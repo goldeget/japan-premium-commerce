@@ -1,0 +1,10 @@
+.git
+**/.git
+**/.git/**
+node_modules
+**/node_modules
+.env
+.env.*
+!.env.example
+var/cache
+var/logs

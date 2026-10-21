@@ -18,7 +18,7 @@
 - Do not edit PrestaShop core files or generate a replacement brand logo.
 - Keep database data in a persistent named volume; do not set `PS_ERASE_DB=1`.
 - Bind the development storefront only to `127.0.0.1:8080`; never expose the development port on all interfaces.
-- Mount only `themes/hummingbird` and `themes/kuranea` into their matching paths under the PrestaShop `themes/` directory. Do not mount over the complete themes directory, which would hide core themes.
+- Package the exact repository Hummingbird submodule and KURANEA child theme into a custom image based on the official PrestaShop image. Sync them into the persistent PrestaShop volume before the upstream entrypoint runs.
 - Include the official child-theme `preview.png` and keep the source Hummingbird tree unmodified. The preview is a theme layout preview, not a replacement brand asset.
 - Keep credentials in ignored local `.env`; commit only placeholders in `.env.example`.
 - Keep the customer shop in Japanese by default; English and Korean are required additional languages, and Back Office acceptance remains Korean 100%.
@@ -31,10 +31,14 @@
 - **Persistent database:** Restarting the stack must preserve the installed shop. Test: restart the services and confirm the same shop can load and the database volume remains attached.
 - **Theme pin:** Hummingbird must resolve to the verified `v2.1.2` commit. Test: check `git submodule status` against the recorded SHA and validate `config/theme.yml` reports 2.1.2.
 - **Child-theme boundary:** KURANEA changes must inherit Hummingbird and leave upstream files untouched. Test: validate the child `parent` value and compare the Hummingbird submodule working tree before and after theme checks.
-- **Theme mount:** The two theme paths visible in the repository must resolve to the same theme files inside the running PrestaShop container. Test: inspect the mounted child manifest, preview, and CSS in the container and fetch the stylesheet from the rendered page.
+- **Theme image packaging:** The repository's Hummingbird and KURANEA files must resolve to the matching theme files inside the running PrestaShop container. Test: compare the child manifest, preview, and CSS with the runtime volume and fetch the stylesheet from the rendered page.
 - **Database connectivity:** After the first install, execute a read-only `SELECT 1` against the configured database and confirm the shop's installed configuration points to MariaDB. Never remove or recreate an existing data volume as a test shortcut.
 - **Responsive rendering:** Capture the rendered shop at a desktop viewport and a mobile viewport; confirm the page is usable at both sizes. Save these screenshots with the bootstrap QA evidence.
 - **Administrator access:** Resolve the generated Back Office directory from the install output/configuration and confirm its login page is reachable over HTTP.
+
+### Implementation adjustment: theme packaging
+
+The initially approved read-only nested theme bind mounts failed against the official image's first-run script. `/tmp/docker_run.sh` sets `-e` and copies the application with `cp -n -R -T -p`; it exited while preserving timestamps under the read-only theme mounts. The PrestaShop container restarted 23 times while MariaDB stayed healthy. After replacing those mounts with the approved image-build approach, automatic installation created 244 tables and the shop/group/URL seed rows, then stopped when the Japanese language pack download could not validate the managed HTTPS proxy certificate. The current named DB volume is preserved; do not rerun the database installer because its default-data step truncates prefixed tables. The image now packages the pinned Hummingbird source and child theme, syncs them into the persistent shop volume before the official entrypoint, and seeds PrestaShop's own cached CA file from the mounted verified host bundle. The remaining repair must resume without clearing or recreating database tables.
 
 ---
 
@@ -42,20 +46,23 @@
 
 **Files:**
 - Create: `compose.yaml`
+- Create: `.dockerignore`
 - Create: `.env.example`
 - Create: `.gitignore`
+- Create: `docker/Dockerfile`
+- Create: `docker/kuranea-entrypoint.sh`
 - Create: `docs/LOCAL_DEVELOPMENT.md`
 
 **Interfaces:**
-- Compose services: `shop` uses `prestashop/prestashop:9.2.0`, `db` uses MariaDB `10.11`.
+- Compose services: `prestashop` builds from official `prestashop/prestashop:9.2.0`, `mariadb` uses MariaDB `10.11`.
 - `.env.example` defines non-secret local placeholders for `MARIADB_DATABASE`, `MARIADB_USER`, `MARIADB_PASSWORD`, `MARIADB_ROOT_PASSWORD`, `ADMIN_MAIL`, and `ADMIN_PASSWD`.
 - Compose must set `PS_INSTALL_AUTO=1`, `PS_LANGUAGE=ja`, `PS_DOMAIN=localhost:8080`, and `PS_ERASE_DB=0`; expose host port `8080` and use persistent database and shop volumes.
 
 - [ ] Create Compose services with a MariaDB health check and `shop` dependency on `db` health; bind `127.0.0.1:8080:80`.
-- [ ] Mount `./themes/hummingbird` to `/var/www/html/themes/hummingbird` and `./themes/kuranea` to `/var/www/html/themes/kuranea`, without masking other PrestaShop themes.
+- [ ] Build the official PrestaShop base with the pinned theme sources; sync only `hummingbird` and `kuranea` into the persistent application volume before calling the upstream entrypoint.
 - [ ] Keep `.env` and generated runtime data ignored; document copying `.env.example` to `.env`.
 - [ ] Run `docker compose config --quiet`; expected: exit 0 with no rendered secrets.
-- [ ] Run `docker compose pull` and `docker compose up -d --wait`; expected: `db` healthy and `shop` running.
+- [ ] Run `docker compose pull mariadb`, `docker compose build --pull`, and `docker compose up -d --wait`; expected: `db` healthy and `prestashop` running.
 - [ ] Run `curl --fail --silent --show-error --output /dev/null --write-out '%{http_code}\n' http://127.0.0.1:8080/`; expected: HTTP 200 after auto-install.
 - [ ] Restart with `docker compose restart` and repeat the HTTP check; expected: same installed shop remains available. Confirm the DB volume identity and installed data remain present.
 - [ ] Commit the runtime, push `work`, then verify the remote SHA and `compose.yaml` contents.
@@ -76,7 +83,7 @@
 
 - [ ] Add the official Hummingbird remote as a submodule and check out the exact verified tag commit.
 - [ ] Add the minimal child-theme manifest, stylesheet, and theme layout preview; do not add placeholder logos or fabricate the official brand mark.
-- [ ] Confirm `preview.png`, manifest, and stylesheet resolve inside the running PrestaShop container through the Compose mounts.
+- [ ] Confirm `preview.png`, manifest, and stylesheet in the running PrestaShop volume match the repository theme files packaged into the image.
 - [ ] Validate the child manifest YAML and assert its top-level `parent` value is `hummingbird` and Hummingbird SHA matches the spec.
 - [ ] Run the official Hummingbird `npm ci`, `npm test`, and `npm run build` using Node 24 and npm 11; expected: Jest tests and production asset build complete successfully.
 - [ ] Confirm PrestaShop lists and activates the child theme, then request the storefront homepage; expected: HTTP 200 and child-theme CSS is served.
@@ -89,10 +96,10 @@
 - Update: cloud environment `install_script` only if a missing reproducible tool or dependency is demonstrated.
 
 **Interfaces:**
-- Start command: `docker compose up -d --wait` from `/workspace/japan-premium-commerce`.
+- Start command: `git submodule update --init --recursive && docker compose build --pull && docker compose up -d --wait` from `/workspace/japan-premium-commerce`.
 - Readiness command: HTTP request to `http://127.0.0.1:8080/`; report service logs from `docker compose logs --tail=100 shop db` on failure.
 
-- [ ] Exercise the startup command and HTTP check in the current cloud machine.
+- [ ] Exercise submodule initialization, image build, Compose startup, and HTTP check in the current cloud machine.
 - [ ] Read the current environment draft, preserve unrelated settings, and save complete tested startup instructions.
 - [ ] Verify the saved draft reports success; distinguish the saved draft from publication and current runtime state.
 

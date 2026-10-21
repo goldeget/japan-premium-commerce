@@ -1,6 +1,6 @@
 # 로컬 개발 환경
 
-이 구성은 공식 PrestaShop `9.2.0` 이미지와 MariaDB `10.11`을 사용합니다. 공식 Hummingbird `v2.1.2`는 PrestaShop `9.2.x` 호환 범위로 고정합니다. 컨테이너는 호스트의 `127.0.0.1:8080`에서만 접근할 수 있습니다.
+이 구성은 공식 PrestaShop `9.2.0` 이미지를 바탕으로 한 로컬 이미지와 MariaDB `10.11`을 사용합니다. 로컬 이미지는 고정된 공식 Hummingbird `v2.1.2`와 KURANEA 자식 테마를 포함합니다. 컨테이너는 호스트의 `127.0.0.1:8080`에서만 접근할 수 있습니다.
 
 ## 사전 준비
 
@@ -8,7 +8,9 @@
 - 공식 Hummingbird `v2.1.2` 소스가 들어 있는 `themes/hummingbird/`
 - KURANEA 자식 테마가 들어 있는 `themes/kuranea/`
 
-두 테마 경로는 PrestaShop의 `themes/` 전체가 아니라 각각의 하위 경로만 마운트합니다. PrestaShop 컨테이너를 시작하기 전에 두 디렉터리가 존재하고 해당 테마 파일을 포함하는지 확인하세요. 빈 디렉터리를 마운트하면 이미지 안의 해당 테마 파일을 가립니다.
+PrestaShop 공식 이미지의 첫 실행 스크립트는 앱 파일을 영속 볼륨으로 복사합니다. 테마 디렉터리를 직접 bind mount하면 복사와 파일 메타데이터 기록이 충돌할 수 있어, Dockerfile이 저장소의 두 테마를 이미지 안에 넣고 래퍼가 이를 `prestashop_html` 볼륨으로 동기화합니다. Hummingbird 원본 submodule은 저장소에서 수정하지 않습니다.
+
+컨테이너는 호스트의 CA bundle을 읽기 전용으로 사용합니다. 시작 스크립트가 PrestaShop 언어팩 다운로드가 참조하는 캐시에도 같은 bundle을 복사합니다. 클라우드 개발 환경의 HTTPS 프록시가 자체 CA로 TLS를 검사하는 경우에도 인증서 검증을 끄지 않습니다. 다른 Linux 개발 호스트에서 CA bundle 경로가 다르면 `.env`에 `HOST_CA_BUNDLE`을 지정하세요.
 
 ## 설정 및 정적 구성 확인
 
@@ -27,15 +29,18 @@ docker compose --env-file .env.example config --quiet
 
 ## 시작 및 확인
 
-테마 경로가 준비된 뒤 저장소 루트에서 실행합니다.
+submodule을 초기화한 뒤 저장소 루트에서 실행합니다.
 
 ```sh
-docker compose up -d
+git submodule update --init --recursive
+docker compose pull mariadb
+docker compose build --pull
+docker compose up -d --wait
 docker compose ps
 docker compose logs -f prestashop
 ```
 
-PrestaShop 자동 설치가 완료되면 `http://localhost:8080`에서 확인합니다. MariaDB healthcheck가 통과한 뒤 PrestaShop이 시작됩니다. PrestaShop healthcheck는 내부 HTTP 포트의 응답 소켓을 확인합니다.
+PrestaShop 자동 설치가 완료되면 `http://localhost:8080`에서 확인합니다. MariaDB healthcheck가 통과한 뒤 PrestaShop이 시작됩니다. 관리자 로그인 경로는 `/admin-kuranea/`입니다. PrestaShop healthcheck는 내부 HTTP 포트의 응답 소켓을 확인합니다.
 
 ## 데이터 보존
 
