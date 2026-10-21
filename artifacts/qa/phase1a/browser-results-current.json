@@ -1,0 +1,144 @@
+{
+  "capturedAt": "2026-10-21T22:52:23.318Z",
+  "baseUrl": "http://localhost:8080",
+  "desktop": {
+    "status": "complete",
+    "lang": "ja-JP",
+    "title": "丁寧に選ぶ、美しい暮らし。",
+    "viewportWidth": 1440,
+    "documentWidth": 1440,
+    "noHorizontalOverflow": true,
+    "logo": {
+      "naturalWidth": 1337,
+      "naturalHeight": 420,
+      "box": {
+        "x": 52,
+        "y": 67,
+        "width": 288,
+        "height": 76
+      }
+    },
+    "hero": {
+      "x": 0,
+      "y": 161,
+      "width": 1440,
+      "height": 691
+    },
+    "heading": {
+      "x": 115,
+      "y": 356,
+      "width": 581,
+      "height": 192
+    },
+    "nav": {
+      "display": "none",
+      "box": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "labels": [
+        "ホーム",
+        "検索",
+        "マイページ",
+        "カート"
+      ]
+    },
+    "hiddenDemoBlocks": [
+      {
+        "className": "ps-imageslider",
+        "visible": false
+      },
+      {
+        "className": "ps-customtext",
+        "visible": false
+      },
+      {
+        "className": "ps-banner",
+        "visible": false
+      }
+    ],
+    "newsletter": {
+      "headingColor": "rgb(23, 38, 56)",
+      "background": "rgb(248, 249, 250)"
+    },
+    "serviceWorkerSupport": true,
+    "httpStatus": 200,
+    "pageErrors": [],
+    "cacheKeys": []
+  },
+  "mobile": {
+    "status": "complete",
+    "lang": "ja-JP",
+    "title": "丁寧に選ぶ、美しい暮らし。",
+    "viewportWidth": 390,
+    "documentWidth": 390,
+    "noHorizontalOverflow": true,
+    "logo": {
+      "naturalWidth": 669,
+      "naturalHeight": 210,
+      "box": {
+        "x": 63,
+        "y": 10,
+        "width": 156,
+        "height": 49
+      }
+    },
+    "hero": {
+      "x": 0,
+      "y": 69,
+      "width": 390,
+      "height": 806
+    },
+    "heading": {
+      "x": 24,
+      "y": 156,
+      "width": 311,
+      "height": 110
+    },
+    "nav": {
+      "display": "grid",
+      "box": {
+        "x": 0,
+        "y": 774,
+        "width": 390,
+        "height": 70
+      },
+      "labels": [
+        "ホーム",
+        "検索",
+        "マイページ",
+        "カート"
+      ]
+    },
+    "hiddenDemoBlocks": [
+      {
+        "className": "ps-imageslider",
+        "visible": false
+      },
+      {
+        "className": "ps-customtext",
+        "visible": false
+      },
+      {
+        "className": "ps-banner",
+        "visible": false
+      }
+    ],
+    "newsletter": {
+      "headingColor": "rgb(23, 38, 56)",
+      "background": "rgb(248, 249, 250)"
+    },
+    "serviceWorkerSupport": true,
+    "httpStatus": 200,
+    "pageErrors": [],
+    "cacheKeys": []
+  },
+  "admin": {
+    "httpStatus": 200,
+    "url": "http://localhost:8080/admin-kuranea/login",
+    "title": "KURANEA",
+    "lang": "ja"
+  }
+}

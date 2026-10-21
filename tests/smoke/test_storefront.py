@@ -10,7 +10,7 @@ from urllib.parse import urljoin, urlsplit
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
-BASE_URL = os.environ.get("SHOP_BASE_URL", "http://127.0.0.1:8080").rstrip("/")
+BASE_URL = os.environ.get("SHOP_BASE_URL", "http://localhost:8080").rstrip("/")
 
 
 class PageMetadata(HTMLParser):
@@ -53,6 +53,30 @@ class StorefrontSmokeTests(unittest.TestCase):
         self.assertEqual(final.port, base.port)
         self.assertTrue(metadata.html_lang.startswith("ja"), metadata.html_lang)
         self.assertIn("KURANEA", body)
+        self.assertIn("丁寧に選ぶ、美しい暮らし。", body)
+        self.assertNotIn("A thoughtful life, beautifully chosen.", body)
+        css_urls = [urljoin(final_url, href) for href in metadata.stylesheets if ".css" in href]
+        css = "\n".join(fetch(url)[2] for url in css_urls)
+        self.assertIn('.page-index .ps-imageslider:has(img[src*="/sample-"])', css)
+        self.assertIn(".page-index .ps-customtext:has(strong.dark)", css)
+        self.assertIn('.page-index .ps-banner:has(img[src*="/sale70.png"])', css)
+
+    def test_homepage_copy_and_mobile_navigation_follow_store_locale(self) -> None:
+        cases = (
+            ("/", "ja-JP", "丁寧に選ぶ、美しい暮らし。", "ホーム", "検索", "マイページ", "カート"),
+            ("/en/", "en-US", "A thoughtful life, beautifully chosen.", "Home", "Search", "Account", "Cart"),
+            ("/ko/", "ko-KR", "정성껏 고른 아름다운 일상.", "홈", "검색", "내 계정", "장바구니"),
+        )
+        for path, language, title, *navigation in cases:
+            with self.subTest(path=path):
+                status, _, body = fetch(f"{BASE_URL}{path}")
+                metadata = PageMetadata()
+                metadata.feed(body)
+                self.assertEqual(status, 200)
+                self.assertEqual(metadata.html_lang, language)
+                self.assertIn(title, body)
+                for label in navigation:
+                    self.assertIn(f">{label}<", body)
 
     def test_kuranea_child_theme_css_is_served(self) -> None:
         status, final_url, body = fetch(f"{BASE_URL}/")

@@ -61,6 +61,7 @@ body {
 
 .kuranea-brand {
   width: 100%;
+  max-width: 100%;
   padding: 0.25rem 0;
 }
 
@@ -75,6 +76,10 @@ body {
   max-height: 4.75rem;
   object-fit: contain;
   object-position: left center;
+}
+
+#header .kuranea-brand__image {
+  max-width: min(100%, 18rem);
 }
 
 #header .header-bottom .form-control,
@@ -184,7 +189,7 @@ body {
 }
 
 .kuranea-hero h1 {
-  max-width: 11ch;
+  max-width: 100%;
   margin: 0;
   color: #fffefa;
   font-family: var(--kuranea-serif);
@@ -394,6 +399,31 @@ body {
 
 .kuranea-note__inner .kuranea-text-link {
   color: #f8f6f0;
+}
+
+/* Suppress the untouched Hummingbird demo promotion blocks on the shop home. */
+.page-index .ps-imageslider:has(img[src*="/sample-"]),
+.page-index .ps-customtext:has(strong.dark),
+.page-index .ps-banner:has(img[src*="/sale70.png"]) {
+  display: none !important;
+}
+
+#emailsubscription_anchor_displayFooterBefore.ps-emailsubscription {
+  color: var(--kuranea-ink);
+  background-color: #f0eee8 !important;
+}
+
+#emailsubscription_anchor_displayFooterBefore :is(h1, h2, h3, h4, .h1, .h2, .h3, .h4) {
+  color: var(--kuranea-ink);
+}
+
+#emailsubscription_anchor_displayFooterBefore p {
+  color: #555e68;
+}
+
+#emailsubscription_anchor_displayFooterBefore .form-control {
+  border-color: #cfc8ba;
+  background-color: #fffefa;
 }
 
 .page-category .category__header {

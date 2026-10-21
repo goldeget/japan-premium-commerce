@@ -37,21 +37,40 @@
   </div>
 {/block}
 
-<nav class="kuranea-mobile-nav" aria-label="{l s='Store navigation' d='Shop.Theme.Kuranea'}">
-  <a href="{$urls.pages.index}" class="kuranea-mobile-nav__item" aria-label="{l s='Home' d='Shop.Theme.Kuranea'}">
+{if $language.locale == 'ja-JP'}
+  {$mobileNavLabel = 'ストアメニュー'}
+  {$mobileHome = 'ホーム'}
+  {$mobileSearch = '検索'}
+  {$mobileAccount = 'マイページ'}
+  {$mobileCart = 'カート'}
+{elseif $language.locale == 'ko-KR'}
+  {$mobileNavLabel = '쇼핑 메뉴'}
+  {$mobileHome = '홈'}
+  {$mobileSearch = '검색'}
+  {$mobileAccount = '내 계정'}
+  {$mobileCart = '장바구니'}
+{else}
+  {$mobileNavLabel = 'Store navigation'}
+  {$mobileHome = 'Home'}
+  {$mobileSearch = 'Search'}
+  {$mobileAccount = 'Account'}
+  {$mobileCart = 'Cart'}
+{/if}
+<nav class="kuranea-mobile-nav" aria-label="{$mobileNavLabel|escape:'htmlall':'UTF-8'}">
+  <a href="{$urls.pages.index}" class="kuranea-mobile-nav__item" aria-label="{$mobileHome|escape:'htmlall':'UTF-8'}">
     <i class="material-icons" aria-hidden="true">&#xe88a;</i>
-    <span>{l s='Home' d='Shop.Theme.Kuranea'}</span>
+    <span>{$mobileHome|escape:'htmlall':'UTF-8'}</span>
   </a>
-  <a href="{$urls.pages.search}" class="kuranea-mobile-nav__item" aria-label="{l s='Search' d='Shop.Theme.Kuranea'}">
+  <a href="{$urls.pages.search}" class="kuranea-mobile-nav__item" aria-label="{$mobileSearch|escape:'htmlall':'UTF-8'}">
     <i class="material-icons" aria-hidden="true">&#xe8b6;</i>
-    <span>{l s='Search' d='Shop.Theme.Kuranea'}</span>
+    <span>{$mobileSearch|escape:'htmlall':'UTF-8'}</span>
   </a>
-  <a href="{$urls.pages.my_account}" class="kuranea-mobile-nav__item" aria-label="{l s='Account' d='Shop.Theme.Kuranea'}">
+  <a href="{$urls.pages.my_account}" class="kuranea-mobile-nav__item" aria-label="{$mobileAccount|escape:'htmlall':'UTF-8'}">
     <i class="material-icons" aria-hidden="true">&#xe853;</i>
-    <span>{l s='Account' d='Shop.Theme.Kuranea'}</span>
+    <span>{$mobileAccount|escape:'htmlall':'UTF-8'}</span>
   </a>
-  <a href="{$urls.pages.cart}" class="kuranea-mobile-nav__item" aria-label="{l s='Cart' d='Shop.Theme.Kuranea'}">
+  <a href="{$urls.pages.cart}" class="kuranea-mobile-nav__item" aria-label="{$mobileCart|escape:'htmlall':'UTF-8'}">
     <i class="material-icons" aria-hidden="true">&#xe8cc;</i>
-    <span>{l s='Cart' d='Shop.Theme.Kuranea'}</span>
+    <span>{$mobileCart|escape:'htmlall':'UTF-8'}</span>
   </a>
 </nav>
