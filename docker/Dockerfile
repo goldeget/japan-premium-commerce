@@ -4,9 +4,9 @@ FROM prestashop/prestashop:9.2.0@sha256:2b8f90176b3fad68f8f5c7fbdeaa137f2f05578d
 # image so PrestaShop's first-run file copy does not write through a bind mount.
 COPY themes/hummingbird/ /opt/kuranea/themes/hummingbird/
 COPY themes/kuranea/ /opt/kuranea/themes/kuranea/
-COPY docker/kuranea-entrypoint.sh /usr/local/bin/kuranea-entrypoint
-
-RUN chmod 0755 /usr/local/bin/kuranea-entrypoint
+COPY --chmod=0755 docker/kuranea-entrypoint.sh /usr/local/bin/kuranea-entrypoint
+COPY --chown=root:www-data --chmod=0640 docker/kuran-post-install.php /usr/local/bin/kuran-post-install.php
+COPY --chmod=0755 docker/post-install/10-kuranea-bootstrap.sh /tmp/post-install-scripts/10-kuranea-bootstrap.sh
 
 ENTRYPOINT ["/usr/local/bin/kuranea-entrypoint"]
 CMD ["/tmp/docker_run.sh"]
