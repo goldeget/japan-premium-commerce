@@ -38,7 +38,7 @@
 
 ### Implementation adjustment: theme packaging
 
-The initially approved read-only nested theme bind mounts failed against the official image's first-run script. `/tmp/docker_run.sh` sets `-e` and copies the application with `cp -n -R -T -p`; it exited while preserving timestamps under the read-only theme mounts. The PrestaShop container restarted 23 times while MariaDB stayed healthy. After replacing those mounts with the approved image-build approach, automatic installation created 244 tables and the shop/group/URL seed rows, then stopped when the Japanese language pack download could not validate the managed HTTPS proxy certificate. The current named DB volume is preserved; do not rerun the database installer because its default-data step truncates prefixed tables. The image now packages the pinned Hummingbird source and child theme, syncs them into the persistent shop volume before the official entrypoint, and seeds PrestaShop's own cached CA file from the mounted verified host bundle. The remaining repair must resume without clearing or recreating database tables.
+The initially approved read-only nested theme bind mounts failed against the official image's first-run script; they were replaced by the image-build and persistent-volume sync approach. The existing DB volume was preserved. A no-reset idempotent post-install hook now adds the requested languages, sets the employee language, and activates the child theme. The live existing-volume installation and restart persistence were verified. Two later isolated empty-volume auto-install attempts failed during MariaDB system-table creation because Docker storage ran out (`errno 28`); fresh-volume installation remains unverified. Do not rerun installation against an existing volume or remove any project data volumes.
 
 ---
 
@@ -58,14 +58,14 @@ The initially approved read-only nested theme bind mounts failed against the off
 - `.env.example` defines non-secret local placeholders for `MARIADB_DATABASE`, `MARIADB_USER`, `MARIADB_PASSWORD`, `MARIADB_ROOT_PASSWORD`, `ADMIN_MAIL`, and `ADMIN_PASSWD`.
 - Compose must set `PS_INSTALL_AUTO=1`, `PS_LANGUAGE=ja`, `PS_DOMAIN=localhost:8080`, and `PS_ERASE_DB=0`; expose host port `8080` and use persistent database and shop volumes.
 
-- [ ] Create Compose services with a MariaDB health check and `shop` dependency on `db` health; bind `127.0.0.1:8080:80`.
-- [ ] Build the official PrestaShop base with the pinned theme sources; sync only `hummingbird` and `kuranea` into the persistent application volume before calling the upstream entrypoint.
-- [ ] Keep `.env` and generated runtime data ignored; document copying `.env.example` to `.env`.
-- [ ] Run `docker compose config --quiet`; expected: exit 0 with no rendered secrets.
-- [ ] Run `docker compose pull mariadb`, `docker compose build --pull`, and `docker compose up -d --wait`; expected: `db` healthy and `prestashop` running.
-- [ ] Run `curl --fail --silent --show-error --output /dev/null --write-out '%{http_code}\n' http://127.0.0.1:8080/`; expected: HTTP 200 after auto-install.
-- [ ] Restart with `docker compose restart` and repeat the HTTP check; expected: same installed shop remains available. Confirm the DB volume identity and installed data remain present.
-- [ ] Commit the runtime, push `work`, then verify the remote SHA and `compose.yaml` contents.
+- [x] Create Compose services with a MariaDB health check and PrestaShop dependency on DB health; bind `127.0.0.1:8080:80`.
+- [x] Build the official PrestaShop base with the pinned theme sources; sync only `hummingbird` and `kuranea` into the persistent application volume before calling the upstream entrypoint.
+- [x] Keep `.env` and generated runtime data ignored; document copying `.env.example` to `.env`.
+- [x] Run `docker compose config --quiet`; expected: exit 0 with no rendered secrets.
+- [x] Build and start the existing Compose installation; MariaDB and PrestaShop report healthy. Blank-volume auto-install is tracked separately as blocked below.
+- [x] Request the existing storefront; expected HTTP 200. Fresh-volume auto-install was not validated.
+- [x] Restart the existing services and repeat the HTTP check; existing installed shop, DB tables, and settings remain present.
+- [x] Commit the runtime, push `work`, then verify the remote SHA and `compose.yaml` contents.
 
 ### Task 2: Pin Hummingbird and create the child-theme shell
 
@@ -81,13 +81,13 @@ The initially approved read-only nested theme bind mounts failed against the off
 - `themes/kuranea/config/theme.yml` sets `parent: hummingbird`, name `kuranea`, display name `KURANEA`, and child-theme compatibility `~9.2.0`.
 - `themes/kuranea/assets/css/theme.css` contains only KURANEA overrides; upstream theme assets remain in the submodule.
 
-- [ ] Add the official Hummingbird remote as a submodule and check out the exact verified tag commit.
-- [ ] Add the minimal child-theme manifest, stylesheet, and theme layout preview; do not add placeholder logos or fabricate the official brand mark.
-- [ ] Confirm `preview.png`, manifest, and stylesheet in the running PrestaShop volume match the repository theme files packaged into the image.
-- [ ] Validate the child manifest YAML and assert its top-level `parent` value is `hummingbird` and Hummingbird SHA matches the spec.
-- [ ] Run the official Hummingbird `npm ci`, `npm test`, and `npm run build` using Node 24 and npm 11; expected: Jest tests and production asset build complete successfully.
-- [ ] Confirm PrestaShop lists and activates the child theme, then request the storefront homepage; expected: HTTP 200 and child-theme CSS is served.
-- [ ] Commit the submodule pin and child theme, push `work`, then compare remote SHA and submodule entry.
+- [x] Add the official Hummingbird remote as a submodule and check out the exact verified tag commit.
+- [x] Add the minimal child-theme manifest, stylesheet, and theme layout preview; do not add placeholder logos or fabricate the official brand mark.
+- [x] Confirm `preview.png`, manifest, and stylesheet in the running PrestaShop volume match the repository theme files packaged into the image.
+- [x] Validate the child manifest YAML and assert its top-level `parent` value is `hummingbird` and Hummingbird SHA matches the spec.
+- [x] Run the official Hummingbird `npm ci`, `npm test`, and `npm run build` using Node 24 and npm 11; expected: Jest tests and production asset build complete successfully.
+- [x] Confirm PrestaShop activates the child theme, then request the storefront; HTTP 200 and child-theme CSS are served.
+- [x] Commit the submodule pin and child theme, push `work`, then compare remote SHA and submodule entry.
 
 ### Task 3: Save and exercise reusable cloud startup instructions
 
@@ -99,9 +99,9 @@ The initially approved read-only nested theme bind mounts failed against the off
 - Start command: `git submodule update --init --recursive && docker compose build --pull && docker compose up -d --wait` from `/workspace/japan-premium-commerce`.
 - Readiness command: HTTP request to `http://127.0.0.1:8080/`; report service logs from `docker compose logs --tail=100 shop db` on failure.
 
-- [ ] Exercise submodule initialization, image build, Compose startup, and HTTP check in the current cloud machine.
-- [ ] Read the current environment draft, preserve unrelated settings, and save complete tested startup instructions.
-- [ ] Verify the saved draft reports success; distinguish the saved draft from publication and current runtime state.
+- [x] Exercise submodule initialization, image build, Compose startup, and HTTP check in the current cloud machine.
+- [ ] Save complete, safe startup instructions in the cloud-environment draft after local HEAD is synchronized with the pushed checkpoint.
+- [ ] Verify draft persistence; note that saving a draft does not publish or apply it.
 
 ### Task 4: First storefront verification
 
@@ -113,10 +113,10 @@ The initially approved read-only nested theme bind mounts failed against the off
 - Smoke test base URL: `http://127.0.0.1:8080`.
 - Test assertions: homepage is HTTP 200, `lang="ja"` is present, and the active theme is `kuranea`.
 
-- [ ] Add the smoke test with assertions for HTTP 200, `lang="ja"`, and a response asset path under `/themes/kuranea/`.
-- [ ] Run the test against the live Compose stack; expected: all assertions pass. Separately verify the MariaDB connection with a read-only query and confirm the admin login URL is reachable.
-- [ ] Save results and desktop/mobile screenshots only after the browser renders the page at both viewport widths.
-- [ ] Commit the test and QA note, push `work`, and verify the remote SHA and test file.
+- [x] Add the smoke test with assertions for HTTP 200, `lang="ja"`, and a response asset path under `/themes/kuranea/`.
+- [x] Run the smoke test against the existing live Compose stack; all 3 checks pass. Separately verify MariaDB connectivity and the admin login route.
+- [x] Save results and desktop/mobile screenshots after successful browser renders at both viewport widths.
+- [ ] Commit the test and QA note, push `work`, and verify the final remote SHA and new-clone recovery.
 
 ## Out of scope for this bootstrap plan
 

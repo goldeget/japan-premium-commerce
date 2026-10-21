@@ -40,8 +40,19 @@ docker compose ps
 docker compose logs -f prestashop
 ```
 
-PrestaShop 자동 설치가 완료되면 `http://localhost:8080`에서 확인합니다. MariaDB healthcheck가 통과한 뒤 PrestaShop이 시작됩니다. 관리자 로그인 경로는 `/admin-kuranea/`입니다. PrestaShop healthcheck는 내부 HTTP 포트의 응답 소켓을 확인합니다.
+PrestaShop 자동 설치가 완료되면 `http://localhost:8080`에서 확인합니다. MariaDB healthcheck가 통과한 뒤 PrestaShop이 시작됩니다. 관리자 로그인 경로는 `/admin-kuranea/`입니다. PrestaShop healthcheck는 내부 HTTP 요청에 `Host: localhost:8080`을 넣고 HTTP 200 응답을 확인합니다.
 
 ## 데이터 보존
 
 데이터베이스와 PrestaShop 파일은 각각 `mariadb_data`, `prestashop_html` named volume에 보관됩니다. 컨테이너를 중지할 때는 `docker compose stop`을 사용하세요. `docker compose down`도 named volume은 보존하지만, 이 프로젝트에서는 DB 초기화나 볼륨 제거가 허용되지 않습니다. `docker compose down -v`, `docker volume rm`, `docker volume prune` 명령은 실행하지 마세요.
+
+
+## 설치된 볼륨에 KURANEA 기본 설정 적용
+
+PrestaShop 설치 시 기존 DB 볼륨이 이미 초기화되어 있으면 공식 이미지의 첫 설치 후크가 다시 실행되지 않습니다. 이미지의 멱등 후크를 수동으로 실행하면 일본어 기본 언어, 영어·한국어 추가, 한국어 관리자 직원 언어와 KURANEA 자식 테마를 설정합니다. 완료 표식이 있으면 변경 없이 종료합니다.
+
+```sh
+docker compose exec -T prestashop /tmp/post-install-scripts/10-kuranea-bootstrap.sh
+```
+
+이 스크립트는 DB를 초기화하거나 테이블을 지우지 않습니다. DB 초기화 옵션을 변경하거나 named volume을 삭제하지 마세요.
