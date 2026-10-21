@@ -1,5 +1,13 @@
 # KURANEA 작업 기록
 
+## 2026-10-21 — PrestaShop 9 주소 조회 응답 및 신규 설치 요청 보강
+
+- 시작 기준: `work` 로컬 HEAD 및 원격 SHA `6044653535c7e37d88c2b6c2c23bd22d7eb3f3f0`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다.
+- 원인: PrestaShop 9.2에서 이전 응답 API `Tools::jsonEncode()`와 `ajaxDie()`는 사용할 수 없어 postcode 후보 라우트가 503을 반환했다. 테스트 더블도 존재하지 않는 `ajaxDie()`를 제공해 실제 코어 동작을 잘못 모사하고 있었다.
+- 변경: 컨트롤러는 표준 `json_encode()`와 PS9 `ajaxRender()`로 상태 코드가 포함된 JSON을 출력하고 종료한다. 주소 테스트는 격리된 PHP 자식 프로세스에서 `ajaxRender()` 응답을 받아 검증한다. 빈 설치 CI의 주소 조회 `curl`에는 canonical-host 리다이렉트 추적을 추가했다.
+- 검증: 기존 실행 중인 쇼핑몰에서 주소 lookup 경로 HTTP 200, JSON 응답, `manual_entry_available=true`를 확인했다. 응답 후보는 0개이며 공식 Japan Post CSV가 아직 적재되지 않았으므로 실제 `100-0004` 주소 매핑은 PASS로 기록하지 않는다. 스모크 13/13, 관리자 계약 테스트 6/6, postcode PHP 도메인·컨트롤러 테스트, PHP lint 통과.
+- 보존: 실행 중인 PrestaShop/MariaDB와 named volume은 초기화하거나 삭제하지 않았다. GitHub Actions API는 이 환경에서 `403 Forbidden`을 반환해 신규 빈 DB 설치 결과를 직접 확인할 수 없었다.
+
 ## 2026-10-21 — Phase 1A 일본어 홈 UI 및 반응형 QA
 
 - 시작 SHA: 로컬 `work`와 GitHub 원격 `work`가 모두 `34b97b6982e42361018f1746eb0214efe5fe366b`였다. 기존 컨테이너와 named volume은 유지했다.

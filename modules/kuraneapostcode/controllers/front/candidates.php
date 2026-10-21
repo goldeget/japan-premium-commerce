@@ -18,12 +18,11 @@ class KuraneapostcodeCandidatesModuleFrontController extends ModuleFrontControll
 
         if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'GET') {
             header('Allow: GET');
-            http_response_code(405);
-            $this->ajaxDie(Tools::jsonEncode([
+            $this->respond([
                 'candidates' => [],
                 'manual_entry_available' => true,
                 'error' => 'method_not_allowed',
-            ]));
+            ], 405);
         }
 
         $query = Tools::getValue('q', '');
@@ -49,16 +48,28 @@ class KuraneapostcodeCandidatesModuleFrontController extends ModuleFrontControll
                 ];
             }
 
-            $payload = ['candidates' => $candidates, 'manual_entry_available' => true];
-            $this->ajaxDie(Tools::jsonEncode($payload));
+            $this->respond(['candidates' => $candidates, 'manual_entry_available' => true]);
         } catch (Throwable $exception) {
-            http_response_code(503);
-            $this->ajaxDie(Tools::jsonEncode([
+            $this->respond([
                 'candidates' => [],
                 'manual_entry_available' => true,
                 'error' => 'lookup_unavailable',
-            ]));
+            ], 503);
         }
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function respond(array $payload, int $status = 200): void
+    {
+        $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if (!is_string($json)) {
+            $status = 500;
+            $json = '{"candidates":[],"manual_entry_available":true,"error":"response_encoding_failed"}';
+        }
+
+        http_response_code($status);
+        $this->ajaxRender($json);
+        exit;
     }
 
     /** @return array<string, int> */

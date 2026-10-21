@@ -66,7 +66,7 @@ jobs:
           SHOP_BASE_URL: http://127.0.0.1:8080
         run: |
           set -euo pipefail
-          payload=$(curl --fail --silent --show-error --get "$SHOP_BASE_URL/" \
+          payload=$(curl --fail --silent --show-error --location --get "$SHOP_BASE_URL/" \
             --data-urlencode 'fc=module' \
             --data-urlencode 'module=kuraneapostcode' \
             --data-urlencode 'controller=candidates' \

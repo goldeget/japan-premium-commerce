@@ -6,7 +6,7 @@ import json
 import re
 import unittest
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlencode, urljoin, urlsplit
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
@@ -118,6 +118,21 @@ class StorefrontSmokeTests(unittest.TestCase):
         self.assertIn("/admin-kuranea/login", final_url)
         self.assertGreaterEqual(len(re.findall(r'<input[^>]+type=[\"\'](?:email|password)', body)), 2)
         self.assertIn("KURANEA", body)
+
+    def test_postcode_lookup_endpoint_keeps_manual_entry_available(self) -> None:
+        query = urlencode({
+            "fc": "module",
+            "module": "kuraneapostcode",
+            "controller": "candidates",
+            "q": "1000004",
+        })
+        request = urlopen(f"{BASE_URL}/?{query}", timeout=20)
+        with request as response:
+            self.assertEqual(response.status, 200)
+            self.assertIn("application/json", response.headers.get("Content-Type", ""))
+            payload = json.loads(response.read().decode("utf-8"))
+        self.assertIs(payload.get("manual_entry_available"), True)
+        self.assertIsInstance(payload.get("candidates"), list)
 
 
 if __name__ == "__main__":

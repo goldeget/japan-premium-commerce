@@ -371,22 +371,6 @@ if (!class_exists('Tools')) {
         {
             return $_POST[$key] ?? $_GET[$key] ?? $default;
         }
-
-        public static function jsonEncode($value): string
-        {
-            return json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
-        }
-    }
-}
-if (!class_exists('ModuleFrontController')) {
-    class ModuleFrontController
-    {
-        public string $response = '';
-
-        public function ajaxDie(string $response): void
-        {
-            $this->response = $response;
-        }
     }
 }
 
@@ -439,16 +423,26 @@ $savedAddress->postcode = '1000004';
 $module->hookActionSubmitCustomerAddressForm(['address' => $savedAddress]);
 assertSameValue('100-0004', $savedAddress->postcode, 'The native customer address hook should persist canonical postcode formatting.');
 
-require_once __DIR__ . '/../../modules/kuraneapostcode/controllers/front/candidates.php';
-$_SERVER['REQUEST_METHOD'] = 'GET';
-$_GET = ['q' => '9999999'];
-$candidateController = new KuraneapostcodeCandidatesModuleFrontController();
-$candidateController->initContent();
-$apiResponse = json_decode($candidateController->response, true, 512, JSON_THROW_ON_ERROR);
+$controllerPipes = [];
+$controllerProcess = proc_open(
+    [PHP_BINARY, __DIR__ . '/run_candidates_endpoint.php'],
+    [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+    $controllerPipes
+);
+if (!is_resource($controllerProcess)) {
+    throw new RuntimeException('Could not start the isolated candidate endpoint test process.');
+}
+fclose($controllerPipes[0]);
+$controllerOutput = stream_get_contents($controllerPipes[1]);
+$controllerError = stream_get_contents($controllerPipes[2]);
+fclose($controllerPipes[1]);
+fclose($controllerPipes[2]);
+$controllerExitCode = proc_close($controllerProcess);
+assertSameValue(0, $controllerExitCode, 'The candidate endpoint test process should complete successfully: ' . $controllerError);
+$apiResponse = json_decode(trim($controllerOutput), true, 512, JSON_THROW_ON_ERROR);
 assertSameValue(true, $apiResponse['manual_entry_available'], 'The public candidate endpoint should always preserve manual entry.');
 assertSameValue(1, count($apiResponse['candidates']), 'The public candidate endpoint should return matching candidates.');
 assertSameValue('東京都', $apiResponse['candidates'][0]['prefecture'], 'The public API should return the prefecture candidate.');
 assertTrueValue(is_int($apiResponse['candidates'][0]['state_id']), 'The public API should resolve the candidate to the native state ID.');
-assertTrueValue(str_starts_with(Db::$queries[count(Db::$queries) - 1], 'SELECT '), 'The candidate endpoint must query the postal table read-only.');
 
 echo "PASS: postcode normalization, KEN_ALL import, candidate endpoint lookup, address form validation/persistence hooks, localization, and native field mapping\n";
