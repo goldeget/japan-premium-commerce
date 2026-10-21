@@ -17,6 +17,9 @@
 - Use official Hummingbird `v2.1.2` tag SHA `4e52b64d3c772f19d9974409b73d55fb532e9e22`.
 - Do not edit PrestaShop core files or generate a replacement brand logo.
 - Keep database data in a persistent named volume; do not set `PS_ERASE_DB=1`.
+- Bind the development storefront only to `127.0.0.1:8080`; never expose the development port on all interfaces.
+- Mount only `themes/hummingbird` and `themes/kuranea` into their matching paths under the PrestaShop `themes/` directory. Do not mount over the complete themes directory, which would hide core themes.
+- Include the official child-theme `preview.png` and keep the source Hummingbird tree unmodified. The preview is a theme layout preview, not a replacement brand asset.
 - Keep credentials in ignored local `.env`; commit only placeholders in `.env.example`.
 - Keep the customer shop in Japanese by default; English and Korean are required additional languages, and Back Office acceptance remains Korean 100%.
 - After each task, run its checks, commit, push to `work`, and confirm remote SHA and files.
@@ -28,6 +31,10 @@
 - **Persistent database:** Restarting the stack must preserve the installed shop. Test: restart the services and confirm the same shop can load and the database volume remains attached.
 - **Theme pin:** Hummingbird must resolve to the verified `v2.1.2` commit. Test: check `git submodule status` against the recorded SHA and validate `config/theme.yml` reports 2.1.2.
 - **Child-theme boundary:** KURANEA changes must inherit Hummingbird and leave upstream files untouched. Test: validate the child `parent` value and compare the Hummingbird submodule working tree before and after theme checks.
+- **Theme mount:** The two theme paths visible in the repository must resolve to the same theme files inside the running PrestaShop container. Test: inspect the mounted child manifest, preview, and CSS in the container and fetch the stylesheet from the rendered page.
+- **Database connectivity:** After the first install, execute a read-only `SELECT 1` against the configured database and confirm the shop's installed configuration points to MariaDB. Never remove or recreate an existing data volume as a test shortcut.
+- **Responsive rendering:** Capture the rendered shop at a desktop viewport and a mobile viewport; confirm the page is usable at both sizes. Save these screenshots with the bootstrap QA evidence.
+- **Administrator access:** Resolve the generated Back Office directory from the install output/configuration and confirm its login page is reachable over HTTP.
 
 ---
 
@@ -44,12 +51,13 @@
 - `.env.example` defines non-secret local defaults for `DB_NAME`, `DB_USER`, `DB_PASSWD`, `MARIADB_ROOT_PASSWORD`, `ADMIN_MAIL`, and `ADMIN_PASSWD`.
 - Compose must set `PS_INSTALL_AUTO=1`, `PS_LANGUAGE=ja`, `PS_DOMAIN=localhost:8080`, and `PS_ERASE_DB=0`; expose host port `8080` and use persistent database and shop volumes.
 
-- [ ] Create Compose services with a MariaDB health check and `shop` dependency on `db` health.
+- [ ] Create Compose services with a MariaDB health check and `shop` dependency on `db` health; bind `127.0.0.1:8080:80`.
+- [ ] Mount `./themes/hummingbird` to `/var/www/html/themes/hummingbird` and `./themes/kuranea` to `/var/www/html/themes/kuranea`, without masking other PrestaShop themes.
 - [ ] Keep `.env` and generated runtime data ignored; document copying `.env.example` to `.env`.
 - [ ] Run `docker compose config --quiet`; expected: exit 0 with no rendered secrets.
 - [ ] Run `docker compose pull` and `docker compose up -d --wait`; expected: `db` healthy and `shop` running.
 - [ ] Run `curl --fail --silent --show-error --output /dev/null --write-out '%{http_code}\n' http://127.0.0.1:8080/`; expected: HTTP 200 after auto-install.
-- [ ] Restart with `docker compose restart` and repeat the HTTP check; expected: same installed shop remains available.
+- [ ] Restart with `docker compose restart` and repeat the HTTP check; expected: same installed shop remains available. Confirm the DB volume identity and installed data remain present.
 - [ ] Commit the runtime, push `work`, then verify the remote SHA and `compose.yaml` contents.
 
 ### Task 2: Pin Hummingbird and create the child-theme shell
@@ -59,6 +67,7 @@
 - Add submodule: `themes/hummingbird` at Hummingbird `v2.1.2` SHA `4e52b64d3c772f19d9974409b73d55fb532e9e22`
 - Create: `themes/kuranea/config/theme.yml`
 - Create: `themes/kuranea/assets/css/theme.css`
+- Create: `themes/kuranea/preview.png`
 - Create: `docs/THEME_DEVELOPMENT.md`
 
 **Interfaces:**
@@ -66,7 +75,8 @@
 - `themes/kuranea/assets/css/theme.css` contains only KURANEA overrides; upstream theme assets remain in the submodule.
 
 - [ ] Add the official Hummingbird remote as a submodule and check out the exact verified tag commit.
-- [ ] Add the minimal child-theme manifest and stylesheet; do not add placeholder logos.
+- [ ] Add the minimal child-theme manifest, stylesheet, and theme layout preview; do not add placeholder logos or fabricate the official brand mark.
+- [ ] Confirm `preview.png`, manifest, and stylesheet resolve inside the running PrestaShop container through the Compose mounts.
 - [ ] Validate the child manifest YAML and assert its top-level `parent` value is `hummingbird` and Hummingbird SHA matches the spec.
 - [ ] Run the official Hummingbird `npm ci`, `npm test`, and `npm run build` using Node 24 and npm 11; expected: Jest tests and production asset build complete successfully.
 - [ ] Confirm PrestaShop lists and activates the child theme, then request the storefront homepage; expected: HTTP 200 and child-theme CSS is served.
@@ -97,8 +107,8 @@
 - Test assertions: homepage is HTTP 200, `lang="ja"` is present, and the active theme is `kuranea`.
 
 - [ ] Add the smoke test with assertions for HTTP 200, `lang="ja"`, and a response asset path under `/themes/kuranea/`.
-- [ ] Run the test against the live Compose stack; expected: all assertions pass.
-- [ ] Save results and screenshot only after the browser renders the page at desktop and mobile widths.
+- [ ] Run the test against the live Compose stack; expected: all assertions pass. Separately verify the MariaDB connection with a read-only query and confirm the admin login URL is reachable.
+- [ ] Save results and desktop/mobile screenshots only after the browser renders the page at both viewport widths.
 - [ ] Commit the test and QA note, push `work`, and verify the remote SHA and test file.
 
 ## Out of scope for this bootstrap plan
