@@ -52,3 +52,9 @@ git ls-remote origin refs/heads/work
 - 기존 DB 볼륨이 이미 설치된 상태에서는 공식 첫 설치 후크가 실행되지 않으므로, `docs/LOCAL_DEVELOPMENT.md`의 멱등 후크 실행 절차를 따른다.
 - 격리된 빈 볼륨 자동 설치 검증은 MariaDB 초기 시스템 테이블 생성 중 Docker 저장 공간 부족(`errno 28`)으로 실패했다. 이 실패는 통과로 간주하지 않으며 기존 `kuranea_mariadb_data`와 `kuranea_prestashop_html`은 삭제하거나 초기화하지 않았다.
 - 이후 커밋별 원격 SHA 및 별도 새 복제 검증은 `docs/QA_BOOTSTRAP.md`와 최종 작업 보고서에 기록한다.
+
+### QA 복제 체크포인트
+
+- QA/스모크 테스트/캡처 체크포인트: `ecd528ce5e2d2f9e91de89d92d379bcad3bde274`
+- `git ls-remote`의 `work` SHA와 새 shallow clone `/tmp/kuran-final-recovery-ecd528c`의 HEAD가 모두 위 SHA와 일치했다. 복제본에서 테스트, QA 문서, 데스크톱·모바일·관리자 캡처 파일을 `git cat-file -e`로 확인했고 복제본 작업 트리는 clean이었다.
+- `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지됐다.

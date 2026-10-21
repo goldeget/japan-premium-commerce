@@ -44,4 +44,4 @@ SHOP_BASE_URL=http://127.0.0.1:8080 PYTHONDONTWRITEBYTECODE=1 python3 -m unittes
 
 ## 원격 복구 체크포인트
 
-각 기능 커밋은 `work`로 개별 푸시하고 `git ls-remote`와 별도 복제본에서 파일을 확인한다. 마지막 QA/문서 커밋의 SHA 및 새 복제본 검증 결과는 작업 완료 후 이 문서와 `docs/CLOUD_RECOVERY.md`에 기록한다.
+QA/테스트/캡처 커밋 `ecd528ce5e2d2f9e91de89d92d379bcad3bde274`는 `work` 원격 SHA와 일치했다. 새 shallow clone `/tmp/kuran-final-recovery-ecd528c`에서 이 SHA, 스모크 테스트, QA 문서와 세 캡처 파일을 조회했고 복제본은 clean이었다. 자세한 복구 절차는 `docs/CLOUD_RECOVERY.md`에 있다.
