@@ -90,3 +90,11 @@
 - 검증: 전체 smoke 24/24, CI 워크플로우 계약 3/3 PASS. GitHub Actions `run:` bash 블록을 추출해 `bash -n` 및 모의 Docker 실패 실행을 했고, summary에 실패 진단이 포함되며 `MARIADB_ROOT_PASSWORD` 예시 값은 `[REDACTED]`로 변환됨을 확인했다. 새 Actions 실행 결과는 푸시 뒤 확인한다.
 - 안전: 로컬 컨테이너/named volume을 조작하지 않았고 Docker prune/build를 실행하지 않았다.
 - 원격 보존: `62690b81bcee67a6589981a6004956131e974943`를 `git ls-remote` 및 `origin/work`과 대조했다. 원격 workflow와 계약 테스트를 `git show`로 다시 읽었다. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다.
+
+## 2026-10-21 — 신규 설치 CI 진단 마스킹 및 artifact 보존
+
+- 시작 기준: 로컬과 원격 `work` SHA `1238c7cc0a7e1590b4eb372b2dbb80d68dd8580c`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다. 기존 미추적 QA 캡처·테스트 캐시는 그대로 뒀다.
+- CI 증거: run `39695319325` (`62690b81bcee67a6589981a6004956131e974943`)는 2분 15초 뒤 `Build and install into unique empty volumes` 단계에서 실패했다. 공개 job 화면은 exit code만 보였고 GitHub API 호출은 403을 반환해 원인을 검증할 상세 요약/로그에 접근하지 못했다.
+- 변경: 시작 단계와 이후 실패 단계가 공통 수집기를 사용한다. Docker 상태와 최대 160줄의 서비스 로그를 마스킹한 뒤에만 stdout·step summary·2일 보존 artifact에 쓴다. 시작 실패 후 후속 단계에서 원시 서비스 로그를 다시 출력하던 경로를 제거했다.
+- 검증: 테스트 우선으로 수집기 부재 시 회귀 테스트 실패를 확인한 뒤 구현했다. 전체 smoke 26/26, admin locale 계약 6/6, bash 구문, workflow YAML 파싱, `docker compose config --quiet`, `git diff --check` 통과. 현재 실행 중인 컨테이너와 named volume은 유지했고 Docker 빌드/prune을 하지 않았다.
+- 원격 보존: `f636d40738c217f9c1f587b50c70742789583d99`를 `work`로 푸시한 뒤 로컬 HEAD·`git ls-remote`·`origin/work`이 일치하는 것을 확인하고 원격 workflow/수집기/회귀 테스트를 다시 읽었다. 이 커밋은 run `39695971760`을 시작했으며 마지막 확인 시 실행 중이었다.

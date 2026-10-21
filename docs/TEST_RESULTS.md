@@ -6,7 +6,7 @@
 
 | 검사 | 결과 | 근거 |
 | --- | --- | --- |
-| Python smoke 및 계약 테스트 | PASS | `python3 -m unittest discover -s tests/smoke -v`: 24/24 |
+| Python smoke 및 계약 테스트 | PASS | `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/smoke -v`: 26/26 |
 | 관리자 번역 계약 테스트 | PASS | `python3 -m unittest discover -s tests/admin_locale -v`: 6/6. 전체 Back Office 번역 커버리지 검증은 아니다. |
 | 우편번호 도메인 테스트 | PASS | 기존 PrestaShop 컨테이너 PHP CLI에서 `tests/postcode/run.php` 실행 |
 | 우편번호 후보 API 단위 테스트 | PASS | 격리 테스트 더블에서 JSON 후보 및 `manual_entry_available` 응답 확인 |
@@ -14,7 +14,7 @@
 | 우편번호 모듈 PHP 문법 검사 | PASS | 모듈 및 우편번호 테스트 PHP 파일 전체 lint |
 | 셸/JavaScript/Compose 문법 | PASS | `bash -n`, `node --check`, `docker compose config --quiet` |
 | 변경사항 공백 검사 | PASS | `git diff --check` |
-| CI 진단 요약 회귀 계약 | PASS | 워크플로우 실패 요약 계약 3/3, 추출한 Actions bash 구문 및 모의 실패 경로에서 민감값 제거 확인; 다음 Actions 실행 결과는 미확인 |
+| CI 진단 마스킹·워크플로우 계약 | PASS | smoke 26개에 startup/later-failure 경로 및 모의 `MARIADB_PASSWORD` 로그의 stdout·요약·artifact 민감값 제거 검증 포함; workflow YAML 파싱 및 셸 구문 통과 |
 | 컨테이너 상태 | PASS | PrestaShop 9.2.0 및 MariaDB 10.11 healthy |
 | JPY DB 설정 | PASS | DB 읽기 전용 조회에서 JPY 활성·0자리·기본값, ja/en/ko 통화명 확인; EUR/USD 비활성 |
 | 기존 DB 재시작 보존 | PASS | 기존 MariaDB/PrestaShop 컨테이너를 재시작한 뒤 HTTP 200, 양쪽 healthy, JPY 기본값과 3개 언어 행을 읽기 전용 확인 |
@@ -24,7 +24,7 @@
 
 | 검사 | 결과 | 상세 |
 | --- | --- | --- |
-| 신규 빈 볼륨 설치 | FAIL | 최신 확인 run `39694912661`이 Compose 이미지 빌드/설치 단계에서 실패했다. 익명 로그 페이지에는 상세 진단이 노출되지 않고 현재 GH_TOKEN도 유효하지 않아 원인을 확인하지 못했다. PASS로 간주하지 않는다. |
+| 신규 빈 볼륨 설치 | FAIL·재검증 중 | run `39695319325` (`62690b81`)이 `Build and install into unique empty volumes` 단계에서 2분 15초 후 실패했다. 공개 job은 exit code 1만 노출하고 GitHub API는 403을 반환해 진단 본문을 확인하지 못했다. `f636d40`에서 민감값을 마스킹한 단기 artifact를 추가했다. 후속 run `39695971760`은 마지막 확인 시 실행 중이므로 설치 성공으로 간주하지 않는다. |
 | 공식 데이터 DB/HTTP 통합 lookup | BLOCKED | 데이터 파일의 실제 파싱 및 in-memory lookup은 통과했지만 격리 CI는 CSV 다운로드/DB 적재 전에 중단됐다. 개발 DB는 보존을 위해 공식 CSV import를 실행하지 않았다. |
 | native 주소 저장, 실제 주문 및 관리자 주문 표시 | 미실행 | 테스트 스크립트는 준비돼 있으나 CI 설치가 선행 단계에서 실패한다. 기존 DB에 테스트 주문을 생성하지 않았다. |
 | PC/모바일 browser regression | 이전 체크포인트 PASS | 데스크톱 1440px, 모바일 390px 브라우저 캡처와 결과 JSON은 `artifacts/qa/phase1a/`에 보존돼 있다. 상품이 없는 상태라 상품 상세·주문 화면은 검증하지 않았다. |
