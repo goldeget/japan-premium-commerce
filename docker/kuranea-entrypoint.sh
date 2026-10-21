@@ -19,6 +19,11 @@ sync_theme() {
 sync_theme hummingbird
 sync_theme kuranea
 
+# A child theme's theme.css replaces the parent's main stylesheet in
+# PrestaShop's asset resolver. Keep the parent stylesheet active and load
+# KURANEA's overrides from custom.css instead.
+rm -f /var/www/html/themes/kuranea/assets/css/theme.css
+
 # PrestaShop's language downloader uses its own cached CA file instead of the
 # operating system bundle. Seed that file from the verified host trust store so
 # HTTPS remains verified through the managed development proxy.

@@ -12,7 +12,7 @@
 ## 파일 경계
 
 - `themes/kuranea/config/theme.yml`: 테마 식별, 부모 테마 및 PrestaShop 호환 범위
-- `themes/kuranea/assets/css/theme.css`: 네이비·절제된 골드 기반 색상과 접근성 포커스 스타일
+- `themes/kuranea/assets/css/custom.css`: 네이비·절제된 골드 기반 색상과 접근성 포커스 스타일. 부모의 `theme.css`는 Hummingbird에서 상속한다.
 - `themes/kuranea/preview.png`: 테마 선택용 레이아웃 콘셉트 미리보기
 - `themes/hummingbird`: 수정하지 않는 공식 상위 테마
 
@@ -37,3 +37,7 @@ Hummingbird 원본 테마를 수정하지 않는다. 자식 테마의 레이아�
 - `npm test -- --runInBand`: 8개 스위트, 42개 테스트 통과.
 - `npm run build`: exit 0. Webpack에서 경고 46개를 출력했으며, 빌드 뒤 Hummingbird submodule 작업 트리는 깨끗했다.
 - PrestaShop 컨테이너에서의 테마 활성화 및 화면 검증은 라이브 런타임 단계에서 진행한다.
+
+## 자산 로딩
+
+PrestaShop은 자식 테마에 `assets/css/theme.css`가 있으면 Hummingbird의 메인 스타일시트를 대체한다. 기본 Hummingbird CSS를 유지하려면 브랜드 오버라이드를 `assets/css/custom.css`에 둔다. 기존 영속 웹 루트에 남아 있을 수 있는 이전 `theme.css`는 Compose 시작 시 제거한다.
