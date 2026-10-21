@@ -1,0 +1,95 @@
+<?xml version="1.0"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file source-language="en-US" target-language="en-US" datatype="plaintext" original="Shop.Theme.Kuranea">
+    <body>
+      <trans-unit id="thoughtful-life">
+        <source>A thoughtful life, beautifully chosen.</source>
+        <target state="final">A thoughtful life, beautifully chosen.</target>
+      </trans-unit>
+      <trans-unit id="considered-essentials">
+        <source>Discover considered essentials for home, self, and the moments in between.</source>
+        <target state="final">Discover considered essentials for home, self, and the moments in between.</target>
+      </trans-unit>
+      <trans-unit id="curated-japan">
+        <source>Curated in Japan</source>
+        <target state="final">Curated in Japan</target>
+      </trans-unit>
+      <trans-unit id="explore-collection">
+        <source>Explore the collection</source>
+        <target state="final">Explore the collection</target>
+      </trans-unit>
+      <trans-unit id="search-store">
+        <source>Search the store</source>
+        <target state="final">Search the store</target>
+      </trans-unit>
+      <trans-unit id="kuranea-approach">
+        <source>The KURANEA approach</source>
+        <target state="final">The KURANEA approach</target>
+      </trans-unit>
+      <trans-unit id="everyday-rituals">
+        <source>For everyday rituals</source>
+        <target state="final">For everyday rituals</target>
+      </trans-unit>
+      <trans-unit id="care-everyday">
+        <source>Objects that bring a little more care to the everyday.</source>
+        <target state="final">Objects that bring a little more care to the everyday.</target>
+      </trans-unit>
+      <trans-unit id="selected-intention">
+        <source>Selected with intention</source>
+        <target state="final">Selected with intention</target>
+      </trans-unit>
+      <trans-unit id="japanese-sensibility">
+        <source>A considered edit shaped by Japanese sensibility.</source>
+        <target state="final">A considered edit shaped by Japanese sensibility.</target>
+      </trans-unit>
+      <trans-unit id="quietly-distinctive">
+        <source>Quietly distinctive</source>
+        <target state="final">Quietly distinctive</target>
+      </trans-unit>
+      <trans-unit id="timeless-details">
+        <source>Timeless details, made to feel at home.</source>
+        <target state="final">Timeless details, made to feel at home.</target>
+      </trans-unit>
+      <trans-unit id="kuranea-edit">
+        <source>The KURANEA edit</source>
+        <target state="final">The KURANEA edit</target>
+      </trans-unit>
+      <trans-unit id="quiet-luxury">
+        <source>A quieter kind of luxury</source>
+        <target state="final">A quieter kind of luxury</target>
+      </trans-unit>
+      <trans-unit id="explore-all">
+        <source>Explore all</source>
+        <target state="final">Explore all</target>
+      </trans-unit>
+      <trans-unit id="considered-collection">
+        <source>A considered collection for the way you live.</source>
+        <target state="final">A considered collection for the way you live.</target>
+      </trans-unit>
+      <trans-unit id="discover-new">
+        <source>Discover what is new</source>
+        <target state="final">Discover what is new</target>
+      </trans-unit>
+      <trans-unit id="store-navigation">
+        <source>Store navigation</source>
+        <target state="final">Store navigation</target>
+      </trans-unit>
+      <trans-unit id="home">
+        <source>Home</source>
+        <target state="final">Home</target>
+      </trans-unit>
+      <trans-unit id="search">
+        <source>Search</source>
+        <target state="final">Search</target>
+      </trans-unit>
+      <trans-unit id="account">
+        <source>Account</source>
+        <target state="final">Account</target>
+      </trans-unit>
+      <trans-unit id="cart">
+        <source>Cart</source>
+        <target state="final">Cart</target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

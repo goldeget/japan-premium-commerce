@@ -122,6 +122,7 @@ def main() -> None:
     draw = ImageDraw.Draw(og)
     draw.line((180, 568, 1020, 568), fill=(180, 154, 97), width=2)
     save_png(og, GENERATED / "og-brand.png")
+    save_png(og, THEME_BRAND / "og-brand.png")
 
     hashes = []
     for path in sorted(GENERATED.iterdir()):

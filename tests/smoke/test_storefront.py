@@ -16,6 +16,8 @@ class PageMetadata(HTMLParser):
         super().__init__()
         self.html_lang = ""
         self.stylesheets: list[str] = []
+        self.links: list[dict[str, str]] = []
+        self.images: list[dict[str, str]] = []
         self.inputs: list[dict[str, str]] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -24,6 +26,10 @@ class PageMetadata(HTMLParser):
             self.html_lang = values.get("lang", "")
         if tag == "link" and "stylesheet" in values.get("rel", "").split():
             self.stylesheets.append(values.get("href", ""))
+        if tag == "link":
+            self.links.append(values)
+        if tag == "img":
+            self.images.append(values)
         if tag == "input":
             self.inputs.append(values)
 
@@ -57,6 +63,19 @@ class StorefrontSmokeTests(unittest.TestCase):
         self.assertIn("--kuranea-ink", css)
         self.assertIn(":focus-visible", css)
         self.assertIn(".container", css)
+
+    def test_brand_logo_manifest_and_mobile_navigation_are_present(self) -> None:
+        status, final_url, body = fetch(f"{BASE_URL}/")
+        self.assertEqual(status, 200)
+        metadata = PageMetadata()
+        metadata.feed(body)
+        logo = next((image for image in metadata.images if "kuranea-logo-desktop.png" in image.get("src", "")), None)
+        self.assertIsNotNone(logo, "official desktop brand logo was not rendered")
+        self.assertEqual(logo.get("alt"), "KURANEA クラネア")
+        self.assertTrue(any(link.get("rel") == "manifest" for link in metadata.links), "web manifest link is missing")
+        self.assertTrue(any(link.get("rel") == "apple-touch-icon" for link in metadata.links), "Apple touch icon is missing")
+        self.assertIn("kuranea-mobile-nav", body)
+        self.assertIn("kuranea-logo-mobile.webp", body)
 
     def test_admin_login_is_reachable(self) -> None:
         status, final_url, body = fetch(f"{BASE_URL}/admin-kuranea/")

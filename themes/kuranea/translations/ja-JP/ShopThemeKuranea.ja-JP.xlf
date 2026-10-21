@@ -1,0 +1,95 @@
+<?xml version="1.0"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file source-language="en-US" target-language="ja-JP" datatype="plaintext" original="Shop.Theme.Kuranea">
+    <body>
+      <trans-unit id="thoughtful-life">
+        <source>A thoughtful life, beautifully chosen.</source>
+        <target state="final">丁寧に選ぶ、美しい暮らし。</target>
+      </trans-unit>
+      <trans-unit id="considered-essentials">
+        <source>Discover considered essentials for home, self, and the moments in between.</source>
+        <target state="final">住まいと自分、日々のひとときを豊かにする品々をご紹介します。</target>
+      </trans-unit>
+      <trans-unit id="curated-japan">
+        <source>Curated in Japan</source>
+        <target state="final">日本で選び抜いた品々</target>
+      </trans-unit>
+      <trans-unit id="explore-collection">
+        <source>Explore the collection</source>
+        <target state="final">コレクションを見る</target>
+      </trans-unit>
+      <trans-unit id="search-store">
+        <source>Search the store</source>
+        <target state="final">商品を探す</target>
+      </trans-unit>
+      <trans-unit id="kuranea-approach">
+        <source>The KURANEA approach</source>
+        <target state="final">KURANEAのこだわり</target>
+      </trans-unit>
+      <trans-unit id="everyday-rituals">
+        <source>For everyday rituals</source>
+        <target state="final">日々の暮らしに寄り添う</target>
+      </trans-unit>
+      <trans-unit id="care-everyday">
+        <source>Objects that bring a little more care to the everyday.</source>
+        <target state="final">日常に、ささやかな心地よさを添える品々。</target>
+      </trans-unit>
+      <trans-unit id="selected-intention">
+        <source>Selected with intention</source>
+        <target state="final">想いを込めて選ぶ</target>
+      </trans-unit>
+      <trans-unit id="japanese-sensibility">
+        <source>A considered edit shaped by Japanese sensibility.</source>
+        <target state="final">日本の感性を大切にしたセレクション。</target>
+      </trans-unit>
+      <trans-unit id="quietly-distinctive">
+        <source>Quietly distinctive</source>
+        <target state="final">静かな個性</target>
+      </trans-unit>
+      <trans-unit id="timeless-details">
+        <source>Timeless details, made to feel at home.</source>
+        <target state="final">時を重ねても心地よい、細部へのこだわり。</target>
+      </trans-unit>
+      <trans-unit id="kuranea-edit">
+        <source>The KURANEA edit</source>
+        <target state="final">KURANEAのセレクション</target>
+      </trans-unit>
+      <trans-unit id="quiet-luxury">
+        <source>A quieter kind of luxury</source>
+        <target state="final">控えめな贅沢</target>
+      </trans-unit>
+      <trans-unit id="explore-all">
+        <source>Explore all</source>
+        <target state="final">すべて見る</target>
+      </trans-unit>
+      <trans-unit id="considered-collection">
+        <source>A considered collection for the way you live.</source>
+        <target state="final">あなたの暮らしに寄り添う、選び抜かれたコレクション。</target>
+      </trans-unit>
+      <trans-unit id="discover-new">
+        <source>Discover what is new</source>
+        <target state="final">新しいアイテムを見る</target>
+      </trans-unit>
+      <trans-unit id="store-navigation">
+        <source>Store navigation</source>
+        <target state="final">ストアナビゲーション</target>
+      </trans-unit>
+      <trans-unit id="home">
+        <source>Home</source>
+        <target state="final">ホーム</target>
+      </trans-unit>
+      <trans-unit id="search">
+        <source>Search</source>
+        <target state="final">検索</target>
+      </trans-unit>
+      <trans-unit id="account">
+        <source>Account</source>
+        <target state="final">アカウント</target>
+      </trans-unit>
+      <trans-unit id="cart">
+        <source>Cart</source>
+        <target state="final">カート</target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

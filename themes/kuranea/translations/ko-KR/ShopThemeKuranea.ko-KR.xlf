@@ -1,0 +1,95 @@
+<?xml version="1.0"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file source-language="en-US" target-language="ko-KR" datatype="plaintext" original="Shop.Theme.Kuranea">
+    <body>
+      <trans-unit id="thoughtful-life">
+        <source>A thoughtful life, beautifully chosen.</source>
+        <target state="final">정성껏 고른 아름다운 일상.</target>
+      </trans-unit>
+      <trans-unit id="considered-essentials">
+        <source>Discover considered essentials for home, self, and the moments in between.</source>
+        <target state="final">집과 자신, 그리고 일상의 순간을 위한 세심하게 고른 아이템을 만나보세요.</target>
+      </trans-unit>
+      <trans-unit id="curated-japan">
+        <source>Curated in Japan</source>
+        <target state="final">일본에서 엄선한 아이템</target>
+      </trans-unit>
+      <trans-unit id="explore-collection">
+        <source>Explore the collection</source>
+        <target state="final">컬렉션 보기</target>
+      </trans-unit>
+      <trans-unit id="search-store">
+        <source>Search the store</source>
+        <target state="final">상품 검색</target>
+      </trans-unit>
+      <trans-unit id="kuranea-approach">
+        <source>The KURANEA approach</source>
+        <target state="final">KURANEA의 기준</target>
+      </trans-unit>
+      <trans-unit id="everyday-rituals">
+        <source>For everyday rituals</source>
+        <target state="final">매일의 작은 의식</target>
+      </trans-unit>
+      <trans-unit id="care-everyday">
+        <source>Objects that bring a little more care to the everyday.</source>
+        <target state="final">일상에 조금 더 세심함을 더하는 제품.</target>
+      </trans-unit>
+      <trans-unit id="selected-intention">
+        <source>Selected with intention</source>
+        <target state="final">생각을 담아 고른</target>
+      </trans-unit>
+      <trans-unit id="japanese-sensibility">
+        <source>A considered edit shaped by Japanese sensibility.</source>
+        <target state="final">일본의 감각을 담아 선별한 컬렉션.</target>
+      </trans-unit>
+      <trans-unit id="quietly-distinctive">
+        <source>Quietly distinctive</source>
+        <target state="final">은은한 개성</target>
+      </trans-unit>
+      <trans-unit id="timeless-details">
+        <source>Timeless details, made to feel at home.</source>
+        <target state="final">오래도록 편안한 세심한 디테일.</target>
+      </trans-unit>
+      <trans-unit id="kuranea-edit">
+        <source>The KURANEA edit</source>
+        <target state="final">KURANEA 셀렉션</target>
+      </trans-unit>
+      <trans-unit id="quiet-luxury">
+        <source>A quieter kind of luxury</source>
+        <target state="final">절제된 고급스러움</target>
+      </trans-unit>
+      <trans-unit id="explore-all">
+        <source>Explore all</source>
+        <target state="final">모두 보기</target>
+      </trans-unit>
+      <trans-unit id="considered-collection">
+        <source>A considered collection for the way you live.</source>
+        <target state="final">당신의 생활을 위한 세심하게 고른 컬렉션.</target>
+      </trans-unit>
+      <trans-unit id="discover-new">
+        <source>Discover what is new</source>
+        <target state="final">신상품 보기</target>
+      </trans-unit>
+      <trans-unit id="store-navigation">
+        <source>Store navigation</source>
+        <target state="final">스토어 내비게이션</target>
+      </trans-unit>
+      <trans-unit id="home">
+        <source>Home</source>
+        <target state="final">홈</target>
+      </trans-unit>
+      <trans-unit id="search">
+        <source>Search</source>
+        <target state="final">검색</target>
+      </trans-unit>
+      <trans-unit id="account">
+        <source>Account</source>
+        <target state="final">계정</target>
+      </trans-unit>
+      <trans-unit id="cart">
+        <source>Cart</source>
+        <target state="final">장바구니</target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

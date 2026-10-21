@@ -19,6 +19,18 @@ sync_theme() {
 sync_theme hummingbird
 sync_theme kuranea
 
+brand_dir="/var/www/html/themes/kuranea/assets/img/brand"
+if [ ! -f "$brand_dir/kuranea-logo-desktop.png" ] || [ ! -f "$brand_dir/favicon.ico" ]; then
+    echo "KURANEA brand assets are incomplete: $brand_dir" >&2
+    exit 1
+fi
+mkdir -p /var/www/html/img
+cp "$brand_dir/kuranea-logo-desktop.png" /var/www/html/img/logo.png
+cp "$brand_dir/favicon.ico" /var/www/html/img/favicon.ico
+chown www-data:www-data /var/www/html/img/logo.png /var/www/html/img/favicon.ico
+cp /var/www/html/themes/kuranea/assets/sw.js /var/www/html/sw.js
+chown www-data:www-data /var/www/html/sw.js
+
 # A child theme's theme.css replaces the parent's main stylesheet in
 # PrestaShop's asset resolver. Keep the parent stylesheet active and load
 # KURANEA's overrides from custom.css instead.
