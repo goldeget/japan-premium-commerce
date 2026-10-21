@@ -1,0 +1,63 @@
+name: Isolated fresh install
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [work]
+    paths:
+      - '.github/workflows/fresh-install.yml'
+      - 'compose.yaml'
+      - 'docker/**'
+      - 'themes/**'
+      - 'tests/smoke/fresh_install.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI_COMPOSE_PROJECT_NAME: kuranea-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out work and pinned submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Prepare disposable test credentials
+        shell: bash
+        run: |
+          cat > .env <<'EOF'
+          MARIADB_DATABASE=prestashop
+          MARIADB_USER=prestashop
+          MARIADB_PASSWORD=ci-only-db-password
+          MARIADB_ROOT_PASSWORD=ci-only-root-password
+          ADMIN_MAIL=ci-kuranea@example.invalid
+          ADMIN_PASSWD=Ci-Only-Admin-Password-92!
+          EOF
+
+      - name: Validate Compose configuration
+        run: docker compose -p "$CI_COMPOSE_PROJECT_NAME" config --quiet
+
+      - name: Build and install into unique empty volumes
+        run: docker compose -p "$CI_COMPOSE_PROJECT_NAME" up -d --build --wait --wait-timeout 900
+
+      - name: Verify the fresh shop and restart persistence
+        env:
+          SHOP_BASE_URL: http://127.0.0.1:8080
+        run: bash tests/smoke/fresh_install.sh "$CI_COMPOSE_PROJECT_NAME"
+
+      - name: Capture bounded diagnostics on failure
+        if: failure()
+        run: |
+          df -h
+          df -i
+          docker system df
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" ps -a || true
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" logs --tail=160 mariadb prestashop || true
+
+      - name: Remove only this run's containers and volumes
+        if: always()
+        run: docker compose -p "$CI_COMPOSE_PROJECT_NAME" down -v --remove-orphans
