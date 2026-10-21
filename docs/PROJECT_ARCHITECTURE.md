@@ -9,7 +9,7 @@
 
 ## 구성 경계
 
-- `themes/kuranear`는 Hummingbird를 부모로 지정한 KURANEA 자식 테마다. 로고 배치, 반응형 헤더, 브랜드 색상·타이포그래피를 담당한다.
+- `themes/kuranea`는 Hummingbird를 부모로 지정한 KURANEA 자식 테마다. 로고 배치, 반응형 헤더, 브랜드 색상·타이포그래피를 담당한다.
 - 별도 PrestaShop 모듈은 Manifest, 서비스 워커, 설치 안내, 관리자 브랜드 요소 및 이메일 로고 연동을 담당한다.
 - 원본 브랜드 자산은 `assets/brand/source/`에 보존하고, 파생 파일은 재현 가능한 스크립트로 `assets/brand/generated/`에 만든다.
 - PrestaShop 코어는 변경하지 않는다. Back Office 한국어 보완은 공식 번역을 우선 사용하고, 커스텀 번역을 별도 모듈/번역 파일로 제공한다.
