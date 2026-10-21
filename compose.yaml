@@ -1,0 +1,62 @@
+name: kuranea
+
+services:
+  mariadb:
+    image: mariadb:10.11
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-prestashop}
+      MARIADB_USER: ${MARIADB_USER:-prestashop}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:?Set MARIADB_PASSWORD in .env}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?Set MARIADB_ROOT_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+  prestashop:
+    image: prestashop/prestashop:9.2.0
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:80"
+    environment:
+      DB_SERVER: mariadb
+      DB_NAME: ${MARIADB_DATABASE:-prestashop}
+      DB_USER: ${MARIADB_USER:-prestashop}
+      DB_PASSWD: ${MARIADB_PASSWORD:?Set MARIADB_PASSWORD in .env}
+      PS_INSTALL_AUTO: "1"
+      PS_LANGUAGE: ja
+      PS_COUNTRY: JP
+      PS_DOMAIN: localhost:8080
+      PS_ERASE_DB: "0"
+      ADMIN_MAIL: ${ADMIN_MAIL:?Set ADMIN_MAIL in .env}
+      ADMIN_PASSWD: ${ADMIN_PASSWD:?Set ADMIN_PASSWD in .env}
+    volumes:
+      - prestashop_html:/var/www/html
+      - type: bind
+        source: ./themes/hummingbird
+        target: /var/www/html/themes/hummingbird
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./themes/kuranea
+        target: /var/www/html/themes/kuranea
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@fsockopen('127.0.0.1', 80) ? 0 : 1);"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 2m
+
+volumes:
+  mariadb_data:
+  prestashop_html:

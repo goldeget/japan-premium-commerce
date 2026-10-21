@@ -48,7 +48,7 @@
 
 **Interfaces:**
 - Compose services: `shop` uses `prestashop/prestashop:9.2.0`, `db` uses MariaDB `10.11`.
-- `.env.example` defines non-secret local defaults for `DB_NAME`, `DB_USER`, `DB_PASSWD`, `MARIADB_ROOT_PASSWORD`, `ADMIN_MAIL`, and `ADMIN_PASSWD`.
+- `.env.example` defines non-secret local placeholders for `MARIADB_DATABASE`, `MARIADB_USER`, `MARIADB_PASSWORD`, `MARIADB_ROOT_PASSWORD`, `ADMIN_MAIL`, and `ADMIN_PASSWD`.
 - Compose must set `PS_INSTALL_AUTO=1`, `PS_LANGUAGE=ja`, `PS_DOMAIN=localhost:8080`, and `PS_ERASE_DB=0`; expose host port `8080` and use persistent database and shop volumes.
 
 - [ ] Create Compose services with a MariaDB health check and `shop` dependency on `db` health; bind `127.0.0.1:8080:80`.

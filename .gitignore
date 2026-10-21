@@ -1,0 +1,14 @@
+# Local environment values and secrets
+/.env
+/.env.*
+!/.env.example
+
+# PrestaShop generated runtime files
+/var/cache/
+/var/logs/
+/var/sessions/
+/app/config/parameters.php
+
+# Local logs and caches
+*.log
+.cache/
