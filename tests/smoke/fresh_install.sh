@@ -56,6 +56,12 @@ PY
 curl --fail --silent --show-error "$css_url" -o /tmp/kuranea-theme.css
 grep -q -- '--kuranea-navy' /tmp/kuranea-theme.css
 
+cache_dir_owner=$(compose exec -T prestashop stat -c '%U:%G' /var/www/html/var/cache/prod)
+test "$cache_dir_owner" = www-data:www-data
+cache_index_owner=$(compose exec -T prestashop stat -c '%U:%G' /var/www/html/var/cache/prod/class_index.php)
+test "$cache_index_owner" = www-data:www-data
+compose exec -T prestashop sh -ec 'runuser -g www-data -u www-data -- test -w /var/www/html/var/cache/prod/class_index.php'
+
 compose restart mariadb prestashop
 for attempt in $(seq 1 60); do
   if curl --fail --silent --show-error --location --output /dev/null "$base_url/" && [ "$(db_query 'SELECT 1')" = 1 ]; then
@@ -72,4 +78,4 @@ table_count_after=$(db_query 'SELECT COUNT(*) FROM information_schema.tables WHE
 test "$table_count_before" = "$table_count_after"
 test "$(db_query 'SELECT theme_name FROM ps_shop WHERE id_shop=1')" = kuranea
 test "$(db_query 'SELECT 1')" = 1
-printf 'PASS: empty-volume install, ja/en/ko setup, ko employee locale, active KURANEA theme, CSS, BO login, and restart persistence (%s tables)\n' "$table_count_after"
+printf 'PASS: empty-volume install, www-data cache ownership/writeability, ja/en/ko setup, ko employee locale, active KURANEA theme, CSS, BO login, and restart persistence (%s tables)\n' "$table_count_after"

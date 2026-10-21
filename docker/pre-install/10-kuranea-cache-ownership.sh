@@ -6,4 +6,4 @@ set -eu
 # tree so the installer, which runs as www-data, can replace class_index.php.
 cache_dir=/var/www/html/var/cache/prod
 mkdir -p "$cache_dir"
-chown -R www-data:www-data "$cache_dir"
+chown www-data:www-data "$cache_dir"
