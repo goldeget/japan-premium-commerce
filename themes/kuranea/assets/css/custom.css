@@ -771,6 +771,10 @@ body {
     text-decoration: none;
   }
 
+  #footer .kuranea-mobile-nav__item {
+    color: var(--kuranea-ink);
+  }
+
   .kuranea-mobile-nav__item .material-icons {
     color: var(--kuranea-navy);
     font-size: 1.25rem;

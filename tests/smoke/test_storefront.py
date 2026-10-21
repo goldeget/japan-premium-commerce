@@ -78,6 +78,22 @@ class StorefrontSmokeTests(unittest.TestCase):
                 for label in navigation:
                     self.assertIn(f">{label}<", body)
 
+    def test_search_placeholder_follows_store_locale(self) -> None:
+        cases = (
+            ("/", "商品名・キーワードで検索"),
+            ("/en/", "Search products..."),
+            ("/ko/", "상품명 또는 키워드 검색"),
+        )
+        for path, expected_placeholder in cases:
+            with self.subTest(path=path):
+                status, _, body = fetch(f"{BASE_URL}{path}")
+                metadata = PageMetadata()
+                metadata.feed(body)
+                self.assertEqual(status, 200)
+                search = next((item for item in metadata.inputs if item.get("name") == "s"), None)
+                self.assertIsNotNone(search, "Hummingbird search input is missing")
+                self.assertEqual(search.get("placeholder"), expected_placeholder)
+
     def test_kuranea_child_theme_css_is_served(self) -> None:
         status, final_url, body = fetch(f"{BASE_URL}/")
         self.assertEqual(status, 200)

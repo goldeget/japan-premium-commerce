@@ -1,5 +1,13 @@
 # KURANEA 작업 기록
 
+## 2026-10-21 — 검색 다국어와 모바일 내비게이션 대비 개선
+
+- 시작 기준: `work` 원격 SHA `d1b2166d6380348e855989b6dbe79650cc9ecedc`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다.
+- 원인: Hummingbird의 검색 템플릿은 `Search products...`를 일본어·한국어에도 출력했고, 모바일 하단 메뉴는 `#fffefa` 배경 위에서 푸터 링크 색상 `#e9e5dc`를 상속해 대비가 약 1.25:1이었다.
+- 변경: Hummingbird 원본은 유지하고 KURANEA 자식 테마의 `ps_searchbar` 템플릿 오버라이드를 추가해 일본어·영어·한국어 검색창과 검색 관련 접근성 문구를 현지화했다. 모바일 메뉴에 `#footer` 고특이도 선택자를 적용해 브랜드 잉크색으로 표시한다.
+- 검증: locale별 검색 문구 smoke를 포함한 smoke 19/19 PASS. 실제 Chromium에서 데스크톱 1440×1000·모바일 390×844를 열어 HTTP 200, 올바른 `ja-JP` 및 검색 문구, 모바일 메뉴색 `rgb(23, 38, 56)`, 가로 넘침 없음, 페이지 오류 0건을 확인했다. 캡처: `artifacts/qa/phase1a/home-desktop-locale-contrast.png`, `home-mobile-locale-contrast.png`.
+- 미완료: 푸터의 일부 링크 문구가 영어이며, 기본 통화는 아직 EUR이고 상품 카탈로그는 비어 있다. 해당 사항은 후속 작업으로 남긴다. 기존 상품/주문 데이터와 named volume은 변경하지 않았다.
+
 ## 2026-10-21 — 신규 설치 CI의 공식 우편 CSV 경로 복구
 
 - 시작 기준: `work` 로컬·원격 SHA `ec2059c519121e0a73640b75e6f62be95a1f1797`, `main` SHA `ee02a3657448d563508687614a246e05ac61eecd`; 기존 미추적 QA 캡처와 테스트 캐시는 그대로 보존했다.

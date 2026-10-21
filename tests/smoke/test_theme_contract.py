@@ -43,6 +43,20 @@ class ThemeContractTests(unittest.TestCase):
             "content clearance must include the device safe area",
         )
 
+    def test_mobile_navigation_color_overrides_footer_link_color(self) -> None:
+        css = (THEME / "assets" / "css" / "custom.css").read_text(encoding="utf-8")
+        self.assertIn("#footer .kuranea-mobile-nav__item", css)
+        self.assertIn("color: var(--kuranea-ink)", css)
+
+    def test_searchbar_override_provides_store_locale_labels(self) -> None:
+        override = THEME / "modules" / "ps_searchbar" / "ps_searchbar.tpl"
+        self.assertTrue(override.is_file(), "KURANEA search bar override is missing")
+        template = override.read_text(encoding="utf-8")
+        self.assertIn("商品名・キーワードで検索", template)
+        self.assertIn("Search products...", template)
+        self.assertIn("상품명 또는 키워드 검색", template)
+        self.assertIn("name=\"s\"", template)
+
     def test_pwa_registers_network_only_service_worker(self) -> None:
         head = (THEME / "templates" / "_partials" / "head.tpl").read_text(encoding="utf-8")
         worker_path = THEME / "assets" / "sw.js"
