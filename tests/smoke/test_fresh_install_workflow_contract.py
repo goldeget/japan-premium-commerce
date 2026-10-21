@@ -17,16 +17,28 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             workflow,
         )
 
-    def test_failed_compose_bootstrap_prints_bounded_service_diagnostics(self) -> None:
+    def test_failed_compose_bootstrap_uses_the_shared_redacting_diagnostics_script(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("if ! docker compose -p \"$CI_COMPOSE_PROJECT_NAME\" up", workflow)
-        self.assertIn("docker compose -p \"$CI_COMPOSE_PROJECT_NAME\" logs --tail=160 mariadb prestashop", workflow)
+        self.assertIn("bash tests/smoke/collect_failure_diagnostics.sh", workflow)
+        self.assertIn("docker compose -p \"$project_name\" logs --tail=160 mariadb prestashop", (ROOT / "tests/smoke/collect_failure_diagnostics.sh").read_text(encoding="utf-8"))
 
     def test_failed_compose_bootstrap_publishes_a_redacted_step_summary(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         bootstrap = workflow.split("- name: Build and install into unique empty volumes", 1)[1].split("- name:", 1)[0]
-        self.assertIn("GITHUB_STEP_SUMMARY", bootstrap)
-        self.assertIn("[REDACTED]", bootstrap)
+        diagnostics = (ROOT / "tests/smoke/collect_failure_diagnostics.sh").read_text(encoding="utf-8")
+        self.assertIn("bash tests/smoke/collect_failure_diagnostics.sh", bootstrap)
+        self.assertIn("GITHUB_STEP_SUMMARY", diagnostics)
+        self.assertIn("[REDACTED]", diagnostics)
+        self.assertIn("Upload redacted install diagnostics", workflow)
+        self.assertIn("retention-days: 2", workflow)
+
+    def test_later_step_failures_also_use_the_redacting_collector(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        capture = workflow.split("- name: Capture bounded diagnostics on failure", 1)[1].split("- name:", 1)[0]
+        self.assertIn("steps.compose_bootstrap.outcome == 'success'", capture)
+        self.assertIn("bash tests/smoke/collect_failure_diagnostics.sh", capture)
+        self.assertNotIn("docker compose", capture)
 
 
 if __name__ == "__main__":
