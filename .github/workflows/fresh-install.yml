@@ -44,7 +44,18 @@ jobs:
         run: docker compose -p "$CI_COMPOSE_PROJECT_NAME" config --quiet
 
       - name: Build and install into unique empty volumes
-        run: docker compose -p "$CI_COMPOSE_PROJECT_NAME" up -d --build --wait --wait-timeout 900
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! docker compose -p "$CI_COMPOSE_PROJECT_NAME" up -d --build --wait --wait-timeout 900; then
+            echo 'Fresh install startup failed; collecting bounded diagnostics for this isolated run.'
+            df -h || true
+            df -i || true
+            docker system df || true
+            docker compose -p "$CI_COMPOSE_PROJECT_NAME" ps -a || true
+            docker compose -p "$CI_COMPOSE_PROJECT_NAME" logs --tail=160 mariadb prestashop || true
+            exit 1
+          fi
 
       - name: Download and import official Japan Post KEN_ALL data
         shell: bash
@@ -53,7 +64,7 @@ jobs:
           archive="$RUNNER_TEMP/ken_all.zip"
           csv="$RUNNER_TEMP/KEN_ALL.CSV"
           curl --fail --location --retry 3 --retry-delay 2 --max-time 180 \
-            'https://www.post.japanpost.jp/zipcode/dl/kogaki/zip/ken_all.zip' \
+            'https://www.post.japanpost.jp/service/search/zipcode/download/kogaki/zip/ken_all.zip' \
             --output "$archive"
           unzip -p "$archive" KEN_ALL.CSV > "$csv"
           test -s "$csv"

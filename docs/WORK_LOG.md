@@ -1,5 +1,14 @@
 # KURANEA 작업 기록
 
+## 2026-10-21 — 신규 설치 CI의 공식 우편 CSV 경로 복구
+
+- 시작 기준: `work` 로컬·원격 SHA `ec2059c519121e0a73640b75e6f62be95a1f1797`, `main` SHA `ee02a3657448d563508687614a246e05ac61eecd`; 기존 미추적 QA 캡처와 테스트 캐시는 그대로 보존했다.
+- 실패 증거: GitHub Actions 실행 #9 `39692749750` 및 #8 `39691897612`는 `Build and install into unique empty volumes` 단계에서 실패했다. 공개 실행 페이지에서는 상세 로그가 차단되어 원래 stderr는 확인되지 않았다.
+- 원인 확인: Actions의 기존 Japan Post KEN_ALL 주소는 HTTP 404였다. 공식 다운로드 페이지에서 확인한 `/service/search/zipcode/download/kogaki/zip/ken_all.zip`은 HTTP 200 및 ZIP 응답을 반환했다.
+- 변경: 신규 설치 Actions에서 Compose 기동 실패 시 해당 격리 실행의 파일시스템·Docker 사용량, 컨테이너 상태와 제한된 서비스 로그를 즉시 출력하도록 했다. Japan Post 공식 CSV 경로를 수정하고, 두 동작을 고정하는 회귀 계약 테스트를 추가했다.
+- 검증: 회귀 계약 2/2, 전체 smoke 16/16 PASS; 공식 URL HEAD 200, Compose YAML parse 및 `docker compose config --quiet` PASS. 격리된 GitHub Actions 신규 설치 결과는 새 실행이 끝나기 전까지 미검증이다.
+- 데이터 보존: 로컬 overlay에는 약 197 MB 여유와 95% inode 사용률이 남아 있어 Docker 빌드·prune을 실행하지 않았다. 기존 `kuranea_mariadb_data` 및 `kuranea_prestashop_html` 볼륨과 실행 중인 컨테이너를 유지했고, DB에는 주소 CSV를 가져오지 않았다.
+
 ## 2026-10-21 — PrestaShop 9 주소 조회 응답 및 신규 설치 요청 보강
 
 - 시작 기준: `work` 로컬 HEAD 및 원격 SHA `6044653535c7e37d88c2b6c2c23bd22d7eb3f3f0`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다.
