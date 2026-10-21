@@ -24,7 +24,7 @@
 
 | 검사 | 결과 | 상세 |
 | --- | --- | --- |
-| 신규 빈 볼륨 설치 | FAIL·재검증 중 | run `39695319325` (`62690b81`)이 `Build and install into unique empty volumes` 단계에서 2분 15초 후 실패했다. 공개 job은 exit code 1만 노출하고 GitHub API는 403을 반환해 진단 본문을 확인하지 못했다. `f636d40`에서 민감값을 마스킹한 단기 artifact를 추가했다. 후속 run `39695971760`은 마지막 확인 시 실행 중이므로 설치 성공으로 간주하지 않는다. |
+| 신규 빈 볼륨 설치 | FAIL | run `39695971760` (`f636d40`)이 같은 설치 단계에서 2분 32초 후 실패했다. 공개 페이지에서 `fresh-install-diagnostics-39695971760-1` artifact(3.71 KB, SHA-256 `d2dbb7b5a52cf41d8fd4663c4823cf0b8bd1d8af6c4ed35a5a2642184bcfabd0`)의 존재는 확인했으나, 콘텐츠 다운로드는 404/403으로 막혀 원인을 확인하지 못했다. 신규 설치 PASS가 아니다. |
 | 공식 데이터 DB/HTTP 통합 lookup | BLOCKED | 데이터 파일의 실제 파싱 및 in-memory lookup은 통과했지만 격리 CI는 CSV 다운로드/DB 적재 전에 중단됐다. 개발 DB는 보존을 위해 공식 CSV import를 실행하지 않았다. |
 | native 주소 저장, 실제 주문 및 관리자 주문 표시 | 미실행 | 테스트 스크립트는 준비돼 있으나 CI 설치가 선행 단계에서 실패한다. 기존 DB에 테스트 주문을 생성하지 않았다. |
 | PC/모바일 browser regression | 이전 체크포인트 PASS | 데스크톱 1440px, 모바일 390px 브라우저 캡처와 결과 JSON은 `artifacts/qa/phase1a/`에 보존돼 있다. 상품이 없는 상태라 상품 상세·주문 화면은 검증하지 않았다. |
