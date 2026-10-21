@@ -74,3 +74,11 @@
 - 테스트: smoke 23/23, 관리자 계약 테스트 6/6, 우편번호 도메인·후보 API 테스트, PHP lint, shell/JS 문법, Compose 설정, `git diff --check` 통과. 기존 DB 읽기 전용 조회에서 JPY 활성/기본값 및 ja/en/ko 이름을 확인했고 상품/주문은 각각 0건이었다.
 - 제한: 새 빈 볼륨 Actions run `39693892012`는 `Build and install into unique empty volumes`에서 실패했다. 익명 로그 및 무효한 현재 `GH_TOKEN`으로 상세 로그를 열지 못했으므로 설치 성공은 PASS로 기록하지 않는다. 공식 CSV 적재, 저장주소/주문/관리자 주문 화면, 관리자 전체 한국어, PWA 실기기 설치는 미완료다.
 - 환경/보존: 관측된 cloud environment revision은 2로, 요청된 3이 적용되지 않았다. workspace 여유는 약 194 MB이고 inode 사용률은 95%다. 실행 중인 컨테이너, DB 데이터 및 named volume을 보존했고 prune/재빌드/초기화를 실행하지 않았다.
+
+### 검증 추가 — 공식 우편 CSV 및 기존 볼륨 재시작
+
+- Japan Post 공식 `ken_all.zip`을 내려받아 SHA-256 `c976cb0ff691a1aa7480b47b7e1f61bea08c2eadb3278f0366e474cd82dbf4b8`를 기록했다. 최신 CSV 124,840행을 기존 모듈 importer로 메모리 파싱했으며 저장 DB를 건드리지 않았다.
+- PASS: `1000004`/`100-0004`가 각각 같은 실제 후보 1개를 찾고, `千代田区大手町` 부분검색 결과에 해당 주소가 포함됐다. 공식 CSV의 중복 우편번호 `004-0000`에서 서로 다른 후보 2개를 선택했고, `1000004` 후보가 `id_state`/도시/町域과 고객 입력 건물명을 네이티브 주소 필드로 보존했다.
+- 기존 MariaDB/PrestaShop 컨테이너만 재시작했다. 두 컨테이너 healthy 및 쇼핑몰 HTTP 200을 확인하고 JPY 기본값·3개 언어 행·상품 0건·주문 0건을 읽기 전용 조회했다. 기존 named volume은 유지했다.
+- 범위 제한: 위 공식 데이터 검증은 parser와 in-memory lookup까지다. 데이터베이스/API/checkout 주문 저장/Back Office 주문 화면 통합은 새 빈 볼륨 Actions 실패를 해결한 뒤 실행한다.
+- 체크포인트: 구현 커밋 `ec7af91b66bdb31a36ea073957fdd8c7d428d334`를 `work` 원격과 대조했다. `git show`로 원격 PHP helper와 개발 현황 문서를 다시 읽고 데스크톱·모바일 증거 PNG 존재를 확인했다. 원격 `main`은 그대로다.
