@@ -66,3 +66,11 @@
 - 변경: PrestaShop의 제한된 테마 디렉터리 접근 정책을 피하도록 manifest를 webroot `/manifest.webmanifest`에서 제공하고, HTML의 manifest 링크를 그 경로로 갱신했다. smoke 테스트는 manifest의 `ja-JP`와 아이콘 크기를 확인한다.
 - 검증: 기존 실행 사이트에서 manifest HTTP 200 및 JSON을 확인했다. 10개 뷰포트에서 일본어 문서 언어, HTTP 200, 가로 넘침 없음, 브라우저 페이지 오류 0건을 기록했다. service worker 범위는 루트이고 Cache API 목록은 비어 있으며, 네트워크 실패 시 503 오프라인 안내를 확인했다.
 - 범위 제한: 카테고리 캡처 URL은 현재 홈페이지로 리다이렉트되어 카테고리 화면 검증으로 인정하지 않는다. 현재 카탈로그가 비어 있어 상품 상세·주문과 실제 기기 설치도 검증하지 않았다.
+
+## 2026-10-21 — JPY 기본 통화 및 재시작 smoke 검증
+
+- 시작 기준: `work` 로컬 및 원격 SHA `69a99c4ef6f14882d7151ea109e86a47d2c4d2a8`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다. 로컬 변경과 미추적 QA 산출물을 먼저 점검하고 기존 파일을 삭제하거나 초기화하지 않았다.
+- 변경: 신규 설치와 기존 설치 helper가 같은 멱등 JPY 부트스트랩을 사용하도록 했다. 기본 통화는 JPY, 정밀도는 0, ja/en/ko 표시명을 설정한다. 확인된 환율이 없는 EUR/USD는 비활성화한다. 신규 설치 smoke는 재시작 후 JPY 기본값과 3개 언어 번역을 다시 검사한다.
+- 테스트: smoke 23/23, 관리자 계약 테스트 6/6, 우편번호 도메인·후보 API 테스트, PHP lint, shell/JS 문법, Compose 설정, `git diff --check` 통과. 기존 DB 읽기 전용 조회에서 JPY 활성/기본값 및 ja/en/ko 이름을 확인했고 상품/주문은 각각 0건이었다.
+- 제한: 새 빈 볼륨 Actions run `39693892012`는 `Build and install into unique empty volumes`에서 실패했다. 익명 로그 및 무효한 현재 `GH_TOKEN`으로 상세 로그를 열지 못했으므로 설치 성공은 PASS로 기록하지 않는다. 공식 CSV 적재, 저장주소/주문/관리자 주문 화면, 관리자 전체 한국어, PWA 실기기 설치는 미완료다.
+- 환경/보존: 관측된 cloud environment revision은 2로, 요청된 3이 적용되지 않았다. workspace 여유는 약 194 MB이고 inode 사용률은 95%다. 실행 중인 컨테이너, DB 데이터 및 named volume을 보존했고 prune/재빌드/초기화를 실행하지 않았다.

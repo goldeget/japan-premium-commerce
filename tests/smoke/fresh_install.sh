@@ -31,6 +31,14 @@ languages=$(db_query "SELECT COUNT(*) FROM ps_lang WHERE active=1 AND iso_code I
 test "$languages" = 3
 shop_default=$(db_query "SELECT COUNT(*) FROM ps_configuration c JOIN ps_lang l ON l.id_lang=CAST(c.value AS UNSIGNED) WHERE c.name='PS_LANG_DEFAULT' AND l.iso_code='ja'")
 test "$shop_default" = 1
+default_currency=$(db_query "SELECT cur.iso_code FROM ps_configuration cfg JOIN ps_currency cur ON cur.id_currency=CAST(cfg.value AS UNSIGNED) WHERE cfg.name='PS_CURRENCY_DEFAULT'")
+test "$default_currency" = JPY
+jpy_currency=$(db_query "SELECT COUNT(*) FROM ps_currency WHERE iso_code='JPY' AND active=1 AND deleted=0")
+test "$jpy_currency" = 1
+jpy_translations=$(db_query "SELECT COUNT(DISTINCT cl.id_lang) FROM ps_currency c JOIN ps_currency_lang cl ON cl.id_currency=c.id_currency JOIN ps_lang l ON l.id_lang=cl.id_lang WHERE c.iso_code='JPY' AND l.iso_code IN ('ja','en','ko')")
+test "$jpy_translations" = 3
+active_non_jpy=$(db_query "SELECT COUNT(*) FROM ps_currency WHERE iso_code<>'JPY' AND active=1 AND deleted=0")
+test "$active_non_jpy" = 0
 employee_locale=$(db_query 'SELECT l.iso_code FROM ps_employee e JOIN ps_lang l ON l.id_lang=e.id_lang WHERE e.id_employee=1')
 test "$employee_locale" = ko
 postcode_module=$(db_query "SELECT COUNT(*) FROM ps_module WHERE name='kuraneapostcode' AND active=1")
@@ -95,8 +103,12 @@ for attempt in $(seq 1 60); do
   sleep 5
 done
 
+default_currency_after_restart=$(db_query "SELECT cur.iso_code FROM ps_configuration cfg JOIN ps_currency cur ON cur.id_currency=CAST(cfg.value AS UNSIGNED) WHERE cfg.name='PS_CURRENCY_DEFAULT'")
+test "$default_currency_after_restart" = JPY
+jpy_translations_after_restart=$(db_query "SELECT COUNT(DISTINCT cl.id_lang) FROM ps_currency c JOIN ps_currency_lang cl ON cl.id_currency=c.id_currency JOIN ps_lang l ON l.id_lang=cl.id_lang WHERE c.iso_code='JPY' AND l.iso_code IN ('ja','en','ko')")
+test "$jpy_translations_after_restart" = 3
 table_count_after=$(db_query 'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()')
 test "$table_count_before" = "$table_count_after"
 test "$(db_query 'SELECT theme_name FROM ps_shop WHERE id_shop=1')" = kuranea
 test "$(db_query 'SELECT 1')" = 1
-printf 'PASS: empty-volume install, cache ownership/writeability, ja/en/ko setup, ko employee locale, active KURANEA theme, CSS, Korean branded BO login, postcode/back-office modules, and restart persistence (%s tables)\n' "$table_count_after"
+printf 'PASS: empty-volume install, JPY default currency, cache ownership/writeability, ja/en/ko setup, ko employee locale, active KURANEA theme, CSS, Korean branded BO login, postcode/back-office modules, and restart persistence (%s tables)\n' "$table_count_after"

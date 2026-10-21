@@ -9,6 +9,7 @@ $_SERVER['SCRIPT_NAME'] = '/index.php';
 $_SERVER['SERVER_PORT'] = (string) (parse_url('http://' . $shopDomain, PHP_URL_PORT) ?: 80);
 
 require_once '/var/www/html/config/config.inc.php';
+require_once '/usr/local/bin/kuran-configure-jpy.php';
 require_once '/var/www/html/app/AdminKernel.php';
 
 global $kernel;
@@ -33,9 +34,7 @@ $context->language = new Language($japaneseLanguageId);
 $context->country = new Country($japanCountryId, $japaneseLanguageId);
 $context->employee = $admin;
 $context->cart = new Cart();
-if ($currencyId = Currency::getDefaultCurrencyId()) {
-    $context->currency = new Currency((int) $currencyId);
-}
+$context->currency = kuraneaConfigureJapaneseCurrency($context);
 $kernel->getContainer()->get(ContextBuilderPreparer::class)->prepareFromLegacyContext($context);
 
 foreach (['kuraneapostcode', 'kuraneabackoffice'] as $moduleName) {
