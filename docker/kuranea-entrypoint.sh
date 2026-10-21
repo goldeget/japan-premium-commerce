@@ -19,6 +19,24 @@ sync_theme() {
 sync_theme hummingbird
 sync_theme kuranea
 
+sync_module() {
+    module_name="$1"
+    source_dir="/opt/kuranea/modules/${module_name}"
+    target_dir="/var/www/html/modules/${module_name}"
+
+    if [ ! -d "$source_dir" ]; then
+        echo "Missing bundled module source: $source_dir" >&2
+        exit 1
+    fi
+
+    mkdir -p "$target_dir"
+    cp -R "$source_dir"/. "$target_dir"/
+    chown -R www-data:www-data "$target_dir"
+}
+
+sync_module kuraneapostcode
+sync_module kuraneabackoffice
+
 brand_dir="/var/www/html/themes/kuranea/assets/img/brand"
 if [ ! -f "$brand_dir/kuranea-logo-desktop.png" ] || [ ! -f "$brand_dir/favicon.ico" ]; then
     echo "KURANEA brand assets are incomplete: $brand_dir" >&2

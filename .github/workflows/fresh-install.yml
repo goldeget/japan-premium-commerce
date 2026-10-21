@@ -9,7 +9,9 @@ on:
       - 'compose.yaml'
       - 'docker/**'
       - 'themes/**'
+      - 'modules/**'
       - 'tests/smoke/fresh_install.sh'
+      - 'tests/postcode/**'
 
 permissions:
   contents: read
@@ -43,6 +45,50 @@ jobs:
 
       - name: Build and install into unique empty volumes
         run: docker compose -p "$CI_COMPOSE_PROJECT_NAME" up -d --build --wait --wait-timeout 900
+
+      - name: Download and import official Japan Post KEN_ALL data
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/ken_all.zip"
+          csv="$RUNNER_TEMP/KEN_ALL.CSV"
+          curl --fail --location --retry 3 --retry-delay 2 --max-time 180 \
+            'https://www.post.japanpost.jp/zipcode/dl/kogaki/zip/ken_all.zip' \
+            --output "$archive"
+          unzip -p "$archive" KEN_ALL.CSV > "$csv"
+          test -s "$csv"
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop sh -c 'cat > /tmp/KEN_ALL.CSV' < "$csv"
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            php /var/www/html/modules/kuraneapostcode/bin/import-ken-all.php --file=/tmp/KEN_ALL.CSV
+
+      - name: Verify real Tokyo postcode lookup and saved native address
+        env:
+          SHOP_BASE_URL: http://127.0.0.1:8080
+        run: |
+          set -euo pipefail
+          payload=$(curl --fail --silent --show-error --get "$SHOP_BASE_URL/" \
+            --data-urlencode 'fc=module' \
+            --data-urlencode 'module=kuraneapostcode' \
+            --data-urlencode 'controller=candidates' \
+            --data-urlencode 'q=1000004')
+          python3 - "$payload" <<'PY'
+          import json, sys
+          data = json.loads(sys.argv[1])
+          assert data.get("manual_entry_available") is True
+          assert any(
+              item.get("postcode") == "100-0004"
+              and item.get("prefecture") == "東京都"
+              and item.get("municipality") == "千代田区"
+              and "大手町" in item.get("town", "")
+              for item in data.get("candidates", [])
+          ), data
+          print("PASS: official Japan Post postcode 1000004 resolves to Tokyo / Chiyoda / Otemachi")
+          PY
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/verify_native_address_persistence.php' \
+            < tests/postcode/verify_native_address_persistence.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            runuser -g www-data -u www-data -- php /tmp/verify_native_address_persistence.php
 
       - name: Verify the fresh shop and restart persistence
         env:

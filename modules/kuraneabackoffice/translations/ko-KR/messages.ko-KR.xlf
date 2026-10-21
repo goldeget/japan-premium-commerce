@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="psgdpr-admin.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="be11c74c1dd7f307bb80183a90dc2067" approved="yes"><source>Get started</source><target state="final">시작하기</target></trans-unit>
+      <trans-unit id="949de8585e0cc176f0e47317ce985023" approved="yes"><source>Personal data management</source><target state="final">개인정보 관리</target></trans-unit>
+      <trans-unit id="04d691f0f2b299343d6431e23cfe6be4" approved="yes"><source>Consent checkbox customization</source><target state="final">동의 확인란 설정</target></trans-unit>
+      <trans-unit id="e898759faaefeae772f161b7dbdc31ec" approved="yes"><source>Customer activity tracking</source><target state="final">고객 활동 추적</target></trans-unit>
+      <trans-unit id="6a26f548831e6a8c26bfbbd9f6ec61e0" approved="yes"><source>Help</source><target state="final">도움말</target></trans-unit>
+      <trans-unit id="34b6cd75171affba6957e308dcbd92be" approved="yes"><source>Version</source><target state="final">버전</target></trans-unit>
+      <trans-unit id="aa4de6aaed26c361322b279d34d8a7dd" approved="yes"><source>Data visualization and automatic actions</source><target state="final">데이터 시각화 및 자동 처리</target></trans-unit>
+      <trans-unit id="c32a80e0c500e5a7537f5b70fe8129fd" approved="yes"><source>Find here listed all personal data collected by PrestaShop and your installed modules.</source><target state="final">PrestaShop과 설치된 모듈이 수집한 개인정보를 여기에서 확인할 수 있습니다.</target></trans-unit>
+      <trans-unit id="3a7a2fb701b6c416ccfd2328cb1461d6" approved="yes"><source>These data will be used at 2 different levels :</source><target state="final">이 데이터는 다음 두 가지 요청에 사용됩니다.</target></trans-unit>
+      <trans-unit id="34c7656d69407f8ff8bc0ae5ad35daca" approved="yes"><source>When a customer requests access to his data: he gets a copy of his personal data collected on your store.</source><target state="final">고객이 데이터 열람을 요청하면 상점이 수집한 개인정보 사본을 제공합니다.</target></trans-unit>
+      <trans-unit id="d61bbb8ed4a9c97a676591d853b71488" approved="yes"><source>When a customer requests data erasure: if you accept his request, his data will be removed permanently.</source><target state="final">고객의 데이터 삭제 요청을 승인하면 해당 데이터가 영구적으로 삭제됩니다.</target></trans-unit>
+      <trans-unit id="5680774f084e3133256426b423793cdf" approved="yes"><source>Compliant module list</source><target state="final">개인정보 보호 기준 준수 모듈</target></trans-unit>
+      <trans-unit id="fbc7f08ab791ff80697db8706f83ac05" approved="yes"><source>Find here listed all the elements that are GDPR compliant.</source><target state="final">GDPR 기준을 준수하는 항목을 여기에서 확인할 수 있습니다.</target></trans-unit>
+      <trans-unit id="d50e4299564d3d86275eaa685cc64a0b" approved="yes"><source>Please make sure that you have access to the latest version of these modules to fully benefit the GDPR update.</source><target state="final">GDPR 업데이트를 완전히 적용하려면 모듈을 최신 버전으로 유지하세요.</target></trans-unit>
+      <trans-unit id="9f776b9ffe1e70cc7e59acbc33dff365" approved="yes"><source>If they are still not displayed in the block above, we invite you to contact their respective developers to have more information about these modules. </source><target state="final">위 영역에 모듈이 표시되지 않으면 자세한 내용은 해당 모듈 개발자에게 문의하세요. </target></trans-unit>
+      <trans-unit id="e7040e6151b9ba04bebf1ac35a3b9773" approved="yes"><source>PrestaShop data</source><target state="final">PrestaShop 데이터</target></trans-unit>
+      <trans-unit id="47e3d0b9fb896965dcac1b891d69181d" approved="yes"><source>Manage customer's personal data</source><target state="final">고객 개인정보 관리</target></trans-unit>
+      <trans-unit id="2e0a7d4ff8913a1d22b0c74c72c7008c" approved="yes"><source>Search for an existing customer by typing the first letters of his/her name or email.</source><target state="final">이름 또는 이메일의 앞부분을 입력해 고객을 검색하세요.</target></trans-unit>
+      <trans-unit id="bac34a31ff6a35a479858c60dffe3705" approved="yes"><source>Search for a customer name OR email</source><target state="final">고객 이름 또는 이메일 검색</target></trans-unit>
+      <trans-unit id="d69e451e32539a7b9b79381d327fc028" approved="yes"><source>Eg: john doe ...</source><target state="final">예: 홍길동</target></trans-unit>
+      <trans-unit id="2f43ddb446e84df137be34b78029835f" approved="yes"><source>To visualize all the data that your store has collected from a specific customer, please click on the corresponding customer block</source><target state="final">특정 고객에 대해 상점이 수집한 데이터를 보려면 해당 고객 항목을 선택하세요.</target></trans-unit>
+      <trans-unit id="261e15beaa4972092243d9a678afa8a3" approved="yes"><source>Orders number</source><target state="final">주문 수</target></trans-unit>
+      <trans-unit id="3ec365dd533ddb7ef3d1c111186ce872" approved="yes"><source>Details</source><target state="final">상세 정보</target></trans-unit>
+      <trans-unit id="596403b61367ca30d6de75812275f9cd" approved="yes"><source>Remove data</source><target state="final">데이터 삭제</target></trans-unit>
+      <trans-unit id="5fde470e78d8f75e778801d4ec4bd91b" approved="yes"><source>Download invoices</source><target state="final">송장 다운로드</target></trans-unit>
+      <trans-unit id="997c785cce775d7c1014ffbd6e446d50" approved="yes"><source>General information</source><target state="final">기본 정보</target></trans-unit>
+      <trans-unit id="6370c5a9859b827de2be9d30ec4b997e" approved="yes"><source>Personal data</source><target state="final">개인정보</target></trans-unit>
+      <trans-unit id="019ec3132cdf8ee0f2e2a75cf5d3e459" approved="yes"><source>Gender</source><target state="final">성별</target></trans-unit>
+      <trans-unit id="49ee3087348e8d44e1feda1917443987" approved="yes"><source>Name</source><target state="final">이름</target></trans-unit>
+      <trans-unit id="9c37b7b6ff829e977df287900543ea54" approved="yes"><source>Birth date</source><target state="final">생년월일</target></trans-unit>
+      <trans-unit id="9d8d2d5ab12b515182a505f54db7f538" approved="yes"><source>Age</source><target state="final">나이</target></trans-unit>
+      <trans-unit id="ce8ae9da5b7cd6c3df2929543a9af92d" approved="yes"><source>Email</source><target state="final">이메일</target></trans-unit>
+      <trans-unit id="4994a8ffeba4ac3140beb89e8d41f174" approved="yes"><source>Language</source><target state="final">언어</target></trans-unit>
+      <trans-unit id="3112209b2dd9b55cf5dbc4865dd15afd" approved="yes"><source>Creation date</source><target state="final">생성일</target></trans-unit>
+      <trans-unit id="5e5914912e8d2f2765525840acf98bea" approved="yes"><source>Last visit</source><target state="final">마지막 방문</target></trans-unit>
+      <trans-unit id="f5a289ea76ecee6abfd43c2e7eddf58f" approved="yes"><source>Customer activity list</source><target state="final">고객 활동 목록</target></trans-unit>
+      <trans-unit id="f078af4e0b76b98d53f3820e0ce629b2" approved="yes"><source>Keep track of your customer activity related to data accessibility, consent and erasure.</source><target state="final">데이터 열람, 동의 및 삭제와 관련된 고객 활동을 확인합니다.</target></trans-unit>
+      <trans-unit id="9579cdef0bf63ffa6b1e3e3c616d9cac" approved="yes"><source>Client name/ID</source><target state="final">고객 이름/ID</target></trans-unit>
+      <trans-unit id="b9263f280c2c2ef949e10b7aa7a61549" approved="yes"><source>Type of request</source><target state="final">요청 유형</target></trans-unit>
+      <trans-unit id="f0dc5a7e50af112eee854e8cee968e06" approved="yes"><source>Submission date</source><target state="final">제출일</target></trans-unit>
+      <trans-unit id="b62799f8fdbb9329b450c490004a6213" approved="yes"><source>Consent confirmation</source><target state="final">동의 확인</target></trans-unit>
+      <trans-unit id="e0e4fc6213e8b3593495a7260c3a4c2e" approved="yes"><source>Accessibility</source><target state="final">열람</target></trans-unit>
+      <trans-unit id="530479efffb195651bdbfbd50cfb8a4c" approved="yes"><source>Erasure</source><target state="final">삭제</target></trans-unit>
+      <trans-unit id="4fb72931ca985b1f33b9b2b5b604c6ef" approved="yes"><source>Url has been copied to the clipboard!</source><target state="final">URL을 클립보드에 복사했습니다.</target></trans-unit>
+      <trans-unit id="cdec11f09fb339e01121a4ef5224594c" approved="yes"><source>Invoices have been successfully downloaded.</source><target state="final">송장을 내려받았습니다.</target></trans-unit>
+      <trans-unit id="f0a90a69e73126cef322ef544ebb641f" approved="yes"><source>No invoices available for this customer.</source><target state="final">이 고객의 송장이 없습니다.</target></trans-unit>
+      <trans-unit id="729a51874fe901b092899e9e8b31c97a" approved="yes"><source>Are you sure?</source><target state="final">계속하시겠습니까?</target></trans-unit>
+      <trans-unit id="7db050b741b6de7a1f955472f33d8325" approved="yes"><source>Attention! This action is irreversible. Please make sure you have downloaded all of the customer’s invoices (if he has any) before clicking on Confirm erasure.</source><target state="final">주의: 이 작업은 되돌릴 수 없습니다. 삭제를 확인하기 전에 고객의 송장(있는 경우)을 모두 내려받았는지 확인하세요.</target></trans-unit>
+      <trans-unit id="1bf87e44da33943a3baad59edd51f4a0" approved="yes"><source>Cancel action</source><target state="final">작업 취소</target></trans-unit>
+      <trans-unit id="0cac91b206582769ea4876fbbae5f2ab" approved="yes"><source>Confirm Erasure</source><target state="final">삭제 확인</target></trans-unit>
+      <trans-unit id="a5d79cef10bbfc4e501d8f6728de7fa3" approved="yes"><source>The customer's data has been successfully deleted!</source><target state="final">고객 데이터를 삭제했습니다.</target></trans-unit>
+      <trans-unit id="0095a9fa74d1713e43e370a7d7846224" approved="yes"><source>Export</source><target state="final">내보내기</target></trans-unit>
+    </body>
+  </file>
+</xliff>

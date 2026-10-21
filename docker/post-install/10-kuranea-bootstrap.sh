@@ -6,4 +6,5 @@ if [ ! -f /var/www/html/app/config/parameters.php ]; then
     exit 1
 fi
 
-exec runuser -g www-data -u www-data -- php /usr/local/bin/kuran-post-install.php
+runuser -g www-data -u www-data -- php /usr/local/bin/kuran-post-install.php
+runuser -g www-data -u www-data -- php /usr/local/bin/kuran-install-modules.php

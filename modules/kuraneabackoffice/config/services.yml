@@ -1,0 +1,10 @@
+services:
+  Kuranea\Backoffice\AdminLocaleSubscriber:
+    autowire: true
+    arguments:
+      $translator: '@translator'
+      $translatorLanguageLoader: '@prestashop.translation.translator_language_loader'
+      $modulePath: '%prestashop.module_dir%kuraneabackoffice'
+      $activeModules: '%prestashop.active_modules%'
+    tags:
+      - { name: kernel.event_subscriber }

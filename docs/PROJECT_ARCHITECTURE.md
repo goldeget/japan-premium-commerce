@@ -11,6 +11,8 @@
 
 - `themes/kuranea`는 Hummingbird를 부모로 지정한 KURANEA 자식 테마다. 로고 배치, 반응형 헤더, 브랜드 색상·타이포그래피를 담당한다.
 - 별도 PrestaShop 모듈은 Manifest, 서비스 워커, 설치 안내, 관리자 브랜드 요소 및 이메일 로고 연동을 담당한다.
+- `modules/kuraneapostcode`는 일본우편 KEN_ALL 데이터를 별도 테이블에 저장하고, 고객이 선택한 도도부현·시구정촌·町域을 PrestaShop 네이티브 `id_state`, `city`, `address1`, `postcode` 필드로 기록한다. 번지와 건물·호수는 고객 입력을 보존한다. 주문 주소는 기존 PrestaShop 주소 관계를 사용한다.
+- `modules/kuraneabackoffice`는 관리자 로그인 한국어 및 공식 로고, 관리자 번역 오버레이를 제공한다. 이는 코어 수정 없이 추가하며 전체 Back Office 번역 범위는 화면별 QA로 기록한다.
 - 원본 브랜드 자산은 `assets/brand/source/`에 보존하고, 파생 파일은 재현 가능한 스크립트로 `assets/brand/generated/`에 만든다.
 - PrestaShop 코어는 변경하지 않는다. Back Office 한국어 보완은 공식 번역을 우선 사용하고, 커스텀 번역을 별도 모듈/번역 파일로 제공한다.
 - 고객 언어는 일본어를 기본으로 영어·한국어를 제공한다. Back Office는 한국어 번역 검증을 별도 acceptance gate로 둔다.

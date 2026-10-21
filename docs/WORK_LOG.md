@@ -7,6 +7,13 @@
 - 검증: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/smoke -v` 12개 통과. 실제 브라우저에서 데스크톱 1440px과 모바일 390px을 열어 HTTP 200, `ja-JP`, 가로 넘침 없음, 브라우저 오류 0건을 확인했다. 현재 캡처는 `artifacts/qa/phase1a/home-desktop-current.png`, `home-mobile-current.png`, `admin-login-current.png`, 결과는 `browser-results-current.json`에 보존했다.
 - 제한: 기존 카탈로그에 상품이 없어 유효한 카테고리·상품 상세 경로와 주문 흐름은 검증하지 않았다. 관리자 로그인은 접근 가능하지만 한국어/공식 관리자 로고 적용 전 상태로 촬영했다. 이번 UI 소스는 로컬 검토용으로 기존 webroot에 복사했으며, Compose 이미지는 빌드·배포하지 않았다.
 
+## 2026-10-21 — 일본 우편번호 모듈 및 관리자 한국어 기반
+
+- 변경: `kuraneapostcode` 모듈이 7자리/하이픈/전각 우편번호, 일본어 주소 검색, 복수 후보, 수동 입력, 공식 KEN_ALL CSV 가져오기, 일본어·영어·한국어 문구와 네이티브 주소 매핑을 제공한다. `kuraneabackoffice`는 익명 로그인 한국어 context, 제공된 공식 로고 hook, 누락 번역 overlay의 시작 범위를 제공한다.
+- 런타임 경로: Compose 이미지가 두 모듈을 포함하고 기존 설치에서도 멱등 설치 helper를 실행하도록 연결했다. 신규 빈 설치 CI는 별도 GitHub-hosted project/volume을 사용해 공식 Japan Post CSV 다운로드·가져오기, 실제 `1000004` lookup, 수동 건물명이 있는 네이티브 Address 저장, 관리자 로그인 브랜드/한국어, 재시작 후 테이블 유지를 검증하도록 구성했다.
+- 로컬 검증: smoke 12/12, 관리자 overlay 5/5, 우편번호 도메인 테스트 통과, 모듈 PHP lint 및 helper PHP lint 통과, JS 구문 검사, 셸 구문 검사, XLIFF XML 파싱, `docker compose config --quiet`, `git diff --check` 통과.
+- 미검증: 공식 CSV 네트워크 다운로드와 실제 `1000004` 통합 테스트는 GitHub Actions 실행이 완료되어야 PASS로 기록한다. 브라우저 주소 입력/주문 생성/관리자 주문 화면도 아직 미검증이다. 기존 DB/named volume은 변경하지 않았다. 한국어 관리자 전체 화면 100%는 미완료이며 로그인 및 소수 번역 보완 코드만 검토했다.
+
 ## 2026-10-21 — 빈 설치 캐시 권한 P0 수정
 
 - 시작 상태: `work`의 로컬 및 GitHub 원격 SHA가 `6ddf52b0b3dc63a873bb39019fd93060a9d4b645`로 일치했고, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다.

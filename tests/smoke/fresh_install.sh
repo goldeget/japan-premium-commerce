@@ -15,8 +15,10 @@ db_query() {
 storefront_status=$(curl --fail --silent --show-error --location --output /tmp/kuranea-home.html --write-out '%{http_code}' "$base_url/")
 test "$storefront_status" = 200
 grep -q '<html[^>]*lang="ja-JP"' /tmp/kuranea-home.html
-admin_status=$(curl --fail --silent --show-error --location --output /dev/null --write-out '%{http_code}' "$base_url/admin-kuranea/login")
+admin_status=$(curl --fail --silent --show-error --location --output /tmp/kuranea-admin-login.html --write-out '%{http_code}' "$base_url/admin-kuranea/login")
 test "$admin_status" = 200
+grep -q 'kuraneabackoffice/views/img/kuranea-logo.png' /tmp/kuranea-admin-login.html
+grep -q '로그인' /tmp/kuranea-admin-login.html
 
 db_ok=$(db_query 'SELECT 1')
 test "$db_ok" = 1
@@ -28,6 +30,14 @@ shop_default=$(db_query "SELECT COUNT(*) FROM ps_configuration c JOIN ps_lang l 
 test "$shop_default" = 1
 employee_locale=$(db_query 'SELECT l.iso_code FROM ps_employee e JOIN ps_lang l ON l.id_lang=e.id_lang WHERE e.id_employee=1')
 test "$employee_locale" = ko
+postcode_module=$(db_query "SELECT COUNT(*) FROM ps_module WHERE name='kuraneapostcode' AND active=1")
+backoffice_module=$(db_query "SELECT COUNT(*) FROM ps_module WHERE name='kuraneabackoffice' AND active=1")
+test "$postcode_module" = 1
+test "$backoffice_module" = 1
+postcode_states=$(db_query "SELECT COUNT(*) FROM ps_state s JOIN ps_country c ON c.id_country=s.id_country WHERE c.iso_code='JP' AND s.active=1 AND s.iso_code REGEXP '^JP-[0-9]{2}$'")
+test "$postcode_states" = 47
+postcode_table=$(db_query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='ps_kuraneapostcode_address'")
+test "$postcode_table" = 1
 table_count_before=$(db_query 'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()')
 
 css_url=$(python3 - <<'PY'
@@ -78,4 +88,4 @@ table_count_after=$(db_query 'SELECT COUNT(*) FROM information_schema.tables WHE
 test "$table_count_before" = "$table_count_after"
 test "$(db_query 'SELECT theme_name FROM ps_shop WHERE id_shop=1')" = kuranea
 test "$(db_query 'SELECT 1')" = 1
-printf 'PASS: empty-volume install, www-data cache ownership/writeability, ja/en/ko setup, ko employee locale, active KURANEA theme, CSS, BO login, and restart persistence (%s tables)\n' "$table_count_after"
+printf 'PASS: empty-volume install, cache ownership/writeability, ja/en/ko setup, ko employee locale, active KURANEA theme, CSS, Korean branded BO login, postcode/back-office modules, and restart persistence (%s tables)\n' "$table_count_after"
