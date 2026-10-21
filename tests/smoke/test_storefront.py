@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import os
+import json
 import re
 import unittest
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
+from urllib.error import HTTPError
 from urllib.request import urlopen
 
 BASE_URL = os.environ.get("SHOP_BASE_URL", "http://127.0.0.1:8080").rstrip("/")
@@ -76,6 +78,15 @@ class StorefrontSmokeTests(unittest.TestCase):
         self.assertTrue(any(link.get("rel") == "apple-touch-icon" for link in metadata.links), "Apple touch icon is missing")
         self.assertIn("kuranea-mobile-nav", body)
         self.assertIn("kuranea-logo-mobile.webp", body)
+        manifest_url = next(link["href"] for link in metadata.links if link.get("rel") == "manifest")
+        try:
+            with urlopen(urljoin(final_url, manifest_url), timeout=20) as response:
+                self.assertEqual(response.status, 200)
+                manifest = json.load(response)
+        except HTTPError as error:
+            self.fail(f"web app manifest returned HTTP {error.code}")
+        self.assertEqual(manifest.get("lang"), "ja-JP")
+        self.assertEqual({icon.get("sizes") for icon in manifest.get("icons", [])}, {"192x192", "512x512"})
 
     def test_admin_login_is_reachable(self) -> None:
         status, final_url, body = fetch(f"{BASE_URL}/admin-kuranea/")

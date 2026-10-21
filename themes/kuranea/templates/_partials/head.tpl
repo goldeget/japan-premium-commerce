@@ -77,7 +77,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="{$urls.theme_assets}img/brand/favicon-16x16.png">
   <link rel="icon" type="image/png" sizes="32x32" href="{$urls.theme_assets}img/brand/favicon-32x32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="{$urls.theme_assets}img/brand/apple-touch-icon.png">
-  <link rel="manifest" href="{$urls.theme_assets}manifest.webmanifest">
+  <link rel="manifest" href="{$urls.base_url}manifest.webmanifest">
   <meta name="theme-color" content="#0b1b30">
   <script defer src="{$urls.theme_assets}js/pwa-register.js" data-service-worker="{$urls.base_url}sw.js" data-scope="{$urls.base_url}"></script>
 {/block}
