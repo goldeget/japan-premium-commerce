@@ -22,6 +22,12 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("if ! docker compose -p \"$CI_COMPOSE_PROJECT_NAME\" up", workflow)
         self.assertIn("docker compose -p \"$CI_COMPOSE_PROJECT_NAME\" logs --tail=160 mariadb prestashop", workflow)
 
+    def test_failed_compose_bootstrap_publishes_a_redacted_step_summary(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        bootstrap = workflow.split("- name: Build and install into unique empty volumes", 1)[1].split("- name:", 1)[0]
+        self.assertIn("GITHUB_STEP_SUMMARY", bootstrap)
+        self.assertIn("[REDACTED]", bootstrap)
+
 
 if __name__ == "__main__":
     unittest.main()
