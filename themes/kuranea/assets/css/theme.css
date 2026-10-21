@@ -1,0 +1,52 @@
+/* KURANEA child-theme overrides. Keep Hummingbird as the source of base styles. */
+:root {
+  --kuranea-ink: #172638;
+  --kuranea-navy: #14273f;
+  --kuranea-gold: #b49a61;
+  --kuranea-paper: #fbfaf7;
+  --bs-body-color: var(--kuranea-ink);
+  --bs-body-bg: var(--kuranea-paper);
+  --bs-link-color: var(--kuranea-navy);
+  --bs-link-hover-color: #8d7546;
+  --bs-primary: var(--kuranea-navy);
+  --bs-primary-rgb: 20, 39, 63;
+  --bs-border-color: #e7e1d5;
+}
+
+body {
+  color: var(--kuranea-ink);
+  background-color: var(--kuranea-paper);
+}
+
+#header .header-nav,
+#header .header-top {
+  border-bottom: 1px solid rgb(180 154 97 / 22%);
+}
+
+.btn-primary {
+  --bs-btn-color: #fff;
+  --bs-btn-bg: var(--kuranea-navy);
+  --bs-btn-border-color: var(--kuranea-navy);
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: #203a59;
+  --bs-btn-hover-border-color: #203a59;
+  --bs-btn-active-bg: #102238;
+  --bs-btn-active-border-color: #102238;
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--kuranea-gold);
+  box-shadow: 0 0 0 0.2rem rgb(180 154 97 / 18%);
+}
+
+:focus-visible {
+  outline: 2px solid var(--kuranea-gold);
+  outline-offset: 2px;
+}
+
+@media (max-width: 767.98px) {
+  #header .header-top {
+    border-bottom-color: rgb(180 154 97 / 28%);
+  }
+}

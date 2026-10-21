@@ -1,0 +1,3 @@
+[submodule "themes/hummingbird"]
+	path = themes/hummingbird
+	url = https://github.com/PrestaShop/hummingbird.git

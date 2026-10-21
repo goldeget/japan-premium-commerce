@@ -43,11 +43,13 @@ services:
       - type: bind
         source: ./themes/hummingbird
         target: /var/www/html/themes/hummingbird
+        read_only: true
         bind:
           create_host_path: false
       - type: bind
         source: ./themes/kuranea
         target: /var/www/html/themes/kuranea
+        read_only: true
         bind:
           create_host_path: false
     healthcheck:

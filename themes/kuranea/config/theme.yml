@@ -1,0 +1,26 @@
+name: kuranea
+display_name: KURANEA
+version: 1.0.0
+author:
+  name: KURANEA
+parent: hummingbird
+
+meta:
+  compatibility:
+    from: 9.2.0
+    to: ~9.2.0
+    framework: bootstrap-v5.3.3
+
+  available_layouts:
+    layout-full-width:
+      name: Full Width
+      description: Full-width layout for focused shopping pages.
+    layout-both-columns:
+      name: Three Columns
+      description: Main content with both side columns.
+    layout-left-column:
+      name: Left Column
+      description: Main content with a left side column.
+    layout-right-column:
+      name: Right Column
+      description: Main content with a right side column.
