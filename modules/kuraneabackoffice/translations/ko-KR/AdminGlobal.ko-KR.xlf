@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="Admin.Global.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="kuranea-admin-password" approved="yes">
+        <source>Password</source>
+        <target state="final">비밀번호</target>
+        <note>PrestaShop 9.2 administrator login password field label.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

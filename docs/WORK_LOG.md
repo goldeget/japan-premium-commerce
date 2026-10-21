@@ -8,6 +8,14 @@
 - 검증: 기존 실행 중인 쇼핑몰에서 주소 lookup 경로 HTTP 200, JSON 응답, `manual_entry_available=true`를 확인했다. 응답 후보는 0개이며 공식 Japan Post CSV가 아직 적재되지 않았으므로 실제 `100-0004` 주소 매핑은 PASS로 기록하지 않는다. 스모크 13/13, 관리자 계약 테스트 6/6, postcode PHP 도메인·컨트롤러 테스트, PHP lint 통과.
 - 보존: 실행 중인 PrestaShop/MariaDB와 named volume은 초기화하거나 삭제하지 않았다. GitHub Actions API는 이 환경에서 `403 Forbidden`을 반환해 신규 빈 DB 설치 결과를 직접 확인할 수 없었다.
 
+## 2026-10-21 — 관리자 로그인 한국어·공식 로고 및 모듈 파일 권한
+
+- 시작 기준: 주소 기능 체크포인트 `6531d64f419e24867f5aff6832ef240c7fa7762c`가 원격 `work`와 일치했다.
+- 원인: 기존 Back Office의 `AdminGlobal` 한국어 XLIFF에는 Dutch 대상 문자열이 남아 있었고, PrestaShop 번역기는 XLIFF 뒤에 DB 번역 리소스를 붙여 단순 `addResource()` 오버레이보다 DB 문자열이 우선했다. 컨테이너에 수동 복사한 로컬 파일도 호스트 `0600` 모드가 전파되어 `www-data`가 읽지 못했다.
+- 변경: Back Office 모듈이 한국어 XLIFF를 완성된 번역 카탈로그 뒤에 병합해 DB 값보다 우선하도록 했다. 로그인 화면은 제공된 공식 로고를 이미지로 표시하고 PrestaShop 상단·푸터 브랜딩을 감춘다. `docker/kuranea-entrypoint.sh`는 두 KURANEA 모듈 트리만 `www-data` 소유·디렉터리 0755·파일 0644로 동기화하고, fresh-install QA가 해당 파일을 실제 `www-data`로 읽을 수 있는지 확인한다.
+- 브라우저 검증: 실제 관리자 로그인 데스크톱 1440×1000과 모바일 390×844에서 HTTP 200, `lang=ko`, 비밀번호 라벨 한국어, 공식 로고 표시, stock header/footer 숨김, 가로 넘침 없음, 페이지 오류 0건을 확인했다. 캡처는 `artifacts/qa/phase1a/admin-login-desktop-brand-fix.png`, `admin-login-mobile-brand-fix.png`에 저장했다.
+- 제한: 로그인 외 관리자 전체 메뉴·대시보드의 한국어 100%는 아직 검증되지 않았다. 새 빈 DB Actions 실행과 공식 Japan Post CSV 실데이터 lookup도 아직 미확인이다.
+
 ## 2026-10-21 — Phase 1A 일본어 홈 UI 및 반응형 QA
 
 - 시작 SHA: 로컬 `work`와 GitHub 원격 `work`가 모두 `34b97b6982e42361018f1746eb0214efe5fe366b`였다. 기존 컨테이너와 named volume은 유지했다.

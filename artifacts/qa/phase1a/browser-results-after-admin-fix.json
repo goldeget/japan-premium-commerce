@@ -1,0 +1,54 @@
+{
+  "store_desktop": {
+    "status": 200,
+    "title": "KURANEA",
+    "lang": "ja-JP",
+    "viewportWidth": 1440,
+    "scrollWidth": 1440,
+    "brandLogoVisible": true,
+    "passwordLabel": "",
+    "stockHeaderDisplay": null,
+    "stockFooterDisplay": null,
+    "shopImageContent": null,
+    "pageErrors": []
+  },
+  "store_mobile": {
+    "status": 200,
+    "title": "KURANEA",
+    "lang": "ja-JP",
+    "viewportWidth": 390,
+    "scrollWidth": 390,
+    "brandLogoVisible": true,
+    "passwordLabel": "",
+    "stockHeaderDisplay": null,
+    "stockFooterDisplay": null,
+    "shopImageContent": null,
+    "pageErrors": []
+  },
+  "admin_desktop": {
+    "status": 200,
+    "title": "KURANEA",
+    "lang": "ko",
+    "viewportWidth": 1440,
+    "scrollWidth": 1440,
+    "brandLogoVisible": true,
+    "passwordLabel": "비밀번호",
+    "stockHeaderDisplay": "none",
+    "stockFooterDisplay": "none",
+    "shopImageContent": "url(\"http://localhost:8080/modules/kuraneabackoffice/views/img/kuranea-logo.png\")",
+    "pageErrors": []
+  },
+  "admin_mobile": {
+    "status": 200,
+    "title": "KURANEA",
+    "lang": "ko",
+    "viewportWidth": 390,
+    "scrollWidth": 390,
+    "brandLogoVisible": true,
+    "passwordLabel": "비밀번호",
+    "stockHeaderDisplay": "none",
+    "stockFooterDisplay": "none",
+    "shopImageContent": "url(\"http://localhost:8080/modules/kuraneabackoffice/views/img/kuranea-logo.png\")",
+    "pageErrors": []
+  }
+}

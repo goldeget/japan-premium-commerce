@@ -44,16 +44,27 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         services = services_path.read_text()
 
         self.assertIn("TranslatorLanguageLoader", source)
+        self.assertIn("XliffFileLoader", source)
+        self.assertIn("getCatalogue", source)
+        self.assertIn("addCatalogue", source)
         self.assertIn("loadLanguage", source)
         self.assertIn("addResource", source)
         self.assertIn("kernel.event_subscriber", services)
+        self.assertIn("AdminGlobal", source)
+        self.assertIn("AdminGlobal.ko-KR.xlf", source)
         self.assertTrue((MODULE / "translations" / "ko-KR" / "AdminActions.ko-KR.xlf").is_file())
+        self.assertTrue((MODULE / "translations" / "ko-KR" / "AdminGlobal.ko-KR.xlf").is_file())
         self.assertTrue((MODULE / "translations" / "ko-KR" / "messages.ko-KR.xlf").is_file())
 
     def test_admin_actions_overlay_fills_the_observed_back_to_gap(self) -> None:
         path = MODULE / "translations" / "ko-KR" / "AdminActions.ko-KR.xlf"
         self.assertTrue(path.is_file(), "missing module-owned Admin.Actions overlay")
         self.assertEqual("쇼핑몰로 돌아가기", translations(path).get("Back to"))
+
+    def test_admin_global_overlay_translates_the_observed_password_gap(self) -> None:
+        path = MODULE / "translations" / "ko-KR" / "AdminGlobal.ko-KR.xlf"
+        self.assertTrue(path.is_file(), "missing module-owned Admin.Global overlay")
+        self.assertEqual("비밀번호", translations(path).get("Password"))
 
     def test_psgdpr_overlay_translates_the_observed_admin_gaps(self) -> None:
         path = MODULE / "translations" / "ko-KR" / "messages.ko-KR.xlf"
@@ -86,6 +97,12 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertIn("kuranea-logo.png", module_source)
         self.assertIn("kuranea_backoffice_logo", hook_template)
         self.assertIn('alt="KURANEA"', hook_template)
+        self.assertIn("#login-header", hook_template)
+        self.assertIn("#login-footer", hook_template)
+        self.assertIn("#shop-img img", hook_template)
+        self.assertIn("content: url(", hook_template)
+        self.assertIn('content: url("{/literal}{$kuranea_backoffice_logo', hook_template)
+        self.assertIn("content: \"←\";", hook_template)
         self.assertTrue(logo.is_file())
         self.assertEqual(b"\x89PNG\r\n\x1a\n", logo.read_bytes()[:8])
 

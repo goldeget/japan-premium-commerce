@@ -14,6 +14,8 @@ sync_theme() {
     mkdir -p "$target_dir"
     cp -R "$source_dir"/. "$target_dir"/
     chown -R www-data:www-data "$target_dir"
+    find "$target_dir" -type d -exec chmod 0755 {} +
+    find "$target_dir" -type f -exec chmod 0644 {} +
 }
 
 sync_theme hummingbird

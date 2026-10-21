@@ -25,6 +25,18 @@ class PreinstallOwnershipTests(unittest.TestCase):
         self.assertNotIn("chown -R", script)
         self.assertNotRegex(script, r"chmod\s+(?:-R\s+)?777")
 
+    def test_bundled_module_files_are_readable_by_the_web_user_after_sync(self) -> None:
+        entrypoint = ROOT / "docker/kuranea-entrypoint.sh"
+        self.assertTrue(entrypoint.is_file(), "missing KURANEA module sync entrypoint")
+        script = entrypoint.read_text(encoding="utf-8")
+
+        self.assertIn('find "$target_dir" -type d -exec chmod 0755 {} +', script)
+        self.assertIn('find "$target_dir" -type f -exec chmod 0644 {} +', script)
+
+        fresh_install = (ROOT / "tests/smoke/fresh_install.sh").read_text(encoding="utf-8")
+        self.assertIn("modules/kuraneabackoffice/src/AdminLocaleSubscriber.php", fresh_install)
+        self.assertIn("runuser -g www-data -u www-data -- test -r", fresh_install)
+
 
 if __name__ == "__main__":
     unittest.main()

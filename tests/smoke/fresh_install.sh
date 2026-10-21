@@ -19,6 +19,9 @@ admin_status=$(curl --fail --silent --show-error --location --output /tmp/kurane
 test "$admin_status" = 200
 grep -q 'kuraneabackoffice/views/img/kuranea-logo.png' /tmp/kuranea-admin-login.html
 grep -q '로그인' /tmp/kuranea-admin-login.html
+grep -q '비밀번호' /tmp/kuranea-admin-login.html
+! grep -q 'Sleutelwoord' /tmp/kuranea-admin-login.html
+grep -Fq 'content: url("/modules/kuraneabackoffice/views/img/kuranea-logo.png");' /tmp/kuranea-admin-login.html
 
 db_ok=$(db_query 'SELECT 1')
 test "$db_ok" = 1
@@ -34,6 +37,14 @@ postcode_module=$(db_query "SELECT COUNT(*) FROM ps_module WHERE name='kuraneapo
 backoffice_module=$(db_query "SELECT COUNT(*) FROM ps_module WHERE name='kuraneabackoffice' AND active=1")
 test "$postcode_module" = 1
 test "$backoffice_module" = 1
+compose exec -T prestashop sh -ec '
+  for module_file in \
+    /var/www/html/modules/kuraneabackoffice/src/AdminLocaleSubscriber.php \
+    /var/www/html/modules/kuraneabackoffice/translations/ko-KR/AdminGlobal.ko-KR.xlf \
+    /var/www/html/modules/kuraneabackoffice/views/templates/hook/admin-login.tpl; do
+    runuser -g www-data -u www-data -- test -r "$module_file"
+  done
+'
 postcode_states=$(db_query "SELECT COUNT(*) FROM ps_state s JOIN ps_country c ON c.id_country=s.id_country WHERE c.iso_code='JP' AND s.active=1 AND s.iso_code REGEXP '^JP-[0-9]{2}$'")
 test "$postcode_states" = 47
 postcode_table=$(db_query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='ps_kuraneapostcode_address'")

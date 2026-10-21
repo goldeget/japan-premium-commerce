@@ -10,6 +10,7 @@ use PrestaShopBundle\Translation\TranslatorLanguageLoader;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Component\Translation\Loader\XliffFileLoader;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 final class AdminLocaleSubscriber implements EventSubscriberInterface
@@ -88,13 +89,27 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
                 ->loadLanguage($this->translator, $locale, true);
         }
 
+        $overlayFiles = [];
         foreach ([
             'AdminActions' => 'AdminActions.ko-KR.xlf',
+            'AdminGlobal' => 'AdminGlobal.ko-KR.xlf',
             'messages' => 'messages.ko-KR.xlf',
         ] as $domain => $filename) {
             $translationFile = $this->modulePath . '/translations/' . $locale . '/' . $filename;
             if (is_file($translationFile)) {
                 $this->translator->addResource('xlf', $translationFile, $locale, $domain);
+                $overlayFiles[$domain] = $translationFile;
+            }
+        }
+
+        // PrestaShop's translator adds a database resource after each XLIFF resource. Merge
+        // module-owned overrides after the catalogue is built so stale admin DB translations
+        // cannot replace the Korean strings.
+        if (method_exists($this->translator, 'getCatalogue') && $overlayFiles !== []) {
+            $catalogue = $this->translator->getCatalogue($locale);
+            $loader = new XliffFileLoader();
+            foreach ($overlayFiles as $domain => $translationFile) {
+                $catalogue->addCatalogue($loader->load($translationFile, $locale, $domain));
             }
         }
     }
