@@ -8,7 +8,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 from selenium import webdriver
 from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
@@ -75,6 +75,18 @@ def _safe_checkout_navigation_path(raw_url: object) -> str | None:
         return None
 
     source_path = parsed.path or "/"
+    redacted_segments: list[str] = []
+    for segment in source_path.split("/"):
+        try:
+            decoded_segment = unquote(segment, errors="strict")
+        except (UnicodeDecodeError, ValueError):
+            decoded_segment = segment
+        if re.fullmatch(r"[A-Za-z0-9._~-]{24,}", decoded_segment):
+            redacted_segments.append("redacted")
+        else:
+            redacted_segments.append(segment)
+    source_path = "/".join(redacted_segments)
+
     safe_characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~/"
     safe_path: list[str] = []
     index = 0
@@ -110,7 +122,7 @@ def _safe_checkout_http_status(value: object) -> int | None:
 
 
 def checkout_order_navigation_network_diagnostics(driver: webdriver.Chrome) -> dict[str, object]:
-    """Capture bounded same-origin redirect metadata without query values or response data."""
+    """Capture bounded document navigation metadata without URLs' query values or response data."""
     try:
         events = driver.get_log("performance")
     except Exception:
@@ -122,12 +134,14 @@ def checkout_order_navigation_network_diagnostics(driver: webdriver.Chrome) -> d
             "response_status": None,
             "response_path": None,
             "redirects": [],
+            "documents": [],
         }
 
     truncated = len(events) > 1000
-    navigation: dict[str, object] | None = None
-    navigation_request_id: str | None = None
-    current_request_url = ""
+    top_frame_id: str | None = None
+    documents_by_request_id: dict[str, dict[str, object]] = {}
+    document_request_ids: list[str] = []
+    current_request_urls: dict[str, str] = {}
     redirects: list[dict[str, object]] = []
 
     for entry in events[:1000]:
@@ -149,34 +163,48 @@ def checkout_order_navigation_network_diagnostics(driver: webdriver.Chrome) -> d
             continue
 
         if event_name == "Network.requestWillBeSent":
+            if params.get("type") != "Document":
+                continue
+            frame_id = params.get("frameId")
+            if not isinstance(frame_id, str) or not frame_id:
+                continue
+            if top_frame_id is None:
+                top_frame_id = frame_id
+            elif frame_id != top_frame_id:
+                continue
             request = params.get("request", {})
             if not isinstance(request, dict):
                 continue
             request_url = request.get("url")
             request_url = request_url if isinstance(request_url, str) else ""
-            if navigation is None:
-                if params.get("type") != "Document":
+            if request_id not in documents_by_request_id:
+                if len(document_request_ids) >= 8:
+                    truncated = True
                     continue
                 request_path = _safe_checkout_navigation_path(request_url)
-                if request_path is None:
-                    continue
-                query = parse_qs(urlparse(request_url).query)
-                navigation_request_id = request_id
-                current_request_url = request_url
-                navigation = {
+                query = parse_qs(urlparse(request_url).query) if request_path is not None else {}
+                documents_by_request_id[request_id] = {
                     "request_path": request_path,
+                    "request_same_origin": request_path is not None,
                     "requested_order_controller": query.get("controller") == ["order"],
                     "response_status": None,
                     "response_path": None,
-                    "redirects": redirects,
+                    "response_same_origin": None,
                 }
-                continue
-
-            if request_id != navigation_request_id:
-                continue
+                document_request_ids.append(request_id)
 
             redirect_response = params.get("redirectResponse")
             if isinstance(redirect_response, dict):
+                redirect_status = _safe_checkout_http_status(redirect_response.get("status"))
+                redirect_url = redirect_response.get("url")
+                if not isinstance(redirect_url, str):
+                    redirect_url = current_request_urls.get(request_id, "")
+                response_path = _safe_checkout_navigation_path(redirect_url)
+                document = documents_by_request_id[request_id]
+                document["response_status"] = redirect_status
+                document["response_path"] = response_path
+                document["response_same_origin"] = response_path is not None
+
                 headers = redirect_response.get("headers", {})
                 location = None
                 if isinstance(headers, dict):
@@ -188,27 +216,32 @@ def checkout_order_navigation_network_diagnostics(driver: webdriver.Chrome) -> d
                         ),
                         None,
                     )
+                current_request_url = current_request_urls.get(request_id, redirect_url)
                 target_url = urljoin(current_request_url, location) if isinstance(location, str) else ""
                 target_path = _safe_checkout_navigation_path(target_url)
-                if len(redirects) < 5:
+                if len(redirects) < 8:
                     redirects.append(
                         {
-                            "status": _safe_checkout_http_status(redirect_response.get("status")),
+                            "status": redirect_status,
                             "target_path": target_path,
                             "target_same_origin": target_path is not None,
                         }
                     )
                 else:
                     truncated = True
-            current_request_url = request_url
+            current_request_urls[request_id] = request_url
 
-        elif event_name == "Network.responseReceived" and request_id == navigation_request_id:
+        elif event_name == "Network.responseReceived" and request_id in documents_by_request_id:
             response = params.get("response", {})
-            if isinstance(response, dict) and navigation is not None:
-                navigation["response_status"] = _safe_checkout_http_status(response.get("status"))
-                navigation["response_path"] = _safe_checkout_navigation_path(response.get("url"))
+            if isinstance(response, dict):
+                response_path = _safe_checkout_navigation_path(response.get("url"))
+                document = documents_by_request_id[request_id]
+                document["response_status"] = _safe_checkout_http_status(response.get("status"))
+                document["response_path"] = response_path
+                document["response_same_origin"] = response_path is not None
 
-    if navigation is None:
+    documents = [documents_by_request_id[request_id] for request_id in document_request_ids]
+    if not documents:
         return {
             "available": True,
             "truncated": truncated,
@@ -217,9 +250,24 @@ def checkout_order_navigation_network_diagnostics(driver: webdriver.Chrome) -> d
             "response_status": None,
             "response_path": None,
             "redirects": [],
+            "documents": [],
         }
 
-    return {"available": True, "truncated": truncated, **navigation}
+    latest_response = next(
+        (document for document in reversed(documents) if document["response_status"] is not None),
+        documents[0],
+    )
+    first_document = documents[0]
+    return {
+        "available": True,
+        "truncated": truncated,
+        "request_path": first_document["request_path"],
+        "requested_order_controller": first_document["requested_order_controller"],
+        "response_status": latest_response["response_status"],
+        "response_path": latest_response["response_path"],
+        "redirects": redirects,
+        "documents": documents,
+    }
 
 
 def fill(driver: webdriver.Chrome, selector: str, value: str, root=None) -> None:

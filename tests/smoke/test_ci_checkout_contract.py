@@ -8,7 +8,7 @@ import unittest
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from types import SimpleNamespace
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -72,6 +72,28 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             workflow.index("Verify ORDENOWA business profile installation and admin access"),
             workflow.index("Prepare Chromium browser smoke environment"),
         )
+
+    def test_checkout_route_diagnostics_are_failure_gated_and_value_encoded(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        diagnostic_step = workflow.split(
+            "      - name: Diagnose Japanese order rewrite in the isolated database", 1
+        )[1].split("      - name:", 1)[0]
+
+        self.assertIn("steps.checkout_override.outcome == 'success'", diagnostic_step)
+        self.assertIn("steps.checkout_customer_browser_qa.outcome == 'failure'", diagnostic_step)
+        self.assertIn('MYSQL_PWD="$MARIADB_ROOT_PASSWORD"', diagnostic_step)
+        self.assertIn('"$MARIADB_DATABASE"', diagnostic_step)
+        for expected in (
+            "PS_REWRITING_SETTINGS",
+            "PS_CANONICAL_REDIRECT",
+            "PS_LANG_DEFAULT",
+            "PS_DEFAULT_LANGUAGE_URL_PREFIX",
+            "HEX(\\`value\\`)",
+            "HEX(ml.url_rewrite)",
+            "l.iso_code =",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, diagnostic_step)
 
     def test_browser_flow_uses_unpaid_native_payment_and_separate_admin_session(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
@@ -430,11 +452,25 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             "re": re,
             "urljoin": urljoin,
             "urlparse": urlparse,
+            "unquote": unquote,
             "parse_qs": parse_qs,
             "webdriver": SimpleNamespace(Chrome=object),
         }
         helper_module = ast.Module(body=helper_nodes, type_ignores=[])
         exec(compile(helper_module, str(browser_path), "exec"), namespace)
+
+        opaque_path_token = "a1b2c3d4e5f60718293a4b5c6d7e8f90"
+        safe_path = namespace["_safe_checkout_navigation_path"](
+            f"http://localhost:18080/customer/{opaque_path_token}"
+        )
+        self.assertEqual(safe_path, "/customer/redacted")
+        self.assertNotIn(opaque_path_token, safe_path or "")
+        self.assertEqual(
+            namespace["_safe_checkout_navigation_path"](
+                "http://localhost:18080/%C3%A6%C2%B3%C2%A8%C3%A6%C2%96%C2%87"
+            ),
+            "/%C3%A6%C2%B3%C2%A8%C3%A6%C2%96%C2%87",
+        )
 
         order_url = "http://localhost:18080/index.php?controller=order&token=checkout-token-sentinel"
         redirected_url = (
@@ -452,6 +488,7 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
                 {
                     "requestId": "navigation-request-sentinel",
                     "type": "Document",
+                    "frameId": "checkout-frame-sentinel",
                     "request": {
                         "method": "GET",
                         "url": order_url,
@@ -464,6 +501,7 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
                 {
                     "requestId": "navigation-request-sentinel",
                     "type": "Document",
+                    "frameId": "checkout-frame-sentinel",
                     "request": {"method": "GET", "url": redirected_url},
                     "redirectResponse": {
                         "status": 302,
@@ -479,6 +517,7 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
                 {
                     "requestId": "navigation-request-sentinel",
                     "type": "Document",
+                    "frameId": "checkout-frame-sentinel",
                     "request": {"method": "GET", "url": external_url},
                     "redirectResponse": {
                         "status": 301,
@@ -492,6 +531,50 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
                     "requestId": "navigation-request-sentinel",
                     "type": "Document",
                     "response": {"status": 404, "url": external_url, "headers": {}},
+                },
+            ),
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": "iframe-document-request-sentinel",
+                    "type": "Document",
+                    "frameId": "iframe-frame-sentinel",
+                    "request": {
+                        "method": "GET",
+                        "url": "http://localhost:18080/embedded/frame?token=iframe-token-sentinel",
+                    },
+                },
+            ),
+            event(
+                "Network.responseReceived",
+                {
+                    "requestId": "iframe-document-request-sentinel",
+                    "type": "Document",
+                    "response": {
+                        "status": 200,
+                        "url": "http://localhost:18080/embedded/frame?token=iframe-token-sentinel",
+                    },
+                },
+            ),
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": "js-navigation-request-sentinel",
+                    "type": "Document",
+                    "frameId": "checkout-frame-sentinel",
+                    "request": {
+                        "method": "GET",
+                        "url": redirected_url,
+                        "headers": {"Cookie": "second-session-cookie-sentinel"},
+                    },
+                },
+            ),
+            event(
+                "Network.responseReceived",
+                {
+                    "requestId": "js-navigation-request-sentinel",
+                    "type": "Document",
+                    "response": {"status": 404, "url": redirected_url, "headers": {}},
                 },
             ),
         ]
@@ -511,7 +594,31 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertEqual(diagnostics["request_path"], "/index.php")
         self.assertTrue(diagnostics["requested_order_controller"])
         self.assertEqual(diagnostics["response_status"], 404)
-        self.assertIsNone(diagnostics["response_path"])
+        self.assertEqual(
+            diagnostics["response_path"],
+            "/%C3%A6%C2%B3%C2%A8%C3%A6%C2%96%C2%87",
+        )
+        self.assertEqual(
+            diagnostics["documents"],
+            [
+                {
+                    "request_path": "/index.php",
+                    "request_same_origin": True,
+                    "requested_order_controller": True,
+                    "response_status": 404,
+                    "response_path": None,
+                    "response_same_origin": False,
+                },
+                {
+                    "request_path": "/%C3%A6%C2%B3%C2%A8%C3%A6%C2%96%C2%87",
+                    "request_same_origin": True,
+                    "requested_order_controller": False,
+                    "response_status": 404,
+                    "response_path": "/%C3%A6%C2%B3%C2%A8%C3%A6%C2%96%C2%87",
+                    "response_same_origin": True,
+                },
+            ],
+        )
         self.assertEqual(diagnostics["redirects"][0]["status"], 302)
         self.assertEqual(
             diagnostics["redirects"][0]["target_path"],
@@ -526,9 +633,98 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             "private-customer-sentinel",
             "external-token-sentinel",
             "session-cookie-sentinel",
+            "second-session-cookie-sentinel",
             "attacker.example",
             "redirect-secret-sentinel",
             "navigation-request-sentinel",
+            "iframe-document-request-sentinel",
+            "iframe-frame-sentinel",
+            "iframe-token-sentinel",
+            "checkout-frame-sentinel",
+            "js-navigation-request-sentinel",
+        ):
+            with self.subTest(secret_marker=secret_marker):
+                self.assertNotIn(secret_marker, rendered)
+
+    def test_checkout_document_navigation_capture_is_limited_to_eight_requests(self) -> None:
+        browser_path = CHECKOUT_FLOW
+        tree = ast.parse(browser_path.read_text(encoding="utf-8"))
+        helper_names = {
+            "_safe_checkout_navigation_path",
+            "_safe_checkout_http_status",
+            "checkout_order_navigation_network_diagnostics",
+        }
+        helper_nodes = [
+            node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in helper_names
+        ]
+        self.assertEqual({node.name for node in helper_nodes}, helper_names)
+
+        namespace = {
+            "BASE": "http://localhost:18080",
+            "json": json,
+            "re": re,
+            "urljoin": urljoin,
+            "urlparse": urlparse,
+            "unquote": unquote,
+            "parse_qs": parse_qs,
+            "webdriver": SimpleNamespace(Chrome=object),
+        }
+        exec(compile(ast.Module(body=helper_nodes, type_ignores=[]), str(browser_path), "exec"), namespace)
+        events = []
+        for index in range(9):
+            request_id = f"document-request-id-sentinel-{index}"
+            request_url = f"http://localhost:18080/document/{index}?token=document-token-sentinel-{index}"
+            events.extend(
+                [
+                    {
+                        "message": json.dumps(
+                            {
+                                "message": {
+                                    "method": "Network.requestWillBeSent",
+                                    "params": {
+                                        "requestId": request_id,
+                                        "type": "Document",
+                                        "frameId": "checkout-frame-sentinel",
+                                        "request": {"url": request_url},
+                                    },
+                                }
+                            }
+                        )
+                    },
+                    {
+                        "message": json.dumps(
+                            {
+                                "message": {
+                                    "method": "Network.responseReceived",
+                                    "params": {
+                                        "requestId": request_id,
+                                        "type": "Document",
+                                        "response": {"status": 200, "url": request_url},
+                                    },
+                                }
+                            }
+                        )
+                    },
+                ]
+            )
+
+        class FakeDriver:
+            def get_log(self, name: str) -> list[dict[str, str]]:
+                self.log_name = name
+                return events
+
+        diagnostics = namespace["checkout_order_navigation_network_diagnostics"](FakeDriver())
+        rendered = json.dumps(diagnostics, sort_keys=True)
+
+        self.assertEqual(len(diagnostics["documents"]), 8)
+        self.assertTrue(diagnostics["truncated"])
+        self.assertTrue(all(document["request_same_origin"] for document in diagnostics["documents"]))
+        self.assertTrue(all(document["response_same_origin"] for document in diagnostics["documents"]))
+        self.assertEqual(diagnostics["documents"][0]["request_path"], "/document/0")
+        self.assertEqual(diagnostics["documents"][-1]["request_path"], "/document/7")
+        for secret_marker in (
+            *(f"document-request-id-sentinel-{index}" for index in range(9)),
+            *(f"document-token-sentinel-{index}" for index in range(9)),
         ):
             with self.subTest(secret_marker=secret_marker):
                 self.assertNotIn(secret_marker, rendered)
