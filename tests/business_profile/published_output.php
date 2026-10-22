@@ -39,6 +39,9 @@ assertBusinessProfileTrue(
 
 $manifest = \Kuranea\BusinessProfile\Customer\PwaManifestBuilder::build($published, 'https://shop.example/');
 assertBusinessProfileSame('オーデノワ', $manifest['name'], 'The manifest must read the localized published app name.');
+assertBusinessProfileSame('/', $manifest['id'], 'A root-installed shop should use the root path as its manifest identity.');
+assertBusinessProfileSame('/', $manifest['start_url'], 'A root-installed shop should launch from the root path.');
+assertBusinessProfileSame('/', $manifest['scope'], 'A root-installed shop should use the root service worker scope.');
 assertBusinessProfileSame(3, count($manifest['icons']), 'The public manifest should expose the three approved official PWA images.');
 assertBusinessProfileTrue(
     str_contains($manifest['icons'][2]['src'] ?? '', 'official-pwa-maskable-512.png')
@@ -52,6 +55,11 @@ $withIcons['brand']['assets']['pwa_maskable_512'] = 'https://malicious.example/f
 $manifestWithIcons = \Kuranea\BusinessProfile\Customer\PwaManifestBuilder::build($withIcons, 'https://shop.example/');
 assertBusinessProfileSame('https://shop.example/img/ordenowa/versions/' . str_repeat('a', 64) . '/pwa-192.png', $manifestWithIcons['icons'][0]['src'] ?? null, 'Manifest icons must use only versioned local ORDENOWA assets.');
 assertBusinessProfileSame(1, count($manifestWithIcons['icons']), 'External or unversioned image URLs must not enter the app manifest.');
+$subdirectoryManifest = \Kuranea\BusinessProfile\Customer\PwaManifestBuilder::build($published, 'https://shop.example/store/');
+assertBusinessProfileSame('/store/', $subdirectoryManifest['id'], 'A subdirectory shop should keep its manifest identity within its installation path.');
+assertBusinessProfileSame('/store/', $subdirectoryManifest['start_url'], 'A subdirectory shop should launch inside its installation path.');
+assertBusinessProfileSame('/store/', $subdirectoryManifest['scope'], 'A subdirectory shop should scope its service worker within its installation path.');
+assertBusinessProfileTrue(str_starts_with($subdirectoryManifest['icons'][0]['src'] ?? '', 'https://shop.example/store/'), 'Subdirectory PWA icons should resolve within the same shop base path.');
 assertBusinessProfileSame(false, \Kuranea\BusinessProfile\Customer\CommerceGate::isEnabled($published), 'An unapproved seller profile must not enable checkout.');
 $approved = $published;
 $approved['seller']['authorization_status'] = 'approved';

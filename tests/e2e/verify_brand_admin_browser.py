@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urljoin, urlparse
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.select import Select
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -62,7 +63,9 @@ def assert_public_brand_assets(driver: webdriver.Chrome, label: str, expected_lo
           const manifest = await (await fetch(manifestLink, {cache: 'no-store'})).json();
           const icons = [];
           for (const icon of manifest.icons || []) icons.push({sizes: icon.sizes, purpose: icon.purpose, ...await load(icon.src)});
-          return {assetLinks, og, ogImage, manifest, icons, title: document.title};
+          const description = document.querySelector('meta[name="description"]')?.content || '';
+          const themeColor = document.querySelector('meta[name="theme-color"]')?.content || '';
+          return {assetLinks, og, ogImage, manifest, icons, title: document.title, description, themeColor};
         })().then(done).catch(error => done({error: String(error)}));
         """
     )
@@ -77,6 +80,17 @@ def assert_public_brand_assets(driver: webdriver.Chrome, label: str, expected_lo
         raise AssertionError("PWA manifest does not expose the approved any and maskable icons")
     if "ORDENOWA CI QA" not in results["title"]:
         raise AssertionError("Korean admin SEO title update did not publish to the customer page")
+    if results["description"] != "ORDENOWA CI SEO description":
+        raise AssertionError("Korean admin SEO description did not publish to the customer page")
+    if (
+        results["manifest"].get("name") != "ORDENOWA CI QA"
+        or results["manifest"].get("short_name") != "ORDENOWA CI"
+        or results["manifest"].get("theme_color") != "#244a7d"
+        or results["manifest"].get("background_color") != "#f5f7fa"
+    ):
+        raise AssertionError("Korean admin PWA names or colors did not publish to the app manifest")
+    if results["themeColor"] != "#244a7d":
+        raise AssertionError("Korean admin PWA theme color did not publish to customer metadata")
 
 
 def run() -> None:
@@ -146,8 +160,37 @@ def run() -> None:
         pwa_name = visible(driver, 'input[name="profile[pwa][name][ja-JP]"]')
         pwa_name.clear()
         pwa_name.send_keys("ORDENOWA CI QA")
+        ci_settings = {
+            'input[name="profile[company_reference][name][ja-JP]"]': "ORDENOWA CI REFERENCE",
+            'input[name="profile[company_reference][corporate_number]"]': "0000000000000",
+            'input[name="profile[company_reference][postal_code]"]': "000-0000",
+            'input[name="profile[company_reference][address]"]': "ORDENOWA CI REFERENCE ADDRESS",
+            'input[name="profile[company_reference][phone]"]': "000-0000-0000",
+            'input[name="profile[company_reference][representative]"]': "ORDENOWA CI REFERENCE CONTACT",
+            'input[name="profile[company_reference][source_url]"]': "https://example.invalid/ci",
+            'select[name="profile[company_reference][verification_status]"]': "user_provided_reference",
+            'input[name="profile[customer_support][phone]"]': "000-0000-0000",
+            'input[name="profile[customer_support][email]"]': "ci-test@example.invalid",
+            'input[name="profile[customer_support][hours][ja-JP]"]': "ORDENOWA CI SUPPORT HOURS",
+            'textarea[name="profile[shipping][ja-JP]"]': "ORDENOWA CI SHIPPING POLICY",
+            'textarea[name="profile[refund][ja-JP]"]': "ORDENOWA CI REFUND POLICY",
+            'textarea[name="profile[seo][description][ja-JP]"]': "ORDENOWA CI SEO description",
+            'input[name="profile[pwa][short_name][ja-JP]"]': "ORDENOWA CI",
+            'input[name="profile[pwa][theme_color]"]': "#244a7d",
+            'input[name="profile[pwa][background_color]"]': "#f5f7fa",
+        }
+        for selector, value in ci_settings.items():
+            field = visible(driver, selector)
+            if field.tag_name.lower() == "select":
+                Select(field).select_by_value(value)
+            else:
+                field.clear()
+                field.send_keys(value)
         visible(driver, 'form.ordenowa-profile-settings button[name="submitOrdenowaSaveDraft"]').click()
         WebDriverWait(driver, 30).until(lambda browser: "초안을 저장했습니다" in browser.find_element(By.TAG_NAME, "body").text)
+        for selector, expected in ci_settings.items():
+            if visible(driver, selector).get_attribute("value") != expected:
+                raise AssertionError("a Korean admin operating setting did not persist in its draft")
         driver.save_screenshot(str(DEST / "brand-admin-uploaded-draft.png"))
 
         stage = "private_admin_preview"
@@ -159,6 +202,9 @@ def run() -> None:
         )
         current_draft_row.find_element(By.CSS_SELECTOR, 'button[name="submitOrdenowaPreview"]').click()
         preview = visible(driver, ".ordenowa-profile-preview")
+        for expected in ("000-0000-0000", "ORDENOWA CI SHIPPING POLICY", "ORDENOWA CI REFUND POLICY"):
+            if expected not in preview.text:
+                raise AssertionError("Korean admin operating settings are missing from the private preview")
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", preview)
         preview_images = preview.find_elements(By.TAG_NAME, "img")
         if len(preview_images) < 7:

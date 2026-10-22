@@ -45,6 +45,16 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn('controller == ["AdminBusinessProfile"]', brand_flow)
         self.assertIn("submitOrdenowaPreview", brand_flow)
         self.assertIn("submitOrdenowaPublish", brand_flow)
+        for expected_value in (
+            "ORDENOWA CI REFERENCE",
+            "ORDENOWA CI SUPPORT HOURS",
+            "ORDENOWA CI SHIPPING POLICY",
+            "ORDENOWA CI REFUND POLICY",
+            "ORDENOWA CI SEO description",
+            "#244a7d",
+            "#f5f7fa",
+        ):
+            self.assertIn(expected_value, brand_flow)
         self.assertIn('brand_uploads[{slot}]', brand_flow)
         for source_slot in ('"primary_logo"', '"favicon_symbol"', '"pwa_icon"'):
             self.assertIn(source_slot, brand_flow)

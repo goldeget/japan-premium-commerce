@@ -9,6 +9,11 @@ final class PwaManifestBuilder
     /** @return array<string, mixed> */
     public static function build(array $profile, string $baseUrl): array
     {
+        $basePath = parse_url($baseUrl, PHP_URL_PATH);
+        $scopePath = '/' . trim(is_string($basePath) ? $basePath : '', '/') . '/';
+        if ($scopePath === '//') {
+            $scopePath = '/';
+        }
         $locale = (string) ($profile['_resolved_locale'] ?? $profile['localization']['default_locale'] ?? 'ja-JP');
         $assets = (array) ($profile['brand']['assets'] ?? []);
         $icons = [];
@@ -34,13 +39,13 @@ final class PwaManifestBuilder
         $name = (string) ($profile['pwa']['name'][$locale] ?? $brandName);
 
         return [
-            'id' => '/',
+            'id' => $scopePath,
             'name' => $name,
             'short_name' => (string) ($profile['pwa']['short_name'][$locale] ?? $name),
             'description' => (string) ($profile['brand']['description'][$locale] ?? ''),
             'lang' => $locale,
-            'start_url' => '/',
-            'scope' => '/',
+            'start_url' => $scopePath,
+            'scope' => $scopePath,
             'display' => 'standalone',
             'display_override' => ['standalone', 'minimal-ui'],
             'orientation' => 'any',
