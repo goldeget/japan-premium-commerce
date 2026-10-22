@@ -13,7 +13,7 @@ foreach (['기본 정보', '브랜드·로고', '사업자 정보', '고객센�
     assertBusinessProfileTrue(in_array($requiredSection, $adminSectionTitles, true), 'The Korean admin form should include the ' . $requiredSection . ' section.');
 }
 $specifiedActSection = array_values(array_filter($adminSections, static fn (array $section): bool => $section['key'] === 'specified_commercial_act'))[0];
-assertBusinessProfileSame('특정상거래법 표시', $specifiedActSection['fields'][0]['label'], 'The Japanese specified-commercial-act label must be presented in Korean in the admin form.');
+assertBusinessProfileSame('특정상거래법 표시 · 일본어', $specifiedActSection['fields'][0]['label'], 'The Japanese specified-commercial-act label must be presented in Korean in the admin form.');
 $brandSection = array_values(array_filter($adminSections, static fn (array $section): bool => $section['key'] === 'brand'))[0];
 $uploadSlots = array_map(
     static fn (array $field): mixed => $field['options']['slot'] ?? null,
