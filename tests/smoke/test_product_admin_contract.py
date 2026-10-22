@@ -104,6 +104,14 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("replace('%', '%25')", handler)
         self.assertIn("print(annotation", handler)
 
+    def test_chromium_startup_is_inside_the_product_failure_handler(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        run_method = browser.split("def run() -> None:", 1)[1].split("if __name__ == \"__main__\":", 1)[0]
+
+        self.assertIn('stage = "chromium_startup"', run_method)
+        self.assertLess(run_method.index("try:"), run_method.index("driver = webdriver.Chrome(options=options)"))
+        self.assertIn("if driver is not None:", run_method)
+
 
 if __name__ == "__main__":
     unittest.main()

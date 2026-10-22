@@ -68,9 +68,11 @@ def run() -> None:
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1440,960")
     options.add_argument("--lang=ja-JP")
-    driver = webdriver.Chrome(options=options)
-    stage = "administrator_login"
+    driver: webdriver.Chrome | None = None
+    stage = "chromium_startup"
     try:
+        driver = webdriver.Chrome(options=options)
+        stage = "administrator_login"
         driver.get(ADMIN_LOGIN + "/login")
         email = visible(driver, '#login_form input[name="email"], input[type="email"]')
         password = visible(driver, '#login_form input[name="passwd"], #login_form input[name="password"], input[type="password"]')
@@ -233,7 +235,8 @@ def run() -> None:
         print(annotation, file=sys.stdout)
         raise
     finally:
-        driver.quit()
+        if driver is not None:
+            driver.quit()
 
 
 if __name__ == "__main__":
