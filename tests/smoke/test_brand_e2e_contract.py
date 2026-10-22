@@ -61,13 +61,20 @@ class BrandE2EContractTests(unittest.TestCase):
                 'results["assetLinks"], "apple-touch-icon", OFFICIAL_UPLOADS["pwa_icon"], "apple-touch-icon.png"',
             ),
             ('results["og"], OFFICIAL_UPLOADS["primary_logo"], "og-brand.png"',),
-            ('icon_url, OFFICIAL_UPLOADS["pwa_icon"], filename',),
+            ('icon_url["src"], OFFICIAL_UPLOADS["pwa_icon"], filename',),
             ('("email-logo.png", "primary_logo")',),
         )
         for binding in source_bindings:
             with self.subTest(binding=binding):
                 for assertion in binding:
                     self.assertIn(assertion, browser_flow)
+
+        self.assertIn('for filename in ("favicon-16.png", "favicon-32.png"):', browser_flow)
+        self.assertIn('results["assetLinks"], "icon", OFFICIAL_UPLOADS["favicon_symbol"], filename', browser_flow)
+        self.assertIn('("pwa-192.png", "192x192", "any", 192, 192)', browser_flow)
+        self.assertIn('("pwa-512.png", "512x512", "any", 512, 512)', browser_flow)
+        self.assertIn('("pwa-maskable-512.png", "512x512", "maskable", 512, 512)', browser_flow)
+        self.assertIn('(icon_url["sizes"], icon_url["purpose"], icon_url["width"], icon_url["height"])', browser_flow)
 
 
 if __name__ == "__main__":

@@ -158,6 +158,15 @@ def assert_public_brand_assets(driver: webdriver.Chrome, label: str, expected_lo
         "favicon.ico",
         "favicon",
     )
+    for filename in ("favicon-16.png", "favicon-32.png"):
+        assert_uploaded_derivative_url(
+            find_asset_url(
+                results["assetLinks"], "icon", OFFICIAL_UPLOADS["favicon_symbol"], filename
+            ),
+            OFFICIAL_UPLOADS["favicon_symbol"],
+            filename,
+            "favicon",
+        )
     assert_uploaded_derivative_url(
         find_asset_url(
             results["assetLinks"], "apple-touch-icon", OFFICIAL_UPLOADS["pwa_icon"], "apple-touch-icon.png"
@@ -173,12 +182,34 @@ def assert_public_brand_assets(driver: webdriver.Chrome, label: str, expected_lo
         raise AssertionError("the approved Open Graph image dimensions are incorrect")
     if len(results["icons"]) != 3 or not any(item["purpose"] == "maskable" for item in results["icons"]):
         raise AssertionError("PWA manifest does not expose the approved any and maskable icons")
-    for filename in ("pwa-192.png", "pwa-512.png", "pwa-maskable-512.png"):
+    pwa_icon_expectations = (
+        ("pwa-192.png", "192x192", "any", 192, 192),
+        ("pwa-512.png", "512x512", "any", 512, 512),
+        ("pwa-maskable-512.png", "512x512", "maskable", 512, 512),
+    )
+    for filename, declared_size, purpose, width, height in pwa_icon_expectations:
         icon_url = next(
-            (item["src"] for item in results["icons"] if urlparse(item["src"]).path.endswith("/" + filename)),
-            "",
+            (
+                item
+                for item in results["icons"]
+                if urlparse(item["src"]).path.endswith("/" + filename)
+            ),
+            None,
         )
-        assert_uploaded_derivative_url(icon_url, OFFICIAL_UPLOADS["pwa_icon"], filename, "PWA icon")
+        if icon_url is None:
+            raise AssertionError("PWA manifest is missing " + filename)
+        assert_uploaded_derivative_url(
+            icon_url["src"], OFFICIAL_UPLOADS["pwa_icon"], filename, "PWA icon"
+        )
+        if (icon_url["sizes"], icon_url["purpose"], icon_url["width"], icon_url["height"]) != (
+            declared_size,
+            purpose,
+            width,
+            height,
+        ):
+            raise AssertionError(
+                "PWA manifest size, purpose, or decoded dimensions are incorrect for " + filename
+            )
     if "ORDENOWA CI QA" not in results["title"]:
         raise AssertionError("Korean admin SEO title update did not publish to the customer page")
     if results["description"] != "ORDENOWA CI SEO description":
