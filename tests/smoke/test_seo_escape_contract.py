@@ -198,6 +198,50 @@ class SeoEscapeContract(unittest.TestCase):
         self.assertNotIn(' onmouseover="alert(1)"', rendered_anchor)
         self.assertNotIn('aria-label="Product brand: Brand" onmouseover=', rendered_anchor)
 
+    def test_product_scalar_attributes_and_text_are_explicitly_escaped(self):
+        source = CHILD_PRODUCT_TEMPLATE.read_text(encoding="utf-8")
+        manufacturer_block = source.split("{block name='product_header_manufacturer'}", 1)[1].split("{/block}", 1)[0]
+        attachment_block = source.split("{block name='product_attachments'}", 1)[1].split("{/block}", 1)[0]
+
+        self.assertIn(
+            'href="{$product_manufacturer->url|escape:\'htmlall\':\'UTF-8\'}"',
+            manufacturer_block,
+            "manufacturer URLs must be escaped for an HTML attribute",
+        )
+        self.assertIn(
+            "{$product_manufacturer->name|escape:'htmlall':'UTF-8'}",
+            manufacturer_block,
+            "manufacturer names must be escaped for an HTML text node",
+        )
+        self.assertIn("{block name='page_title'}{$product.name|escape:'htmlall':'UTF-8'}{/block}", source)
+        for variable in ("$attachment.name", "$attachment.description", "$attachment.file_size_formatted"):
+            self.assertIn(
+                "{" + variable + "|escape:'htmlall':'UTF-8'}",
+                attachment_block,
+                f"plain attachment field {variable} must be escaped in its HTML text context",
+            )
+
+        # Product descriptions are curated rich HTML and must keep their current rendering path.
+        parent_source = PRODUCT_TEMPLATE.read_text(encoding="utf-8")
+        self.assertIn("{$product.description_short nofilter}", parent_source)
+        self.assertIn("{$product.description nofilter}", parent_source)
+
+    def test_inherited_product_metadata_does_not_bypass_prestashop_html_autoescaping(self):
+        source = PRODUCT_TEMPLATE.read_text(encoding="utf-8")
+        head_block = source.split("{block name='head' append}", 1)[1].split("{/block}", 1)[0]
+        for variable in (
+            "$product.url",
+            "$product.cover.large.url",
+            "$product.price_tax_exc",
+            "$currency.iso_code",
+            "$product.price_amount",
+            "$product.weight",
+            "$product.weight_unit",
+        ):
+            output = "{" + variable + "}"
+            self.assertIn(output, head_block, f"expected inherited product metadata output {output}")
+            self.assertNotIn(output + " nofilter", head_block, f"must not disable PrestaShop 9 HTML autoescape for {output}")
+
     def test_seo_contract_workflow_triggers_for_every_template_dependency(self):
         source = SEO_WORKFLOW.read_text(encoding="utf-8")
         self.assertRegex(
