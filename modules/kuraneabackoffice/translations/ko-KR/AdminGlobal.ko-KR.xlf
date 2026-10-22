@@ -7,6 +7,16 @@
         <target state="final">비밀번호</target>
         <note>PrestaShop 9.2 administrator login password field label.</note>
       </trans-unit>
+      <trans-unit id="kuranea-date-range-from" approved="yes">
+        <source>From</source>
+        <target state="final">시작일</target>
+        <note>PrestaShop dashboard date-range filter start label observed in the Korean dashboard.</note>
+      </trans-unit>
+      <trans-unit id="kuranea-date-range-to" approved="yes">
+        <source>To</source>
+        <target state="final">종료일</target>
+        <note>PrestaShop dashboard date-range filter end label observed in the Korean dashboard.</note>
+      </trans-unit>
     </body>
   </file>
 </xliff>

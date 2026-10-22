@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="Admin.Navigation.Header.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="kuranea-view-my-store" approved="yes">
+        <source>View my store</source>
+        <target state="final">내 쇼핑몰 보기</target>
+        <note>PrestaShop 9.2 Back Office multistore header action.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

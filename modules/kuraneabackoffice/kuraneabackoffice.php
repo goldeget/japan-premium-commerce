@@ -26,7 +26,17 @@ class Kuraneabackoffice extends Module
 
     public function install(): bool
     {
-        return parent::install() && $this->registerHook('displayAdminLogin');
+        return parent::install() && $this->registerHook(['displayAdminLogin', 'actionAdminControllerSetMedia']);
+    }
+
+    public function hookActionAdminControllerSetMedia(): void
+    {
+        $languageIsoCode = strtolower((string) ($this->context->language->iso_code ?? ''));
+        if (!str_starts_with($languageIsoCode, 'ko') || get_class($this->context->controller) !== 'AdminDashboardController') {
+            return;
+        }
+
+        $this->context->controller->addJs($this->_path . 'views/js/dashboard-korean.js');
     }
 
     public function hookDisplayAdminLogin(array $params = []): string

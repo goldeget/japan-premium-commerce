@@ -91,8 +91,9 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
 
         $overlayFiles = [];
         foreach ([
-            'AdminActions' => 'AdminActions.ko-KR.xlf',
-            'AdminGlobal' => 'AdminGlobal.ko-KR.xlf',
+            'Admin.Actions' => 'AdminActions.ko-KR.xlf',
+            'Admin.Global' => 'AdminGlobal.ko-KR.xlf',
+            'Admin.Navigation.Header' => 'AdminNavigationHeader.ko-KR.xlf',
             'messages' => 'messages.ko-KR.xlf',
         ] as $domain => $filename) {
             $translationFile = $this->modulePath . '/translations/' . $locale . '/' . $filename;

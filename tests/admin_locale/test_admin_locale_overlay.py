@@ -50,11 +50,26 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertIn("loadLanguage", source)
         self.assertIn("addResource", source)
         self.assertIn("kernel.event_subscriber", services)
-        self.assertIn("AdminGlobal", source)
+        self.assertIn("Admin.Global", source)
+        self.assertIn("Admin.Actions", source)
+        self.assertIn("Admin.Navigation.Header", source)
         self.assertIn("AdminGlobal.ko-KR.xlf", source)
+        self.assertTrue((MODULE / "translations" / "ko-KR" / "AdminNavigationHeader.ko-KR.xlf").is_file())
         self.assertTrue((MODULE / "translations" / "ko-KR" / "AdminActions.ko-KR.xlf").is_file())
         self.assertTrue((MODULE / "translations" / "ko-KR" / "AdminGlobal.ko-KR.xlf").is_file())
         self.assertTrue((MODULE / "translations" / "ko-KR" / "messages.ko-KR.xlf").is_file())
+
+    def test_admin_dashboard_date_range_is_localized_by_module_asset(self) -> None:
+        module_source = (MODULE / "kuraneabackoffice.php").read_text()
+        javascript_path = MODULE / "views" / "js" / "dashboard-korean.js"
+        self.assertIn("actionAdminControllerSetMedia", module_source)
+        self.assertIn("dashboard-korean.js", module_source)
+        self.assertTrue(javascript_path.is_file(), "missing module-owned dashboard locale asset")
+        javascript = javascript_path.read_text()
+        self.assertIn("시작일", javascript)
+        self.assertIn("종료일", javascript)
+        self.assertIn("date_from", javascript)
+        self.assertIn("compare_date_to", javascript)
 
     def test_admin_actions_overlay_fills_the_observed_back_to_gap(self) -> None:
         path = MODULE / "translations" / "ko-KR" / "AdminActions.ko-KR.xlf"
@@ -64,7 +79,17 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
     def test_admin_global_overlay_translates_the_observed_password_gap(self) -> None:
         path = MODULE / "translations" / "ko-KR" / "AdminGlobal.ko-KR.xlf"
         self.assertTrue(path.is_file(), "missing module-owned Admin.Global overlay")
-        self.assertEqual("비밀번호", translations(path).get("Password"))
+        entries = translations(path)
+        self.assertEqual("비밀번호", entries.get("Password"))
+        self.assertEqual("시작일", entries.get("From"))
+        self.assertEqual("종료일", entries.get("To"))
+
+    def test_admin_navigation_header_overlay_translates_view_store_action(self) -> None:
+        subscriber = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text()
+        self.assertIn("AdminNavigationHeader.ko-KR.xlf", subscriber)
+        path = MODULE / "translations" / "ko-KR" / "AdminNavigationHeader.ko-KR.xlf"
+        self.assertTrue(path.is_file(), "missing module-owned Admin.Navigation.Header overlay")
+        self.assertEqual("내 쇼핑몰 보기", translations(path).get("View my store"))
 
     def test_psgdpr_overlay_translates_the_observed_admin_gaps(self) -> None:
         path = MODULE / "translations" / "ko-KR" / "messages.ko-KR.xlf"
