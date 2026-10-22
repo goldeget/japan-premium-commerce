@@ -562,7 +562,7 @@ final class PrestaShopNativeProductManager
                 continue;
             }
             $source = (string) (($language['iso_code'] ?? '') === 'ko' ? $draft->nameKo : $draft->nameJa);
-            $slug = (string) \Tools::link_rewrite($source);
+            $slug = (string) \Tools::str2url($source);
             $values[$id] = $slug !== ''
                 ? (string) \Tools::substr($slug, 0, 128)
                 : strtolower(self::REFERENCE_PREFIX . bin2hex(random_bytes(2)));

@@ -46,6 +46,8 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("validateImageChanges", service)
         self.assertIn("resultingImageCount", service)
         self.assertIn("validateOptionChanges", service)
+        self.assertIn("\\Tools::str2url", service)
+        self.assertNotIn("\\Tools::link_rewrite", service)
         save_method = service.split("public function save(", 1)[1].split("public function optionGroups(", 1)[0]
         self.assertLess(save_method.index("validateImageChanges"), save_method.index("$product->add()"))
         self.assertLess(save_method.index("validateImageChanges"), save_method.index("$product->update()"))
