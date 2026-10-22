@@ -234,8 +234,15 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
 
     def test_account_browser_error_annotation_reports_sanitized_control_metadata_only(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        workflow = WORKFLOW.read_text(encoding="utf-8")
         failure = account_flow.split("except Exception as error:", 1)[1].split("raise SystemExit", 1)[0]
         annotation = failure.split("::error title=Customer account browser QA::", 1)[1].split("file=sys.stderr", 1)[0]
+        account_step = workflow.split("- name: Verify customer registration, email login, logout, password reset, and my page in Chromium", 1)[1].split(
+            "- name:", 1
+        )[0]
+        aggregate = workflow.split("- name: Aggregate browser QA and postal verification failures", 1)[1].split(
+            "- name:", 1
+        )[0]
 
         self.assertIn("control_name={failure_control.get('name') or 'none'}", annotation)
         self.assertIn("control_type={failure_control.get('type') or 'none'}", annotation)
@@ -243,6 +250,13 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertNotIn("initial_password", annotation)
         self.assertNotIn("reset_password", annotation)
         self.assertNotIn("str(error)", annotation)
+        self.assertIn("browser_status=${PIPESTATUS[0]}", account_step)
+        self.assertIn('exit "$browser_status"', account_step)
+        self.assertIn('diagnostics_lines=$(rg \'^ORDENOWA_ACCOUNT_REGISTRATION_DIAGNOSTICS=\' "$log_file" || true)', account_step)
+        self.assertIn('::error title=Customer account registration diagnostics::%s\\n', account_step)
+        self.assertIn('ACCOUNT_BROWSER_QA_OUTCOME: ${{ steps.account_browser_qa.outcome }}', aggregate)
+        self.assertIn('"account=$ACCOUNT_BROWSER_QA_OUTCOME"', aggregate)
+        self.assertIn('if [[ "$entry" == *=failure || "$entry" == *=cancelled ]]; then', aggregate)
 
     def test_required_registration_checkbox_uses_its_visible_label(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
