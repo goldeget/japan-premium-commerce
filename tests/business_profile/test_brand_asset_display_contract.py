@@ -64,6 +64,32 @@ class BrandAssetDisplayContractTests(unittest.TestCase):
 
         self.assertIn("'admin_login' => '관리자 로그인 로고'", preview)
 
+    def test_published_brand_name_enriches_only_core_organization_and_website_jsonld(self) -> None:
+        module = (ROOT / "modules/kuraneabusinessprofile/kuraneabusinessprofile.php").read_text(encoding="utf-8")
+        enricher_path = ROOT / "modules/kuraneabusinessprofile/src/Customer/StructuredDataBrandEnricher.php"
+        browser = (ROOT / "tests/e2e/verify_brand_admin_browser.py").read_text(encoding="utf-8")
+
+        self.assertTrue(enricher_path.is_file(), "core structured data should have a focused brand-name enricher")
+        enricher = enricher_path.read_text(encoding="utf-8")
+        self.assertIn("'actionFrontControllerSetVariables'", module)
+        self.assertIn("function hookActionFrontControllerSetVariables(array $params)", module)
+        self.assertIn("StructuredDataBrandEnricher::apply", module)
+        self.assertIn("'Organization'", enricher)
+        self.assertIn("'WebSite'", enricher)
+        self.assertNotIn("'WebPage'", enricher)
+        self.assertIn("JSON-LD did not preserve the hostile brand name as a decoded string value", browser)
+        for stage in (
+            "hostile_seo_title",
+            "hostile_seo_description",
+            "hostile_seo_open_graph",
+            "hostile_seo_dom_sentinels",
+            "hostile_seo_jsonld_present",
+            "hostile_seo_jsonld_parse",
+            "hostile_seo_jsonld_value",
+        ):
+            with self.subTest(stage=stage):
+                self.assertIn(stage, browser)
+
 
 if __name__ == "__main__":
     unittest.main()

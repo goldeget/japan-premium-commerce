@@ -164,4 +164,26 @@ assertBusinessProfileThrows(
     'Invalid bank account numbers should be rejected.'
 );
 
+$hostileJsonLdBrandName = 'ORDENOWA CI </script><meta id="ordenowa-jsonld-inert-sentinel">';
+$coreStructuredData = [
+    'organization' => ['@type' => 'Organization', 'name' => 'KURANEA'],
+    'website' => ['@type' => 'WebSite', 'name' => 'KURANEA'],
+    'webpage' => ['@type' => 'WebPage', 'name' => 'Homepage'],
+    'product' => ['@type' => 'Product', 'name' => 'Product name'],
+];
+$brandedStructuredData = \Kuranea\BusinessProfile\Customer\StructuredDataBrandEnricher::apply(
+    $coreStructuredData,
+    $hostileJsonLdBrandName
+);
+assertBusinessProfileSame($hostileJsonLdBrandName, $brandedStructuredData['organization']['name'], 'Published brand name should replace the core Organization name.');
+assertBusinessProfileSame($hostileJsonLdBrandName, $brandedStructuredData['website']['name'], 'Published brand name should replace the core WebSite name.');
+assertBusinessProfileSame('Homepage', $brandedStructuredData['webpage']['name'], 'Brand enrichment must not change the core WebPage title.');
+assertBusinessProfileSame('Product name', $brandedStructuredData['product']['name'], 'Brand enrichment must not change product structured data.');
+assertBusinessProfileSame('KURANEA', $coreStructuredData['organization']['name'], 'Brand enrichment must not mutate the original core structured data array.');
+assertBusinessProfileSame(
+    $coreStructuredData,
+    \Kuranea\BusinessProfile\Customer\StructuredDataBrandEnricher::apply($coreStructuredData, '  '),
+    'An empty brand name must leave core structured data unchanged.'
+);
+
 echo "PASS: Korean admin settings form sections, allowlisted edits, and bank masking\n";

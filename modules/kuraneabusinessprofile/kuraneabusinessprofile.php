@@ -11,6 +11,7 @@ require_once __DIR__ . '/autoload.php';
 use Kuranea\BusinessProfile\Domain\ProfileDefaults;
 use Kuranea\BusinessProfile\Customer\PublishedProfileProvider;
 use Kuranea\BusinessProfile\Customer\PublicFooterBuilder;
+use Kuranea\BusinessProfile\Customer\StructuredDataBrandEnricher;
 use Kuranea\BusinessProfile\Customer\CommerceGate;
 use Kuranea\BusinessProfile\Customer\PublishedLegalPageBuilder;
 use Kuranea\BusinessProfile\Customer\OrderConfirmationMailContent;
@@ -24,7 +25,7 @@ class Kuraneabusinessprofile extends Module
     {
         $this->name = 'kuraneabusinessprofile';
         $this->tab = 'administration';
-        $this->version = '1.0.3';
+        $this->version = '1.0.4';
         $this->author = 'ORDENOWA';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -55,6 +56,7 @@ class Kuraneabusinessprofile extends Module
             'displayHeader',
             'displayFooter',
             'actionFrontControllerInitBefore',
+            'actionFrontControllerSetVariables',
             'actionGetExtraMailTemplateVars',
             'actionEmailSendBefore',
             'actionEmailAddAfterContent',
@@ -159,6 +161,35 @@ class Kuraneabusinessprofile extends Module
             $profile,
             (string) $this->context->link->getModuleLink($this->name, 'legal')
         );
+    }
+
+    /** @param array<string, mixed> $params
+     *  @return array<string, never>
+     */
+    public function hookActionFrontControllerSetVariables(array $params): array
+    {
+        if (!isset($params['templateVars']) || !is_array($params['templateVars'])) {
+            return [];
+        }
+
+        $structuredData = $params['templateVars']['structured_data'] ?? null;
+        if (!is_array($structuredData)) {
+            return [];
+        }
+
+        $profile = $this->publicProfile();
+        if ($profile === null) {
+            $profile = ProfileDefaults::initial();
+            $profile['_resolved_locale'] = PublishedProfileProvider::localeForIso(
+                (string) ($this->context->language->iso_code ?? 'ja')
+            );
+        }
+
+        $locale = (string) ($profile['_resolved_locale'] ?? 'ja-JP');
+        $brandName = (string) ($profile['brand']['name'][$locale] ?? $profile['brand']['name']['ja-JP'] ?? 'ORDENOWA');
+        $params['templateVars']['structured_data'] = StructuredDataBrandEnricher::apply($structuredData, $brandName);
+
+        return [];
     }
 
     public function hookActionFrontControllerInitBefore(array $params = []): void

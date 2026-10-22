@@ -31,10 +31,11 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         self.assertIn("function hookActionEmailSendBefore(array $params)", module)
         self.assertIn("$params['idShop']", module)
         self.assertIn("$this->activeMailShopId", module)
-        self.assertIn("$this->version = '1.0.3'", module)
+        self.assertIn("$this->version = '1.0.4'", module)
         self.assertTrue(upgrade_path.is_file(), "existing installations need a 1.0.2 hook upgrade")
         self.assertIn("registerHook('actionEmailSendBefore')", upgrade_path.read_text(encoding="utf-8"))
         self.assertTrue((ROOT / "modules/kuraneabusinessprofile/upgrade/upgrade-1.0.3.php").is_file())
+        self.assertTrue((ROOT / "modules/kuraneabusinessprofile/upgrade/upgrade-1.0.4.php").is_file())
 
     def test_mail_shop_context_reaches_both_content_and_extra_vars_before_cleanup(self):
         module = MODULE_PATH.read_text(encoding="utf-8")
@@ -72,10 +73,11 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
     def test_existing_install_upgrade_registers_the_new_hook(self):
         module = MODULE_PATH.read_text(encoding="utf-8")
         upgrade = UPGRADE_PATH.read_text(encoding="utf-8")
-        self.assertIn("$this->version = '1.0.3'", module)
+        self.assertIn("$this->version = '1.0.4'", module)
         self.assertIn("function upgrade_module_1_0_1", upgrade)
         self.assertIn("registerHook('actionEmailAddAfterContent')", upgrade)
         self.assertTrue((ROOT / "modules/kuraneabusinessprofile/upgrade/upgrade-1.0.3.php").is_file())
+        self.assertTrue((ROOT / "modules/kuraneabusinessprofile/upgrade/upgrade-1.0.4.php").is_file())
 
     def test_appender_preserves_both_templates_and_uses_escaped_public_profile_output(self):
         appender = APPENDER_PATH.read_text(encoding="utf-8")

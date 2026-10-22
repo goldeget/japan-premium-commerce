@@ -71,27 +71,38 @@ def assert_hostile_seo_and_jsonld_rendering(
     expected_title: str,
     expected_description: str,
     expected_jsonld_brand_name: str,
+    stage_callback: Callable[[str], None],
 ) -> None:
+    stage_callback("hostile_seo_title")
     if results.get("title") != expected_title:
         raise AssertionError("Smarty did not preserve the complete SEO title as inert title text")
+
+    stage_callback("hostile_seo_description")
     if results.get("description") != expected_description:
         raise AssertionError("Smarty did not preserve the complete SEO description attribute value")
+
+    stage_callback("hostile_seo_open_graph")
     if results.get("ogTitle") != expected_title or results.get("ogDescription") != expected_description:
         raise AssertionError("Smarty did not preserve the complete Open Graph metadata attribute values")
 
+    stage_callback("hostile_seo_dom_sentinels")
     sentinels = results.get("inertSentinels") or []
     if sentinels:
         raise AssertionError("hostile SEO input created inert HTML elements: " + ", ".join(sentinels))
 
+    stage_callback("hostile_seo_jsonld_present")
     scripts = results.get("jsonLdScripts") or []
     if not scripts:
         raise AssertionError("the rendered customer page has no JSON-LD for the script-safe serialization check")
     parsed_scripts = []
     for script_source in scripts:
+        stage_callback("hostile_seo_jsonld_parse")
         try:
             parsed_scripts.append(json.loads(script_source))
         except (TypeError, ValueError):
             raise AssertionError("Smarty emitted invalid JSON-LD script text") from None
+
+    stage_callback("hostile_seo_jsonld_value")
     if not any(json_contains_string(script, expected_jsonld_brand_name) for script in parsed_scripts):
         raise AssertionError("JSON-LD did not preserve the hostile brand name as a decoded string value")
 
@@ -468,12 +479,12 @@ def assert_public_brand_assets(
     if results.get("error"):
         raise AssertionError("brand favicon, Apple icon, OG image, or PWA asset failed browser decoding")
 
-    set_assertion_stage("hostile_seo_and_jsonld_rendering")
     assert_hostile_seo_and_jsonld_rendering(
         results,
         seo_title,
         seo_description,
         jsonld_brand_name,
+        set_assertion_stage,
     )
 
     set_assertion_stage("public_asset_derivative_paths")
