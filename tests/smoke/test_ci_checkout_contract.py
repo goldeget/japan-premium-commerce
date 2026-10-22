@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import unittest
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 
@@ -9,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "fresh-install.yml"
 COMPOSE = ROOT / "compose.yaml"
 CHECKOUT_FLOW = ROOT / "tests" / "e2e" / "verify_ci_checkout_admin_browser.py"
+CHECKOUT_ADMIN_ROUTES = ROOT / "tests" / "e2e" / "checkout_admin_routes.py"
 STOREFRONT_FLOW = ROOT / "tests" / "e2e" / "verify_storefront_browser.py"
 GATE = ROOT / "modules" / "kuraneabusinessprofile" / "src" / "Customer" / "CommerceGate.php"
 SHOP_MODULE = ROOT / "modules" / "kuraneabusinessprofile" / "kuraneabusinessprofile.php"
@@ -87,6 +89,66 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertIn("GITHUB_RUN_ID", flow)
         self.assertIn("@example.invalid", flow)
         self.assertIn("live payment", flow.lower())
+
+    def test_offline_payment_is_selected_before_order_submission(self) -> None:
+        flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        payment_step = flow.split("def choose_delivery_and_offline_payment", 1)[1].split(
+            "def place_unpaid_order", 1
+        )[0]
+        selection_wait = flow.split("def wait_for_offline_payment_selection", 1)[1].split(
+            "def choose_delivery_and_offline_payment", 1
+        )[0]
+
+        self.assertIn("wait_for_offline_payment_selection(driver)", payment_step)
+        diagnostics = flow.split("def emit_checkout_payment_diagnostics", 1)[1].split(
+            "def wait_for_offline_payment_selection", 1
+        )[0]
+        self.assertIn("option.is_selected()", diagnostics)
+        self.assertIn("selected_modules", diagnostics)
+        self.assertIn("WebDriverWait", selection_wait)
+        self.assertIn("TimeoutException", selection_wait)
+        self.assertIn("emit_checkout_payment_diagnostics(driver)", selection_wait)
+
+    def test_legacy_admin_order_detail_route_rejects_invoice_and_download_links(self) -> None:
+        self.assertTrue(
+            CHECKOUT_ADMIN_ROUTES.is_file(),
+            "legacy order detail URL matching must be isolated in a testable route helper",
+        )
+        spec = spec_from_file_location("checkout_admin_routes", CHECKOUT_ADMIN_ROUTES)
+        self.assertIsNotNone(spec)
+        assert spec is not None and spec.loader is not None
+        route_helper = module_from_spec(spec)
+        spec.loader.exec_module(route_helper)
+        is_detail = route_helper.is_legacy_admin_order_detail_url
+
+        detail = (
+            "http://localhost/admin/index.php?controller=AdminOrders&vieworder"
+            "&id_order=42&token=ci-token"
+        )
+        invoice = (
+            "http://localhost/admin/index.php?controller=AdminPdf"
+            "&submitAction=generateInvoicePDF&id_order=42"
+        )
+        download = (
+            "http://localhost/admin/index.php?controller=AdminOrders"
+            "&id_order=42&submitAction=downloadInvoice"
+        )
+        bare_order_id = (
+            "http://localhost/admin/index.php?controller=AdminOrders&id_order=42"
+        )
+        wrong_order = (
+            "http://localhost/admin/index.php?controller=AdminOrders&vieworder"
+            "&id_order=420&token=ci-token"
+        )
+
+        self.assertTrue(is_detail(detail, 42))
+        self.assertFalse(is_detail(invoice, 42))
+        self.assertFalse(is_detail(download, 42))
+        self.assertFalse(is_detail(bare_order_id, 42))
+        self.assertFalse(is_detail(wrong_order, 42))
+
+        flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        self.assertIn("is_legacy_admin_order_detail_url(href, order_id)", flow)
 
     def test_browser_checkout_explicitly_creates_a_registered_customer(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
@@ -191,6 +253,57 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
                     navigation_wait,
                 )
         self.assertNotIn("driver.find_element(By.TAG_NAME, \"body\")", navigation_wait)
+
+    def test_checkout_cart_uses_hummingbird_controls_and_safe_state_diagnostics(self) -> None:
+        flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        compose = COMPOSE.read_text(encoding="utf-8")
+        customer_step = workflow.split(
+            "- name: Verify browser customer search, Japan checkout, and unpaid offline order", 1
+        )[1].split("- name:", 1)[0]
+        add_to_cart_template = (
+            ROOT / "themes" / "hummingbird" / "templates" / "catalog" / "_partials"
+            / "product-add-to-cart.tpl"
+        ).read_text(encoding="utf-8")
+        blockcart_template = (
+            ROOT / "themes" / "hummingbird" / "modules" / "ps_shoppingcart" / "modal.tpl"
+        ).read_text(encoding="utf-8")
+        add_cart = flow.split("def add_product_and_open_checkout", 1)[1].split(
+            "def register_checkout_account", 1
+        )[0]
+        self.assertIn("def emit_checkout_cart_diagnostics", flow)
+        self.assertIn("PS_DOMAIN: localhost:${SHOP_PORT:-8080}", compose)
+        self.assertIn("SHOP_BASE_URL: http://localhost:18080", customer_step)
+        self.assertIn('data-ps-ref="add-to-cart"', add_to_cart_template)
+        self.assertIn('data-ps-ref="blockcart-modal"', blockcart_template)
+        self.assertIn("Proceed to checkout", blockcart_template)
+
+        diagnostics = flow.split("def emit_checkout_cart_diagnostics", 1)[1].split(
+            "def add_product_and_open_checkout", 1
+        )[0]
+        for required in (
+            'button[data-ps-ref="add-to-cart"]',
+            '[data-ps-ref="blockcart-modal"]',
+            ".blockcart-modal__name",
+            '.modal-footer > a.btn-primary',
+            'cart_product_ids == [str(PRODUCT_ID)]',
+            "emit_checkout_cart_diagnostics(driver, label, operation)",
+        ):
+            self.assertIn(required, add_cart)
+        self.assertNotIn(".add-to-cart", add_cart)
+        self.assertNotIn("time.sleep", add_cart)
+        for state in (
+            "pathname:",
+            "queryKeys:",
+            "cartProductIds,",
+            "blockcartModalVisible:",
+            "ciOnlyInCart:",
+            "currentCheckoutSteps:",
+        ):
+            with self.subTest(state=state):
+                self.assertIn(state, diagnostics)
+        self.assertNotIn("document.body.innerText", diagnostics)
+        self.assertNotIn("document.body.textContent", diagnostics)
 
     def test_customer_runner_attempts_both_viewports_before_reporting_failure(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
@@ -305,7 +418,14 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertIn("#checkout-continue-form button", registration)
         self.assertNotIn("identity_main_link", registration)
         self.assertIn('ADMIN_LOGIN + "/sell/orders/orders"', admin_detail)
-        self.assertIn('ADMIN_LOGIN + f"/sell/orders/orders/{order[\'order_id\']}/view"', admin_detail)
+        self.assertIn('order["reference"] not in row_text and order["email"] not in row_text', admin_detail)
+        self.assertIn("is_legacy_admin_order_detail_url(href, order_id)", admin_detail)
+        self.assertNotIn('query.get("id_order") == [order_id]', admin_detail)
+        self.assertIn('rf"/sell/orders/orders/{re.escape(order_id)}', admin_detail)
+        self.assertIn("raise AssertionError", admin_detail)
+        self.assertIn("matching Back Office order-list result", admin_detail)
+        self.assertNotIn('return ADMIN_LOGIN + f"/sell/orders/orders/{order[\'order_id\']}/view"', admin_detail)
+        self.assertNotIn("controller=AdminOrders&vieworder&id_order=", admin_detail)
         self.assertNotIn('root + "/sell/orders/orders"', admin_detail)
 
 

@@ -126,7 +126,7 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
             workflow.index("- name: Capture bounded diagnostics on failure"),
         )
 
-    def test_checkout_restore_is_unconditional_and_final_gate_requires_successful_override_and_restore(self) -> None:
+    def test_checkout_restore_is_unconditional_and_gate_rechecks_success_or_failure(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         restore = workflow.split("- name: Restore the fail-closed base checkout environment", 1)[1].split(
             "- name:", 1
@@ -140,6 +140,7 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
         self.assertIn("id: checkout_gate_after_order", gate)
         self.assertIn("if: always()", gate)
         self.assertIn("steps.checkout_override.outcome == 'success'", gate)
+        self.assertIn("steps.checkout_override.outcome == 'failure'", gate)
         self.assertIn("steps.checkout_restore.outcome == 'success'", gate)
 
     def test_storefront_browser_saves_a_failure_state_screenshot(self) -> None:

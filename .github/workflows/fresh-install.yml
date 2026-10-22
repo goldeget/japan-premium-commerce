@@ -438,7 +438,7 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
-          SHOP_BASE_URL: http://127.0.0.1:18080
+          SHOP_BASE_URL: http://localhost:18080
           ADMIN_LOGIN_URL: http://127.0.0.1:18080/admin-kuranea
           ADMIN_MAIL: ci-kuranea@example.invalid
           ADMIN_PASSWD: Ci-Only-Admin-Password-92!
@@ -523,7 +523,7 @@ jobs:
 
       - name: Restore the fail-closed base checkout environment
         id: checkout_restore
-        if: always()
+        if: always() && steps.checkout_override.outcome != 'skipped'
         shell: bash
         run: |
           set -euo pipefail
@@ -532,7 +532,7 @@ jobs:
 
       - name: Recheck storefront checkout stays gated after unpaid CI order QA
         id: checkout_gate_after_order
-        if: always() && steps.checkout_override.outcome == 'success' && steps.checkout_restore.outcome == 'success'
+        if: always() && (steps.checkout_override.outcome == 'success' || steps.checkout_override.outcome == 'failure') && steps.checkout_restore.outcome == 'success'
         continue-on-error: true
         shell: bash
         env:

@@ -7,7 +7,6 @@ import json
 import os
 import re
 import sys
-import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -18,6 +17,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.select import Select
 from selenium.webdriver.support.ui import WebDriverWait
+
+from checkout_admin_routes import is_legacy_admin_order_detail_url
 
 
 BASE = os.environ["SHOP_BASE_URL"].rstrip("/")
@@ -78,6 +79,64 @@ def click_at_center(driver: webdriver.Chrome, element) -> None:
         )
     )
     element.click()
+
+
+def emit_checkout_cart_diagnostics(driver: webdriver.Chrome, label: str, operation: str) -> None:
+    try:
+        state = driver.execute_script(
+            """
+            const visible = (element) => {
+              if (!element) return false;
+              const box = element.getBoundingClientRect();
+              const style = window.getComputedStyle(element);
+              return box.width > 0 && box.height > 0
+                && style.display !== 'none' && style.visibility !== 'hidden';
+            };
+            const cartRows = [...document.querySelectorAll('.cart__item')];
+            const cartProductIds = [...document.querySelectorAll(
+              '.cart__item [data-link-action="delete-from-cart"][data-id-product]'
+            )].map((element) => element.getAttribute('data-id-product'));
+            const modal = document.querySelector('[data-ps-ref="blockcart-modal"]');
+            const modalName = modal?.querySelector('.blockcart-modal__name');
+            const addToCartButtons = [...document.querySelectorAll(
+              'button[data-ps-ref="add-to-cart"]'
+            )].map((element) => ({visible: visible(element), disabled: element.disabled}));
+            return {
+              pathname: window.location.pathname,
+              queryKeys: [...new URLSearchParams(window.location.search).keys()].sort(),
+              readyState: document.readyState,
+              cartProductIds,
+              ciOnlyInCart: cartRows.some((element) => element.textContent?.includes('[CI ONLY]')),
+              blockcartModalVisible: visible(modal),
+              ciOnlyInBlockcartModal: Boolean(visible(modalName) && modalName.textContent?.includes('[CI ONLY]')),
+              addToCartButtons,
+              currentCheckoutSteps: [...document.querySelectorAll('section.step--current')]
+                .map((element) => element.id),
+            };
+            """
+        )
+        print(
+            "ORDENOWA_CHECKOUT_CART_STATE="
+            + json.dumps(
+                {"viewport": label, "operation": operation, "state": state},
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
+    except Exception as diagnostic_error:
+        print(
+            "ORDENOWA_CHECKOUT_CART_STATE_UNAVAILABLE="
+            + json.dumps(
+                {
+                    "viewport": label,
+                    "operation": operation,
+                    "error": type(diagnostic_error).__name__,
+                },
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
 
 
 def browser_options(width: int, height: int) -> Options:
@@ -240,35 +299,94 @@ def search_for_product(driver: webdriver.Chrome, label: str) -> None:
 
 
 def add_product_and_open_checkout(driver: webdriver.Chrome, label: str) -> None:
-    buttons = driver.find_elements(
-        By.CSS_SELECTOR, "button[data-button-action='add-to-cart'], .add-to-cart"
-    )
-    button = next(
-        (item for item in buttons if item.is_displayed() and item.is_enabled()),
-        None,
-    )
-    if button is None:
-        raise AssertionError("the searched CI product has no active add-to-cart control")
-    click_at_center(driver, button)
-    time.sleep(2)
-    visit(driver, BASE + "/index.php?controller=cart&action=show")
-    cart_text = driver.find_element(By.TAG_NAME, "body").text
-    if "[CI ONLY]" not in cart_text:
-        raise AssertionError("the real browser cart does not contain the searched CI-only product")
-    driver.save_screenshot(str(DEST / f"checkout-{label}-cart.png"))
-    visit(driver, BASE + "/index.php?controller=order")
-    current = WebDriverWait(driver, 30).until(
-        lambda browser: next(
-            (
-                section
-                for section in browser.find_elements(By.CSS_SELECTOR, "section.step--current")
-                if section.is_displayed()
+    operation = "locate_add_to_cart_button"
+    try:
+        button = WebDriverWait(driver, 20).until(
+            lambda browser: next(
+                (
+                    item
+                    for item in browser.find_elements(
+                        By.CSS_SELECTOR, 'button[data-ps-ref="add-to-cart"]'
+                    )
+                    if item.is_displayed() and item.is_enabled()
+                ),
+                False,
             ),
-            False,
+            message="the searched CI product has no active Hummingbird add-to-cart button",
         )
-    )
-    if not current.get_attribute("id"):
-        raise AssertionError("the authorized isolated customer checkout did not open")
+        operation = "click_add_to_cart_button"
+        click_at_center(driver, button)
+
+        operation = "wait_for_ci_only_blockcart_modal"
+
+        def ci_only_modal(browser: webdriver.Chrome):
+            for modal in browser.find_elements(By.CSS_SELECTOR, '[data-ps-ref="blockcart-modal"]'):
+                if not modal.is_displayed():
+                    continue
+                names = modal.find_elements(By.CSS_SELECTOR, ".blockcart-modal__name")
+                if names and "[CI ONLY]" in names[0].text:
+                    return modal
+            return False
+
+        modal = WebDriverWait(
+            driver,
+            25,
+            poll_frequency=0.2,
+            ignored_exceptions=(StaleElementReferenceException,),
+        ).until(
+            ci_only_modal,
+            message="adding the searched CI product did not show its Hummingbird cart confirmation",
+        )
+
+        operation = "follow_blockcart_proceed_to_checkout_link"
+        proceed_links = modal.find_elements(By.CSS_SELECTOR, ".modal-footer > a.btn-primary")
+        proceed_link = next(
+            (link for link in proceed_links if link.is_displayed() and link.is_enabled()),
+            None,
+        )
+        if proceed_link is None:
+            raise AssertionError("the Hummingbird cart confirmation has no visible proceed-to-checkout link")
+        proceed_link.click()
+
+        operation = "wait_for_exact_cart_product_id"
+
+        def exact_cart_product(browser: webdriver.Chrome) -> bool:
+            cart_product_ids = [
+                item.get_attribute("data-id-product")
+                for item in browser.find_elements(
+                    By.CSS_SELECTOR,
+                    '.cart__item [data-link-action="delete-from-cart"][data-id-product]',
+                )
+            ]
+            return cart_product_ids == [str(PRODUCT_ID)]
+
+        WebDriverWait(driver, 30, poll_frequency=0.2).until(
+            exact_cart_product,
+            message=f"the browser cart did not contain only product {PRODUCT_ID}",
+        )
+        cart_text = driver.find_element(By.TAG_NAME, "body").text
+        if "[CI ONLY]" not in cart_text:
+            raise AssertionError("the real browser cart does not contain the searched CI-only product")
+        driver.save_screenshot(str(DEST / f"checkout-{label}-cart.png"))
+
+        operation = "open_order_checkout"
+        visit(driver, BASE + "/index.php?controller=order")
+        operation = "wait_for_initial_checkout_step"
+        current = WebDriverWait(driver, 30).until(
+            lambda browser: next(
+                (
+                    section
+                    for section in browser.find_elements(By.CSS_SELECTOR, "section.step--current")
+                    if section.is_displayed()
+                ),
+                False,
+            )
+        )
+        if not current.get_attribute("id"):
+            raise AssertionError("the authorized isolated customer checkout did not open")
+    except Exception:
+        emit_checkout_cart_diagnostics(driver, label, operation)
+        raise
 
 
 def register_checkout_account(driver: webdriver.Chrome, label: str) -> str:
@@ -355,6 +473,54 @@ def select_japan_address(driver: webdriver.Chrome, label: str) -> None:
     )
 
 
+def emit_checkout_payment_diagnostics(driver: webdriver.Chrome) -> None:
+    payment_selector = 'input[name="payment-option"][data-module-name="ps_checkpayment"]'
+    try:
+        offline_options = driver.find_elements(By.CSS_SELECTOR, payment_selector)
+        selected_options = driver.find_elements(
+            By.CSS_SELECTOR, 'input[name="payment-option"]:checked'
+        )
+        diagnostics = {
+            "path": urlparse(driver.current_url).path,
+            "offline_selected": any(option.is_selected() for option in offline_options),
+            "selected_modules": [
+                module
+                for module in (
+                    option.get_attribute("data-module-name") for option in selected_options
+                )
+                if module
+            ][:10],
+        }
+    except Exception as error:
+        diagnostics = {"diagnostic_error": type(error).__name__}
+    print(
+        "::error title=ORDENOWA checkout payment state::"
+        + json.dumps(diagnostics, sort_keys=True),
+        file=sys.stderr,
+    )
+
+
+def wait_for_offline_payment_selection(driver: webdriver.Chrome) -> None:
+    payment_selector = 'input[name="payment-option"][data-module-name="ps_checkpayment"]'
+
+    def offline_payment_selected(browser: webdriver.Chrome) -> bool:
+        try:
+            return any(
+                option.is_selected()
+                for option in browser.find_elements(By.CSS_SELECTOR, payment_selector)
+            )
+        except StaleElementReferenceException:
+            return False
+
+    try:
+        WebDriverWait(driver, 15, poll_frequency=0.25).until(offline_payment_selected)
+    except TimeoutException:
+        emit_checkout_payment_diagnostics(driver)
+        raise AssertionError(
+            "offline ps_checkpayment radio did not become selected before order review"
+        ) from None
+
+
 def choose_delivery_and_offline_payment(driver: webdriver.Chrome, label: str) -> None:
     delivery_radios = WebDriverWait(driver, 30).until(
         lambda browser: browser.find_elements(
@@ -376,6 +542,7 @@ def choose_delivery_and_offline_payment(driver: webdriver.Chrome, label: str) ->
     )
     if not offline.is_selected():
         click_at_center(driver, offline)
+    wait_for_offline_payment_selection(driver)
     other_selected = [
         item.get_attribute("data-module-name")
         for item in driver.find_elements(By.CSS_SELECTOR, 'input[name="payment-option"]:checked')
@@ -529,6 +696,8 @@ def find_admin_detail_url(driver: webdriver.Chrome, order: dict) -> str:
         ADMIN_LOGIN + "/sell/orders/orders",
         ADMIN_LOGIN + "/index.php?controller=AdminOrders",
     )
+    rows_inspected = 0
+    matching_rows = 0
     for listing_url in candidate_pages:
         visit(driver, listing_url)
         try:
@@ -541,40 +710,31 @@ def find_admin_detail_url(driver: webdriver.Chrome, order: dict) -> str:
         if "/login" in urlparse(driver.current_url).path:
             continue
         for row in driver.find_elements(By.CSS_SELECTOR, "tr, [role='row']"):
+            rows_inspected += 1
             row_text = row.text
             if order["reference"] not in row_text and order["email"] not in row_text:
                 continue
+            matching_rows += 1
             for link in row.find_elements(By.CSS_SELECTOR, "a[href]"):
                 href = link.get_attribute("href") or ""
                 parsed = urlparse(href)
-                query = parse_qs(parsed.query)
-                if (
-                    order["reference"] in link.text
-                    or str(order["order_id"]) in href
-                    or query.get("id_order") == [str(order["order_id"])]
-                ):
-                    return href
-            for link in row.find_elements(By.CSS_SELECTOR, "a[href]"):
-                href = link.get_attribute("href") or ""
-                if "/sell/orders/orders/" in href or "controller=AdminOrders" in href:
-                    return href
-
-        legacy_links = driver.find_elements(By.CSS_SELECTOR, 'a[href*="controller=AdminOrders"]')
-        for link in legacy_links:
-            href = link.get_attribute("href") or ""
-            token = parse_qs(urlparse(href).query).get("token", [])
-            if token:
-                return (
-                    ADMIN_LOGIN + "/index.php"
-                    + "?controller=AdminOrders&vieworder&id_order="
-                    + str(order["order_id"])
-                    + "&token="
-                    + token[0]
+                order_id = str(order["order_id"])
+                modern_detail = re.search(
+                    rf"/sell/orders/orders/{re.escape(order_id)}(?:/view)?/?$",
+                    parsed.path,
                 )
-
-    # The modern Symfony order detail route is stable in the pinned
-    # PrestaShop release even when its list markup changes between versions.
-    return ADMIN_LOGIN + f"/sell/orders/orders/{order['order_id']}/view"
+                if modern_detail or is_legacy_admin_order_detail_url(href, order_id):
+                    return href
+    print(
+        "::error title=ORDENOWA admin order lookup::"
+        "No matching Back Office order-list result with a detail link was found "
+        f"after inspecting {len(candidate_pages)} routes and {rows_inspected} rows "
+        f"({matching_rows} rows matched the expected reference or customer email).",
+        file=sys.stderr,
+    )
+    raise AssertionError(
+        "no matching Back Office order-list result was found for the expected order reference or email"
+    )
 
 
 def run_admin_order_view() -> None:

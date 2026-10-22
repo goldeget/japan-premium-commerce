@@ -86,6 +86,7 @@ def message_recipients(message: dict) -> set[str]:
 
 def reset_link_for(email_address: str, timeout_seconds: int = 90) -> tuple[str, dict]:
     deadline = time.monotonic() + timeout_seconds
+    base_location = urlparse(BASE)
     while time.monotonic() < deadline:
         try:
             listing = request_json(f"{MAILPIT_API}/api/v1/messages?{urlencode({'start': 0, 'limit': 100})}")
@@ -108,8 +109,12 @@ def reset_link_for(email_address: str, timeout_seconds: int = 90) -> tuple[str, 
                     query = {key.lower(): values for key, values in parse_qs(parsed.query).items()}
                     has_token = "token" in query or "reset_token" in query
                     is_password_route = "password" in parsed.path.lower() or query.get("controller") == ["password"]
-                    allowed_host = parsed.hostname in {"localhost", "127.0.0.1"}
-                    if allowed_host and has_token and is_password_route:
+                    matches_base_origin = (
+                        parsed.scheme == base_location.scheme
+                        and parsed.hostname == base_location.hostname
+                        and parsed.port == base_location.port
+                    )
+                    if matches_base_origin and has_token and is_password_route:
                         return reset_url, detail
         except (OSError, URLError, ValueError, json.JSONDecodeError):
             pass
@@ -138,6 +143,21 @@ def click_centered(driver: webdriver.Chrome, element) -> None:
     element.click()
 
 
+def wait_for_registration_success(driver: webdriver.Chrome) -> None:
+    result_page = WebDriverWait(driver, 30).until(
+        lambda browser: browser.execute_script(
+            """
+            const accountLink = document.getElementById('identity_main_link');
+            if (accountLink && accountLink.getClientRects().length) return 'account';
+            return document.getElementById('userMenuButton') ? 'header' : false;
+            """
+        )
+    )
+    if result_page == "header":
+        driver.get(f"{BASE}/index.php?controller=my-account")
+        visible(driver, "#identity_main_link")
+
+
 def set_registration_control(control: dict[str, str], name: str, field_type: str) -> None:
     control["name"] = re.sub(r"[^A-Za-z0-9_.\[\]-]", "_", name)[:80]
     control["type"] = re.sub(r"[^A-Za-z0-9_-]", "_", field_type)[:40]
@@ -148,57 +168,99 @@ def emit_registration_diagnostics(
     stage: str,
     control: dict[str, str],
 ) -> None:
-    diagnostics = driver.execute_script(
-        r"""
-        const form = document.querySelector('#customer-form');
-        const isVisible = element => Boolean(element && element.getClientRects().length);
-        const invalid = form ? [...form.querySelectorAll(':invalid')].filter(isVisible) : [];
-        const email = form?.querySelector('input[name="email"]');
-        const passwords = form ? [...form.querySelectorAll('input[type="password"]')] : [];
-        const submit = form?.querySelector('button.form-control-submit');
-        const registrationLink = document.querySelector('a[data-link-action="display-register-form"]');
-        let registrationTarget = null;
-        if (registrationLink) {
-          const rect = registrationLink.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0) {
-            registrationTarget = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-          }
-        }
-        const registrationTargetClass = registrationTarget && typeof registrationTarget.className === 'string'
-          ? registrationTarget.className.slice(0, 120)
-          : '';
-        const firstInvalid = invalid[0];
-        const bodyText = document.body?.innerText || '';
-        return {
-          registration_stage: arguments[0],
-          registration_control_name: arguments[1].name || '',
-          registration_control_type: arguments[1].type || '',
-          registration_form_visible: isVisible(form),
-          registration_link_visible: isVisible(registrationLink),
-          registration_center_unobstructed: Boolean(registrationTarget && (registrationTarget === registrationLink || registrationLink.contains(registrationTarget))),
-          registration_center_target_tag: registrationTarget?.tagName.toLowerCase() || '',
-          registration_center_target_id: registrationTarget?.id || '',
-          registration_center_target_class: registrationTargetClass,
-          identity_link_visible: isVisible(document.querySelector('#identity_main_link')),
-          login_form_visible: isVisible(document.querySelector('#login-form')),
-          submit_button_visible: isVisible(submit),
-          submit_button_enabled: Boolean(submit && !submit.disabled),
-          registration_form_valid: Boolean(form && form.checkValidity()),
-          visible_invalid_control_count: invalid.length,
-          first_invalid_control_name: firstInvalid?.getAttribute('name') || '',
-          first_invalid_control_type: firstInvalid?.getAttribute('type') || firstInvalid?.tagName.toLowerCase() || '',
-          email_type: email?.getAttribute('type') || '',
-          email_valid: Boolean(email && email.checkValidity()),
-          password_control_count: passwords.length,
-          password_controls_valid: passwords.length > 0 && passwords.every(field => field.checkValidity()),
-          alert_visible: isVisible(document.querySelector('.alert, [role="alert"], .help-block.error')),
-          account_error_marker: /(?:already registered|already exists|invalid|required|error|failed|오류|필수|이미 사용|잘못)/i.test(bodyText),
-          pathname: window.location.pathname
-        };
-        """,
-        stage,
-        control,
-    )
+    diagnostics: dict[str, object] = {
+        "registration_stage": stage,
+        "registration_control_name": control.get("name") or "",
+        "registration_control_type": control.get("type") or "",
+        "pathname": "",
+    }
+    try:
+        diagnostics["pathname"] = urlparse(driver.current_url).path
+    except Exception as error:
+        diagnostics["pathname_error_type"] = type(error).__name__
+
+    try:
+        browser_diagnostics = driver.execute_script(
+            r"""
+            const form = document.querySelector('#customer-form');
+            const isVisible = element => Boolean(element && element.getClientRects().length);
+            const invalid = form ? [...form.querySelectorAll(':invalid')].filter(isVisible) : [];
+            const email = form?.querySelector('input[name="email"]');
+            const passwords = form ? [...form.querySelectorAll('input[type="password"]')] : [];
+            const submit = form?.querySelector('button.form-control-submit');
+            const registrationLink = document.querySelector('a[data-link-action="display-register-form"]');
+            const userMenuButton = document.querySelector('#userMenuButton');
+            let registrationTarget = null;
+            if (registrationLink) {
+              const rect = registrationLink.getBoundingClientRect();
+              if (rect.width > 0 && rect.height > 0) {
+                registrationTarget = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+              }
+            }
+            const registrationTargetClass = registrationTarget && typeof registrationTarget.className === 'string'
+              ? registrationTarget.className.slice(0, 120)
+              : '';
+            const firstInvalid = invalid[0];
+            const bodyText = document.body?.innerText || '';
+            return {
+              registration_stage: arguments[0],
+              registration_control_name: arguments[1].name || '',
+              registration_control_type: arguments[1].type || '',
+              registration_form_visible: isVisible(form),
+              registration_link_visible: isVisible(registrationLink),
+              registration_center_unobstructed: Boolean(registrationTarget && (registrationTarget === registrationLink || registrationLink.contains(registrationTarget))),
+              registration_center_target_tag: registrationTarget?.tagName.toLowerCase() || '',
+              registration_center_target_id: registrationTarget?.id || '',
+              registration_center_target_class: registrationTargetClass,
+              identity_link_visible: isVisible(document.querySelector('#identity_main_link')),
+              login_form_visible: isVisible(document.querySelector('#login-form')),
+              header_user_menu_button_present: Boolean(userMenuButton),
+              header_user_menu_button_visible: isVisible(userMenuButton),
+              submit_button_visible: isVisible(submit),
+              submit_button_enabled: Boolean(submit && !submit.disabled),
+              registration_form_valid: Boolean(form && form.checkValidity()),
+              visible_invalid_control_count: invalid.length,
+              first_invalid_control_name: firstInvalid?.getAttribute('name') || '',
+              first_invalid_control_type: firstInvalid?.getAttribute('type') || firstInvalid?.tagName.toLowerCase() || '',
+              email_type: email?.getAttribute('type') || '',
+              email_valid: Boolean(email && email.checkValidity()),
+              password_control_count: passwords.length,
+              password_controls_valid: passwords.length > 0 && passwords.every(field => field.checkValidity()),
+              alert_visible: isVisible(document.querySelector('.alert, [role="alert"], .help-block.error')),
+              account_error_marker: /(?:already registered|already exists|invalid|required|error|failed|오류|필수|이미 사용|잘못)/i.test(bodyText),
+              pathname: window.location.pathname
+            };
+            """,
+            stage,
+            control,
+        )
+        if not isinstance(browser_diagnostics, dict):
+            raise TypeError("browser diagnostics response was not an object")
+        diagnostics.update(browser_diagnostics)
+    except Exception as error:
+        diagnostics["diagnostics_collection_error"] = type(error).__name__
+
+        def safe_visible(selector: str) -> bool:
+            try:
+                return any(element.is_displayed() for element in driver.find_elements(By.CSS_SELECTOR, selector))
+            except Exception:
+                return False
+
+        for field, selector in (
+            ("registration_form_visible", "#customer-form"),
+            ("registration_link_visible", 'a[data-link-action="display-register-form"]'),
+            ("identity_link_visible", "#identity_main_link"),
+            ("login_form_visible", "#login-form"),
+            ("header_user_menu_button_visible", "#userMenuButton"),
+            ("submit_button_visible", "#customer-form button.form-control-submit"),
+            ("alert_visible", '.alert, [role="alert"], .help-block.error'),
+        ):
+            diagnostics[field] = safe_visible(selector)
+        try:
+            diagnostics["header_user_menu_button_present"] = bool(driver.find_elements(By.ID, "userMenuButton"))
+        except Exception:
+            diagnostics["header_user_menu_button_present"] = False
+
     print(
         "ORDENOWA_ACCOUNT_REGISTRATION_DIAGNOSTICS=" + json.dumps(diagnostics, ensure_ascii=False, sort_keys=True),
         file=sys.stderr,
@@ -452,7 +514,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         base_location = urlparse(BASE)
         if (
             registration_location.scheme != base_location.scheme
-            or registration_location.hostname not in {"localhost", "127.0.0.1"}
+            or registration_location.hostname != base_location.hostname
             or registration_location.port != base_location.port
         ):
             raise AssertionError("PrestaShop registration link is outside the isolated shop")
@@ -477,7 +539,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         click_centered(driver, submit_button)
         stage = "registration_post_submit"
         failure_control = {"name": "", "type": ""}
-        WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.ID, "identity_main_link")))
+        wait_for_registration_success(driver)
         assert_my_page(driver, "CI")
         driver.save_screenshot(str(DEST / f"{label}-customer-account-created.png"))
 
@@ -545,7 +607,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         base = urlparse(BASE)
         if (
             parsed_reset.scheme != base.scheme
-            or parsed_reset.hostname not in {"localhost", "127.0.0.1"}
+            or parsed_reset.hostname != base.hostname
             or parsed_reset.port != base.port
         ):
             raise AssertionError("password reset email points outside the isolated shop")

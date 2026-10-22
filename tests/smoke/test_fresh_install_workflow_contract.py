@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import unittest
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,7 +27,6 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertTrue("docker rm -f \"${CI_COMPOSE_PROJECT_NAME}-mailpit\"" in workflow, "CI mail service cleanup is missing")
         self.assertTrue('input[name="email"]' in account_flow and 'get_attribute("type") != "email"' in account_flow, "customer login is not verified as email-based")
         self.assertTrue("reset_link_for(account_email)" in account_flow, "password reset does not follow the captured test email")
-        self.assertTrue('parsed.hostname in {"localhost", "127.0.0.1"}' in account_flow, "reset links are not restricted to the isolated shop")
         self.assertIn('a[data-link-action="display-register-form"]', account_flow, "registration must follow the theme's actual registration link")
         self.assertIn("click_centered(driver, registration_link)", account_flow)
         self.assertNotIn("controller=authentication&create_account=1", account_flow, "registration must not rely on a legacy authentication query")
@@ -133,7 +133,9 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "title",
         ):
             self.assertIn(field, brand_flow)
-        navigation = brand_flow.split('driver.get(settings_url)', 1)[1].split('stage = "official_asset_upload"', 1)[0]
+        navigation = brand_flow.split('stage = "korean_brand_settings_form"', 1)[1].split(
+            'stage = "official_asset_upload"', 1
+        )[0]
         diagnostics = brand_flow.split("def emit_brand_settings_diagnostics", 1)[1].split("def assert_public_brand_assets", 1)[0]
         self.assertLess(navigation.index('driver.save_screenshot(str(DEST / "brand-settings-after-navigation.png"))'), navigation.index('visible(driver, "form.ordenowa-profile-settings")'))
         self.assertIn("emit_brand_settings_diagnostics(driver)", navigation)
@@ -200,6 +202,86 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn('visible(driver, "#customer-form button.form-control-submit")', registration)
         self.assertIn("click_centered(driver,", registration)
         self.assertNotIn('button.form-control-submit").click()', registration)
+
+    def test_registration_post_submit_accepts_the_authenticated_header_redirect(self) -> None:
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        self.assertIn("def wait_for_registration_success", account_flow)
+        success_wait = account_flow.split("def wait_for_registration_success", 1)[1].split(
+            "def set_registration_control", 1
+        )[0]
+        post_submit = account_flow.split('stage = "registration_post_submit"', 1)[1].split(
+            'stage = "profile_update"', 1
+        )[0]
+        sign_in_template = (ROOT / "themes" / "hummingbird" / "modules" / "ps_customersignin" / "ps_customersignin.tpl").read_text(
+            encoding="utf-8"
+        )
+        my_account_template = (ROOT / "themes" / "hummingbird" / "templates" / "customer" / "my-account.tpl").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("getElementById('userMenuButton')", success_wait)
+        self.assertIn("getElementById('identity_main_link')", success_wait)
+        self.assertIn('driver.get(f"{BASE}/index.php?controller=my-account")', success_wait)
+        self.assertIn("wait_for_registration_success(driver)", post_submit)
+        self.assertIn('assert_my_page(driver, "CI")', post_submit)
+        self.assertIn("{if $customer.is_logged}", sign_in_template)
+        self.assertIn('id="userMenuButton"', sign_in_template)
+        self.assertIn('id="identity_main_link"', my_account_template)
+
+    def test_registration_link_host_must_match_the_base_shop_host(self) -> None:
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        registration_guard = account_flow.split('stage = "registration_link_validation"', 1)[1].split(
+            'stage = "registration_link_click"', 1
+        )[0]
+        success_wait = account_flow.split("def wait_for_registration_success", 1)[1].split(
+            "def set_registration_control", 1
+        )[0]
+
+        base_host = urlparse("http://localhost:18080").hostname
+        alternate_host = urlparse("http://127.0.0.1:18080/register").hostname
+        self.assertNotEqual(base_host, alternate_host, "the alternate loopback host must be a separate browser origin")
+        self.assertIn(
+            "registration_location.hostname != base_location.hostname",
+            registration_guard,
+            "registration links must keep the same browser cookie host as SHOP_BASE_URL",
+        )
+        self.assertNotIn('hostname not in {"localhost", "127.0.0.1"}', registration_guard)
+        self.assertIn('driver.get(f"{BASE}/index.php?controller=my-account")', success_wait)
+
+    def test_password_reset_links_must_match_the_exact_base_origin(self) -> None:
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        reset_mail_filter = account_flow.split("def reset_link_for", 1)[1].split("def visible", 1)[0]
+        reset_navigation = account_flow.split('stage = "password_reset"', 1)[1].split(
+            "driver.get(reset_url)", 1
+        )[0]
+
+        base_url = "http://localhost:18080"
+        alternate_host_url = "http://127.0.0.1:18080/password?token=synthetic"
+        self.assertNotEqual(urlparse(base_url).hostname, urlparse(alternate_host_url).hostname)
+        for guard, candidate_prefix, base_prefix, comparator in (
+            (reset_mail_filter, "parsed", "base_location", "=="),
+            (reset_navigation, "parsed_reset", "base", "!="),
+        ):
+            self.assertIn(f"{candidate_prefix}.scheme {comparator} {base_prefix}.scheme", guard)
+            self.assertIn(f"{candidate_prefix}.hostname {comparator} {base_prefix}.hostname", guard)
+            self.assertIn(f"{candidate_prefix}.port {comparator} {base_prefix}.port", guard)
+        self.assertNotIn('hostname in {"localhost", "127.0.0.1"}', reset_mail_filter)
+        self.assertNotIn('hostname in {"localhost", "127.0.0.1"}', reset_navigation)
+
+    def test_registration_failure_diagnostics_fall_back_to_safe_page_markers(self) -> None:
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        diagnostics = account_flow.split("def emit_registration_diagnostics", 1)[1].split("def fill", 1)[0]
+
+        self.assertIn("window.location.pathname", diagnostics)
+        self.assertIn("header_user_menu_button_present", diagnostics)
+        self.assertIn("header_user_menu_button_visible", diagnostics)
+        self.assertIn("login_form_visible", diagnostics)
+        self.assertIn("alert_visible", diagnostics)
+        self.assertIn("urlparse(driver.current_url).path", diagnostics)
+        self.assertIn('diagnostics["diagnostics_collection_error"] = type(error).__name__', diagnostics)
+        self.assertNotIn("window.location.search", diagnostics)
+        self.assertNotIn("email.value", diagnostics)
+        self.assertNotIn("password.value", diagnostics)
 
     def test_account_registration_reports_link_and_required_control_stages_safely(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
@@ -516,6 +598,16 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertRegex(checkout, r"uses: actions/checkout@v4\s+with:\s+submodules: recursive")
         self.assertIn(".gitmodules", path_filter)
         self.assertIn("themes/hummingbird", path_filter)
+
+    def test_checkout_restore_only_runs_after_checkout_override_was_attempted(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        restore_step = workflow.split("id: checkout_restore", 1)[1].split("- name:", 1)[0]
+
+        self.assertRegex(
+            restore_step,
+            r"if:\s*always\(\)\s*&&\s*steps\.checkout_override\.outcome\s*!=\s*'skipped'",
+            "restoration should run after a failed or successful override, but not when checkout QA never started",
+        )
 
 
 if __name__ == "__main__":
