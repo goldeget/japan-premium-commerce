@@ -8,10 +8,10 @@ use DateTimeImmutable;
 use DateTimeZone;
 
 /**
- * In-memory queue behavior for offline parsing and tests. Persistent storage
- * and administrator actions are intentionally outside this parser task.
+ * In-memory implementation retained for isolated domain tests. Production
+ * persistence is provided separately by the JSON queue repository.
  */
-final class ProductReviewQueue
+final class ProductReviewQueue implements ProductReviewQueueRepositoryInterface
 {
     /** @var array<string, ProductReviewQueueEntry> */
     private array $entries = [];
@@ -29,12 +29,47 @@ final class ProductReviewQueue
         $entry = new ProductReviewQueueEntry(
             $key,
             ProductReviewQueueEntry::STATUS_PENDING,
-            $snapshot,
+            $snapshot->withApprovalStatus('pending'),
             $existing?->queuedAt ?? $queuedAt ?? new DateTimeImmutable('now', new DateTimeZone('UTC'))
         );
         $this->entries[$key] = $entry;
 
         return $entry;
+    }
+
+    public function find(string $idempotencyKey): ?ProductReviewQueueEntry
+    {
+        return $this->entries[$idempotencyKey] ?? null;
+    }
+
+    public function save(ProductReviewQueueEntry $entry): void
+    {
+        if ($entry->idempotencyKey === '') {
+            throw new \InvalidArgumentException('Product review queue identity cannot be empty.');
+        }
+
+        $this->entries[$entry->idempotencyKey] = $entry;
+    }
+
+    public function approveIfPending(
+        string $idempotencyKey,
+        string $expectedContentHash,
+        int $nativeProductId,
+        string $approvedBy,
+        DateTimeImmutable $approvedAt
+    ): ?ProductReviewQueueEntry {
+        $entry = $this->entries[$idempotencyKey] ?? null;
+        if ($entry === null || $entry->snapshot->contentHash !== $expectedContentHash) {
+            return null;
+        }
+        if ($entry->status === ProductReviewQueueEntry::STATUS_APPROVED) {
+            return $entry->nativeProductId === $nativeProductId ? $entry : null;
+        }
+        if ($entry->status !== ProductReviewQueueEntry::STATUS_PENDING) {
+            return null;
+        }
+
+        return $this->entries[$idempotencyKey] = $entry->approve($nativeProductId, $approvedBy, $approvedAt);
     }
 
     /** @return list<ProductReviewQueueEntry> */
