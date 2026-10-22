@@ -7,7 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 THEMES = ROOT / "themes"
 BRAND_BROWSER = ROOT / "tests" / "e2e" / "verify_brand_admin_browser.py"
+STOREFRONT_BROWSER = ROOT / "tests" / "e2e" / "verify_storefront_browser.py"
+BUSINESS_PROFILE_MODULE = ROOT / "modules" / "kuraneabusinessprofile" / "kuraneabusinessprofile.php"
 HEAD = THEMES / "kuranea" / "templates" / "_partials" / "head.tpl"
+PAGINATION_SEO = THEMES / "kuranea" / "templates" / "_partials" / "pagination-seo.tpl"
 LEGACY_JSONLD = (
     THEMES
     / "kuranea"
@@ -27,6 +30,7 @@ SEO_WORKFLOW_PATHS = (
     ".github/workflows/seo-escape.yml",
     "tests/smoke/test_seo_escape_contract.py",
     "themes/kuranea/templates/_partials/head.tpl",
+    "themes/kuranea/templates/_partials/pagination-seo.tpl",
     "themes/kuranea/templates/_partials/microdata/head-jsonld.tpl",
     "themes/kuranea/templates/_partials/microdata/product-jsonld.tpl",
     "themes/kuranea/templates/_partials/microdata/product-list-jsonld.tpl",
@@ -274,6 +278,44 @@ class SeoEscapeContract(unittest.TestCase):
         self.assertIn('<meta name="description" content="{block name=\'head_seo_description\'}{$ordenowaResolvedSeoDescription|escape:\'htmlall\':\'UTF-8\'}{/block}">', source)
         self.assertEqual(1, source.count('content="{$ordenowaResolvedSeoTitle|escape:\'htmlall\':\'UTF-8\'}"'))
         self.assertEqual(1, source.count('content="{$ordenowaResolvedSeoDescription|escape:\'htmlall\':\'UTF-8\'}"'))
+
+    def test_paginated_listing_canonical_is_rendered_after_pagination_partial_updates_it(self):
+        source = HEAD.read_text(encoding="utf-8")
+        pagination_include = "{include file='_partials/pagination-seo.tpl'}"
+        canonical_link = '<link rel="canonical" href="{$page.canonical|escape:\'htmlall\':\'UTF-8\'}">'
+
+        self.assertIn(pagination_include, source)
+        self.assertIn(canonical_link, source)
+        self.assertLess(
+            source.index(pagination_include),
+            source.index(canonical_link),
+            "pagination must remove ?page=N before the child head renders its canonical link",
+        )
+
+    def test_pagination_navigation_hrefs_are_html_attribute_escaped(self):
+        source = PAGINATION_SEO.read_text(encoding="utf-8")
+        self.assertIn(
+            '<link rel="prev" href="{$prev|escape:\'htmlall\':\'UTF-8\'}">',
+            source,
+        )
+        self.assertIn(
+            '<link rel="next" href="{$next|escape:\'htmlall\':\'UTF-8\'}">',
+            source,
+        )
+        self.assertNotIn('href="{$prev}"', source)
+        self.assertNotIn('href="{$next}"', source)
+
+    def test_global_brand_open_graph_image_is_suppressed_on_product_pages(self):
+        source = BUSINESS_PROFILE_MODULE.read_text(encoding="utf-8")
+        self.assertIn("$controller->php_self ?? '') === 'product'", source)
+        self.assertIn("$ogImage !== '' && !$isProductPage", source)
+
+    def test_product_browser_flow_checks_first_open_graph_image_is_product_scoped(self):
+        source = STOREFRONT_BROWSER.read_text(encoding="utf-8")
+        self.assertIn('meta[property="og:image"]', source)
+        self.assertIn("len(og_images) == 1", source)
+        self.assertIn("/img/p/", source)
+        self.assertIn("product page Open Graph image", source)
 
     def test_isolated_brand_browser_flow_exercises_hostile_inert_seo_and_jsonld_values(self):
         source = BRAND_BROWSER.read_text(encoding="utf-8")

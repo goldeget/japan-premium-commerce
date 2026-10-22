@@ -35,6 +35,10 @@
     <meta name="robots" content="{$page.meta.robots|escape:'htmlall':'UTF-8'}">
   {/if}
 
+  {block name='head_pagination_seo'}
+    {include file='_partials/pagination-seo.tpl'}
+  {/block}
+
   {if $page.canonical}
     <link rel="canonical" href="{$page.canonical|escape:'htmlall':'UTF-8'}">
   {/if}
@@ -59,10 +63,6 @@
     {/block}
     {block name='head_microdata_special'}{/block}
   {/if}
-
-  {block name='head_pagination_seo'}
-    {include file='_partials/pagination-seo.tpl'}
-  {/block}
 
   {block name='head_open_graph'}
     <meta property="og:title" content="{$ordenowaResolvedSeoTitle|escape:'htmlall':'UTF-8'}">

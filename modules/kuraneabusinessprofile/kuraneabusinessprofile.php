@@ -135,7 +135,12 @@ class Kuraneabusinessprofile extends Module
         }
 
         $ogImage = $this->assetUrl($assets['og_image'] ?? null, $baseUrl);
-        $openGraph = $ogImage === '' ? '' : '<meta property="og:image" content="' . $this->escape($ogImage) . '">';
+        $controller = $this->context->controller ?? null;
+        $isProductPage = is_object($controller) && ($controller->php_self ?? '') === 'product';
+        $openGraph = '';
+        if ($ogImage !== '' && !$isProductPage) {
+            $openGraph = '<meta property="og:image" content="' . $this->escape($ogImage) . '">';
+        }
         $appleTouch = $this->assetUrl($assets['apple_touch'] ?? null, $baseUrl);
         if ($appleTouch !== '') {
             $icons .= '<link rel="apple-touch-icon" sizes="180x180" href="' . $this->escape($appleTouch) . '">';

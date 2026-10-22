@@ -55,6 +55,43 @@ def run_viewport(width, height, label):
         assert_true("404" not in driver.title, "CI product detail page did not render.")
         assert_true("JPY" in driver.page_source or "¥" in driver.page_source,
                     "JPY product price was not rendered on the product page.")
+        product_covers = driver.find_elements(
+            By.CSS_SELECTOR, ".product__images .carousel-item.active img"
+        )
+        og_images = driver.find_elements(By.CSS_SELECTOR, 'meta[property="og:image"]')
+        if product_covers:
+            assert_true(
+                len(og_images) == 1,
+                "Product page must render only the product cover Open Graph image.",
+            )
+            cover_path = urlparse(product_covers[0].get_attribute("src") or "").path
+            first_og_path = urlparse(og_images[0].get_attribute("content") or "").path
+            cover_identity = re.sub(
+                r"-[A-Za-z0-9_]+\.(?:jpe?g|png|webp)$",
+                "",
+                Path(cover_path).name,
+                flags=re.IGNORECASE,
+            )
+            og_identity = re.sub(
+                r"-[A-Za-z0-9_]+\.(?:jpe?g|png|webp)$",
+                "",
+                Path(first_og_path).name,
+                flags=re.IGNORECASE,
+            )
+            assert_true(
+                "/img/p/" in cover_path,
+                "Rendered product cover URL is not a PrestaShop product image.",
+            )
+            assert_true(
+                "/img/p/" in first_og_path
+                and (Path(first_og_path).name == Path(cover_path).name or og_identity == cover_identity),
+                "First product page Open Graph image is not the rendered product cover.",
+            )
+        else:
+            assert_true(
+                not og_images,
+                "Global brand Open Graph image leaked onto a product page without a product cover.",
+            )
         driver.save_screenshot(str(DEST / f"{label}-product-detail.png"))
         buttons = driver.find_elements(By.CSS_SELECTOR, "button[data-button-action='add-to-cart'], .add-to-cart")
         assert_true(bool(buttons), "No add-to-cart control on active synthetic product.")
