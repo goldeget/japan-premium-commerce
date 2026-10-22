@@ -112,7 +112,7 @@ final class AdminProfileForm
             [
                 'key' => 'specified_commercial_act',
                 'title' => '특정상거래법 표시',
-                'fields' => $localized(['content', 'specified_commercial_act'], '特定商取引法に基づく表記', 'textarea'),
+                'fields' => $localized(['content', 'specified_commercial_act'], '특정상거래법 표시', 'textarea'),
             ],
             [
                 'key' => 'localization',
