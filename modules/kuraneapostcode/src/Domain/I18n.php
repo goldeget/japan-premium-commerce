@@ -15,6 +15,7 @@ final class I18n
             'no_results' => '候補が見つかりません。住所を直接入力できます。',
             'choose_hint' => '該当する住所を選択してください。',
             'invalid_postcode' => '郵便番号は7桁で入力してください。',
+            'address_mismatch' => '郵便番号に対応する都道府県・市区町村・町域を確認してください。',
         ],
         'en' => [
             'search_label' => 'Postcode or address search',
@@ -23,6 +24,7 @@ final class I18n
             'no_results' => 'No matches. You can enter the address manually.',
             'choose_hint' => 'Choose the matching address.',
             'invalid_postcode' => 'Enter a valid 7-digit Japanese postcode.',
+            'address_mismatch' => 'Check that the prefecture, municipality, and town area match this postcode.',
         ],
         'ko' => [
             'search_label' => '우편번호·주소 검색',
@@ -31,6 +33,7 @@ final class I18n
             'no_results' => '검색 결과가 없습니다. 주소를 직접 입력할 수 있습니다.',
             'choose_hint' => '해당하는 주소를 선택하세요.',
             'invalid_postcode' => '일본 우편번호 7자리를 입력해 주세요.',
+            'address_mismatch' => '우편번호에 해당하는 도도부현·시구정촌·정역을 확인해 주세요.',
         ],
     ];
 

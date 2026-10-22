@@ -338,6 +338,13 @@ if (!class_exists('Db')) {
     class Db
     {
         public static array $queries = [];
+        public static array $resultRows = [[
+            'postcode' => '999-9999',
+            'jis_code' => '13101',
+            'prefecture' => '東京都',
+            'municipality' => '千代田区',
+            'town' => 'テスト町',
+        ]];
         private static ?self $instance = null;
 
         public static function getInstance($slave = false): self
@@ -354,13 +361,7 @@ if (!class_exists('Db')) {
         public function executeS(string $query): array
         {
             self::$queries[] = $query;
-            return [[
-                'postcode' => '999-9999',
-                'jis_code' => '13101',
-                'prefecture' => '東京都',
-                'municipality' => '千代田区',
-                'town' => 'テスト町',
-            ]];
+            return self::$resultRows;
         }
     }
 }
@@ -407,16 +408,85 @@ $testAddressFormatter = new class($testCountry) {
 };
 $testPostcodeField = new FormField();
 $testPostcodeField->setValue('１０００００４');
-$testAddressForm = new class($testAddressFormatter, $testPostcodeField) {
-    public function __construct(private object $formatter, private object $field) {}
+Db::$resultRows = [];
+$testAddressFields = [
+    'postcode' => $testPostcodeField,
+    'id_state' => (new FormField())->setValue(0),
+    'city' => (new FormField())->setValue(''),
+    'address1' => (new FormField())->setValue(''),
+    'address2' => (new FormField())->setValue(''),
+];
+$testAddressForm = new class($testAddressFormatter, $testAddressFields) {
+    public function __construct(private object $formatter, private array $fields) {}
     public function getFormatter(): object { return $this->formatter; }
-    public function getField(string $name): ?object { return $name === 'postcode' ? $this->field : null; }
+    public function getField(string $name): ?object { return $this->fields[$name] ?? null; }
 };
 assertSameValue(true, $module->hookActionValidateCustomerAddressForm(['form' => $testAddressForm]), 'Japan postcode hook validation should accept and normalize full-width input.');
 assertSameValue('100-0004', $testPostcodeField->value, 'Address validation should canonicalize postcode before persistence.');
 $testPostcodeField->setValue('100-0004x');
 assertSameValue(false, $module->hookActionValidateCustomerAddressForm(['form' => $testAddressForm]), 'Invalid Japan postcode should be rejected by the module validation hook.');
 assertTrueValue(count($testPostcodeField->errors) === 1, 'Invalid postcode should produce a localized field error.');
+
+$tokyoStateId = 0;
+foreach (State::$rows as $stateRow) {
+    if ($stateRow['iso_code'] === 'JP-13') {
+        $tokyoStateId = $stateRow['id_state'];
+        break;
+    }
+}
+assertTrueValue($tokyoStateId > 0, 'The address validation fixture should resolve Tokyo to a native state ID.');
+Db::$resultRows = [
+    [
+        'postcode' => '100-0004',
+        'jis_code' => '13101',
+        'prefecture' => '東京都',
+        'municipality' => '千代田区',
+        'town' => '大手町',
+    ],
+    [
+        'postcode' => '100-0004',
+        'jis_code' => '13101',
+        'prefecture' => '東京都',
+        'municipality' => '千代田区',
+        'town' => '丸の内',
+    ],
+];
+$makeJapanAddressForm = static function (int $stateId, string $city, string $town, string $building = '') use ($testAddressFormatter): object {
+    $fields = [
+        'postcode' => (new FormField())->setValue('100-0004'),
+        'id_state' => (new FormField())->setValue($stateId),
+        'city' => (new FormField())->setValue($city),
+        'address1' => (new FormField())->setValue($town),
+        'address2' => (new FormField())->setValue($building),
+    ];
+
+    return new class($testAddressFormatter, $fields) {
+        public function __construct(private object $formatter, private array $fields) {}
+        public function getFormatter(): object { return $this->formatter; }
+        public function getField(string $name): ?object { return $this->fields[$name] ?? null; }
+    };
+};
+assertSameValue(
+    true,
+    $module->hookActionValidateCustomerAddressForm(['form' => $makeJapanAddressForm($tokyoStateId, '千代田区', '大手町1-2', '大手町タワー101号')]),
+    'An official postcode candidate with matching prefecture, municipality, town area, and editable building should pass.'
+);
+assertSameValue(
+    true,
+    $module->hookActionValidateCustomerAddressForm(['form' => $makeJapanAddressForm($tokyoStateId, '千代田区', '丸の内1-2')]),
+    'A second town-area candidate for the same postcode should pass when selected.'
+);
+$mismatchedPrefecture = $makeJapanAddressForm($tokyoStateId + 1, '千代田区', '大手町1-2');
+assertSameValue(false, $module->hookActionValidateCustomerAddressForm(['form' => $mismatchedPrefecture]), 'A mismatched prefecture should be rejected when official postcode candidates exist.');
+assertSameValue('우편번호에 해당하는 도도부현·시구정촌·정역을 확인해 주세요.', $mismatchedPrefecture->getField('postcode')->errors[0], 'Address mismatch errors should be localized in the active store language.');
+assertSameValue(false, $module->hookActionValidateCustomerAddressForm(['form' => $makeJapanAddressForm($tokyoStateId, '中央区', '大手町1-2')]), 'A mismatched municipality should be rejected.');
+assertSameValue(false, $module->hookActionValidateCustomerAddressForm(['form' => $makeJapanAddressForm($tokyoStateId, '千代田区', '神田1-2')]), 'A mismatched town area should be rejected.');
+Db::$resultRows = [];
+assertSameValue(
+    true,
+    $module->hookActionValidateCustomerAddressForm(['form' => $makeJapanAddressForm($tokyoStateId, '手入力の市区町村', '手入力の町域')]),
+    'Manual entry should remain available when the official postcode index has no candidate rows.'
+);
 
 $savedAddress = new Address();
 $savedAddress->postcode = '1000004';

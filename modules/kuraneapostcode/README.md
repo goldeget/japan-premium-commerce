@@ -63,6 +63,10 @@ The frontend normalizes ASCII/full-width digits and supported hyphens before
 native PrestaShop postcode validation. The server also normalizes the posted
 postcode before that core validation, so the accepted seven-digit input works
 without JavaScript. Search failure never blocks manual address entry.
+When official postcode candidates are available, the server validates the
+selected native prefecture, municipality, and town area against the postcode
+before saving. Building and room fields remain customer-editable. If the
+postcode index has no rows or cannot be queried, manual entry remains enabled.
 
 Widget and validation strings are provided in Japanese, English, and Korean.
 Because saved orders use the same native PrestaShop address fields, the
@@ -85,5 +89,9 @@ Post addresses. The isolated GitHub Actions fresh-install job downloads the
 official KEN_ALL archive, imports it into its disposable database, checks the
 real `1000004` lookup, and saves a native PrestaShop address with a manually
 edited building field. The live developer shop is not modified by that test.
+`tests/postcode/verify_live_address_validation.php` is a read-only integration
+check for the running developer shop: it verifies the official `1000004`
+candidate, address mismatch rejection, and manual fallback without creating
+customers, addresses, orders, or other database records.
 Browser checkout, linked order creation, and admin order display remain
 separate QA items until a full browser checkout is exercised.

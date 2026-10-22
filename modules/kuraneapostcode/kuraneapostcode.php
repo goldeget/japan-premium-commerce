@@ -11,6 +11,7 @@ require_once __DIR__ . '/autoload.php';
 use Kuranea\Postcode\Domain\I18n;
 use Kuranea\Postcode\Domain\PrefectureCatalog;
 use Kuranea\Postcode\Domain\ZipCode;
+use Kuranea\Postcode\Infrastructure\DatabasePostalAddressLookup;
 use Kuranea\Postcode\Infrastructure\DatabaseSchema;
 
 class Kuraneapostcode extends Module
@@ -124,7 +125,56 @@ class Kuraneapostcode extends Module
 
         $postcodeField->setValue($postcode);
 
-        return true;
+        try {
+            $candidates = (new DatabasePostalAddressLookup())->lookupByPostcode($postcode);
+        } catch (Throwable $exception) {
+            // Keep manual address entry available if the optional postal index
+            // is temporarily unavailable.
+            return true;
+        }
+
+        if ($candidates === []) {
+            return true;
+        }
+
+        $stateField = $form->getField('id_state');
+        $cityField = $form->getField('city');
+        $addressField = $form->getField('address1');
+        if (!is_object($stateField) || !method_exists($stateField, 'getValue')
+            || !is_object($cityField) || !method_exists($cityField, 'getValue')
+            || !is_object($addressField) || !method_exists($addressField, 'getValue')) {
+            return true;
+        }
+
+        $stateId = (int) $stateField->getValue();
+        $city = trim((string) $cityField->getValue());
+        $address = trim((string) $addressField->getValue());
+        $stateIds = [];
+        foreach (State::getStatesByIdCountry((int) $country->id, false, 'iso_code', 'asc') as $state) {
+            $isoCode = (string) ($state['iso_code'] ?? '');
+            if (preg_match('/^JP-([0-9]{2})$/D', $isoCode, $matches) === 1) {
+                $stateIds[$matches[1]] = (int) $state['id_state'];
+            }
+        }
+
+        foreach ($candidates as $candidate) {
+            $native = $candidate->toNativeAddressFields($stateIds);
+            if ($native === null || $stateId !== $native['id_state'] || $city !== $native['city']) {
+                continue;
+            }
+
+            // Japan Post uses an empty town for entries where the postal data
+            // has no specific town-area subdivision. In those cases the
+            // customer can still enter the street/building details manually.
+            if ($native['address1'] === '' || $native['address1'] === '以下に掲載がない場合'
+                || str_starts_with($address, $native['address1'])) {
+                return true;
+            }
+        }
+
+        $postcodeField->addError(I18n::text('address_mismatch', $this->currentLocale()));
+
+        return false;
     }
 
     public function hookActionFrontControllerInitBefore(array $params)
