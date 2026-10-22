@@ -60,6 +60,21 @@ class ProductAdminContractTests(unittest.TestCase):
         )
         self.assertNotIn("function processSave(", controller)
 
+    def test_product_save_reuses_prestashop_admin_controller_token_validation(self) -> None:
+        controller = (MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php").read_text(
+            encoding="utf-8"
+        )
+        save_method = controller.split("private function processProductSave(", 1)[1].split(
+            "private function submittedValues()", 1
+        )[0]
+        render_method = controller.split("private function renderManager(", 1)[1].split(
+            "private function renderTextField(", 1
+        )[0]
+
+        self.assertIn("if (!$this->checkToken())", save_method)
+        self.assertNotIn("Tools::getAdminTokenLite", save_method)
+        self.assertIn("Tools::getAdminTokenLite('AdminOrdenowaProductManager')", render_method)
+
     def test_native_product_manager_enforces_safe_state_and_native_fields(self) -> None:
         service_path = MODULE / "src" / "Integration" / "PrestaShopNativeProductManager.php"
         self.assertTrue(service_path.is_file(), "the native product manager service is missing")

@@ -71,9 +71,9 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
         $this->formValues = $this->submittedValues();
         $this->selectedImageIds = array_map('intval', (array) Tools::getValue('remove_image_ids', []));
 
-        $submittedToken = Tools::getValue('token');
-        $expectedToken = (string) Tools::getAdminTokenLite('AdminOrdenowaProductManager');
-        if (!is_string($submittedToken) || $expectedToken === '' || !hash_equals($expectedToken, $submittedToken)) {
+        // Let PrestaShop's AdminController validate the token using the same
+        // legacy/Symfony CSRF contract as the Back Office request itself.
+        if (!$this->checkToken()) {
             $this->fail('관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.');
 
             return;
