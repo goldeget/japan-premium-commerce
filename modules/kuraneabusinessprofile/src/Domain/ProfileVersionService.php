@@ -60,8 +60,10 @@ final class ProfileVersionService
         $currentDraft = $this->repository->loadDraft($shopId);
         $currentBankAccounts = $currentDraft?->profile['bank_accounts'] ?? [];
         $targetBankAccounts = $version->profile['bank_accounts'] ?? [];
+        $currentBankTransfer = self::bankTransferConfiguration($currentDraft?->profile ?? []);
+        $targetBankTransfer = self::bankTransferConfiguration($version->profile);
 
-        if ($targetBankAccounts !== $currentBankAccounts) {
+        if ($targetBankAccounts !== $currentBankAccounts || $targetBankTransfer !== $currentBankTransfer) {
             throw new InvalidArgumentException('은행 계좌 관리 권한이 필요한 버전은 일반 설정에서 복원할 수 없습니다.');
         }
 
@@ -78,6 +80,12 @@ final class ProfileVersionService
 
         $profile = $currentDraft->profile;
         $profile['bank_accounts'] = $version->profile['bank_accounts'] ?? [];
+        $paymentMethods = $profile['payment_methods'] ?? [];
+        if (!is_array($paymentMethods)) {
+            $paymentMethods = [];
+        }
+        $paymentMethods['bank_transfer'] = self::bankTransferConfiguration($version->profile);
+        $profile['payment_methods'] = $paymentMethods;
 
         return $this->saveDraft($shopId, $profile, $employeeId);
     }
@@ -86,5 +94,23 @@ final class ProfileVersionService
     public function history(int $shopId): array
     {
         return $this->repository->history($shopId);
+    }
+
+    /** @param array<string, mixed> $profile
+     *  @return array{enabled: bool, bank_account_id: string}
+     */
+    private static function bankTransferConfiguration(array $profile): array
+    {
+        $settings = $profile['payment_methods']['bank_transfer'] ?? [];
+        if (!is_array($settings)) {
+            $settings = [];
+        }
+
+        return [
+            'enabled' => ($settings['enabled'] ?? false) === true,
+            'bank_account_id' => is_string($settings['bank_account_id'] ?? null)
+                ? $settings['bank_account_id']
+                : '',
+        ];
     }
 }

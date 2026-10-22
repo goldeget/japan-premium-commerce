@@ -28,6 +28,7 @@ $profile['content']['privacy']['ja-JP'] = 'TEST PRIVACY';
 $profile['content']['specified_commercial_act']['ja-JP'] = 'TEST SPECIFIED ACT';
 $profile['bank_accounts'] = [
     [
+        'id' => str_repeat('a', 32),
         'bank_name' => 'TEST BANK', 'branch_name' => 'TOKYO', 'account_type' => 'ordinary',
         'account_number' => '12345678', 'account_holder' => 'TEST HOLDER', 'active' => true,
     ],
@@ -36,11 +37,13 @@ $profile['bank_accounts'] = [
         'account_number' => '87654321', 'account_holder' => 'INACTIVE HOLDER', 'active' => false,
     ],
 ];
+$profile['payment_methods']['bank_transfer'] = ['enabled' => true, 'bank_account_id' => str_repeat('a', 32)];
 
 $closed = \Kuranea\BusinessProfile\Customer\PublishedLegalPageBuilder::build($profile, false);
- $footerLink = \Kuranea\BusinessProfile\Customer\PublishedLegalPageBuilder::footerLink($profile, 'https://shop.example/module/kuraneabusinessprofile/legal');
+$footerLink = \Kuranea\BusinessProfile\Customer\PublishedLegalPageBuilder::footerLink($profile, 'https://shop.example/module/kuraneabusinessprofile/legal');
 assertBusinessProfileTrue(str_contains($footerLink, '会社情報・お取引に関する表示'), 'The footer should expose a localized link to the public information page.');
 assertBusinessProfileTrue(str_contains($footerLink, 'https://shop.example/module/kuraneabusinessprofile/legal'), 'The footer link should point at the module legal page route.');
+assertBusinessProfileTrue(str_contains($closed, '<h1>会社情報・お取引に関する表示</h1>'), 'The Japanese legal page should render its localized title as the page heading.');
 assertBusinessProfileTrue(str_contains($closed, '販売とお取引は受け付けていません'), 'Unapproved visitors must see a localized closed-sales notice.');
 foreach ([
     'TEST SELLER LEGAL', 'TEST SELLER ADDRESS', 'TEST CUSTOMER PHONE',

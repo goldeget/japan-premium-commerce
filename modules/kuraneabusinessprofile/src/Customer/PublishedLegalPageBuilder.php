@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Kuranea\BusinessProfile\Customer;
 
 use Kuranea\BusinessProfile\Domain\ProfileDefaults;
+use Kuranea\BusinessProfile\Domain\BankTransferPayment;
 
 /** Builds the public legal and operating-information page from one published profile version. */
 final class PublishedLegalPageBuilder
@@ -130,7 +131,8 @@ final class PublishedLegalPageBuilder
         $locale = self::locale($profile);
         $brand = (string) ($profile['brand']['name'][$locale] ?? $profile['brand']['name']['ja-JP'] ?? 'ORDENOWA');
         $html = '<article class="ordenowa-legal-page" lang="' . self::escape($locale) . '">';
-        $html .= '<header><p class="ordenowa-legal-page__brand">' . self::escape($brand) . '</p>';
+        $html .= '<header><h1>' . self::escape(self::title($profile)) . '</h1>';
+        $html .= '<p class="ordenowa-legal-page__brand">' . self::escape($brand) . '</p>';
         $html .= self::paragraph($profile['brand']['description'][$locale] ?? '');
         $html .= self::paragraph($profile['brand']['slogan'][$locale] ?? '') . '</header>';
 
@@ -175,7 +177,10 @@ final class PublishedLegalPageBuilder
             $html .= self::section(self::copy($locale, $key), $content);
         }
 
-        $html .= self::bankSection((array) ($profile['bank_accounts'] ?? []), $locale);
+        $bankTransferAccount = BankTransferPayment::selectedActiveAccount($profile);
+        $html .= $bankTransferAccount === null
+            ? ''
+            : self::bankSection([$bankTransferAccount], $locale);
 
         return $html . '</article>';
     }

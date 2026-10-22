@@ -22,6 +22,7 @@ $publicBrandProfile['refund']['ja-JP'] = 'TEST REFUND POLICY';
 $publicBrandProfile['content']['terms']['ja-JP'] = 'TEST TERMS';
 $publicBrandProfile['content']['privacy']['ja-JP'] = 'TEST PRIVACY';
 $publicBrandProfile['bank_accounts'] = [[
+    'id' => str_repeat('a', 32),
     'bank_name' => 'TEST BANK',
     'branch_name' => 'TOKYO',
     'account_type' => 'ordinary',
@@ -29,6 +30,7 @@ $publicBrandProfile['bank_accounts'] = [[
     'account_holder' => 'TEST HOLDER',
     'active' => true,
 ]];
+$publicBrandProfile['payment_methods']['bank_transfer'] = ['enabled' => true, 'bank_account_id' => str_repeat('a', 32)];
 
 $brandOnlyHtml = \Kuranea\BusinessProfile\Customer\PublicFooterBuilder::build($publicBrandProfile, false);
 assertBusinessProfileTrue(str_contains($brandOnlyHtml, 'オーデノワ'), 'Brand identity should be publishable before seller authorization.');
@@ -60,3 +62,5 @@ $escapedHtml = \Kuranea\BusinessProfile\Customer\PublicFooterBuilder::build($esc
 assertBusinessProfileTrue(!str_contains($escapedHtml, '<script>alert(1)</script>'), 'Published seller values must be escaped.');
 
 echo "PASS: public branding and approved seller disclosures are rendered separately by locale\n";
+
+require_once __DIR__ . '/bank_payment_linkage.php';

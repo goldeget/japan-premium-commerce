@@ -36,6 +36,27 @@ final class ProfileValidator
             }
         }
 
+        // This additive field may be absent in profiles saved before bank-transfer
+        // linkage was introduced; absence is treated as disabled for compatibility.
+        if (array_key_exists('payment_methods', $profile)) {
+            $methods = $profile['payment_methods'];
+            if (!is_array($methods)) {
+                $errors[] = '결제수단 설정 형식이 올바르지 않습니다.';
+            } elseif (array_key_exists('bank_transfer', $methods)) {
+                $bankTransfer = $methods['bank_transfer'];
+                if (!is_array($bankTransfer)) {
+                    $errors[] = '계좌이체 설정 형식이 올바르지 않습니다.';
+                } else {
+                    if (array_key_exists('enabled', $bankTransfer) && !is_bool($bankTransfer['enabled'])) {
+                        $errors[] = '계좌이체 사용 여부 설정이 올바르지 않습니다.';
+                    }
+                    if (array_key_exists('bank_account_id', $bankTransfer) && !is_string($bankTransfer['bank_account_id'])) {
+                        $errors[] = '계좌이체 연결 계좌 설정이 올바르지 않습니다.';
+                    }
+                }
+            }
+        }
+
         $companyNumber = $profile['company_reference']['corporate_number'] ?? '';
         if (!is_string($companyNumber) || preg_match('/\A[0-9]{13}\z/D', $companyNumber) !== 1) {
             $errors[] = '회사 참고 법인번호는 숫자 13자리로 입력해 주세요.';
@@ -104,6 +125,14 @@ final class ProfileValidator
 
         if (trim((string) ($profile['seller']['support']['phone'] ?? '')) === '' || trim((string) ($profile['seller']['support']['email'] ?? '')) === '') {
             $errors[] = '판매사업 전용 고객센터 전화번호와 이메일을 입력해 주세요.';
+        }
+
+        $bankTransfer = $profile['payment_methods']['bank_transfer'] ?? null;
+        if (is_array($bankTransfer)
+            && ($bankTransfer['enabled'] ?? false) === true
+            && BankTransferPayment::selectedActiveAccount($profile) === null
+        ) {
+            $errors[] = '은행 계좌이체 결제에는 게시할 활성 계좌를 연결해야 합니다.';
         }
 
         return array_values(array_unique($errors));

@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Kuranea\BusinessProfile\Admin;
 
+use Kuranea\BusinessProfile\Domain\BankTransferPayment;
 use InvalidArgumentException;
 
 final class AdminBankAccountForm
 {
     private const ACCOUNT_TYPES = ['ordinary' => '보통', 'current' => '당좌', 'savings' => '저축'];
 
-    /** @return list<array{bank_name: string, branch_name: string, account_type: string, account_number: string, account_holder: string, active: bool}> */
+    /** @return list<array{id: string, bank_name: string, branch_name: string, account_type: string, account_number: string, account_holder: string, active: bool}> */
     public static function apply(array $submitted): array
     {
         $rows = $submitted['accounts'] ?? [];
@@ -19,11 +20,22 @@ final class AdminBankAccountForm
         }
 
         $accounts = [];
+        $usedIds = [];
         foreach ($rows as $row) {
             if (!is_array($row)) {
                 continue;
             }
+            $id = is_scalar($row['id'] ?? null) ? strtolower(trim((string) $row['id'])) : '';
+            if (preg_match('/\A[a-f0-9]{32}\z/D', $id) !== 1) {
+                $id = bin2hex(random_bytes(16));
+            }
+            if (isset($usedIds[$id])) {
+                throw new InvalidArgumentException('은행 계좌 ID가 중복되었습니다. 페이지를 새로고침한 뒤 다시 저장해 주세요.');
+            }
+            $usedIds[$id] = true;
+
             $account = [
+                'id' => $id,
                 'bank_name' => self::text($row['bank_name'] ?? '', 120),
                 'branch_name' => self::text($row['branch_name'] ?? '', 120),
                 'account_type' => is_scalar($row['account_type'] ?? null) ? (string) $row['account_type'] : '',
@@ -51,8 +63,35 @@ final class AdminBankAccountForm
         return $accounts;
     }
 
+    /** @param list<array<string, mixed>> $accounts
+     *  @return array{enabled: bool, bank_account_id: string}
+     */
+    public static function applyPaymentMethod(array $submitted, array $accounts): array
+    {
+        $enabled = in_array($submitted['enabled'] ?? false, [1, '1', true, 'on'], true);
+        $requestedId = is_scalar($submitted['bank_account_id'] ?? null)
+            ? strtolower(trim((string) $submitted['bank_account_id']))
+            : '';
+        $selectedId = '';
+
+        foreach ($accounts as $account) {
+            if (!is_array($account)
+                || ($account['id'] ?? null) !== $requestedId
+                || !BankTransferPayment::isCompleteAccount($account)
+                || ($account['active'] ?? false) !== true
+            ) {
+                continue;
+            }
+
+            $selectedId = $requestedId;
+            break;
+        }
+
+        return ['enabled' => $enabled, 'bank_account_id' => $selectedId];
+    }
+
     /** @param list<array<string, mixed>> $accounts */
-    public static function render(array $accounts, string $actionUrl, string $token): string
+    public static function render(array $accounts, string $actionUrl, string $token, array $paymentMethod = []): string
     {
         if ($accounts === []) {
             $accounts = [[
@@ -64,12 +103,45 @@ final class AdminBankAccountForm
                 'active' => false,
             ]];
         }
+        $accounts = array_map(static function (array $account): array {
+            $id = is_scalar($account['id'] ?? null) ? strtolower(trim((string) $account['id'])) : '';
+            if (preg_match('/\A[a-f0-9]{32}\z/D', $id) !== 1) {
+                $id = bin2hex(random_bytes(16));
+            }
+            $account['id'] = $id;
+
+            return $account;
+        }, array_slice($accounts, 0, 10));
 
         $html = '<form method="post" action="' . self::escape($actionUrl) . '" class="ordenowa-bank-settings">';
         $html .= '<input type="hidden" name="token" value="' . self::escape($token) . '">';
-        $html .= '<div class="alert alert-warning">은행 계좌는 활성 게시 시 결제 안내에 표시될 수 있습니다. 실제 계좌만 입력하고 게시 전에 다시 확인해 주세요.</div>';
-        foreach (array_slice($accounts, 0, 10) as $index => $account) {
+        $html .= '<div class="alert alert-warning">은행 계좌는 계좌이체를 사용하도록 선택하고 연결한 활성 계좌만 결제 안내와 고객 이메일에 표시됩니다.</div>';
+        $selectedId = is_scalar($paymentMethod['bank_account_id'] ?? null)
+            ? (string) $paymentMethod['bank_account_id']
+            : '';
+        $enabled = ($paymentMethod['enabled'] ?? false) === true;
+        $html .= '<fieldset class="panel"><legend>계좌이체 결제수단</legend><div class="form-group">'
+            . '<label for="bank-transfer-enabled">계좌이체 사용 여부</label><select class="form-control" id="bank-transfer-enabled" name="bank_accounts[payment_method][enabled]">'
+            . '<option value="0"' . ($enabled ? '' : ' selected') . '>사용 안 함</option>'
+            . '<option value="1"' . ($enabled ? ' selected' : '') . '>사용</option></select></div>'
+            . '<div class="form-group"><label for="bank-transfer-account">계좌이체 연결 계좌</label>'
+            . '<select class="form-control" id="bank-transfer-account" name="bank_accounts[payment_method][bank_account_id]">'
+            . '<option value="">활성 계좌를 선택해 주세요</option>';
+        foreach ($accounts as $account) {
+            if (($account['active'] ?? false) !== true || !BankTransferPayment::isCompleteAccount($account)) {
+                continue;
+            }
+            $accountId = (string) $account['id'];
+            $masked = BankAccountPresenter::mask($account);
+            $label = (string) $account['bank_name'] . ' · ' . (string) $account['branch_name']
+                . ' · ' . (string) $masked['account_number'];
+            $html .= '<option value="' . self::escape($accountId) . '"'
+                . ($selectedId === $accountId ? ' selected' : '') . '>' . self::escape($label) . '</option>';
+        }
+        $html .= '</select><p class="help-block">활성 상태이고 선택된 계좌 하나만 고객에게 공개됩니다.</p></div></fieldset>';
+        foreach ($accounts as $index => $account) {
             $html .= '<fieldset class="panel"><legend>계좌 ' . ($index + 1) . '</legend>';
+            $html .= '<input type="hidden" name="bank_accounts[accounts][' . $index . '][id]" value="' . self::escape((string) $account['id']) . '">';
             $html .= self::input($index, 'bank_name', '은행명', $account['bank_name'] ?? '');
             $html .= self::input($index, 'branch_name', '지점명', $account['branch_name'] ?? '');
             $html .= '<div class="form-group"><label for="bank-type-' . $index . '">계좌 종류</label><select class="form-control" id="bank-type-' . $index
@@ -82,7 +154,7 @@ final class AdminBankAccountForm
             $html .= self::input($index, 'account_number', '계좌번호', $account['account_number'] ?? '', 'text', 'numeric');
             $html .= self::input($index, 'account_holder', '예금주', $account['account_holder'] ?? '');
             $checked = !empty($account['active']) ? ' checked' : '';
-            $html .= '<div class="checkbox"><label><input type="checkbox" name="bank_accounts[accounts][' . $index . '][active]" value="1"' . $checked . '> 결제 안내에 사용할 계좌</label></div>';
+            $html .= '<div class="checkbox"><label><input type="checkbox" name="bank_accounts[accounts][' . $index . '][active]" value="1"' . $checked . '> 계좌이체에서 선택할 수 있는 활성 계좌</label></div>';
             $html .= '</fieldset>';
         }
 

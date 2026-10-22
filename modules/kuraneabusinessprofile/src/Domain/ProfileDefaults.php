@@ -62,6 +62,12 @@ final class ProfileDefaults
             ],
             'bank_accounts' => [],
             'payment' => $emptyLocales,
+            'payment_methods' => [
+                'bank_transfer' => [
+                    'enabled' => false,
+                    'bank_account_id' => '',
+                ],
+            ],
             'shipping' => $emptyLocales,
             'refund' => $emptyLocales,
             'content' => [

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Kuranea\BusinessProfile\Customer;
 
 use Kuranea\BusinessProfile\Domain\ProfileDefaults;
+use Kuranea\BusinessProfile\Domain\BankTransferPayment;
 
 final class PublicFooterBuilder
 {
@@ -183,12 +184,9 @@ final class PublicFooterBuilder
      */
     private static function activeBankAccounts(array $profile): array
     {
-        $accounts = $profile['bank_accounts'] ?? [];
-        if (!is_array($accounts)) {
-            return [];
-        }
+        $account = BankTransferPayment::selectedActiveAccount($profile);
 
-        return array_values(array_filter($accounts, static fn ($account): bool => is_array($account) && !empty($account['active'])));
+        return $account === null ? [] : [$account];
     }
 
     /** @param array<string, mixed> $profile */

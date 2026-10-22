@@ -77,6 +77,15 @@ class AdminBusinessProfileBanksController extends ModuleAdminController
                 } else {
                     try {
                         $profile['bank_accounts'] = AdminBankAccountForm::apply($submitted);
+                        $paymentMethods = $profile['payment_methods'] ?? [];
+                        if (!is_array($paymentMethods)) {
+                            $paymentMethods = [];
+                        }
+                        $paymentMethods['bank_transfer'] = AdminBankAccountForm::applyPaymentMethod(
+                            is_array($submitted['payment_method'] ?? null) ? $submitted['payment_method'] : [],
+                            $profile['bank_accounts']
+                        );
+                        $profile['payment_methods'] = $paymentMethods;
                         $service->saveDraft($shopId, $profile, $employeeId);
                         $this->ordenowaFeedback = '은행 계좌 초안을 저장했습니다. 고객에게 표시하려면 운영정보 게시 검증을 통과해야 합니다.';
                     } catch (Throwable $exception) {
@@ -93,9 +102,13 @@ class AdminBusinessProfileBanksController extends ModuleAdminController
 
         $actionUrl = (string) $this->context->link->getAdminLink('AdminBusinessProfileBanks');
         $token = (string) Tools::getAdminTokenLite('AdminBusinessProfileBanks');
+        $paymentMethod = $profile['payment_methods']['bank_transfer'] ?? [];
+        if (!is_array($paymentMethod)) {
+            $paymentMethod = [];
+        }
         $this->content .= $this->renderFeedback();
         $this->content .= '<p><a href="' . htmlspecialchars((string) $this->context->link->getAdminLink('AdminBusinessProfile'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '">쇼핑몰 운영 설정으로 돌아가기</a></p>';
-        $this->content .= AdminBankAccountForm::render($profile['bank_accounts'] ?? [], $actionUrl, $token);
+        $this->content .= AdminBankAccountForm::render($profile['bank_accounts'] ?? [], $actionUrl, $token, $paymentMethod);
         $this->content .= AdminBankAccountForm::renderHistory(
             $service->history($shopId),
             $draft?->id ?? 0,
