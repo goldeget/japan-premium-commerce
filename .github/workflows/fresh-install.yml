@@ -547,8 +547,74 @@ jobs:
         with:
           name: ordenowa-storefront-browser-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/ordenowa-browser-qa/
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 30
+
+      - name: Verify browser QA screenshot coverage
+        if: always()
+        shell: bash
+        env:
+          BRAND_BROWSER_QA_OUTCOME: ${{ steps.brand_browser_qa.outcome }}
+          ACCOUNT_BROWSER_QA_OUTCOME: ${{ steps.account_browser_qa.outcome }}
+          PRODUCT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.product_admin_browser_qa.outcome }}
+          STOREFRONT_BROWSER_QA_OUTCOME: ${{ steps.storefront_browser_qa.outcome }}
+          CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.checkout_override.outcome }}
+          CHECKOUT_CUSTOMER_BROWSER_QA_OUTCOME: ${{ steps.checkout_customer_browser_qa.outcome }}
+          CHECKOUT_ORDER_PERSISTENCE_OUTCOME: ${{ steps.checkout_order_persistence.outcome }}
+          CHECKOUT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.checkout_admin_browser_qa.outcome }}
+          CHECKOUT_RESTORE_OUTCOME: ${{ steps.checkout_restore.outcome }}
+          CHECKOUT_GATE_AFTER_ORDER_OUTCOME: ${{ steps.checkout_gate_after_order.outcome }}
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/ordenowa-browser-qa"
+          if [[ "$BRAND_BROWSER_QA_OUTCOME" == success \
+            && "$ACCOUNT_BROWSER_QA_OUTCOME" == success \
+            && "$PRODUCT_ADMIN_BROWSER_QA_OUTCOME" == success \
+            && "$STOREFRONT_BROWSER_QA_OUTCOME" == success \
+            && "$CHECKOUT_OVERRIDE_OUTCOME" == success \
+            && "$CHECKOUT_CUSTOMER_BROWSER_QA_OUTCOME" == success \
+            && "$CHECKOUT_ORDER_PERSISTENCE_OUTCOME" == success \
+            && "$CHECKOUT_ADMIN_BROWSER_QA_OUTCOME" == success \
+            && "$CHECKOUT_RESTORE_OUTCOME" == success \
+            && "$CHECKOUT_GATE_AFTER_ORDER_OUTCOME" == success ]]; then
+            required_artifacts=(
+              ordenowa-brand-e2e.log
+              customer-account-e2e.log
+              product-admin-e2e.log
+              storefront-product-cart-e2e.log
+              ci-checkout-customer-e2e.log
+              ci-checkout-admin-e2e.log
+              storefront-checkout-gate-after-ci-order.log
+              brand-desktop-published.png
+              brand-mobile-published.png
+              desktop-customer-account-created.png
+              mobile-customer-account-created.png
+              product-admin-created-desktop.png
+              product-admin-mobile.png
+              desktop-home.png
+              mobile-home.png
+              checkout-desktop.png
+              checkout-mobile.png
+            )
+            missing_artifacts=()
+            for artifact in "${required_artifacts[@]}"; do
+              if [ ! -s "$artifact_dir/$artifact" ]; then
+                missing_artifacts+=("$artifact")
+              fi
+            done
+            if ((${#missing_artifacts[@]})); then
+              printf '::error title=Browser QA artifact coverage::Missing required logs or PC/mobile screenshots: %s\n' \
+                "${missing_artifacts[*]}"
+              exit 1
+            fi
+            printf 'PASS: browser QA logs and PC/mobile screenshots are ready for artifact upload.\n'
+          else
+            if [ ! -d "$artifact_dir" ] || [ -z "$(find "$artifact_dir" -maxdepth 1 -type f -print -quit)" ]; then
+              echo '::error title=Browser QA artifact coverage::No browser QA log or screenshot was produced.'
+              exit 1
+            fi
+            printf 'Browser QA did not complete; uploading available logs and captures for diagnosis.\n'
+          fi
 
       - name: Verify the fresh shop and restart persistence
         id: fresh_install_restart

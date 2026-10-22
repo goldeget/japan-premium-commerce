@@ -28,6 +28,33 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
         self.assertIn('path: ${{ runner.temp }}/ordenowa-browser-qa/', workflow)
         self.assertIn("retention-days: 30", workflow)
 
+    def test_successful_browser_qa_requires_desktop_and_mobile_screenshots(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("- name: Verify browser QA screenshot coverage", workflow)
+        verification = workflow.split(
+            "- name: Verify browser QA screenshot coverage", 1
+        )[1].split("- name:", 1)[0]
+
+        for screenshot in (
+            "brand-desktop-published.png",
+            "brand-mobile-published.png",
+            "desktop-customer-account-created.png",
+            "mobile-customer-account-created.png",
+            "product-admin-created-desktop.png",
+            "product-admin-mobile.png",
+            "desktop-home.png",
+            "mobile-home.png",
+            "checkout-desktop.png",
+            "checkout-mobile.png",
+        ):
+            with self.subTest(screenshot=screenshot):
+                self.assertIn(screenshot, verification)
+
+        self.assertIn("if: always()", verification)
+        self.assertIn('if-no-files-found: error', workflow.split(
+            "- name: Upload browser QA screenshots", 1
+        )[1].split("- name:", 1)[0])
+
     def test_brand_stale_publish_target_is_forwarded_to_the_step_summary(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         step = workflow.split(
