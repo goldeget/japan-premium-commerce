@@ -341,9 +341,22 @@ jobs:
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
+          log_file="$RUNNER_TEMP/ordenowa-browser-qa/customer-account-e2e.log"
+          set +e
           "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
             tests/e2e/verify_customer_account_browser.py \
-            2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/customer-account-e2e.log"
+            2>&1 | tee "$log_file"
+          browser_status=${PIPESTATUS[0]}
+          set -e
+          if [ "$browser_status" -ne 0 ]; then
+            failure_line=$(rg '^FAIL:' "$log_file" | tail -n 1 || true)
+            diagnostics_line=$(rg '^ORDENOWA_ACCOUNT_REGISTRATION_DIAGNOSTICS=' "$log_file" | tail -n 1 || true)
+            printf 'ORDENOWA customer account browser failure: %s\n' "${failure_line:-See the uploaded account browser log for the failing stage.}" >> "$GITHUB_STEP_SUMMARY"
+            if [ -n "$diagnostics_line" ]; then
+              printf '%s\n' "$diagnostics_line" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            exit "$browser_status"
+          fi
 
       - name: Verify Korean admin native product create and edit in Chromium
         shell: bash

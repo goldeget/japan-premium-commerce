@@ -130,6 +130,31 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("element.click()", helper)
         self.assertIn("click_centered(driver, publish_button)", publish_stage)
 
+    def test_account_registration_failure_emits_redacted_browser_state_in_ci_summary(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        diagnostics = account_flow.split("def emit_registration_diagnostics", 1)[1].split("def fill", 1)[0]
+        registration = account_flow.split('stage = "registration_form_load"', 1)[1].split('stage = "profile_update"', 1)[0]
+        self.assertLess(registration.index('stage = "registration_submit"'), registration.index('stage = "registration_post_submit"'))
+        for field in (
+            "registration_form_visible",
+            "identity_link_visible",
+            "submit_button_enabled",
+            "registration_form_valid",
+            "visible_invalid_control_count",
+            "first_invalid_control_name",
+            "email_valid",
+            "password_controls_valid",
+            "account_error_marker",
+            "pathname",
+        ):
+            self.assertIn(field, diagnostics)
+        self.assertIn("ORDENOWA_ACCOUNT_REGISTRATION_DIAGNOSTICS=", diagnostics)
+        self.assertNotIn("window.location.search", diagnostics)
+        self.assertNotIn("email.value", diagnostics)
+        self.assertIn('rg \'^ORDENOWA_ACCOUNT_REGISTRATION_DIAGNOSTICS=\' "$log_file"', workflow)
+        self.assertIn("customer-account-e2e.log", workflow)
+
     def test_ci_uses_the_module_updater_for_the_official_japan_post_archive(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         postal_step = workflow.split("- name: Download and import official Japan Post KEN_ALL data", 1)[1].split("- name:", 1)[0]

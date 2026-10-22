@@ -120,6 +120,43 @@ def visible(driver: webdriver.Chrome, selector: str):
     return WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.CSS_SELECTOR, selector)))
 
 
+def emit_registration_diagnostics(driver: webdriver.Chrome) -> None:
+    diagnostics = driver.execute_script(
+        r"""
+        const form = document.querySelector('#customer-form');
+        const isVisible = element => Boolean(element && element.getClientRects().length);
+        const invalid = form ? [...form.querySelectorAll(':invalid')].filter(isVisible) : [];
+        const email = form?.querySelector('input[name="email"]');
+        const passwords = form ? [...form.querySelectorAll('input[type="password"]')] : [];
+        const submit = form?.querySelector('button.form-control-submit');
+        const firstInvalid = invalid[0];
+        const bodyText = document.body?.innerText || '';
+        return {
+          registration_form_visible: isVisible(form),
+          identity_link_visible: isVisible(document.querySelector('#identity_main_link')),
+          login_form_visible: isVisible(document.querySelector('#login-form')),
+          submit_button_visible: isVisible(submit),
+          submit_button_enabled: Boolean(submit && !submit.disabled),
+          registration_form_valid: Boolean(form && form.checkValidity()),
+          visible_invalid_control_count: invalid.length,
+          first_invalid_control_name: firstInvalid?.getAttribute('name') || '',
+          first_invalid_control_type: firstInvalid?.getAttribute('type') || firstInvalid?.tagName.toLowerCase() || '',
+          email_type: email?.getAttribute('type') || '',
+          email_valid: Boolean(email && email.checkValidity()),
+          password_control_count: passwords.length,
+          password_controls_valid: passwords.length > 0 && passwords.every(field => field.checkValidity()),
+          alert_visible: isVisible(document.querySelector('.alert, [role="alert"], .help-block.error')),
+          account_error_marker: /(?:already registered|already exists|invalid|required|error|failed|오류|필수|이미 사용|잘못)/i.test(bodyText),
+          pathname: window.location.pathname
+        };
+        """
+    )
+    print(
+        "ORDENOWA_ACCOUNT_REGISTRATION_DIAGNOSTICS=" + json.dumps(diagnostics, ensure_ascii=False, sort_keys=True),
+        file=sys.stderr,
+    )
+
+
 def fill(driver: webdriver.Chrome, selector: str, value: str) -> None:
     element = visible(driver, selector)
     element.clear()
@@ -203,7 +240,7 @@ def run_viewport(width: int, height: int, label: str) -> None:
     options.add_argument(f"--window-size={width},{height}")
     options.add_argument("--lang=ja-JP")
     driver = webdriver.Chrome(options=options)
-    stage = "registration"
+    stage = "registration_form_load"
     try:
         driver.set_window_size(width, height)
         account_email = f"qa-ordenowa-{RUN_ID}-{RUN_ATTEMPT}-{label}@example.invalid"
@@ -212,7 +249,9 @@ def run_viewport(width: int, height: int, label: str) -> None:
 
         driver.get(f"{BASE}/index.php?controller=authentication&create_account=1")
         prepare_required_registration_fields(driver, account_email, initial_password)
+        stage = "registration_submit"
         visible(driver, "#customer-form button.form-control-submit").click()
+        stage = "registration_post_submit"
         WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.ID, "identity_main_link")))
         assert_my_page(driver, "CI")
         driver.save_screenshot(str(DEST / f"{label}-customer-account-created.png"))
@@ -297,6 +336,11 @@ def run_viewport(width: int, height: int, label: str) -> None:
             driver.save_screenshot(str(DEST / f"{label}-customer-account-failure.png"))
         except Exception:
             pass
+        if stage.startswith("registration_"):
+            try:
+                emit_registration_diagnostics(driver)
+            except Exception:
+                pass
         print(f"FAIL: {label} customer account flow at {stage} ({type(error).__name__})", file=sys.stderr)
         print(f"::error title=Customer account browser QA::{label} failed at {stage} ({type(error).__name__})", file=sys.stderr)
         raise SystemExit("isolated customer account browser flow failed") from None
