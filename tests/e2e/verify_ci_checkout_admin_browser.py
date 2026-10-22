@@ -504,7 +504,19 @@ def wait_for_autocomplete_fields(driver: webdriver.Chrome, form) -> None:
     WebDriverWait(driver, 15, poll_frequency=0.2).until(autocomplete_fields_applied)
 
 
-def click_required_checkbox_label(driver: webdriver.Chrome, form, checkbox) -> None:
+def _mark_checkout_stage(stage_callback, stage: str) -> None:
+    if stage_callback is not None:
+        stage_callback(stage)
+
+
+def click_required_checkbox_label(
+    driver: webdriver.Chrome,
+    form,
+    checkbox,
+    stage_callback=None,
+    stage_prefix: str = "required_checkbox",
+) -> None:
+    _mark_checkout_stage(stage_callback, f"{stage_prefix}.label_locate")
     checkbox_id = checkbox.get_attribute("id") or ""
     if not checkbox_id:
         raise AssertionError("required checkout checkbox has no associated label id")
@@ -520,7 +532,9 @@ def click_required_checkbox_label(driver: webdriver.Chrome, form, checkbox) -> N
     if label is None:
         raise AssertionError("required checkout checkbox has no visible associated label")
 
+    _mark_checkout_stage(stage_callback, f"{stage_prefix}.label_click")
     click_at_center(driver, label)
+    _mark_checkout_stage(stage_callback, f"{stage_prefix}.selected_wait")
     WebDriverWait(driver, 5, poll_frequency=0.1).until(
         lambda _browser: checkbox.is_selected(),
         message="clicking the required checkout checkbox label did not select it",
@@ -543,51 +557,73 @@ def enter_product_search_query(driver: webdriver.Chrome) -> None:
         return
 
 
-def prepare_required_customer_fields(driver: webdriver.Chrome, form, email: str, password: str) -> None:
+def prepare_required_customer_fields(
+    driver: webdriver.Chrome,
+    form,
+    email: str,
+    password: str,
+    stage_callback=None,
+) -> None:
     for name, value in (("firstname", "ORDENOWA"), ("lastname", "CI Checkout"), ("email", email)):
+        _mark_checkout_stage(stage_callback, f"customer_field.{name}.locate")
         fields = form.find_elements(By.CSS_SELECTOR, f'input[name="{name}"]')
         if fields:
+            _mark_checkout_stage(stage_callback, f"customer_field.{name}.fill")
             fields[0].clear()
             fields[0].send_keys(value)
 
+    _mark_checkout_stage(stage_callback, "account_checkbox.locate")
     create_account = form.find_elements(By.CSS_SELECTOR, "#password-form__check")
     if not create_account:
         raise AssertionError("checkout customer form did not offer account creation")
     account_checkbox = create_account[0]
+    _mark_checkout_stage(stage_callback, "account_checkbox.label_locate")
     account_label = form.find_elements(By.CSS_SELECTOR, 'label[for="password-form__check"]')
     if not account_label:
         raise AssertionError("checkout account creation checkbox has no associated label")
     if not account_checkbox.is_selected():
+        _mark_checkout_stage(stage_callback, "account_checkbox.label_click")
         click_at_center(driver, account_label[0])
+    _mark_checkout_stage(stage_callback, "account_checkbox.selected_wait")
     WebDriverWait(driver, 5, poll_frequency=0.1).until(
         lambda _browser: account_checkbox.is_selected(),
         message="checkout account creation checkbox was not selected",
     )
 
+    _mark_checkout_stage(stage_callback, "password_field.locate")
     password_fields = form.find_elements(By.CSS_SELECTOR, 'input[type="password"]')
     if not password_fields:
         raise AssertionError("checkout customer form did not expose a password field for account creation")
+    _mark_checkout_stage(stage_callback, "password_field.fill")
     password_fields[0].clear()
     password_fields[0].send_keys(password)
 
     selected_radio_groups: set[str] = set()
-    for field in form.find_elements(By.CSS_SELECTOR, "input[required]"):
+    for field_index, field in enumerate(form.find_elements(By.CSS_SELECTOR, "input[required]"), start=1):
         if not field.is_displayed() or not field.is_enabled():
             continue
         field_type = (field.get_attribute("type") or "").lower()
         name = field.get_attribute("name") or ""
         if field_type == "checkbox" and not field.is_selected():
-            click_required_checkbox_label(driver, form, field)
+            click_required_checkbox_label(
+                driver,
+                form,
+                field,
+                stage_callback,
+                stage_prefix=f"required_checkbox_{field_index}",
+            )
         elif field_type == "radio" and name not in selected_radio_groups:
+            _mark_checkout_stage(stage_callback, f"required_radio_{field_index}.click")
             click_at_center(driver, field)
             selected_radio_groups.add(name)
 
-    for field in form.find_elements(By.CSS_SELECTOR, "select[required]"):
+    for field_index, field in enumerate(form.find_elements(By.CSS_SELECTOR, "select[required]"), start=1):
         if not field.is_displayed() or not field.is_enabled():
             continue
         select = Select(field)
         option = next((item for item in select.options if item.get_attribute("value")), None)
         if option is not None:
+            _mark_checkout_stage(stage_callback, f"required_select_{field_index}.select")
             select.select_by_value(option.get_attribute("value"))
 
 
@@ -739,14 +775,18 @@ def add_product_and_open_checkout(driver: webdriver.Chrome, label: str) -> None:
         raise
 
 
-def register_checkout_account(driver: webdriver.Chrome, label: str) -> str:
+def register_checkout_account(driver: webdriver.Chrome, label: str, stage_callback=None) -> str:
     email = f"qa-ordenowa-checkout-{RUN_ID}-{RUN_ATTEMPT}-{label}@example.invalid"
     password = f"ORDENOWA-CI-{RUN_ID}-{RUN_ATTEMPT}-Aa1!"
+    _mark_checkout_stage(stage_callback, "customer_form.locate")
     stage_form = visible(driver, "#checkout-guest-form #customer-form")
-    prepare_required_customer_fields(driver, stage_form, email, password)
+    prepare_required_customer_fields(driver, stage_form, email, password, stage_callback)
+    _mark_checkout_stage(stage_callback, "checkout_submit.locate")
     submit = visible(driver, '#checkout-guest-form button[name="continue"]')
+    _mark_checkout_stage(stage_callback, "checkout_submit.click")
     click_at_center(driver, submit)
 
+    _mark_checkout_stage(stage_callback, "checkout_registration_step.wait")
     WebDriverWait(driver, 35).until(
         lambda browser: bool(browser.find_elements(By.CSS_SELECTOR, "#delivery-address form, #delivery-addresses"))
         or bool(browser.find_elements(By.ID, "checkout-continue-form"))
@@ -754,8 +794,11 @@ def register_checkout_account(driver: webdriver.Chrome, label: str) -> str:
     if not driver.find_elements(By.CSS_SELECTOR, "#delivery-address form, #delivery-addresses"):
         # Hummingbird renders this form only after account creation succeeds;
         # submit it to proceed from personal information to the address step.
+        _mark_checkout_stage(stage_callback, "checkout_continuation.locate")
         continuation = visible(driver, "#checkout-continue-form button")
+        _mark_checkout_stage(stage_callback, "checkout_continuation.click")
         click_at_center(driver, continuation)
+    _mark_checkout_stage(stage_callback, "delivery_address_step.wait")
     WebDriverWait(driver, 35).until(
         lambda browser: (
             bool(browser.find_elements(By.CSS_SELECTOR, "#delivery-address form"))
@@ -1062,6 +1105,23 @@ def place_unpaid_order(driver: webdriver.Chrome, label: str, email: str) -> dict
     return result
 
 
+def emit_checkout_customer_failure(label: str, stage: str, error: Exception) -> None:
+    safe_label = label if label in {"desktop", "mobile"} else "unknown"
+    safe_stage = stage if re.fullmatch(r"[a-z][a-z0-9_.]*", stage) else "unknown"
+    exception_type = type(error).__name__
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", exception_type):
+        exception_type = "Exception"
+
+    failure_line = f"{safe_label} failed at {safe_stage} ({exception_type})"
+    print(f"FAIL: isolated {safe_label} customer checkout at {safe_stage} ({exception_type})", file=sys.stderr)
+    print(f"::error title=ORDENOWA browser checkout::{failure_line}", file=sys.stderr)
+
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        with Path(summary_path).open("a", encoding="utf-8") as summary:
+            summary.write(f"- Browser checkout **{safe_label}** failed at `{safe_stage}` (`{exception_type}`).\n")
+
+
 def run_customer_checkout(width: int, height: int, label: str) -> None:
     driver = webdriver.Chrome(options=browser_options(width, height))
     stage = "product_search"
@@ -1070,8 +1130,12 @@ def run_customer_checkout(width: int, height: int, label: str) -> None:
         search_for_product(driver, label)
         stage = "cart"
         add_product_and_open_checkout(driver, label)
-        stage = "customer_registration"
-        email = register_checkout_account(driver, label)
+
+        def set_registration_stage(registration_stage: str) -> None:
+            nonlocal stage
+            stage = f"customer_registration.{registration_stage}"
+
+        email = register_checkout_account(driver, label, set_registration_stage)
         stage = "Japanese_address_lookup_and_save"
         select_japan_address(driver, label)
         stage = "carrier_and_offline_payment"
@@ -1088,14 +1152,7 @@ def run_customer_checkout(width: int, height: int, label: str) -> None:
             driver.save_screenshot(str(DEST / f"checkout-{label}-failure.png"))
         except Exception:
             pass
-        print(
-            f"FAIL: isolated {label} customer checkout at {stage} ({type(error).__name__})",
-            file=sys.stderr,
-        )
-        print(
-            f"::error title=ORDENOWA browser checkout::{label} failed at {stage} ({type(error).__name__})",
-            file=sys.stderr,
-        )
+        emit_checkout_customer_failure(label, stage, error)
         raise SystemExit(f"isolated {label} customer checkout failed") from None
     finally:
         driver.quit()

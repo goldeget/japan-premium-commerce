@@ -355,6 +355,61 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertNotIn("click_at_center(driver, account_checkbox)", account_checkbox)
         self.assertIn("WebDriverWait(driver, 5", account_checkbox)
 
+    def test_checkout_registration_failure_reports_a_sanitized_exact_action_stage(self) -> None:
+        flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        field_setup = flow.split("def prepare_required_customer_fields", 1)[1].split(
+            "def search_for_product", 1
+        )[0]
+        registration = flow.split("def register_checkout_account", 1)[1].split(
+            "def select_japan_address", 1
+        )[0]
+        failure_reporter = flow.split("def emit_checkout_customer_failure", 1)[1].split(
+            "def run_customer_checkout", 1
+        )[0]
+        customer_runner = flow.split("def run_customer_checkout", 1)[1].split(
+            "def run_customer_checkouts", 1
+        )[0]
+
+        self.assertIn(
+            'for name, value in (("firstname", "ORDENOWA"), ("lastname", "CI Checkout"), ("email", email))',
+            field_setup,
+        )
+        self.assertIn('f"customer_field.{name}.fill"', field_setup)
+        for safe_stage in (
+            '"account_checkbox.label_click"',
+            '"account_checkbox.selected_wait"',
+            '"password_field.fill"',
+            'f"required_checkbox_{field_index}"',
+            'f"required_radio_{field_index}.click"',
+            'f"required_select_{field_index}.select"',
+            '"checkout_submit.click"',
+            '"checkout_continuation.click"',
+        ):
+            with self.subTest(safe_stage=safe_stage):
+                self.assertIn(safe_stage, field_setup + registration)
+
+        self.assertIn('f"customer_field.{name}.locate"', field_setup)
+
+        self.assertIn("stage_callback", field_setup)
+        self.assertIn("stage_callback", registration)
+        self.assertIn(
+            "prepare_required_customer_fields(driver, stage_form, email, password, stage_callback)",
+            registration,
+        )
+        self.assertIn("customer_registration.{registration_stage}", customer_runner)
+        self.assertIn("emit_checkout_customer_failure(label, stage, error)", customer_runner)
+        self.assertIn('"::error title=ORDENOWA browser checkout::', failure_reporter)
+        self.assertIn('os.environ.get("GITHUB_STEP_SUMMARY")', failure_reporter)
+        self.assertIn(
+            'failure_line = f"{safe_label} failed at {safe_stage} ({exception_type})"',
+            failure_reporter,
+        )
+        self.assertIn('`{safe_stage}`', failure_reporter)
+        self.assertIn("safe_stage", failure_reporter)
+        self.assertNotIn("email", failure_reporter)
+        self.assertNotIn("password", failure_reporter)
+        self.assertNotIn("str(error)", failure_reporter)
+
     def test_required_checkout_checkboxes_use_their_visible_label_and_assert_selection(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
         checkbox_helper = flow.split("def click_required_checkbox_label", 1)[1].split(
@@ -372,7 +427,9 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertIn("candidate.is_displayed()", checkbox_helper)
         self.assertIn("click_at_center(driver, label)", checkbox_helper)
         self.assertIn("lambda _browser: checkbox.is_selected()", checkbox_helper)
-        self.assertIn("click_required_checkbox_label(driver, form, field)", checkbox_branch)
+        self.assertIn("click_required_checkbox_label(", checkbox_branch)
+        self.assertIn("stage_callback", checkbox_branch)
+        self.assertIn('stage_prefix=f"required_checkbox_{field_index}"', checkbox_branch)
         self.assertNotIn("click_at_center(driver, field)", checkbox_branch)
 
     def test_mobile_search_toggle_uses_a_native_webdriver_click(self) -> None:
