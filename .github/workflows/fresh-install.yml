@@ -89,7 +89,7 @@ jobs:
           MARIADB_USER=prestashop
           MARIADB_PASSWORD=ci-only-db-password
           MARIADB_ROOT_PASSWORD=ci-only-root-password
-          ADMIN_MAIL=ci-kuranea@example.invalid
+          ADMIN_MAIL=ci-ordenowa@example.invalid
           ADMIN_PASSWD=Ci-Only-Admin-Password-92!
           EOF
 
@@ -353,7 +353,7 @@ jobs:
         env:
           SHOP_BASE_URL: http://localhost:18080
           ADMIN_LOGIN_URL: http://localhost:18080/admin-kuranea
-          ADMIN_MAIL: ci-kuranea@example.invalid
+          ADMIN_MAIL: ci-ordenowa@example.invalid
           ADMIN_PASSWD: Ci-Only-Admin-Password-92!
           QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
         run: |
@@ -431,7 +431,7 @@ jobs:
         env:
           SHOP_BASE_URL: http://localhost:18080
           ADMIN_LOGIN_URL: http://localhost:18080/admin-kuranea
-          ADMIN_MAIL: ci-kuranea@example.invalid
+          ADMIN_MAIL: ci-ordenowa@example.invalid
           ADMIN_PASSWD: Ci-Only-Admin-Password-92!
           QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
           GITHUB_RUN_ID: ${{ github.run_id }}
@@ -491,7 +491,7 @@ jobs:
         env:
           SHOP_BASE_URL: http://localhost:18080
           ADMIN_LOGIN_URL: http://127.0.0.1:18080/admin-kuranea
-          ADMIN_MAIL: ci-kuranea@example.invalid
+          ADMIN_MAIL: ci-ordenowa@example.invalid
           ADMIN_PASSWD: Ci-Only-Admin-Password-92!
           QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
           GITHUB_RUN_ID: ${{ github.run_id }}
@@ -581,7 +581,7 @@ jobs:
         env:
           SHOP_BASE_URL: http://localhost:18080
           ADMIN_LOGIN_URL: http://localhost:18080/admin-kuranea
-          ADMIN_MAIL: ci-kuranea@example.invalid
+          ADMIN_MAIL: ci-ordenowa@example.invalid
           ADMIN_PASSWD: Ci-Only-Admin-Password-92!
           QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
           GITHUB_RUN_ID: ${{ github.run_id }}
