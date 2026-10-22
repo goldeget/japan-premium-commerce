@@ -45,3 +45,10 @@ SHOP_BASE_URL=http://127.0.0.1:8080 PYTHONDONTWRITEBYTECODE=1 python3 -m unittes
 ## 원격 복구 체크포인트
 
 QA/테스트/캡처 커밋 `ecd528ce5e2d2f9e91de89d92d379bcad3bde274`는 `work` 원격 SHA와 일치했다. 새 shallow clone `/tmp/kuran-final-recovery-ecd528c`에서 이 SHA, 스모크 테스트, QA 문서와 세 캡처 파일을 조회했고 복제본은 clean이었다. 자세한 복구 절차는 `docs/CLOUD_RECOVERY.md`에 있다.
+
+## 2026-10-22 — P0 관리자 폴더 설치 순서 수정
+
+- 최신 실패 로그에서 확인한 직접 오류는 디스크 부족이나 캐시 권한이 아니라 `assets:install admin-dev --symlink=1`의 target 경로 부재다. PrestaShop 9.2.0 `Install::finalize()`는 `/admin/`이 있을 때만 다른 관리자 경로로 이름을 바꾸고 그 경로에 자산을 설치한다. 공식 Docker `docker_run.sh`가 `PS_FOLDER_ADMIN`으로 `/admin`을 먼저 옮겨 설치기의 기본값 `admin-dev`가 사라졌다.
+- 원격 체크포인트 `175d75dac132ddb0a8f54777519795208df8ae4d`는 신규 설치에 `PS_FOLDER_ADMIN=admin`을 전달하는 첫 수정안이었다. 공식 설치기 실행이 시작됐지만 run `39727310686`은 `Start the empty-volume shop`에서 실패했다. 현재 환경에서 세부 stderr/log를 열 수 없어 그 수정안의 남은 원인을 추측하지 않는다.
+- 후속 로컬 후보는 `PS_FOLDER_ADMIN=admin-dev`로 실제 관리자 파일을 설치 동안 유지하고, Docker post-install hook이 PHP 부트스트랩을 호출한다. PHP가 official post-install 처리를 끝낸 뒤 감지한 디렉터리를 `admin-kuranea`로 옮기고 최종 경로 assets를 설치한다. 계약 테스트는 셸에서 먼저 이동하는 중간안을 실패시켰고, 현재 경로가 순서를 보장하는지 다시 검증 중이다. 새 빈 폴더 생성, 기존 named volume 변경, 코어 수정은 없다.
+- 안전: 최신 overlay 여유는 0 bytes/inode 100%다. 기존 PrestaShop·MariaDB 컨테이너와 `kuranea_mariadb_data`, `kuranea_prestashop_html`, 출처 불명 volume을 유지했고 재시작·DB 조작·prune·재빌드는 하지 않았다. MariaDB가 unhealthy로 관찰되어 신규 설치/주문은 격리 CI에서만 진행한다.

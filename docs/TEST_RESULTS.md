@@ -6,7 +6,10 @@
 
 | 검사 | 결과 | 근거 |
 | --- | --- | --- |
-| Python smoke 및 CI 계약 테스트 | PASS | 2026-10-22 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/smoke -p 'test_*.py' -v`: 34/34. 일본 주소 주문 검사가 GitHub CI 프로젝트에서만 실행되는지 guard 계약도 포함한다. |
+| PrestaShop 관리자 경로 설치 순서 회귀 계약 | PASS (정적/계약) | `tests/smoke/test_admin_folder_install_order.py` 구현 전 3건 실패를 재현하고 수정 후 3/3 통과했다. Compose가 공식 `/admin`을 첫 설치 동안 유지하고 post-install이 감지된 관리자 폴더를 이동한 뒤 최종 경로 자산을 설치하는지 검사한다. 실제 빈 DB 설치는 별도 CI 결과가 필요하다. |
+| 관리자 경로 후속 후보 계약 | PASS (정적/계약) | 수정된 후보의 `PS_FOLDER_ADMIN=admin-dev`, CLI 이후 PHP bootstrap 순서, 최종 `admin-kuranea`/`admin-dev` 부재 검사를 4/4 통과했다. 이 검사는 실제 신규 설치를 대체하지 않는다. |
+| 관련 workflow 계약·설정·문법 | PASS | 관리자 경로 회귀 및 기존 fresh-install workflow 계약 합계 10/10, PHP lint, shell syntax, `docker compose config --quiet`, `git diff --check` 통과. |
+| Python smoke 및 CI 계약 테스트 | 부분 실패 | 2026-10-22 최근 실행은 38건 중 35건 통과, 3건 오류다. 세 오류는 빈 카테고리 ja/en/ko 경로가 리다이렉트 후 HTTP 500을 반환한 기존 로컬 storefront 동작이다 (`Category.php`/`CategoryController.php`에서 DB 조회 결과 `false`에 대한 foreach 경고). 나머지 smoke 검사는 통과했다. 이 환경의 DB를 변경하지 않았으며 원인은 별도 조사 대상이다. |
 | 관리자 번역 계약 테스트 | PASS | 2026-10-22 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/admin_locale -p 'test_*.py' -v`: 8/8. 전체 Back Office 번역 커버리지 검증은 아니다. |
 | Japan Post 데이터 갱신 CLI 계약 테스트 | PASS | 2026-10-22 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/postcode -p 'test_*.py' -v`: 6/6. 공식 URL, TLS 리다이렉트 제한, ZIP/CSV 검증, 실패 시 importer 미호출, 임시 파일 제거를 stubs로 확인했다. 실제 다운로드/import는 실행하지 않았다. |
 | 우편번호 도메인·주소 검증 테스트 | PASS | 호스트에 PHP CLI가 없어 기존 PrestaShop 컨테이너의 임시 `/tmp` 경로에 테스트 소스만 복사해 실행했다. 정규화, 후보 검색, 복수 후보, 주소 일치/불일치, 건물 입력 및 수동 fallback 통과. 영구 프로젝트 파일/DB 변경 없음. |
@@ -23,7 +26,7 @@
 | 셸/JavaScript/Compose 문법 | PASS | `bash -n`, `node --check`, `docker compose config --quiet` |
 | 변경사항 공백 검사 | PASS | `git diff --check` |
 | CI 진단 마스킹·워크플로우 계약 | PASS | smoke 34/34. 분리된 설치 단계, 실패 진단, 민감값 마스킹, 공식 주소 importer, 격리 주문 검증 가드를 포함한다. |
-| 컨테이너 상태 | PASS | PrestaShop 9.2.0 및 MariaDB 10.11 healthy |
+| 컨테이너 상태 | 부분 실패 | 마지막 관찰에서 PrestaShop은 healthy였으나 MariaDB healthcheck는 unhealthy였다. 기존 서비스 재시작이나 DB 조작은 하지 않았다. |
 | JPY DB 설정 | PASS | DB 읽기 전용 조회에서 JPY 활성·0자리·기본값, ja/en/ko 통화명 확인; EUR/USD 비활성 |
 | 기존 DB 재시작 보존 | PASS | 기존 MariaDB/PrestaShop 컨테이너를 재시작한 뒤 HTTP 200, 양쪽 healthy, JPY 기본값과 3개 언어 행을 읽기 전용 확인 |
 | 로컬 DB 상품/주문 현황 | PASS | 읽기 전용 조회 결과 상품 0건, 주문 0건 |
@@ -33,14 +36,15 @@
 
 | 검사 | 결과 | 상세 |
 | --- | --- | --- |
-| 신규 빈 볼륨 설치 | FAIL / 추적 중 | run `39703327857`과 `39704824787`은 이미지 빌드·격리 cache 권한 probe PASS 후 `Start the empty-volume shop`에서 실패했다. 공개 실행 페이지에서 후속 runs `39705702536`, `39706052890`, `39706126218`도 Failure로 확인했다. 최신 run(`1690a07`, 2분 39초)의 진단 artifact는 3.37 KB지만, 로그 화면 로그인 요구·GitHub API 403·익명 artifact 다운로드 404로 세부 로그를 읽지 못했다. 최신 실패 단계와 `errno 28` 여부는 확정하지 않으며 신규 설치 PASS가 아니다. |
+| P0 관리자 폴더 설치 수정의 실제 CI 검증 | FAIL (후속 수정 필요) | GitHub Actions run `39727310686`, 코드 SHA `175d75dac132ddb0a8f54777519795208df8ae4d`. 이미지 빌드와 사전 계약 검사는 통과했으나 `Start the empty-volume shop`이 실패했다. 현재 환경은 run 로그/artifact 응답을 열지 못해 상세 원인을 확인하지 못했다. 최신 로컬 후보는 `PS_FOLDER_ADMIN=admin-dev`를 통해 실제 관리자 파일을 CLI asset 설치까지 보존한 뒤 post-install에서 이름을 바꾼다. 후보 코드는 로컬 계약 검증만 통과했으며 원격 신규 설치는 미검증이다. |
+| 과거 신규 빈 볼륨 설치 | FAIL (이전 코드) | runs `39703327857`, `39704824787`, `39705702536`, `39706052890`, `39706126218`은 이전 코드에서 실패했다. 최신 사용자가 제공한 상세 로그에서 `assets:install admin-dev`가 부재한 `/var/www/html/admin-dev`를 대상으로 한 직접 원인을 확인했다. 이번 원인은 errno 28로 기록하지 않는다. |
 | Amazon Japan·Rakuten 원본 페이지 접근 | BLOCKED | 2026-10-22 읽기 전용 HTTPS 요청 모두 egress proxy CONNECT `403`을 반환했다. 접근통제를 우회하지 않았고 페이지를 수집·파싱하지 않았다. |
 | 신규 설치 DB 적재 및 API lookup | BLOCKED | 기존 dev DB에서는 공식 데이터를 가져와 실제 HTTP lookup을 확인했다. 격리 CI 실패로 새 빈 DB import/조회는 검증하지 못했다. |
 | checkout 주문 연결 및 관리자 배송지 | 미실행 | 무결제 네이티브 Order 생성, `id_address_delivery` 연결, PrestaShop 관리자 조회 주소 formatter를 검사하는 CI 전용 스크립트를 추가·원격 저장했고 PHP 문법 및 격리 가드만 확인했다. 실제 검증은 새 빈 설치 CI가 먼저 통과해야 한다. 브라우저 checkout 경로는 아직 주소 폼 fixture만 검증했다. |
 | PC/모바일 browser regression | 부분 PASS | 홈 빈 카탈로그 안내는 PC 1440px·모바일 390px에서 실제 렌더링했다. 화면별 증거는 위 캡처를 참조한다. 전체 반응형 폭 테스트와 상품 상세·주문 화면은 별도 미완료다. |
 | 관리자 한국어 100% | 미완료 | 로그인과 대시보드에서 한국어 메뉴·날짜 범위를 실제 브라우저로 확인했다. 모듈 계약 테스트는 8/8이지만 전체 메뉴, 모든 설정·주문관리·모듈 화면은 아직 범위별 audit을 하지 않았다. |
 | PWA 기기 설치 | 미실행 | manifest/service worker 정적 검증은 있지만 iOS/Android 홈 화면 설치 테스트는 없다. |
-| Docker 신규 설치/재빌드 | 미실행 | 현재 작업공간 overlay 여유는 약 86 MB(사용률 100%), inode 95%다. Docker 이미지·캐시·named volume을 조사했다. 기존 데이터와 볼륨은 보존했고 prune·재빌드를 하지 않았다. |
-| Cloud config revision 3 | 미적용 | 활성 status는 revision 2/observed 2다. 저장 draft는 revision 4이며 repository ref가 과거 `2db9892`로 현재 `work`보다 뒤처진다. active egress에서 `api.github.com`을 허용한 evidence가 없어 CI 상세 로그를 직접 조회하지 못했다. 설정은 수정/게시하지 않았다. |
+| Docker 신규 설치/재빌드 | 차단 | `/workspace` overlay 여유 블록 0 bytes, inode 사용률 100%(약 7천 개 여유). Docker 이미지/캐시/volume 사용량은 조사했다. 신규 컨테이너 생성과 컨테이너 exec가 공간/runtime 오류로 실패해 로컬 설치는 실행하지 않았다. 기존 데이터와 모든 볼륨을 보존하고 prune·재빌드·재시작은 하지 않았다. |
+| Cloud config revision 3 | 미적용·draft 갱신 대기 | 활성 status는 revision 2/observed 2, 저장 draft revision 4는 이전 SHA `2db9892`다. 코드 체크포인트를 최신화한 뒤 저장 draft를 현재 `work` SHA로 갱신하고 Actions API 및 필요한 공식 주소 호스트를 추가해 사용자 검토용으로 저장할 계획이다. 저장·게시 후 적용은 별도로 확인해야 한다. |
 
 새 기능의 최종 PASS는 반드시 실제 격리 환경 및 해당 기능의 end-to-end 검증으로 기록한다.

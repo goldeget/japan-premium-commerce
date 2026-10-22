@@ -12,6 +12,12 @@
 
 ## 새 환경에서 확인
 
+최근 원격 코드 복구 체크포인트: `175d75dac132ddb0a8f54777519795208df8ae4d`. 이 커밋의 신규 설치 전략은 GitHub Actions run `39727310686`에서 실패했다. 당시 이미지 빌드와 정적 계약 검사는 통과했지만 빈 DB 설치 단계는 실패했고, 현재 환경에서 해당 실행의 상세 로그를 읽지 못했다. 이어진 로컬 수정은 아직 원격 체크포인트가 아니므로 push 후 별도 CI 실행이 필요하다.
+
+현재 cloud runtime에는 revision 2가 적용돼 있고, 읽기 draft revision 4는 오래된 `2db98927a9ede2b2423456873f0994ddd19ffe4e`를 참조한다. 현재 `work`와 같은 SHA를 가진 환경 설정 draft를 저장하기 전까지 새 작업 환경에서 예전 ref가 체크아웃될 수 있다. 개정 설정이 현재 runtime에 적용됐다고 간주하지 않는다.
+
+이전 체크포인트는 새 shallow clone `/tmp/kuran-recovery-175d75d`에서 `work` SHA와 `docker/kuran-post-install.php`, `tests/smoke/test_admin_folder_install_order.py`를 읽어 복구 확인했다. 그 CI 실행은 실패했으므로 새 설치 PASS를 뜻하지 않는다.
+
 ```bash
 git status --short --branch
 git fetch origin

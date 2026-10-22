@@ -39,10 +39,10 @@ services:
       PS_COUNTRY: JP
       PS_DOMAIN: localhost:${SHOP_PORT:-8080}
       PS_ERASE_DB: "0"
-      # Leave the official /admin tree in place for PrestaShop's installer.
-      # The installer renames it after creating its assets; our post-install
-      # hook then moves that completed directory to the stable KURANEA path.
-      PS_FOLDER_ADMIN: admin
+      # The installer defaults its bundle-assets target to admin-dev when the
+      # source /admin folder is renamed before installation. Keep real admin
+      # files there until the official installer has completed its assets.
+      PS_FOLDER_ADMIN: admin-dev
       KURANEA_ADMIN_FOLDER: admin-kuranea
       ADMIN_MAIL: ${ADMIN_MAIL:?Set ADMIN_MAIL in .env}
       ADMIN_PASSWD: ${ADMIN_PASSWD:?Set ADMIN_PASSWD in .env}

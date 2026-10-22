@@ -1,5 +1,22 @@
 # KURANEA 작업 기록
 
+## 2026-10-22 — 관리자 폴더 설치 경로 후속 수정
+
+- 원격 최신 SHA는 `175d75dac132ddb0a8f54777519795208df8ae4d`였다. 첫 수정 커밋의 Actions run `39727310686`은 이미지 빌드/정적 검사를 통과했지만 빈 DB 설치 단계에서 실패했다. 이 실행의 상세 로그는 현재 환경에서 404/접근 오류여서 실패 세부를 추정하지 않았다.
+- 후속 후보는 `PS_FOLDER_ADMIN=admin-dev`로 공식 Docker entrypoint가 실제 관리자 파일을 `/admin-dev`에 놓게 한다. 공식 CLI 자산 설치가 반환된 뒤 post-install helper가 실행되고, PHP bootstrap의 official post-install 처리 이후 실제 감지한 관리 디렉터리를 `admin-kuranea`로 옮겨 최종 assets를 확인한다. 빈 관리자 디렉터리나 `chmod 777`을 사용하지 않는다.
+- 테스트: 관리자 설치 순서 계약 4/4, 주소 갱신 계약 6/6, 관리자 번역 계약 8/8 통과. 전체 storefront smoke는 38건 중 35건 통과, 3개 언어의 빈 카테고리 URL에서 HTTP 500이 발생했다. 로컬 category 응답에는 `Category.php`와 `CategoryController.php`의 `foreach(false)` 경고가 있으나 원인 분석은 미완료다. `docker compose exec` PHP lint는 runc runtime 오류로 재시도 불가했다.
+- 안전: overlay 여유 0 bytes·inode 100%, MariaDB unhealthy를 관찰했다. 실행 중인 컨테이너와 모든 named volume을 보존하고 재시작, DB 변경, prune, 재빌드는 하지 않았다. 동일한 이유로 신규 설치/실주문 검증은 하지 않았다.
+- 현재 후속 코드는 로컬 수정이며 다음 원격 checkpoint SHA는 아직 없다. 코드와 이 기록을 `work`에 push/원격 SHA 확인한 뒤 fresh-install Actions를 확인하고, 성공 전에 주문 E2E를 실행하지 않는다.
+
+## 2026-10-22 — PrestaShop 신규 설치 admin-dev 경로 오류
+
+- 시작 기준: 로컬 `work`와 원격 `work`가 `4c6d38d7cf94506e2427c2fc904074055a070312`였고 원격 `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다. 미추적 QA 캡처/JSON/pycache, 실행 중인 PrestaShop·MariaDB, 기존 named volume과 미연결 volume을 보존했다.
+- 신규 원인: 최신 Actions 로그의 `assets:install admin-dev --symlink=1` 오류를 PrestaShop 9.2.0 `Install::finalize()`와 Docker 시작 순서에 대조했다. Docker가 설치 전에 `/admin`을 `admin-kuranea`로 이동해 CLI 설치기가 존재하지 않는 `admin-dev`를 target으로 선택했다. 과거 `errno 28`은 이전 실패 기록이며 이번 직접 원인으로 취급하지 않는다. 공식 이슈는 PrestaShop #40348 및 Docker #465다.
+- 변경: Compose 신규 설치에는 `PS_FOLDER_ADMIN=admin`, 최종 이름은 별도 `KURANEA_ADMIN_FOLDER=admin-kuranea`로 분리했다. post-install helper가 설치기가 감지한 관리자 경로를 확인하고, 대상 충돌을 거부한 뒤 최종 경로로 이동하고 공식 `AssetsInstaller`를 다시 호출한다. 최종 폴더와 관리자 CSS/로그인 URL 검증을 smoke에 추가하고 CI에서 경로 순서 계약을 확인한다. 코어, 기존 DB, named volume은 수정하지 않았다.
+- 테스트: 회귀 계약은 구현 전 3건 실패를 재현한 뒤 3/3 통과, 기존 fresh-install workflow 계약과 합계 10/10 통과했다. PHP lint, shell syntax, `docker compose config --quiet`, `git diff --check`도 통과했다. 실제 신규 설치는 작업공간 85 MB 여유로 로컬 실행하지 않았다.
+- 보존: 커밋 `175d75dac132ddb0a8f54777519795208df8ae4d`를 즉시 원격 `work`에 push했다. `git ls-remote`, `origin/work`, 로컬 HEAD가 일치하고 원격 파일을 재조회했다. 새 shallow clone `/tmp/kuran-recovery-175d75d`의 HEAD와 helper/회귀 테스트 복구를 확인했다. `main`은 그대로다. Actions run `39727310686`은 이미지 빌드·사전 계약 검사를 통과했고 격리 설치 결과는 아직 진행 중이다.
+- 다음: 동일 CI 실행에서 빈 설치, ja/en/ko, KURANEA theme, 최종 `admin-kuranea` assets/login, 재시작 보존을 확인한다. 실패하면 로그에서 새 직접 원인을 확인하고 필요한 수정만 별도 체크포인트로 저장한다. 이후 실제 storefront checkout/browser order를 격리 runner에서 검증한다.
+
 ## 2026-10-22 — 주소 데이터 안전성·갱신과 환경 상태 점검
 
 - 시작 기준: 로컬 `HEAD`, `origin/work`, GitHub `work` 원격 SHA가 `1690a073bc25f38d3c02cc7616dd7b8f9f5a3cc7`로 일치했다. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`다. 기존 미추적 브라우저 캡처와 테스트 캐시는 변경하거나 삭제하지 않았다.
@@ -158,12 +175,4 @@
 ## 2026-10-22 — 관리자 대시보드 날짜 필드 한국어
 
 - 실제 관리자 대시보드에서 영어 `From`, `Start`, `End`를 확인했다. PrestaShop core는 수정하지 않고 KURANEA 관리자 모듈의 XLIFF 도메인을 PrestaShop 명명 규칙에 맞췄으며, dashboard 전용 module JS가 날짜 입력 label/placeholder와 요약을 한국어로 표시하도록 했다.
-- 관리자 브라우저 로그인 후 PC 1440×1000에서 `lang=ko`, 한국어 날짜 labels/placeholders/요약, 한국어 메뉴, page error 0건을 검증하고 `artifacts/qa/phase1a/admin-dashboard-korean-after-date-overlay.png`를 저장했다. 관리자 locale 계약 8/8, JS syntax, XLIFF XML, PHP lint 통과. 전 관리자 100% 범위 검증은 미완료다.
-- 필요한 admin media hook을 현재 dev shop에서 등록했으며 고객·주문 데이터는 변경하지 않았다. 커밋 `46fc912d74c818023db08b18a8a5528f07117ef5`를 push하고 원격 SHA/file을 확인했다. CI run #20 `39701883450`는 마지막 확인에서 실행 중.
-
-## 2026-10-22 — 디스크·환경 재확인
-
-- `df -h /workspace`: overlay 32 GB 중 30 GB 사용, 91 MB 여유, 100% 표시; inode 95% 사용. `docker system df -v`: 활성 `kuranea/prestashop:9.2.0` 및 `mariadb:10.11`, shared base, 미사용 dangling image 8.29 MB, build cache 8.284 MB, 활성 named volumes `kuranea_mariadb_data` 320.6 MB / `kuranea_prestashop_html` 538.9 MB, 미연결 254 MB volume 확인.
-- 이미지/build cache는 프로젝트 복구/재빌드에 쓰일 수 있고 미연결 volume의 출처도 확실하지 않아 삭제하지 않았다. 어떤 Docker prune/재빌드/DB 초기화도 실행하지 않았다. 새 설치를 로컬에서 실행할 수 있는 저장 공간은 확보되지 않았다.
-- Cloud environment status는 `spec_revision=2`, `observed_spec_revision=2`, connected/running을 보고한다. revision 3 설정은 이 runtime에 적용되지 않았다. 설정을 수정하지 않았다.
-- run #20 `39701883450` 완료 상태를 다시 확인했다. 공개 job 화면은 `Build and install into unique empty volumes` 실패만 노출했고 상세 stderr/artifact는 접근할 수 없었다. run #18–20은 모두 이 단계에서 실패했으므로 clean install은 계속 FAIL이며 errno 28의 현재 원인은 확정되지 않았다.
+- 관리자 브라우저 로그인 후 PC 1440×1000에서 `lang=ko`, 한국어 날짜 labels/placeholders/요약, 한국어 메뉴, page error 0건을 검증하고 `artifacts/qa/phase1a/admin-dashboard-korean-after-date-overlay.png`를 저장했다. 관리자 locale 계약 8/8, JS syntax,
