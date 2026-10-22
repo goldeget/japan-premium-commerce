@@ -29,6 +29,8 @@ $editedByAdmin = \Kuranea\BusinessProfile\Admin\AdminProfileForm::apply($initial
     'seller' => ['authorization_status' => 'approved'],
     'unrecognized' => ['secret' => 'discard this'],
 ]);
+assertBusinessProfileSame(false, \Kuranea\BusinessProfile\Admin\AdminProfileForm::hasUnsavedChanges($initial, $initial), 'An unchanged submitted profile must remain publishable.');
+assertBusinessProfileSame(true, \Kuranea\BusinessProfile\Admin\AdminProfileForm::hasUnsavedChanges($initial, ['brand' => ['name' => ['ko-KR' => 'Unsaved name']]]), 'A changed submitted profile must be saved before it can be published.');
 assertBusinessProfileSame('ORDENOWA 테스트', $editedByAdmin['brand']['name']['ko-KR'], 'The admin form should map submitted editable fields into the profile.');
 assertBusinessProfileSame('pending', $initial['seller']['authorization_status'], 'Applying edits must not mutate the input profile version.');
 assertBusinessProfileTrue(!isset($editedByAdmin['unrecognized']), 'The admin form must ignore fields outside its allowlist.');

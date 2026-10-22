@@ -200,6 +200,15 @@ class AdminBusinessProfileController extends ModuleAdminController
                 return;
             }
 
+            $submitted = Tools::getValue('profile', []);
+            if (!is_array($submitted)
+                || AdminProfileForm::hasUnsavedChanges($draft->profile, $submitted)
+                || $this->hasPendingBrandUpload()
+            ) {
+                $this->fail('저장되지 않은 변경사항이 있습니다. 먼저 초안 저장을 누른 뒤 다시 게시해 주세요. 선택한 브랜드 이미지는 초안에 저장된 후 게시할 수 있습니다.');
+                return;
+            }
+
             $result = $service->publish($shopId, $draft->id, $employeeId);
             if (!$result['published']) {
                 $this->fail(implode(' ', $result['errors']));
@@ -307,6 +316,26 @@ class AdminBusinessProfileController extends ModuleAdminController
         $shopId = (int) ($this->context->shop->id ?? 0);
 
         return max(1, $shopId);
+    }
+
+    private function hasPendingBrandUpload(): bool
+    {
+        $upload = $_FILES['brand_uploads'] ?? [];
+        if ($upload === []) {
+            return false;
+        }
+        if (!is_array($upload) || !is_array($upload['error'] ?? null)) {
+            return true;
+        }
+
+        foreach (['primary_logo', 'favicon_symbol', 'pwa_icon'] as $slot) {
+            $error = $upload['error'][$slot] ?? UPLOAD_ERR_NO_FILE;
+            if (!is_numeric($error) || (int) $error !== UPLOAD_ERR_NO_FILE) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @param array<string, mixed> $profile

@@ -56,6 +56,11 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python3 -m unittest discover -s tests/business_profile -p 'test_brand_asset_display_contract.py' -v
 
+      - name: Check publish blocks unsaved profile changes
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -m unittest discover -s tests/business_profile -p 'test_brand_publish_guard_contract.py' -v
+
       - name: Verify published customer output and PWA manifest
         run: php tests/business_profile/published_output.php
 

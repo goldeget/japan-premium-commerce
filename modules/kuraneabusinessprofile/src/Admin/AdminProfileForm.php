@@ -189,6 +189,11 @@ final class AdminProfileForm
         return $next;
     }
 
+    public static function hasUnsavedChanges(array $current, array $submitted): bool
+    {
+        return self::apply($current, $submitted) !== $current;
+    }
+
     public static function render(
         array $profile,
         string $actionUrl,
