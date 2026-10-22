@@ -1,9 +1,14 @@
 """Keep the unpaid customer order exercise inside isolated GitHub Actions."""
 from __future__ import annotations
 
+import ast
+import json
+import re
 import unittest
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import parse_qs, urljoin, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -359,6 +364,174 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertNotIn("document.body.innerHTML", diagnostics)
         self.assertNotIn("document.body.innerText", diagnostics)
         self.assertNotIn("document.body.textContent", diagnostics)
+
+    def test_checkout_navigation_redirect_capture_strips_queries_and_untrusted_origins(self) -> None:
+        flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        self.assertIn("def checkout_order_navigation_network_diagnostics", flow)
+        network_diagnostics = flow.split("def checkout_order_navigation_network_diagnostics", 1)[1].split(
+            "def browser_options", 1
+        )[0]
+        order_navigation = flow.split('operation = "open_order_checkout"', 1)[1].split(
+            'operation = "wait_for_initial_checkout_step"', 1
+        )[0]
+
+        for expected in (
+            'driver.get_log("performance")',
+            "Network.requestWillBeSent",
+            "redirectResponse",
+            "Network.responseReceived",
+            '"status":',
+            '"target_path":',
+            '"target_same_origin":',
+            '"requested_order_controller":',
+            "urlparse",
+            "urljoin",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, network_diagnostics)
+        self.assertIn('options.set_capability("goog:loggingPrefs", {"performance": "ALL"})', flow)
+        self.assertIn("clear_checkout_network_events(driver)", order_navigation)
+        self.assertLess(
+            order_navigation.index("clear_checkout_network_events(driver)"),
+            order_navigation.index('visit(driver, BASE + "/index.php?controller=order")'),
+        )
+        self.assertIn('"network": checkout_order_navigation_network_diagnostics(driver)', flow)
+        self.assertIn('"verified": verified_cart_product_ids == [str(PRODUCT_ID)]', flow)
+        for forbidden in (
+            '"headers":',
+            '"body":',
+            '"location":',
+            '"request_url":',
+            '"redirect_url":',
+            '"query":',
+            "driver.current_url",
+            "document.body.innerHTML",
+            "document.body.textContent",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, network_diagnostics)
+
+    def test_checkout_network_diagnostics_keep_only_same_origin_paths_and_redirect_statuses(self) -> None:
+        browser_path = CHECKOUT_FLOW
+        tree = ast.parse(browser_path.read_text(encoding="utf-8"))
+        helper_names = {
+            "_safe_checkout_navigation_path",
+            "_safe_checkout_http_status",
+            "checkout_order_navigation_network_diagnostics",
+        }
+        helper_nodes = [
+            node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in helper_names
+        ]
+        self.assertEqual({node.name for node in helper_nodes}, helper_names)
+
+        namespace = {
+            "BASE": "http://localhost:18080",
+            "json": json,
+            "re": re,
+            "urljoin": urljoin,
+            "urlparse": urlparse,
+            "parse_qs": parse_qs,
+            "webdriver": SimpleNamespace(Chrome=object),
+        }
+        helper_module = ast.Module(body=helper_nodes, type_ignores=[])
+        exec(compile(helper_module, str(browser_path), "exec"), namespace)
+
+        order_url = "http://localhost:18080/index.php?controller=order&token=checkout-token-sentinel"
+        redirected_url = (
+            "http://localhost:18080/%C3%A6%C2%B3%C2%A8%C3%A6%C2%96%C2%87"
+            "?customer=private-customer-sentinel"
+        )
+        external_url = "https://attacker.example/redirect-secret-sentinel?token=external-token-sentinel"
+
+        def event(method: str, params: dict[str, object]) -> dict[str, str]:
+            return {"message": json.dumps({"message": {"method": method, "params": params}})}
+
+        events = [
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": "navigation-request-sentinel",
+                    "type": "Document",
+                    "request": {
+                        "method": "GET",
+                        "url": order_url,
+                        "headers": {"Cookie": "session-cookie-sentinel"},
+                    },
+                },
+            ),
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": "navigation-request-sentinel",
+                    "type": "Document",
+                    "request": {"method": "GET", "url": redirected_url},
+                    "redirectResponse": {
+                        "status": 302,
+                        "headers": {
+                            "Location": redirected_url,
+                            "Set-Cookie": "session-cookie-sentinel",
+                        },
+                    },
+                },
+            ),
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": "navigation-request-sentinel",
+                    "type": "Document",
+                    "request": {"method": "GET", "url": external_url},
+                    "redirectResponse": {
+                        "status": 301,
+                        "headers": {"Location": external_url},
+                    },
+                },
+            ),
+            event(
+                "Network.responseReceived",
+                {
+                    "requestId": "navigation-request-sentinel",
+                    "type": "Document",
+                    "response": {"status": 404, "url": external_url, "headers": {}},
+                },
+            ),
+        ]
+
+        class FakeDriver:
+            def get_log(self, name: str) -> list[dict[str, str]]:
+                self.log_name = name
+                return events
+
+        fake_driver = FakeDriver()
+        diagnostics = namespace["checkout_order_navigation_network_diagnostics"](fake_driver)
+        rendered = json.dumps(diagnostics, sort_keys=True)
+
+        self.assertEqual(fake_driver.log_name, "performance")
+        self.assertTrue(diagnostics["available"])
+        self.assertEqual(len(diagnostics["redirects"]), 2)
+        self.assertEqual(diagnostics["request_path"], "/index.php")
+        self.assertTrue(diagnostics["requested_order_controller"])
+        self.assertEqual(diagnostics["response_status"], 404)
+        self.assertIsNone(diagnostics["response_path"])
+        self.assertEqual(diagnostics["redirects"][0]["status"], 302)
+        self.assertEqual(
+            diagnostics["redirects"][0]["target_path"],
+            "/%C3%A6%C2%B3%C2%A8%C3%A6%C2%96%C2%87",
+        )
+        self.assertTrue(diagnostics["redirects"][0]["target_same_origin"])
+        self.assertEqual(diagnostics["redirects"][1]["status"], 301)
+        self.assertIsNone(diagnostics["redirects"][1]["target_path"])
+        self.assertFalse(diagnostics["redirects"][1]["target_same_origin"])
+        for secret_marker in (
+            "checkout-token-sentinel",
+            "private-customer-sentinel",
+            "external-token-sentinel",
+            "session-cookie-sentinel",
+            "attacker.example",
+            "redirect-secret-sentinel",
+            "navigation-request-sentinel",
+        ):
+            with self.subTest(secret_marker=secret_marker):
+                self.assertNotIn(secret_marker, rendered)
 
     def test_customer_runner_attempts_both_viewports_before_reporting_failure(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")

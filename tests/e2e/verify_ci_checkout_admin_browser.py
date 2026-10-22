@@ -8,7 +8,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 from selenium import webdriver
 from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
@@ -43,6 +43,183 @@ def visit(driver: webdriver.Chrome, url: str) -> None:
     WebDriverWait(driver, 40).until(
         lambda browser: browser.execute_script("return document.readyState") == "complete"
     )
+
+
+def clear_checkout_network_events(driver: webdriver.Chrome) -> None:
+    """Keep later performance records scoped to the order navigation."""
+    try:
+        driver.get_log("performance")
+    except Exception:
+        return
+
+
+def _safe_checkout_navigation_path(raw_url: object) -> str | None:
+    """Return a bounded same-origin path with query and fragment removed."""
+    if not isinstance(raw_url, str):
+        return None
+    try:
+        parsed = urlparse(raw_url)
+        expected = urlparse(BASE)
+        same_origin = (
+            parsed.scheme.lower(),
+            parsed.hostname,
+            parsed.port,
+        ) == (
+            expected.scheme.lower(),
+            expected.hostname,
+            expected.port,
+        )
+    except ValueError:
+        return None
+    if not same_origin:
+        return None
+
+    source_path = parsed.path or "/"
+    safe_characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~/"
+    safe_path: list[str] = []
+    index = 0
+    while index < len(source_path):
+        current_length = sum(len(part) for part in safe_path)
+        if current_length >= 240:
+            break
+        character = source_path[index]
+        if character in safe_characters:
+            safe_path.append(character)
+            index += 1
+        elif character == "%" and re.match(r"[0-9A-Fa-f]{2}", source_path[index + 1:index + 3]):
+            if current_length + 3 > 240:
+                break
+            safe_path.append(source_path[index:index + 3])
+            index += 3
+        else:
+            encoded_character = "".join(f"%{byte:02X}" for byte in character.encode("utf-8"))
+            if current_length + len(encoded_character) > 240:
+                break
+            safe_path.append(encoded_character)
+            index += 1
+
+    return "".join(safe_path)
+
+
+def _safe_checkout_http_status(value: object) -> int | None:
+    try:
+        status = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return status if 100 <= status <= 599 else None
+
+
+def checkout_order_navigation_network_diagnostics(driver: webdriver.Chrome) -> dict[str, object]:
+    """Capture bounded same-origin redirect metadata without query values or response data."""
+    try:
+        events = driver.get_log("performance")
+    except Exception:
+        return {
+            "available": False,
+            "truncated": False,
+            "request_path": None,
+            "requested_order_controller": False,
+            "response_status": None,
+            "response_path": None,
+            "redirects": [],
+        }
+
+    truncated = len(events) > 1000
+    navigation: dict[str, object] | None = None
+    navigation_request_id: str | None = None
+    current_request_url = ""
+    redirects: list[dict[str, object]] = []
+
+    for entry in events[:1000]:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            envelope = json.loads(entry.get("message", ""))
+        except (TypeError, ValueError):
+            continue
+        message = envelope.get("message", {}) if isinstance(envelope, dict) else {}
+        if not isinstance(message, dict):
+            continue
+        event_name = message.get("method")
+        params = message.get("params", {})
+        if not isinstance(params, dict):
+            continue
+        request_id = params.get("requestId")
+        if not isinstance(request_id, str):
+            continue
+
+        if event_name == "Network.requestWillBeSent":
+            request = params.get("request", {})
+            if not isinstance(request, dict):
+                continue
+            request_url = request.get("url")
+            request_url = request_url if isinstance(request_url, str) else ""
+            if navigation is None:
+                if params.get("type") != "Document":
+                    continue
+                request_path = _safe_checkout_navigation_path(request_url)
+                if request_path is None:
+                    continue
+                query = parse_qs(urlparse(request_url).query)
+                navigation_request_id = request_id
+                current_request_url = request_url
+                navigation = {
+                    "request_path": request_path,
+                    "requested_order_controller": query.get("controller") == ["order"],
+                    "response_status": None,
+                    "response_path": None,
+                    "redirects": redirects,
+                }
+                continue
+
+            if request_id != navigation_request_id:
+                continue
+
+            redirect_response = params.get("redirectResponse")
+            if isinstance(redirect_response, dict):
+                headers = redirect_response.get("headers", {})
+                location = None
+                if isinstance(headers, dict):
+                    location = next(
+                        (
+                            value
+                            for key, value in headers.items()
+                            if isinstance(key, str) and key.lower() == "location"
+                        ),
+                        None,
+                    )
+                target_url = urljoin(current_request_url, location) if isinstance(location, str) else ""
+                target_path = _safe_checkout_navigation_path(target_url)
+                if len(redirects) < 5:
+                    redirects.append(
+                        {
+                            "status": _safe_checkout_http_status(redirect_response.get("status")),
+                            "target_path": target_path,
+                            "target_same_origin": target_path is not None,
+                        }
+                    )
+                else:
+                    truncated = True
+            current_request_url = request_url
+
+        elif event_name == "Network.responseReceived" and request_id == navigation_request_id:
+            response = params.get("response", {})
+            if isinstance(response, dict) and navigation is not None:
+                navigation["response_status"] = _safe_checkout_http_status(response.get("status"))
+                navigation["response_path"] = _safe_checkout_navigation_path(response.get("url"))
+
+    if navigation is None:
+        return {
+            "available": True,
+            "truncated": truncated,
+            "request_path": None,
+            "requested_order_controller": False,
+            "response_status": None,
+            "response_path": None,
+            "redirects": [],
+        }
+
+    return {"available": True, "truncated": truncated, **navigation}
 
 
 def fill(driver: webdriver.Chrome, selector: str, value: str, root=None) -> None:
@@ -167,10 +344,12 @@ def emit_checkout_cart_diagnostics(
         )
         if not isinstance(state, dict):
             raise TypeError("cart diagnostics response was not an object")
+        network = checkout_order_navigation_network_diagnostics(driver)
         diagnostic_payload = {
             "viewport": label,
             "operation": operation,
             "pre_navigation_cart": pre_navigation_cart,
+            "network": network,
             "state": state,
         }
         print(
@@ -188,6 +367,7 @@ def emit_checkout_cart_diagnostics(
             "operation": operation,
             "pre_navigation_cart": pre_navigation_cart,
             "state_collection_error": type(diagnostic_error).__name__,
+            "network": checkout_order_navigation_network_diagnostics(driver),
         }
         print(
             "ORDENOWA_CHECKOUT_CART_STATE_UNAVAILABLE="
@@ -211,6 +391,7 @@ def browser_options(width: int, height: int) -> Options:
     options.add_argument("--disable-gpu")
     options.add_argument(f"--window-size={width},{height}")
     options.add_argument("--lang=ja-JP")
+    options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
     return options
 
 
@@ -450,6 +631,7 @@ def add_product_and_open_checkout(driver: webdriver.Chrome, label: str) -> None:
         driver.save_screenshot(str(DEST / f"checkout-{label}-cart.png"))
 
         operation = "open_order_checkout"
+        clear_checkout_network_events(driver)
         visit(driver, BASE + "/index.php?controller=order")
         operation = "wait_for_initial_checkout_step"
         current = WebDriverWait(driver, 30).until(
