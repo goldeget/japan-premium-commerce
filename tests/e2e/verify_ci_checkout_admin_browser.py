@@ -1124,22 +1124,56 @@ def run_customer_checkouts() -> None:
         raise SystemExit(f"isolated customer checkout failed for: {failed_viewports}")
 
 
-def admin_login(driver: webdriver.Chrome) -> None:
+def admin_login_diagnostics(driver: webdriver.Chrome) -> dict[str, object]:
+    return {
+        "path": _safe_checkout_navigation_path(driver.current_url),
+        "login_form_present": bool(driver.find_elements(By.CSS_SELECTOR, "#login_form")),
+        "email_field_count": len(
+            driver.find_elements(By.CSS_SELECTOR, '#login_form input[name="email"], input[type="email"]')
+        ),
+        "password_field_count": len(
+            driver.find_elements(
+                By.CSS_SELECTOR,
+                '#login_form input[name="passwd"], #login_form input[name="password"], input[type="password"]',
+            )
+        ),
+        "submit_button_count": len(
+            driver.find_elements(
+                By.CSS_SELECTOR,
+                '#login_form button[type="submit"], #login_form input[type="submit"], button[type="submit"]',
+            )
+        ),
+        "alert_count": len(driver.find_elements(By.CSS_SELECTOR, '.alert-danger, .alert-error, [role="alert"]')),
+        "admin_sidebar_present": bool(driver.find_elements(By.CSS_SELECTOR, "#nav-sidebar")),
+    }
+
+
+def admin_login(driver: webdriver.Chrome, set_stage=None) -> None:
+    if set_stage:
+        set_stage("navigation")
     visit(driver, ADMIN_LOGIN + "/login")
+    if set_stage:
+        set_stage("email_field")
     email = visible(
         driver,
         '#login_form input[name="email"], input[type="email"]',
     )
+    if set_stage:
+        set_stage("password_field")
     password = visible(
         driver,
         '#login_form input[name="passwd"], #login_form input[name="password"], input[type="password"]',
     )
     email.send_keys(ADMIN_EMAIL)
     password.send_keys(ADMIN_PASSWORD)
+    if set_stage:
+        set_stage("submit_button")
     visible(
         driver,
         '#login_form button[type="submit"], #login_form input[type="submit"], button[type="submit"]',
     ).click()
+    if set_stage:
+        set_stage("redirect")
     WebDriverWait(driver, 35).until(
         lambda browser: "/login" not in urlparse(browser.current_url).path
     )
@@ -1196,7 +1230,11 @@ def run_admin_order_view() -> None:
     driver = webdriver.Chrome(options=options)
     stage = "administrator_login"
     try:
-        admin_login(driver)
+        def set_login_stage(login_stage: str) -> None:
+            nonlocal stage
+            stage = f"administrator_login_{login_stage}"
+
+        admin_login(driver, set_login_stage)
         driver.save_screenshot(str(DEST / "checkout-admin-login.png"))
         orders = [
             json.loads((DEST / f"ci-checkout-{label}.json").read_text(encoding="utf-8"))
@@ -1245,6 +1283,15 @@ def run_admin_order_view() -> None:
             driver.save_screenshot(str(DEST / "checkout-admin-order-failure.png"))
         except Exception:
             pass
+        if stage.startswith("administrator_login_"):
+            try:
+                print(
+                    "ORDENOWA_ADMIN_LOGIN_DIAGNOSTICS="
+                    + json.dumps(admin_login_diagnostics(driver), sort_keys=True),
+                    file=sys.stderr,
+                )
+            except Exception:
+                print("ORDENOWA_ADMIN_LOGIN_DIAGNOSTICS=unavailable", file=sys.stderr)
         print(
             f"FAIL: isolated administrator order view at {stage} ({type(error).__name__})",
             file=sys.stderr,

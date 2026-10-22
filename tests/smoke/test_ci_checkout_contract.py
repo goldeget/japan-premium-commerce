@@ -76,6 +76,35 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             workflow.index("Prepare Chromium browser smoke environment"),
         )
 
+    def test_separate_admin_order_browser_uses_the_canonical_shop_host(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        compose = COMPOSE.read_text(encoding="utf-8")
+        flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        admin_step = workflow.split(
+            "- name: Verify a separate admin session can view both browser orders", 1
+        )[1].split("- name:", 1)[0]
+        admin_login = flow.split("def admin_login(", 1)[1].split("def find_admin_detail_url", 1)[0]
+        admin_diagnostics = flow.split("def admin_login_diagnostics(", 1)[1].split("def admin_login(", 1)[0]
+
+        self.assertIn("PS_DOMAIN: localhost:${SHOP_PORT:-8080}", compose)
+        self.assertIn("SHOP_BASE_URL: http://localhost:18080", admin_step)
+        self.assertIn("ADMIN_LOGIN_URL: http://localhost:18080/admin-kuranea", admin_step)
+        self.assertNotIn("127.0.0.1:18080", admin_step)
+        for stage in ("navigation", "email_field", "password_field", "submit_button", "redirect"):
+            self.assertIn(f'set_stage("{stage}")', admin_login)
+        for marker in (
+            '"path"',
+            '"login_form_present"',
+            '"email_field_count"',
+            '"password_field_count"',
+            '"submit_button_count"',
+            '"alert_count"',
+            '"admin_sidebar_present"',
+        ):
+            self.assertIn(marker, admin_diagnostics)
+        self.assertIn("ORDENOWA_ADMIN_LOGIN_DIAGNOSTICS=", flow)
+        self.assertNotIn("ADMIN_PASSWORD", admin_diagnostics)
+
     def test_checkout_route_diagnostics_are_failure_gated_and_value_encoded(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         diagnostic_step = workflow.split(

@@ -577,8 +577,8 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
-          SHOP_BASE_URL: http://127.0.0.1:18080
-          ADMIN_LOGIN_URL: http://127.0.0.1:18080/admin-kuranea
+          SHOP_BASE_URL: http://localhost:18080
+          ADMIN_LOGIN_URL: http://localhost:18080/admin-kuranea
           ADMIN_MAIL: ci-kuranea@example.invalid
           ADMIN_PASSWD: Ci-Only-Admin-Password-92!
           QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
