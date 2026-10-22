@@ -55,7 +55,22 @@ jobs:
         run: php tests/business_profile/published_output.php
 
       - name: Verify localized legal page and seller disclosure gating
-        run: php tests/business_profile/legal_pages.php
+        shell: bash
+        run: |
+          set -euo pipefail
+          output_file="$RUNNER_TEMP/legal-page-test-output"
+          set +e
+          php tests/business_profile/legal_pages.php 2>&1 | tee "$output_file"
+          test_status=${PIPESTATUS[0]}
+          set -e
+          {
+            echo '## Legal page synthetic test output'
+            echo
+            echo '```text'
+            tail -n 50 "$output_file"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$test_status"
 
       - name: Check legal page published-profile route contract
         run: python3 -m unittest discover -s tests/business_profile -p 'test_published_legal_page_contract.py'
