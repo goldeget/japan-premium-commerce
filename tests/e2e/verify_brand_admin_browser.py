@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -106,14 +106,24 @@ def run() -> None:
         submit.click()
         WebDriverWait(driver, 30).until(lambda browser: "/login" not in urlparse(browser.current_url).path)
 
-        stage = "korean_brand_settings"
-        links = WebDriverWait(driver, 30).until(
-            lambda browser: browser.find_elements(By.CSS_SELECTOR, 'a[href*="controller=AdminBusinessProfile"]')
-        )
+        stage = "admin_settings_menu_link"
+
+        def business_profile_links(browser: webdriver.Chrome):
+            matches = []
+            for link in browser.find_elements(By.CSS_SELECTOR, 'a[href*="controller="]'):
+                href = link.get_attribute("href") or ""
+                controller = parse_qs(urlparse(href).query).get("controller", [])
+                if controller == ["AdminBusinessProfile"]:
+                    matches.append(link)
+            return matches
+
+        links = WebDriverWait(driver, 30).until(business_profile_links)
         settings_url = urljoin(driver.current_url, links[0].get_attribute("href"))
         settings_location = urlparse(settings_url)
         if settings_location.hostname not in {"localhost", "127.0.0.1"} or not settings_location.path.startswith("/admin-kuranea/"):
             raise AssertionError("business profile menu link is outside this isolated Back Office")
+
+        stage = "korean_brand_settings_form"
         driver.get(settings_url)
         visible(driver, "form.ordenowa-profile-settings")
         if "브랜드·로고" not in driver.find_element(By.ID, "ordenowa-brand").text:
@@ -151,8 +161,8 @@ def run() -> None:
         preview = visible(driver, ".ordenowa-profile-preview")
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", preview)
         preview_images = preview.find_elements(By.TAG_NAME, "img")
-        if len(preview_images) < 6:
-            raise AssertionError("saved brand preview does not show desktop, mobile, favicon, Apple, PWA, and OG assets")
+        if len(preview_images) < 7:
+            raise AssertionError("saved brand preview does not show desktop, mobile, email, favicon, Apple, PWA, and OG assets")
         WebDriverWait(driver, 30).until(
             lambda browser: all(
                 int(image.get_attribute("naturalWidth") or 0) > 0

@@ -289,6 +289,7 @@ final class AdminProfileForm
         foreach ([
             'header_desktop' => 'PC 헤더 로고',
             'header_mobile' => '모바일 헤더 로고',
+            'email_logo' => '이메일 로고',
             'favicon_32' => '브라우저 파비콘',
             'apple_touch' => 'Apple Touch Icon',
             'pwa_512' => 'PWA 아이콘',

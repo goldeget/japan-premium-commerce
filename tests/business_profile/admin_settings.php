@@ -55,6 +55,7 @@ $imagePreviewProfile = $initial;
 $imagePreviewProfile['brand']['assets']['header_desktop'] = 'img/ordenowa/versions/' . str_repeat('c', 64) . '/header-desktop.png';
 $imagePreviewHtml = \Kuranea\BusinessProfile\Admin\AdminProfileForm::renderPreview($imagePreviewProfile, 'https://shop.example/');
 assertBusinessProfileTrue(str_contains($imagePreviewHtml, 'https://shop.example/img/ordenowa/versions/'), 'Uploaded brand derivatives should be visible in the authenticated preview.');
+assertBusinessProfileTrue(str_contains($imagePreviewHtml, '<figcaption>이메일 로고</figcaption>'), 'The authenticated brand preview should include the email logo derivative.');
 
 $secretProfile = $initial;
 $secretProfile['bank_accounts'] = [['account_number' => '9988776655', 'account_holder' => 'PRIVATE HOLDER']];

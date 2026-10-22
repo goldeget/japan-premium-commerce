@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import os
@@ -27,6 +28,14 @@ from selenium.webdriver.support.ui import WebDriverWait
 BASE = os.environ["SHOP_BASE_URL"].rstrip("/")
 MAILPIT_API = os.environ["MAILPIT_API_URL"].rstrip("/")
 DEST = Path(os.environ["QA_ARTIFACT_DIR"])
+OFFICIAL_LOGO = (
+    Path(__file__).resolve().parents[2]
+    / "assets"
+    / "brand"
+    / "ordenowa"
+    / "official_originals"
+    / "ORDENOWA-logo.png"
+)
 RUN_ID = re.sub(r"[^0-9]", "", os.environ["GITHUB_RUN_ID"])
 RUN_ATTEMPT = re.sub(r"[^0-9]", "", os.environ["GITHUB_RUN_ATTEMPT"])
 DEST.mkdir(parents=True, exist_ok=True)
@@ -52,6 +61,12 @@ def request_json(url: str) -> dict:
     if not isinstance(value, dict):
         raise ValueError("unexpected mail capture response")
     return value
+
+
+def request_bytes(url: str) -> bytes:
+    request = Request(url, headers={"Accept": "*/*"})
+    with urlopen(request, timeout=10) as response:
+        return response.read()
 
 
 def message_recipients(message: dict) -> set[str]:
@@ -215,6 +230,30 @@ def run_viewport(width: int, height: int, label: str) -> None:
         reset_url, reset_message = reset_link_for(account_email)
         if "cid:shop_logo" not in str(reset_message.get("HTML") or ""):
             raise AssertionError("password reset email does not render the approved inline ORDENOWA logo")
+        logo_hash = hashlib.sha256(OFFICIAL_LOGO.read_bytes()).hexdigest()
+        expected_logo = request_bytes(f"{BASE}/img/ordenowa/versions/{logo_hash}/email-logo.png")
+        inline_logo = next(
+            (
+                attachment
+                for attachment in reset_message.get("Inline", [])
+                if isinstance(attachment, dict)
+                and str(attachment.get("ContentID", "")).strip("<>").lower() == "shop_logo"
+            ),
+            None,
+        )
+        if not isinstance(inline_logo, dict) or inline_logo.get("ContentType") != "image/png":
+            raise AssertionError("password reset email is missing the inline ORDENOWA PNG attachment")
+        message_id = reset_message.get("ID") or reset_message.get("Id")
+        part_id = inline_logo.get("PartID")
+        if not isinstance(message_id, str) or not isinstance(part_id, str):
+            raise AssertionError("Mailpit did not identify the inline ORDENOWA logo part")
+        attachment_url = (
+            f"{MAILPIT_API}/api/v1/message/{quote(message_id, safe='')}"
+            f"/part/{quote(part_id, safe='')}"
+        )
+        sent_logo = request_bytes(attachment_url)
+        if hashlib.sha256(sent_logo).digest() != hashlib.sha256(expected_logo).digest():
+            raise AssertionError("password reset email logo bytes do not match the published ORDENOWA derivative")
 
         stage = "password_reset"
         parsed_reset = urlparse(reset_url)

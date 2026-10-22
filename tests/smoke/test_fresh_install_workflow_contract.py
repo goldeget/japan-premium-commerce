@@ -27,6 +27,8 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertTrue("reset_link_for(account_email)" in account_flow, "password reset does not follow the captured test email")
         self.assertTrue('parsed.hostname in {"localhost", "127.0.0.1"}' in account_flow, "reset links are not restricted to the isolated shop")
         self.assertIn('"cid:shop_logo"', account_flow, "captured reset email must render the approved brand logo")
+        self.assertIn('attachment.get("ContentID", "")', account_flow)
+        self.assertIn("published ORDENOWA derivative", account_flow)
 
     def test_official_brand_upload_preview_publish_and_browser_checks_run_in_isolated_ci(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -40,6 +42,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("ordenowa-brand-e2e.log", workflow)
         self.assertIn("brand-desktop-published.png", brand_flow)
         self.assertIn("brand-mobile-published.png", brand_flow)
+        self.assertIn('controller == ["AdminBusinessProfile"]', brand_flow)
         self.assertIn("submitOrdenowaPreview", brand_flow)
         self.assertIn("submitOrdenowaPublish", brand_flow)
         self.assertIn('brand_uploads[{slot}]', brand_flow)
