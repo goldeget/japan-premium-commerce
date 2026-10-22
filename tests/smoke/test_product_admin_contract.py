@@ -240,6 +240,36 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("message_category", browser)
         self.assertNotIn("alert_text", failure_handler)
 
+    def test_native_product_alert_diagnostics_identify_only_safe_controller_and_field_markers(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        controller = (MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php").read_text(encoding="utf-8")
+        draft = (MODULE / "src" / "Domain" / "ProductAdminDraft.php").read_text(encoding="utf-8")
+        failure_handler = browser.split("except Exception as error:", 1)[1].split("finally:", 1)[0]
+
+        for source_marker in ("관리자 보안 토큰이 올바르지 않습니다.", "상품을 등록할 권한이 없습니다.", "상품 저장에 실패했습니다."):
+            self.assertIn(source_marker, controller)
+        for source_marker in ("JPY 가격은", "재고는", "카테고리를 하나 이상", "상품 옵션 입력값"):
+            self.assertIn(source_marker, draft)
+        for expected in (
+            "admin_token_invalid",
+            "product_add_permission_denied",
+            "price_jpy_invalid",
+            "quantity_invalid",
+            "category_ids_invalid",
+            "product_options_invalid",
+            "product_image_invalid",
+            "field_error_names",
+            "hidden_token_matches_action",
+            "form_before_submit",
+            "form_after_response",
+            "product_list_present",
+            "login_form_present",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, browser)
+        self.assertNotIn("alert_text", failure_handler)
+        self.assertNotIn("innerText", failure_handler)
+
     def test_browser_product_edit_verifies_korean_name_and_updated_inactive_list_record(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
         edit_flow = browser.split('stage = "native_product_edit"', 1)[1].split(

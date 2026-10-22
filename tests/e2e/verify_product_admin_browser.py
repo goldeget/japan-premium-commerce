@@ -56,7 +56,69 @@ def manager_page_diagnostics(driver: webdriver.Chrome) -> dict[str, bool]:
             load_error_marker: bodyText.includes('상품 관리 화면을 불러오지 못했습니다.'),
             login_form_present: Boolean(document.querySelector('#login_form')),
             product_form_present: Boolean(nameField && nameField.closest('form')),
+            product_list_present: Array.from(document.querySelectorAll('h3')).some(
+                (heading) => heading.innerText.trim() === 'ORDENOWA 관리 상품'
+            ),
             manager_route_present: managerRoutePresent,
+        };
+        """
+    )
+
+
+def product_form_diagnostics(driver: webdriver.Chrome) -> dict[str, object]:
+    """Return bounded form shape/field state without reading submitted values or tokens."""
+    return driver.execute_script(
+        """
+        const submitButton = document.querySelector('button[name="submitKuraneaProductSave"]');
+        const form = submitButton?.form || document.querySelector('#name_ja')?.closest('form');
+        if (!form) {
+            return {
+                login_form_present: Boolean(document.querySelector('#login_form')),
+                manager_route_present: new URLSearchParams(window.location.search)
+                    .get('controller') === 'AdminOrdenowaProductManager',
+                product_form_present: false,
+                product_list_present: Array.from(document.querySelectorAll('h3')).some(
+                    (heading) => heading.innerText.trim() === 'ORDENOWA 관리 상품'
+                ),
+            };
+        }
+
+        const action = new URL(form.action, document.baseURI);
+        const hiddenToken = form.querySelector('input[name="token"]')?.value || '';
+        const actionToken = action.searchParams.get('token') || '';
+        const safeFields = [
+            'name_ja', 'name_ko', 'price_jpy', 'quantity', 'category_ids',
+            'options', 'description_ja', 'description_ko', 'product_images',
+        ];
+        const hasValue = (name) => Array.from(form.querySelectorAll(`[name="${name}"], [name="${name}[]"]`)).some((field) => {
+            if (field.type === 'checkbox' || field.type === 'radio') return field.checked;
+            if (field.type === 'file') return Boolean(field.files?.length);
+            return String(field.value || '').trim() !== '';
+        });
+        const invalidNames = safeFields.filter((name) =>
+            Array.from(form.querySelectorAll(`[name="${name}"], [name="${name}[]"]`)).some(
+                (field) => field.willValidate && !field.validity.valid
+            )
+        );
+        return {
+            login_form_present: Boolean(document.querySelector('#login_form')),
+            manager_route_present: new URLSearchParams(window.location.search)
+                .get('controller') === 'AdminOrdenowaProductManager',
+            product_form_present: true,
+            product_list_present: Array.from(document.querySelectorAll('h3')).some(
+                (heading) => heading.innerText.trim() === 'ORDENOWA 관리 상품'
+            ),
+            form_method_post: form.method.toLowerCase() === 'post',
+            multipart_form: form.enctype.toLowerCase() === 'multipart/form-data',
+            action_targets_manager: new URLSearchParams(action.search).get('controller') === 'AdminOrdenowaProductManager',
+            action_token_present: Boolean(actionToken),
+            hidden_token_present: Boolean(hiddenToken),
+            hidden_token_matches_action: Boolean(hiddenToken && actionToken && hiddenToken === actionToken),
+            submit_control_present: Boolean(submitButton),
+            populated_field_names: safeFields.filter(hasValue),
+            field_error_names: invalidNames,
+            selected_category_count: form.querySelectorAll('input[name="category_ids[]"]:checked').length,
+            selected_file_count: form.querySelector('#product_images')?.files?.length || 0,
         };
         """
     )
@@ -80,15 +142,68 @@ def product_save_result(driver: webdriver.Chrome):
         const alertClass = ['success', 'danger', 'warning', 'info'].find(
             (name) => alert.classList.contains(`alert-${name}`)
         ) || 'unknown';
+        const knownErrors = [
+            ['admin_token_invalid', '관리자 보안 토큰이 올바르지 않습니다.'],
+            ['product_add_permission_denied', '상품을 등록할 권한이 없습니다.'],
+            ['product_edit_permission_denied', '상품을 수정할 권한이 없습니다.'],
+            ['product_name_ja_invalid', '일본어 상품명'],
+            ['product_name_ko_invalid', '한국어 상품명'],
+            ['price_jpy_invalid', 'JPY 가격'],
+            ['quantity_invalid', '재고는'],
+            ['category_ids_missing', '카테고리를 하나 이상'],
+            ['category_ids_invalid', '카테고리 선택값'],
+            ['product_category_unavailable', '선택한 카테고리 중'],
+            ['product_options_invalid', '상품 옵션'],
+            ['product_option_format_invalid', '옵션은 그룹명:'],
+            ['product_option_group_invalid', '옵션 그룹'],
+            ['product_option_value_invalid', '옵션 값'],
+            ['product_option_combination_limit', '옵션 조합은 최대'],
+            ['product_image_invalid', '상품 이미지는'],
+            ['product_image_removal_invalid', '삭제할 상품 이미지'],
+            ['managed_product_protected', '판매 보호 상태'],
+            ['native_product_creation_failed', '비활성 상품을 생성하지 못했습니다.'],
+            ['native_product_update_failed', '상품 내용을 저장하지 못했습니다.'],
+            ['native_product_save_failed', '상품 저장에 실패했습니다.'],
+            ['manager_load_failed', '상품 관리 화면을 불러오지 못했습니다.'],
+        ];
+        const errorMarkers = knownErrors
+            .filter(([, phrase]) => text.includes(phrase))
+            .map(([marker]) => marker);
+        const fieldForMarker = {
+            product_name_ja_invalid: 'name_ja',
+            product_name_ko_invalid: 'name_ko',
+            price_jpy_invalid: 'price_jpy',
+            quantity_invalid: 'quantity',
+            category_ids_missing: 'category_ids',
+            category_ids_invalid: 'category_ids',
+            product_category_unavailable: 'category_ids',
+            product_options_invalid: 'options',
+            product_option_format_invalid: 'options',
+            product_option_group_invalid: 'options',
+            product_option_value_invalid: 'options',
+            product_option_combination_limit: 'options',
+            product_image_invalid: 'product_images',
+            product_image_removal_invalid: 'remove_image_ids',
+        };
+        const fieldErrorNames = [...new Set(errorMarkers.map((marker) => fieldForMarker[marker]).filter(Boolean))];
         let messageCategory = 'unknown';
-        if (text.includes('권한') || text.includes('허용')) {
+        if (errorMarkers.includes('admin_token_invalid')) {
+            messageCategory = 'security_token';
+        } else if (errorMarkers.some((marker) => marker.endsWith('permission_denied'))) {
             messageCategory = 'permission_denied';
-        } else if (text.includes('필수') || text.includes('유효') || text.includes('입력값')) {
+        } else if (fieldErrorNames.length > 0) {
             messageCategory = 'validation_error';
-        } else if (text.includes('저장') || text.includes('실패') || text.includes('오류')) {
+        } else if (errorMarkers.some((marker) => marker.includes('creation_failed') || marker.includes('update_failed') || marker.includes('save_failed'))) {
             messageCategory = 'save_error';
         }
-        return {status: 'alert', alert_class: alertClass, message_category: messageCategory};
+        if (errorMarkers.length === 0) errorMarkers.push('unknown_controller_error');
+        return {
+            status: 'alert',
+            alert_class: alertClass,
+            message_category: messageCategory,
+            error_markers: errorMarkers,
+            field_error_names: fieldErrorNames,
+        };
         """
     )
 
@@ -146,7 +261,8 @@ def run() -> None:
     stage = "chromium_startup"
     create_operation = "not_started"
     manager_page_state: dict[str, str | bool] | None = None
-    save_diagnostics: dict[str, str | bool] | None = None
+    form_before_submit: dict[str, object] | None = None
+    save_diagnostics: dict[str, object] | None = None
     try:
         driver = webdriver.Chrome(options=options)
         stage = "administrator_login"
@@ -213,11 +329,14 @@ def run() -> None:
             create_operation = "upload_image"
             visible(driver, "#product_images").send_keys(image_file.name)
             create_operation = "submit_product"
+            form_before_submit = product_form_diagnostics(driver)
             visible(driver, 'button[name="submitKuraneaProductSave"]').click()
 
         create_operation = "wait_for_save_confirmation"
         save_result = WebDriverWait(driver, 45).until(product_save_result)
         save_diagnostics = {
+            "form_before_submit": form_before_submit or {},
+            "form_after_response": product_form_diagnostics(driver),
             **{
                 key: value
                 for key, value in manager_page_diagnostics(driver).items()
@@ -362,6 +481,8 @@ def run() -> None:
             if driver is not None and save_diagnostics is None:
                 try:
                     save_diagnostics = {
+                        "form_before_submit": form_before_submit or {},
+                        "form_after_response": product_form_diagnostics(driver),
                         **{
                             key: value
                             for key, value in manager_page_diagnostics(driver).items()
