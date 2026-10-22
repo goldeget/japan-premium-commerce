@@ -217,6 +217,23 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertNotIn("reset_password", annotation)
         self.assertNotIn("str(error)", annotation)
 
+    def test_required_registration_checkbox_uses_its_visible_label(self) -> None:
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        checkbox_click = account_flow.split("def click_required_checkbox_label", 1)[1].split("def prepare_required_registration_fields", 1)[0]
+        registration = account_flow.split("def prepare_required_registration_fields", 1)[1].split("def submit_login", 1)[0]
+        hummingbird_fields = (ROOT / "themes" / "hummingbird" / "templates" / "_partials" / "form-fields.tpl").read_text(encoding="utf-8")
+
+        self.assertIn('find_elements(By.CSS_SELECTOR, "label[for]")', checkbox_click)
+        self.assertIn('candidate.get_attribute("for") == checkbox_id', checkbox_click)
+        self.assertIn("candidate.is_displayed()", checkbox_click)
+        self.assertIn("label.click()", checkbox_click)
+        self.assertIn("checkbox.is_selected()", checkbox_click)
+        self.assertIn("click_required_checkbox_label(form, element)", registration)
+        self.assertIn('id="{$id_prefix}field-{$field.name}"', hummingbird_fields)
+        self.assertIn('for="{$id_prefix}field-{$field.name}"', hummingbird_fields)
+        self.assertNotIn("execute_script", checkbox_click)
+        self.assertNotIn(".checked =", checkbox_click)
+
     def test_ci_uses_the_module_updater_for_the_official_japan_post_archive(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         postal_step = workflow.split("- name: Download and import official Japan Post KEN_ALL data", 1)[1].split("- name:", 1)[0]

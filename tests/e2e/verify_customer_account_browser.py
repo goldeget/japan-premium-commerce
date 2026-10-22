@@ -219,6 +219,29 @@ def assert_my_page(driver: webdriver.Chrome, expected_first_name: str) -> None:
         raise AssertionError("My Page did not show the signed-in customer's saved name")
 
 
+def click_required_checkbox_label(form, checkbox) -> None:
+    checkbox_id = checkbox.get_attribute("id") or ""
+    if not checkbox_id:
+        raise AssertionError("required registration checkbox does not have an associated label id")
+
+    label = next(
+        (
+            candidate
+            for candidate in form.find_elements(By.CSS_SELECTOR, "label[for]")
+            if candidate.get_attribute("for") == checkbox_id and candidate.is_displayed()
+        ),
+        None,
+    )
+    if label is None:
+        raise AssertionError("required registration checkbox does not have a visible associated label")
+
+    # Use the visible label as a customer would. Selenium performs a normal
+    # browser click and hit-test; do not toggle the checkbox through script.
+    label.click()
+    if not checkbox.is_selected():
+        raise AssertionError("clicking the required registration checkbox label did not select it")
+
+
 def prepare_required_registration_fields(
     driver: webdriver.Chrome,
     form,
@@ -269,7 +292,7 @@ def prepare_required_registration_fields(
             field_type or "input",
         )
         if field_type == "checkbox" and not element.is_selected():
-            element.click()
+            click_required_checkbox_label(form, element)
         elif field_type == "radio" and name not in selected_radio_groups:
             element.click()
             selected_radio_groups.add(name)
