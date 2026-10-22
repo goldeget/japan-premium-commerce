@@ -20,6 +20,18 @@ PRODUCT_TEMPLATE = THEMES / "hummingbird" / "templates" / "catalog" / "product.t
 PRODUCT_LIST_TEMPLATE = THEMES / "kuranea" / "templates" / "catalog" / "listing" / "product-list.tpl"
 CHILD_THEME_CONFIG = THEMES / "kuranea" / "config" / "theme.yml"
 SEO_WORKFLOW = ROOT / ".github" / "workflows" / "seo-escape.yml"
+SEO_WORKFLOW_PATHS = (
+    ".github/workflows/seo-escape.yml",
+    "tests/smoke/test_seo_escape_contract.py",
+    "themes/kuranea/templates/_partials/head.tpl",
+    "themes/kuranea/templates/_partials/microdata/head-jsonld.tpl",
+    "themes/kuranea/templates/_partials/microdata/product-jsonld.tpl",
+    "themes/kuranea/templates/_partials/microdata/product-list-jsonld.tpl",
+    "themes/kuranea/templates/catalog/listing/product-list.tpl",
+    "themes/kuranea/config/theme.yml",
+    "themes/hummingbird",
+    ".gitmodules",
+)
 
 
 class SeoEscapeContract(unittest.TestCase):
@@ -137,15 +149,12 @@ class SeoEscapeContract(unittest.TestCase):
         )
         for trigger, next_trigger in (("push", "pull_request"), ("pull_request", "workflow_dispatch")):
             section = source.split(f"  {trigger}:", 1)[1].split(f"  {next_trigger}:", 1)[0]
-            for path in (
-                ".gitmodules",
-                "themes/kuranea/templates/_partials/microdata/product-jsonld.tpl",
-                "themes/kuranea/templates/_partials/microdata/product-list-jsonld.tpl",
-                "themes/kuranea/templates/catalog/listing/product-list.tpl",
-                "themes/kuranea/config/theme.yml",
-                "themes/hummingbird",
-            ):
-                self.assertIn(f"      - '{path}'", section, f"{trigger} must run for changes to {path}")
+            configured_paths = tuple(re.findall(r"^      - '([^']+)'$", section, flags=re.MULTILINE))
+            self.assertEqual(
+                SEO_WORKFLOW_PATHS,
+                configured_paths,
+                f"{trigger} path filters must cover every child/parent SEO template dependency, the contract, and workflow configuration",
+            )
 
     def test_home_uses_brand_seo_defaults_and_other_pages_keep_prestashop_metadata(self):
         source = HEAD.read_text(encoding="utf-8")
