@@ -124,6 +124,23 @@ jobs:
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             runuser -g www-data -u www-data -- php /tmp/verify_native_address_persistence.php
 
+      - name: Verify Japan Post address in an unpaid native order and Back Office view
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/verify_native_order_persistence.php' \
+            < tests/postcode/verify_native_order_persistence.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e CI="$CI" \
+            -e GITHUB_ACTIONS="$GITHUB_ACTIONS" \
+            -e KURANEA_ISOLATED_CI=1 \
+            -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            -e KURANEA_CI_RUN_ID="$GITHUB_RUN_ID" \
+            -e KURANEA_CI_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            prestashop runuser -g www-data -u www-data -- \
+            php /tmp/verify_native_order_persistence.php
+
       - name: Verify the fresh shop and restart persistence
         env:
           SHOP_BASE_URL: http://127.0.0.1:18080

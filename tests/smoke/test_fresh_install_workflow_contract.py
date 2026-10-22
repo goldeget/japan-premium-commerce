@@ -21,37 +21,58 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
 
     def test_failed_compose_bootstrap_uses_the_shared_redacting_diagnostics_script(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("if ! docker compose -p \"$CI_COMPOSE_PROJECT_NAME\" up", workflow)
+        self.assertIn("- name: Start the empty-volume shop", workflow)
+        self.assertIn("id: compose_up", workflow)
         self.assertIn("bash tests/smoke/collect_failure_diagnostics.sh", workflow)
         self.assertIn("docker compose -p \"$project_name\" logs --tail=160 mariadb prestashop", (ROOT / "tests/smoke/collect_failure_diagnostics.sh").read_text(encoding="utf-8"))
 
     def test_isolated_preinstall_probe_repairs_a_root_owned_class_index(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        bootstrap = workflow.split("- name: Build and install into unique empty volumes", 1)[1].split("- name:", 1)[0]
-        self.assertIn('probe_project="${CI_COMPOSE_PROJECT_NAME}-cache-probe"', bootstrap)
-        self.assertIn("run --rm --no-deps", bootstrap)
-        self.assertIn('chown -R root:root "$cache_dir"', bootstrap)
-        self.assertIn("/tmp/pre-install-scripts/10-kuranea-cache-ownership.sh", bootstrap)
-        self.assertIn('test "$(stat -c "%U:%G" "$cache_dir/class_index.php")" = www-data:www-data', bootstrap)
-        self.assertIn("runuser -g www-data -u www-data -- test -w", bootstrap)
-        self.assertIn('docker compose -p "$probe_project" down -v --remove-orphans', bootstrap)
+        probe = workflow.split("- name: Verify fresh cache ownership in an isolated probe project", 1)[1].split("- name:", 1)[0]
+        self.assertIn('probe_project="${CI_COMPOSE_PROJECT_NAME}-cache-probe"', probe)
+        self.assertIn("run --rm --no-deps", probe)
+        self.assertIn('chown -R root:root "$cache_dir"', probe)
+        self.assertIn("/tmp/pre-install-scripts/10-kuranea-cache-ownership.sh", probe)
+        self.assertIn('test "$(stat -c "%U:%G" "$cache_dir/class_index.php")" = www-data:www-data', probe)
+        self.assertIn("runuser -g www-data -u www-data -- test -w", probe)
+        self.assertIn('docker compose -p "$probe_project" down -v --remove-orphans', probe)
+        start = workflow.split("- name: Start the empty-volume shop", 1)[1].split("- name:", 1)[0]
+        self.assertIn('docker compose -p "$CI_COMPOSE_PROJECT_NAME" up -d --wait --wait-timeout 900', start)
 
     def test_failed_compose_bootstrap_publishes_a_redacted_step_summary(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        bootstrap = workflow.split("- name: Build and install into unique empty volumes", 1)[1].split("- name:", 1)[0]
+        capture = workflow.split("- name: Capture bounded diagnostics on failure", 1)[1].split("- name:", 1)[0]
         diagnostics = (ROOT / "tests/smoke/collect_failure_diagnostics.sh").read_text(encoding="utf-8")
-        self.assertIn("bash tests/smoke/collect_failure_diagnostics.sh", bootstrap)
+        self.assertIn("if: failure()", capture)
+        self.assertIn("steps.image_build.outcome", capture)
+        self.assertIn("steps.cache_probe.outcome", capture)
+        self.assertIn("steps.compose_up.outcome", capture)
+        self.assertIn("bash tests/smoke/collect_failure_diagnostics.sh", capture)
         self.assertIn("GITHUB_STEP_SUMMARY", diagnostics)
         self.assertIn("[REDACTED]", diagnostics)
         self.assertIn("Upload redacted install diagnostics", workflow)
         self.assertIn("retention-days: 2", workflow)
 
-    def test_later_step_failures_also_use_the_redacting_collector(self) -> None:
+    def test_every_workflow_failure_uses_the_redacting_collector(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         capture = workflow.split("- name: Capture bounded diagnostics on failure", 1)[1].split("- name:", 1)[0]
-        self.assertIn("steps.compose_bootstrap.outcome == 'success'", capture)
+        self.assertIn("if: failure()", capture)
         self.assertIn("bash tests/smoke/collect_failure_diagnostics.sh", capture)
         self.assertNotIn("docker compose", capture)
+
+    def test_native_order_persistence_test_is_guarded_to_its_isolated_github_project(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        order_step = workflow.split("- name: Verify Japan Post address in an unpaid native order and Back Office view", 1)[1].split("- name:", 1)[0]
+        order_test = (ROOT / "tests/postcode/verify_native_order_persistence.php").read_text(encoding="utf-8")
+        self.assertIn("KURANEA_ISOLATED_CI=1", order_step)
+        self.assertIn('KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME"', order_step)
+        self.assertIn('KURANEA_CI_RUN_ID="$GITHUB_RUN_ID"', order_step)
+        self.assertIn('KURANEA_CI_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT"', order_step)
+        self.assertIn("getenv('CI') !== 'true'", order_test)
+        self.assertIn("getenv('GITHUB_ACTIONS') !== 'true'", order_test)
+        self.assertIn("$projectName !== $expectedProjectName", order_test)
+        self.assertIn("instanceof PaymentModule", order_test)
+        self.assertIn("GetOrderForViewing", order_test)
 
     def test_successful_postal_import_clears_only_the_staging_copy(self) -> None:
         importer = POSTAL_IMPORT.read_text(encoding="utf-8")
