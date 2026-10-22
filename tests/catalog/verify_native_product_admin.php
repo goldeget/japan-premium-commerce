@@ -79,7 +79,7 @@ if (!$managerTab instanceof Tab
 }
 
 $stage = 'synthetic product draft and image upload';
-$png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/kWQAAAAASUVORK5CYII=', true);
+$png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGNU8qplYGBgYmBgYGBgAAAKuwDtbIwH5AAAAABJRU5ErkJggg==', true);
 if (!is_string($png)) {
     throw new RuntimeException('Could not decode the synthetic image fixture.');
 }

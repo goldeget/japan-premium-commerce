@@ -115,7 +115,7 @@ def run() -> None:
             categories[0].click()
 
         png = base64.b64decode(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/kWQAAAAASUVORK5CYII="
+            "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGNU8qplYGBgYmBgYGBgAAAKuwDtbIwH5AAAAABJRU5ErkJggg=="
         )
         with tempfile.NamedTemporaryFile(prefix="ordenowa-product-", suffix=".png") as image_file:
             image_file.write(png)
@@ -173,7 +173,7 @@ def run() -> None:
             if box.is_selected() != (category_id in expected_category_ids):
                 box.click()
         png = base64.b64decode(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/kWQAAAAASUVORK5CYII="
+            "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGNU8qplYGBgYmBgYGBgAAAKuwDtbIwH5AAAAABJRU5ErkJggg=="
         )
         with tempfile.NamedTemporaryFile(prefix="ordenowa-product-replacement-", suffix=".png") as image_file:
             image_file.write(png)
