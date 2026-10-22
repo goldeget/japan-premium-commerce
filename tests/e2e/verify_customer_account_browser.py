@@ -13,7 +13,7 @@ import time
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.error import URLError
-from urllib.parse import parse_qs, quote, urlencode, urljoin, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from selenium import webdriver
@@ -202,6 +202,40 @@ def safe_diagnostic_boolean(value: object) -> bool | None:
     return value if isinstance(value, bool) else None
 
 
+def safe_same_origin_path(value: object) -> str:
+    if not isinstance(value, str):
+        return "/<unknown>"
+    try:
+        location = urlparse(value)
+        base_location = urlparse(BASE)
+        same_origin = (
+            location.scheme == base_location.scheme
+            and location.hostname == base_location.hostname
+            and location.port == base_location.port
+        )
+        if not same_origin:
+            return "/<other-origin>"
+        path = unquote(location.path or "/")
+    except (TypeError, ValueError):
+        return "/<unknown>"
+
+    if len(path) > 160:
+        return "/<long-path>"
+    safe_segments = []
+    for segment in path.split("/"):
+        token_like_segment = (
+            len(segment) >= 16
+            and re.fullmatch(r"[A-Za-z0-9_-]+", segment)
+            and re.search(r"[A-Za-z]", segment)
+            and re.search(r"[0-9]", segment)
+        )
+        if len(segment) > 20 or token_like_segment or "@" in segment:
+            safe_segments.append("<redacted>")
+        else:
+            safe_segments.append(re.sub(r"[^A-Za-z0-9_.-]", "_", segment))
+    return "/".join(safe_segments)[:160] or "/"
+
+
 def safe_registration_path(value: object) -> str:
     if isinstance(value, str) and value in {"/", "/index.php"}:
         return value
@@ -334,6 +368,129 @@ def emit_registration_diagnostics(
     print("ORDENOWA_ACCOUNT_REGISTRATION_SAFE_STATE=" + safe_state_json, file=sys.stderr)
     annotation = safe_state_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
     print(f"::error title=Customer account registration response state::{annotation}", file=sys.stderr)
+
+
+def collect_profile_update_diagnostics(
+    driver: webdriver.Chrome,
+    phase: str,
+    expected_first_name: str,
+) -> dict[str, object]:
+    diagnostics: dict[str, object] = {}
+    try:
+        current_url = driver.current_url
+    except Exception:
+        current_url = ""
+    try:
+        browser_diagnostics = driver.execute_script(
+            r"""
+            const form = document.querySelector('#customer-form');
+            const isVisible = element => Boolean(element && element.getClientRects().length);
+            const invalid = form ? [...form.querySelectorAll(':invalid')].filter(isVisible) : [];
+            const password = form?.querySelector('input[name="password"]');
+            const firstName = form?.querySelector('input[name="firstname"]');
+            const submit = form?.querySelector('button.form-control-submit');
+            const alerts = [...document.querySelectorAll('.alert, [role="alert"], .help-block.error')].filter(isVisible);
+            const classifyAlert = element => {
+              const className = typeof element.className === 'string' ? element.className.toLowerCase() : '';
+              if (/(^|\s)(alert-success|is-success)(\s|$)/.test(className)) return 'success';
+              if (/(^|\s)(alert-danger|is-danger|error)(\s|$)/.test(className)) return 'danger';
+              if (/(^|\s)(alert-warning|is-warning)(\s|$)/.test(className)) return 'warning';
+              if (/(^|\s)(alert-info|is-info)(\s|$)/.test(className)) return 'info';
+              return 'unknown';
+            };
+            const alertClassification = alerts.length ? classifyAlert(alerts[0]) : 'none';
+            return {
+              form_present: Boolean(form),
+              form_visible: isVisible(form),
+              submit_button_present: Boolean(submit),
+              submit_button_visible: isVisible(submit),
+              submit_button_enabled: Boolean(submit && !submit.disabled),
+              form_valid: Boolean(form && form.checkValidity()),
+              visible_invalid_control_count: Math.min(invalid.length, 99),
+              visible_invalid_controls: invalid.slice(0, 6).map(control => ({
+                name: control.getAttribute('name') || '',
+                type: control.getAttribute('type') || control.tagName.toLowerCase()
+              })),
+              current_password_present: Boolean(password),
+              current_password_type: password?.getAttribute('type') || '',
+              current_password_required: Boolean(password && password.required),
+              current_password_filled: Boolean(password && password.value.length > 0),
+              first_name_present: Boolean(firstName),
+              first_name_matches_expected: Boolean(firstName && firstName.value === arguments[0]),
+              alert_classification: alertClassification
+            };
+            """,
+            expected_first_name,
+        )
+        if isinstance(browser_diagnostics, dict):
+            diagnostics = browser_diagnostics
+    except Exception as error:
+        diagnostics["collection_error_type"] = type(error).__name__
+
+    invalid_controls = diagnostics.get("visible_invalid_controls")
+    safe_invalid_controls: list[dict[str, str]] = []
+    if isinstance(invalid_controls, list):
+        for item in invalid_controls[:6]:
+            if not isinstance(item, dict):
+                continue
+            safe_invalid_controls.append(
+                {
+                    "name": safe_diagnostic_name(item.get("name")),
+                    "type": safe_diagnostic_name(item.get("type"), field_type=True),
+                }
+            )
+    invalid_count = diagnostics.get("visible_invalid_control_count")
+    if not isinstance(invalid_count, int) or isinstance(invalid_count, bool):
+        invalid_count = None
+    else:
+        invalid_count = min(max(invalid_count, 0), 99)
+    alert_classification = diagnostics.get("alert_classification")
+    if alert_classification not in {"none", "success", "danger", "warning", "info", "unknown"}:
+        alert_classification = "unavailable"
+
+    safe_state: dict[str, object] = {
+        "phase": safe_diagnostic_name(phase),
+        "path": safe_same_origin_path(current_url),
+        "form_present": safe_diagnostic_boolean(diagnostics.get("form_present")),
+        "form_visible": safe_diagnostic_boolean(diagnostics.get("form_visible")),
+        "submit_button_present": safe_diagnostic_boolean(diagnostics.get("submit_button_present")),
+        "submit_button_visible": safe_diagnostic_boolean(diagnostics.get("submit_button_visible")),
+        "submit_button_enabled": safe_diagnostic_boolean(diagnostics.get("submit_button_enabled")),
+        "form_valid": safe_diagnostic_boolean(diagnostics.get("form_valid")),
+        "visible_invalid_control_count": invalid_count,
+        "visible_invalid_controls": safe_invalid_controls,
+        "current_password_present": safe_diagnostic_boolean(diagnostics.get("current_password_present")),
+        "current_password_type": safe_diagnostic_name(
+            diagnostics.get("current_password_type"), field_type=True
+        ),
+        "current_password_required": safe_diagnostic_boolean(diagnostics.get("current_password_required")),
+        "current_password_filled": safe_diagnostic_boolean(diagnostics.get("current_password_filled")),
+        "first_name_present": safe_diagnostic_boolean(diagnostics.get("first_name_present")),
+        "first_name_matches_expected": safe_diagnostic_boolean(
+            diagnostics.get("first_name_matches_expected")
+        ),
+        "alert_classification": alert_classification,
+    }
+    collection_error = diagnostics.get("collection_error_type")
+    if isinstance(collection_error, str):
+        safe_state["collection_error_type"] = safe_diagnostic_name(collection_error, field_type=True)
+    return safe_state
+
+
+def emit_profile_update_diagnostics(
+    driver: webdriver.Chrome,
+    stage: str,
+    pre_submit: dict[str, object] | None,
+    expected_first_name: str,
+) -> None:
+    safe_state = {
+        "pre_submit": pre_submit,
+        "failure_state": collect_profile_update_diagnostics(driver, stage, expected_first_name),
+    }
+    safe_state_json = json.dumps(safe_state, ensure_ascii=True, sort_keys=True)
+    print("ORDENOWA_ACCOUNT_PROFILE_UPDATE_SAFE_STATE=" + safe_state_json, file=sys.stderr)
+    annotation = safe_state_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::error title=Customer account profile update safe state::{annotation}", file=sys.stderr)
 
 
 def fill(driver: webdriver.Chrome, selector: str, value: str) -> None:
@@ -560,6 +717,8 @@ def logout(driver: webdriver.Chrome) -> None:
 def run_viewport(width: int, height: int, label: str) -> bool:
     stage = "registration_link_load"
     failure_control = {"name": "display-register-form", "type": "anchor"}
+    profile_pre_submit: dict[str, object] | None = None
+    expected_first_name = f"CI-{label.title()}"
     driver = None
     success = False
     try:
@@ -613,17 +772,24 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         assert_my_page(driver, "CI")
         driver.save_screenshot(str(DEST / f"{label}-customer-account-created.png"))
 
-        stage = "profile_update"
+        stage = "profile_update_route"
         driver.get(f"{BASE}/index.php?controller=identity")
+        stage = "profile_update_first_name"
         first_name = visible(driver, '#customer-form input[name="firstname"]')
         first_name.clear()
-        first_name.send_keys(f"CI-{label.title()}")
+        first_name.send_keys(expected_first_name)
+        stage = "profile_update_current_password"
         # PrestaShop 9 requires the signed-in customer's current password before saving identity changes.
         fill(driver, '#customer-form input[name="password"]', initial_password)
+        profile_pre_submit = collect_profile_update_diagnostics(
+            driver, "pre_submit", expected_first_name
+        )
+        stage = "profile_update_submit"
         visible(driver, "#customer-form button.form-control-submit").click()
+        stage = "profile_update_persist_wait"
         WebDriverWait(driver, 30).until(
             lambda browser: browser.find_element(By.CSS_SELECTOR, '#customer-form input[name="firstname"]').get_attribute("value")
-            == f"CI-{label.title()}"
+            == expected_first_name
         )
         driver.save_screenshot(str(DEST / f"{label}-customer-account-profile.png"))
 
@@ -707,6 +873,13 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             if stage.startswith("registration_"):
                 try:
                     emit_registration_diagnostics(driver, stage, failure_control)
+                except Exception:
+                    pass
+            elif stage.startswith("profile_update_"):
+                try:
+                    emit_profile_update_diagnostics(
+                        driver, stage, profile_pre_submit, expected_first_name
+                    )
                 except Exception:
                     pass
         print(f"FAIL: {label} customer account flow at {stage} ({type(error).__name__})", file=sys.stderr)

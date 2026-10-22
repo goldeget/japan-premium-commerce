@@ -1,10 +1,11 @@
 """Keep the isolated installer pointed at Japan Post's published KEN_ALL archive."""
 from __future__ import annotations
 
+import ast
 import re
 import unittest
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -171,8 +172,10 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
     def test_account_registration_failure_emits_redacted_browser_state_in_ci_summary(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
-        diagnostics = account_flow.split("def emit_registration_diagnostics", 1)[1].split("def fill", 1)[0]
-        registration = account_flow.split('stage = "registration_form_load"', 1)[1].split('stage = "profile_update"', 1)[0]
+        diagnostics = account_flow.split("def emit_registration_diagnostics", 1)[1].split(
+            "def collect_profile_update_diagnostics", 1
+        )[0]
+        registration = account_flow.split('stage = "registration_form_load"', 1)[1].split('stage = "profile_update_route"', 1)[0]
         self.assertLess(registration.index('stage = "registration_submit"'), registration.index('stage = "registration_post_submit"'))
         for field in (
             "registration_form_visible",
@@ -226,7 +229,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "def set_registration_control", 1
         )[0]
         post_submit = account_flow.split('stage = "registration_post_submit"', 1)[1].split(
-            'stage = "profile_update"', 1
+            'stage = "profile_update_route"', 1
         )[0]
         sign_in_template = (ROOT / "themes" / "hummingbird" / "modules" / "ps_customersignin" / "ps_customersignin.tpl").read_text(
             encoding="utf-8"
@@ -252,15 +255,102 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
 
     def test_profile_update_submits_the_required_current_password(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
-        profile_update = account_flow.split('stage = "profile_update"', 1)[1].split(
-            'stage = "email_login"', 1
-        )[0]
+        profile_start = account_flow.index('stage = "profile_update_route"')
+        profile_end = account_flow.index('stage = "email_login"', profile_start)
+        profile_update = account_flow[profile_start:profile_end]
         current_password = "fill(driver, '#customer-form input[name=\"password\"]', initial_password)"
         self.assertIn(current_password, profile_update)
         self.assertLess(
             profile_update.index(current_password),
             profile_update.index('visible(driver, "#customer-form button.form-control-submit").click()'),
         )
+
+    def test_profile_update_failure_emits_bounded_redacted_dom_diagnostics(self) -> None:
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        collector = account_flow.split("def collect_profile_update_diagnostics", 1)[1].split(
+            "def emit_profile_update_diagnostics", 1
+        )[0]
+        emitter = account_flow.split("def emit_profile_update_diagnostics", 1)[1].split("def fill", 1)[0]
+        profile_start = account_flow.index('stage = "profile_update_route"')
+        profile_end = account_flow.index('stage = "email_login"', profile_start)
+        profile_update = account_flow[profile_start:profile_end]
+        failure = account_flow.split("def run_viewport", 1)[1].split(
+            "except Exception as error:", 1
+        )[1].split("print(f\"FAIL:", 1)[0]
+        account_step = workflow.split(
+            "- name: Verify customer registration, email login, logout, password reset, and my page in Chromium", 1
+        )[1].split("- name:", 1)[0]
+
+        for field in (
+            "form_present",
+            "form_visible",
+            "submit_button_present",
+            "submit_button_visible",
+            "submit_button_enabled",
+            "form_valid",
+            "visible_invalid_control_count",
+            "visible_invalid_controls",
+            "current_password_present",
+            "current_password_type",
+            "current_password_required",
+            "current_password_filled",
+            "first_name_present",
+            "first_name_matches_expected",
+            "alert_classification",
+        ):
+            self.assertIn(field, collector)
+        self.assertIn("safe_same_origin_path", collector)
+        self.assertIn('ORDENOWA_ACCOUNT_PROFILE_UPDATE_SAFE_STATE=', emitter)
+        self.assertIn('::error title=Customer account profile update safe state::', emitter)
+        self.assertIn("pre_submit", emitter)
+        self.assertIn("failure_state", emitter)
+        self.assertNotIn("innerText", collector)
+        self.assertNotIn("window.location.search", collector)
+        self.assertNotIn('"password"', emitter)
+        self.assertNotIn('"email"', emitter)
+        self.assertNotIn('"token"', emitter)
+        self.assertNotIn("str(error)", failure)
+
+        for stage in (
+            'stage = "profile_update_route"',
+            'stage = "profile_update_first_name"',
+            'stage = "profile_update_current_password"',
+            'stage = "profile_update_submit"',
+            'stage = "profile_update_persist_wait"',
+        ):
+            self.assertIn(stage, profile_update)
+        self.assertIn("profile_pre_submit = collect_profile_update_diagnostics(", profile_update)
+        self.assertIn('driver, "pre_submit", expected_first_name', profile_update)
+        self.assertIn("elif stage.startswith(\"profile_update_\")", failure)
+        self.assertIn("driver, stage, profile_pre_submit, expected_first_name", failure)
+        self.assertIn("ORDENOWA_ACCOUNT_PROFILE_UPDATE_SAFE_STATE=", account_step)
+        self.assertIn("profile_diagnostics_lines=$(rg '^ORDENOWA_ACCOUNT_PROFILE_UPDATE_SAFE_STATE=' \"$log_file\" || true)", account_step)
+
+    def test_same_origin_long_token_path_segment_is_redacted(self) -> None:
+        source = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        module = ast.parse(source)
+        helper = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == "safe_same_origin_path"
+        )
+        helper_module = ast.Module(body=[helper], type_ignores=[])
+        namespace = {
+            "BASE": "https://shop.example",
+            "re": re,
+            "unquote": unquote,
+            "urlparse": urlparse,
+        }
+        exec(compile(helper_module, "verify_customer_account_browser.py", "exec"), namespace)
+
+        reset_token = "a1b2c3d4e5f60718293a4b5c6d7e8f90"
+        result = namespace["safe_same_origin_path"](
+            f"https://shop.example/index.php/{reset_token}?email=private@example.invalid"
+        )
+
+        self.assertEqual(result, "/index.php/<redacted>")
+        self.assertNotIn(reset_token, result)
 
     def test_registration_link_host_must_match_the_base_shop_host(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
@@ -305,7 +395,9 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
 
     def test_registration_failure_diagnostics_fall_back_to_safe_page_markers(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
-        diagnostics = account_flow.split("def emit_registration_diagnostics", 1)[1].split("def fill", 1)[0]
+        diagnostics = account_flow.split("def emit_registration_diagnostics", 1)[1].split(
+            "def collect_profile_update_diagnostics", 1
+        )[0]
 
         self.assertIn("window.location.pathname", diagnostics)
         self.assertIn("header_user_menu_button_present", diagnostics)
@@ -321,7 +413,9 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
     def test_account_registration_reports_link_and_required_control_stages_safely(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
         registration = account_flow.split("def run_viewport", 1)[1].split("if __name__", 1)[0]
-        diagnostics = account_flow.split("def emit_registration_diagnostics", 1)[1].split("def fill", 1)[0]
+        diagnostics = account_flow.split("def emit_registration_diagnostics", 1)[1].split(
+            "def collect_profile_update_diagnostics", 1
+        )[0]
 
         stage_markers = (
             'stage = "registration_link_load"',
@@ -377,7 +471,9 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
 
     def test_account_registration_failure_annotation_exposes_only_safe_response_state(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
-        diagnostics = account_flow.split("def emit_registration_diagnostics", 1)[1].split("def fill", 1)[0]
+        diagnostics = account_flow.split("def emit_registration_diagnostics", 1)[1].split(
+            "def collect_profile_update_diagnostics", 1
+        )[0]
         state_builder = diagnostics.split("safe_state: dict[str, object] = {", 1)[1].split(
             "safe_state_json =", 1
         )[0]

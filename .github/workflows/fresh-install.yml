@@ -367,6 +367,7 @@ jobs:
           if [ "$browser_status" -ne 0 ]; then
             failure_line=$(rg '^FAIL:' "$log_file" | tail -n 1 || true)
             diagnostics_lines=$(rg '^ORDENOWA_ACCOUNT_REGISTRATION_SAFE_STATE=' "$log_file" || true)
+            profile_diagnostics_lines=$(rg '^ORDENOWA_ACCOUNT_PROFILE_UPDATE_SAFE_STATE=' "$log_file" || true)
             printf 'ORDENOWA customer account browser failure: %s\n' "${failure_line:-See the uploaded account browser log for the failing stage.}" >> "$GITHUB_STEP_SUMMARY"
             if [ -n "$diagnostics_lines" ]; then
               while IFS= read -r diagnostics_line; do
@@ -376,6 +377,15 @@ jobs:
                 diagnostics_annotation=${diagnostics_annotation//$'\n'/'%0A'}
                 printf '::error title=Customer account registration safe state::%s\n' "$diagnostics_annotation"
               done <<< "$diagnostics_lines"
+            fi
+            if [ -n "$profile_diagnostics_lines" ]; then
+              while IFS= read -r profile_diagnostics_line; do
+                printf '%s\n' "$profile_diagnostics_line" >> "$GITHUB_STEP_SUMMARY"
+                profile_diagnostics_annotation=${profile_diagnostics_line//'%'/'%25'}
+                profile_diagnostics_annotation=${profile_diagnostics_annotation//$'\r'/'%0D'}
+                profile_diagnostics_annotation=${profile_diagnostics_annotation//$'\n'/'%0A'}
+                printf '::error title=Customer account profile update safe state::%s\n' "$profile_diagnostics_annotation"
+              done <<< "$profile_diagnostics_lines"
             fi
             exit "$browser_status"
           fi
