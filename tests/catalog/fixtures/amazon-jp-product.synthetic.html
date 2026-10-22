@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>合成テスト商品 A</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Product",
+        "name": "[TEST FIXTURE] 合成キッチンツール A",
+        "description": "合成データです。Amazon または実在商品から取得した情報ではありません。",
+        "sku": "SYNTHETIC-AMAZON-SKU",
+        "brand": {"@type": "Brand", "name": "KURANEA Fixture Lab"},
+        "category": "生活用品 > キッチン用品",
+        "image": [
+          {"@type": "ImageObject", "url": "https://images.example.invalid/fixture-a-main.jpg", "caption": "合成メイン画像"},
+          "https://images.example.invalid/fixture-a-detail.jpg"
+        ],
+        "additionalProperty": [
+          {"@type": "PropertyValue", "name": "色", "value": "藍色"},
+          {"@type": "PropertyValue", "name": "サイズ", "value": "M"},
+          {"@type": "PropertyValue", "name": "サイズ", "value": "L"}
+        ],
+        "offers": {
+          "@type": "Offer",
+          "price": "5980",
+          "priceCurrency": "JPY",
+          "availability": "https://schema.org/InStock"
+        },
+        "aggregateRating": {"@type": "AggregateRating", "ratingValue": "4.5", "reviewCount": "2"},
+        "review": [
+          {"@type": "Review", "author": {"name": "Fixture Reviewer"}, "reviewBody": "合成レビューです。", "reviewRating": {"ratingValue": "4"}}
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body><main>合成 fixture のみ</main></body>
+</html>
