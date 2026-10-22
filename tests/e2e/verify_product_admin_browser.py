@@ -6,6 +6,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -22,6 +23,7 @@ BASE = os.environ["SHOP_BASE_URL"].rstrip("/")
 ADMIN_LOGIN = os.environ["ADMIN_LOGIN_URL"].rstrip("/")
 ADMIN_EMAIL = os.environ["ADMIN_MAIL"]
 ADMIN_PASSWORD = os.environ["ADMIN_PASSWD"]
+ADMIN_PATH = urlparse(ADMIN_LOGIN).path.rstrip("/")
 DEST = Path(os.environ["QA_ARTIFACT_DIR"])
 DEST.mkdir(parents=True, exist_ok=True)
 
@@ -65,12 +67,172 @@ def manager_page_diagnostics(driver: webdriver.Chrome) -> dict[str, bool]:
     )
 
 
+def clear_product_browser_network_events(driver: webdriver.Chrome) -> bool:
+    """Discard earlier browser traffic so later records cover only the product POST."""
+    try:
+        driver.get_log("performance")
+    except Exception:
+        return False
+    return True
+
+
+def _safe_network_url_metadata(raw_url: object) -> dict[str, object]:
+    """Reduce a browser URL to a sanitized path and route booleans; omit query values."""
+    if not isinstance(raw_url, str):
+        raw_url = ""
+    try:
+        parsed = urlparse(raw_url)
+        expected = urlparse(BASE)
+        same_origin = (
+            parsed.scheme.lower(),
+            parsed.hostname,
+            parsed.port,
+        ) == (
+            expected.scheme.lower(),
+            expected.hostname,
+            expected.port,
+        )
+    except ValueError:
+        parsed = urlparse("")
+        same_origin = False
+
+    path = re.sub(r"[^A-Za-z0-9._~/-]", "_", parsed.path or "/")[:240]
+    query_controller = parse_qs(parsed.query).get("controller", [""])[0]
+    controller_is_manager = query_controller == "AdminOrdenowaProductManager"
+    is_admin_path = bool(
+        ADMIN_PATH
+        and (parsed.path == ADMIN_PATH or parsed.path.startswith(ADMIN_PATH + "/"))
+    )
+    return {
+        "path": path,
+        "origin_matches_shop": same_origin,
+        "is_admin_path": is_admin_path,
+        "controller_is_manager": controller_is_manager,
+    }
+
+
+def _safe_http_status(value: object) -> int | None:
+    try:
+        status = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return status if 100 <= status <= 599 else None
+
+
+def _safe_network_failure_category(value: object) -> str:
+    categories = {
+        "net::ERR_ABORTED": "aborted",
+        "net::ERR_CONNECTION_REFUSED": "connection_refused",
+        "net::ERR_CONNECTION_RESET": "connection_reset",
+        "net::ERR_NAME_NOT_RESOLVED": "dns_failure",
+        "net::ERR_TIMED_OUT": "timeout",
+    }
+    if not isinstance(value, str):
+        return "other_failure"
+    return categories.get(value, "network_failure" if value.startswith("net::ERR_") else "other_failure")
+
+
+def product_post_network_diagnostics(driver: webdriver.Chrome) -> dict[str, object]:
+    """Return bounded request/redirect metadata without headers, cookies, query values, or bodies."""
+    try:
+        events = driver.get_log("performance")
+    except Exception:
+        return {"available": False, "truncated": False, "records": []}
+
+    records_by_id: dict[str, dict[str, object]] = {}
+    current_methods: dict[str, str] = {}
+    truncated = len(events) > 2000
+    for entry in events[:2000]:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            envelope = json.loads(entry.get("message", ""))
+        except (TypeError, ValueError):
+            continue
+        event = envelope.get("message", {}) if isinstance(envelope, dict) else {}
+        if not isinstance(event, dict):
+            continue
+        event_name = event.get("method")
+        params = event.get("params", {})
+        if not isinstance(params, dict):
+            continue
+        request_id = params.get("requestId")
+        if not isinstance(request_id, str):
+            continue
+
+        if event_name == "Network.requestWillBeSent":
+            request = params.get("request", {})
+            if not isinstance(request, dict):
+                continue
+            request_method = request.get("method", "")
+            request_method = request_method.upper() if isinstance(request_method, str) else ""
+            metadata = _safe_network_url_metadata(request.get("url"))
+            record = records_by_id.get(request_id)
+            redirect_response = params.get("redirectResponse")
+            if record is not None and isinstance(redirect_response, dict):
+                redirect_status = _safe_http_status(redirect_response.get("status"))
+                if current_methods.get(request_id) == "POST" and record["post_response_status"] is None:
+                    record["post_response_status"] = redirect_status
+                redirects = record["redirects"]
+                if isinstance(redirects, list) and len(redirects) < 3:
+                    redirects.append(
+                        {
+                            "status": redirect_status,
+                            "redirect_target_path": metadata["path"],
+                            "redirect_target_origin_matches_shop": metadata["origin_matches_shop"],
+                            "redirect_target_is_admin_path": metadata["is_admin_path"],
+                            "redirect_target_controller_is_manager": metadata["controller_is_manager"],
+                        }
+                    )
+                elif isinstance(redirects, list):
+                    truncated = True
+
+            if request_method == "POST" and record is None and len(records_by_id) < 8:
+                record = {
+                    "method": "POST",
+                    "path": metadata["path"],
+                    "origin_matches_shop": metadata["origin_matches_shop"],
+                    "is_admin_path": metadata["is_admin_path"],
+                    "controller_is_manager": metadata["controller_is_manager"],
+                    "post_response_status": None,
+                    "redirects": [],
+                    "failure_category": None,
+                }
+                records_by_id[request_id] = record
+            elif request_method == "POST" and record is None:
+                truncated = True
+            if record is not None:
+                current_methods[request_id] = request_method
+
+        elif event_name == "Network.responseReceived":
+            record = records_by_id.get(request_id)
+            response = params.get("response", {})
+            if record is not None and current_methods.get(request_id) == "POST" and isinstance(response, dict):
+                status = _safe_http_status(response.get("status"))
+                if status is not None:
+                    record["post_response_status"] = status
+
+        elif event_name == "Network.loadingFailed":
+            record = records_by_id.get(request_id)
+            if record is not None:
+                record["failure_category"] = _safe_network_failure_category(params.get("errorText"))
+
+    return {
+        "available": True,
+        "truncated": truncated,
+        "records": list(records_by_id.values())[:8],
+    }
+
+
 def product_form_diagnostics(driver: webdriver.Chrome) -> dict[str, object]:
-    """Return bounded form shape/field state without reading submitted values or tokens."""
+    """Return bounded form shape/state without emitting submitted values or tokens."""
     return driver.execute_script(
-        """
+        r"""
         const submitButton = document.querySelector('button[name="submitKuraneaProductSave"]');
         const form = submitButton?.form || document.querySelector('#name_ja')?.closest('form');
+        const shopOrigin = new URL(arguments[0], document.baseURI).origin;
+        const adminPath = String(arguments[1] || '').replace(/\/+$/, '');
+        const safePath = (value) => String(value || '/').slice(0, 240).replace(/[^A-Za-z0-9._~/-]/g, '_');
         if (!form) {
             return {
                 login_form_present: Boolean(document.querySelector('#login_form')),
@@ -80,10 +242,20 @@ def product_form_diagnostics(driver: webdriver.Chrome) -> dict[str, object]:
                 product_list_present: Array.from(document.querySelectorAll('h3')).some(
                     (heading) => heading.innerText.trim() === 'ORDENOWA 관리 상품'
                 ),
+                action_origin_matches_current: false,
+                action_origin_matches_shop: false,
+                action_path: null,
+                action_is_admin_path: false,
+                action_controller_is_manager: false,
             };
         }
 
         const action = new URL(form.action, document.baseURI);
+        const actionControllerIsManager = new URLSearchParams(action.search).get('controller')
+            === 'AdminOrdenowaProductManager';
+        const actionIsAdminPath = Boolean(
+            adminPath && (action.pathname === adminPath || action.pathname.startsWith(`${adminPath}/`))
+        );
         const hiddenToken = form.querySelector('input[name="token"]')?.value || '';
         const actionToken = action.searchParams.get('token') || '';
         const safeFields = [
@@ -110,7 +282,12 @@ def product_form_diagnostics(driver: webdriver.Chrome) -> dict[str, object]:
             ),
             form_method_post: form.method.toLowerCase() === 'post',
             multipart_form: form.enctype.toLowerCase() === 'multipart/form-data',
-            action_targets_manager: new URLSearchParams(action.search).get('controller') === 'AdminOrdenowaProductManager',
+            action_origin_matches_current: action.origin === window.location.origin,
+            action_origin_matches_shop: action.origin === shopOrigin,
+            action_path: safePath(action.pathname),
+            action_is_admin_path: actionIsAdminPath,
+            action_controller_is_manager: actionControllerIsManager,
+            action_targets_manager: actionControllerIsManager,
             action_token_present: Boolean(actionToken),
             hidden_token_present: Boolean(hiddenToken),
             hidden_token_matches_action: Boolean(hiddenToken && actionToken && hiddenToken === actionToken),
@@ -120,7 +297,9 @@ def product_form_diagnostics(driver: webdriver.Chrome) -> dict[str, object]:
             selected_category_count: form.querySelectorAll('input[name="category_ids[]"]:checked').length,
             selected_file_count: form.querySelector('#product_images')?.files?.length || 0,
         };
-        """
+        """,
+        BASE,
+        ADMIN_PATH,
     )
 
 
@@ -279,6 +458,7 @@ def product_post_failure_diagnostics(
     save_result = product_save_result(driver)
     if not isinstance(save_result, dict):
         save_result = {}
+    network_diagnostics = product_post_network_diagnostics(driver)
 
     return {
         **page_diagnostics,
@@ -287,6 +467,9 @@ def product_post_failure_diagnostics(
         "save_status": save_result.get("status", "no_visible_response"),
         "alert_class": save_result.get("alert_class"),
         "error_markers": save_result.get("error_markers", []),
+        "post_network_capture_available": network_diagnostics["available"],
+        "post_network_records_truncated": network_diagnostics["truncated"],
+        "post_network_records": network_diagnostics["records"],
     }
 
 
@@ -339,6 +522,7 @@ def run() -> None:
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1440,960")
     options.add_argument("--lang=ja-JP")
+    options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
     driver: webdriver.Chrome | None = None
     stage = "chromium_startup"
     create_operation = "not_started"
@@ -412,6 +596,7 @@ def run() -> None:
             visible(driver, "#product_images").send_keys(image_file.name)
             create_operation = "submit_product"
             form_before_submit = product_form_diagnostics(driver)
+            clear_product_browser_network_events(driver)
             visible(driver, 'button[name="submitKuraneaProductSave"]').click()
 
         create_operation = "wait_for_save_confirmation"

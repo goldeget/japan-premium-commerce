@@ -1,8 +1,13 @@
 """Guard Korean native-product administration and its isolated QA coverage."""
 from __future__ import annotations
 
+import ast
+import json
+import re
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -293,6 +298,156 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("product_post_failure_diagnostics(driver, form_before_submit)", failure_handler)
         self.assertNotIn("alert_text", failure_handler)
 
+    def test_product_post_route_and_network_diagnostics_are_path_only_and_bounded(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        self.assertIn("def product_post_network_diagnostics", browser)
+        form_diagnostics = browser.split("def product_form_diagnostics", 1)[1].split(
+            "\n\ndef product_save_result", 1
+        )[0]
+        network_diagnostics = browser.split("def product_post_network_diagnostics", 1)[1].split(
+            "\n\ndef product_post_failure_diagnostics", 1
+        )[0]
+        failure_diagnostics = browser.split("def product_post_failure_diagnostics", 1)[1].split(
+            "\n\ndef product_links", 1
+        )[0]
+        create_flow = browser.split('stage = "native_product_create"', 1)[1].split(
+            'stage = "native_product_edit"', 1
+        )[0]
+
+        for expected in (
+            "action_origin_matches_current",
+            "action_path",
+            "action_is_admin_path",
+            "action_controller_is_manager",
+            "action.pathname",
+            "action.origin === window.location.origin",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, form_diagnostics)
+
+        for expected in (
+            'driver.get_log("performance")',
+            "Network.requestWillBeSent",
+            "Network.responseReceived",
+            "Network.loadingFailed",
+            "redirects",
+            "redirect_target_path",
+            "post_response_status",
+            "failure_category",
+            "[:2000]",
+            "len(redirects) < 3",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, network_diagnostics)
+
+        self.assertIn('options.set_capability("goog:loggingPrefs", {"performance": "ALL"})', browser)
+        self.assertIn("clear_product_browser_network_events(driver)", create_flow)
+        self.assertIn('"post_network_records": network_diagnostics["records"]', failure_diagnostics)
+        self.assertIn("safePath(action.pathname)", form_diagnostics)
+        self.assertNotIn("action.href", form_diagnostics)
+        self.assertNotIn('"headers"', network_diagnostics)
+        self.assertNotIn('"postData"', network_diagnostics)
+        self.assertNotIn('"request_url"', network_diagnostics)
+        self.assertNotIn('"redirect_url"', network_diagnostics)
+
+    def test_product_post_network_records_drop_query_values_headers_and_request_body(self) -> None:
+        browser_path = ROOT / "tests" / "e2e" / "verify_product_admin_browser.py"
+        tree = ast.parse(browser_path.read_text(encoding="utf-8"))
+        helper_names = {
+            "_safe_network_url_metadata",
+            "_safe_http_status",
+            "_safe_network_failure_category",
+            "product_post_network_diagnostics",
+        }
+        helper_nodes = [
+            node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in helper_names
+        ]
+        self.assertEqual({node.name for node in helper_nodes}, helper_names)
+
+        namespace = {
+            "BASE": "http://localhost:18080",
+            "ADMIN_PATH": "/admin-kuranea",
+            "json": json,
+            "re": re,
+            "urlparse": urlparse,
+            "parse_qs": parse_qs,
+            "webdriver": SimpleNamespace(Chrome=object),
+        }
+        helper_module = ast.Module(body=helper_nodes, type_ignores=[])
+        exec(compile(helper_module, str(browser_path), "exec"), namespace)
+
+        post_url = (
+            "http://localhost:18080/admin-kuranea/index.php"
+            "?controller=AdminOrdenowaProductManager&token=post-token-sentinel"
+        )
+        redirect_url = "http://localhost:18080/?token=redirect-token-sentinel"
+
+        def event(method: str, params: dict[str, object]) -> dict[str, str]:
+            return {"message": json.dumps({"message": {"method": method, "params": params}})}
+
+        events = [
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": "request-id-sentinel",
+                    "request": {
+                        "method": "POST",
+                        "url": post_url,
+                        "headers": {"Cookie": "session-cookie-sentinel", "Authorization": "auth-sentinel"},
+                        "postData": "private-product-value-sentinel",
+                    },
+                },
+            ),
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": "request-id-sentinel",
+                    "request": {"method": "GET", "url": redirect_url},
+                    "redirectResponse": {
+                        "url": post_url,
+                        "status": 302,
+                        "headers": {"Location": redirect_url, "Cookie": "response-cookie-sentinel"},
+                    },
+                },
+            ),
+            event(
+                "Network.responseReceived",
+                {"requestId": "request-id-sentinel", "response": {"status": 200, "headers": {}}},
+            ),
+        ]
+
+        class FakeDriver:
+            def get_log(self, name: str) -> list[dict[str, str]]:
+                self.log_name = name
+                return events
+
+        fake_driver = FakeDriver()
+        diagnostics = namespace["product_post_network_diagnostics"](fake_driver)
+        rendered = json.dumps(diagnostics, sort_keys=True)
+
+        self.assertEqual(fake_driver.log_name, "performance")
+        self.assertEqual(len(diagnostics["records"]), 1)
+        record = diagnostics["records"][0]
+        self.assertEqual(record["path"], "/admin-kuranea/index.php")
+        self.assertTrue(record["origin_matches_shop"])
+        self.assertTrue(record["is_admin_path"])
+        self.assertTrue(record["controller_is_manager"])
+        self.assertEqual(record["post_response_status"], 302)
+        self.assertEqual(record["redirects"][0]["redirect_target_path"], "/")
+        self.assertEqual(record["redirects"][0]["status"], 302)
+        for secret_marker in (
+            "post-token-sentinel",
+            "redirect-token-sentinel",
+            "session-cookie-sentinel",
+            "response-cookie-sentinel",
+            "auth-sentinel",
+            "private-product-value-sentinel",
+            "AdminOrdenowaProductManager",
+            "request-id-sentinel",
+        ):
+            with self.subTest(secret_marker=secret_marker):
+                self.assertNotIn(secret_marker, rendered)
+
     def test_native_product_alert_diagnostics_identify_only_safe_controller_and_field_markers(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
         controller = (MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php").read_text(encoding="utf-8")
@@ -379,7 +534,7 @@ class ProductAdminContractTests(unittest.TestCase):
     def test_manager_page_failure_diagnostics_emit_no_raw_url_values(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
         diagnostics = browser.split("def manager_page_diagnostics", 1)[1].split(
-            "\n\ndef product_form_diagnostics", 1
+            "\n\ndef clear_product_browser_network_events", 1
         )[0]
 
         for expected in (
