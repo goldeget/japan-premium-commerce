@@ -159,6 +159,27 @@ assertSameValue('テスト町', $nativeFields['address1'], 'PrestaShop address1 
 assertSameValue('サンプルビル 101', $nativeFields['address2'], 'The customer-entered building should remain editable and preserved.');
 assertSameValue(null, $postcodeCandidates[0]->toNativeAddressFields([], '手入力建物'), 'Missing prefecture state mapping should keep manual entry available.');
 
+$qualifiedTown = new \Kuranea\Postcode\Domain\PostalAddress(
+    '100-0004',
+    '13101',
+    '東京都',
+    '千代田区',
+    '大手町（次のビルを除く）'
+);
+assertSameValue('大手町', $qualifiedTown->townForAddress(), 'Japan Post explanatory building qualifiers should not enter customer addresses.');
+$qualifiedNativeFields = $qualifiedTown->toNativeAddressFields(['13' => 43]);
+assertSameValue('大手町', $qualifiedNativeFields['address1'], 'Native delivery addresses should use the customer-facing town text.');
+
+$unspecifiedTown = new \Kuranea\Postcode\Domain\PostalAddress(
+    '100-0004',
+    '13101',
+    '東京都',
+    '千代田区',
+    '以下に掲載がない場合'
+);
+assertSameValue('', $unspecifiedTown->townForAddress(), 'A Japan Post unspecified-area note should remain an editable manual address field.');
+assertSameValue('', $unspecifiedTown->toNativeAddressFields(['13' => 43])['address1'], 'Japan Post explanatory text should not be saved as address1.');
+
 assertSameValue('郵便番号・住所検索', \Kuranea\Postcode\Domain\I18n::text('search_label', 'ja-JP'), 'The widget should have Japanese text.');
 assertSameValue('Postcode or address search', \Kuranea\Postcode\Domain\I18n::text('search_label', 'en'), 'The widget should have English text.');
 assertSameValue('우편번호·주소 검색', \Kuranea\Postcode\Domain\I18n::text('search_label', 'ko-KR'), 'The widget should have Korean text.');

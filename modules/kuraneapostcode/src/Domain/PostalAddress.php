@@ -25,6 +25,23 @@ final class PostalAddress
     }
 
     /**
+     * Return the town text that belongs in a customer's street address.
+     * Japan Post includes explanatory labels that are useful in its source
+     * data but are not part of an address customers should copy or save.
+     */
+    public function townForAddress(): string
+    {
+        $town = trim($this->town);
+        if ($town === '以下に掲載がない場合') {
+            return '';
+        }
+
+        $town = preg_replace('/[（(]次のビルを除く[）)]\s*$/u', '', $town);
+
+        return trim(is_string($town) ? $town : $this->town);
+    }
+
+    /**
      * Map a selected Japan Post address into PrestaShop's native address fields.
      * State IDs are keyed by the two-digit JIS prefecture code (01 through 47).
      * A missing state mapping returns null so callers can keep manual entry open.
@@ -44,7 +61,7 @@ final class PostalAddress
             'postcode' => $this->postcode,
             'id_state' => $stateId,
             'city' => $this->municipality,
-            'address1' => $this->town,
+            'address1' => $this->townForAddress(),
             'address2' => $building,
         ];
     }

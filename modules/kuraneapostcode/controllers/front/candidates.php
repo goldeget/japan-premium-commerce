@@ -43,7 +43,7 @@ class KuraneapostcodeCandidatesModuleFrontController extends ModuleFrontControll
                     'postcode' => $address->postcode,
                     'prefecture' => $address->prefecture,
                     'municipality' => $address->municipality,
-                    'town' => $address->town,
+                    'town' => $address->townForAddress(),
                     'state_id' => $native['id_state'] ?? null,
                 ];
             }
