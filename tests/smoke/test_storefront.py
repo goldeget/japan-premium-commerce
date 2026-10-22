@@ -4,9 +4,10 @@ from __future__ import annotations
 import os
 import json
 import re
+import html
 import unittest
 from html.parser import HTMLParser
-from urllib.parse import urlencode, urljoin, urlsplit
+from urllib.parse import quote, urlencode, urljoin, urlsplit, urlunsplit
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
@@ -34,6 +35,27 @@ class PageMetadata(HTMLParser):
             self.images.append(values)
         if tag == "input":
             self.inputs.append(values)
+
+
+class SearchFormParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.forms: list[dict[str, object]] = []
+        self.current: dict[str, object] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = {key: value or "" for key, value in attrs}
+        if tag == "form":
+            self.current = {"action": values.get("action", ""), "inputs": []}
+        elif tag == "input" and self.current is not None:
+            inputs = self.current["inputs"]
+            assert isinstance(inputs, list)
+            inputs.append(values)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "form" and self.current is not None:
+            self.forms.append(self.current)
+            self.current = None
 
 
 def fetch(url: str) -> tuple[int, str, str]:
@@ -94,6 +116,132 @@ class StorefrontSmokeTests(unittest.TestCase):
                 search = next((item for item in metadata.inputs if item.get("name") == "s"), None)
                 self.assertIsNotNone(search, "Hummingbird search input is missing")
                 self.assertEqual(search.get("placeholder"), expected_placeholder)
+
+    def test_search_empty_state_uses_store_locale(self) -> None:
+        cases = (
+            ("/", "ja-JP", "商品は見つかりませんでした", "トップページへ戻る"),
+            ("/en/", "en-US", "No search results for", "Back to home"),
+            ("/ko/", "ko-KR", "검색 결과가 없습니다", "홈으로 돌아가기"),
+        )
+        for path, language, title, back_label in cases:
+            with self.subTest(path=path):
+                status, home_url, home = fetch(f"{BASE_URL}{path}")
+                self.assertEqual(status, 200)
+                parser = SearchFormParser()
+                parser.feed(home)
+                search_form = next(
+                    (
+                        form
+                        for form in parser.forms
+                        if any(item.get("name") == "s" for item in form["inputs"])
+                    ),
+                    None,
+                )
+                self.assertIsNotNone(search_form, "store search form is missing")
+                search_url = urljoin(home_url, str(search_form["action"]))
+                parts = urlsplit(search_url)
+                search_path = quote(parts.path, safe="/%:@")
+                search_url = urlunsplit((parts.scheme, parts.netloc, search_path, "", ""))
+                status, final_url, body = fetch(
+                    f"{search_url}?{urlencode({'controller': 'search', 's': 'kuranea-empty-state-qa'})}"
+                )
+                metadata = PageMetadata()
+                metadata.feed(body)
+                self.assertEqual(status, 200, final_url)
+                self.assertEqual(metadata.html_lang, language)
+                self.assertIn(title, body)
+                self.assertIn(back_label, body)
+                if language == "en-US":
+                    self.assertIn("We couldn't find any matching products.", body)
+                else:
+                    self.assertNotIn("We couldn't find any matching products.", body)
+
+    def test_empty_category_state_uses_store_locale(self) -> None:
+        cases = (
+            ("/2-home", "ja-JP", "現在、商品を掲載していません。", "ホームへ戻る"),
+            ("/en/2-home", "en-US", "No products available at the moment", "Back to Home page"),
+            ("/ko/2-home", "ko-KR", "현재 판매할 상품을 준비하고 있습니다.", "홈으로 돌아가기"),
+        )
+        for path, language, empty_copy, home_label in cases:
+            with self.subTest(path=path):
+                status, final_url, body = fetch(f"{BASE_URL}{path}")
+                metadata = PageMetadata()
+                metadata.feed(body)
+                self.assertEqual(status, 200, final_url)
+                self.assertEqual(metadata.html_lang, language)
+                self.assertIn(empty_copy, body)
+                self.assertIn(home_label, body)
+                if language != "en-US":
+                    self.assertNotIn("No products available at the moment", body)
+                    self.assertNotIn("Back to Home page", body)
+
+    def test_japanese_footer_links_have_japanese_accessible_text(self) -> None:
+        status, _, body = fetch(f"{BASE_URL}/")
+        self.assertEqual(status, 200)
+        footer_match = re.search(r'<footer id="footer".*?</footer>', body, re.DOTALL)
+        self.assertIsNotNone(footer_match, "store footer is missing")
+        footer = html.unescape(footer_match.group(0))
+        footer_text = " ".join(re.sub(r"<[^>]+>", " ", footer).split())
+
+        for expected in (
+            "値下げ商品",
+            "新着商品",
+            "ベストセラー",
+            "人気商品一覧",
+            "注文状況の確認",
+            "商品リンクを開閉",
+            "会社情報リンクを開閉",
+            "アカウントリンクを開閉",
+            "店舗情報を開閉",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, footer_text)
+
+        for untranslated in (
+            "Our special products",
+            "Our terms and conditions of delivery",
+            "Our secure payment method",
+            "Order tracking",
+            "Toggle your account links",
+            "Toggle 商品 links",
+            "Toggle 当社について links",
+            "Toggle store information",
+        ):
+            with self.subTest(untranslated=untranslated):
+                self.assertNotIn(untranslated, footer_text)
+
+    def test_korean_footer_links_and_accessible_text_use_korean(self) -> None:
+        status, _, body = fetch(f"{BASE_URL}/ko/")
+        self.assertEqual(status, 200)
+        footer_match = re.search(r'<footer id="footer".*?</footer>', body, re.DOTALL)
+        self.assertIsNotNone(footer_match, "store footer is missing")
+        footer = html.unescape(footer_match.group(0))
+        footer_text = " ".join(re.sub(r"<[^>]+>", " ", footer).split())
+
+        for expected in (
+            "상품 링크 열기/닫기",
+            "회사 정보 링크 열기/닫기",
+            "계정 링크 열기/닫기",
+            "매장 정보 링크 열기/닫기",
+            "할인 상품",
+            "배송 안내",
+            "주문 조회",
+            "로그인",
+            "회원가입",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, footer_text)
+
+        for untranslated in (
+            "Toggle 상품 links",
+            "Toggle 우리 회사 links",
+            "Toggle your account links",
+            "Toggle store information",
+            "Order tracking",
+            "Create an account",
+        ):
+            with self.subTest(untranslated=untranslated):
+                self.assertNotIn(untranslated, footer_text)
 
     def test_kuranea_child_theme_css_is_served(self) -> None:
         status, final_url, body = fetch(f"{BASE_URL}/")
