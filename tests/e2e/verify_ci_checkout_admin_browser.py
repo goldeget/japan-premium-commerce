@@ -81,7 +81,12 @@ def click_at_center(driver: webdriver.Chrome, element) -> None:
     element.click()
 
 
-def emit_checkout_cart_diagnostics(driver: webdriver.Chrome, label: str, operation: str) -> None:
+def emit_checkout_cart_diagnostics(
+    driver: webdriver.Chrome,
+    label: str,
+    operation: str,
+    pre_navigation_cart: dict[str, object] | None,
+) -> None:
     try:
         state = driver.execute_script(
             """
@@ -95,29 +100,79 @@ def emit_checkout_cart_diagnostics(driver: webdriver.Chrome, label: str, operati
             const cartRows = [...document.querySelectorAll('.cart__item')];
             const cartProductIds = [...document.querySelectorAll(
               '.cart__item [data-link-action="delete-from-cart"][data-id-product]'
-            )].map((element) => element.getAttribute('data-id-product'));
+            )].map((element) => element.getAttribute('data-id-product'))
+              .filter((productId) => /^\\d+$/.test(productId || ''));
             const modal = document.querySelector('[data-ps-ref="blockcart-modal"]');
             const modalName = modal?.querySelector('.blockcart-modal__name');
             const addToCartButtons = [...document.querySelectorAll(
               'button[data-ps-ref="add-to-cart"]'
             )].map((element) => ({visible: visible(element), disabled: element.disabled}));
+            const controllerValue = new URLSearchParams(window.location.search).get('controller');
+            const allowedControllers = ['order', 'order-opc', 'cart', 'authentication', 'index'];
+            const controller = !controllerValue
+              ? 'none'
+              : allowedControllers.includes(controllerValue) ? controllerValue : 'other';
+            const allowedPages = [
+              'order', 'order-opc', 'cart', 'authentication', 'identity', 'index', 'pagenotfound', '404'
+            ];
+            const pageValue = document.body?.id || '';
+            const bodyPage = allowedPages.includes(pageValue) ? pageValue : 'other';
+            const currentCheckoutSteps = [...document.querySelectorAll('section.step--current')]
+              .map((element) => element.id)
+              .filter((stepId) => [
+                'checkout-personal-information-step', 'checkout-addresses-step',
+                'checkout-delivery-step', 'checkout-payment-step'
+              ].includes(stepId));
+            const emptyCart = Boolean(document.querySelector('.cart-grid') && cartRows.length === 0);
+            const notFound = bodyPage === 'pagenotfound' || bodyPage === '404'
+              || Boolean(document.querySelector('#pagenotfound, .page-not-found, [data-page="not-found"]'));
+            const authentication = bodyPage === 'authentication'
+              || Boolean(document.querySelector('#authentication, #login_form, #login-form, #customer-form, #checkout-guest-form, #checkout-login-form'));
+            const shopHome = bodyPage === 'index';
+            const title = (document.title || '').toLocaleLowerCase();
+            const titleMarkers = {
+              checkout: /checkout|order|注文|お届け先|お客様情報/.test(title),
+              authentication: /login|sign in|ログイン/.test(title),
+              not_found: /404|not found|見つかりません|該当するページ/.test(title),
+              shop_brand: /ordenowa|オーデノワ/.test(title),
+            };
+            const destination = currentCheckoutSteps.length ? 'checkout'
+              : notFound ? 'not_found'
+              : emptyCart ? 'empty_cart'
+              : authentication ? 'authentication'
+              : shopHome ? 'shop_home'
+              : controller === 'cart' || bodyPage === 'cart' ? 'cart'
+              : controller === 'order' || controller === 'order-opc'
+                || bodyPage === 'order' || bodyPage === 'order-opc' ? 'checkout_without_steps'
+              : 'other';
             return {
-              pathname: window.location.pathname,
-              queryKeys: [...new URLSearchParams(window.location.search).keys()].sort(),
+              destination,
+              controller,
+              bodyPage,
+              titleMarkers,
               readyState: document.readyState,
               cartProductIds,
+              cartProductCount: cartProductIds.length,
+              emptyCart,
+              notFound,
+              authentication,
+              shopHome,
               ciOnlyInCart: cartRows.some((element) => element.textContent?.includes('[CI ONLY]')),
               blockcartModalVisible: visible(modal),
               ciOnlyInBlockcartModal: Boolean(visible(modalName) && modalName.textContent?.includes('[CI ONLY]')),
               addToCartButtons,
-              currentCheckoutSteps: [...document.querySelectorAll('section.step--current')]
-                .map((element) => element.id),
+              currentCheckoutSteps,
             };
             """
         )
         if not isinstance(state, dict):
             raise TypeError("cart diagnostics response was not an object")
-        diagnostic_payload = {"viewport": label, "operation": operation, "state": state}
+        diagnostic_payload = {
+            "viewport": label,
+            "operation": operation,
+            "pre_navigation_cart": pre_navigation_cart,
+            "state": state,
+        }
         print(
             "ORDENOWA_CHECKOUT_CART_STATE="
             + json.dumps(
@@ -131,6 +186,7 @@ def emit_checkout_cart_diagnostics(driver: webdriver.Chrome, label: str, operati
         diagnostic_payload = {
             "viewport": label,
             "operation": operation,
+            "pre_navigation_cart": pre_navigation_cart,
             "state_collection_error": type(diagnostic_error).__name__,
         }
         print(
@@ -308,6 +364,7 @@ def search_for_product(driver: webdriver.Chrome, label: str) -> None:
 
 def add_product_and_open_checkout(driver: webdriver.Chrome, label: str) -> None:
     operation = "locate_add_to_cart_button"
+    verified_pre_navigation_cart: dict[str, object] | None = None
     try:
         button = WebDriverWait(driver, 20).until(
             lambda browser: next(
@@ -375,6 +432,21 @@ def add_product_and_open_checkout(driver: webdriver.Chrome, label: str) -> None:
         cart_text = driver.find_element(By.TAG_NAME, "body").text
         if "[CI ONLY]" not in cart_text:
             raise AssertionError("the real browser cart does not contain the searched CI-only product")
+        verified_cart_product_ids = [
+            item.get_attribute("data-id-product")
+            for item in driver.find_elements(
+                By.CSS_SELECTOR,
+                '.cart__item [data-link-action="delete-from-cart"][data-id-product]',
+            )
+        ]
+        verified_pre_navigation_cart = {
+            "cart_product_ids": [
+                product_id for product_id in verified_cart_product_ids
+                if product_id and product_id.isascii() and product_id.isdigit()
+            ],
+            "count": len(verified_cart_product_ids),
+            "verified": verified_cart_product_ids == [str(PRODUCT_ID)] and "[CI ONLY]" in cart_text,
+        }
         driver.save_screenshot(str(DEST / f"checkout-{label}-cart.png"))
 
         operation = "open_order_checkout"
@@ -393,7 +465,7 @@ def add_product_and_open_checkout(driver: webdriver.Chrome, label: str) -> None:
         if not current.get_attribute("id"):
             raise AssertionError("the authorized isolated customer checkout did not open")
     except Exception:
-        emit_checkout_cart_diagnostics(driver, label, operation)
+        emit_checkout_cart_diagnostics(driver, label, operation, verified_pre_navigation_cart)
         raise
 
 

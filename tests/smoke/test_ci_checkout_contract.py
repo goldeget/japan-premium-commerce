@@ -287,18 +287,28 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             ".blockcart-modal__name",
             '.modal-footer > a.btn-primary',
             'cart_product_ids == [str(PRODUCT_ID)]',
-            "emit_checkout_cart_diagnostics(driver, label, operation)",
+            "emit_checkout_cart_diagnostics(driver, label, operation, verified_pre_navigation_cart)",
+            '"cart_product_ids": [',
+            '"count": len(verified_cart_product_ids)',
+            '"verified": verified_cart_product_ids == [str(PRODUCT_ID)]',
         ):
             self.assertIn(required, add_cart)
         self.assertNotIn(".add-to-cart", add_cart)
         self.assertNotIn("time.sleep", add_cart)
         for state in (
-            "pathname:",
-            "queryKeys:",
+            "destination,",
+            "controller,",
+            "bodyPage,",
+            "titleMarkers,",
             "cartProductIds,",
+            "cartProductCount:",
+            "emptyCart,",
+            "notFound,",
+            "authentication,",
+            "shopHome,",
             "blockcartModalVisible:",
             "ciOnlyInCart:",
-            "currentCheckoutSteps:",
+            "currentCheckoutSteps,",
         ):
             with self.subTest(state=state):
                 self.assertIn(state, diagnostics)
@@ -317,10 +327,17 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertIn("annotation_payload.replace(\"%\", \"%25\")", diagnostics)
         self.assertIn('"::error title=ORDENOWA checkout cart diagnostics::"', diagnostics)
         self.assertIn("print(annotation, file=sys.stdout)", diagnostics)
-        self.assertIn("new URLSearchParams(window.location.search).keys()", diagnostics)
         for safe_state in (
-            "window.location.pathname",
             "cartProductIds",
+            "pre_navigation_cart",
+            "destination,",
+            "controller,",
+            "bodyPage,",
+            "titleMarkers,",
+            "emptyCart,",
+            "notFound,",
+            "authentication,",
+            "shopHome,",
             "blockcartModalVisible",
             "ciOnlyInBlockcartModal",
             "addToCartButtons",
@@ -328,7 +345,18 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         ):
             with self.subTest(state=safe_state):
                 self.assertIn(safe_state, diagnostics)
+        self.assertIn('"pre_navigation_cart": pre_navigation_cart', diagnostics)
+        self.assertIn("verified_pre_navigation_cart", flow)
+        self.assertIn(
+            "emit_checkout_cart_diagnostics(driver, label, operation, verified_pre_navigation_cart)",
+            flow,
+        )
+        self.assertNotIn("window.location.pathname", diagnostics)
         self.assertNotIn("window.location.href", diagnostics)
+        self.assertNotIn("get_attribute('href')", diagnostics)
+        self.assertNotIn("driver.current_url", diagnostics)
+        self.assertNotIn("title: document.title", diagnostics)
+        self.assertNotIn("document.body.innerHTML", diagnostics)
         self.assertNotIn("document.body.innerText", diagnostics)
         self.assertNotIn("document.body.textContent", diagnostics)
 
