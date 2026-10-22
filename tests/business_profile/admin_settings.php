@@ -53,8 +53,10 @@ assertBusinessProfileTrue(!str_contains($previewHtml, '<script>alert(1)</script>
 assertBusinessProfileTrue(str_contains($previewHtml, '관리자 전용'), 'Admin previews must state that they do not publish the profile.');
 $imagePreviewProfile = $initial;
 $imagePreviewProfile['brand']['assets']['header_desktop'] = 'img/ordenowa/versions/' . str_repeat('c', 64) . '/header-desktop.png';
+$imagePreviewProfile['brand']['assets']['admin_login'] = 'img/ordenowa/versions/' . str_repeat('d', 64) . '/admin-login.png';
 $imagePreviewHtml = \Kuranea\BusinessProfile\Admin\AdminProfileForm::renderPreview($imagePreviewProfile, 'https://shop.example/');
 assertBusinessProfileTrue(str_contains($imagePreviewHtml, 'https://shop.example/img/ordenowa/versions/'), 'Uploaded brand derivatives should be visible in the authenticated preview.');
+assertBusinessProfileTrue(str_contains($imagePreviewHtml, '<figcaption>관리자 로그인 로고</figcaption>'), 'The authenticated brand preview should include the admin-login derivative.');
 assertBusinessProfileTrue(str_contains($imagePreviewHtml, '<figcaption>이메일 로고</figcaption>'), 'The authenticated brand preview should include the email logo derivative.');
 
 $secretProfile = $initial;

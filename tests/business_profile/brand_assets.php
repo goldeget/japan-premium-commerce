@@ -79,6 +79,12 @@ try {
     assertBusinessProfileSame($original, file_get_contents($privateRoot . '/' . $logo['source']['path']), 'The original logo bytes must be preserved exactly.');
     assertBusinessProfileSame([640, 200], array_slice(getimagesize($publicRoot . '/' . $logo['assets']['header_desktop']), 0, 2), 'Desktop logo output must use a fixed non-distorting canvas.');
     assertBusinessProfileSame([360, 120], array_slice(getimagesize($publicRoot . '/' . $logo['assets']['header_mobile']), 0, 2), 'Mobile logo output must use a fixed non-distorting canvas.');
+    $ogImage = imagecreatefrompng($publicRoot . '/' . $logo['assets']['og_image']);
+    assertBusinessProfileTrue($ogImage instanceof GdImage, 'The uploaded OG derivative must be a readable PNG.');
+    $ogCorner = imagecolorsforindex($ogImage, imagecolorat($ogImage, 0, 0));
+    assertBusinessProfileSame(0, $ogCorner['alpha'], 'Transparent source corners must be composited to opaque pixels in the OG derivative.');
+    assertBusinessProfileSame([255, 255, 255], [$ogCorner['red'], $ogCorner['green'], $ogCorner['blue']], 'The uploaded OG derivative must use a white background.');
+    imagedestroy($ogImage);
     assertBusinessProfileSame([180, 180], array_slice(getimagesize($publicRoot . '/' . $appIcon['assets']['apple_touch']), 0, 2), 'Apple Touch icon must have its required dimensions.');
     assertBusinessProfileSame([512, 512], array_slice(getimagesize($publicRoot . '/' . $appIcon['assets']['pwa_maskable_512']), 0, 2), 'Maskable PWA output must have its required dimensions.');
     assertBusinessProfileSame(hex2bin('00000100'), file_get_contents($publicRoot . '/' . $symbol['assets']['favicon'], false, null, 0, 4), 'The favicon derivative must be a valid ICO container.');

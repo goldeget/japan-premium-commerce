@@ -142,10 +142,10 @@ final class BrandAssetProcessor
         }
 
         $canvas = imagecreatetruecolor($width, $height);
-        imagealphablending($canvas, false);
+        imagealphablending($canvas, $white);
         imagesavealpha($canvas, true);
         $background = $white
-            ? imagecolorallocatealpha($canvas, 255, 255, 255, 0)
+            ? imagecolorallocate($canvas, 255, 255, 255)
             : imagecolorallocatealpha($canvas, 0, 0, 0, 127);
         imagefill($canvas, 0, 0, $background);
 
