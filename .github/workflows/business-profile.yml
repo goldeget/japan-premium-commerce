@@ -89,6 +89,11 @@ jobs:
       - name: Check legal page published-profile route contract
         run: python3 -m unittest discover -s tests/business_profile -p 'test_published_legal_page_contract.py'
 
+      - name: Check admin access denial and render contract
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -m unittest discover -s tests/business_profile -p 'test_admin_access_source_contract.py'
+
       - name: Verify public brand and seller disclosure gating
         run: php tests/business_profile/public_footer.php
 
