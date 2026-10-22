@@ -3,7 +3,7 @@ name: Isolated fresh install
 on:
   workflow_dispatch:
   push:
-    branches: [work, ci/ordenowa-postcode-isolation-20261022]
+    branches: [work, qa/ordenowa-product-browser-20261022]
     paths:
       - '.github/workflows/fresh-install.yml'
       - 'compose.yaml'
@@ -23,6 +23,8 @@ on:
       - 'tests/smoke/test_docker_run_recovery.py'
       - 'tests/smoke/test_ci_diagnostics_script.py'
       - 'tests/postcode/**'
+      - 'tests/e2e/**'
+      - 'tests/catalog/verify_native_registration.php'
 
 permissions:
   contents: read
@@ -120,6 +122,22 @@ jobs:
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             runuser -g www-data -u www-data -- php /tmp/verify_catalog_installation.php
 
+      - name: Verify reviewed synthetic product is registered as an inactive native product
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/verify_native_registration.php' \
+            < tests/catalog/verify_native_registration.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e CI="$CI" -e GITHUB_ACTIONS="$GITHUB_ACTIONS" \
+            -e KURANEA_ISOLATED_CI=1 \
+            -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            -e KURANEA_CI_RUN_ID="$GITHUB_RUN_ID" \
+            -e KURANEA_CI_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            prestashop runuser -g www-data -u www-data -- \
+            php /tmp/verify_native_registration.php
+
       - name: Import synthetic Tokyo postcode fixture for isolated checkout QA
         shell: bash
         run: |
@@ -187,6 +205,41 @@ jobs:
             -e KURANEA_CI_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
             prestashop runuser -g www-data -u www-data -- \
             php /tmp/verify_native_order_persistence.php
+
+      - name: Prepare Chromium browser smoke environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/ordenowa-browser-venv"
+          "$RUNNER_TEMP/ordenowa-browser-venv/bin/pip" install --disable-pip-version-check --quiet selenium==4.27.1
+          command -v google-chrome || command -v chromium
+          mkdir -p "$RUNNER_TEMP/ordenowa-browser-qa"
+
+      - name: Verify real product detail and cart in Chromium (no payment)
+        shell: bash
+        env:
+          SHOP_BASE_URL: http://127.0.0.1:18080
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+        run: |
+          set -euo pipefail
+          product_id=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
+            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT id_product FROM ps_product WHERE reference LIKE \"KURANEA-CI-%\" AND active=1 ORDER BY id_product DESC LIMIT 1"')
+          if ! [[ "$product_id" =~ ^[0-9]+$ ]] || [ "$product_id" -lt 1 ]; then
+            echo "::error title=ORDENOWA browser QA::No isolated active test product found."
+            exit 1
+          fi
+          CI_TEST_PRODUCT_ID="$product_id" \
+            "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
+            tests/e2e/verify_storefront_browser.py
+
+      - name: Upload browser QA screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ordenowa-storefront-browser-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ordenowa-browser-qa/
+          if-no-files-found: ignore
+          retention-days: 3
 
       - name: Verify the fresh shop and restart persistence
         env:
