@@ -16,6 +16,12 @@ class BusinessProfileInstallationDiagnosticsContractTests(unittest.TestCase):
         self.assertLess(helper.index("fwrite(STDOUT"), helper.index("throw new RuntimeException($message)"))
         self.assertIn("ORDENOWA_BUSINESS_PROFILE_ASSERTION=", helper)
 
+    def test_permission_constant_uses_prestashop_92_namespace(self) -> None:
+        source = INSTALLATION_CHECK.read_text(encoding="utf-8")
+
+        self.assertIn("\\PrestaShop\\PrestaShop\\Core\\Security\\Permission::PREFIX_TAB", source)
+        self.assertNotIn("Access::isGranted(Permission::PREFIX_TAB", source)
+
 
 if __name__ == "__main__":
     unittest.main()

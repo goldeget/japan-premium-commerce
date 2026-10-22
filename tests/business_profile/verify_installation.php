@@ -101,7 +101,7 @@ foreach (['AdminBusinessProfile' => '쇼핑몰 운영 설정', 'AdminBusinessPro
     verifyBusinessProfile((int) $tab->id_parent === $shopParametersParentId, 'The Korean settings and bank tabs must be siblings under ShopParameters: ' . $className);
     verifyBusinessProfile(in_array($expectedLabel, (array) $tab->name, true), 'The Back Office tab must have its Korean title: ' . $expectedLabel);
     if (in_array($className, ['AdminBusinessProfile', 'AdminBusinessProfileBanks'], true)) {
-        $canView = Access::isGranted(Permission::PREFIX_TAB . strtoupper($className) . '_READ', 1);
+        $canView = Access::isGranted(\PrestaShop\PrestaShop\Core\Security\Permission::PREFIX_TAB . strtoupper($className) . '_READ', 1);
         verifyBusinessProfile((bool) $canView, 'SuperAdmin profile 1 must be able to view the Korean admin tab: ' . $className);
     }
 }
