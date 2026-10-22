@@ -233,11 +233,47 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("def product_save_result", browser)
         self.assertIn('save_result["status"] != "success"', create_flow)
         self.assertIn('save_result["status"] == "alert"', create_flow)
-        self.assertIn('"add_denied_marker"', browser)
-        self.assertIn('"edit_denied_marker"', browser)
+        self.assertIn("add_denied_marker:", browser)
+        self.assertIn("edit_denied_marker:", browser)
         self.assertIn("save_diagnostics", failure_handler)
         self.assertIn("alert_class", browser)
         self.assertIn("message_category", browser)
+
+    def test_product_post_failure_diagnostics_are_allowlisted_and_token_safe(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        self.assertIn("def product_post_failure_diagnostics", browser)
+        helper = browser.split("def product_post_failure_diagnostics", 1)[1].split(
+            "\n\ndef product_links", 1
+        )[0]
+        form_diagnostics = browser.split("def product_form_diagnostics", 1)[1].split(
+            "\n\ndef product_save_result", 1
+        )[0]
+        failure_handler = browser.split("except Exception as error:", 1)[1].split("finally:", 1)[0]
+
+        for expected in (
+            "window.location.pathname",
+            "params.get('controller')",
+            "document.title",
+            "responseStatus",
+            "page_markers",
+            "product_form_present",
+            "login_form_present",
+            "manager_route_present",
+            "product_list_present",
+            "alert_class",
+            "error_markers",
+            "no_visible_response",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, helper)
+
+        self.assertNotIn("window.location.href", helper)
+        self.assertNotIn("innerHTML", helper)
+        self.assertIn('"form_before_submit": form_before_submit or {}', helper)
+        self.assertIn('"form_after_response": product_form_diagnostics(driver)', helper)
+        self.assertIn("populated_field_names", form_diagnostics)
+        self.assertNotIn('"token"', helper)
+        self.assertIn("product_post_failure_diagnostics(driver, form_before_submit)", failure_handler)
         self.assertNotIn("alert_text", failure_handler)
 
     def test_native_product_alert_diagnostics_identify_only_safe_controller_and_field_markers(self) -> None:
@@ -325,7 +361,9 @@ class ProductAdminContractTests(unittest.TestCase):
 
     def test_manager_page_failure_diagnostics_emit_no_raw_url_values(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
-        diagnostics = browser.split("def manager_page_diagnostics", 1)[1].split("def product_links", 1)[0]
+        diagnostics = browser.split("def manager_page_diagnostics", 1)[1].split(
+            "\n\ndef product_form_diagnostics", 1
+        )[0]
 
         for expected in (
             "product_heading:",

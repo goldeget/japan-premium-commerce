@@ -117,6 +117,13 @@ jobs:
         shell: bash
         run: docker compose -p "$CI_COMPOSE_PROJECT_NAME" up -d --wait --wait-timeout 900
 
+      - name: Verify the first empty-volume bootstrap marker
+        shell: bash
+        run: |
+          set -euo pipefail
+          startup_logs=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" logs --no-color prestashop 2>&1)
+          grep -q 'ORDENOWA bootstrap: storefront=ja, en/ko=enabled, admin=ko, theme=kuranea' <<< "$startup_logs"
+
       - name: Verify the installed KURANEA catalog review module and persistent queue
         shell: bash
         run: |

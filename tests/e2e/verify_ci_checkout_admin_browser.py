@@ -115,28 +115,36 @@ def emit_checkout_cart_diagnostics(driver: webdriver.Chrome, label: str, operati
             };
             """
         )
+        if not isinstance(state, dict):
+            raise TypeError("cart diagnostics response was not an object")
+        diagnostic_payload = {"viewport": label, "operation": operation, "state": state}
         print(
             "ORDENOWA_CHECKOUT_CART_STATE="
             + json.dumps(
-                {"viewport": label, "operation": operation, "state": state},
+                diagnostic_payload,
                 ensure_ascii=False,
                 sort_keys=True,
             ),
             file=sys.stderr,
         )
     except Exception as diagnostic_error:
+        diagnostic_payload = {
+            "viewport": label,
+            "operation": operation,
+            "state_collection_error": type(diagnostic_error).__name__,
+        }
         print(
             "ORDENOWA_CHECKOUT_CART_STATE_UNAVAILABLE="
             + json.dumps(
-                {
-                    "viewport": label,
-                    "operation": operation,
-                    "error": type(diagnostic_error).__name__,
-                },
+                diagnostic_payload,
                 sort_keys=True,
             ),
             file=sys.stderr,
         )
+    annotation_payload = json.dumps(diagnostic_payload, ensure_ascii=True, sort_keys=True)
+    annotation_payload = annotation_payload.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    annotation = "::error title=ORDENOWA checkout cart diagnostics::" + annotation_payload
+    print(annotation, file=sys.stdout)
 
 
 def browser_options(width: int, height: int) -> Options:

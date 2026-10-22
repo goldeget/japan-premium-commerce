@@ -340,6 +340,39 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn('"account=$ACCOUNT_BROWSER_QA_OUTCOME"', aggregate)
         self.assertIn('if [[ "$entry" == *=failure || "$entry" == *=cancelled ]]; then', aggregate)
 
+    def test_account_registration_failure_annotation_exposes_only_safe_response_state(self) -> None:
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        diagnostics = account_flow.split("def emit_registration_diagnostics", 1)[1].split("def fill", 1)[0]
+        state_builder = diagnostics.split("safe_state: dict[str, object] = {", 1)[1].split(
+            "safe_state_json =", 1
+        )[0]
+        annotation_output = diagnostics.split("safe_state_json =", 1)[1]
+
+        self.assertIn('::error title=Customer account registration response state::', annotation_output)
+        self.assertIn('ORDENOWA_ACCOUNT_REGISTRATION_SAFE_STATE=', annotation_output)
+        for field in (
+            '"stage"',
+            '"path"',
+            '"registration_form_valid"',
+            '"visible_invalid_control_count"',
+            '"first_invalid_control_name"',
+            '"first_invalid_control_type"',
+            '"alert_visible"',
+            '"identity_link_visible"',
+            '"login_form_visible"',
+            '"header_user_menu_button_visible"',
+        ):
+            self.assertIn(field, state_builder)
+        self.assertIn('safe_path = diagnostics.get("pathname")', diagnostics)
+        self.assertIn('safe_path = safe_path if safe_path in {"/", "/index.php"} else "/<other>"', diagnostics)
+        self.assertIn("safe_diagnostic_name", state_builder)
+        self.assertIn("safe_registration_path", account_flow)
+        self.assertNotIn("email", state_builder)
+        self.assertNotIn("password", state_builder)
+        self.assertNotIn("token", state_builder)
+        self.assertNotIn("bodyText", state_builder)
+        self.assertNotIn("window.location.search", state_builder)
+
     def test_required_registration_checkbox_uses_its_visible_label(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
         checkbox_click = account_flow.split("def click_required_checkbox_label", 1)[1].split("def prepare_required_registration_fields", 1)[0]
@@ -440,6 +473,28 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("id: compose_up", workflow)
         self.assertIn("bash tests/smoke/collect_failure_diagnostics.sh", workflow)
         self.assertIn("docker compose -p \"$project_name\" logs --tail=160 mariadb prestashop", (ROOT / "tests/smoke/collect_failure_diagnostics.sh").read_text(encoding="utf-8"))
+
+    def test_first_boot_marker_is_verified_before_any_ci_container_recreation(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        start = workflow.index("- name: Start the empty-volume shop")
+        initial_marker = workflow.index("- name: Verify the first empty-volume bootstrap marker")
+        first_module_restart = workflow.index("docker compose -p \"$CI_COMPOSE_PROJECT_NAME\" restart prestashop")
+        checkout_restore = workflow.index("- name: Restore the fail-closed base checkout environment")
+        self.assertLess(start, initial_marker)
+        self.assertLess(initial_marker, first_module_restart)
+        self.assertLess(initial_marker, checkout_restore)
+        step = workflow[initial_marker:first_module_restart]
+        self.assertIn("ORDENOWA bootstrap: storefront=ja, en/ko=enabled, admin=ko, theme=kuranea", step)
+
+    def test_post_restore_smoke_accepts_existing_container_bootstrap_marker(self) -> None:
+        script = FRESH_INSTALL_SMOKE.read_text(encoding="utf-8")
+        marker_check = script.split('verification_phase="initial_bootstrap_marker"', 1)[1].split(
+            'verification_phase="restart_service_recovery"', 1
+        )[0]
+        self.assertIn("ORDENOWA bootstrap: storefront=ja, en/ko=enabled, admin=ko, theme=kuranea", marker_check)
+        self.assertIn("KURANEA bootstrap already completed\\.", marker_check)
+        self.assertIn("initial_storefront_http_request", script)
+        self.assertIn("initial_admin_login_http_request", script)
 
     def test_isolated_preinstall_probe_repairs_a_root_owned_class_index(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")

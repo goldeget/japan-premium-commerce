@@ -305,6 +305,33 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertNotIn("document.body.innerText", diagnostics)
         self.assertNotIn("document.body.textContent", diagnostics)
 
+    def test_checkout_cart_failure_emits_operation_and_sanitized_state_as_github_annotation(self) -> None:
+        flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        diagnostics = flow.split("def emit_checkout_cart_diagnostics", 1)[1].split(
+            "def browser_options", 1
+        )[0]
+
+        self.assertIn('"operation": operation', diagnostics)
+        self.assertIn('"state": state', diagnostics)
+        self.assertIn('annotation_payload = json.dumps(diagnostic_payload', diagnostics)
+        self.assertIn("annotation_payload.replace(\"%\", \"%25\")", diagnostics)
+        self.assertIn('"::error title=ORDENOWA checkout cart diagnostics::"', diagnostics)
+        self.assertIn("print(annotation, file=sys.stdout)", diagnostics)
+        self.assertIn("new URLSearchParams(window.location.search).keys()", diagnostics)
+        for safe_state in (
+            "window.location.pathname",
+            "cartProductIds",
+            "blockcartModalVisible",
+            "ciOnlyInBlockcartModal",
+            "addToCartButtons",
+            "currentCheckoutSteps",
+        ):
+            with self.subTest(state=safe_state):
+                self.assertIn(safe_state, diagnostics)
+        self.assertNotIn("window.location.href", diagnostics)
+        self.assertNotIn("document.body.innerText", diagnostics)
+        self.assertNotIn("document.body.textContent", diagnostics)
+
     def test_customer_runner_attempts_both_viewports_before_reporting_failure(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
         customer_runner = flow.split("def run_customer_checkouts", 1)[1].split(

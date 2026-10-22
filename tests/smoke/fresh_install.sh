@@ -35,17 +35,27 @@ db_query() {
   compose exec -T mariadb sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "$1"' -- "$1"
 }
 
-verification_phase="initial_storefront_and_admin_http"
+verification_phase="initial_storefront_http_request"
 storefront_status=$(curl --fail --silent --show-error --location --output /tmp/kuranea-home.html --write-out '%{http_code}' "$base_url/")
+verification_phase="initial_storefront_http_status"
 test "$storefront_status" = 200
+verification_phase="initial_storefront_language"
 grep -q '<html[^>]*lang="ja-JP"' /tmp/kuranea-home.html
+verification_phase="initial_admin_login_http_request"
 admin_status=$(curl --fail --silent --show-error --location --output /tmp/kuranea-admin-login.html --write-out '%{http_code}' "$base_url/admin-kuranea/login")
+verification_phase="initial_admin_login_http_status"
 test "$admin_status" = 200
+verification_phase="initial_admin_brand_name"
 grep -q 'ORDENOWA' /tmp/kuranea-admin-login.html
+verification_phase="initial_admin_korean_login_label"
 grep -q '로그인' /tmp/kuranea-admin-login.html
+verification_phase="initial_admin_korean_password_label"
 grep -q '비밀번호' /tmp/kuranea-admin-login.html
+verification_phase="initial_admin_no_dutch_translation"
 ! grep -q 'Sleutelwoord' /tmp/kuranea-admin-login.html
+verification_phase="initial_admin_no_legacy_logo_fallback"
 ! grep -q 'kuraneabackoffice/views/img/kuranea-logo.png' /tmp/kuranea-admin-login.html
+verification_phase="initial_admin_no_legacy_brand_text"
 ! grep -q 'KURANEA' /tmp/kuranea-admin-login.html
 verification_phase="initial_install_files_and_admin_css"
 compose exec -T prestashop sh -ec '
@@ -159,7 +169,9 @@ compose exec -T prestashop sh -ec 'runuser -g www-data -u www-data -- test -w /v
 
 verification_phase="initial_bootstrap_marker"
 initial_bootstrap_logs=$(compose logs --no-color prestashop 2>&1)
-grep -q 'ORDENOWA bootstrap: storefront=ja, en/ko=enabled, admin=ko, theme=kuranea' <<< "$initial_bootstrap_logs"
+if ! grep -Eq 'ORDENOWA bootstrap: storefront=ja, en/ko=enabled, admin=ko, theme=kuranea|KURANEA bootstrap already completed\.' <<< "$initial_bootstrap_logs"; then
+  false
+fi
 
 verification_phase="restart_service_recovery"
 compose restart mariadb prestashop

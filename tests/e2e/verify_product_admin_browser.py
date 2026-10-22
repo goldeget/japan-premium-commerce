@@ -208,6 +208,82 @@ def product_save_result(driver: webdriver.Chrome):
     )
 
 
+def product_post_failure_diagnostics(
+    driver: webdriver.Chrome,
+    form_before_submit: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Return an allowlisted page summary without exposing query tokens or page text."""
+    page_diagnostics = driver.execute_script(
+        """
+        const params = new URLSearchParams(window.location.search);
+        const rawController = params.get('controller') || '';
+        const controller = /^[A-Za-z0-9_-]{1,80}$/.test(rawController) ? rawController : null;
+        const pagePath = String(window.location.pathname || '')
+            .slice(0, 240)
+            .replace(/[^A-Za-z0-9._~/-]/g, '_');
+        const pageTitle = String(document.title || '')
+            .replace(/[\\u0000-\\u001f\\u007f]/g, ' ')
+            .replace(/\\s+/g, ' ')
+            .trim()
+            .slice(0, 160);
+        const navigation = performance.getEntriesByType('navigation')[0];
+        const candidateStatus = Number(navigation?.responseStatus);
+        const responseStatus = Number.isInteger(candidateStatus)
+            && candidateStatus >= 100
+            && candidateStatus <= 599
+            ? candidateStatus
+            : null;
+        const safeMarkerText = [
+            pageTitle,
+            ...Array.from(document.querySelectorAll('h1, h2, [role="alert"]'))
+                .filter((element) => element.getClientRects().length > 0)
+                .map((element) => element.innerText || element.textContent || ''),
+        ].join(' ').slice(0, 2000).toLowerCase();
+        const pageMarkers = [];
+        if (responseStatus === 404 || /\\b404\\b|not found|page not found|ページが見つかりません/.test(safeMarkerText)) {
+            pageMarkers.push('not_found');
+        }
+        if (responseStatus >= 500 || /\\b500\\b|internal server error|bad gateway|service unavailable/.test(safeMarkerText)) {
+            pageMarkers.push('server_error');
+        }
+        if (/fatal error|uncaught (?:exception|error)|symfony exception|oops! an error occurred|whoops, looks like something went wrong/.test(safeMarkerText)) {
+            pageMarkers.push('fatal_error');
+        }
+
+        const nameField = document.querySelector('#name_ja');
+        const headings = Array.from(document.querySelectorAll('h3')).map((heading) => heading.innerText.trim());
+        const bodyText = document.body?.innerText || '';
+        return {
+            page_path: pagePath,
+            query_controller: controller,
+            page_title: pageTitle,
+            response_status: responseStatus,
+            page_markers: pageMarkers,
+            login_form_present: Boolean(document.querySelector('#login_form')),
+            product_form_present: Boolean(nameField && nameField.closest('form')),
+            manager_route_present: controller === 'AdminOrdenowaProductManager',
+            manager_heading_present: headings.includes('새 상품 등록') || headings.includes('상품 수정'),
+            product_list_present: headings.includes('ORDENOWA 관리 상품'),
+            add_denied_marker: bodyText.includes('상품을 등록할 권한이 없습니다.'),
+            edit_denied_marker: bodyText.includes('상품을 수정할 권한이 없습니다.'),
+            manager_load_error_marker: bodyText.includes('상품 관리 화면을 불러오지 못했습니다.'),
+        };
+        """
+    )
+    save_result = product_save_result(driver)
+    if not isinstance(save_result, dict):
+        save_result = {}
+
+    return {
+        **page_diagnostics,
+        "form_before_submit": form_before_submit or {},
+        "form_after_response": product_form_diagnostics(driver),
+        "save_status": save_result.get("status", "no_visible_response"),
+        "alert_class": save_result.get("alert_class"),
+        "error_markers": save_result.get("error_markers", []),
+    }
+
+
 def product_links(driver: webdriver.Chrome, product_id: int):
     return [
         link
@@ -334,17 +410,8 @@ def run() -> None:
 
         create_operation = "wait_for_save_confirmation"
         save_result = WebDriverWait(driver, 45).until(product_save_result)
-        save_diagnostics = {
-            "form_before_submit": form_before_submit or {},
-            "form_after_response": product_form_diagnostics(driver),
-            **{
-                key: value
-                for key, value in manager_page_diagnostics(driver).items()
-                if key in {"manager_route_present", "product_form_present", "add_denied_marker", "edit_denied_marker"}
-            },
-            **save_result,
-        }
         if save_result["status"] == "alert":
+            save_diagnostics = product_post_failure_diagnostics(driver, form_before_submit)
             raise AssertionError("native product save displayed an alert")
         if save_result["status"] != "success":
             raise AssertionError("native product save did not return a verified success response")
@@ -493,18 +560,9 @@ def run() -> None:
             diagnostic += f"; operation={create_operation}"
             if driver is not None and save_diagnostics is None:
                 try:
-                    save_diagnostics = {
-                        "form_before_submit": form_before_submit or {},
-                        "form_after_response": product_form_diagnostics(driver),
-                        **{
-                            key: value
-                            for key, value in manager_page_diagnostics(driver).items()
-                            if key in {"manager_route_present", "product_form_present", "add_denied_marker", "edit_denied_marker"}
-                        },
-                        **(product_save_result(driver) or {"status": "no_visible_response"}),
-                    }
+                    save_diagnostics = product_post_failure_diagnostics(driver, form_before_submit)
                 except Exception:
-                    pass
+                    save_diagnostics = {"diagnostics_unavailable": True}
             if save_diagnostics is not None:
                 diagnostic += "; save_diagnostics=" + json.dumps(save_diagnostics, ensure_ascii=False, sort_keys=True)
         if stage == "korean_product_manager_form" and driver is not None:

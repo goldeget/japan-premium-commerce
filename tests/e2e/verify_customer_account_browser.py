@@ -163,6 +163,23 @@ def set_registration_control(control: dict[str, str], name: str, field_type: str
     control["type"] = re.sub(r"[^A-Za-z0-9_-]", "_", field_type)[:40]
 
 
+def safe_diagnostic_name(value: object, *, field_type: bool = False) -> str:
+    if not isinstance(value, str):
+        return ""
+    pattern = r"[^A-Za-z0-9_-]" if field_type else r"[^A-Za-z0-9_.\[\]-]"
+    return re.sub(pattern, "_", value)[:80]
+
+
+def safe_diagnostic_boolean(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
+
+
+def safe_registration_path(value: object) -> str:
+    if isinstance(value, str) and value in {"/", "/index.php"}:
+        return value
+    return "/<other>"
+
+
 def emit_registration_diagnostics(
     driver: webdriver.Chrome,
     stage: str,
@@ -261,10 +278,38 @@ def emit_registration_diagnostics(
         except Exception:
             diagnostics["header_user_menu_button_present"] = False
 
+    diagnostics["pathname"] = safe_registration_path(diagnostics.get("pathname"))
+    safe_path = diagnostics.get("pathname")
+    safe_path = safe_path if safe_path in {"/", "/index.php"} else "/<other>"
+    invalid_count = diagnostics.get("visible_invalid_control_count")
+    safe_state: dict[str, object] = {
+        "stage": safe_diagnostic_name(stage),
+        "path": safe_path,
+        "registration_form_visible": safe_diagnostic_boolean(diagnostics.get("registration_form_visible")),
+        "registration_form_valid": safe_diagnostic_boolean(diagnostics.get("registration_form_valid")),
+        "visible_invalid_control_count": (
+            invalid_count if isinstance(invalid_count, int) and not isinstance(invalid_count, bool) else None
+        ),
+        "first_invalid_control_name": safe_diagnostic_name(diagnostics.get("first_invalid_control_name")),
+        "first_invalid_control_type": safe_diagnostic_name(
+            diagnostics.get("first_invalid_control_type"), field_type=True
+        ),
+        "alert_visible": safe_diagnostic_boolean(diagnostics.get("alert_visible")),
+        "registration_link_visible": safe_diagnostic_boolean(diagnostics.get("registration_link_visible")),
+        "identity_link_visible": safe_diagnostic_boolean(diagnostics.get("identity_link_visible")),
+        "login_form_visible": safe_diagnostic_boolean(diagnostics.get("login_form_visible")),
+        "header_user_menu_button_visible": safe_diagnostic_boolean(
+            diagnostics.get("header_user_menu_button_visible")
+        ),
+    }
+    safe_state_json = json.dumps(safe_state, ensure_ascii=True, sort_keys=True)
     print(
         "ORDENOWA_ACCOUNT_REGISTRATION_DIAGNOSTICS=" + json.dumps(diagnostics, ensure_ascii=False, sort_keys=True),
         file=sys.stderr,
     )
+    print("ORDENOWA_ACCOUNT_REGISTRATION_SAFE_STATE=" + safe_state_json, file=sys.stderr)
+    annotation = safe_state_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::error title=Customer account registration response state::{annotation}", file=sys.stderr)
 
 
 def fill(driver: webdriver.Chrome, selector: str, value: str) -> None:
