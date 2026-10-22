@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use PrestaShop\PrestaShop\Core\CommandBus\CommandBusInterface;
 use PrestaShop\PrestaShop\Core\Domain\Order\Query\GetOrderForViewing;
+use PrestaShop\PrestaShop\Core\Domain\ValueObject\QuerySorting;
 use Kuranea\Postcode\Infrastructure\DatabasePostalAddressLookup;
 
 $runId = trim((string) getenv('KURANEA_CI_RUN_ID'));
@@ -343,8 +343,8 @@ try {
 
     $stage = 'Back Office shipping address projection';
     $orderForViewing = $kernel->getContainer()
-        ->get(CommandBusInterface::class)
-        ->handle(new GetOrderForViewing($orderId));
+        ->get('prestashop.core.query_bus')
+        ->handle(new GetOrderForViewing($orderId, QuerySorting::DESC));
     if (!is_object($orderForViewing) || !method_exists($orderForViewing, 'getShippingAddressFormatted')) {
         throw new RuntimeException('PrestaShop could not load the native Back Office order-view address projection.');
     }

@@ -25,7 +25,7 @@
 | 관리자 한국어 | 로그인·대시보드·주문 목록 부분 검증, 전체 100% 미완료 | 실제 로그인 후 대시보드 및 주문 목록 PC/모바일을 확인했다. 주문 목록은 HTTP 200, 화면 문구와 메뉴 한국어, 브라우저 오류 0건이다. 화면에 주문이 없어 주소 표시 행은 아직 확인하지 못했다. 빈 상태 삽화 안의 샘플 영문/달러 그림도 표시된다. 전체 관리자 화면의 한국어 100%는 완료되지 않았다. |
 | PWA | 부분 완료 | manifest, 아이콘, 공개 정적 자산 전용 service worker 기반을 갖췄다. 실제 iOS/Android 설치 검증은 미실행이다. |
 | 현재 로컬 회귀 실행 | 부분 실패 | 최신 38개 storefront/smoke 실행에서 35건 통과, 빈 카테고리 ja/en/ko 경로 3건이 `Category.php`/`CategoryController.php`의 false 조회 결과 foreach 경고와 함께 HTTP 500으로 실패했다. 주소·관리자 번역 계약은 별도 6/6·8/8 통과했다. 여유 공간·inode가 0/100%인 상태에서 MariaDB도 unhealthy로 관찰되어 DB 변경이나 컨테이너 재시작 없이 중단했다. |
-| 신규 설치 CI | 설치·CSV·lookup·Address PASS, Order 검증 원인 확인 중 | run `39735277398`에서 빈 볼륨 설치, 공식 Japan Post CSV import, `1000004` Tokyo/Otemachi lookup, 네이티브 Address 저장이 통과했다. Order/Back Office 검증 step은 exit 255로 끝났고 restart는 건너뛰었다. 해당 실행의 스크립트에는 단계별 예외 기록이 없어 구체 원인은 아직 모른다. 주문 검증기에 boundary별 GitHub error annotation을 추가해 다음 격리 실행에서 stage·예외를 확인한다. native Order, Back Office 주소 표시, 재시작은 아직 PASS가 아니다. |
+| 신규 설치 CI | 설치·CSV·lookup·Address PASS, 관리자 projection 수정 후 CI 대기 | run `39736010830`에서 빈 볼륨 기동, 공식 CSV import, `1000004` Tokyo/Otemachi lookup, 네이티브 Address 저장이 통과했다. 실패 stage는 `Back Office shipping address projection`; 예외는 비공개로 최적화된 `CommandBusInterface`를 찾지 못한 `ServiceNotFoundException`이다. PrestaShop 9.2.0 공식 관리자 주문 컨트롤러의 `prestashop.core.query_bus` 경로와 `QuerySorting::DESC` 호출로 QA harness를 수정했다. 이 수정은 아직 CI에서 검증되지 않았으며 Order 조회, 관리자 주소 표시, restart는 PASS가 아니다. |
 | Amazon Japan·Rakuten 상품 수집 | 차단 | 공개 홈페이지를 읽기 전용 HTTP 요청했으나 둘 다 개발환경 egress proxy의 CONNECT `403`으로 거부됐다. 우회하지 않았으며 실제 페이지 파싱·상품 수집·등록을 하지 않았다. |
 | 주문·상품 운영 | 미완료 | 카탈로그가 비어 있고 신규 설치 CI가 실패한다. 실제 상품 수집, 주문, 주문관리 브라우저 여정은 완료되지 않았다. |
 

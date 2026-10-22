@@ -36,10 +36,10 @@
 
 | 검사 | 결과 | 상세 |
 | --- | --- | --- |
-| P0 신규 설치 부팅 오류 | 설치 부팅 복구, Address 저장 PASS, Order E2E 미완료 | run `39735277398`에서 empty-volume startup/cache probe/CSV import/`1000004` Tokyo/Otemachi API lookup/native Address 저장이 통과했다. Order 및 Back Office 배송지 projection step은 exit 255, restart smoke는 skipped다. 해당 실행은 오류 stage를 출력하지 않아 구체 Order 실패 경계를 아직 알 수 없다. 다음 CI 진단에서 이를 출력하도록 verifier를 보강했다. 전체 주문/재시작 E2E는 PASS가 아니다. |
+| P0 신규 설치 부팅 오류 | 설치 부팅 복구, Address 저장 PASS, 관리자 조회 API harness 수정 대기 | run `39736010830`에서 empty-volume startup/cache probe/CSV import/`1000004` lookup/native Address 저장이 통과했다. 주문 step은 `Back Office shipping address projection`에서 `ServiceNotFoundException`으로 실패했다: 테스트가 비공개로 인라인된 `CommandBusInterface`를 컨테이너에서 직접 요청했다. 공식 `FrameworkBundleAdminController` 조회 경로(`prestashop.core.query_bus`, `QuerySorting::DESC`)로 수정했으며 미검증이다. Order/Back Office address projection 및 restart QA는 아직 PASS가 아니다. |
 | 과거 신규 빈 볼륨 설치 | FAIL (이전 코드) | runs `39703327857`, `39704824787`, `39705702536`, `39706052890`, `39706126218`은 이전 코드에서 실패했다. 최신 사용자가 제공한 상세 로그에서 `assets:install admin-dev`가 부재한 `/var/www/html/admin-dev`를 대상으로 한 직접 원인을 확인했다. 이번 원인은 errno 28로 기록하지 않는다. |
 | Amazon Japan·Rakuten 원본 페이지 접근 | BLOCKED | 2026-10-22 읽기 전용 HTTPS 요청 모두 egress proxy CONNECT `403`을 반환했다. 접근통제를 우회하지 않았고 페이지를 수집·파싱하지 않았다. |
-| 신규 설치 DB 적재 및 API lookup | import·lookup·native Address PASS, Order 판정 대기 | run `39735277398`에서 공식 CSV import, postcode `1000004` lookup, manual building을 포함한 native Address 재조회가 통과했다. 후속 unpaid Order/Back Office 검증은 exit 255여서 주문/주소 projection 결과를 확인하지 못했다. diagnostic handler를 추가한 새 실행으로 판정한다. |
+| 신규 설치 DB 적재 및 API lookup | import·lookup·native Address PASS, BO projection 미검증 | run `39736010830`은 공식 CSV import, postcode lookup, native Address 저장이 성공했다. 이후 native Order/Back Office projection 단계에서 CI-only QueryBus lookup 오류로 실패했고 restart 검증은 건너뛰었다. query bus 호출 경로를 수정해 다음 격리 실행에서 재검증한다. |
 | checkout 주문 연결 및 관리자 배송지 | 미실행 | 무결제 네이티브 Order 생성, `id_address_delivery` 연결, PrestaShop 관리자 조회 주소 formatter를 검사하는 CI 전용 스크립트를 추가·원격 저장했고 PHP 문법 및 격리 가드만 확인했다. 실제 검증은 새 빈 설치 CI가 먼저 통과해야 한다. 브라우저 checkout 경로는 아직 주소 폼 fixture만 검증했다. |
 | PC/모바일 browser regression | 부분 PASS | 홈 빈 카탈로그 안내는 PC 1440px·모바일 390px에서 실제 렌더링했다. 화면별 증거는 위 캡처를 참조한다. 전체 반응형 폭 테스트와 상품 상세·주문 화면은 별도 미완료다. |
 | 관리자 한국어 100% | 미완료 | 로그인과 대시보드에서 한국어 메뉴·날짜 범위를 실제 브라우저로 확인했다. 모듈 계약 테스트는 8/8이지만 전체 메뉴, 모든 설정·주문관리·모듈 화면은 아직 범위별 audit을 하지 않았다. |

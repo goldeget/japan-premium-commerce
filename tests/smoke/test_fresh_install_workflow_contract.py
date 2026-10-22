@@ -73,6 +73,9 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("$projectName !== $expectedProjectName", order_test)
         self.assertIn("instanceof PaymentModule", order_test)
         self.assertIn("GetOrderForViewing", order_test)
+        self.assertIn("get('prestashop.core.query_bus')", order_test)
+        self.assertIn("QuerySorting::DESC", order_test)
+        self.assertNotIn("CommandBusInterface::class", order_test)
         self.assertIn("KURANEA_NATIVE_ORDER_STAGE", order_test)
         self.assertIn("::error title=KURANEA native order::", order_test)
         for stage in (

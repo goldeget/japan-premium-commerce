@@ -209,3 +209,9 @@
 - 새 수정 run `39735277398`에서 empty-volume startup, Japan Post CSV import, Tokyo/Otemachi API lookup 및 native Address save가 통과했지만 native unpaid-order/Back Office projection step은 exit 255로 실패했다. 당시 order verifier의 uncaught exception은 public job page에서 상세 로그로 읽을 수 없어 실패 경계를 추정하지 않는다. restart step은 skipped.
 - 개선: native order verifier에 bootstrap, Back Office kernel, JP context, payment module, address, product, cart/quantity, delivery, order 및 Back Office projection stage를 추가한다. Uncaught Throwable은 제한된 메시지와 stage를 GitHub annotation으로 출력한다. 다음 CI의 오류 증거로 실제 root cause를 판정한다.
 - TDD/로컬 검사: stage contract를 먼저 추가해 fail을 확인한 뒤 handler와 stage marker를 넣었다. fresh-install contract 및 Japan Post refresh 테스트 15/15, Compose YAML 검증, `git diff --check` 통과. 실제 PHP/MySQL 동작은 다음 격리 CI에서 확인한다.
+## 2026-10-22 — Back Office order projection query bus 수정
+
+- run `39736010830`에서 workflow/image/cache probe, 빈 볼륨 설치, official CSV import, `1000004` Tokyo/Otemachi API lookup 및 native Address 저장이 통과했다. annotation의 실패 단계는 `Back Office shipping address projection`; 예외는 Symfony `ServiceNotFoundException`으로 `CommandBusInterface`가 컴파일된 컨테이너에서 removed/inlined 됐다는 내용이었다. restart step은 실행하지 않았다.
+- PrestaShop 9.2.0 공식 `FrameworkBundleAdminController::getQueryBus()`가 `prestashop.core.query_bus` 서비스를 사용하고 공식 OrderController가 `GetOrderForViewing($orderId, QuerySorting::DESC)`를 dispatch하는 것을 확인했다. 검증기는 같은 query bus service id 및 정렬값을 사용하도록 바꿨으며 PHP 코어/쇼핑몰 모듈은 변경하지 않았다.
+- 회귀 contract를 먼저 추가해 기존 direct `CommandBusInterface::class` 호출에서 실패를 확인하고, 공식 query bus alias 적용 후 green을 확인했다. fresh-install contract 및 Japan Post refresh 15/15, Compose config, `git diff --check` 통과.
+- 실제 관리자 order projection, unpaid Order의 저장/주소 표시 및 restart/data persistence는 다음 격리 GitHub Actions 실행 전까지 미완료다.
