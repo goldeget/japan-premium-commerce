@@ -12,7 +12,7 @@ class Kuraneabackoffice extends Module
     {
         $this->name = 'kuraneabackoffice';
         $this->tab = 'administration';
-        $this->version = '1.0.0';
+        $this->version = '1.0.1';
         $this->author = 'ORDENOWA';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -26,7 +26,11 @@ class Kuraneabackoffice extends Module
 
     public function install(): bool
     {
-        return parent::install() && $this->registerHook(['displayAdminLogin', 'actionAdminControllerSetMedia']);
+        return parent::install() && $this->registerHook([
+            'displayAdminLogin',
+            'displayAdminEndContent',
+            'actionAdminControllerSetMedia',
+        ]);
     }
 
     public function hookActionAdminControllerSetMedia(): void
@@ -37,6 +41,22 @@ class Kuraneabackoffice extends Module
         }
 
         $this->context->controller->addJs($this->_path . 'views/js/dashboard-korean.js');
+    }
+
+    public function hookDisplayAdminEndContent(array $params = []): string
+    {
+        $languageIsoCode = strtolower((string) ($this->context->language->iso_code ?? ''));
+        $controller = $this->context->controller;
+        $controllerName = is_object($controller) ? (string) ($controller->controller_name ?? '') : '';
+        if (!str_starts_with($languageIsoCode, 'ko') || $controllerName !== 'AdminOrders') {
+            return '';
+        }
+
+        $this->context->smarty->assign([
+            'kuranea_orders_empty_state_script' => $this->_path . 'views/js/orders-empty-state-korean.js',
+        ]);
+
+        return $this->fetch('module:' . $this->name . '/views/templates/hook/admin-orders-empty-state.tpl');
     }
 
     public function hookDisplayAdminLogin(array $params = []): string
