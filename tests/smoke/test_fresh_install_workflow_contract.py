@@ -95,10 +95,16 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         ):
             self.assertIn(stage, verifier)
 
-    def test_native_address_verifier_does_not_assign_unsupported_shop_property(self) -> None:
-        verifier = (ROOT / "tests" / "postcode" / "verify_native_address_persistence.php").read_text(encoding="utf-8")
-        self.assertNotRegex(verifier, r"\$address->id_shop\s*=")
-        self.assertIn("$address->id_customer =", verifier)
+    def test_native_address_verifiers_do_not_assign_unsupported_shop_property(self) -> None:
+        verifier_paths = (
+            ROOT / "tests" / "postcode" / "verify_native_address_persistence.php",
+            ROOT / "tests" / "postcode" / "verify_native_order_persistence.php",
+        )
+        for verifier_path in verifier_paths:
+            with self.subTest(verifier=verifier_path.name):
+                verifier = verifier_path.read_text(encoding="utf-8")
+                self.assertNotRegex(verifier, r"\$address->id_shop\s*=")
+                self.assertIn("$address->id_customer =", verifier)
 
     def test_successful_postal_import_clears_only_the_staging_copy(self) -> None:
         importer = POSTAL_IMPORT.read_text(encoding="utf-8")

@@ -198,3 +198,8 @@
 - PrestaShop 9.2.0 공식 `AddressCore`를 확인해 `id_shop`가 Address public property나 ObjectModel field가 아닌 것을 대조했다. 테스트 harness의 불필요한 `$address->id_shop = 1`만 제거했고 코어/운영 모듈을 수정하지 않았다.
 - TDD: 먼저 Address의 미지원 shop 속성 대입을 금지하는 workflow contract를 추가하고 실패를 확인한 다음 잘못된 대입을 지웠다. postcode workflow 및 Japan Post refresh contract 15/15 통과, Compose 정적 설정과 `git diff --check` 통과.
 - 새 격리 CI에서 native address save, unpaid Order 생성, 관리자 배송지 조회, restart/data persistence는 다시 확인해야 하므로 아직 PASS가 아니다. 기존 개발 DB, named volume 및 미커밋 catalog parser 변경은 보존했다.
+## 2026-10-22 — Native order verifier의 미지원 Address 속성 제거
+
+- run `39735099736`은 주소 저장 verifier의 첫 수정 커밋으로 진행 중이었다. 이 실행에서 다음 단계로 넘어가기 전에 `tests/postcode/verify_native_order_persistence.php`도 같은 `$address->id_shop` 대입을 하고 있음을 확인했다. 이전 CI annotation으로 확인된 PrestaShop 9.2.0 `AddressCore` 계약과 같은 원인이므로 주소·주문 검증기를 함께 고친다.
+- 회귀 검사를 먼저 확장해 두 스크립트에서 해당 대입을 거부하는 검사가 기존 코드에서 실패함을 확인했다. native order verifier의 한 줄 대입을 삭제했으며, 주소/주문 로직과 코어는 변경하지 않았다.
+- fresh-install workflow contract 및 Japan Post refresh 테스트 15/15 통과, Compose 설정·diff 검사 통과. 이 수정은 다음 격리 CI에서 검증하며 `39735099736`은 수정 전 snapshot이므로 별도로 결과를 기록한다.

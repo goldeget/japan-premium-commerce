@@ -162,7 +162,6 @@ try {
     $address->postcode = (string) $nativeAddress['postcode'];
     $address->city = (string) $nativeAddress['city'];
     $address->phone = '0312345678';
-    $address->id_shop = $shopId;
     if (!$address->add()) {
         throw new RuntimeException('Could not save the CI-only native Japan Post address.');
     }
