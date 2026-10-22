@@ -50,7 +50,7 @@ if (!class_exists('Db')) {
                 'jis_code' => '13101',
                 'prefecture' => '東京都',
                 'municipality' => '千代田区',
-                'town' => 'テスト町',
+                'town' => 'テスト町（次のビルを除く）',
             ]];
         }
     }

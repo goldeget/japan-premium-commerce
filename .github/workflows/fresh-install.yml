@@ -113,7 +113,7 @@ jobs:
               item.get("postcode") == "100-0004"
               and item.get("prefecture") == "東京都"
               and item.get("municipality") == "千代田区"
-              and "大手町" in item.get("town", "")
+              and item.get("town") == "大手町"
               for item in data.get("candidates", [])
           ), data
           print("PASS: official Japan Post postcode 1000004 resolves to Tokyo / Chiyoda / Otemachi")

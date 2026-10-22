@@ -7,7 +7,8 @@ $_SERVER['HTTP_HOST'] = trim((string) getenv('PS_DOMAIN')) ?: 'localhost:8080';
 $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/index.php';
 require_once $shopRoot . '/config/config.inc.php';
-require_once $shopRoot . '/modules/kuraneapostcode/kuraneapostcode.php';
+$moduleRoot = trim((string) getenv('KURANEA_POSTCODE_MODULE_ROOT')) ?: $shopRoot . '/modules/kuraneapostcode';
+require_once $moduleRoot . '/kuraneapostcode.php';
 
 use Kuranea\Postcode\Infrastructure\DatabasePostalAddressLookup;
 
@@ -48,6 +49,9 @@ $native = $candidate->toNativeAddressFields($stateIds);
 if ($native === null) {
     throw new RuntimeException('Tokyo does not map to a native PrestaShop state.');
 }
+if ($native['address1'] !== '大手町') {
+    throw new RuntimeException('The Japan Post building-exclusion note was not removed from the customer street address.');
+}
 
 $country = new Country($countryId);
 $formatter = new class($country) {
@@ -72,8 +76,7 @@ $makeForm = static function (string $postcode, int $stateId, string $city, strin
 
 $module = new Kuraneapostcode();
 Context::getContext()->language->iso_code = 'ja';
-$editableTown = str_replace('（次のビルを除く）', '', $native['address1']);
-$validForm = $makeForm('1000004', $native['id_state'], $native['city'], $editableTown . '1-2', 'KURANEA QA Bldg 101');
+$validForm = $makeForm('1000004', $native['id_state'], $native['city'], $native['address1'] . '1-2', 'KURANEA QA Bldg 101');
 if ($module->hookActionValidateCustomerAddressForm(['form' => $validForm]) !== true) {
     throw new RuntimeException('A valid 1000004 address with a manually entered building was rejected.');
 }
