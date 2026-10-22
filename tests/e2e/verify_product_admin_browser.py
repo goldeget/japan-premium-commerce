@@ -880,10 +880,9 @@ def run() -> None:
         visible(driver, 'button[name="submitKuraneaProductSave"]').click()
 
         edit_operation = "wait_edit_save_confirmation"
-        WebDriverWait(driver, 45).until(
-            lambda browser: "수정했습니다" in browser.find_element(By.TAG_NAME, "body").text
-            or "저장했습니다" in browser.find_element(By.TAG_NAME, "body").text
-        )
+        edit_save_result = WebDriverWait(driver, 45).until(product_save_result)
+        if not isinstance(edit_save_result, dict) or edit_save_result.get("status") != "success":
+            raise AssertionError("native product edit did not return a verified success response")
         edit_operation = "verify_edited_fields"
         if visible(driver, "#name_ja").get_attribute("value") != japanese_name + " 수정":
             raise AssertionError("product name edit did not persist")

@@ -575,6 +575,16 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("product_edit_failure_diagnostics(", failure_handler)
         self.assertIn('edit_diagnostics=', failure_handler)
 
+    def test_product_edit_confirmation_wait_uses_stale_safe_save_result(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        edit_flow = browser.split('stage = "native_product_edit"', 1)[1].split(
+            "    except Exception as error:", 1
+        )[0]
+
+        self.assertIn('edit_save_result = WebDriverWait(driver, 45).until(product_save_result)', edit_flow)
+        self.assertIn('edit_save_result.get("status") != "success"', edit_flow)
+        self.assertNotIn('find_element(By.TAG_NAME, "body").text', edit_flow)
+
     def test_product_edit_category_diagnostics_keep_only_bounded_numeric_ids(self) -> None:
         browser_path = ROOT / "tests" / "e2e" / "verify_product_admin_browser.py"
         tree = ast.parse(browser_path.read_text(encoding="utf-8"))
