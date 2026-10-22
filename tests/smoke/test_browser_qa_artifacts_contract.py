@@ -1,6 +1,9 @@
 """Keep browser QA failures and execution logs in the retained artifact bundle."""
 from __future__ import annotations
 
+import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -151,6 +154,43 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
         ):
             with self.subTest(phase=phase):
                 self.assertIn(f'verification_phase="{phase}"', script)
+
+    def test_fresh_install_failure_phase_is_appended_to_step_summary(self) -> None:
+        script = FRESH_INSTALL.read_text(encoding="utf-8")
+        handler_start = script.index("report_verification_failure() {")
+        handler_end = script.index("\n}\n", handler_start) + 2
+        handler = script[handler_start:handler_end]
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            summary = Path(temporary_directory) / "step-summary.md"
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    "verification_phase=restart_service_recovery\n"
+                    f"{handler}\n"
+                    "report_verification_failure 7\n",
+                ],
+                capture_output=True,
+                check=False,
+                env={
+                    "PATH": os.environ["PATH"],
+                    "GITHUB_STEP_SUMMARY": str(summary),
+                    "SECRET_TOKEN": "must-not-be-printed",
+                },
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(
+                result.stderr,
+                "FRESH_INSTALL_VERIFICATION_FAILED phase=restart_service_recovery exit_code=7\n",
+            )
+            self.assertTrue(summary.exists(), "failure phase was not written to the step summary")
+            self.assertEqual(
+                summary.read_text(encoding="utf-8"),
+                "FRESH_INSTALL_VERIFICATION_FAILED phase=restart_service_recovery exit_code=7\n",
+            )
 
 
 if __name__ == "__main__":

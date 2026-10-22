@@ -9,6 +9,10 @@ report_verification_failure() {
   local failure_status=$1
   printf 'FRESH_INSTALL_VERIFICATION_FAILED phase=%s exit_code=%s\n' \
     "$verification_phase" "$failure_status" >&2
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    printf 'FRESH_INSTALL_VERIFICATION_FAILED phase=%s exit_code=%s\n' \
+      "$verification_phase" "$failure_status" >> "$GITHUB_STEP_SUMMARY"
+  fi
 }
 
 trap 'report_verification_failure "$?"' ERR
