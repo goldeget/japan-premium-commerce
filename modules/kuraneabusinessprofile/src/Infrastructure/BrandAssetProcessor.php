@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class BrandAssetProcessor
 {
-    private const MAX_BYTES = 10 * 1024 * 1024;
+    public const MAX_BYTES = 10 * 1024 * 1024;
     private const MAX_DIMENSION = 8192;
     private const MAX_PIXELS = 40000000;
 

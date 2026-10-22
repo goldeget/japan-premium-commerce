@@ -368,6 +368,13 @@ class AdminBusinessProfileController extends ModuleAdminController
             if (!is_string($temporaryPath) || $temporaryPath === '' || !is_uploaded_file($temporaryPath)) {
                 throw new \InvalidArgumentException('브랜드 원본 업로드 경로를 검증하지 못했습니다.');
             }
+            $temporarySize = filesize($temporaryPath);
+            if ($temporarySize === false) {
+                throw new \InvalidArgumentException('브랜드 원본 파일 크기를 확인하지 못했습니다.');
+            }
+            if ($temporarySize > BrandAssetProcessor::MAX_BYTES) {
+                throw new \InvalidArgumentException('브랜드 원본 이미지는 10MiB 이하로 업로드해 주세요.');
+            }
             $bytes = file_get_contents($temporaryPath);
             if (!is_string($bytes)) {
                 throw new \InvalidArgumentException('브랜드 원본 파일을 읽지 못했습니다.');
