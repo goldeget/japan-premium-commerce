@@ -126,6 +126,15 @@ def fill(driver: webdriver.Chrome, selector: str, value: str) -> None:
     element.send_keys(value)
 
 
+def assert_my_page(driver: webdriver.Chrome, expected_first_name: str) -> None:
+    for selector in ("#identity_main_link", "#history_main_link", "#signout_link"):
+        visible(driver, selector)
+
+    page_text = driver.find_element(By.TAG_NAME, "body").text
+    if expected_first_name not in page_text or "Customer" not in page_text:
+        raise AssertionError("My Page did not show the signed-in customer's saved name")
+
+
 def prepare_required_registration_fields(driver: webdriver.Chrome, email_address: str, password: str) -> None:
     form = visible(driver, "#customer-form")
     for name, value in (("firstname", "CI"), ("lastname", "Customer"), ("email", email_address)):
@@ -172,7 +181,17 @@ def submit_login(driver: webdriver.Chrome, email_address: str, password: str) ->
 def logout(driver: webdriver.Chrome) -> None:
     link = visible(driver, "a.account-menu__link--signout")
     link.click()
+    driver.get(f"{BASE}/index.php?controller=my-account")
+    WebDriverWait(driver, 30).until(
+        lambda browser: bool(browser.find_elements(By.CSS_SELECTOR, '#login-form input[name="email"]'))
+        or bool(browser.find_elements(By.ID, "identity_main_link"))
+    )
+    if driver.find_elements(By.ID, "identity_main_link"):
+        raise AssertionError("the signed-out customer can still open My Page")
+    visible(driver, '#login-form input[name="email"]')
     WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.ID, "submit-login")))
+    if driver.find_elements(By.ID, "signout_link") or driver.find_elements(By.CSS_SELECTOR, "a.account-menu__link--signout"):
+        raise AssertionError("the customer still has an authenticated My Page session after logout")
 
 
 def run_viewport(width: int, height: int, label: str) -> None:
@@ -195,6 +214,7 @@ def run_viewport(width: int, height: int, label: str) -> None:
         prepare_required_registration_fields(driver, account_email, initial_password)
         visible(driver, "#customer-form button.form-control-submit").click()
         WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.ID, "identity_main_link")))
+        assert_my_page(driver, "CI")
         driver.save_screenshot(str(DEST / f"{label}-customer-account-created.png"))
 
         stage = "profile_update"
@@ -219,6 +239,7 @@ def run_viewport(width: int, height: int, label: str) -> None:
         fill(driver, '#login-form input[name="password"]', initial_password)
         visible(driver, "#submit-login").click()
         WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.ID, "identity_main_link")))
+        assert_my_page(driver, f"CI-{label.title()}")
         driver.save_screenshot(str(DEST / f"{label}-customer-email-login.png"))
 
         stage = "password_reset_request"
@@ -267,6 +288,7 @@ def run_viewport(width: int, height: int, label: str) -> None:
 
         stage = "password_reset_login"
         submit_login(driver, account_email, reset_password)
+        assert_my_page(driver, f"CI-{label.title()}")
         driver.save_screenshot(str(DEST / f"{label}-customer-password-reset-login.png"))
         logout(driver)
         print(f"PASS: {label} customer registration, profile update, email login/logout, and Mailpit password reset")

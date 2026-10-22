@@ -30,6 +30,19 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn('attachment.get("ContentID", "")', account_flow)
         self.assertIn("published ORDENOWA derivative", account_flow)
 
+    def test_customer_account_browser_proves_my_page_and_logout_transitions(self) -> None:
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        self.assertIn("def assert_my_page", account_flow)
+        my_page = account_flow.split("def assert_my_page", 1)[1].split("def prepare_required_registration_fields", 1)[0]
+        logout = account_flow.split("def logout", 1)[1].split("def run_viewport", 1)[0]
+        self.assertEqual(account_flow.count("        assert_my_page(driver,"), 3)
+        for selector in ("identity_main_link", "history_main_link", "signout_link"):
+            self.assertIn(selector, my_page)
+        self.assertIn("expected_first_name", my_page)
+        self.assertIn('driver.get(f"{BASE}/index.php?controller=my-account")', logout)
+        self.assertIn("identity_main_link", logout)
+        self.assertIn('#login-form input[name="email"]', logout)
+
     def test_official_brand_upload_preview_publish_and_browser_checks_run_in_isolated_ci(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         brand_flow_path = ROOT / "tests" / "e2e" / "verify_brand_admin_browser.py"
