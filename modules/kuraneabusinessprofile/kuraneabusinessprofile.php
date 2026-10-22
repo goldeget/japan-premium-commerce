@@ -170,7 +170,9 @@ class Kuraneabusinessprofile extends Module
         }
 
         $profile = $this->publicProfile();
-        if (CommerceGate::isEnabled($profile, $this->externalAuthorizationConfirmed())) {
+        if (CommerceGate::isEnabled($profile, $this->externalAuthorizationConfirmed())
+            || CommerceGate::isIsolatedCiCheckoutEnabled()
+        ) {
             return;
         }
 
@@ -351,9 +353,15 @@ class Kuraneabusinessprofile extends Module
 
     private function installTabs(): bool
     {
-        $parentId = (int) Tab::getIdFromClassName('AdminParentShopParameters');
+        $parentId = (int) Tab::getIdFromClassName('ShopParameters');
+        if ($parentId < 1) {
+            $parentId = (int) Tab::getIdFromClassName('AdminParentShopParameters');
+        }
         if ($parentId < 1) {
             $parentId = (int) Tab::getIdFromClassName('AdminParentPreferences');
+        }
+        if ($parentId < 1) {
+            return false;
         }
 
         $generalTabId = $this->upsertTab('AdminBusinessProfile', '쇼핑몰 운영 설정', $parentId);
@@ -361,7 +369,7 @@ class Kuraneabusinessprofile extends Module
             return false;
         }
 
-        return $this->upsertTab('AdminBusinessProfileBanks', '은행 계좌', $generalTabId) > 0;
+        return $this->upsertTab('AdminBusinessProfileBanks', '은행 계좌', $parentId) > 0;
     }
 
     private function upsertTab(string $className, string $label, int $parentId): int

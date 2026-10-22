@@ -75,11 +75,36 @@ verifyBusinessProfile(($draft->profile['localization']['default_locale'] ?? '') 
 verifyBusinessProfile(!\Kuranea\BusinessProfile\Customer\CommerceGate::isEnabled($draft->profile, getenv('ORDENOWA_SELLER_AUTHORIZATION_CONFIRMED') === '1'), 'A fresh install must not enable real checkout.');
 verifyBusinessProfile((string) Configuration::get('PS_SHOP_NAME') === 'ORDENOWA', 'The PrestaShop compatibility shop name must use the confirmed brand.');
 
+$shopParametersParentId = (int) Tab::getIdFromClassName('ShopParameters');
+verifyBusinessProfile($shopParametersParentId > 0, 'The PrestaShop ShopParameters parent tab must exist.');
+$shopParametersParent = new Tab($shopParametersParentId);
+verifyBusinessProfile(
+    (string) $shopParametersParent->class_name === 'ShopParameters',
+    'The Korean admin tabs must attach to the exact ShopParameters class.'
+);
+verifyBusinessProfile((bool) $shopParametersParent->active, 'The ShopParameters parent tab must be active.');
+if (isset($shopParametersParent->enabled)) {
+    verifyBusinessProfile((bool) $shopParametersParent->enabled, 'The ShopParameters parent tab must be enabled.');
+}
+
 foreach (['AdminBusinessProfile' => '쇼핑몰 운영 설정', 'AdminBusinessProfileBanks' => '은행 계좌'] as $className => $expectedLabel) {
     $tabId = (int) Tab::getIdFromClassName($className);
     verifyBusinessProfile($tabId > 0, 'The Korean Back Office tab must exist: ' . $className);
     $tab = new Tab($tabId);
+    verifyBusinessProfile((bool) $tab->active, 'The Korean Back Office tab must be active: ' . $className);
+    if (isset($tab->enabled)) {
+        verifyBusinessProfile((bool) $tab->enabled, 'The Korean Back Office tab must be enabled: ' . $className);
+    }
+    verifyBusinessProfile((int) $tab->id_parent === $shopParametersParentId, 'The Korean settings and bank tabs must be siblings under ShopParameters: ' . $className);
     verifyBusinessProfile(in_array($expectedLabel, (array) $tab->name, true), 'The Back Office tab must have its Korean title: ' . $expectedLabel);
+    if (in_array($className, ['AdminBusinessProfile', 'AdminBusinessProfileBanks'], true)) {
+        $permissionQuery = 'SELECT ' . chr(96) . 'view' . chr(96)
+            . ' FROM ' . chr(96) . _DB_PREFIX_ . 'access' . chr(96)
+            . ' WHERE ' . chr(96) . 'id_profile' . chr(96) . ' = 1'
+            . ' AND ' . chr(96) . 'id_tab' . chr(96) . ' = ' . $tabId;
+        $viewPermission = (int) Db::getInstance()->getValue($permissionQuery);
+        verifyBusinessProfile($viewPermission === 1, 'SuperAdmin profile 1 must be able to view the Korean admin tab: ' . $className);
+    }
 }
 
-echo "PASS: fresh PrestaShop install stores ORDENOWA defaults, keeps seller disabled, and creates Korean admin tabs\n";
+echo "PASS: fresh PrestaShop install keeps seller authorization pending and creates active Korean admin tabs with profile 1 view access\n";

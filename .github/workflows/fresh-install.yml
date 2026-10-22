@@ -23,6 +23,8 @@ on:
       - 'tests/smoke/test_admin_folder_install_order.py'
       - 'tests/smoke/test_docker_run_recovery.py'
       - 'tests/smoke/test_ci_diagnostics_script.py'
+      - 'tests/smoke/test_ci_checkout_contract.py'
+      - 'tests/fixtures/ci-checkout.compose.yaml'
       - 'tests/postcode/**'
       - 'tests/e2e/**'
       - 'tests/catalog/verify_native_registration.php'
@@ -69,6 +71,9 @@ jobs:
 
       - name: Verify fresh-install workflow contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract -v
+
+      - name: Verify isolated unpaid checkout contracts
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract -v
 
       - name: Verify official ORDENOWA brand pack integrity and runtime wiring
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ordenowa_brand_pack -v
@@ -248,6 +253,16 @@ jobs:
             fclose($socket);
           '
 
+      - name: Verify ORDENOWA business profile installation and admin access
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/verify_business_profile_install.php' \
+            < tests/business_profile/verify_installation.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            runuser -g www-data -u www-data -- php /tmp/verify_business_profile_install.php
+
       - name: Prepare Chromium browser smoke environment
         shell: bash
         run: |
@@ -267,9 +282,18 @@ jobs:
           QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
         run: |
           set -euo pipefail
+          log_file="$RUNNER_TEMP/ordenowa-browser-qa/ordenowa-brand-e2e.log"
+          set +e
           "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
             tests/e2e/verify_brand_admin_browser.py \
-            2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/ordenowa-brand-e2e.log"
+            2>&1 | tee "$log_file"
+          browser_status=${PIPESTATUS[0]}
+          set -e
+          if [ "$browser_status" -ne 0 ]; then
+            failure_line=$(rg '^FAIL:' "$log_file" | tail -n 1 || true)
+            printf 'ORDENOWA brand browser failure: %s\n' "${failure_line:-See the uploaded brand browser log for the failing stage.}" >> "$GITHUB_STEP_SUMMARY"
+            exit "$browser_status"
+          fi
 
       - name: Verify real product detail and cart in Chromium (no payment)
         shell: bash
@@ -287,6 +311,109 @@ jobs:
           CI_TEST_PRODUCT_ID="$product_id" \
             "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
             tests/e2e/verify_storefront_browser.py
+
+      - name: Enable run-scoped checkout only for the isolated order browser QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" \
+            -f compose.yaml -f tests/fixtures/ci-checkout.compose.yaml config --quiet
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" \
+            -f compose.yaml -f tests/fixtures/ci-checkout.compose.yaml \
+            up -d --no-deps --wait --wait-timeout 300 prestashop
+
+      - name: Verify browser customer search, Japan checkout, and unpaid offline order
+        shell: bash
+        env:
+          SHOP_BASE_URL: http://127.0.0.1:18080
+          ADMIN_LOGIN_URL: http://127.0.0.1:18080/admin-kuranea
+          ADMIN_MAIL: ci-kuranea@example.invalid
+          ADMIN_PASSWD: Ci-Only-Admin-Password-92!
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          product_id=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
+            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT id_product FROM ps_product WHERE reference LIKE \"KURANEA-CI-%\" AND active=1 ORDER BY id_product DESC LIMIT 1"')
+          if ! [[ "$product_id" =~ ^[0-9]+$ ]] || [ "$product_id" -lt 1 ]; then
+            echo "::error title=ORDENOWA checkout QA::No isolated active test product found."
+            exit 1
+          fi
+          CI_TEST_PRODUCT_ID="$product_id" \
+            "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
+            tests/e2e/verify_ci_checkout_admin_browser.py customer \
+            2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/ci-checkout-customer-e2e.log"
+
+      - name: Verify saved browser orders are unpaid and retain Japan addresses
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/verify_ci_browser_checkout_order.php' \
+            < tests/postcode/verify_ci_browser_checkout_order.php
+          for viewport in desktop mobile; do
+            order_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["order_id"])' \
+              "$RUNNER_TEMP/ordenowa-browser-qa/ci-checkout-$viewport.json")
+            verified_json="$RUNNER_TEMP/ordenowa-browser-qa/ci-checkout-$viewport-verified.json"
+            verification_log="$RUNNER_TEMP/ordenowa-browser-qa/ci-checkout-$viewport-verification.log"
+            if ! docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+              -e CI=true \
+              -e GITHUB_ACTIONS=true \
+              -e GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+              -e GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+              -e KURANEA_ISOLATED_CI=1 \
+              -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+              -e KURANEA_CI_VIEWPORT="$viewport" \
+              -e KURANEA_CI_ORDER_ID="$order_id" \
+              prestashop runuser -g www-data -u www-data -- \
+              php /tmp/verify_ci_browser_checkout_order.php \
+              > "$verified_json" 2> "$verification_log"; then
+              cat "$verification_log" >&2
+              exit 1
+            fi
+            cat "$verification_log"
+          done
+
+      - name: Verify a separate admin session can view both browser orders
+        shell: bash
+        env:
+          SHOP_BASE_URL: http://127.0.0.1:18080
+          ADMIN_LOGIN_URL: http://127.0.0.1:18080/admin-kuranea
+          ADMIN_MAIL: ci-kuranea@example.invalid
+          ADMIN_PASSWD: Ci-Only-Admin-Password-92!
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          product_id=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
+            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT id_product FROM ps_product WHERE reference LIKE \"KURANEA-CI-%\" AND active=1 ORDER BY id_product DESC LIMIT 1"')
+          CI_TEST_PRODUCT_ID="$product_id" \
+            "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
+            tests/e2e/verify_ci_checkout_admin_browser.py admin \
+            2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/ci-checkout-admin-e2e.log"
+
+      - name: Restore the fail-closed base checkout environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" \
+            up -d --no-deps --force-recreate --wait --wait-timeout 300 prestashop
+
+      - name: Recheck storefront checkout stays gated after unpaid CI order QA
+        shell: bash
+        env:
+          SHOP_BASE_URL: http://127.0.0.1:18080
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+        run: |
+          set -euo pipefail
+          product_id=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
+            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT id_product FROM ps_product WHERE reference LIKE \"KURANEA-CI-%\" AND active=1 ORDER BY id_product DESC LIMIT 1"')
+          CI_TEST_PRODUCT_ID="$product_id" \
+            "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
+            tests/e2e/verify_storefront_browser.py \
+            2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/storefront-checkout-gate-after-ci-order.log"
 
       - name: Verify customer registration, email login, logout, password reset, and my page in Chromium
         shell: bash
@@ -315,16 +442,6 @@ jobs:
         env:
           SHOP_BASE_URL: http://127.0.0.1:18080
         run: bash tests/smoke/fresh_install.sh "$CI_COMPOSE_PROJECT_NAME"
-
-      - name: Verify the installed ORDENOWA business profile module
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
-            sh -c 'cat > /tmp/verify_business_profile_install.php' \
-            < tests/business_profile/verify_installation.php
-          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
-            runuser -g www-data -u www-data -- php /tmp/verify_business_profile_install.php
 
       - name: Download and import official Japan Post KEN_ALL data
         run: bash tests/smoke/run_postal_updater.sh "$CI_COMPOSE_PROJECT_NAME"

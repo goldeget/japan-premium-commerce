@@ -1,0 +1,110 @@
+<?php
+
+declare(strict_types=1);
+
+$runId = trim((string) getenv('GITHUB_RUN_ID'));
+$runAttempt = trim((string) getenv('GITHUB_RUN_ATTEMPT'));
+$projectName = trim((string) getenv('KURANEA_CI_PROJECT_NAME'));
+$viewport = trim((string) getenv('KURANEA_CI_VIEWPORT'));
+$orderId = (int) getenv('KURANEA_CI_ORDER_ID');
+$expectedProjectName = 'kuranea-ci-' . $runId . '-' . $runAttempt;
+
+if (getenv('CI') !== 'true'
+    || getenv('GITHUB_ACTIONS') !== 'true'
+    || getenv('KURANEA_ISOLATED_CI') !== '1'
+    || preg_match('/\A[0-9]+\z/D', $runId) !== 1
+    || preg_match('/\A[0-9]+\z/D', $runAttempt) !== 1
+    || $projectName !== $expectedProjectName
+    || !in_array($viewport, ['desktop', 'mobile'], true)
+    || $orderId < 1
+) {
+    fwrite(STDERR, "BLOCKED: browser order verification requires its matching isolated GitHub Actions checkout.\n");
+    exit(77);
+}
+
+$stage = 'PrestaShop bootstrap';
+set_exception_handler(static function (Throwable $exception) use (&$stage): void {
+    $message = preg_replace('/[\r\n]+/', ' ', $exception->getMessage()) ?? 'Unknown error';
+    $diagnostic = sprintf(
+        'KURANEA_BROWSER_ORDER_STAGE=%s; exception=%s; message=%s',
+        $stage,
+        get_class($exception),
+        substr($message, 0, 1000)
+    );
+    fwrite(STDERR, $diagnostic . PHP_EOL);
+    if (getenv('GITHUB_ACTIONS') === 'true') {
+        $annotation = str_replace(['%', "\r", "\n"], ['%25', '%0D', '%0A'], $diagnostic);
+        fwrite(STDOUT, '::error title=ORDENOWA browser order::' . $annotation . PHP_EOL);
+    }
+    exit(1);
+});
+
+$shopRoot = '/var/www/html';
+if (!is_file($shopRoot . '/config/config.inc.php')) {
+    throw new RuntimeException('The installed PrestaShop configuration is missing.');
+}
+$_SERVER['HTTP_HOST'] = trim((string) getenv('PS_DOMAIN')) ?: 'localhost:8080';
+$_SERVER['REQUEST_URI'] = '/';
+$_SERVER['SCRIPT_NAME'] = '/index.php';
+$_SERVER['SERVER_PORT'] = (string) (parse_url('http://' . $_SERVER['HTTP_HOST'], PHP_URL_PORT) ?: 80);
+require_once $shopRoot . '/config/config.inc.php';
+
+$stage = 'browser customer order lookup';
+$order = new Order($orderId);
+if (!Validate::isLoadedObject($order)) {
+    throw new RuntimeException('The browser checkout did not create the reported native order.');
+}
+$customer = new Customer((int) $order->id_customer);
+$expectedEmail = sprintf('qa-ordenowa-checkout-%s-%s-%s@example.invalid', $runId, $runAttempt, $viewport);
+if (!Validate::isLoadedObject($customer) || strtolower((string) $customer->email) !== strtolower($expectedEmail)) {
+    throw new RuntimeException('The browser order is not linked to its run-scoped test customer.');
+}
+
+$stage = 'unpaid ps_checkpayment order';
+$state = new OrderState((int) $order->current_state, (int) $order->id_lang);
+$currency = new Currency((int) $order->id_currency);
+if ((string) $order->module !== 'ps_checkpayment'
+    || !Validate::isLoadedObject($state)
+    || (bool) $state->paid
+    || (float) $order->total_paid_real !== 0.0
+    || (float) $order->total_paid_tax_incl <= 0.0
+    || !Validate::isLoadedObject($currency)
+    || (string) $currency->iso_code !== 'JPY'
+) {
+    throw new RuntimeException('The browser order must be a positive JPY ps_checkpayment order whose state is still unpaid.');
+}
+
+$stage = 'Japanese delivery-address persistence';
+$address = new Address((int) $order->id_address_delivery);
+$expectedBuilding = 'ORDENOWA CI ' . strtoupper($viewport) . ' TEST BUILDING 101';
+if (!Validate::isLoadedObject($address)
+    || (int) $address->id_customer !== (int) $customer->id
+    || (int) $address->id_country !== (int) Country::getByIso('JP')
+    || (string) $address->postcode !== '100-0004'
+    || (string) $address->city !== '千代田区'
+    || !str_contains((string) $address->address1, '大手町')
+    || !str_contains((string) $address->address1, '1-2-3')
+    || (string) $address->address2 !== $expectedBuilding
+) {
+    throw new RuntimeException('The browser order must retain its selected Tokyo postcode and manually entered building address.');
+}
+
+echo json_encode([
+    'order_id' => (int) $order->id,
+    'reference' => (string) $order->reference,
+    'email' => (string) $customer->email,
+    'payment_module' => (string) $order->module,
+    'state' => (string) $state->name,
+    'total_paid_real' => (float) $order->total_paid_real,
+    'currency' => (string) $currency->iso_code,
+    'postcode' => (string) $address->postcode,
+    'city' => (string) $address->city,
+    'address1' => (string) $address->address1,
+    'address2' => (string) $address->address2,
+], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL;
+fwrite(STDOUT, sprintf(
+    'PASS: browser %s order #%d/%s is an unpaid JPY ps_checkpayment order with Tokyo address 100-0004.\n',
+    $viewport,
+    (int) $order->id,
+    (string) $order->reference
+));

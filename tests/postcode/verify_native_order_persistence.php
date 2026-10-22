@@ -237,6 +237,7 @@ try {
     if ((int) StockAvailable::getQuantityAvailableByProduct((int) $product->id, 0, $shopId) < 1) {
         throw new RuntimeException('Could not add stock to the CI-only product.');
     }
+    Search::indexation(false, (int) $product->id);
 
     $stage = 'CI-only carrier setup';
     $carrier = new Carrier();

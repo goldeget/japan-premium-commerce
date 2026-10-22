@@ -87,6 +87,70 @@ $approved['brand']['assets'] = array_fill_keys(
 $approved['seller']['support'] = ['phone' => 'TEST PHONE', 'email' => 'test@example.invalid'];
 assertBusinessProfileSame(false, \Kuranea\BusinessProfile\Customer\CommerceGate::isEnabled($approved), 'A Back Office status change alone must not activate production commerce.');
 assertBusinessProfileSame(true, \Kuranea\BusinessProfile\Customer\CommerceGate::isEnabled($approved, true), 'Only an externally confirmed approval flag plus complete seller settings may enable an isolated checkout.');
+
+$checkoutGateEnvironment = [
+    'CI' => getenv('CI'),
+    'GITHUB_ACTIONS' => getenv('GITHUB_ACTIONS'),
+    'GITHUB_RUN_ID' => getenv('GITHUB_RUN_ID'),
+    'GITHUB_RUN_ATTEMPT' => getenv('GITHUB_RUN_ATTEMPT'),
+    'KURANEA_ISOLATED_CI' => getenv('KURANEA_ISOLATED_CI'),
+    'KURANEA_CI_PROJECT_NAME' => getenv('KURANEA_CI_PROJECT_NAME'),
+];
+try {
+    foreach ([
+        'CI' => 'true',
+        'GITHUB_ACTIONS' => 'true',
+        'GITHUB_RUN_ID' => '123456789',
+        'GITHUB_RUN_ATTEMPT' => '1',
+        'KURANEA_ISOLATED_CI' => '1',
+        'KURANEA_CI_PROJECT_NAME' => 'kuranea-ci-123456789-1',
+    ] as $name => $value) {
+        putenv($name . '=' . $value);
+    }
+    assertBusinessProfileSame(
+        true,
+        \Kuranea\BusinessProfile\Customer\CommerceGate::isIsolatedCiCheckoutEnabled(),
+        'A uniquely named GitHub Actions disposable Compose project must be able to reach unpaid checkout QA.'
+    );
+    putenv('GITHUB_RUN_ATTEMPT=2');
+    assertBusinessProfileSame(
+        false,
+        \Kuranea\BusinessProfile\Customer\CommerceGate::isIsolatedCiCheckoutEnabled(),
+        'The isolated checkout route must reject a Compose project from another Actions attempt.'
+    );
+    putenv('GITHUB_RUN_ATTEMPT=1');
+    putenv('GITHUB_ACTIONS=false');
+    assertBusinessProfileSame(
+        false,
+        \Kuranea\BusinessProfile\Customer\CommerceGate::isIsolatedCiCheckoutEnabled(),
+        'The isolated checkout route must stay closed outside GitHub Actions.'
+    );
+    putenv('GITHUB_ACTIONS=true');
+    putenv('KURANEA_CI_PROJECT_NAME=kuranea-production');
+    assertBusinessProfileSame(
+        false,
+        \Kuranea\BusinessProfile\Customer\CommerceGate::isIsolatedCiCheckoutEnabled(),
+        'The isolated checkout route must reject a non-run-specific Compose project name.'
+    );
+    putenv('KURANEA_CI_PROJECT_NAME=kuranea-ci-123456789-1');
+    putenv('KURANEA_ISOLATED_CI=0');
+    assertBusinessProfileSame(
+        false,
+        \Kuranea\BusinessProfile\Customer\CommerceGate::isIsolatedCiCheckoutEnabled(),
+        'The isolated checkout route must remain closed without its explicit test flag.'
+    );
+} finally {
+    foreach ($checkoutGateEnvironment as $name => $value) {
+        if ($value === false) {
+            putenv($name);
+            unset($_ENV[$name], $_SERVER[$name]);
+        } else {
+            putenv($name . '=' . $value);
+            $_ENV[$name] = $value;
+            $_SERVER[$name] = $value;
+        }
+    }
+}
 unset($approved['seller']['support']['email']);
 assertBusinessProfileSame(false, \Kuranea\BusinessProfile\Customer\CommerceGate::isEnabled($approved), 'Incomplete seller details must fail closed even on an approved published profile.');
 
