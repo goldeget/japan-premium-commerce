@@ -92,46 +92,65 @@ PY
 )
 curl --fail --silent --show-error "$admin_css_url" -o /tmp/kuranea-admin-theme.css
 
-verification_phase="initial_database_shop_and_postcode_configuration"
+verification_phase="initial_database_connectivity"
 db_ok=$(db_query 'SELECT 1')
 test "$db_ok" = 1
+verification_phase="initial_database_theme"
 theme=$(db_query 'SELECT theme_name FROM ps_shop WHERE id_shop=1')
 test "$theme" = kuranea
+verification_phase="initial_database_active_languages"
 languages=$(db_query "SELECT COUNT(*) FROM ps_lang WHERE active=1 AND iso_code IN ('ja','en','ko')")
 test "$languages" = 3
+verification_phase="initial_database_default_language"
 shop_default=$(db_query "SELECT COUNT(*) FROM ps_configuration c JOIN ps_lang l ON l.id_lang=CAST(c.value AS UNSIGNED) WHERE c.name='PS_LANG_DEFAULT' AND l.iso_code='ja'")
 test "$shop_default" = 1
+verification_phase="initial_database_checkout_route"
 checkout_route=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='order' AND ml.id_shop=1 AND l.iso_code='ja'")
 test "$checkout_route" = checkout
+verification_phase="initial_database_identity_route"
 identity_route=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='identity' AND ml.id_shop=1 AND l.iso_code='ja'")
 test "$identity_route" = identity
+verification_phase="initial_database_password_route"
 password_route=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='password' AND ml.id_shop=1 AND l.iso_code='ja'")
 test "$password_route" = password-reset
+verification_phase="initial_database_history_meta"
 history_meta_count=$(db_query "SELECT COUNT(*) FROM ps_meta m JOIN ps_meta_lang ml ON ml.id_meta=m.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='history' AND ml.id_shop=1 AND l.iso_code='ja'")
 history_route=""
 if [ "$history_meta_count" -gt 0 ]; then
+  verification_phase="initial_database_history_route"
   history_route=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='history' AND ml.id_shop=1 AND l.iso_code='ja'")
 fi
+verification_phase="initial_database_rewrite_settings"
 checkout_rewriting=$(db_query "SELECT value FROM ps_configuration WHERE name='PS_REWRITING_SETTINGS'")
 test "$checkout_rewriting" = 1
+verification_phase="initial_database_canonical_redirect"
 canonical_redirect_before_restart=$(db_query "SELECT value FROM ps_configuration WHERE name='PS_CANONICAL_REDIRECT' ORDER BY id_shop DESC, id_shop_group DESC LIMIT 1")
 test "$canonical_redirect_before_restart" = 1
+verification_phase="initial_database_route_migration_marker"
 route_migration_marker=$(db_query "SELECT value FROM ps_configuration WHERE name='ORDENOWA_ASCII_ROUTE_MIGRATION_V1' ORDER BY id_shop DESC, id_shop_group DESC LIMIT 1")
 test "$route_migration_marker" = 1
+verification_phase="initial_database_default_currency"
 default_currency=$(db_query "SELECT cur.iso_code FROM ps_configuration cfg JOIN ps_currency cur ON cur.id_currency=CAST(cfg.value AS UNSIGNED) WHERE cfg.name='PS_CURRENCY_DEFAULT'")
 test "$default_currency" = JPY
+verification_phase="initial_database_jpy_currency"
 jpy_currency=$(db_query "SELECT COUNT(*) FROM ps_currency WHERE iso_code='JPY' AND active=1 AND deleted=0")
 test "$jpy_currency" = 1
+verification_phase="initial_database_jpy_translations"
 jpy_translations=$(db_query "SELECT COUNT(DISTINCT cl.id_lang) FROM ps_currency c JOIN ps_currency_lang cl ON cl.id_currency=c.id_currency JOIN ps_lang l ON l.id_lang=cl.id_lang WHERE c.iso_code='JPY' AND l.iso_code IN ('ja','en','ko')")
 test "$jpy_translations" = 3
+verification_phase="initial_database_other_currency_state"
 active_non_jpy=$(db_query "SELECT COUNT(*) FROM ps_currency WHERE iso_code<>'JPY' AND active=1 AND deleted=0")
 test "$active_non_jpy" = 0
+verification_phase="initial_database_employee_locale"
 employee_locale=$(db_query 'SELECT l.iso_code FROM ps_employee e JOIN ps_lang l ON l.id_lang=e.id_lang WHERE e.id_employee=1')
 test "$employee_locale" = ko
+verification_phase="initial_database_postcode_module"
 postcode_module=$(db_query "SELECT COUNT(*) FROM ps_module WHERE name='kuraneapostcode' AND active=1")
-backoffice_module=$(db_query "SELECT COUNT(*) FROM ps_module WHERE name='kuraneabackoffice' AND active=1")
 test "$postcode_module" = 1
+verification_phase="initial_database_backoffice_module"
+backoffice_module=$(db_query "SELECT COUNT(*) FROM ps_module WHERE name='kuraneabackoffice' AND active=1")
 test "$backoffice_module" = 1
+verification_phase="initial_database_backoffice_module_files"
 compose exec -T prestashop sh -ec '
   for module_file in \
     /var/www/html/modules/kuraneabackoffice/src/AdminLocaleSubscriber.php \
@@ -140,14 +159,19 @@ compose exec -T prestashop sh -ec '
     runuser -g www-data -u www-data -- test -r "$module_file"
   done
 '
+verification_phase="initial_database_japan_states"
 postcode_states=$(db_query "SELECT COUNT(*) FROM ps_state s JOIN ps_country c ON c.id_country=s.id_country WHERE c.iso_code='JP' AND s.active=1 AND s.iso_code REGEXP '^JP-[0-9]{2}$'")
 test "$postcode_states" = 47
+verification_phase="initial_database_postcode_address_table"
 postcode_table=$(db_query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='ps_kuraneapostcode_address'")
 test "$postcode_table" = 1
+verification_phase="initial_database_postcode_stage_table"
 postcode_stage_table=$(db_query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='ps_kuraneapostcode_stage'")
 test "$postcode_stage_table" = 1
+verification_phase="initial_database_postcode_stage_empty"
 postcode_stage_rows=$(db_query 'SELECT COUNT(*) FROM ps_kuraneapostcode_stage')
 test "$postcode_stage_rows" = 0
+verification_phase="initial_database_table_count"
 table_count_before=$(db_query 'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()')
 
 verification_phase="initial_storefront_theme_assets"

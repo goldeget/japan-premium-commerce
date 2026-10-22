@@ -189,6 +189,60 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
             with self.subTest(phase=phase):
                 self.assertIn(f'verification_phase="{phase}"', script)
 
+    def test_fresh_install_database_checks_have_static_failure_phases(self) -> None:
+        script = FRESH_INSTALL.read_text(encoding="utf-8")
+        checks = (
+            ("initial_database_connectivity", "db_ok=$(db_query"),
+            ("initial_database_theme", "theme=$(db_query"),
+            ("initial_database_active_languages", "languages=$(db_query"),
+            ("initial_database_default_language", "shop_default=$(db_query"),
+            ("initial_database_checkout_route", "checkout_route=$(db_query"),
+            ("initial_database_identity_route", "identity_route=$(db_query"),
+            ("initial_database_password_route", "password_route=$(db_query"),
+            ("initial_database_history_meta", "history_meta_count=$(db_query"),
+            ("initial_database_history_route", "history_route=$(db_query"),
+            ("initial_database_rewrite_settings", "checkout_rewriting=$(db_query"),
+            (
+                "initial_database_canonical_redirect",
+                "canonical_redirect_before_restart=$(db_query",
+            ),
+            (
+                "initial_database_route_migration_marker",
+                "route_migration_marker=$(db_query",
+            ),
+            ("initial_database_default_currency", "default_currency=$(db_query"),
+            ("initial_database_jpy_currency", "jpy_currency=$(db_query"),
+            ("initial_database_jpy_translations", "jpy_translations=$(db_query"),
+            ("initial_database_other_currency_state", "active_non_jpy=$(db_query"),
+            ("initial_database_employee_locale", "employee_locale=$(db_query"),
+            ("initial_database_postcode_module", "postcode_module=$(db_query"),
+            ("initial_database_backoffice_module", "backoffice_module=$(db_query"),
+            ("initial_database_backoffice_module_files", "for module_file in \\"),
+            ("initial_database_japan_states", "postcode_states=$(db_query"),
+            ("initial_database_postcode_address_table", "postcode_table=$(db_query"),
+            ("initial_database_postcode_stage_table", "postcode_stage_table=$(db_query"),
+            ("initial_database_postcode_stage_empty", "postcode_stage_rows=$(db_query"),
+            ("initial_database_table_count", "table_count_before=$(db_query"),
+        )
+
+        self.assertTrue(
+            'verification_phase="initial_database_shop_and_postcode_configuration"' not in script,
+            "broad initial database phase still hides the individual failing check",
+        )
+
+        for phase, command in checks:
+            with self.subTest(phase=phase):
+                phase_marker = f'verification_phase="{phase}"'
+                self.assertTrue(phase_marker in script, f"missing static phase {phase}")
+                phase_position = script.index(phase_marker)
+                next_phase_position = script.find(
+                    'verification_phase="', phase_position + len(phase_marker)
+                )
+                if next_phase_position == -1:
+                    next_phase_position = len(script)
+
+                self.assertIn(command, script[phase_position:next_phase_position])
+
     def test_fresh_install_failure_phase_is_appended_to_step_summary(self) -> None:
         script = FRESH_INSTALL.read_text(encoding="utf-8")
         handler_start = script.index("report_verification_failure() {")
