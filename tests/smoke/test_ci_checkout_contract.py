@@ -143,31 +143,31 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertIn("search_toggle.click()", search_flow)
         self.assertNotIn("click_at_center(driver, search_toggle)", search_flow)
 
-    def test_product_search_retries_the_full_submission_and_stale_result_polling(self) -> None:
+    def test_product_search_selects_the_exact_hummingbird_autocomplete_result(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        fixture = (ROOT / "tests" / "postcode" / "verify_native_order_persistence.php").read_text(
+            encoding="utf-8"
+        )
         search_helper = flow.split("def enter_product_search_query", 1)[1].split(
             "def prepare_required_customer_fields", 1
         )[0]
         search_flow = flow.split("def search_for_product", 1)[1].split(
             "def add_product_and_open_checkout", 1
         )[0]
-        stale_retry = search_helper.split("try:", 1)[1].split(
-            "except StaleElementReferenceException:", 1
-        )[0]
-
-        self.assertIn("for attempt in range(2)", search_helper)
-        self.assertIn('visible(driver, \'input[name="s"]\')', search_helper)
-        self.assertIn("except StaleElementReferenceException", search_helper)
-        self.assertIn("if attempt == 1:", search_helper)
-        self.assertIn("search.clear()", stale_retry)
-        self.assertIn('search.send_keys("CI ONLY")', stale_retry)
-        self.assertIn("search.send_keys(Keys.ENTER)", stale_retry)
-        self.assertNotIn("except Exception", search_helper)
-        self.assertNotIn("except TimeoutException", search_helper)
+        self.assertIn('search.send_keys("postcode")', search_helper)
+        self.assertNotIn("Keys.ENTER", search_helper)
+        self.assertIn("$productName = '[CI ONLY] KURANEA postcode order ' . $suffix;", fixture)
+        self.assertIn("Search::indexation(false, (int) $product->id);", fixture)
         self.assertIn("enter_product_search_query(driver)", search_flow)
         self.assertIn("ignored_exceptions=(StaleElementReferenceException,)", search_flow)
-        self.assertIn('miniature.get_attribute("data-id-product") == str(PRODUCT_ID)', search_flow)
-        self.assertIn('if "[CI ONLY]" not in miniature.text:', search_flow)
+        self.assertIn('f"result_product_option_{PRODUCT_ID}"', search_flow)
+        self.assertIn('product_link.get_attribute("aria-label")', search_flow)
+        self.assertIn('if "[CI ONLY]" not in product_name', search_flow)
+        self.assertIn('"[CI ONLY]" not in product_link.text', search_flow)
+        self.assertIn("click_at_center(driver, product_link)", search_flow)
+        self.assertNotIn(".product-miniature[data-id-product]", search_flow)
+        self.assertNotIn("except Exception", search_helper)
+        self.assertNotIn("except TimeoutException", search_helper)
 
     def test_customer_runner_attempts_both_viewports_before_reporting_failure(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")

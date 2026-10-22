@@ -15,7 +15,6 @@ from selenium import webdriver
 from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.select import Select
 from selenium.webdriver.support.ui import WebDriverWait
@@ -142,8 +141,10 @@ def enter_product_search_query(driver: webdriver.Chrome) -> None:
         search = visible(driver, 'input[name="s"]')
         try:
             search.clear()
-            search.send_keys("CI ONLY")
-            search.send_keys(Keys.ENTER)
+            # The fixture title includes this full-length indexed word. "CI" is
+            # too short for a reliable PrestaShop search term, and Hummingbird
+            # renders AJAX autocomplete results instead of submitting on Enter.
+            search.send_keys("postcode")
         except StaleElementReferenceException:
             if attempt == 1:
                 raise
@@ -206,26 +207,31 @@ def search_for_product(driver: webdriver.Chrome, label: str) -> None:
         search_toggle.click()
     enter_product_search_query(driver)
 
+    result_id = f"result_product_option_{PRODUCT_ID}"
+
     def result(browser: webdriver.Chrome):
-        for miniature in browser.find_elements(By.CSS_SELECTOR, ".product-miniature[data-id-product]"):
-            if miniature.get_attribute("data-id-product") == str(PRODUCT_ID):
-                return miniature
+        for product_link in browser.find_elements(By.ID, result_id):
+            if product_link.is_displayed():
+                return product_link
         return False
 
-    miniature = WebDriverWait(
+    product_link = WebDriverWait(
         driver,
         35,
         poll_frequency=0.2,
         ignored_exceptions=(StaleElementReferenceException,),
     ).until(result)
-    title_link = miniature.find_element(By.CSS_SELECTOR, "a.product-miniature__title")
-    if "[CI ONLY]" not in miniature.text:
+    product_name = product_link.get_attribute("aria-label") or product_link.text
+    if "[CI ONLY]" not in product_name or "[CI ONLY]" not in product_link.text:
         raise AssertionError("the live search result is not the clearly marked CI-only product")
-    click_at_center(driver, title_link)
+    product_url = urlparse(product_link.get_attribute("href"))
+    click_at_center(driver, product_link)
     WebDriverWait(driver, 30).until(
-        lambda browser: f"id_product={PRODUCT_ID}" in browser.current_url
-        or f"/{PRODUCT_ID}-" in browser.current_url
-        or "[CI ONLY]" in browser.find_element(By.TAG_NAME, "body").text
+        lambda browser: (
+            urlparse(browser.current_url).netloc == product_url.netloc
+            and urlparse(browser.current_url).path == product_url.path
+        ),
+        message=f"clicking the exact search result for product {PRODUCT_ID} did not open its detail page",
     )
     if "[CI ONLY]" not in driver.find_element(By.TAG_NAME, "body").text:
         raise AssertionError("the selected search result did not open the CI-only product detail")
