@@ -618,6 +618,8 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         first_name = visible(driver, '#customer-form input[name="firstname"]')
         first_name.clear()
         first_name.send_keys(f"CI-{label.title()}")
+        # PrestaShop 9 requires the signed-in customer's current password before saving identity changes.
+        fill(driver, '#customer-form input[name="password"]', initial_password)
         visible(driver, "#customer-form button.form-control-submit").click()
         WebDriverWait(driver, 30).until(
             lambda browser: browser.find_element(By.CSS_SELECTOR, '#customer-form input[name="firstname"]').get_attribute("value")

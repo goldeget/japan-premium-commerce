@@ -250,6 +250,18 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn('id="userMenuButton"', sign_in_template)
         self.assertIn('id="identity_main_link"', my_account_template)
 
+    def test_profile_update_submits_the_required_current_password(self) -> None:
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        profile_update = account_flow.split('stage = "profile_update"', 1)[1].split(
+            'stage = "email_login"', 1
+        )[0]
+        current_password = "fill(driver, '#customer-form input[name=\"password\"]', initial_password)"
+        self.assertIn(current_password, profile_update)
+        self.assertLess(
+            profile_update.index(current_password),
+            profile_update.index('visible(driver, "#customer-form button.form-control-submit").click()'),
+        )
+
     def test_registration_link_host_must_match_the_base_shop_host(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
         registration_guard = account_flow.split('stage = "registration_link_validation"', 1)[1].split(
