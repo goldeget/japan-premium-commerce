@@ -150,10 +150,25 @@ $versions = new InMemoryBusinessProfileRepository();
 $service = new \Kuranea\BusinessProfile\Domain\ProfileVersionService($versions, $validator);
 $firstVersionId = $service->saveDraft(1, $initial, 10);
 $versions->seedPublished(1, $firstVersionId);
-$edited = $initial;
-$edited['brand']['name']['ko-KR'] = '오데노와 테스트';
+$syntheticKoreanCompanyProfile = 'ORDENOWA CI 검증용 회사 소개';
+$edited = \Kuranea\BusinessProfile\Admin\AdminProfileForm::apply($initial, [
+    'brand' => ['name' => ['ko-KR' => '오데노와 테스트']],
+    'content' => ['company_profile' => ['ko-KR' => $syntheticKoreanCompanyProfile]],
+]);
 $secondVersionId = $service->saveDraft(1, $edited, 11);
+$draftCompanyProfile = $versions->loadDraft(1)?->profile['content']['company_profile']['ko-KR'] ?? null;
+assertBusinessProfileSame(
+    $syntheticKoreanCompanyProfile,
+    $draftCompanyProfile,
+    'The Korean company profile submitted through the admin form should survive draft save and repository reload.'
+);
 $publishResult = $service->publish(1, $secondVersionId, 13);
+$publishedCompanyProfile = $versions->loadPublished(1)?->profile['content']['company_profile']['ko-KR'] ?? null;
+assertBusinessProfileSame(
+    $syntheticKoreanCompanyProfile,
+    $publishedCompanyProfile,
+    'The published profile should expose the Korean company profile from the selected version.'
+);
 $restoredVersionId = $service->restoreAsDraft(1, $firstVersionId, 12);
 $history = $service->history(1);
 
