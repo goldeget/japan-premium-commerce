@@ -45,13 +45,18 @@ jobs:
       - name: Validate Compose configuration
         run: docker compose -p "$CI_COMPOSE_PROJECT_NAME" config --quiet
 
-      - name: Build and install into unique empty volumes
-        id: compose_bootstrap
+      - name: Build the PrestaShop image
+        id: image_build
         shell: bash
         run: |
           set -euo pipefail
-          docker compose -p "$CI_COMPOSE_PROJECT_NAME" build prestashop
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" build --progress=plain prestashop
 
+      - name: Verify fresh cache ownership in an isolated probe project
+        id: cache_probe
+        shell: bash
+        run: |
+          set -euo pipefail
           probe_project="${CI_COMPOSE_PROJECT_NAME}-cache-probe"
           cleanup_probe() {
             docker compose -p "$probe_project" down -v --remove-orphans >/dev/null 2>&1 || true
@@ -69,10 +74,10 @@ jobs:
           cleanup_probe
           trap - EXIT
 
-          if ! docker compose -p "$CI_COMPOSE_PROJECT_NAME" up -d --wait --wait-timeout 900; then
-            bash tests/smoke/collect_failure_diagnostics.sh
-            exit 1
-          fi
+      - name: Start the empty-volume shop
+        id: compose_up
+        shell: bash
+        run: docker compose -p "$CI_COMPOSE_PROJECT_NAME" up -d --wait --wait-timeout 900
 
       - name: Download and import official Japan Post KEN_ALL data
         shell: bash
@@ -124,8 +129,15 @@ jobs:
         run: bash tests/smoke/fresh_install.sh "$CI_COMPOSE_PROJECT_NAME"
 
       - name: Capture bounded diagnostics on failure
-        if: failure() && steps.compose_bootstrap.outcome == 'success'
-        run: bash tests/smoke/collect_failure_diagnostics.sh
+        if: failure()
+        shell: bash
+        run: |
+          {
+            printf 'Build outcome: %s\n' '${{ steps.image_build.outcome }}'
+            printf 'Cache probe outcome: %s\n' '${{ steps.cache_probe.outcome }}'
+            printf 'Compose startup outcome: %s\n' '${{ steps.compose_up.outcome }}'
+          } | tee "$RUNNER_TEMP/kuranea-bootstrap-stage.txt" >> "$GITHUB_STEP_SUMMARY"
+          bash tests/smoke/collect_failure_diagnostics.sh
 
       - name: Upload redacted install diagnostics
         if: always()
