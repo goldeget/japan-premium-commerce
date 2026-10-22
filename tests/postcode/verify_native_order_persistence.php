@@ -21,6 +21,25 @@ if (getenv('CI') !== 'true'
     exit(77);
 }
 
+$stage = 'PrestaShop bootstrap';
+set_exception_handler(static function (Throwable $exception) use (&$stage): void {
+    $message = preg_replace('/[\r\n]+/', ' ', $exception->getMessage()) ?? 'Unknown error';
+    $diagnostic = sprintf(
+        'KURANEA_NATIVE_ORDER_STAGE=%s; exception=%s; message=%s',
+        $stage,
+        get_class($exception),
+        substr($message, 0, 1000)
+    );
+    fwrite(STDERR, $diagnostic . PHP_EOL);
+
+    if (getenv('GITHUB_ACTIONS') === 'true') {
+        $annotation = str_replace(['%', "\r", "\n"], ['%25', '%0D', '%0A'], $diagnostic);
+        fwrite(STDOUT, '::error title=KURANEA native order::' . $annotation . PHP_EOL);
+    }
+
+    exit(1);
+});
+
 $shopRoot = '/var/www/html';
 if (!is_file($shopRoot . '/config/config.inc.php')
     || !is_file($shopRoot . '/modules/kuraneapostcode/autoload.php')
@@ -33,14 +52,17 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/index.php';
 $_SERVER['SERVER_PORT'] = (string) (parse_url('http://' . $_SERVER['HTTP_HOST'], PHP_URL_PORT) ?: 80);
 
+$stage = 'PrestaShop bootstrap';
 require_once $shopRoot . '/config/config.inc.php';
 require_once $shopRoot . '/modules/kuraneapostcode/autoload.php';
 require_once $shopRoot . '/app/AdminKernel.php';
 
 global $kernel;
+$stage = 'Back Office kernel boot';
 $kernel = new AdminKernel(_PS_ENV_, _PS_MODE_DEV_);
 $kernel->boot();
 
+$stage = 'Japanese shop context';
 $shopId = 1;
 $shop = new Shop($shopId);
 $japaneseLanguageId = (int) Language::getIdByIso('ja', true);
@@ -68,6 +90,7 @@ $kernel->getContainer()
     ->get(PrestaShop\PrestaShop\Core\Context\ContextBuilderPreparer::class)
     ->prepareFromLegacyContext($context);
 
+$stage = 'offline payment module';
 $paymentModuleName = 'ps_checkpayment';
 $paymentModule = Module::getInstanceByName($paymentModuleName);
 if (!$paymentModule) {
@@ -100,6 +123,7 @@ if (!Validate::isLoadedObject($homeCategory) || !(bool) $homeCategory->active) {
     throw new RuntimeException('The configured home category is not available for a disposable QA product.');
 }
 
+$stage = 'official postcode candidate';
 $stateIds = [];
 $states = State::getStatesByIdCountry($japanCountryId, true, 'iso_code', 'asc');
 foreach (is_array($states) ? $states : [] as $state) {
@@ -134,6 +158,7 @@ if (!Configuration::updateValue('PS_MAIL_METHOD', Mail::METHOD_DISABLE)) {
     throw new RuntimeException('Could not disable PrestaShop mail delivery in the isolated test shop.');
 }
 
+$stage = 'customer and address persistence';
 try {
     $customer = new Customer();
     $customer->firstname = 'KURANEA';
@@ -177,6 +202,7 @@ try {
         throw new RuntimeException('The selected or manually edited Japanese address fields did not persist in the native Address record.');
     }
 
+    $stage = 'CI-only product creation';
     $suffix = strtoupper(bin2hex(random_bytes(4)));
     $productName = '[CI ONLY] KURANEA postcode order ' . $suffix;
     $product = new Product();
@@ -212,6 +238,7 @@ try {
         throw new RuntimeException('Could not add stock to the CI-only product.');
     }
 
+    $stage = 'CI-only carrier setup';
     $carrier = new Carrier();
     $carrier->name = 'KURANEA CI ONLY - Japan free test carrier';
     $carrier->active = 1;
@@ -238,6 +265,7 @@ try {
         throw new RuntimeException('Could not associate the CI-only Japan carrier with the test customer groups.');
     }
 
+    $stage = 'native cart and quantity';
     $cart = new Cart();
     $cart->id_customer = (int) $customer->id;
     $cart->id_address_delivery = (int) $address->id;
@@ -258,6 +286,7 @@ try {
         throw new RuntimeException('Could not add the CI-only product to the native cart.');
     }
 
+    $stage = 'delivery option';
     $deliveryOptions = $cart->getDeliveryOptionList($japan, true);
     $addressOptions = $deliveryOptions[(int) $address->id] ?? [];
     if (!is_array($addressOptions) || $addressOptions === []) {
@@ -274,6 +303,7 @@ try {
         throw new RuntimeException('The CI-only cart total is invalid.');
     }
 
+    $stage = 'unpaid native order';
     $paymentModule->validateOrder(
         (int) $cart->id,
         $pendingStateId,
@@ -311,6 +341,7 @@ try {
         throw new RuntimeException('The CI-only order did not remain in an unpaid state.');
     }
 
+    $stage = 'Back Office shipping address projection';
     $orderForViewing = $kernel->getContainer()
         ->get(CommandBusInterface::class)
         ->handle(new GetOrderForViewing($orderId));

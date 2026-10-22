@@ -203,3 +203,9 @@
 - run `39735099736`은 주소 저장 verifier의 첫 수정 커밋으로 진행 중이었다. 이 실행에서 다음 단계로 넘어가기 전에 `tests/postcode/verify_native_order_persistence.php`도 같은 `$address->id_shop` 대입을 하고 있음을 확인했다. 이전 CI annotation으로 확인된 PrestaShop 9.2.0 `AddressCore` 계약과 같은 원인이므로 주소·주문 검증기를 함께 고친다.
 - 회귀 검사를 먼저 확장해 두 스크립트에서 해당 대입을 거부하는 검사가 기존 코드에서 실패함을 확인했다. native order verifier의 한 줄 대입을 삭제했으며, 주소/주문 로직과 코어는 변경하지 않았다.
 - fresh-install workflow contract 및 Japan Post refresh 테스트 15/15 통과, Compose 설정·diff 검사 통과. 이 수정은 다음 격리 CI에서 검증하며 `39735099736`은 수정 전 snapshot이므로 별도로 결과를 기록한다.
+## 2026-10-22 — Native order E2E 실패 경계 계측
+
+- run `39735099736`은 empty-volume install, 공식 CSV import, `1000004` postcode lookup 및 native Address 저장까지 통과했다. Order step 실패 후 확인하니 그 run의 checkout SHA `dad3066`에서 주문 verifier에 Address의 미지원 `id_shop` 대입이 남아 있었다. 같은 속성을 거부하는 회귀 계약을 확장하고 해당 대입을 제거해 `994a3f6`에 저장했다.
+- 새 수정 run `39735277398`에서 empty-volume startup, Japan Post CSV import, Tokyo/Otemachi API lookup 및 native Address save가 통과했지만 native unpaid-order/Back Office projection step은 exit 255로 실패했다. 당시 order verifier의 uncaught exception은 public job page에서 상세 로그로 읽을 수 없어 실패 경계를 추정하지 않는다. restart step은 skipped.
+- 개선: native order verifier에 bootstrap, Back Office kernel, JP context, payment module, address, product, cart/quantity, delivery, order 및 Back Office projection stage를 추가한다. Uncaught Throwable은 제한된 메시지와 stage를 GitHub annotation으로 출력한다. 다음 CI의 오류 증거로 실제 root cause를 판정한다.
+- TDD/로컬 검사: stage contract를 먼저 추가해 fail을 확인한 뒤 handler와 stage marker를 넣었다. fresh-install contract 및 Japan Post refresh 테스트 15/15, Compose YAML 검증, `git diff --check` 통과. 실제 PHP/MySQL 동작은 다음 격리 CI에서 확인한다.

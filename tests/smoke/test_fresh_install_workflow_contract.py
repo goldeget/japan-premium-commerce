@@ -73,6 +73,23 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("$projectName !== $expectedProjectName", order_test)
         self.assertIn("instanceof PaymentModule", order_test)
         self.assertIn("GetOrderForViewing", order_test)
+        self.assertIn("KURANEA_NATIVE_ORDER_STAGE", order_test)
+        self.assertIn("::error title=KURANEA native order::", order_test)
+        for stage in (
+            "PrestaShop bootstrap",
+            "Back Office kernel boot",
+            "Japanese shop context",
+            "offline payment module",
+            "official postcode candidate",
+            "customer and address persistence",
+            "CI-only product creation",
+            "CI-only carrier setup",
+            "native cart and quantity",
+            "delivery option",
+            "unpaid native order",
+            "Back Office shipping address projection",
+        ):
+            self.assertIn(stage, order_test)
 
     def test_postcode_lookup_and_native_address_save_report_separate_ci_failures(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
