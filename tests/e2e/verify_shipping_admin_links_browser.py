@@ -14,6 +14,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from shipping_admin_routes import is_korean_admin_language, matches_admin_controller_url
 
 
 BASE = os.environ["SHOP_BASE_URL"].rstrip("/")
@@ -60,6 +61,7 @@ def safe_failure_detail(error: Exception) -> str:
                     f"{controller} native admin page redirected outside the isolated shop",
                     f"{controller} native admin page redirected to the login form",
                     f"{controller} native admin page returned an empty document",
+                    f"{controller} native admin page did not use Korean interface locale",
                 }
             )
         if str(error) in safe_messages:
@@ -78,7 +80,7 @@ def resolved_admin_page(driver: webdriver.Chrome, href: str, controller: str) ->
     expected_admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
     if not parsed.path.startswith(expected_admin_path + "/"):
         raise AssertionError(f"{controller} link leaves the isolated admin directory")
-    if parse_qs(parsed.query).get("controller") != [controller]:
+    if not matches_admin_controller_url(href, controller, expected_admin_path):
         raise AssertionError(f"shipping link does not target the expected {controller} controller")
 
     response = driver.execute_async_script(
@@ -94,6 +96,7 @@ def resolved_admin_page(driver: webdriver.Chrome, href: str, controller: str) ->
               finalUrl: response.url,
               titlePresent: Boolean((page.title || '').trim()),
               bodyTextLength: (page.body?.innerText || '').trim().length,
+              documentLanguage: page.documentElement?.getAttribute("lang") || "",
               loginFormPresent: Boolean(page.querySelector('#login_form, input[name="passwd"]'))
             });
           })
@@ -111,6 +114,9 @@ def resolved_admin_page(driver: webdriver.Chrome, href: str, controller: str) ->
         raise AssertionError(f"{controller} native admin page redirected to the login form")
     if response.get("titlePresent") is not True or not isinstance(response.get("bodyTextLength"), int) or response["bodyTextLength"] < 1:
         raise AssertionError(f"{controller} native admin page returned an empty document")
+    document_language = response.get("documentLanguage")
+    if not isinstance(document_language, str) or not is_korean_admin_language(document_language):
+        raise AssertionError(f"{controller} native admin page did not use Korean interface locale")
 
     return {"controller": controller, "status": 200, "authenticated_page": True}
 
