@@ -18,6 +18,7 @@ $kernel->boot();
 
 use PrestaShop\PrestaShop\Core\Context\ContextBuilderPreparer;
 
+$db = Db::getInstance();
 $japaneseLanguageId = (int) Language::getIdByIso('ja', true);
 $japanCountryId = (int) Country::getByIso('JP');
 $shop = new Shop(1);
@@ -36,6 +37,40 @@ $context->employee = $admin;
 $context->cart = new Cart();
 $context->currency = kuraneaConfigureJapaneseCurrency($context);
 $kernel->getContainer()->get(ContextBuilderPreparer::class)->prepareFromLegacyContext($context);
+
+// The database contains a valid UTF-8 Japanese order slug ("注文"), but the
+// runtime canonical redirect double-encodes it into a mojibake path. Keep
+// friendly URLs enabled and use a stable ASCII alias for this controller.
+// This installer runs on every container start, so the narrow repair also
+// applies to shops whose post-install marker already exists.
+$checkoutMetaId = (int) $db->getValue(
+    'SELECT id_meta FROM `' . _DB_PREFIX_ . 'meta` WHERE page = \'order\' LIMIT 1',
+    false
+);
+if ($checkoutMetaId < 1) {
+    throw new RuntimeException('The PrestaShop order page metadata is missing.');
+}
+
+$checkoutRouteWhere = sprintf(
+    'id_meta = %d AND id_shop = 1 AND id_lang = %d',
+    $checkoutMetaId,
+    $japaneseLanguageId
+);
+$checkoutRouteQuery = 'SELECT url_rewrite FROM `' . _DB_PREFIX_ . 'meta_lang` WHERE ' . $checkoutRouteWhere;
+$checkoutRouteSlug = $db->getValue($checkoutRouteQuery, false);
+if (!is_string($checkoutRouteSlug)) {
+    throw new RuntimeException('The Japanese PrestaShop order route is missing.');
+}
+
+if ($checkoutRouteSlug !== 'checkout'
+    && !$db->update('meta_lang', ['url_rewrite' => 'checkout'], $checkoutRouteWhere, 1, false, false)
+) {
+    throw new RuntimeException('Could not normalize the Japanese PrestaShop order route.');
+}
+
+if ($db->getValue($checkoutRouteQuery, false) !== 'checkout') {
+    throw new RuntimeException('The Japanese PrestaShop order route did not persist as /checkout.');
+}
 
 foreach (['kuraneapostcode', 'kuraneabackoffice', 'kuraneabusinessprofile', 'kuraneacatalog'] as $moduleName) {
     $module = Module::getInstanceByName($moduleName);

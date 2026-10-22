@@ -101,6 +101,10 @@ languages=$(db_query "SELECT COUNT(*) FROM ps_lang WHERE active=1 AND iso_code I
 test "$languages" = 3
 shop_default=$(db_query "SELECT COUNT(*) FROM ps_configuration c JOIN ps_lang l ON l.id_lang=CAST(c.value AS UNSIGNED) WHERE c.name='PS_LANG_DEFAULT' AND l.iso_code='ja'")
 test "$shop_default" = 1
+checkout_route=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='order' AND ml.id_shop=1 AND l.iso_code='ja'")
+test "$checkout_route" = checkout
+checkout_rewriting=$(db_query "SELECT value FROM ps_configuration WHERE name='PS_REWRITING_SETTINGS'")
+test "$checkout_rewriting" = 1
 default_currency=$(db_query "SELECT cur.iso_code FROM ps_configuration cfg JOIN ps_currency cur ON cur.id_currency=CAST(cfg.value AS UNSIGNED) WHERE cfg.name='PS_CURRENCY_DEFAULT'")
 test "$default_currency" = JPY
 jpy_currency=$(db_query "SELECT COUNT(*) FROM ps_currency WHERE iso_code='JPY' AND active=1 AND deleted=0")
@@ -211,6 +215,8 @@ default_currency_after_restart=$(db_query "SELECT cur.iso_code FROM ps_configura
 test "$default_currency_after_restart" = JPY
 jpy_translations_after_restart=$(db_query "SELECT COUNT(DISTINCT cl.id_lang) FROM ps_currency c JOIN ps_currency_lang cl ON cl.id_currency=c.id_currency JOIN ps_lang l ON l.id_lang=cl.id_lang WHERE c.iso_code='JPY' AND l.iso_code IN ('ja','en','ko')")
 test "$jpy_translations_after_restart" = 3
+checkout_route_after_restart=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='order' AND ml.id_shop=1 AND l.iso_code='ja'")
+test "$checkout_route_after_restart" = checkout
 verification_phase="restart_shop_identity_and_schema"
 test "$(db_query 'SELECT name FROM ps_shop WHERE id_shop=1')" = ORDENOWA
 table_count_after=$(db_query 'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()')

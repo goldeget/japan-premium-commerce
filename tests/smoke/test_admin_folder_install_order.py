@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "compose.yaml"
 POST_INSTALL = ROOT / "docker" / "kuran-post-install.php"
 POST_INSTALL_HOOK = ROOT / "docker" / "init" / "10-kuranea-bootstrap.sh"
+MODULE_INSTALL = ROOT / "docker" / "kuran-install-modules.php"
 FRESH_INSTALL_SMOKE = ROOT / "tests" / "smoke" / "fresh_install.sh"
 
 
@@ -46,6 +47,23 @@ class AdminFolderInstallOrderTests(unittest.TestCase):
         self.assertIn("/var/www/html/admin-kuranea", smoke)
         self.assertIn("/var/www/html/admin-dev", smoke)
         self.assertIn("themes/new-theme/public/theme.css", smoke)
+
+    def test_japanese_order_route_is_normalized_on_every_start_and_verified(self) -> None:
+        hook = POST_INSTALL_HOOK.read_text(encoding="utf-8")
+        installer = MODULE_INSTALL.read_text(encoding="utf-8")
+        smoke = FRESH_INSTALL_SMOKE.read_text(encoding="utf-8")
+
+        module_install_call = hook.find("php /usr/local/bin/kuran-install-modules.php")
+        self.assertGreaterEqual(module_install_call, 0)
+        self.assertNotIn(".kuranea-bootstrap-v2", hook.split("php /usr/local/bin/kuran-install-modules.php", 1)[0])
+        self.assertIn("page = \\'order\\'", installer)
+        self.assertIn("AND id_shop = 1 AND id_lang = %d", installer)
+        self.assertIn("$checkoutRouteSlug !== 'checkout'", installer)
+        self.assertIn("['url_rewrite' => 'checkout']", installer)
+        self.assertIn("$db->getValue($checkoutRouteQuery, false) !== 'checkout'", installer)
+        self.assertIn("PS_REWRITING_SETTINGS", smoke)
+        self.assertIn("checkout_route", smoke)
+        self.assertIn("checkout_route_after_restart", smoke)
 
 
 if __name__ == "__main__":
