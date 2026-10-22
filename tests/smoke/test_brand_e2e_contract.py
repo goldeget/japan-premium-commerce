@@ -343,6 +343,21 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('restore_admin_session(driver, stage_callback, stage_prefix + "_admin_session_restore")', logo_assertion)
         self.assertIn("restore_admin_session(", initial_restore)
         self.assertIn('"official_publish_admin_session_restore"', initial_restore)
+        self.assertIn("def business_profile_settings_url(", browser_flow)
+        self.assertIn('parse_qs(urlparse(href).query).get("controller", []) == ["AdminBusinessProfile"]', browser_flow)
+        self.assertIn('settings_location.path.startswith("/admin-kuranea/")', browser_flow)
+        for reauthentication_stage in (
+            "published_desktop_customer_brand",
+            "published_mobile_customer_brand",
+            "published_korean_customer_brand",
+            "published_replacement_logo",
+            "published_restored_approved_logo",
+        ):
+            stage_block = run_flow.split(f'stage = "{reauthentication_stage}"', 1)[1].split(
+                'driver.save_screenshot', 1
+            )[0]
+            with self.subTest(reauthentication_stage=reauthentication_stage):
+                self.assertIn("settings_url = business_profile_settings_url(driver)", stage_block)
         self.assertIn("email_fields[0].send_keys(ADMIN_EMAIL)", session_restore)
         self.assertIn("password_fields[0].send_keys(ADMIN_PASSWORD)", session_restore)
         self.assertIn("stage_callback(stage_name)", session_restore)

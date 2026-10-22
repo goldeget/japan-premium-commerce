@@ -132,6 +132,7 @@ def restore_approved_logo_after_failure(
     driver.delete_all_cookies()
     driver.get(ADMIN_LOGIN + "/login")
     restore_admin_session(driver, stage_callback, "replacement_failure_cleanup_admin_login")
+    settings_url = business_profile_settings_url(driver)
     driver.get(settings_url)
     visible(driver, "form.ordenowa-profile-settings")
     replace_primary_logo_in_saved_draft(
@@ -432,6 +433,22 @@ def restore_admin_session(
         '#login_form button[type="submit"], #login_form input[type="submit"], button[type="submit"]',
     ).click()
     WebDriverWait(driver, 30).until(lambda browser: "/login" not in urlparse(browser.current_url).path)
+
+
+def business_profile_settings_url(driver: webdriver.Chrome) -> str:
+    def business_profile_link(browser: webdriver.Chrome):
+        for link in browser.find_elements(By.CSS_SELECTOR, 'a[href*="controller="]'):
+            href = link.get_attribute("href") or ""
+            if parse_qs(urlparse(href).query).get("controller", []) == ["AdminBusinessProfile"]:
+                return href
+        return False
+
+    href = WebDriverWait(driver, 30).until(business_profile_link)
+    settings_url = urljoin(driver.current_url, href)
+    settings_location = urlparse(settings_url)
+    if settings_location.hostname not in {"localhost", "127.0.0.1"} or not settings_location.path.startswith("/admin-kuranea/"):
+        raise AssertionError("business profile menu link is outside this isolated Back Office")
+    return settings_url
 
 
 def assert_published_logo_source(
@@ -784,20 +801,7 @@ def run() -> None:
 
         stage = "admin_settings_menu_link"
 
-        def business_profile_links(browser: webdriver.Chrome):
-            matches = []
-            for link in browser.find_elements(By.CSS_SELECTOR, 'a[href*="controller="]'):
-                href = link.get_attribute("href") or ""
-                controller = parse_qs(urlparse(href).query).get("controller", [])
-                if controller == ["AdminBusinessProfile"]:
-                    matches.append(link)
-            return matches
-
-        links = WebDriverWait(driver, 30).until(business_profile_links)
-        settings_url = urljoin(driver.current_url, links[0].get_attribute("href"))
-        settings_location = urlparse(settings_url)
-        if settings_location.hostname not in {"localhost", "127.0.0.1"} or not settings_location.path.startswith("/admin-kuranea/"):
-            raise AssertionError("business profile menu link is outside this isolated Back Office")
+        settings_url = business_profile_settings_url(driver)
 
         stage = "korean_brand_settings_form"
         driver.get(settings_url)
@@ -1011,6 +1015,7 @@ def run() -> None:
             stage_prefix="published_desktop_customer_brand",
             stage_callback=set_brand_assertion_stage,
         )
+        settings_url = business_profile_settings_url(driver)
         driver.save_screenshot(str(DEST / "brand-desktop-published.png"))
 
         stage = "published_mobile_customer_brand"
@@ -1022,6 +1027,7 @@ def run() -> None:
             stage_prefix="published_mobile_customer_brand",
             stage_callback=set_brand_assertion_stage,
         )
+        settings_url = business_profile_settings_url(driver)
         driver.save_screenshot(str(DEST / "brand-mobile-published.png"))
 
         stage = "published_korean_customer_brand"
@@ -1040,6 +1046,7 @@ def run() -> None:
             stage_prefix="published_korean_customer_brand",
             stage_callback=set_brand_assertion_stage,
         )
+        settings_url = business_profile_settings_url(driver)
         driver.save_screenshot(str(DEST / "brand-korean-published.png"))
 
         stage = "published_company_profile_and_seller_disclosures_remain_gated"
@@ -1070,6 +1077,7 @@ def run() -> None:
             set_brand_assertion_stage,
             "official_publish_admin_session_restore",
         )
+        settings_url = business_profile_settings_url(driver)
 
         stage = "record_official_published_mobile_header_logo"
         driver.set_window_size(390, 844)
@@ -1109,6 +1117,7 @@ def run() -> None:
             stage_callback=set_brand_assertion_stage,
             stage_prefix="published_replacement_logo",
         )
+        settings_url = business_profile_settings_url(driver)
 
         stage = "restore_approved_logo_after_replacement_publish"
         replace_primary_logo_in_saved_draft(
@@ -1135,6 +1144,7 @@ def run() -> None:
             stage_callback=set_brand_assertion_stage,
             stage_prefix="published_restored_approved_logo",
         )
+        settings_url = business_profile_settings_url(driver)
         if restored_logos["desktop_header"] != official_header_logo:
             raise AssertionError("republishing the approved source did not restore the original desktop logo URL")
         if restored_logos["mobile_header"] != official_mobile_header_logo:

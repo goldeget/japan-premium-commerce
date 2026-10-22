@@ -186,7 +186,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("ordenowa-brand-e2e.log", workflow)
         self.assertIn("brand-desktop-published.png", brand_flow)
         self.assertIn("brand-mobile-published.png", brand_flow)
-        self.assertIn('controller == ["AdminBusinessProfile"]', brand_flow)
+        self.assertIn('get("controller", []) == ["AdminBusinessProfile"]', brand_flow)
         self.assertIn("submitOrdenowaPreview", brand_flow)
         self.assertIn("submitOrdenowaPublish", brand_flow)
         for expected_value in (
@@ -232,6 +232,17 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertNotIn("window.location.search", diagnostics)
         self.assertIn('rg \'^ORDENOWA_BRAND_SETTINGS_DIAGNOSTICS=\' "$log_file"', workflow)
         self.assertIn('diagnostics_line', workflow)
+        self.assertIn('::error title=ORDENOWA brand page state::%s\\n', workflow)
+
+    def test_reset_email_failure_forwards_only_redacted_logo_state_to_check_annotations(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        email_step = workflow.split(
+            "- name: Verify the published ORDENOWA password-reset email logo in Chromium", 1
+        )[1].split("- name:", 1)[0]
+
+        self.assertIn("safe_state_line=$(rg '^ORDENOWA_RESET_EMAIL_SAFE_STATE=' \"$log_file\" | tail -n 1 || true)", email_step)
+        self.assertIn('::error title=ORDENOWA reset-email logo state::%s\\n', email_step)
+        self.assertIn('safe_state_annotation=${safe_state_annotation//$\'\\n\'/\'%0A\'}', email_step)
 
     def test_brand_publish_button_is_centered_and_checked_for_obstruction_before_click(self) -> None:
         brand_flow = (ROOT / "tests" / "e2e" / "verify_brand_admin_browser.py").read_text(encoding="utf-8")
