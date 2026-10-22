@@ -154,8 +154,30 @@ def wait_for_registration_success(driver: webdriver.Chrome) -> None:
         )
     )
     if result_page == "header":
-        driver.get(f"{BASE}/index.php?controller=my-account")
+        account_link, _ = my_account_link_from_header(driver)
+        click_centered(driver, account_link)
         visible(driver, "#identity_main_link")
+
+
+def my_account_link_from_header(driver: webdriver.Chrome):
+    """Open the authenticated header menu and resolve its canonical My Page link."""
+    button = visible(driver, "#userMenuButton")
+    if button.get_attribute("aria-expanded") != "true":
+        click_centered(driver, button)
+
+    account_link = visible(driver, 'div.dropdown-menu[aria-labelledby="userMenuButton"] a[href]')
+    href = account_link.get_attribute("href") or ""
+    account_url = urljoin(driver.current_url, href)
+    account_location = urlparse(account_url)
+    base_location = urlparse(BASE)
+    if (
+        account_location.scheme != base_location.scheme
+        or account_location.hostname != base_location.hostname
+        or account_location.port != base_location.port
+    ):
+        raise AssertionError("the authenticated My Page link changed the base shop origin")
+
+    return account_link, account_url
 
 
 def set_registration_control(control: dict[str, str], name: str, field_type: str) -> None:
@@ -510,9 +532,10 @@ def assert_login_rejected(driver: webdriver.Chrome, email_address: str, password
 
 
 def logout(driver: webdriver.Chrome) -> None:
+    _, account_url = my_account_link_from_header(driver)
     link = visible_signout_link(driver)
     link.click()
-    driver.get(f"{BASE}/index.php?controller=my-account")
+    driver.get(account_url)
     WebDriverWait(driver, 30).until(
         lambda browser: bool(browser.find_elements(By.CSS_SELECTOR, '#login-form input[name="email"]'))
         or bool(browser.find_elements(By.ID, "identity_main_link"))

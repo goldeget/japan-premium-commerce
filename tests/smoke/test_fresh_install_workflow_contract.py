@@ -46,7 +46,8 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         for selector in ("identity_main_link", "signout_link"):
             self.assertIn(selector, my_page)
         self.assertIn("expected_first_name", my_page)
-        self.assertIn('driver.get(f"{BASE}/index.php?controller=my-account")', logout)
+        self.assertIn("my_account_link_from_header(driver)", logout)
+        self.assertIn("driver.get(account_url)", logout)
         self.assertIn("identity_main_link", logout)
         self.assertIn('#login-form input[name="email"]', logout)
 
@@ -203,10 +204,13 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("click_centered(driver,", registration)
         self.assertNotIn('button.form-control-submit").click()', registration)
 
-    def test_registration_post_submit_accepts_the_authenticated_header_redirect(self) -> None:
+    def test_registration_post_submit_uses_the_rendered_authenticated_my_page_link(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
         self.assertIn("def wait_for_registration_success", account_flow)
         success_wait = account_flow.split("def wait_for_registration_success", 1)[1].split(
+            "def set_registration_control", 1
+        )[0]
+        route_helper = account_flow.split("def my_account_link_from_header", 1)[1].split(
             "def set_registration_control", 1
         )[0]
         post_submit = account_flow.split('stage = "registration_post_submit"', 1)[1].split(
@@ -221,7 +225,13 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
 
         self.assertIn("getElementById('userMenuButton')", success_wait)
         self.assertIn("getElementById('identity_main_link')", success_wait)
-        self.assertIn('driver.get(f"{BASE}/index.php?controller=my-account")', success_wait)
+        self.assertIn("my_account_link_from_header(driver)", success_wait)
+        self.assertIn("click_centered(driver, account_link)", success_wait)
+        self.assertIn('div.dropdown-menu[aria-labelledby="userMenuButton"] a[href]', route_helper)
+        self.assertIn("account_location.hostname != base_location.hostname", route_helper)
+        self.assertIn("account_location.scheme != base_location.scheme", route_helper)
+        self.assertIn("account_location.port != base_location.port", route_helper)
+        self.assertIn('href="{$urls.pages.my_account}"', sign_in_template)
         self.assertIn("wait_for_registration_success(driver)", post_submit)
         self.assertIn('assert_my_page(driver, "CI")', post_submit)
         self.assertIn("{if $customer.is_logged}", sign_in_template)
@@ -246,7 +256,8 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "registration links must keep the same browser cookie host as SHOP_BASE_URL",
         )
         self.assertNotIn('hostname not in {"localhost", "127.0.0.1"}', registration_guard)
-        self.assertIn('driver.get(f"{BASE}/index.php?controller=my-account")', success_wait)
+        self.assertIn("my_account_link_from_header(driver)", success_wait)
+        self.assertIn("account_location.hostname != base_location.hostname", account_flow)
 
     def test_password_reset_links_must_match_the_exact_base_origin(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
