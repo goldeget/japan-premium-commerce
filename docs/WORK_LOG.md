@@ -1,5 +1,13 @@
 # KURANEA 작업 기록
 
+## 2026-10-22 — Actions 분리 기준 및 SEO escape 보안 체크포인트
+
+- 시작 전 `work`와 `origin/work`는 `f8de2015d14cfefb5f25982bd56d781007d91ff3`, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다. 미커밋 변경은 없었다. Codex Cloud에서 Docker `vfs`/32 GB 이미지 빌드를 재시도하지 않고 Docker·MariaDB·브라우저 실행을 GitHub Actions에 둔다.
+- Draft PR #3 (`095d19baec40400e3b7c286e98af7886532290b2`)의 SEO diff를 검토했다. title/description/robots/canonical/hreflang/Open Graph 속성 값의 HTML escaping과 JSON-LD `JSON_HEX_TAG`를 적용하고, PR 검사에서 빠졌던 PWA `data-service-worker`·`data-scope`의 `$urls.base_url`도 escape하도록 보완했다. 기존 KURANEA 원본 자산은 변경하지 않았다.
+- TDD: 새 SEO source contract를 먼저 실행해 현재 head template에서 2개 테스트 실패를 확인했다. 수정 적용 후 SEO contract 2/2, 기존 theme contract 15/15, `git diff --check`가 통과했다.
+- `security(seo): escape dynamic metadata and JSON-LD` 커밋 `000b0661937c9d4f48e4408d7fb88598cd426e45`를 `work`에 push했다. 원격 SHA와 새 파일 내용을 확인했고, GitHub Actions SEO contract run `39786618881`이 성공했다. 해당 workflow는 source contract만 실행했으며 실제 PrestaShop/Smarty 렌더링은 검증하지 않았다.
+- `main`은 변경하지 않았다. `work` checkpoint를 별도 `/tmp` clone으로 복제해 SHA와 세 변경 파일을 검증했다. ORDENOWA 공식 원본 ZIP은 아직 저장소나 작업공간에서 찾지 못해 이미지 배포는 대기 중이다.
+
 ## 2026-10-22 — P0 Docker 설치 후처리 실패 진단 및 로컬 수정
 
 - 시작 기준: 원격 `work`는 `c2e3d9f11dc0cfeb3c116fde8d0c03274d7e88a3`, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다. checkpoint clone에 있던 미커밋 카탈로그 파서·workflow·문서 변경을 보존했고 main이나 기존 개발 DB/named volume을 수정하지 않았다.

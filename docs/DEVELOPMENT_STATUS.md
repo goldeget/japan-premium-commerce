@@ -3,15 +3,13 @@
 기준일: 2026-10-22
 
 작업 브랜치: `work`
-검증된 코드 체크포인트 `work` SHA: `5b2a1cb8d2193458a088174eb04228f252cd9e0e`
+검증된 코드 체크포인트 `work` SHA: `000b0661937c9d4f48e4408d7fb88598cd426e45`
 
 ## 실행 기반
 
 - PrestaShop 9.2.0, Hummingbird 2.1.2, MariaDB 10.11, Docker Compose를 사용한다. 개발 포트는 `127.0.0.1:8080`에 바인딩된다.
-- 현재 실행환경에서 `/workspace` overlay는 0 bytes 여유 공간(100%)이고 `/tmp`에는 약 12 GB가 남아 있다. Docker CLI는 있지만 PHP CLI는 없다. 기존 `kuranea-prestashop-1` 및 `kuranea-mariadb-1` 컨테이너는 unhealthy로 관찰됐다. `kuranea_mariadb_data`, `kuranea_prestashop_html` 및 출처 미확인 볼륨을 그대로 보존했으며 삭제·초기화·중지·prune을 하지 않았다. 신규 컨테이너 생성과 로컬 이미지 빌드는 시도하지 않았다.
-- 원래 `/workspace/japan-premium-commerce` 작업트리는 `175d75dac132ddb0a8f54777519795208df8ae4d`에 있으며 미커밋 파일과 QA 산출물이 다수 있다. 이를 수정하지 않고 `/tmp/kuran-p0-checkpoint`에서 변경을 만들고 원격 `work`에 보존했다.
-- `main`은 `ee02a3657448d563508687614a246e05ac61eecd` 상태로 보존한다.
-- cloud environment revision 2가 활성·관측 상태다. revision 3 적용은 확인되지 않았다. 저장된 draft는 revision 4지만 저장소 ref가 이전 SHA `2db98927a9ede2b2423456873f0994ddd19ffe4e`를 가리킨다. 설정은 수정·게시하지 않았다. 활성 네트워크 정책 상태는 `unknown`이며 custom egress 목록은 `i18n.prestashop-project.org` 및 `www.post.japanpost.jp`(draft)와 다르다.
+- Codex Cloud는 코드 분석·수정·Python 계약 테스트에 사용한다. 이 런타임은 Docker `vfs` storage driver와 32 GB 파일시스템을 사용하며 PrestaShop 이미지 빌드가 공간 부족으로 실패했다. 로컬 PHP CLI도 없다. 여기서 Docker 빌드·Compose 구동을 반복하지 않고, 이미지·DB·브라우저 검증은 격리된 GitHub Actions에서 수행한다.
+- 현재 작업트리는 `/workspace/japan-premium-commerce`의 `work`이며 깨끗하다. `main` SHA `ee02a3657448d563508687614a246e05ac61eecd`는 보존한다. 이 설정 작업에서 컨테이너나 named volume을 만들거나 초기화하지 않았다.
 
 ## 구현 상태
 
@@ -19,6 +17,7 @@
 | --- | --- | --- |
 | ORDENOWA 공식 이미지 | BLOCKED | 세 이미지 미리보기는 대화에 표시되지만 첨부 다운로드가 `cannot create attachment directory: Not a directory`로 실패했고 로컬 원본 바이트를 찾지 못했다. 저장소에는 KURANEA 원본만 있어 이를 보존했다. ORDENOWA 로고·파비콘·PWA 아이콘은 생성·교체하지 않았다. |
 | 쇼핑몰 운영 설정 모듈 | 코드·CI PASS, 실제 운영 화면 QA 미완료 | 한국어 설정 폼, 다국어 브랜드·회사 참조/판매자 분리, 이미지 업로드 파생물, 초안·게시·이력·복원, 공개 법률 페이지·푸터·SEO·manifest·메일 연결이 있다. bank transfer는 사용 여부와 계좌 연결을 별도로 선택하고 선택된 활성 계좌 하나만 공개한다. CI run `39757526475`에서 PHP lint와 모듈·법률·메일 계약이 통과했다. 실제 관리자 브라우저 저장·미리보기·게시 및 세 언어 확인은 미실행이다. |
+| SEO 메타데이터 보안 | 소스 계약 CI PASS, 실제 Smarty 렌더링 QA 미실행 | Draft PR #3의 동적 title/description/robots/canonical/hreflang/Open Graph 이스케이프와 JSON-LD `JSON_HEX_TAG` 수정을 검토해 `000b066`에 반영했다. PWA script URL 속성도 HTML 이스케이프한다. 전용 Actions run `39786618881`의 2개 Python 계약 테스트와 기존 테마 계약 15개가 통과했다. |
 | LOGISTEED 운영 법인 참조 | 초깃값 구성·미확인 | ロジスティード株式会社, LOGISTEED, Ltd., 법인번호·주소·대표전화·대표자를 참고정보로 분리했다. 실제 판매사업 정보는 별도 빈 설정이고 승인 상태는 pending이므로 공식 판매처 표기와 거래는 fail-closed다. |
 | Storefront 및 반응형 | 기존 화면 일부 확인, ORDENOWA 최종 QA 미실행 | 일본어/영어/한국어 빈 카탈로그 화면과 반응형 자식 테마의 과거 캡처가 남아 있다. 현재 상품은 0개다. 이 작업에서 새로운 ORDENOWA 실제 브라우저 스크린샷, 상품 카드·상세·주문 여정은 확보하지 않았다. |
 | JPY 기본 통화 | 설정 코드·이전 읽기 확인 | JPY 기본 통화와 ja/en/ko 표시명·0자리 정밀도 설정 코드가 있다. 최근 신규 설치 CI는 우편 CSV 단계에서 중단되어 이번 실행에서 JPY·테마·관리자 로그인 설정을 검증하지 못했다. |
