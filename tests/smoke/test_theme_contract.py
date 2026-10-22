@@ -1,6 +1,9 @@
 """Regression checks for KURANEA child-theme integration contracts."""
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -159,6 +162,41 @@ class ThemeContractTests(unittest.TestCase):
         self.assertNotIn("caches.open", worker, "private or order pages must not be stored by the service worker")
         self.assertIn("ORDENOWA", worker)
         self.assertNotIn("KURANEA", worker)
+
+    def test_pwa_offline_page_localizes_document_brand_and_copy_from_request_locale(self) -> None:
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("Node.js is required to execute the service-worker offline-page contract")
+
+        worker_path = THEME / "assets" / "sw.js"
+        node_script = r"""
+          const fs = require('node:fs');
+          const vm = require('node:vm');
+          const source = fs.readFileSync(process.argv[1], 'utf8');
+          const pages = ['ja-JP', 'en-US', 'ko-KR'].map((locale) => vm.runInNewContext(
+            `${source}\nofflinePage(${JSON.stringify(locale)});`,
+            { self: { addEventListener: () => {} } },
+          ));
+          process.stdout.write(JSON.stringify(pages));
+        """
+        result = subprocess.run(
+            [node, "-e", node_script, str(worker_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        pages = json.loads(result.stdout)
+
+        self.assertIn('<html lang="ja">', pages[0])
+        self.assertIn("<title>オーデノワ | ORDENOWA</title>", pages[0])
+        self.assertIn("インターネットに接続できません", pages[0])
+        self.assertIn('<html lang="en">', pages[1])
+        self.assertIn("<title>ORDENOWA</title>", pages[1])
+        self.assertIn("You are offline", pages[1])
+        self.assertIn('<html lang="ko">', pages[2])
+        self.assertIn("<title>오데노와 | ORDENOWA</title>", pages[2])
+        self.assertIn("연결을 확인해 주세요", pages[2])
+        self.assertIn("request.headers.get('Accept-Language')", worker_path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
