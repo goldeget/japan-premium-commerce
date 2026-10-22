@@ -185,3 +185,10 @@
 
 - 실제 관리자 대시보드에서 영어 `From`, `Start`, `End`를 확인했다. PrestaShop core는 수정하지 않고 KURANEA 관리자 모듈의 XLIFF 도메인을 PrestaShop 명명 규칙에 맞췄으며, dashboard 전용 module JS가 날짜 입력 label/placeholder와 요약을 한국어로 표시하도록 했다.
 - 관리자 브라우저 로그인 후 PC 1440×1000에서 `lang=ko`, 한국어 날짜 labels/placeholders/요약, 한국어 메뉴, page error 0건을 검증하고 `artifacts/qa/phase1a/admin-dashboard-korean-after-date-overlay.png`를 저장했다. 관리자 locale 계약 8/8, JS syntax,
+## 2026-10-22 — Fresh install 주소 저장 실패 진단 분리
+
+- 시작 기준: `work` 원격·로컬 SHA `1cfc24c9585ebe4169250dcc38321ad6c5825c68`, `main` SHA `ee02a3657448d563508687614a246e05ac61eecd`. 기존 카탈로그 파서 등 미커밋 파일과 저장소 밖 개발 DB/named volume을 보존했다.
+- 직전 수정 후 격리 Actions run `39732730236`은 이미지 빌드, 캐시 권한 probe, 빈 볼륨 Compose 기동, 공식 Japan Post CSV import 단계까지 성공했다. `Verify real Tokyo postcode lookup and saved native address` 결합 단계는 종료 코드 255로 실패했고 이후 native order 및 restart smoke는 실행되지 않았다. run artifact는 공개 실행 페이지에서 본문을 읽을 수 없으므로 예외의 실제 발생 위치를 추측하지 않는다.
+- 진단 보강: CI를 도쿄 API 조회와 PrestaShop 네이티브 주소 저장으로 분리했다. PHP 저장 검증은 bootstrap, Japan/state 조회, CSV 후보, 고객 생성, 주소 저장, reload 단계를 기록하고 예외 클래스·메시지를 GitHub error annotation으로 제한 출력한다. 회귀 계약 테스트가 두 workflow step 분리와 진단 단계를 고정한다. 프로덕션 모듈/코어는 수정하지 않았다.
+- 로컬 검증: fresh-install workflow contract 및 주소 데이터 갱신 계약 테스트 14개 통과, Docker Compose 정적 config와 `git diff --check` 통과. 호스트에 PHP CLI가 없고 활성 로컬 Docker/DB 상태를 보존하기 위해 실행 DB에 테스트 데이터를 넣지 않았다.
+- 다음 검증은 새 원격 커밋에 의해 실행되는 격리 Actions 1회다. 주소 API, 네이티브 Address, 무결제 Order, 관리자 배송지 표시, 일본어/다국어·JPY·테마·관리자 로그인, 재시작 후 지속성은 실제 각 단계가 성공하기 전까지 미검증이다.

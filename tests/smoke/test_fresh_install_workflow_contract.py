@@ -74,6 +74,27 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("instanceof PaymentModule", order_test)
         self.assertIn("GetOrderForViewing", order_test)
 
+    def test_postcode_lookup_and_native_address_save_report_separate_ci_failures(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("python3 -m unittest tests.smoke.test_fresh_install_workflow_contract", workflow)
+        self.assertIn("- name: Verify real Tokyo postcode lookup", workflow)
+        self.assertIn("- name: Verify saved native Tokyo address", workflow)
+        address_step = workflow.split("- name: Verify saved native Tokyo address", 1)[1].split("- name:", 1)[0]
+        self.assertIn("tests/postcode/verify_native_address_persistence.php", address_step)
+
+        verifier = (ROOT / "tests" / "postcode" / "verify_native_address_persistence.php").read_text(encoding="utf-8")
+        self.assertIn("KURANEA_NATIVE_ADDRESS_STAGE", verifier)
+        self.assertIn("::error title=KURANEA address persistence::", verifier)
+        for stage in (
+            "bootstrap",
+            "Japan and state lookup",
+            "official postcode candidate",
+            "customer creation",
+            "native address save",
+            "saved address reload",
+        ):
+            self.assertIn(stage, verifier)
+
     def test_successful_postal_import_clears_only_the_staging_copy(self) -> None:
         importer = POSTAL_IMPORT.read_text(encoding="utf-8")
         smoke = FRESH_INSTALL_SMOKE.read_text(encoding="utf-8")

@@ -58,6 +58,9 @@ jobs:
       - name: Verify Docker startup cleanup regression contract
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_docker_run_recovery -v
 
+      - name: Verify fresh-install workflow contracts
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract -v
+
       - name: Build the PrestaShop image
         id: image_build
         shell: bash
@@ -107,7 +110,7 @@ jobs:
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             php /var/www/html/modules/kuraneapostcode/bin/import-ken-all.php --file=/tmp/KEN_ALL.CSV
 
-      - name: Verify real Tokyo postcode lookup and saved native address
+      - name: Verify real Tokyo postcode lookup
         env:
           SHOP_BASE_URL: http://127.0.0.1:18080
         run: |
@@ -130,10 +133,17 @@ jobs:
           ), data
           print("PASS: official Japan Post postcode 1000004 resolves to Tokyo / Chiyoda / Otemachi")
           PY
+
+      - name: Verify saved native Tokyo address
+        shell: bash
+        run: |
+          set -euo pipefail
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             sh -c 'cat > /tmp/verify_native_address_persistence.php' \
             < tests/postcode/verify_native_address_persistence.php
-          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e GITHUB_ACTIONS="$GITHUB_ACTIONS" \
+            prestashop \
             runuser -g www-data -u www-data -- php /tmp/verify_native_address_persistence.php
 
       - name: Verify Japan Post address in an unpaid native order and Back Office view
