@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import sys
 import tempfile
@@ -35,6 +36,27 @@ def manager_link(driver: webdriver.Chrome):
         if parse_qs(urlparse(href).query).get("controller", []) == ["AdminOrdenowaProductManager"]:
             return href
     return False
+
+
+def manager_page_diagnostics(driver: webdriver.Chrome) -> dict[str, str | bool]:
+    return driver.execute_script(
+        """
+        const bodyText = document.body?.innerText || '';
+        const nameField = document.querySelector('#name_ja');
+        return {
+            product_heading: Array.from(document.querySelectorAll('h3')).some(
+                (heading) => heading.innerText.trim() === '새 상품 등록'
+            ),
+            name_ja_present: Boolean(nameField),
+            denied_marker: bodyText.includes('상품을 조회할 권한이 없습니다.'),
+            load_error_marker: bodyText.includes('상품 관리 화면을 불러오지 못했습니다.'),
+            login_form_present: Boolean(document.querySelector('#login_form')),
+            product_form_present: Boolean(nameField && nameField.closest('form')),
+            pathname: window.location.pathname,
+            title: document.title,
+        };
+        """
+    )
 
 
 def product_links(driver: webdriver.Chrome, product_id: int):
@@ -70,6 +92,7 @@ def run() -> None:
     options.add_argument("--lang=ja-JP")
     driver: webdriver.Chrome | None = None
     stage = "chromium_startup"
+    manager_page_state: dict[str, str | bool] | None = None
     try:
         driver = webdriver.Chrome(options=options)
         stage = "administrator_login"
@@ -88,9 +111,11 @@ def run() -> None:
             raise AssertionError("product manager link is outside the isolated Back Office")
         driver.get(href)
         stage = "korean_product_manager_form"
-        visible(driver, "form")
-        if "새 상품 등록" not in driver.find_element(By.TAG_NAME, "body").text:
+        driver.save_screenshot(str(DEST / "product-admin-manager-navigation.png"))
+        manager_page_state = manager_page_diagnostics(driver)
+        if not manager_page_state["product_heading"] or not manager_page_state["product_form_present"]:
             raise AssertionError("Korean product registration and management UI is missing")
+        visible(driver, 'form #name_ja')
         if "판매 활성화 기능이 없습니다" not in driver.find_element(By.TAG_NAME, "body").text:
             raise AssertionError("the product page must state that its entries remain inactive")
         for selector in (
@@ -230,6 +255,14 @@ def run() -> None:
         print(f"PASS: Chromium created and edited inactive native product ID={product_id}; image {old_image_id} replaced.")
     except Exception as error:
         diagnostic = f"ORDENOWA_PRODUCT_ADMIN_STAGE={stage}; error={type(error).__name__}: {error}"
+        if stage == "korean_product_manager_form" and driver is not None:
+            try:
+                manager_page_state = manager_page_diagnostics(driver)
+            except Exception:
+                pass
+            if manager_page_state is not None:
+                page_state = json.dumps(manager_page_state, ensure_ascii=False, sort_keys=True)
+                diagnostic += f"; page_state={page_state}"
         annotation_message = diagnostic.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
         annotation = f"::error title=ORDENOWA product admin browser::{annotation_message}"
         print(diagnostic, file=sys.stderr)

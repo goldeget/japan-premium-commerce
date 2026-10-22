@@ -102,8 +102,17 @@ class ProductAdminContractTests(unittest.TestCase):
         )
         self.assertLess(
             manager_navigation.index('stage = "korean_product_manager_form"'),
-            manager_navigation.index('visible(driver, "form")'),
+            manager_navigation.index("manager_page_diagnostics(driver)"),
         )
+        self.assertLess(
+            manager_navigation.index("driver.get(href)"),
+            manager_navigation.index('product-admin-manager-navigation.png'),
+        )
+        self.assertLess(
+            manager_navigation.index('product-admin-manager-navigation.png'),
+            manager_navigation.index("manager_page_diagnostics(driver)"),
+        )
+        self.assertIn("visible(driver, 'form #name_ja')", manager_navigation)
         for expected in (
             "tests/smoke/test_product_admin_contract.py",
             "tests/catalog/product_admin_draft.php",
@@ -142,6 +151,31 @@ class ProductAdminContractTests(unittest.TestCase):
 
         self.assertIn('parse_qs(urlparse(href).query).get("controller", []) == ["AdminOrdenowaProductManager"]', manager_link)
         self.assertNotIn("is_displayed()", manager_link)
+
+    def test_manager_page_failure_diagnostics_exclude_query_tokens(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+
+        for expected in (
+            "product_heading:",
+            "name_ja_present:",
+            "denied_marker:",
+            "load_error_marker:",
+            "login_form_present:",
+            "product_form_present:",
+            "pathname: window.location.pathname",
+            "title: document.title",
+            "page_state=",
+            "json.dumps",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, browser)
+        self.assertNotIn("window.location.search", browser)
+
+    def test_install_verifier_checks_product_manager_read_permission(self) -> None:
+        verifier = (ROOT / "tests" / "catalog" / "verify_native_product_admin.php").read_text(encoding="utf-8")
+
+        self.assertIn("Permission::PREFIX_TAB . 'ADMINORDENOWAPRODUCTMANAGER_READ'", verifier)
+        self.assertIn("Access::isGranted($readPermission, 1)", verifier)
 
 
 if __name__ == "__main__":

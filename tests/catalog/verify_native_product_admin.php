@@ -43,6 +43,7 @@ require_once $shopRoot . '/modules/kuraneacatalog/autoload.php';
 use Kuranea\Catalog\Domain\ProductAdminDraft;
 use Kuranea\Catalog\Integration\PrestaShopNativeProductManager;
 use PrestaShop\PrestaShop\Adapter\SymfonyContainer;
+use PrestaShop\PrestaShop\Core\Security\Permission;
 
 global $kernel;
 $stage = 'Back Office kernel boot';
@@ -76,6 +77,11 @@ if (!$managerTab instanceof Tab
     || $shopParametersTabId < 1
     || (int) $managerTab->id_parent !== $shopParametersTabId) {
     throw new RuntimeException('The Korean product manager tab is not registered under the visible ShopParameters menu.');
+}
+$stage = 'product manager read permission';
+$readPermission = Permission::PREFIX_TAB . 'ADMINORDENOWAPRODUCTMANAGER_READ';
+if (!Access::isGranted($readPermission, 1)) {
+    throw new RuntimeException('The isolated shop administrator profile cannot read the Korean product manager tab.');
 }
 
 $stage = 'synthetic product draft and image upload';
