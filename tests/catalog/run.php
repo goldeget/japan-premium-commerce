@@ -126,5 +126,6 @@ require __DIR__ . '/review_queue_and_approval.php';
 require __DIR__ . '/native_product_registrar_lock.php';
 require __DIR__ . '/admin_review_contract.php';
 require __DIR__ . '/admin_review_controller.php';
+require __DIR__ . '/product_admin_draft.php';
 
 echo "PASS: offline Amazon JP and Rakuten synthetic catalog parser checks\n";

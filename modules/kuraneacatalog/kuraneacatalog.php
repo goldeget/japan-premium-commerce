@@ -44,6 +44,7 @@ class Kuraneacatalog extends Module
 
         if (!$this->installTabs()) {
             $this->removeTab('AdminKuraneaCatalogReview');
+            $this->removeTab('AdminOrdenowaProductManager');
             parent::uninstall();
 
             return false;
@@ -55,6 +56,7 @@ class Kuraneacatalog extends Module
     public function uninstall(): bool
     {
         $this->removeTab('AdminKuraneaCatalogReview');
+        $this->removeTab('AdminOrdenowaProductManager');
 
         // The review queue lives in its own persistent volume and is preserved on uninstall.
         return parent::uninstall();
@@ -63,34 +65,52 @@ class Kuraneacatalog extends Module
     public function getContent(): string
     {
         $adminUrl = $this->context->link->getAdminLink('AdminKuraneaCatalogReview');
+        $productUrl = $this->context->link->getAdminLink('AdminOrdenowaProductManager');
 
-        return '<div class="panel"><h3>상품 검수 대기열</h3><p>검수 승인 시 비활성 TEST/DEMO 상품으로만 등록됩니다.</p>'
-            . '<a class="btn btn-primary" href="' . $this->escape((string) $adminUrl) . '">검수 대기열 열기</a></div>';
+        return '<div class="panel"><h3>ORDENOWA 상품 관리</h3>'
+            . '<p>새 상품은 비활성·비노출·주문 불가 상태로 등록되며, 관리자 판매 승인 절차를 통과하기 전에는 구매할 수 없습니다.</p>'
+            . '<a class="btn btn-primary" href="' . $this->escape((string) $productUrl) . '">상품 등록·관리</a> '
+            . '<a class="btn btn-default" href="' . $this->escape((string) $adminUrl) . '">상품 검수 대기열</a></div>';
     }
 
     private function installTabs(): bool
     {
-        $parentId = (int) Tab::getIdFromClassName('AdminParentCatalog');
-        if ($parentId < 1) {
-            $parentId = (int) Tab::getIdFromClassName('AdminCatalog');
+        $catalogParentId = (int) Tab::getIdFromClassName('AdminParentCatalog');
+        if ($catalogParentId < 1) {
+            $catalogParentId = (int) Tab::getIdFromClassName('AdminCatalog');
         }
-        if ($parentId < 1) {
-            $parentId = (int) Tab::getIdFromClassName('AdminParentShopParameters');
+        if ($catalogParentId < 1) {
+            $catalogParentId = (int) Tab::getIdFromClassName('ShopParameters');
         }
-        if ($parentId < 1) {
+        $settingsParentId = (int) Tab::getIdFromClassName('ShopParameters');
+        if ($settingsParentId < 1) {
+            $settingsParentId = (int) Tab::getIdFromClassName('AdminParentShopParameters');
+        }
+        if ($settingsParentId < 1) {
+            $settingsParentId = (int) Tab::getIdFromClassName('AdminParentPreferences');
+        }
+        if ($settingsParentId < 1) {
+            $settingsParentId = $catalogParentId;
+        }
+        if ($catalogParentId < 1 || $settingsParentId < 1) {
             return false;
         }
 
-        $tabId = (int) Tab::getIdFromClassName('AdminKuraneaCatalogReview');
+        return $this->installTab('AdminKuraneaCatalogReview', '상품 검수 대기열', $catalogParentId)
+            && $this->installTab('AdminOrdenowaProductManager', '상품 등록·관리', $settingsParentId);
+    }
+
+    private function installTab(string $className, string $label, int $parentId): bool
+    {
+        $tabId = (int) Tab::getIdFromClassName($className);
         $tab = $tabId > 0 ? new Tab($tabId) : new Tab();
         $tab->active = 1;
-        $tab->class_name = 'AdminKuraneaCatalogReview';
+        $tab->class_name = $className;
         $tab->module = $this->name;
         $tab->id_parent = $parentId;
         $tab->name = [];
-
         foreach (Language::getLanguages(false) as $language) {
-            $tab->name[(int) $language['id_lang']] = '상품 검수 대기열';
+            $tab->name[(int) $language['id_lang']] = $label;
         }
 
         return $tabId > 0 ? (bool) $tab->update() : (bool) $tab->add();

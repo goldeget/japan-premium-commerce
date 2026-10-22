@@ -24,6 +24,7 @@ on:
       - 'tests/smoke/test_docker_run_recovery.py'
       - 'tests/smoke/test_ci_diagnostics_script.py'
       - 'tests/smoke/test_ci_checkout_contract.py'
+      - 'tests/smoke/test_product_admin_contract.py'
       - 'tests/fixtures/ci-checkout.compose.yaml'
       - 'tests/postcode/**'
       - 'tests/e2e/**'
@@ -74,6 +75,9 @@ jobs:
 
       - name: Verify isolated unpaid checkout contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract -v
+
+      - name: Verify Korean native product manager contracts
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_product_admin_contract -v
 
       - name: Verify official ORDENOWA brand pack integrity and runtime wiring
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ordenowa_brand_pack -v
@@ -126,6 +130,34 @@ jobs:
             < tests/catalog/verify_catalog_installation.php
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             runuser -g www-data -u www-data -- php /tmp/verify_catalog_installation.php
+
+      - name: Verify Japanese and Korean native product draft validation in PHP
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/product_admin_draft.php' \
+            < tests/catalog/product_admin_draft.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            runuser -g www-data -u www-data -- php -r \
+            'require "/var/www/html/modules/kuraneacatalog/autoload.php"; require "/tmp/product_admin_draft.php"; echo "PASS: Japanese and Korean product draft boundaries.\n";'
+
+      - name: Verify native inactive Korean admin product create and edit persistence
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/verify_native_product_admin.php' \
+            < tests/catalog/verify_native_product_admin.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e CI=true \
+            -e GITHUB_ACTIONS=true \
+            -e KURANEA_ISOLATED_CI=1 \
+            -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            -e KURANEA_CI_RUN_ID="$GITHUB_RUN_ID" \
+            -e KURANEA_CI_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            prestashop runuser -g www-data -u www-data -- \
+            php /tmp/verify_native_product_admin.php
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" restart prestashop
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" up -d --wait --wait-timeout 300 prestashop
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
@@ -271,6 +303,31 @@ jobs:
           "$RUNNER_TEMP/ordenowa-browser-venv/bin/pip" install --disable-pip-version-check --quiet selenium==4.27.1
           command -v google-chrome || command -v chromium
           mkdir -p "$RUNNER_TEMP/ordenowa-browser-qa"
+
+      - name: Verify Korean admin native product create and edit in Chromium
+        shell: bash
+        env:
+          SHOP_BASE_URL: http://localhost:18080
+          ADMIN_LOGIN_URL: http://localhost:18080/admin-kuranea
+          ADMIN_MAIL: ci-kuranea@example.invalid
+          ADMIN_PASSWD: Ci-Only-Admin-Password-92!
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          log_file="$RUNNER_TEMP/ordenowa-browser-qa/product-admin-e2e.log"
+          set +e
+          "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
+            tests/e2e/verify_product_admin_browser.py \
+            2>&1 | tee "$log_file"
+          browser_status=${PIPESTATUS[0]}
+          set -e
+          if [ "$browser_status" -ne 0 ]; then
+            failure_line=$(rg '^ORDENOWA_PRODUCT_ADMIN_STAGE=' "$log_file" | tail -n 1 || true)
+            printf 'ORDENOWA product admin browser failure: %s\n' "${failure_line:-See the uploaded product admin browser log for the failing stage.}" >> "$GITHUB_STEP_SUMMARY"
+            exit "$browser_status"
+          fi
 
       - name: Verify official ORDENOWA brand upload and publish in Chromium
         shell: bash
