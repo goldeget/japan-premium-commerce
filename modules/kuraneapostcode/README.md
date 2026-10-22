@@ -14,11 +14,11 @@ shop, deploy this directory to `modules/kuraneapostcode/` and install **KURANEA
 Japan Postcode Lookup** from **Modules > Module Manager**.
 
 The module creates its own `kuraneapostcode_address` table with
-   `CREATE TABLE IF NOT EXISTS`, enables the Japan state selector if needed,
-   and idempotently adds missing `JP-01` through `JP-47` state records.
-   It does not download or fabricate postcode records at installation.
-4. Until a CSV has been imported, the search returns no candidates and the
-   address form remains manually editable.
+`CREATE TABLE IF NOT EXISTS`, enables the Japan state selector if needed,
+and idempotently adds missing `JP-01` through `JP-47` state records. It does
+not download or fabricate postcode records at installation. Until a CSV has
+been imported, the search returns no candidates and the address form remains
+manually editable.
 
 The module does not remove its table or prefecture state rows on uninstall.
 Existing orders can refer to those states, so module removal does not delete
@@ -26,16 +26,26 @@ them.
 
 ## Import or update official data
 
-1. Obtain and extract the current KEN_ALL archive from Japan Post's official
-   download page: <https://www.post.japanpost.jp/service/search/zipcode/download/>.
-2. Keep the downloaded archive and extracted CSV outside the public document
-   root. The importer reads an operator-supplied local file and makes no network
-   request.
-3. From the PrestaShop root, run:
+For an operator-triggered update, run the module's refresh command from the
+installed shop. It downloads the official KEN_ALL ZIP over HTTPS from Japan
+Post, checks the final host, ZIP integrity, expected CSV member, and non-empty
+extracted data, then calls the transactional importer:
 
-   ```sh
-   php modules/kuraneapostcode/bin/import-ken-all.php --file=/absolute/path/to/KEN_ALL.CSV
-   ```
+```sh
+runuser -g www-data -u www-data -- \
+  /var/www/html/modules/kuraneapostcode/bin/update-ken-all.sh
+```
+
+The update command uses a private temporary directory and removes its files on
+success or failure. A download, archive, or extraction error stops before the
+importer runs, so the active postcode table is unchanged.
+
+For an operator-supplied CSV, keep the file outside the public document root
+and run the local importer from the PrestaShop root:
+
+```sh
+php modules/kuraneapostcode/bin/import-ken-all.php --file=/absolute/path/to/KEN_ALL.CSV
+```
 
 The command first parses into the module-owned staging table, then replaces
 only the module's postcode rows in an InnoDB transaction after at least one
@@ -47,7 +57,8 @@ postcodes with different town areas remain separate selectable candidates.
 KEN_ALL fields are read from columns 0, 2, 6, 7, and 8: JIS municipality code,
 postcode, prefecture, municipality, and town area. UTF-8 and CP932/Windows-31J
 are supported. The local domain importer can also be called with a persistence
-callback for a different operator-managed import workflow.
+callback for a different operator-managed import workflow. The refresh command
+is manual; no automatic schedule or Back Office update screen is configured.
 
 ## Address form and candidate endpoint
 
@@ -68,7 +79,9 @@ selected native prefecture, municipality, and town area against the postcode
 before saving. Building and room fields remain customer-editable. If the
 postcode index has no rows or cannot be queried, manual entry remains enabled.
 Japan Post's explanatory suffix `（次のビルを除く）` is stripped for this
-comparison so customers can enter the actual town area and street number.
+comparison and native address mapping so it is not stored as part of the
+customer's town area. `以下に掲載がない場合` stays blank, allowing customers
+to enter the town or street manually.
 
 Widget and validation strings are provided in Japanese, English, and Korean.
 Because saved orders use the same native PrestaShop address fields, the
