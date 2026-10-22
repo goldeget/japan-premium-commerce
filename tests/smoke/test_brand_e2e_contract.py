@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -47,6 +48,41 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('visible(driver, ".ordenowa-legal-page__closed")', browser_flow)
         self.assertIn("leaked_values = [value for value in private_values if value and value in page.text]", browser_flow)
         self.assertNotIn("submitOrdenowaApproveSeller", browser_flow)
+
+    def test_browser_persists_localized_brand_and_operating_settings_for_every_locale(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        ci_settings = browser_flow.split("ci_settings = {", 1)[1].split(
+            "\n        }\n        for selector, value in ci_settings.items():", 1
+        )[0]
+        localized_fields = (
+            ("input", "brand", "name"),
+            ("input", "brand", "description"),
+            ("input", "brand", "slogan"),
+            ("input", "company_reference", "name"),
+            ("input", "customer_support", "hours"),
+            ("textarea", "shipping", ""),
+            ("textarea", "refund", ""),
+            ("input", "seo", "title"),
+            ("textarea", "seo", "description"),
+            ("input", "pwa", "name"),
+            ("input", "pwa", "short_name"),
+        )
+
+        for element, section, field in localized_fields:
+            for locale in ("ja-JP", "en-US", "ko-KR"):
+                profile_path = f"[{section}][{field}][{locale}]" if field else f"[{section}][{locale}]"
+                selector = f'{element}[name="profile{profile_path}"]'
+                with self.subTest(field=selector):
+                    self.assertIn(selector, ci_settings, msg=f"missing localized draft and publish coverage for {selector}")
+
+        self.assertEqual(
+            2,
+            browser_flow.count("for selector, expected in ci_settings.items():"),
+            "localized settings should be verified after draft save and again after publish",
+        )
+        emails = re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+", ci_settings)
+        self.assertTrue(emails, "the browser fixture should retain synthetic email values")
+        self.assertTrue(all(email.endswith(".invalid") for email in emails), "browser test emails must use the reserved .invalid domain")
 
     def test_browser_replaces_and_restores_the_primary_logo_in_draft(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")

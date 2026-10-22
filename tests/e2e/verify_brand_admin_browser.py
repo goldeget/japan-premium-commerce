@@ -480,13 +480,16 @@ def run() -> None:
                 raise AssertionError("official ORDENOWA source file is missing from the checkout")
             visible(driver, f'input[name="brand_uploads[{slot}]"]').send_keys(str(source.resolve()))
 
-        title = visible(driver, 'input[name="profile[seo][title][ja-JP]"]')
-        title.clear()
-        title.send_keys(SEO_TITLE)
-        pwa_name = visible(driver, 'input[name="profile[pwa][name][ja-JP]"]')
-        pwa_name.clear()
-        pwa_name.send_keys("ORDENOWA CI QA")
         ci_settings = {
+            'input[name="profile[brand][name][ja-JP]"]': "ORDENOWA CI BRAND JP",
+            'input[name="profile[brand][name][en-US]"]': "ORDENOWA CI BRAND EN",
+            'input[name="profile[brand][name][ko-KR]"]': "ORDENOWA CI BRAND KO",
+            'input[name="profile[brand][description][ja-JP]"]': "ORDENOWA CI BRAND DESCRIPTION JP",
+            'input[name="profile[brand][description][en-US]"]': "ORDENOWA CI BRAND DESCRIPTION EN",
+            'input[name="profile[brand][description][ko-KR]"]': "ORDENOWA CI BRAND DESCRIPTION KO",
+            'input[name="profile[brand][slogan][ja-JP]"]': "ORDENOWA CI BRAND SLOGAN JP",
+            'input[name="profile[brand][slogan][en-US]"]': "ORDENOWA CI BRAND SLOGAN EN",
+            'input[name="profile[brand][slogan][ko-KR]"]': "ORDENOWA CI BRAND SLOGAN KO",
             'input[name="profile[seller][legal_name][ja-JP]"]': "ORDENOWA CI SELLER JP",
             'input[name="profile[seller][legal_name][en-US]"]': "ORDENOWA CI SELLER EN",
             'input[name="profile[seller][legal_name][ko-KR]"]': "ORDENOWA CI SELLER KR",
@@ -503,6 +506,8 @@ def run() -> None:
             'input[name="profile[seller][support][phone]"]': "03-1111-2222",
             'input[name="profile[seller][support][email]"]': "seller-ci@example.invalid",
             'input[name="profile[company_reference][name][ja-JP]"]': "ORDENOWA CI REFERENCE",
+            'input[name="profile[company_reference][name][en-US]"]': "ORDENOWA CI REFERENCE EN",
+            'input[name="profile[company_reference][name][ko-KR]"]': "ORDENOWA CI REFERENCE KO",
             'input[name="profile[company_reference][corporate_number]"]': "0000000000000",
             'input[name="profile[company_reference][postal_code]"]': "000-0000",
             'input[name="profile[company_reference][address]"]': "ORDENOWA CI REFERENCE ADDRESS",
@@ -512,11 +517,27 @@ def run() -> None:
             'select[name="profile[company_reference][verification_status]"]': "user_provided_reference",
             'input[name="profile[customer_support][phone]"]': "000-0000-0000",
             'input[name="profile[customer_support][email]"]': "ci-test@example.invalid",
-            'input[name="profile[customer_support][hours][ja-JP]"]': "ORDENOWA CI SUPPORT HOURS",
+            'input[name="profile[customer_support][hours][ja-JP]"]': "ORDENOWA CI SUPPORT HOURS JP",
+            'input[name="profile[customer_support][hours][en-US]"]': "ORDENOWA CI SUPPORT HOURS EN",
+            'input[name="profile[customer_support][hours][ko-KR]"]': "ORDENOWA CI SUPPORT HOURS KO",
             'textarea[name="profile[shipping][ja-JP]"]': "ORDENOWA CI SHIPPING POLICY",
+            'textarea[name="profile[shipping][en-US]"]': "ORDENOWA CI SHIPPING POLICY EN",
+            'textarea[name="profile[shipping][ko-KR]"]': "ORDENOWA CI SHIPPING POLICY KO",
             'textarea[name="profile[refund][ja-JP]"]': "ORDENOWA CI REFUND POLICY",
+            'textarea[name="profile[refund][en-US]"]': "ORDENOWA CI REFUND POLICY EN",
+            'textarea[name="profile[refund][ko-KR]"]': "ORDENOWA CI REFUND POLICY KO",
+            'input[name="profile[seo][title][ja-JP]"]': SEO_TITLE,
+            'input[name="profile[seo][title][en-US]"]': "ORDENOWA CI SEO TITLE EN",
+            'input[name="profile[seo][title][ko-KR]"]': "ORDENOWA CI SEO TITLE KO",
             'textarea[name="profile[seo][description][ja-JP]"]': SEO_DESCRIPTION,
+            'textarea[name="profile[seo][description][en-US]"]': "ORDENOWA CI SEO DESCRIPTION EN",
+            'textarea[name="profile[seo][description][ko-KR]"]': "ORDENOWA CI SEO DESCRIPTION KO",
+            'input[name="profile[pwa][name][ja-JP]"]': "ORDENOWA CI QA",
+            'input[name="profile[pwa][name][en-US]"]': "ORDENOWA CI APP EN",
+            'input[name="profile[pwa][name][ko-KR]"]': "ORDENOWA CI APP KO",
             'input[name="profile[pwa][short_name][ja-JP]"]': "ORDENOWA CI",
+            'input[name="profile[pwa][short_name][en-US]"]': "ORDENOWA EN",
+            'input[name="profile[pwa][short_name][ko-KR]"]': "ORDENOWA KO",
             'input[name="profile[pwa][theme_color]"]': "#244a7d",
             'input[name="profile[pwa][background_color]"]': "#f5f7fa",
         }
@@ -574,7 +595,14 @@ def run() -> None:
         )
         current_draft_row.find_element(By.CSS_SELECTOR, 'button[name="submitOrdenowaPreview"]').click()
         preview = visible(driver, ".ordenowa-profile-preview")
-        for expected in ("000-0000-0000", "ORDENOWA CI SHIPPING POLICY", "ORDENOWA CI REFUND POLICY"):
+        for expected in (
+            "ORDENOWA CI BRAND JP",
+            "ORDENOWA CI BRAND DESCRIPTION JP",
+            "ORDENOWA CI BRAND SLOGAN JP",
+            "000-0000-0000",
+            "ORDENOWA CI SHIPPING POLICY",
+            "ORDENOWA CI REFUND POLICY",
+        ):
             if expected not in preview.text:
                 raise AssertionError("Korean admin operating settings are missing from the private preview")
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", preview)
