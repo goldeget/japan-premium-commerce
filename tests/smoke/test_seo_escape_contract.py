@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 THEMES = ROOT / "themes"
+BRAND_BROWSER = ROOT / "tests" / "e2e" / "verify_brand_admin_browser.py"
 HEAD = THEMES / "kuranea" / "templates" / "_partials" / "head.tpl"
 LEGACY_JSONLD = (
     THEMES
@@ -273,6 +274,27 @@ class SeoEscapeContract(unittest.TestCase):
         self.assertIn('<meta name="description" content="{block name=\'head_seo_description\'}{$ordenowaResolvedSeoDescription|escape:\'htmlall\':\'UTF-8\'}{/block}">', source)
         self.assertEqual(1, source.count('content="{$ordenowaResolvedSeoTitle|escape:\'htmlall\':\'UTF-8\'}"'))
         self.assertEqual(1, source.count('content="{$ordenowaResolvedSeoDescription|escape:\'htmlall\':\'UTF-8\'}"'))
+
+    def test_isolated_brand_browser_flow_exercises_hostile_inert_seo_and_jsonld_values(self):
+        source = BRAND_BROWSER.read_text(encoding="utf-8")
+        self.assertIn(
+            'SEO_TITLE = \'ORDENOWA CI QA " </title><meta id="ordenowa-seo-title-inert-sentinel">\'',
+            source,
+        )
+        self.assertIn(
+            'SEO_DESCRIPTION = \'ORDENOWA CI SEO description \"><meta id="ordenowa-seo-description-inert-sentinel">\'',
+            source,
+        )
+        self.assertIn(
+            'SEO_JSONLD_BRAND_NAME = \'ORDENOWA CI BRAND JP </script><meta id="ordenowa-jsonld-inert-sentinel">\'',
+            source,
+        )
+        self.assertIn('\'input[name="profile[brand][name][ja-JP]"]\': SEO_JSONLD_BRAND_NAME', source)
+        self.assertIn("def assert_hostile_seo_and_jsonld_rendering(", source)
+        self.assertIn("assert_hostile_seo_and_jsonld_rendering(", source)
+        self.assertIn("json.loads(script_source)", source)
+        self.assertIn("document.getElementById(marker)", source)
+        self.assertIn("document.querySelectorAll('script[type=\"application/ld+json\"]')", source)
 
 
 if __name__ == "__main__":

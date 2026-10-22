@@ -34,10 +34,11 @@ OFFICIAL_UPLOADS = {
     "favicon_symbol": SOURCES / "ORDENOWA-favicon-source.png",
     "pwa_icon": SOURCES / "ORDENOWA-pwa-icon-source.png",
 }
-SEO_TITLE = "ORDENOWA CI QA"
-SEO_DESCRIPTION = "ORDENOWA CI SEO description"
+SEO_TITLE = 'ORDENOWA CI QA " </title><meta id="ordenowa-seo-title-inert-sentinel">'
+SEO_DESCRIPTION = 'ORDENOWA CI SEO description "><meta id="ordenowa-seo-description-inert-sentinel">'
 SEO_TITLE_KO = "ORDENOWA CI SEO TITLE KO"
 SEO_DESCRIPTION_KO = "ORDENOWA CI SEO DESCRIPTION KO"
+SEO_JSONLD_BRAND_NAME = 'ORDENOWA CI BRAND JP </script><meta id="ordenowa-jsonld-inert-sentinel">'
 BRAND_DRAFT_REPLACEMENT_ATTEMPTS = 3
 BRAND_DIAGNOSTIC_MAX_MATCHES = 5
 BRAND_DIAGNOSTIC_CONTEXT_CHARS = 64
@@ -53,6 +54,46 @@ def assert_uploaded_derivative_url(url: str, source: Path, filename: str, role: 
     expected_path = expected_derivative_path(source, filename)
     if not urlparse(url).path.endswith(expected_path):
         raise AssertionError(f"published {role} does not use the uploaded official source derivative")
+
+
+def json_contains_string(value: object, expected: str) -> bool:
+    if isinstance(value, str):
+        return value == expected
+    if isinstance(value, list):
+        return any(json_contains_string(item, expected) for item in value)
+    if isinstance(value, dict):
+        return any(json_contains_string(item, expected) for item in value.values())
+    return False
+
+
+def assert_hostile_seo_and_jsonld_rendering(
+    results: dict,
+    expected_title: str,
+    expected_description: str,
+    expected_jsonld_brand_name: str,
+) -> None:
+    if results.get("title") != expected_title:
+        raise AssertionError("Smarty did not preserve the complete SEO title as inert title text")
+    if results.get("description") != expected_description:
+        raise AssertionError("Smarty did not preserve the complete SEO description attribute value")
+    if results.get("ogTitle") != expected_title or results.get("ogDescription") != expected_description:
+        raise AssertionError("Smarty did not preserve the complete Open Graph metadata attribute values")
+
+    sentinels = results.get("inertSentinels") or []
+    if sentinels:
+        raise AssertionError("hostile SEO input created inert HTML elements: " + ", ".join(sentinels))
+
+    scripts = results.get("jsonLdScripts") or []
+    if not scripts:
+        raise AssertionError("the rendered customer page has no JSON-LD for the script-safe serialization check")
+    parsed_scripts = []
+    for script_source in scripts:
+        try:
+            parsed_scripts.append(json.loads(script_source))
+        except (TypeError, ValueError):
+            raise AssertionError("Smarty emitted invalid JSON-LD script text") from None
+    if not any(json_contains_string(script, expected_jsonld_brand_name) for script in parsed_scripts):
+        raise AssertionError("JSON-LD did not preserve the hostile brand name as a decoded string value")
 
 
 def find_asset_url(items: list[dict], rel: str, source: Path, filename: str) -> str:
@@ -359,6 +400,7 @@ def assert_public_brand_assets(
     expected_html_lang: str = "ja-JP",
     seo_title: str = SEO_TITLE,
     seo_description: str = SEO_DESCRIPTION,
+    jsonld_brand_name: str = SEO_JSONLD_BRAND_NAME,
     pwa_name: str = "ORDENOWA CI QA",
     pwa_short_name: str = "ORDENOWA CI",
     stage_prefix: str,
@@ -412,12 +454,27 @@ def assert_public_brand_assets(
           const ogTitle = document.querySelector('meta[property="og:title"]')?.content || '';
           const ogDescription = document.querySelector('meta[property="og:description"]')?.content || '';
           const themeColor = document.querySelector('meta[name="theme-color"]')?.content || '';
-          return {assetLinks, og, ogImage, manifest, icons, title: document.title, htmlLang: document.documentElement.lang, description, ogTitle, ogDescription, themeColor};
+          const jsonLdScripts = [...document.querySelectorAll('script[type="application/ld+json"]')]
+            .map(script => script.textContent || '');
+          const inertSentinels = [
+            'ordenowa-seo-title-inert-sentinel',
+            'ordenowa-seo-description-inert-sentinel',
+            'ordenowa-jsonld-inert-sentinel'
+          ].filter(marker => document.getElementById(marker));
+          return {assetLinks, og, ogImage, manifest, icons, title: document.title, htmlLang: document.documentElement.lang, description, ogTitle, ogDescription, themeColor, jsonLdScripts, inertSentinels};
         })().then(done).catch(error => done({error: String(error)}));
         """
     )
     if results.get("error"):
         raise AssertionError("brand favicon, Apple icon, OG image, or PWA asset failed browser decoding")
+
+    set_assertion_stage("hostile_seo_and_jsonld_rendering")
+    assert_hostile_seo_and_jsonld_rendering(
+        results,
+        seo_title,
+        seo_description,
+        jsonld_brand_name,
+    )
 
     set_assertion_stage("public_asset_derivative_paths")
     rels = {item["rel"] for item in results["assetLinks"]}
@@ -595,7 +652,7 @@ def run() -> None:
             visible(driver, f'input[name="brand_uploads[{slot}]"]').send_keys(str(source.resolve()))
 
         ci_settings = {
-            'input[name="profile[brand][name][ja-JP]"]': "ORDENOWA CI BRAND JP",
+            'input[name="profile[brand][name][ja-JP]"]': SEO_JSONLD_BRAND_NAME,
             'input[name="profile[brand][name][en-US]"]': "ORDENOWA CI BRAND EN",
             'input[name="profile[brand][name][ko-KR]"]': "ORDENOWA CI BRAND KO",
             'input[name="profile[brand][description][ja-JP]"]': "ORDENOWA CI BRAND DESCRIPTION JP",
@@ -791,6 +848,7 @@ def run() -> None:
             expected_html_lang="ko-KR",
             seo_title=SEO_TITLE_KO,
             seo_description=SEO_DESCRIPTION_KO,
+            jsonld_brand_name="ORDENOWA CI BRAND KO",
             pwa_name="ORDENOWA CI APP KO",
             pwa_short_name="ORDENOWA KO",
             stage_prefix="published_korean_customer_brand",

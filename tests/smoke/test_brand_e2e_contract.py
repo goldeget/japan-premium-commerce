@@ -230,8 +230,14 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('seo_description: str = SEO_DESCRIPTION', published_assets)
         self.assertIn('if results["ogTitle"] != seo_title:', published_assets)
         self.assertIn('if results["ogDescription"] != seo_description:', published_assets)
-        self.assertIn("SEO_TITLE = \"ORDENOWA CI QA\"", browser_flow)
-        self.assertIn("SEO_DESCRIPTION = \"ORDENOWA CI SEO description\"", browser_flow)
+        self.assertIn(
+            'SEO_TITLE = \'ORDENOWA CI QA " </title><meta id="ordenowa-seo-title-inert-sentinel">\'',
+            browser_flow,
+        )
+        self.assertIn(
+            'SEO_DESCRIPTION = \'ORDENOWA CI SEO description \"><meta id="ordenowa-seo-description-inert-sentinel">\'',
+            browser_flow,
+        )
 
     def test_publish_stale_click_is_instrumented_without_retry_or_sensitive_dom_data(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
@@ -362,6 +368,7 @@ class BrandE2EContractTests(unittest.TestCase):
             '            expected_html_lang="ko-KR",\n'
             '            seo_title=SEO_TITLE_KO,\n'
             '            seo_description=SEO_DESCRIPTION_KO,\n'
+            '            jsonld_brand_name="ORDENOWA CI BRAND KO",\n'
             '            pwa_name="ORDENOWA CI APP KO",\n'
             '            pwa_short_name="ORDENOWA KO",\n'
             '            stage_prefix="published_korean_customer_brand",\n'
