@@ -83,6 +83,9 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertIn("steps.checkout_customer_browser_qa.outcome == 'failure'", diagnostic_step)
         self.assertIn('MYSQL_PWD="$MARIADB_ROOT_PASSWORD"', diagnostic_step)
         self.assertIn('"$MARIADB_DATABASE"', diagnostic_step)
+        self.assertIn("::notice title=ORDENOWA checkout rewrite database::", diagnostic_step)
+        self.assertIn('"$route_settings_hex"', diagnostic_step)
+        self.assertIn('"$japanese_order_rewrite_hex"', diagnostic_step)
         for expected in (
             "PS_REWRITING_SETTINGS",
             "PS_CANONICAL_REDIRECT",
