@@ -24,6 +24,9 @@ class AdminBusinessProfileBanksController extends ModuleAdminController
 
     public function initContent(): void
     {
+        $this->viewAccess();
+        $this->access('edit');
+
         $bankAccess = (array) ($this->tabAccess ?? []);
         if (!AdminAccessPolicy::canViewBank($bankAccess)) {
             http_response_code(403);

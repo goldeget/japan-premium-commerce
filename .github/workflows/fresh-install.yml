@@ -323,7 +323,11 @@ jobs:
           set -e
           if [ "$browser_status" -ne 0 ]; then
             failure_line=$(rg '^FAIL:' "$log_file" | tail -n 1 || true)
+            diagnostics_line=$(rg '^ORDENOWA_BRAND_SETTINGS_DIAGNOSTICS=' "$log_file" | tail -n 1 || true)
             printf 'ORDENOWA brand browser failure: %s\n' "${failure_line:-See the uploaded brand browser log for the failing stage.}" >> "$GITHUB_STEP_SUMMARY"
+            if [ -n "$diagnostics_line" ]; then
+              printf '%s\n' "$diagnostics_line" >> "$GITHUB_STEP_SUMMARY"
+            fi
             exit "$browser_status"
           fi
 

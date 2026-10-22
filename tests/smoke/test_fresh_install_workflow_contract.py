@@ -96,6 +96,30 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         storefront_flow = (ROOT / "tests" / "e2e" / "verify_storefront_browser.py").read_text(encoding="utf-8")
         self.assertIn("payment-option", storefront_flow, "the browser suite must keep live checkout controls inaccessible")
 
+    def test_brand_settings_browser_failure_emits_redacted_page_state_and_screenshot(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        brand_flow = (ROOT / "tests" / "e2e" / "verify_brand_admin_browser.py").read_text(encoding="utf-8")
+        for field in (
+            "settings_form_visible",
+            "brand_section_visible",
+            "access_denied_marker",
+            "controller_load_error_marker",
+            "general_error_marker",
+            "login_form_visible",
+            "pathname",
+            "title",
+        ):
+            self.assertIn(field, brand_flow)
+        navigation = brand_flow.split('driver.get(settings_url)', 1)[1].split('stage = "official_asset_upload"', 1)[0]
+        diagnostics = brand_flow.split("def emit_brand_settings_diagnostics", 1)[1].split("def assert_public_brand_assets", 1)[0]
+        self.assertLess(navigation.index('driver.save_screenshot(str(DEST / "brand-settings-after-navigation.png"))'), navigation.index('visible(driver, "form.ordenowa-profile-settings")'))
+        self.assertIn("emit_brand_settings_diagnostics(driver)", navigation)
+        self.assertIn("ORDENOWA_BRAND_SETTINGS_DIAGNOSTICS=", diagnostics)
+        self.assertIn("window.location.pathname", diagnostics)
+        self.assertNotIn("window.location.search", diagnostics)
+        self.assertIn('rg \'^ORDENOWA_BRAND_SETTINGS_DIAGNOSTICS=\' "$log_file"', workflow)
+        self.assertIn('diagnostics_line', workflow)
+
     def test_ci_uses_the_module_updater_for_the_official_japan_post_archive(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         postal_step = workflow.split("- name: Download and import official Japan Post KEN_ALL data", 1)[1].split("- name:", 1)[0]

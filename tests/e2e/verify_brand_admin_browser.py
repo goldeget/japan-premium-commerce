@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -35,6 +36,30 @@ def image_is_rendered(driver: webdriver.Chrome, selector: str) -> dict:
     return driver.execute_script(
         "return {src: arguments[0].currentSrc || arguments[0].src, width: arguments[0].naturalWidth, height: arguments[0].naturalHeight};",
         image,
+    )
+
+
+def emit_brand_settings_diagnostics(driver: webdriver.Chrome) -> None:
+    diagnostics = driver.execute_script(
+        r"""
+        const bodyText = document.body?.innerText || '';
+        const brandSection = document.querySelector('#ordenowa-brand');
+        const visible = element => Boolean(element && element.getClientRects().length);
+        return {
+          settings_form_visible: visible(document.querySelector('form.ordenowa-profile-settings')),
+          brand_section_visible: Boolean(visible(brandSection) && /브랜드·로고/.test(brandSection.innerText || '')),
+          access_denied_marker: /(?:access denied|permission denied|you do not have permission|forbidden|권한이 없습니다|접근이 거부|\b403\b)/i.test(bodyText),
+          controller_load_error_marker: /(?:controller|module).{0,120}(?:not found|missing|could not be loaded|failed to load|does not exist)|(?:not found|missing|could not be loaded|failed to load|does not exist).{0,120}(?:controller|module)/i.test(bodyText),
+          general_error_marker: /(?:internal server error|server error|fatal error|uncaught exception|whoops!?|oops!? an error occurred|something went wrong|\b500\b)/i.test(bodyText),
+          login_form_visible: visible(document.querySelector('#login_form, #login-form, form[action*="/login"], input[type="password"]')),
+          pathname: window.location.pathname,
+          title: document.title
+        };
+        """
+    )
+    print(
+        "ORDENOWA_BRAND_SETTINGS_DIAGNOSTICS=" + json.dumps(diagnostics, ensure_ascii=False, sort_keys=True),
+        file=sys.stderr,
     )
 
 
@@ -139,9 +164,14 @@ def run() -> None:
 
         stage = "korean_brand_settings_form"
         driver.get(settings_url)
-        visible(driver, "form.ordenowa-profile-settings")
-        if "브랜드·로고" not in driver.find_element(By.ID, "ordenowa-brand").text:
-            raise AssertionError("Korean brand settings section is missing")
+        driver.save_screenshot(str(DEST / "brand-settings-after-navigation.png"))
+        try:
+            visible(driver, "form.ordenowa-profile-settings")
+            if "브랜드·로고" not in driver.find_element(By.ID, "ordenowa-brand").text:
+                raise AssertionError("Korean brand settings section is missing")
+        except Exception:
+            emit_brand_settings_diagnostics(driver)
+            raise
 
         stage = "official_asset_upload"
         uploads = {

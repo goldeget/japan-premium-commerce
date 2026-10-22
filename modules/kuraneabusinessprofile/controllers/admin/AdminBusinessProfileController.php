@@ -27,6 +27,10 @@ class AdminBusinessProfileController extends ModuleAdminController
 
     public function initContent(): void
     {
+        $this->viewAccess();
+        $this->access('edit');
+        $this->access('add');
+
         if (!AdminAccessPolicy::canView((array) ($this->tabAccess ?? []))) {
             http_response_code(403);
             $this->content = '<div class="alert alert-danger">쇼핑몰 운영 설정을 조회할 권한이 없습니다.</div>';

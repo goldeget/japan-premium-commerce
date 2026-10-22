@@ -16,6 +16,25 @@ def init_content_source(path: Path, next_method: str) -> str:
 
 
 class AdminAccessSourceContractTests(unittest.TestCase):
+    def assert_lazy_access_is_initialized_before_policy(
+        self,
+        source: str,
+        policy_method: str,
+        required_permissions: tuple[str, ...],
+    ) -> None:
+        policy_at = source.index(f"if (!AdminAccessPolicy::{policy_method}(")
+        access_calls = ["$this->viewAccess();"]
+        access_calls.extend(f"$this->access('{permission}');" for permission in required_permissions)
+
+        previous_at = -1
+        for call in access_calls:
+            with self.subTest(access_initializer=call):
+                self.assertIn(call, source)
+                initializer_at = source.index(call)
+                self.assertLess(previous_at, initializer_at, "Lazy access checks should be initialized in order.")
+                self.assertLess(initializer_at, policy_at, f"{call} must run before {policy_method} policy evaluation.")
+                previous_at = initializer_at
+
     def assert_denied_before_admin_work(
         self,
         source: str,
@@ -58,6 +77,7 @@ class AdminAccessSourceContractTests(unittest.TestCase):
 
     def test_business_profile_read_denial_precedes_repository_actions_and_form_render(self) -> None:
         source = init_content_source(PROFILE_CONTROLLER, "    private function processProfileActions(")
+        self.assert_lazy_access_is_initialized_before_policy(source, "canView", ("edit", "add"))
         self.assert_denied_before_admin_work(
             source,
             "canView",
@@ -73,6 +93,7 @@ class AdminAccessSourceContractTests(unittest.TestCase):
 
     def test_bank_profile_read_denial_precedes_repository_and_form_render(self) -> None:
         source = init_content_source(BANKS_CONTROLLER, "    private function renderFeedback(")
+        self.assert_lazy_access_is_initialized_before_policy(source, "canViewBank", ("edit",))
         self.assert_denied_before_admin_work(
             source,
             "canViewBank",
