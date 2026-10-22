@@ -28,6 +28,7 @@ on:
       - 'tests/smoke/test_browser_qa_artifacts_contract.py'
       - 'tests/smoke/test_fresh_install_workflow_contract.py'
       - 'tests/smoke/test_customer_account_browser_flow_contract.py'
+      - 'tests/smoke/test_korean_customer_login_contract.py'
       - 'tests/fixtures/ci-checkout.compose.yaml'
       - 'tests/postcode/**'
       - 'tests/e2e/**'
@@ -58,6 +59,7 @@ on:
       - 'tests/smoke/test_browser_qa_artifacts_contract.py'
       - 'tests/smoke/test_fresh_install_workflow_contract.py'
       - 'tests/smoke/test_customer_account_browser_flow_contract.py'
+      - 'tests/smoke/test_korean_customer_login_contract.py'
       - 'tests/fixtures/ci-checkout.compose.yaml'
       - 'tests/postcode/**'
       - 'tests/e2e/**'
@@ -104,7 +106,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_docker_run_recovery -v
 
       - name: Verify fresh-install workflow contracts
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_customer_account_browser_flow_contract -v
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_korean_customer_login_contract -v
 
       - name: Verify isolated unpaid checkout contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract -v

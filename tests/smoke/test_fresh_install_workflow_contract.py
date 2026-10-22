@@ -25,8 +25,10 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "  workflow_dispatch:", 1
         )[0]
         account_contract_path = "tests/smoke/test_customer_account_browser_flow_contract.py"
+        login_contract_path = "tests/smoke/test_korean_customer_login_contract.py"
         for event, event_block in (("push", push_event), ("pull_request", pull_request_event)):
             self.assertIn(account_contract_path, event_block, f"account contract changes do not trigger {event} CI")
+            self.assertIn(login_contract_path, event_block, f"Korean login contract changes do not trigger {event} CI")
 
         contract_step = workflow.split("- name: Verify fresh-install workflow contracts", 1)[1].split(
             "- name:", 1
@@ -35,6 +37,11 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "tests.smoke.test_customer_account_browser_flow_contract",
             contract_step,
             "fresh-install CI does not run the offline customer account flow contract",
+        )
+        self.assertIn(
+            "tests.smoke.test_korean_customer_login_contract",
+            contract_step,
+            "fresh-install CI does not run the Korean customer login contract",
         )
 
     def test_customer_account_e2e_uses_isolated_mailpit_and_publishes_browser_logs(self) -> None:

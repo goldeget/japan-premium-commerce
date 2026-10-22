@@ -42,7 +42,7 @@ RUN_ATTEMPT = re.sub(r"[^0-9]", "", os.environ["GITHUB_RUN_ATTEMPT"])
 DEST.mkdir(parents=True, exist_ok=True)
 
 KOREAN_EMAIL_ACCESSIBLE_NAME = re.compile(
-    r"(?:이메일|전자\s*우편|메일\s*주소|e[\s-]?mail)", re.IGNORECASE
+    r"(?:이메일|전자\s*우편|메일\s*주소)", re.IGNORECASE
 )
 USER_ID_LOOKUP_ACCESSIBLE_NAME = re.compile(
     r"(?:아이디|사용자\s*id|user\s*id|username)", re.IGNORECASE
@@ -135,25 +135,92 @@ def visible(driver: webdriver.Chrome, selector: str):
 
 
 def assert_korean_email_login_form(driver: webdriver.Chrome) -> None:
-    driver.get(f"{BASE}/ko/login")
-    assert_canonical_static_route(driver, "ko/login")
+    # Use PrestaShop's generated language and account links. The Korean route
+    # slug is installation metadata and must not be guessed as `/ko/login`.
+    driver.get(f"{BASE}/")
+    korean_language_option = WebDriverWait(driver, 30).until(
+        EC.presence_of_element_located(
+            (By.CSS_SELECTOR, 'select.js-language-selector option[data-iso-code="ko"]')
+        )
+    )
+    korean_language_href = korean_language_option.get_attribute("value") or ""
+    if not korean_language_href:
+        raise AssertionError("the PrestaShop language selector has no Korean destination")
+    korean_language_url = urljoin(driver.current_url, korean_language_href)
+    korean_language_location = urlparse(korean_language_url)
+    base_location = urlparse(BASE)
+    if (
+        korean_language_location.scheme != base_location.scheme
+        or korean_language_location.hostname != base_location.hostname
+        or korean_language_location.port != base_location.port
+    ):
+        raise AssertionError("the Korean language selector changed the isolated shop origin")
+    driver.get(korean_language_url)
+
+    document_language = (driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower()
+    if not document_language.startswith("ko"):
+        raise AssertionError("the generated Korean language destination did not render Korean")
+
+    sign_in_links = driver.find_elements(
+        By.CSS_SELECTOR,
+        '#_desktop_ps_customersignin a[href], #_mobile_ps_customersignin a[href]',
+    )
+    sign_in_href = next(
+        (link.get_attribute("href") for link in sign_in_links if link.get_attribute("href")),
+        "",
+    )
+    if not sign_in_href:
+        raise AssertionError("the Korean storefront has no generated customer sign-in link")
+    login_url = urljoin(driver.current_url, sign_in_href)
+    login_location = urlparse(login_url)
+    if (
+        login_location.scheme != base_location.scheme
+        or login_location.hostname != base_location.hostname
+        or login_location.port != base_location.port
+    ):
+        raise AssertionError("the customer sign-in link changed the isolated shop origin")
+    driver.get(login_url)
+
     visible(driver, "#login-form")
-    email_field = visible(driver, '#login-form input[name="email"]')
+    email_field = visible(driver, '#login-form input[type="email"]')
+    if email_field.get_attribute("name") != "email":
+        raise AssertionError("Korean customer login does not submit the email field")
     if email_field.get_attribute("type") != "email":
         raise AssertionError("Korean customer login is not email-based")
 
     document_language = (driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower()
     if not document_language.startswith("ko"):
-        raise AssertionError("/ko/login did not render a Korean-language document")
+        raise AssertionError("the generated sign-in destination did not preserve Korean")
 
-    email_accessible_name = " ".join((email_field.accessible_name or "").split())
+    email_field_id = email_field.get_attribute("id") or ""
+    associated_label = next(
+        (
+            label
+            for label in driver.find_elements(By.CSS_SELECTOR, "#login-form label[for]")
+            if label.get_attribute("for") == email_field_id
+        ),
+        None,
+    )
+    aria_label = " ".join((email_field.get_attribute("aria-label") or "").split())
+    visible_label = (
+        " ".join((associated_label.text or "").split())
+        if associated_label is not None and associated_label.is_displayed()
+        else ""
+    )
+    email_accessible_name = aria_label or visible_label
     if not KOREAN_EMAIL_ACCESSIBLE_NAME.search(email_accessible_name):
         raise AssertionError("Korean login email field has no accessible label that identifies email")
     if USER_ID_LOOKUP_ACCESSIBLE_NAME.search(email_accessible_name):
         raise AssertionError("Korean login field's accessible label implies a separate user ID login")
 
     password_reset_link = visible(driver, '#login-form a[href]')
-    password_reset_name = " ".join((password_reset_link.accessible_name or "").split())
+    password_reset_name = " ".join(
+        (
+            (password_reset_link.get_attribute("aria-label") or "")
+            + " "
+            + (password_reset_link.text or "")
+        ).split()
+    )
     if not PASSWORD_RESET_ACCESSIBLE_NAME.search(password_reset_name):
         raise AssertionError("Korean login recovery link is not identified as password reset")
     if USER_ID_LOOKUP_ACCESSIBLE_NAME.search(password_reset_name):
