@@ -14,6 +14,24 @@ BRAND_PACK = ROOT / "assets" / "brand" / "ordenowa"
 
 
 class BrandE2EContractTests(unittest.TestCase):
+    def test_browser_rejects_legacy_brand_in_rendered_customer_and_admin_pages(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        helper_start = browser_flow.index("def assert_no_legacy_brand_in_rendered_page(")
+        helper_end = browser_flow.index("\ndef ", helper_start + 1)
+        helper = browser_flow[helper_start:helper_end]
+        published_assets = browser_flow.split("def assert_public_brand_assets(", 1)[1].split(
+            "def assert_seller_disclosures_remain_gated", 1
+        )[0]
+        admin_login = browser_flow.split('stage = "admin_login_after_publish"', 1)[1].split(
+            'print("PASS:', 1
+        )[0]
+
+        self.assertIn("document.body?.innerText", helper)
+        self.assertIn("document.title", helper)
+        self.assertIn("KURANEA", helper)
+        self.assertIn("assert_no_legacy_brand_in_rendered_page(driver, label + \" storefront\")", published_assets)
+        self.assertIn('assert_no_legacy_brand_in_rendered_page(driver, "admin login")', admin_login)
+
     def test_browser_persists_seller_profile_fields_without_opening_disclosures(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
 

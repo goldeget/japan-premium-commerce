@@ -268,6 +268,14 @@ def image_is_rendered(driver: webdriver.Chrome, selector: str) -> dict:
     )
 
 
+def assert_no_legacy_brand_in_rendered_page(driver: webdriver.Chrome, label: str) -> None:
+    rendered_text = driver.execute_script(
+        "return [document.title || '', document.body?.innerText || ''].join('\\n');"
+    )
+    if "kuranea" in rendered_text.casefold():
+        raise AssertionError("legacy KURANEA brand was rendered on " + label)
+
+
 def emit_brand_settings_diagnostics(driver: webdriver.Chrome) -> None:
     diagnostics = driver.execute_script(
         r"""
@@ -311,6 +319,7 @@ def assert_public_brand_assets(
     logo = image_is_rendered(driver, "picture img.kuranea-brand__image")
     if logo["width"] < 1 or expected_logo not in logo["src"]:
         raise AssertionError("approved ORDENOWA header logo did not render for " + label)
+    assert_no_legacy_brand_in_rendered_page(driver, label + " storefront")
     assert_uploaded_derivative_url(
         logo["src"], OFFICIAL_UPLOADS["primary_logo"], expected_logo, label + " header logo"
     )
@@ -721,6 +730,7 @@ def run() -> None:
         assert_uploaded_derivative_url(
             login_logo["src"], OFFICIAL_UPLOADS["primary_logo"], "admin-login.png", "admin login logo"
         )
+        assert_no_legacy_brand_in_rendered_page(driver, "admin login")
         driver.save_screenshot(str(DEST / "brand-admin-login-after-publish.png"))
 
         print("PASS: official ORDENOWA uploads, Korean draft preview, publish, PC/mobile logos, admin login, favicon, Apple icon, PWA, OG, and SEO")
