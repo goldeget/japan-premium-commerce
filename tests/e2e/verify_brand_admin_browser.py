@@ -76,6 +76,21 @@ def wait_for_draft_save_confirmation(driver: webdriver.Chrome) -> None:
     )
 
 
+def wait_for_publish_confirmation(driver: webdriver.Chrome) -> None:
+    def publication_is_visible(browser: webdriver.Chrome) -> bool:
+        try:
+            success_alert = any(
+                alert.is_displayed() and "변경사항을 게시했습니다." in alert.text
+                for alert in browser.find_elements(By.CSS_SELECTOR, ".alert.alert-success")
+            )
+            company = browser.find_element(By.ID, "ordenowa-company")
+            return success_alert and "확인 대기" in company.text
+        except StaleElementReferenceException:
+            return False
+
+    WebDriverWait(driver, 30).until(publication_is_visible)
+
+
 def assert_saved_primary_logo(driver: webdriver.Chrome, source: Path, role: str) -> None:
     assert_uploaded_derivative_url(
         asset_preview_url_for_field(driver, "ordenowa-brand-assets-header_desktop"),
@@ -646,9 +661,7 @@ def run() -> None:
             emit_publish_target_diagnostics(driver, publish_selector)
             raise
         stage = "publish_confirmation"
-        WebDriverWait(driver, 30).until(lambda browser: "변경사항을 게시했습니다" in browser.find_element(By.TAG_NAME, "body").text)
-        if "확인 대기" not in driver.find_element(By.ID, "ordenowa-company").text:
-            raise AssertionError("seller authorization must remain pending after brand publication")
+        wait_for_publish_confirmation(driver)
         for selector, expected in ci_settings.items():
             if visible(driver, selector).get_attribute("value") != expected:
                 raise AssertionError("a Korean admin operating setting did not persist after publication")

@@ -43,7 +43,7 @@ class BrandE2EContractTests(unittest.TestCase):
             browser_flow.count("for selector, expected in ci_settings.items():"),
             "seller profile settings should be verified after draft save and again after publish",
         )
-        self.assertIn('if "확인 대기" not in driver.find_element(By.ID, "ordenowa-company").text:', browser_flow)
+        self.assertIn('"확인 대기" in company.text', browser_flow)
         self.assertIn("assert_seller_disclosures_remain_gated(driver, private_values)", browser_flow)
         self.assertIn('visible(driver, ".ordenowa-legal-page__closed")', browser_flow)
         self.assertIn("leaked_values = [value for value in private_values if value and value in page.text]", browser_flow)
@@ -188,6 +188,28 @@ class BrandE2EContractTests(unittest.TestCase):
             with self.subTest(sensitive_dom_field=sensitive_dom_field):
                 self.assertNotIn(sensitive_dom_field, helper)
         self.assertIn("ORDENOWA_PUBLISH_STALE_TARGET=", helper)
+
+    def test_publish_confirmation_retries_stale_dom_polls_without_replaying_publish(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        confirmation = browser_flow.split("def wait_for_publish_confirmation", 1)[1].split(
+            "def assert_saved_primary_logo", 1
+        )[0]
+        publish_stage = browser_flow.split('stage = "publish_confirmation"', 1)[1].split(
+            'stage = "published_desktop_customer_brand"', 1
+        )[0]
+        click_stage = browser_flow.split('stage = "publish_button_click"', 1)[1].split(
+            'stage = "publish_confirmation"', 1
+        )[0]
+
+        self.assertIn('find_elements(By.CSS_SELECTOR, ".alert.alert-success")', confirmation)
+        self.assertIn("except StaleElementReferenceException:", confirmation)
+        self.assertIn("return False", confirmation)
+        self.assertIn("변경사항을 게시했습니다.", confirmation)
+        self.assertIn('find_element(By.ID, "ordenowa-company")', confirmation)
+        self.assertIn('"확인 대기" in company.text', confirmation)
+        self.assertIn("wait_for_publish_confirmation(driver)", publish_stage)
+        self.assertNotIn('find_element(By.TAG_NAME, "body")', publish_stage)
+        self.assertNotIn("retry", click_stage.lower())
 
     def test_browser_checks_published_derivatives_from_uploaded_official_sources(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
