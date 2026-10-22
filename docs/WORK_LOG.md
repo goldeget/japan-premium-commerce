@@ -119,4 +119,29 @@
 - 브라우저: 실제 사이트 origin의 모듈 JS와 DB-backed API를 주소 폼 계약 fixture에 연결했다. PC 1440×900 및 모바일 390×844에서 `1000004` 후보 선택, 도도부현/도시/町域 매핑, 일본어 문자열 검색, `004-0000`의 복수 선택, 건물명 수동 편집 보존을 확인했다. 브라우저 JS 오류는 0건이다. 증거 PNG는 `artifacts/qa/phase1a/postcode-widget-desktop.png`, `postcode-widget-mobile.png`다. 실제 checkout 페이지·주문 저장 화면은 아니므로 해당 검증은 미완료다.
 - 테스트: smoke/계약 28/28, 관리자 번역 계약 6/6, PHP importer lint, 주소 도메인 및 후보 API 테스트, `bash -n`, `docker compose config --quiet`, `git diff --check` 통과. 관리자 한국어 100%와 실제 checkout 주소/주문 및 관리자 주문 표시 검증은 미완료다.
 - 신규 설치/환경: 새 빈 설치 run `39697612835`가 `Build and install into unique empty volumes`에서 2분 38초 후 실패했다. 이 실행환경에서는 상세 로그와 artifact를 읽을 수 없어 errno 28 재현 여부를 확정하지 못했다. 로컬 workspace는 117 MB 여유, inode 사용률 95%여서 Docker 재빌드를 하지 않았다. 관측된 클라우드 environment revision은 2이며 사용자 지정 revision 3은 적용 증거가 없다.
-- 커밋 예정 범위: postal importer, 그 계약 테스트/빈 설치 확인, 주소 요구사항 및 QA 현황 문서와 관련 브라우저 캡처만 명시적으로 stage한다. 이미 있던 미추적 QA 파일은 포함하지 않는다.
+- 커밋 범위는 importer·관련 테스트/CI 체크와 해당 브라우저 증거만 명시적으로 stage했다. 미추적 QA 캡처와 pycache는 그대로 보존했다.
+
+## 2026-10-22 — 다국어 storefront 상태 및 QA 캡처
+
+- 시작 시 로컬 `HEAD`, `origin/work`, 원격 `work`가 `b437e2dc6af0f7548f840103d537c9b03e74e708`에서 일치했고 `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다.
+- 자식 테마에 일본어·영어·한국어 검색 및 빈 카테고리 상태, footer 링크/accessibility 문구를 추가했다. PC 1440px, 모바일 390px 캡처와 ja/en/ko 페이지 검증을 저장했다. smoke/contract 33/33 통과.
+- 커밋 `2636d67cb1d155d5f9993a2476292d6fe11970e8`를 `work`에 push하고 `git ls-remote`, `origin/work`, remote file re-read로 확인했다. CI run #18 `39701030162`는 실패했다.
+
+## 2026-10-22 — 주소 저장 전 우편번호 일치 검증
+
+- Japan Post 후보가 존재하면 PrestaShop 주소 저장 전에 state/city/town 영역을 같은 우편번호 후보와 비교한다. 여러 town 후보는 각각 허용하고 건물·호수 입력은 유지한다. 인덱스에 후보가 없거나 조회가 실패하면 수동 입력을 허용한다. 메시지는 일본어·영어·한국어다.
+- PHP synthetic harness와 PHP lint를 기존 PrestaShop 컨테이너의 임시 경로에서 실행했다. 기존 dev DB를 읽는 통합 검증에서 공식 `1000004` Tokyo/千代田区/大手町의 정상 저장 검증, 1000004/100-0004, 불일치 시구정촌 거부, 건물명 허용 및 수동 fallback을 확인했다. 이 테스트는 DB 데이터를 생성하지 않는다.
+- 커밋 `bb40026956f98e51ff0158c1c095dab8c7f72d8a`를 push하고 원격 SHA·원격 테스트 파일을 다시 확인했다. CI run #19 `39701310507`는 실패; public job 화면에서 실패 단계는 확인했으나 상세 원인은 얻지 못했다.
+
+## 2026-10-22 — 관리자 대시보드 날짜 필드 한국어
+
+- 실제 관리자 대시보드에서 영어 `From`, `Start`, `End`를 확인했다. PrestaShop core는 수정하지 않고 KURANEA 관리자 모듈의 XLIFF 도메인을 PrestaShop 명명 규칙에 맞췄으며, dashboard 전용 module JS가 날짜 입력 label/placeholder와 요약을 한국어로 표시하도록 했다.
+- 관리자 브라우저 로그인 후 PC 1440×1000에서 `lang=ko`, 한국어 날짜 labels/placeholders/요약, 한국어 메뉴, page error 0건을 검증하고 `artifacts/qa/phase1a/admin-dashboard-korean-after-date-overlay.png`를 저장했다. 관리자 locale 계약 8/8, JS syntax, XLIFF XML, PHP lint 통과. 전 관리자 100% 범위 검증은 미완료다.
+- 필요한 admin media hook을 현재 dev shop에서 등록했으며 고객·주문 데이터는 변경하지 않았다. 커밋 `46fc912d74c818023db08b18a8a5528f07117ef5`를 push하고 원격 SHA/file을 확인했다. CI run #20 `39701883450`는 마지막 확인에서 실행 중.
+
+## 2026-10-22 — 디스크·환경 재확인
+
+- `df -h /workspace`: overlay 32 GB 중 30 GB 사용, 91 MB 여유, 100% 표시; inode 95% 사용. `docker system df -v`: 활성 `kuranea/prestashop:9.2.0` 및 `mariadb:10.11`, shared base, 미사용 dangling image 8.29 MB, build cache 8.284 MB, 활성 named volumes `kuranea_mariadb_data` 320.6 MB / `kuranea_prestashop_html` 538.9 MB, 미연결 254 MB volume 확인.
+- 이미지/build cache는 프로젝트 복구/재빌드에 쓰일 수 있고 미연결 volume의 출처도 확실하지 않아 삭제하지 않았다. 어떤 Docker prune/재빌드/DB 초기화도 실행하지 않았다. 새 설치를 로컬에서 실행할 수 있는 저장 공간은 확보되지 않았다.
+- Cloud environment status는 `spec_revision=2`, `observed_spec_revision=2`, connected/running을 보고한다. revision 3 설정은 이 runtime에 적용되지 않았다. 설정을 수정하지 않았다.
+- run #20 `39701883450` 완료 상태를 다시 확인했다. 공개 job 화면은 `Build and install into unique empty volumes` 실패만 노출했고 상세 stderr/artifact는 접근할 수 없었다. run #18–20은 모두 이 단계에서 실패했으므로 clean install은 계속 FAIL이며 errno 28의 현재 원인은 확정되지 않았다.
