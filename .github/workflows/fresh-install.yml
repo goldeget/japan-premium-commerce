@@ -24,6 +24,7 @@ jobs:
     timeout-minutes: 35
     env:
       CI_COMPOSE_PROJECT_NAME: kuranea-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      SHOP_PORT: 18080
     steps:
       - name: Check out work and pinned submodules
         uses: actions/checkout@v4
@@ -96,7 +97,7 @@ jobs:
 
       - name: Verify real Tokyo postcode lookup and saved native address
         env:
-          SHOP_BASE_URL: http://127.0.0.1:8080
+          SHOP_BASE_URL: http://127.0.0.1:18080
         run: |
           set -euo pipefail
           payload=$(curl --fail --silent --show-error --location --get "$SHOP_BASE_URL/" \
@@ -125,7 +126,7 @@ jobs:
 
       - name: Verify the fresh shop and restart persistence
         env:
-          SHOP_BASE_URL: http://127.0.0.1:8080
+          SHOP_BASE_URL: http://127.0.0.1:18080
         run: bash tests/smoke/fresh_install.sh "$CI_COMPOSE_PROJECT_NAME"
 
       - name: Capture bounded diagnostics on failure

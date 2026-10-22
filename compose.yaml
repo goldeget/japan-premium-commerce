@@ -28,7 +28,7 @@ services:
       mariadb:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8080:80"
+      - "127.0.0.1:${SHOP_PORT:-8080}:80"
     environment:
       DB_SERVER: mariadb
       DB_NAME: ${MARIADB_DATABASE:-prestashop}
@@ -37,7 +37,7 @@ services:
       PS_INSTALL_AUTO: "1"
       PS_LANGUAGE: ja
       PS_COUNTRY: JP
-      PS_DOMAIN: localhost:8080
+      PS_DOMAIN: localhost:${SHOP_PORT:-8080}
       PS_ERASE_DB: "0"
       PS_FOLDER_ADMIN: admin-kuranea
       ADMIN_MAIL: ${ADMIN_MAIL:?Set ADMIN_MAIL in .env}
@@ -51,7 +51,7 @@ services:
         bind:
           create_host_path: false
     healthcheck:
-      test: ["CMD-SHELL", "curl --silent --show-error --fail --output /dev/null --header 'Host: localhost:8080' http://127.0.0.1/"]
+      test: ["CMD-SHELL", "curl --silent --show-error --fail --output /dev/null --header 'Host: localhost:${SHOP_PORT:-8080}' http://127.0.0.1/"]
       interval: 30s
       timeout: 5s
       retries: 10
