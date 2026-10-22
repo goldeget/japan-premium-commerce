@@ -209,11 +209,21 @@ def replace_primary_logo_in_saved_draft(
         if stage_callback is not None:
             stage_callback(stage_prefix + "_" + stage_name)
 
+    def wait_for_settings_form(stage_name: str) -> None:
+        report(stage_name)
+        try:
+            visible(driver, "form.ordenowa-profile-settings")
+        except TimeoutException:
+            try:
+                emit_brand_settings_diagnostics(driver)
+            except Exception:
+                pass
+            raise
+
     # Reload to discard stale references and any confirmation left by the previous draft save.
     report("initial_reload")
     driver.get(settings_url)
-    report("draft_form_wait")
-    visible(driver, "form.ordenowa-profile-settings")
+    wait_for_settings_form("draft_form_wait")
 
     for attempt in range(1, BRAND_DRAFT_REPLACEMENT_ATTEMPTS + 1):
         try:
@@ -227,8 +237,7 @@ def replace_primary_logo_in_saved_draft(
                 break
             report(f"stale_upload_retry_reload_attempt_{attempt}")
             driver.get(settings_url)
-            report(f"stale_upload_retry_form_wait_attempt_{attempt}")
-            visible(driver, "form.ordenowa-profile-settings")
+            wait_for_settings_form(f"stale_upload_retry_form_wait_attempt_{attempt}")
             continue
 
         stale_during_save = False
@@ -248,8 +257,7 @@ def replace_primary_logo_in_saved_draft(
                     break
                 report(f"stale_save_retry_reload_attempt_{attempt}")
                 driver.get(settings_url)
-                report(f"stale_save_retry_form_wait_attempt_{attempt}")
-                visible(driver, "form.ordenowa-profile-settings")
+                wait_for_settings_form(f"stale_save_retry_form_wait_attempt_{attempt}")
                 continue
         else:
             report(f"save_confirmation_attempt_{attempt}")
@@ -263,15 +271,13 @@ def replace_primary_logo_in_saved_draft(
                 raise
             report(f"stale_derivative_retry_reload_attempt_{attempt}")
             driver.get(settings_url)
-            report(f"stale_derivative_retry_form_wait_attempt_{attempt}")
-            visible(driver, "form.ordenowa-profile-settings")
+            wait_for_settings_form(f"stale_derivative_retry_form_wait_attempt_{attempt}")
             continue
 
         # A reload proves the draft preview is persisted, not just changed in the upload form.
         report("persisted_draft_reload")
         driver.get(settings_url)
-        report("persisted_form_wait")
-        visible(driver, "form.ordenowa-profile-settings")
+        wait_for_settings_form("persisted_form_wait")
         report("persisted_derivative_requery")
         assert_saved_primary_logo(driver, source, role)
         return

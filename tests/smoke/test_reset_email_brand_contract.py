@@ -77,14 +77,40 @@ class ResetEmailBrandContractTests(unittest.TestCase):
             '"cid:shop_logo"',
             'attachment.get("ContentID", "")',
             'inline_logo.get("ContentType") != "image/png"',
-            "hashlib.sha256(sent_logo).digest()",
-            "hashlib.sha256(expected_logo).digest()",
+            "inline_sha256 = hashlib.sha256(sent_logo).hexdigest()",
+            "published_sha256 = hashlib.sha256(expected_logo).hexdigest()",
             "naturalWidth",
             "is_displayed()",
             'password-reset-email-logo.png',
         ):
             with self.subTest(assertion=assertion):
                 self.assertIn(assertion, browser)
+
+    def test_mailpit_logo_assertions_report_safe_named_substages(self) -> None:
+        browser = EMAIL_BROWSER.read_text(encoding="utf-8")
+        assertion = browser.split("def assert_published_inline_logo(", 1)[1].split(
+            "\ndef render_captured_logo", 1
+        )[0]
+        expected_stages = (
+            'stage_callback("mailpit_html_cid")',
+            'stage_callback("published_public_png")',
+            'stage_callback("mailpit_inline_content_id")',
+            'stage_callback("mailpit_inline_mime")',
+            'stage_callback("mailpit_inline_part_identifiers")',
+            'stage_callback("mailpit_inline_part_fetch")',
+            'stage_callback("published_inline_hash_compare")',
+            'stage_callback("mailpit_html_img_element")',
+        )
+        for stage in expected_stages:
+            with self.subTest(stage=stage):
+                self.assertIn(stage, assertion)
+        positions = [assertion.index(stage) for stage in expected_stages]
+        self.assertEqual(sorted(positions), positions, "email logo diagnostics should follow the assertion flow")
+        self.assertIn('ORDENOWA_EMAIL_LOGO_HASH_MISMATCH=', assertion)
+        self.assertIn('"published_sha256": published_sha256', assertion)
+        self.assertIn('"inline_sha256": inline_sha256', assertion)
+        self.assertIn('stage = "mailpit_message_lookup"', browser)
+        self.assertIn("assert_published_inline_logo(message, set_logo_assertion_stage)", browser)
 
     def test_password_reset_request_is_independent_of_the_full_account_browser(self) -> None:
         browser = EMAIL_BROWSER.read_text(encoding="utf-8")

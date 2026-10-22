@@ -260,7 +260,7 @@ class BrandE2EContractTests(unittest.TestCase):
 
         expected_stages = (
             'report("initial_reload")',
-            'report("draft_form_wait")',
+            'wait_for_settings_form("draft_form_wait")',
             'report(f"upload_input_wait_attempt_{attempt}")',
             'report(f"upload_attempt_{attempt}")',
             'report(f"save_button_wait_attempt_{attempt}")',
@@ -268,7 +268,7 @@ class BrandE2EContractTests(unittest.TestCase):
             'report(f"save_confirmation_attempt_{attempt}")',
             'report(f"saved_derivative_requery_attempt_{attempt}")',
             'report("persisted_draft_reload")',
-            'report("persisted_form_wait")',
+            'wait_for_settings_form("persisted_form_wait")',
             'report("persisted_derivative_requery")',
         )
         for stage in expected_stages:
@@ -280,6 +280,22 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('stage_prefix: str = "replacement_draft"', helper)
         self.assertIn("stage_callback=set_brand_assertion_stage", replacement_call)
         self.assertIn('stage_prefix="replace_published_logo_in_saved_draft"', replacement_call)
+
+    def test_replacement_form_timeout_emits_safe_settings_diagnostics(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        helper_start = browser_flow.index("def replace_primary_logo_in_saved_draft(")
+        helper_end = browser_flow.index("\ndef ", helper_start + 1)
+        helper = browser_flow[helper_start:helper_end]
+        form_wait_start = helper.index("def wait_for_settings_form(")
+        form_wait_end = helper.index("\n    # Reload", form_wait_start)
+        form_wait = helper[form_wait_start:form_wait_end]
+
+        self.assertIn("except TimeoutException:", form_wait)
+        self.assertIn("emit_brand_settings_diagnostics(driver)", form_wait)
+        self.assertIn("except Exception:", form_wait)
+        self.assertIn("raise", form_wait)
+        self.assertIn('wait_for_settings_form("draft_form_wait")', helper)
+        self.assertIn('wait_for_settings_form("persisted_form_wait")', helper)
 
     def test_browser_publishes_replacement_logo_then_restores_and_publishes_approved_logo(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")

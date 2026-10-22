@@ -12,6 +12,7 @@ import sys
 import time
 from html.parser import HTMLParser
 from pathlib import Path
+from typing import Callable
 from urllib.error import URLError
 from urllib.parse import quote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
@@ -123,15 +124,21 @@ def request_message_for_customer(timeout_seconds: int = 90) -> dict:
     raise TimeoutError("the disposable customer password-reset email did not arrive in Mailpit")
 
 
-def assert_published_inline_logo(message: dict) -> bytes:
+def assert_published_inline_logo(
+    message: dict,
+    stage_callback: Callable[[str], None],
+) -> bytes:
+    stage_callback("mailpit_html_cid")
     message_html = message.get("HTML")
     if not isinstance(message_html, str) or "cid:shop_logo" not in message_html.lower():
         raise AssertionError("the reset email HTML does not reference the published ORDENOWA logo")
 
+    stage_callback("published_public_png")
     expected_logo = request_bytes(urljoin(BASE + "/", "img/" + PUBLISHED_EMAIL_LOGO_PATH))
     if not expected_logo.startswith(b"\x89PNG\r\n\x1a\n"):
         raise AssertionError("the published ORDENOWA email logo did not resolve to a PNG image")
 
+    stage_callback("mailpit_inline_content_id")
     inline_logo = next(
         (
             attachment
@@ -141,20 +148,41 @@ def assert_published_inline_logo(message: dict) -> bytes:
         ),
         None,
     )
-    if not isinstance(inline_logo, dict) or inline_logo.get("ContentType") != "image/png":
+    if not isinstance(inline_logo, dict):
+        raise AssertionError("Mailpit did not capture the ORDENOWA logo as an inline part")
+
+    stage_callback("mailpit_inline_mime")
+    if inline_logo.get("ContentType") != "image/png":
         raise AssertionError("Mailpit did not capture the ORDENOWA logo as an inline PNG")
 
+    stage_callback("mailpit_inline_part_identifiers")
     message_id = message.get("ID") or message.get("Id")
     part_id = inline_logo.get("PartID")
     if not isinstance(message_id, str) or not message_id or not isinstance(part_id, str) or not part_id:
         raise AssertionError("Mailpit did not identify the captured inline ORDENOWA logo part")
+    stage_callback("mailpit_inline_part_fetch")
     sent_logo = request_bytes(
         f"{MAILPIT_API}/api/v1/message/{quote(message_id, safe='')}"
         f"/part/{quote(part_id, safe='')}"
     )
-    if hashlib.sha256(sent_logo).digest() != hashlib.sha256(expected_logo).digest():
+    stage_callback("published_inline_hash_compare")
+    published_sha256 = hashlib.sha256(expected_logo).hexdigest()
+    inline_sha256 = hashlib.sha256(sent_logo).hexdigest()
+    if inline_sha256 != published_sha256:
+        print(
+            "ORDENOWA_EMAIL_LOGO_HASH_MISMATCH="
+            + json.dumps(
+                {
+                    "published_sha256": published_sha256,
+                    "inline_sha256": inline_sha256,
+                },
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
         raise AssertionError("the email attachment differs from the current published ORDENOWA derivative")
 
+    stage_callback("mailpit_html_img_element")
     parser = InlineLogoParser()
     parser.feed(message_html)
     if not parser.logo_attributes:
@@ -200,6 +228,11 @@ def render_captured_logo(driver: webdriver.Chrome, logo_bytes: bytes) -> None:
 def run() -> bool:
     driver = None
     stage = "password_recovery_request"
+
+    def set_logo_assertion_stage(stage_name: str) -> None:
+        nonlocal stage
+        stage = stage_name
+
     try:
         options = Options()
         options.add_argument("--headless=new")
@@ -236,9 +269,9 @@ def run() -> bool:
         submit.click()
         driver.save_screenshot(str(DEST / "password-reset-email-requested.png"))
 
-        stage = "mailpit_published_logo_assertion"
+        stage = "mailpit_message_lookup"
         message = request_message_for_customer()
-        logo_bytes = assert_published_inline_logo(message)
+        logo_bytes = assert_published_inline_logo(message, set_logo_assertion_stage)
 
         stage = "chromium_inline_logo_render"
         render_captured_logo(driver, logo_bytes)
