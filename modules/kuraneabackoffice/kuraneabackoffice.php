@@ -20,8 +20,8 @@ class Kuraneabackoffice extends Module
 
         parent::__construct();
 
-        $this->displayName = 'ORDENOWA Back Office support';
-        $this->description = 'Korean Back Office language, published brand display, and translation overlays.';
+        $this->displayName = 'ORDENOWA 관리자 화면 지원';
+        $this->description = '한국어 관리자 로그인, 게시된 브랜드 표시 및 관리자 번역 오버레이를 지원합니다.';
     }
 
     public function install(): bool

@@ -29,8 +29,8 @@ class Kuraneapostcode extends Module
 
         parent::__construct();
 
-        $this->displayName = 'KURANEA Japan Postcode Lookup';
-        $this->description = 'Offline Japan Post postcode and address candidates for customer address forms.';
+        $this->displayName = '일본 우편번호·주소 검색';
+        $this->description = '고객 주소 입력란에서 일본 우편번호와 주소 후보를 오프라인으로 제공합니다.';
     }
 
     public function install()
