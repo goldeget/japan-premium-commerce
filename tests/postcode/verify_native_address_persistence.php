@@ -32,7 +32,7 @@ try {
         }
     }
 
-    $stage = 'official postcode candidate';
+    $stage = 'isolated CI postcode candidate';
     $candidates = (new DatabasePostalAddressLookup())->lookupByPostcode('1000004', 100);
     $tokyoCandidate = null;
     foreach ($candidates as $candidate) {
@@ -44,7 +44,7 @@ try {
         }
     }
     if ($tokyoCandidate === null) {
-        throw new RuntimeException('The official 1000004 Tokyo/Otemachi address was not imported.');
+        throw new RuntimeException('The isolated CI 1000004 Tokyo/Otemachi address was not imported.');
     }
 
     $native = $tokyoCandidate->toNativeAddressFields($stateIds, 'KURANEA QA Bldg 101');

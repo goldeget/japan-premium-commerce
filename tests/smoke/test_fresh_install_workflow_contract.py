@@ -70,6 +70,21 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("restart prestashop", catalog_step)
         self.assertGreaterEqual(catalog_step.count("php /tmp/verify_catalog_installation.php"), 2)
 
+    def test_synthetic_order_qa_is_isolated_from_live_japan_post_download(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        fixture = workflow.index("- name: Import synthetic Tokyo postcode fixture for isolated checkout QA")
+        postcode = workflow.index("- name: Verify isolated CI Tokyo postcode lookup")
+        address = workflow.index("- name: Verify saved native CI Tokyo address")
+        order = workflow.index("- name: Verify synthetic Tokyo address in an unpaid native order and Back Office view")
+        official = workflow.index("- name: Download and import official Japan Post KEN_ALL data")
+        self.assertLess(fixture, postcode)
+        self.assertLess(postcode, address)
+        self.assertLess(address, order)
+        self.assertLess(order, official)
+        self.assertIn("ISOLATED CI FIXTURE:", workflow)
+        self.assertIn("Verify official Japan Post import contains national address data", workflow)
+        self.assertIn("ps_kuraneapostcode_address", workflow)
+
     def test_failed_compose_bootstrap_publishes_a_redacted_step_summary(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         capture = workflow.split("- name: Capture bounded diagnostics on failure", 1)[1].split("- name:", 1)[0]
@@ -93,7 +108,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
 
     def test_native_order_persistence_test_is_guarded_to_its_isolated_github_project(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        order_step = workflow.split("- name: Verify Japan Post address in an unpaid native order and Back Office view", 1)[1].split("- name:", 1)[0]
+        order_step = workflow.split("- name: Verify synthetic Tokyo address in an unpaid native order and Back Office view", 1)[1].split("- name:", 1)[0]
         order_test = (ROOT / "tests/postcode/verify_native_order_persistence.php").read_text(encoding="utf-8")
         self.assertIn("KURANEA_ISOLATED_CI=1", order_step)
         self.assertIn('KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME"', order_step)
@@ -114,7 +129,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "Back Office kernel boot",
             "Japanese shop context",
             "offline payment module",
-            "official postcode candidate",
+            "isolated CI postcode candidate",
             "customer and address persistence",
             "CI-only product creation",
             "CI-only carrier setup",
@@ -128,9 +143,9 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
     def test_postcode_lookup_and_native_address_save_report_separate_ci_failures(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("python3 -m unittest tests.smoke.test_fresh_install_workflow_contract", workflow)
-        self.assertIn("- name: Verify real Tokyo postcode lookup", workflow)
-        self.assertIn("- name: Verify saved native Tokyo address", workflow)
-        address_step = workflow.split("- name: Verify saved native Tokyo address", 1)[1].split("- name:", 1)[0]
+        self.assertIn("- name: Verify isolated CI Tokyo postcode lookup", workflow)
+        self.assertIn("- name: Verify saved native CI Tokyo address", workflow)
+        address_step = workflow.split("- name: Verify saved native CI Tokyo address", 1)[1].split("- name:", 1)[0]
         self.assertIn("tests/postcode/verify_native_address_persistence.php", address_step)
 
         verifier = (ROOT / "tests" / "postcode" / "verify_native_address_persistence.php").read_text(encoding="utf-8")
@@ -139,7 +154,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         for stage in (
             "bootstrap",
             "Japan and state lookup",
-            "official postcode candidate",
+            "isolated CI postcode candidate",
             "customer creation",
             "native address save",
             "saved address reload",

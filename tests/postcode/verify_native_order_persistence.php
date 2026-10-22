@@ -123,7 +123,7 @@ if (!Validate::isLoadedObject($homeCategory) || !(bool) $homeCategory->active) {
     throw new RuntimeException('The configured home category is not available for a disposable QA product.');
 }
 
-$stage = 'official postcode candidate';
+$stage = 'isolated CI postcode candidate';
 $stateIds = [];
 $states = State::getStatesByIdCountry($japanCountryId, true, 'iso_code', 'asc');
 foreach (is_array($states) ? $states : [] as $state) {
@@ -145,12 +145,12 @@ foreach ($officialCandidates as $candidate) {
 }
 
 if ($officialCandidate === null) {
-    throw new RuntimeException('The official Japan Post 1000004 Tokyo/Chiyoda/Otemachi candidate was not imported.');
+    throw new RuntimeException('The isolated CI synthetic 1000004 Tokyo/Chiyoda/Otemachi candidate was not imported.');
 }
 
 $nativeAddress = $officialCandidate->toNativeAddressFields($stateIds);
 if ($nativeAddress === null || (int) $nativeAddress['id_state'] < 1) {
-    throw new RuntimeException('The official Tokyo candidate cannot be mapped to an active native PrestaShop prefecture.');
+    throw new RuntimeException('The isolated CI Tokyo candidate cannot be mapped to an active native PrestaShop prefecture.');
 }
 
 $oldMailMethod = Configuration::get('PS_MAIL_METHOD');
@@ -309,7 +309,7 @@ try {
         $pendingStateId,
         $orderTotal,
         'KURANEA CI ONLY - offline check payment, no capture',
-        'CI ONLY: native order persistence check for Japan Post postcode 1000004.',
+        'CI ONLY: native order persistence check for synthetic Tokyo postcode 1000004.',
         [],
         $jpyCurrencyId,
         false,
@@ -379,7 +379,7 @@ try {
     }
 
     printf(
-        "PASS: official Japan Post 1000004 address persisted into unpaid CI-only order id=%d reference=%s delivery_address_id=%d\n",
+        "PASS: synthetic CI Tokyo postcode 1000004 address persisted into unpaid CI-only order id=%d reference=%s delivery_address_id=%d\n",
         $orderId,
         (string) $order->reference,
         (int) $order->id_address_delivery
