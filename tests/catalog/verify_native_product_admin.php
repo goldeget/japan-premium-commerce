@@ -227,7 +227,7 @@ $editedDraft = ProductAdminDraft::fromArray([
     'category_ids' => [(string) $editCategoryId],
     'description_ja' => '更新した説明',
     'description_ko' => '수정한 상세 설명',
-    'options' => "色:青|赤\nサイズ:S|M",
+    'options' => "色:青|緑\nサイズ:S|M",
 ]);
 $savedProductId = $manager->save($productId, $editedDraft, [$imageUpload], [$imageIds[0]]);
 $editedProduct = new Product($savedProductId, false, $languageId, $shopId);
@@ -235,9 +235,37 @@ $editedCombinationRows = Db::getInstance()->executeS(
     'SELECT `id_product_attribute` FROM `' . _DB_PREFIX_ . 'product_attribute` WHERE `id_product` = ' . (int) $savedProductId . ' ORDER BY `id_product_attribute` ASC'
 );
 $editedCombinationIds = array_map(static fn (array $row): int => (int) $row['id_product_attribute'], is_array($editedCombinationRows) ? $editedCombinationRows : []);
+$nativeCombinationValueRows = Db::getInstance()->executeS('
+    SELECT pa.`id_product_attribute`, agl.`name` AS `group_name`, al.`name` AS `attribute_name`
+    FROM `' . _DB_PREFIX_ . 'product_attribute` pa
+    INNER JOIN `' . _DB_PREFIX_ . 'product_attribute_combination` pac
+        ON pac.`id_product_attribute` = pa.`id_product_attribute`
+    INNER JOIN `' . _DB_PREFIX_ . 'attribute` a ON a.`id_attribute` = pac.`id_attribute`
+    INNER JOIN `' . _DB_PREFIX_ . 'attribute_group` ag ON ag.`id_attribute_group` = a.`id_attribute_group`
+    INNER JOIN `' . _DB_PREFIX_ . 'attribute_group_lang` agl
+        ON agl.`id_attribute_group` = ag.`id_attribute_group` AND agl.`id_lang` = ' . (int) $languageId . '
+    INNER JOIN `' . _DB_PREFIX_ . 'attribute_lang` al
+        ON al.`id_attribute` = a.`id_attribute` AND al.`id_lang` = ' . (int) $languageId . '
+    WHERE pa.`id_product` = ' . (int) $savedProductId . '
+    ORDER BY pa.`id_product_attribute` ASC, ag.`position` ASC, a.`position` ASC
+');
+$nativeCombinationValuesById = [];
+foreach (is_array($nativeCombinationValueRows) ? $nativeCombinationValueRows : [] as $row) {
+    $nativeCombinationValuesById[(int) $row['id_product_attribute']][(string) $row['group_name']] = (string) $row['attribute_name'];
+}
+$editedCombinationValueSets = [];
+foreach ($nativeCombinationValuesById as $valuesByGroup) {
+    if (isset($valuesByGroup['色'], $valuesByGroup['サイズ'])) {
+        $editedCombinationValueSets[] = $valuesByGroup['色'] . '|' . $valuesByGroup['サイズ'];
+    }
+}
+sort($editedCombinationValueSets, SORT_STRING);
+$expectedEditedCombinationValueSets = ['青|S', '青|M', '緑|S', '緑|M'];
+sort($expectedEditedCombinationValueSets, SORT_STRING);
 $editedCategoryIds = array_map('intval', Product::getProductCategories($savedProductId));
 $newImageIds = $manager->imageIds($savedProductId);
 $editedEditor = $manager->editorData($savedProductId);
+$editedOptionGroups = $manager->optionGroups($savedProductId, $languageId, $shopId);
 $editedManagedProducts = array_values(array_filter(
     $manager->managedProducts(),
     static fn (array $row): bool => (int) $row['id_product'] === $savedProductId
@@ -260,12 +288,17 @@ $editChecks = [
     'category association changed' => !in_array($editCategoryId, $createdEditor['category_ids'] ?? [], true),
     'new category association' => in_array($editCategoryId, $editedCategoryIds, true),
     'old category association removed' => !in_array($categoryId, $editedCategoryIds, true),
-    'options' => ($editedEditor['options'] ?? '') === "色:青|赤\nサイズ:S|M",
+    'options' => ($editedEditor['options'] ?? '') === "色:青|緑\nサイズ:S|M",
     'managed product row count' => count($editedManagedProducts) === 1,
     'managed product name' => ($editedManagedProducts[0]['name'] ?? '') === 'ORDENOWA CI 合成商品 수정',
     'combination count' => count($editedCombinationRows) === 4,
-    'combination IDs' => $editedCombinationIds === $createdCombinationIds,
-    'option groups' => $manager->optionGroups($savedProductId, $languageId, $shopId) === $storedGroups,
+    'combination IDs replaced' => count($editedCombinationIds) === 4
+        && array_intersect($editedCombinationIds, $createdCombinationIds) === [],
+    'option groups' => $editedOptionGroups === [
+        ['name' => '色', 'values' => ['青', '緑']],
+        ['name' => 'サイズ', 'values' => ['S', 'M']],
+    ],
+    'native option combinations' => $editedCombinationValueSets === $expectedEditedCombinationValueSets,
     'image count' => count($newImageIds) === 1,
     'image replacement' => count($newImageIds) === 1 && $newImageIds[0] !== $imageIds[0],
     'old image removal' => !file_exists($oldImagePath),

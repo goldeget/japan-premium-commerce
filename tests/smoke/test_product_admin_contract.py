@@ -116,7 +116,7 @@ class ProductAdminContractTests(unittest.TestCase):
         for expected in ("OWA-ADMIN-", "combinationRows", "createdCombinationIds", "editorData", "ShopParameters", "StockAvailable", "id_category_default", "available_for_order", "tooManyImagesRejected"):
             self.assertIn(expected, integration_text)
         self.assertIn("Native product edit failed checks:", integration_text)
-        for expected in ("saved product ID", "Japanese name", "price", "sale gate", "editor Japanese name", "editor Korean name", "Japanese description", "Korean description", "categories", "options", "combination IDs", "image replacement"):
+        for expected in ("saved product ID", "Japanese name", "price", "sale gate", "editor Japanese name", "editor Korean name", "Japanese description", "Korean description", "categories", "options", "combination IDs replaced", "image replacement"):
             self.assertIn(f"'{expected}' =>", integration_text)
         for expected in (
             "새 상품 등록",
@@ -731,6 +731,16 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("category edit must select the isolated CI category", edit_browser)
         self.assertNotIn("currently_selected.intersection(usable_ids)", edit_browser)
 
+    def test_product_edit_verifies_changed_option_values_in_native_combinations(self) -> None:
+        verifier = (ROOT / "tests" / "catalog" / "verify_native_product_admin.php").read_text(encoding="utf-8")
+        edit_verifier = verifier.split("$stage = 'native product edit';", 1)[1]
+
+        self.assertIn("'options' => \"色:青|緑\\nサイズ:S|M\"", edit_verifier)
+        self.assertIn("$editedOptionGroups = $manager->optionGroups($savedProductId, $languageId, $shopId);", edit_verifier)
+        self.assertIn("'option groups' => $editedOptionGroups === [", edit_verifier)
+        self.assertIn("'native option combinations' => $editedCombinationValueSets === $expectedEditedCombinationValueSets", edit_verifier)
+        self.assertIn("'combination IDs replaced'", edit_verifier)
+        self.assertIn("'options' => ($editedEditor['options'] ?? '') === \"色:青|緑\\nサイズ:S|M\"", edit_verifier)
 
 if __name__ == "__main__":
     unittest.main()
