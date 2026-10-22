@@ -167,12 +167,43 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
     def test_registration_link_is_scrolled_and_hit_tested_before_native_click(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
         helper = account_flow.split("def click_centered", 1)[1].split("def emit_registration_diagnostics", 1)[0]
-        registration = account_flow.split('stage = "registration_form_load"', 1)[1].split('stage = "registration_submit"', 1)[0]
+        registration = account_flow.split('stage = "registration_link_click"', 1)[1].split('stage = "registration_submit"', 1)[0]
         self.assertIn("scrollIntoView({block: 'center'", helper)
         self.assertIn("EC.element_to_be_clickable(element)", helper)
         self.assertIn("document.elementFromPoint", helper)
         self.assertIn("element.click()", helper)
         self.assertIn("click_centered(driver, registration_link)", registration)
+
+    def test_account_registration_reports_link_and_required_control_stages_safely(self) -> None:
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        registration = account_flow.split("def run_viewport", 1)[1].split("if __name__", 1)[0]
+        diagnostics = account_flow.split("def emit_registration_diagnostics", 1)[1].split("def fill", 1)[0]
+
+        stage_markers = (
+            'stage = "registration_link_load"',
+            'stage = "registration_link_validation"',
+            'stage = "registration_link_click"',
+            'stage = "registration_form_load"',
+            'stage = "registration_required_controls"',
+            'stage = "registration_submit"',
+            'stage = "registration_post_submit"',
+        )
+        for marker in stage_markers:
+            self.assertIn(marker, registration)
+        stage_positions = [registration.index(marker) for marker in stage_markers]
+        self.assertEqual(stage_positions, sorted(stage_positions))
+        self.assertIn("registration_stage: arguments[0]", diagnostics)
+        self.assertIn("registration_control_name: arguments[1].name || ''", diagnostics)
+        self.assertIn("registration_control_type: arguments[1].type || ''", diagnostics)
+        self.assertIn('emit_registration_diagnostics(driver, stage, failure_control)', account_flow)
+        self.assertIn('set_registration_control(failure_control, "display-register-form", "anchor")', registration)
+        self.assertIn('set_registration_control(failure_control, "customer-form", "form")', registration)
+        self.assertIn('set_registration_control(failure_control, "save-customer", "submit")', registration)
+        self.assertNotIn("email_address", diagnostics)
+        self.assertNotIn(".value", diagnostics)
+        self.assertNotIn("window.location.search", diagnostics)
+        control_metadata = account_flow.split("def set_registration_control", 1)[1].split("def emit_registration_diagnostics", 1)[0]
+        self.assertIn("re.sub", control_metadata)
 
     def test_ci_uses_the_module_updater_for_the_official_japan_post_archive(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")

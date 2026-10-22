@@ -137,7 +137,16 @@ def click_centered(driver: webdriver.Chrome, element) -> None:
     element.click()
 
 
-def emit_registration_diagnostics(driver: webdriver.Chrome) -> None:
+def set_registration_control(control: dict[str, str], name: str, field_type: str) -> None:
+    control["name"] = re.sub(r"[^A-Za-z0-9_.\[\]-]", "_", name)[:80]
+    control["type"] = re.sub(r"[^A-Za-z0-9_-]", "_", field_type)[:40]
+
+
+def emit_registration_diagnostics(
+    driver: webdriver.Chrome,
+    stage: str,
+    control: dict[str, str],
+) -> None:
     diagnostics = driver.execute_script(
         r"""
         const form = document.querySelector('#customer-form');
@@ -160,6 +169,9 @@ def emit_registration_diagnostics(driver: webdriver.Chrome) -> None:
         const firstInvalid = invalid[0];
         const bodyText = document.body?.innerText || '';
         return {
+          registration_stage: arguments[0],
+          registration_control_name: arguments[1].name || '',
+          registration_control_type: arguments[1].type || '',
           registration_form_visible: isVisible(form),
           registration_link_visible: isVisible(registrationLink),
           registration_center_unobstructed: Boolean(registrationTarget && (registrationTarget === registrationLink || registrationLink.contains(registrationTarget))),
@@ -182,7 +194,9 @@ def emit_registration_diagnostics(driver: webdriver.Chrome) -> None:
           account_error_marker: /(?:already registered|already exists|invalid|required|error|failed|오류|필수|이미 사용|잘못)/i.test(bodyText),
           pathname: window.location.pathname
         };
-        """
+        """,
+        stage,
+        control,
     )
     print(
         "ORDENOWA_ACCOUNT_REGISTRATION_DIAGNOSTICS=" + json.dumps(diagnostics, ensure_ascii=False, sort_keys=True),
@@ -205,9 +219,15 @@ def assert_my_page(driver: webdriver.Chrome, expected_first_name: str) -> None:
         raise AssertionError("My Page did not show the signed-in customer's saved name")
 
 
-def prepare_required_registration_fields(driver: webdriver.Chrome, email_address: str, password: str) -> None:
-    form = visible(driver, "#customer-form")
+def prepare_required_registration_fields(
+    driver: webdriver.Chrome,
+    form,
+    email_address: str,
+    password: str,
+    active_control: dict[str, str],
+) -> None:
     for name, value in (("firstname", "CI"), ("lastname", "Customer"), ("email", email_address)):
+        set_registration_control(active_control, name, "input")
         fields = form.find_elements(By.CSS_SELECTOR, f'input[name="{name}"]')
         if not fields:
             raise AssertionError(f"registration form is missing the required {name} field")
@@ -215,14 +235,25 @@ def prepare_required_registration_fields(driver: webdriver.Chrome, email_address
         if not visible_fields:
             raise AssertionError(f"registration form has no usable {name} field")
         for field in visible_fields:
+            set_registration_control(
+                active_control,
+                name,
+                field.get_attribute("type") or "input",
+            )
             field.clear()
             field.send_keys(value)
 
     password_fields = form.find_elements(By.CSS_SELECTOR, 'input[type="password"]')
     usable_password_fields = [field for field in password_fields if field.is_displayed() and field.is_enabled()]
     if not usable_password_fields:
+        set_registration_control(active_control, "password", "password")
         raise AssertionError("registration form does not expose a usable password field")
     for field in usable_password_fields:
+        set_registration_control(
+            active_control,
+            field.get_attribute("name") or field.get_attribute("id") or "password",
+            field.get_attribute("type") or "password",
+        )
         field.clear()
         field.send_keys(password)
 
@@ -232,6 +263,11 @@ def prepare_required_registration_fields(driver: webdriver.Chrome, email_address
             continue
         field_type = (element.get_attribute("type") or "").lower()
         name = element.get_attribute("name") or ""
+        set_registration_control(
+            active_control,
+            name or element.get_attribute("id") or "input",
+            field_type or "input",
+        )
         if field_type == "checkbox" and not element.is_selected():
             element.click()
         elif field_type == "radio" and name not in selected_radio_groups:
@@ -259,12 +295,22 @@ def prepare_required_registration_fields(driver: webdriver.Chrome, email_address
 
     for element in form.find_elements(By.CSS_SELECTOR, "textarea[required]"):
         if element.is_displayed() and element.is_enabled() and not element.get_attribute("value"):
+            set_registration_control(
+                active_control,
+                element.get_attribute("name") or element.get_attribute("id") or "textarea",
+                "textarea",
+            )
             element.clear()
             element.send_keys("CI Test")
 
     for element in form.find_elements(By.CSS_SELECTOR, "select[required]"):
         if not element.is_displayed() or not element.is_enabled():
             continue
+        set_registration_control(
+            active_control,
+            element.get_attribute("name") or element.get_attribute("id") or "select",
+            "select",
+        )
         select = Select(element)
         option = next(
             (
@@ -281,6 +327,8 @@ def prepare_required_registration_fields(driver: webdriver.Chrome, email_address
     for element in form.find_elements(By.CSS_SELECTOR, ":invalid"):
         field_name = element.get_attribute("name") or element.get_attribute("id") or element.tag_name.lower()
         field_type = element.get_attribute("type") or element.tag_name.lower()
+        if not invalid_fields:
+            set_registration_control(active_control, field_name, field_type)
         invalid_fields.append(f"{field_name}:{field_type}")
     if invalid_fields:
         raise AssertionError("registration form has invalid controls: " + ", ".join(invalid_fields))
@@ -319,7 +367,8 @@ def run_viewport(width: int, height: int, label: str) -> None:
     options.add_argument(f"--window-size={width},{height}")
     options.add_argument("--lang=ja-JP")
     driver = webdriver.Chrome(options=options)
-    stage = "registration_form_load"
+    stage = "registration_link_load"
+    failure_control = {"name": "display-register-form", "type": "anchor"}
     try:
         driver.set_window_size(width, height)
         account_email = f"qa-ordenowa-{RUN_ID}-{RUN_ATTEMPT}-{label}@example.invalid"
@@ -328,6 +377,7 @@ def run_viewport(width: int, height: int, label: str) -> None:
 
         driver.get(f"{BASE}/index.php?controller=authentication")
         registration_link = visible(driver, 'a[data-link-action="display-register-form"]')
+        stage = "registration_link_validation"
         registration_url = urljoin(driver.current_url, registration_link.get_attribute("href") or "")
         registration_location = urlparse(registration_url)
         base_location = urlparse(BASE)
@@ -337,11 +387,26 @@ def run_viewport(width: int, height: int, label: str) -> None:
             or registration_location.port != base_location.port
         ):
             raise AssertionError("PrestaShop registration link is outside the isolated shop")
+        stage = "registration_link_click"
+        set_registration_control(failure_control, "display-register-form", "anchor")
         click_centered(driver, registration_link)
-        prepare_required_registration_fields(driver, account_email, initial_password)
+        stage = "registration_form_load"
+        set_registration_control(failure_control, "customer-form", "form")
+        form = visible(driver, "#customer-form")
+        stage = "registration_required_controls"
+        failure_control = {"name": "", "type": ""}
+        prepare_required_registration_fields(
+            driver,
+            form,
+            account_email,
+            initial_password,
+            failure_control,
+        )
         stage = "registration_submit"
+        set_registration_control(failure_control, "save-customer", "submit")
         visible(driver, "#customer-form button.form-control-submit").click()
         stage = "registration_post_submit"
+        failure_control = {"name": "", "type": ""}
         WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.ID, "identity_main_link")))
         assert_my_page(driver, "CI")
         driver.save_screenshot(str(DEST / f"{label}-customer-account-created.png"))
@@ -432,7 +497,7 @@ def run_viewport(width: int, height: int, label: str) -> None:
             pass
         if stage.startswith("registration_"):
             try:
-                emit_registration_diagnostics(driver)
+                emit_registration_diagnostics(driver, stage, failure_control)
             except Exception:
                 pass
         print(f"FAIL: {label} customer account flow at {stage} ({type(error).__name__})", file=sys.stderr)
