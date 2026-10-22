@@ -8,6 +8,7 @@
 - 검증: 상품 상태 계약 테스트를 먼저 실행해 실패를 확인한 뒤 구현했다. Smarty 홈 컴파일 캐시와 CSS 합본 한 파일만 `/tmp`에 백업 후 무효화해 재생성했다. 실제 페이지 HTTP 200, ja/en/ko 홈 문구, Chromium 데스크톱 1440×1000 및 모바일 390×844, 수평 넘침 0, 브라우저 오류 0을 확인했다. Python smoke/계약 27/27, 관리자 계약 6/6, postcode PHP lint 및 도메인/API 단위 테스트 통과, `docker compose config --quiet`, healthy 컨테이너 및 `git diff --check` 확인.
 - 캡처: `artifacts/qa/phase1a/home-empty-state-desktop-v2.png` 및 `home-empty-state-mobile-v2.png`.
 - 범위: 실제 상품이 아직 0개이므로 상품 카드의 숨김 조건은 계약 검사로 확인했고, 실상품 카드 UI는 아직 브라우저에서 검증하지 않았다. DB와 기존 주문은 변경하지 않았다.
+- GitHub 보존: 기능 커밋 `1af5fda05285b423baad2c7751bb7898c3257caa`를 `work`에 푸시하고 `git ls-remote`·`origin/work`와 비교했다. 별도 shallow clone `/tmp/kuranea-checkpoint-1af5fda`에서 같은 HEAD, 템플릿, 두 캡처 파일의 SHA-256을 재확인했다. `main`은 변경하지 않았다.
 
 ## 2026-10-21 — 검색 다국어와 모바일 내비게이션 대비 개선
 
