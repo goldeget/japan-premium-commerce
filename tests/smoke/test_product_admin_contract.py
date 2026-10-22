@@ -645,6 +645,25 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("expected_category_ids = {edit_category_id}", edit_selection)
         self.assertNotIn("currently_selected.intersection(usable_ids)", edit_selection)
 
+    def test_browser_category_selection_uses_visible_label_and_keyboard_fallback(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        category_click = browser.split("def select_category_checkbox", 1)[1].split("def fill(", 1)[0]
+        create_flow = browser.split('create_operation = "select_default_category"', 1)[1].split(
+            'create_operation = "prepare_image_file"', 1
+        )[0]
+        edit_flow = browser.split('edit_operation = "select_edit_category"', 1)[1].split(
+            "edit_category_ids_before_submit =", 1
+        )[0]
+
+        self.assertIn('find_element(By.XPATH, "./ancestor::label[1]")', category_click)
+        self.assertIn("scrollIntoView({block: 'center'", category_click)
+        self.assertIn("label.click()", category_click)
+        self.assertIn("except ElementClickInterceptedException:", category_click)
+        self.assertIn("checkbox.send_keys(Keys.SPACE)", category_click)
+        self.assertIn("lambda _browser: checkbox.is_selected()", category_click)
+        self.assertIn("select_category_checkbox(driver, initial_category)", create_flow)
+        self.assertIn("select_category_checkbox(driver, box)", edit_flow)
+
     def test_native_manager_excludes_root_and_rejects_it_as_a_default_category(self) -> None:
         service = (MODULE / "src" / "Integration" / "PrestaShopNativeProductManager.php").read_text(encoding="utf-8")
         categories = service.split("public function categories()", 1)[1].split("public function managedProducts()", 1)[0]

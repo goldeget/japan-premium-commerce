@@ -13,8 +13,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from selenium import webdriver
+from selenium.common.exceptions import ElementClickInterceptedException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -638,6 +640,22 @@ def default_category_box(driver: webdriver.Chrome):
     return next((box for box in categories if box.get_attribute("value") == "2"), categories[0])
 
 
+def select_category_checkbox(driver: webdriver.Chrome, checkbox) -> None:
+    if checkbox.is_selected():
+        return
+    label = checkbox.find_element(By.XPATH, "./ancestor::label[1]")
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", label)
+    if not label.is_displayed() or not checkbox.is_enabled():
+        raise AssertionError("the selected product category does not have an enabled visible label")
+    try:
+        label.click()
+    except ElementClickInterceptedException:
+        if not checkbox.is_displayed() or not checkbox.is_enabled() or checkbox.is_selected():
+            raise AssertionError("the product category label click was intercepted") from None
+        checkbox.send_keys(Keys.SPACE)
+    WebDriverWait(driver, 5).until(lambda _browser: checkbox.is_selected())
+
+
 def fill(driver: webdriver.Chrome, selector: str, value: str) -> None:
     field = visible(driver, selector)
     field.clear()
@@ -746,7 +764,7 @@ def run() -> None:
         initial_category = default_category_box(driver)
         initial_category_id = initial_category.get_attribute("value")
         if not initial_category.is_selected():
-            initial_category.click()
+            select_category_checkbox(driver, initial_category)
 
         create_operation = "prepare_image_file"
         png = base64.b64decode(
@@ -879,7 +897,7 @@ def run() -> None:
         for box in category_boxes:
             category_id = box.get_attribute("value")
             if box.is_selected() != (category_id in expected_category_ids):
-                box.click()
+                select_category_checkbox(driver, box)
         edit_category_ids_before_submit = [
             box.get_attribute("value") for box in category_boxes if box.is_selected()
         ]
