@@ -32,7 +32,7 @@ def visible(driver: webdriver.Chrome, selector: str):
 def manager_link(driver: webdriver.Chrome):
     for link in driver.find_elements(By.CSS_SELECTOR, 'a[href*="controller="]'):
         href = link.get_attribute("href") or ""
-        if link.is_displayed() and parse_qs(urlparse(href).query).get("controller", []) == ["AdminOrdenowaProductManager"]:
+        if parse_qs(urlparse(href).query).get("controller", []) == ["AdminOrdenowaProductManager"]:
             return href
     return False
 

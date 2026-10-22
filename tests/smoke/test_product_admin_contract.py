@@ -112,6 +112,13 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertLess(run_method.index("try:"), run_method.index("driver = webdriver.Chrome(options=options)"))
         self.assertIn("if driver is not None:", run_method)
 
+    def test_manager_link_discovery_accepts_collapsed_sidebar_entries(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        manager_link = browser.split("def manager_link(", 1)[1].split("\n\ndef product_links", 1)[0]
+
+        self.assertIn('parse_qs(urlparse(href).query).get("controller", []) == ["AdminOrdenowaProductManager"]', manager_link)
+        self.assertNotIn("is_displayed()", manager_link)
+
 
 if __name__ == "__main__":
     unittest.main()
