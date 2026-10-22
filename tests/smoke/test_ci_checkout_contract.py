@@ -88,6 +88,42 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertIn("@example.invalid", flow)
         self.assertIn("live payment", flow.lower())
 
+    def test_browser_checkout_explicitly_creates_a_registered_customer(self) -> None:
+        flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        field_setup = flow.split("def prepare_required_customer_fields", 1)[1].split(
+            "def search_for_product", 1
+        )[0]
+        account_checkbox = field_setup.split(
+            'create_account = form.find_elements(By.CSS_SELECTOR, "#password-form__check")', 1
+        )[1].split("password_fields =", 1)[0]
+
+        self.assertIn("if not create_account:", account_checkbox)
+        self.assertIn("raise AssertionError", account_checkbox)
+        self.assertIn("account_checkbox = create_account[0]", account_checkbox)
+        self.assertIn("account_checkbox.is_selected()", account_checkbox)
+        self.assertIn(
+            'account_label = form.find_elements(By.CSS_SELECTOR, \'label[for="password-form__check"]\')',
+            account_checkbox,
+        )
+        self.assertIn("if not account_label:", account_checkbox)
+        self.assertIn("click_at_center(driver, account_label[0])", account_checkbox)
+        self.assertLess(
+            account_checkbox.index("click_at_center(driver, account_label[0])"),
+            account_checkbox.index("WebDriverWait(driver, 5"),
+        )
+        self.assertNotIn("click_at_center(driver, account_checkbox)", account_checkbox)
+        self.assertIn("WebDriverWait(driver, 5", account_checkbox)
+
+    def test_persisted_browser_order_requires_a_non_guest_customer(self) -> None:
+        verifier = (ROOT / "tests" / "postcode" / "verify_ci_browser_checkout_order.php").read_text(encoding="utf-8")
+        customer_check = verifier.split("$customer = new Customer", 1)[1].split(
+            "$stage = 'unpaid ps_checkpayment order'", 1
+        )[0]
+        rejecting_condition = customer_check.split("if (", 1)[1].split(") {", 1)[0]
+
+        self.assertIn("$customer->is_guest", customer_check)
+        self.assertIn("|| (bool) $customer->is_guest", rejecting_condition)
+
     def test_browser_order_asserts_autocomplete_values_before_manual_address_edits(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
         address_flow = flow.split("def select_japan_address", 1)[1].split(

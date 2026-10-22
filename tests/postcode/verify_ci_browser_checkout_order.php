@@ -58,8 +58,11 @@ if (!Validate::isLoadedObject($order)) {
 }
 $customer = new Customer((int) $order->id_customer);
 $expectedEmail = sprintf('qa-ordenowa-checkout-%s-%s-%s@example.invalid', $runId, $runAttempt, $viewport);
-if (!Validate::isLoadedObject($customer) || strtolower((string) $customer->email) !== strtolower($expectedEmail)) {
-    throw new RuntimeException('The browser order is not linked to its run-scoped test customer.');
+if (!Validate::isLoadedObject($customer)
+    || strtolower((string) $customer->email) !== strtolower($expectedEmail)
+    || (bool) $customer->is_guest
+) {
+    throw new RuntimeException('The browser order must be linked to its run-scoped registered customer.');
 }
 
 $stage = 'unpaid ps_checkpayment order';

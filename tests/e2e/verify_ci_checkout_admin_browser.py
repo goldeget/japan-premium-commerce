@@ -122,8 +122,18 @@ def prepare_required_customer_fields(driver: webdriver.Chrome, form, email: str,
             fields[0].send_keys(value)
 
     create_account = form.find_elements(By.CSS_SELECTOR, "#password-form__check")
-    if create_account and not create_account[0].is_selected():
-        click_at_center(driver, create_account[0])
+    if not create_account:
+        raise AssertionError("checkout customer form did not offer account creation")
+    account_checkbox = create_account[0]
+    account_label = form.find_elements(By.CSS_SELECTOR, 'label[for="password-form__check"]')
+    if not account_label:
+        raise AssertionError("checkout account creation checkbox has no associated label")
+    if not account_checkbox.is_selected():
+        click_at_center(driver, account_label[0])
+    WebDriverWait(driver, 5, poll_frequency=0.1).until(
+        lambda _browser: account_checkbox.is_selected(),
+        message="checkout account creation checkbox was not selected",
+    )
 
     password_fields = form.find_elements(By.CSS_SELECTOR, 'input[type="password"]')
     if not password_fields:
