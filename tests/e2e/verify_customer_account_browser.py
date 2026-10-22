@@ -134,12 +134,16 @@ def visible(driver: webdriver.Chrome, selector: str):
     return WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.CSS_SELECTOR, selector)))
 
 
-def assert_korean_email_login_form(driver: webdriver.Chrome, state: dict[str, str]) -> None:
+def assert_korean_email_login_form(driver: webdriver.Chrome, state: dict[str, object]) -> None:
     # Use PrestaShop's generated language and account links. The Korean route
     # slug is installation metadata and must not be guessed as `/ko/login`.
-    state["stage"] = "korean_storefront_home"
+    def mark_stage(name: str) -> None:
+        state["stage"] = name
+        state["stage_started_at"] = time.monotonic()
+
+    mark_stage("korean_storefront_home")
     driver.get(f"{BASE}/")
-    state["stage"] = "korean_language_selector"
+    mark_stage("korean_language_selector")
     korean_language_option = WebDriverWait(driver, 30).until(
         EC.presence_of_element_located(
             (By.CSS_SELECTOR, 'select.js-language-selector option[data-iso-code="ko"]')
@@ -157,14 +161,17 @@ def assert_korean_email_login_form(driver: webdriver.Chrome, state: dict[str, st
         or korean_language_location.port != base_location.port
     ):
         raise AssertionError("the Korean language selector changed the isolated shop origin")
-    state["stage"] = "korean_language_destination"
+    state["language_url_metadata"] = safe_url_metadata(korean_language_url)
+    mark_stage("korean_language_destination")
     driver.get(korean_language_url)
 
     document_language = (driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower()
+    state["language_destination_document_language"] = safe_diagnostic_name(document_language)
+    state["language_destination_url_metadata"] = safe_url_metadata(driver.current_url)
     if not document_language.startswith("ko"):
         raise AssertionError("the generated Korean language destination did not render Korean")
 
-    state["stage"] = "korean_sign_in_link"
+    mark_stage("korean_sign_in_link")
     sign_in_links = driver.find_elements(
         By.CSS_SELECTOR,
         '#_desktop_ps_customersignin a[href], #_mobile_ps_customersignin a[href]',
@@ -183,12 +190,21 @@ def assert_korean_email_login_form(driver: webdriver.Chrome, state: dict[str, st
         or login_location.port != base_location.port
     ):
         raise AssertionError("the customer sign-in link changed the isolated shop origin")
-    state["stage"] = "korean_login_page_navigation"
+    state["sign_in_url_metadata"] = safe_url_metadata(login_url)
+    mark_stage("korean_login_page_navigation")
     driver.get(login_url)
+    state["login_navigation_document_language"] = safe_diagnostic_name(
+        (driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower()
+    )
+    state["login_navigation_url_metadata"] = safe_url_metadata(driver.current_url)
 
-    state["stage"] = "korean_login_form"
+    mark_stage("korean_login_form")
     visible(driver, "#login-form")
-    state["stage"] = "korean_email_field"
+    state["login_form_document_language"] = safe_diagnostic_name(
+        (driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower()
+    )
+    state["login_form_url_metadata"] = safe_url_metadata(driver.current_url)
+    mark_stage("korean_email_field")
     email_field = visible(driver, '#login-form input[type="email"]')
     if email_field.get_attribute("name") != "email":
         raise AssertionError("Korean customer login does not submit the email field")
@@ -220,7 +236,12 @@ def assert_korean_email_login_form(driver: webdriver.Chrome, state: dict[str, st
     if USER_ID_LOOKUP_ACCESSIBLE_NAME.search(email_accessible_name):
         raise AssertionError("Korean login field's accessible label implies a separate user ID login")
 
-    state["stage"] = "korean_password_reset_link"
+    state["email_label_document_language"] = safe_diagnostic_name(
+        (driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower()
+    )
+    state["email_label_assertion_passed"] = True
+    state["email_label_url_metadata"] = safe_url_metadata(driver.current_url)
+    mark_stage("korean_password_reset_link")
     password_reset_link = visible(driver, '#login-form a[href]')
     password_reset_name = " ".join(
         (
@@ -235,11 +256,12 @@ def assert_korean_email_login_form(driver: webdriver.Chrome, state: dict[str, st
         raise AssertionError("Korean login recovery link implies user ID lookup instead of password reset")
 
 
-def emit_korean_login_diagnostics(driver: webdriver.Chrome, state: dict[str, str]) -> None:
+def emit_korean_login_diagnostics(driver: webdriver.Chrome, state: dict[str, object]) -> None:
     """Report the exact Korean login wait and sanitized page markers on failure."""
     diagnostics: dict[str, object] = {
         "stage": safe_diagnostic_name(state.get("stage", "")),
         "path": safe_same_origin_path(getattr(driver, "current_url", "")),
+        "final_url_metadata": safe_url_metadata(getattr(driver, "current_url", "")),
         "document_language": "",
         "language_selector_count": 0,
         "korean_language_option_count": 0,
@@ -252,7 +274,24 @@ def emit_korean_login_diagnostics(driver: webdriver.Chrome, state: dict[str, str
         "email_field_type_matches": False,
         "email_label_present": False,
         "password_reset_link_count": 0,
+        "language_url_metadata": state.get("language_url_metadata", {}),
+        "language_destination_document_language": state.get("language_destination_document_language", ""),
+        "language_destination_url_metadata": state.get("language_destination_url_metadata", {}),
+        "sign_in_url_metadata": state.get("sign_in_url_metadata", {}),
+        "login_navigation_document_language": state.get("login_navigation_document_language", ""),
+        "login_navigation_url_metadata": state.get("login_navigation_url_metadata", {}),
+        "login_form_document_language": state.get("login_form_document_language", ""),
+        "login_form_url_metadata": state.get("login_form_url_metadata", {}),
+        "email_label_document_language": state.get("email_label_document_language", ""),
+        "email_label_assertion_passed": state.get("email_label_assertion_passed", False),
+        "email_label_url_metadata": state.get("email_label_url_metadata", {}),
+        "failed_stage_elapsed_ms": 0,
     }
+    stage_started_at = state.get("stage_started_at")
+    if isinstance(stage_started_at, (int, float)):
+        diagnostics["failed_stage_elapsed_ms"] = min(
+            300_000, max(0, int((time.monotonic() - stage_started_at) * 1000))
+        )
     try:
         page_state = driver.execute_script(
             """
@@ -282,7 +321,20 @@ def emit_korean_login_diagnostics(driver: webdriver.Chrome, state: dict[str, str
             """
         )
         if isinstance(page_state, dict):
-            for key in diagnostics.keys() - {"stage", "path"}:
+            for key in (
+                "document_language",
+                "language_selector_count",
+                "korean_language_option_count",
+                "customer_sign_in_link_count",
+                "login_form_count",
+                "login_form_visible",
+                "email_field_count",
+                "email_field_visible",
+                "email_field_name_matches",
+                "email_field_type_matches",
+                "email_label_present",
+                "password_reset_link_count",
+            ):
                 value = page_state.get(key)
                 if key == "document_language":
                     diagnostics[key] = re.sub(r"[^A-Za-z0-9-]", "", str(value or ""))[:12]
@@ -422,6 +474,62 @@ def safe_same_origin_path(value: object) -> str:
         else:
             safe_segments.append(re.sub(r"[^A-Za-z0-9_.-]", "_", segment))
     return "/".join(safe_segments)[:160] or "/"
+
+
+def safe_url_metadata(value: object) -> dict[str, object]:
+    """Return route shape without exposing URL values, tokens, or customer data."""
+    metadata: dict[str, object] = {
+        "same_origin": False,
+        "path": "/<unknown>",
+        "path_length": 0,
+        "path_has_non_ascii": False,
+        "path_has_ascii_letters": False,
+        "path_has_digits": False,
+        "path_has_percent_escape": False,
+        "path_segment_count": 0,
+        "query_key_names": [],
+        "id_lang_present": False,
+        "isolang_present": False,
+        "controller_present": False,
+        "back_present": False,
+    }
+    if not isinstance(value, str):
+        return metadata
+    try:
+        location = urlparse(value)
+        base_location = urlparse(BASE)
+        same_origin = (
+            location.scheme.lower() == base_location.scheme.lower()
+            and location.hostname == base_location.hostname
+            and location.port == base_location.port
+        )
+        if not same_origin:
+            return metadata
+        raw_path = location.path or "/"
+        decoded_path = unquote(raw_path)
+        query_keys = set(parse_qs(location.query, keep_blank_values=True).keys())
+    except (TypeError, ValueError):
+        return metadata
+
+    allowlisted_query_keys = {"back", "controller", "id_lang", "isolang", "lang"}
+    metadata.update(
+        {
+            "same_origin": True,
+            "path": safe_same_origin_path(value),
+            "path_length": min(len(decoded_path), 1000),
+            "path_has_non_ascii": any(ord(character) > 127 for character in decoded_path),
+            "path_has_ascii_letters": bool(re.search(r"[A-Za-z]", decoded_path)),
+            "path_has_digits": bool(re.search(r"[0-9]", decoded_path)),
+            "path_has_percent_escape": bool(re.search(r"%[0-9A-Fa-f]{2}", raw_path)),
+            "path_segment_count": len([part for part in decoded_path.split("/") if part]),
+            "query_key_names": sorted(query_keys & allowlisted_query_keys),
+            "id_lang_present": "id_lang" in query_keys,
+            "isolang_present": "isolang" in query_keys,
+            "controller_present": "controller" in query_keys,
+            "back_present": "back" in query_keys,
+        }
+    )
+    return metadata
 
 
 def safe_registration_path(value: object) -> str:
@@ -930,7 +1038,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
     stage = "registration_link_load"
     failure_control = {"name": "display-register-form", "type": "anchor"}
     profile_pre_submit: dict[str, object] | None = None
-    korean_login_state: dict[str, str] = {}
+    korean_login_state: dict[str, object] = {}
     expected_first_name = f"CI-{label.title()}"
     driver = None
     success = False

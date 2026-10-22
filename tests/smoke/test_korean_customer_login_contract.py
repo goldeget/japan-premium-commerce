@@ -1,14 +1,54 @@
 """Guard the rendered Korean login's email identifier and password recovery wording."""
 from __future__ import annotations
 
+import ast
+import re
 import unittest
 from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class KoreanCustomerLoginContractTests(unittest.TestCase):
+    def test_safe_url_metadata_reports_route_shape_without_query_values(self) -> None:
+        browser_flow_path = ROOT / "tests" / "e2e" / "verify_customer_account_browser.py"
+        syntax_tree = ast.parse(browser_flow_path.read_text(encoding="utf-8"))
+        helper_nodes = [
+            node
+            for node in syntax_tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name in {"safe_same_origin_path", "safe_url_metadata"}
+        ]
+        namespace = {
+            "BASE": "https://shop.example.test",
+            "parse_qs": parse_qs,
+            "re": re,
+            "unquote": unquote,
+            "urlparse": urlparse,
+        }
+        compiled_helpers = compile(
+            ast.Module(body=helper_nodes, type_ignores=[]),
+            str(browser_flow_path),
+            "exec",
+        )
+        exec(compiled_helpers, namespace)
+
+        metadata = namespace["safe_url_metadata"](
+            "https://shop.example.test/ログイン?controller=authentication&id_lang=3&token=secret-token&email=private%40example.test"
+        )
+        self.assertTrue(metadata["same_origin"])
+        self.assertTrue(metadata["id_lang_present"])
+        self.assertTrue(metadata["controller_present"])
+        self.assertTrue(metadata["path_has_non_ascii"])
+        self.assertEqual(metadata["query_key_names"], ["controller", "id_lang"])
+        self.assertNotIn("secret-token", repr(metadata))
+        self.assertNotIn("private@example.test", repr(metadata))
+        self.assertFalse(
+            namespace["safe_url_metadata"]("https://other.example.test/login")["same_origin"]
+        )
+
     def test_account_browser_checks_korean_email_login_and_separate_password_recovery(self) -> None:
         browser_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(
             encoding="utf-8"
@@ -89,10 +129,25 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
         ):
             self.assertIn(stage, browser_flow)
         self.assertIn("def emit_korean_login_diagnostics", browser_flow)
+        self.assertIn("def safe_url_metadata", browser_flow)
+        self.assertIn('korean_login_state: dict[str, object]', browser_flow)
+        self.assertIn('for key in (\n                "document_language",', browser_flow)
         self.assertIn('"ORDENOWA_KOREAN_LOGIN_SAFE_STATE="', browser_flow)
         self.assertIn('emit_korean_login_diagnostics(driver, korean_login_state)', browser_flow)
         self.assertIn('korean_login_diagnostics=$(rg \'^ORDENOWA_KOREAN_LOGIN_SAFE_STATE=\'', workflow)
         self.assertIn("ORDENOWA_KOREAN_LOGIN_SAFE_STATE", workflow)
+        for transition_fact in (
+            'state["language_url_metadata"] = safe_url_metadata(korean_language_url)',
+            'state["sign_in_url_metadata"] = safe_url_metadata(login_url)',
+            '"final_url_metadata": safe_url_metadata',
+            '"email_label_document_language"',
+            '"login_navigation_document_language"',
+            '"failed_stage_elapsed_ms"',
+            '"query_key_names"',
+            '"id_lang_present"',
+            '"path_has_non_ascii"',
+        ):
+            self.assertIn(transition_fact, browser_flow)
         diagnostics = browser_flow.split("def emit_korean_login_diagnostics", 1)[1].split(
             "\n\ndef ", 1
         )[0]
