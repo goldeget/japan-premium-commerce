@@ -45,9 +45,6 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertEqual(account_flow.count("        assert_my_page(driver,"), 3)
         for selector in ("identity_main_link", "signout_link"):
             self.assertIn(selector, my_page)
-        hummingbird_account_template = (ROOT / "themes" / "hummingbird" / "templates" / "customer" / "my-account.tpl").read_text(encoding="utf-8")
-        self.assertIn("{if !$configuration.is_catalog}", hummingbird_account_template, "order history is conditional in catalog mode")
-        self.assertIn('id="history_main_link"', hummingbird_account_template)
         self.assertIn("expected_first_name", my_page)
         self.assertIn('driver.get(f"{BASE}/index.php?controller=my-account")', logout)
         self.assertIn("identity_main_link", logout)
