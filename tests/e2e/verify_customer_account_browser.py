@@ -714,6 +714,30 @@ def prepare_required_registration_fields(
         raise AssertionError("registration form has invalid controls: " + ", ".join(invalid_fields))
 
 
+def accept_profile_update_disclosures(driver: webdriver.Chrome, form) -> None:
+    """Accept only the synthetic CI customer's two required profile disclosures."""
+    for name in ("customer_privacy", "psgdpr_consent_checkbox"):
+        checkbox = visible(driver, f'#customer-form input[type="checkbox"][name="{name}"]')
+        if not checkbox.is_displayed() or not checkbox.is_enabled():
+            raise AssertionError(f"profile update disclosure {name} is not available for the CI customer")
+        if not checkbox.is_selected():
+            click_required_checkbox_label(form, checkbox)
+        if not checkbox.is_selected():
+            raise AssertionError(f"profile update disclosure {name} was not accepted by the CI customer")
+
+
+def assert_native_form_valid(driver: webdriver.Chrome, form, form_label: str) -> None:
+    invalid_fields = []
+    for element in form.find_elements(By.CSS_SELECTOR, ":invalid"):
+        field_name = element.get_attribute("name") or element.get_attribute("id") or element.tag_name.lower()
+        field_type = element.get_attribute("type") or element.tag_name.lower()
+        invalid_fields.append(f"{field_name}:{field_type}")
+
+    if invalid_fields or not driver.execute_script("return arguments[0].checkValidity();", form):
+        detail = ", ".join(invalid_fields) if invalid_fields else "unknown controls"
+        raise AssertionError(f"{form_label} form has invalid controls: {detail}")
+
+
 def submit_login(driver: webdriver.Chrome, email_address: str, password: str) -> None:
     driver.get(f"{BASE}/index.php?controller=authentication")
     fill(driver, '#login-form input[name="email"]', email_address)
@@ -835,11 +859,16 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         stage = "profile_update_current_password"
         # PrestaShop 9 requires the signed-in customer's current password before saving identity changes.
         fill(driver, '#customer-form input[name="password"]', initial_password)
+        stage = "profile_update_required_disclosures"
+        profile_form = visible(driver, "#customer-form")
+        accept_profile_update_disclosures(driver, profile_form)
+        assert_native_form_valid(driver, profile_form, "profile update")
         profile_pre_submit = collect_profile_update_diagnostics(
             driver, "pre_submit", expected_first_name
         )
         stage = "profile_update_submit"
-        visible(driver, "#customer-form button.form-control-submit").click()
+        submit_button = visible(driver, "#customer-form button.form-control-submit")
+        click_centered(driver, submit_button)
         stage = "profile_update_persist_wait"
         WebDriverWait(driver, 30).until(
             lambda browser: browser.find_element(By.CSS_SELECTOR, '#customer-form input[name="firstname"]').get_attribute("value")

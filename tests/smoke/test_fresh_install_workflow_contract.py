@@ -284,11 +284,18 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         profile_end = account_flow.index('stage = "email_login"', profile_start)
         profile_update = account_flow[profile_start:profile_end]
         current_password = "fill(driver, '#customer-form input[name=\"password\"]', initial_password)"
+        disclosure_acceptance = "accept_profile_update_disclosures(driver, profile_form)"
+        form_validation = "assert_native_form_valid(driver, profile_form, \"profile update\")"
+        submit_click = "click_centered(driver, submit_button)"
         self.assertIn(current_password, profile_update)
+        self.assertIn(disclosure_acceptance, profile_update)
+        self.assertIn(form_validation, profile_update)
         self.assertLess(
             profile_update.index(current_password),
-            profile_update.index('visible(driver, "#customer-form button.form-control-submit").click()'),
+            profile_update.index(disclosure_acceptance),
         )
+        self.assertLess(profile_update.index(disclosure_acceptance), profile_update.index(form_validation))
+        self.assertLess(profile_update.index(form_validation), profile_update.index(submit_click))
 
     def test_profile_update_failure_emits_bounded_redacted_dom_diagnostics(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
@@ -341,6 +348,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             'stage = "profile_update_route"',
             'stage = "profile_update_first_name"',
             'stage = "profile_update_current_password"',
+            'stage = "profile_update_required_disclosures"',
             'stage = "profile_update_submit"',
             'stage = "profile_update_persist_wait"',
         ):

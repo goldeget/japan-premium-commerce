@@ -121,6 +121,65 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn('(1440, 960, "desktop")', self.source)
         self.assertIn('(390, 844, "mobile")', self.source)
 
+    def test_profile_update_accepts_both_required_disclosures_before_valid_submit(self) -> None:
+        required_stages = (
+            "profile_update_current_password",
+            "profile_update_required_disclosures",
+            "profile_update_submit",
+        )
+        positions = [self.stages.index(stage) for stage in required_stages]
+        self.assertEqual(positions, sorted(positions))
+
+        disclosure_stage = self.blocks["profile_update_required_disclosures"]
+        self.assertIn("accept_profile_update_disclosures(driver, profile_form)", disclosure_stage)
+        self.assertIn("assert_native_form_valid(driver, profile_form", disclosure_stage)
+
+        disclosure_helper = self.source.split("def accept_profile_update_disclosures", 1)[1].split(
+            "def assert_native_form_valid", 1
+        )[0]
+        self.assertIn('("customer_privacy", "psgdpr_consent_checkbox")', disclosure_helper)
+        self.assertIn("checkbox.is_displayed()", disclosure_helper)
+        self.assertIn("checkbox.is_enabled()", disclosure_helper)
+        self.assertIn("if not checkbox.is_selected()", disclosure_helper)
+        self.assertIn("click_required_checkbox_label(form, checkbox)", disclosure_helper)
+        self.assertIn("if not checkbox.is_selected()", disclosure_helper)
+
+        label_interaction = self.source.split("def click_required_checkbox_label", 1)[1].split(
+            "def prepare_required_registration_fields", 1
+        )[0]
+        self.assertIn('form.find_elements(By.CSS_SELECTOR, "label[for]")', label_interaction)
+        self.assertIn("candidate.get_attribute(\"for\") == checkbox_id", label_interaction)
+        self.assertIn("label.click()", label_interaction)
+        self.assertIn("checkbox.send_keys(Keys.SPACE)", label_interaction)
+
+        customer_field_template = (
+            ROOT / "themes" / "hummingbird" / "templates" / "_partials" / "form-fields.tpl"
+        ).read_text(encoding="utf-8")
+        self.assertIn('name="{$field.name}"', customer_field_template)
+        self.assertIn('for="{$id_prefix}field-{$field.name}"', customer_field_template)
+        psgdpr_template = (
+            ROOT
+            / "themes"
+            / "hummingbird"
+            / "modules"
+            / "psgdpr"
+            / "views"
+            / "templates"
+            / "hook"
+            / "displayGDPRConsent.tpl"
+        ).read_text(encoding="utf-8")
+        self.assertIn('name="psgdpr_consent_checkbox"', psgdpr_template)
+        self.assertIn('for="psgdpr_consent_checkbox_{$psgdpr_id_module|escape:', psgdpr_template)
+
+        validity_helper = self.source.split("def assert_native_form_valid", 1)[1].split(
+            "def submit_login", 1
+        )[0]
+        self.assertIn('find_elements(By.CSS_SELECTOR, ":invalid")', validity_helper)
+        self.assertIn("arguments[0].checkValidity()", validity_helper)
+
+        submit_stage = self.blocks["profile_update_submit"]
+        self.assertIn("click_centered(driver, submit_button)", submit_stage)
+
 
 if __name__ == "__main__":
     unittest.main()
