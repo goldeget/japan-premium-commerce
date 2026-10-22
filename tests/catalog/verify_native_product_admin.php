@@ -84,6 +84,40 @@ if (!Access::isGranted($readPermission, 1)) {
     throw new RuntimeException('The isolated shop administrator profile cannot read the Korean product manager tab.');
 }
 
+$stage = 'synthetic product edit category';
+$editCategoryName = 'ORDENOWA CI EDIT CATEGORY ' . $runId . '-' . $attempt;
+$categoryNames = [];
+foreach (Language::getLanguages(false) as $language) {
+    $idLanguage = (int) ($language['id_lang'] ?? 0);
+    if ($idLanguage > 0) {
+        $categoryNames[$idLanguage] = $editCategoryName;
+    }
+}
+if ($categoryNames === []) {
+    throw new RuntimeException('The isolated shop has no active language for its product edit category fixture.');
+}
+$editCategory = new Category();
+$editCategory->id_parent = $categoryId;
+$editCategory->id_shop_default = $shopId;
+$editCategory->is_root_category = false;
+$editCategory->active = 1;
+$editCategory->name = $categoryNames;
+$editCategory->link_rewrite = array_fill_keys(
+    array_keys($categoryNames),
+    'ordenowa-ci-edit-category-' . $runId . '-' . $attempt
+);
+if (!$editCategory->add()) {
+    throw new RuntimeException('Could not create the isolated native product edit category.');
+}
+$editCategoryId = (int) $editCategory->id;
+$visibleEditCategory = array_filter(
+    (new PrestaShopNativeProductManager())->categories(),
+    static fn (array $row): bool => (int) $row['id_category'] === $editCategoryId
+);
+if ($editCategoryId < 1 || $editCategoryId === $categoryId || count($visibleEditCategory) !== 1) {
+    throw new RuntimeException('The isolated native product edit category is not available in the shop.');
+}
+
 $stage = 'synthetic product draft and image upload';
 $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGNU8qplYGBgYmBgYGBgAAAKuwDtbIwH5AAAAABJRU5ErkJggg==', true);
 if (!is_string($png)) {
@@ -190,7 +224,7 @@ $editedDraft = ProductAdminDraft::fromArray([
     'name_ko' => 'ORDENOWA CI 합성 상품 수정',
     'price_jpy' => '1490',
     'quantity' => '5',
-    'category_ids' => [(string) $categoryId],
+    'category_ids' => [(string) $editCategoryId],
     'description_ja' => '更新した説明',
     'description_ko' => '수정한 상세 설명',
     'options' => "色:青|赤\nサイズ:S|M",
@@ -201,6 +235,7 @@ $editedCombinationRows = Db::getInstance()->executeS(
     'SELECT `id_product_attribute` FROM `' . _DB_PREFIX_ . 'product_attribute` WHERE `id_product` = ' . (int) $savedProductId . ' ORDER BY `id_product_attribute` ASC'
 );
 $editedCombinationIds = array_map(static fn (array $row): int => (int) $row['id_product_attribute'], is_array($editedCombinationRows) ? $editedCombinationRows : []);
+$editedCategoryIds = array_map('intval', Product::getProductCategories($savedProductId));
 $newImageIds = $manager->imageIds($savedProductId);
 $editedEditor = $manager->editorData($savedProductId);
 $editedManagedProducts = array_values(array_filter(
@@ -220,7 +255,11 @@ $editChecks = [
     'editor Korean name' => ($editedEditor['name_ko'] ?? '') === 'ORDENOWA CI 합성 상품 수정',
     'Japanese description' => ($editedEditor['description_ja'] ?? '') === '更新した説明',
     'Korean description' => ($editedEditor['description_ko'] ?? '') === '수정한 상세 설명',
-    'categories' => in_array($categoryId, $editedEditor['category_ids'] ?? [], true),
+    'category default' => (int) $editedProduct->id_category_default === $editCategoryId,
+    'categories' => ($editedEditor['category_ids'] ?? []) === [$editCategoryId],
+    'category association changed' => !in_array($editCategoryId, $createdEditor['category_ids'] ?? [], true),
+    'new category association' => in_array($editCategoryId, $editedCategoryIds, true),
+    'old category association removed' => !in_array($categoryId, $editedCategoryIds, true),
     'options' => ($editedEditor['options'] ?? '') === "色:青|赤\nサイズ:S|M",
     'managed product row count' => count($editedManagedProducts) === 1,
     'managed product name' => ($editedManagedProducts[0]['name'] ?? '') === 'ORDENOWA CI 合成商品 수정',

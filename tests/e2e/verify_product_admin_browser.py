@@ -402,19 +402,32 @@ def run() -> None:
         if not usable_ids:
             raise AssertionError("no usable native product categories are available for editing")
         currently_selected = {box.get_attribute("value") for box in category_boxes if box.is_selected()}
+        run_id = os.environ.get("GITHUB_RUN_ID", "local")
+        run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "1")
+        edit_category_name = f"ORDENOWA CI EDIT CATEGORY {run_id}-{run_attempt}"
         alternate_categories = [
             box.get_attribute("value")
             for box in category_boxes
             if box.get_attribute("value") in usable_ids
             and box.get_attribute("value") not in currently_selected
         ]
-        expected_category_ids = (
-            {alternate_categories[0]}
-            if alternate_categories
-            else currently_selected.intersection(usable_ids)
+        if not alternate_categories:
+            raise AssertionError("category edit must select the isolated CI category")
+        edit_category = next(
+            (
+                box
+                for box in category_boxes
+                if box.get_attribute("value") in alternate_categories
+                and edit_category_name in box.find_element(By.XPATH, "./ancestor::label[1]").text
+            ),
+            None,
         )
-        if not expected_category_ids:
-            raise AssertionError("the product edit form has no usable category selected")
+        if edit_category is None:
+            raise AssertionError("the isolated CI product edit category is missing from the admin form")
+        edit_category_id = edit_category.get_attribute("value")
+        if not edit_category_id or edit_category_id == initial_category_id:
+            raise AssertionError("the isolated CI edit category must differ from the created product category")
+        expected_category_ids = {edit_category_id}
         for box in category_boxes:
             category_id = box.get_attribute("value")
             if box.is_selected() != (category_id in expected_category_ids):

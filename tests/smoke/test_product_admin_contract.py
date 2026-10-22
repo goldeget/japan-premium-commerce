@@ -297,7 +297,11 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("initial_category = default_category_box(driver)", browser)
         self.assertIn("created_category_ids != {initial_category_id}", browser)
         self.assertIn("usable_ids = {box.get_attribute(\"value\") for box in usable_category_boxes(driver)}", edit_selection)
-        self.assertIn("currently_selected.intersection(usable_ids)", edit_selection)
+        self.assertIn('edit_category_name = f"ORDENOWA CI EDIT CATEGORY {run_id}-{run_attempt}"', edit_selection)
+        self.assertIn("if not alternate_categories:", edit_selection)
+        self.assertIn('edit_category_name in box.find_element(By.XPATH, "./ancestor::label[1]").text', edit_selection)
+        self.assertIn("expected_category_ids = {edit_category_id}", edit_selection)
+        self.assertNotIn("currently_selected.intersection(usable_ids)", edit_selection)
 
     def test_native_manager_excludes_root_and_rejects_it_as_a_default_category(self) -> None:
         service = (MODULE / "src" / "Integration" / "PrestaShopNativeProductManager.php").read_text(encoding="utf-8")
@@ -356,6 +360,32 @@ class ProductAdminContractTests(unittest.TestCase):
 
         self.assertIn("Permission::PREFIX_TAB . 'ADMINORDENOWAPRODUCTMANAGER_READ'", verifier)
         self.assertIn("Access::isGranted($readPermission, 1)", verifier)
+
+    def test_product_edit_switches_to_a_distinct_ci_category_and_persists_it(self) -> None:
+        verifier = (ROOT / "tests" / "catalog" / "verify_native_product_admin.php").read_text(encoding="utf-8")
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        edit_verifier = verifier.split("$stage = 'native product edit';", 1)[1]
+        edit_browser = browser.split('stage = "native_product_edit"', 1)[1].split(
+            'stage = "mobile_product_admin_layout"', 1
+        )[0]
+
+        self.assertIn("new Category()", verifier)
+        self.assertIn("$stage = 'synthetic product edit category';", verifier)
+        self.assertIn("'ORDENOWA CI EDIT CATEGORY ' . $runId . '-' . $attempt", verifier)
+        self.assertIn("ORDENOWA CI EDIT CATEGORY", verifier)
+        self.assertIn("$editCategory->id_parent = $categoryId;", verifier)
+        self.assertIn("$editCategory->id_shop_default = $shopId;", verifier)
+        self.assertIn("$editCategory->active = 1;", verifier)
+        self.assertIn("$editCategory->add()", verifier)
+        self.assertIn("$editCategoryId === $categoryId", verifier)
+        self.assertIn("'category_ids' => [(string) $editCategoryId]", edit_verifier)
+        self.assertIn("'category default' => (int) $editedProduct->id_category_default === $editCategoryId", edit_verifier)
+        self.assertIn("'category association changed'", edit_verifier)
+        self.assertIn("'new category association'", edit_verifier)
+        self.assertIn("ORDENOWA CI EDIT CATEGORY", edit_browser)
+        self.assertIn("if not alternate_categories:", edit_browser)
+        self.assertIn("category edit must select the isolated CI category", edit_browser)
+        self.assertNotIn("currently_selected.intersection(usable_ids)", edit_browser)
 
 
 if __name__ == "__main__":
