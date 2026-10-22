@@ -1,5 +1,16 @@
 # KURANEA 작업 기록
 
+## 2026-10-22 — Japan Post 배송지의 격리 주문 저장 QA 추가
+
+- 시작 기준: 원격 `work`와 로컬 `HEAD`가 `9a187efbb465c622b1e13afe18ed3f5d34aaf119`로 일치했고, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다. 기존 미추적 파일과 두 활성 named volume을 보존했다.
+- 변경: `tests/postcode/verify_native_order_persistence.php`는 `CI=true`, `GITHUB_ACTIONS=true`, 실행 ID·시도·고유 Compose 프로젝트 이름이 맞을 때만 작동한다. 고유 CI DB에서 공식 오프라인 `ps_checkpayment`, CI 전용 무료 배송사와 상품, 일본우편 `1000004` 배송지·수정 건물명, 실제 `PaymentModule::validateOrder()` 주문 저장, `id_address_delivery`, Back Office `GetOrderForViewing` 주소 projection을 확인하도록 추가했다. workflow가 실행 ID 환경을 전달한다.
+- 추가 발견: CI 설치 계약 테스트 4개가 기존 합쳐진 step 이름을 찾고 있어 분리된 새 workflow를 대상으로 실패했다. 테스트를 개별 이미지 빌드·캐시 권한 probe·Compose 시작·공통 실패 진단 구조에 맞게 업데이트했다.
+- 검증: smoke 및 CI 계약 34/34, 관리자 번역 계약 8/8, 주문 스크립트 PHP lint, postcode 도메인 및 read-only live address 검증, Compose 설정, 실제 storefront HTTP 200을 확인했다. 로컬 DB의 주문 0건·상품 0건을 읽기 전용 조회로 재확인했다. 관리자 주문 목록은 한국어 PC 1440×1000·모바일 390×844에서 HTTP 200, 브라우저 오류 0건이며 캡처를 저장했다. 빈 목록이라 주문별 주소 표시는 확인하지 못했다.
+- 빈 설치 CI: run `39703327857`과 주문 스크립트를 포함한 `39704824787` 모두 이미지 빌드·캐시 권한 probe PASS 후 `Start the empty-volume shop`에서 실패했다. 진단 단계/artifact 업로드는 완료됐지만 이 환경의 GitHub API·익명 artifact 접근 제한으로 본문 로그를 읽지 못해 root cause 및 `errno 28` 여부를 확정하지 않았다. 두 run 모두 설치 완료 전 주문 검증은 건너뛰었다.
+- 환경·데이터 보존: cloud spec revision은 실제 status에서 2로 확인되어 요청된 3이 미적용이다. 로컬 workspace는 91 MB 여유, inode 95%여서 로컬 이미지 재빌드를 하지 않았다. 기존 `kuranea_mariadb_data`, `kuranea_prestashop_html`, 알 수 없는 미연결 볼륨을 초기화하거나 삭제하지 않았다.
+- 원격 checkpoint: `1f5f552316a7e9b860ff551b8998e14313f8bac0`을 `work`에 푸시하고 `git rev-parse`, `git ls-remote`, `git show origin/work:<file>`로 SHA와 주문 테스트·workflow 파일을 재조회했다. `main`은 변경하지 않았다.
+- 미완료: 새 빈 설치와 주소 적재, CI 네이티브 주문 및 관리자 주소 projection은 미검증이다. Back Office 전체 한국어 100%, PWA 실제 설치, 실제 checkout 브라우저 주문도 미완료다.
+
 ## 2026-10-22 — 빈 카탈로그 메인 화면 보완
 
 - 시작 기준: `work` 로컬·원격 SHA `15a3d82de3df746994eac88c194bdf3caf4e1779`, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`; 기존 미추적 파일과 named volume을 보존했다.

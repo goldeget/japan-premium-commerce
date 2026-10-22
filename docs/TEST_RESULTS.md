@@ -6,18 +6,20 @@
 
 | 검사 | 결과 | 근거 |
 | --- | --- | --- |
-| Python smoke 및 계약 테스트 | PASS | 2026-10-22 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/smoke -p 'test_*.py' -v`: 33/33. 메뉴/푸터, 검색·빈 카테고리 상태 ja/en/ko 회귀 검사를 포함한다. |
+| Python smoke 및 CI 계약 테스트 | PASS | 2026-10-22 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/smoke -p 'test_*.py' -v`: 34/34. 일본 주소 주문 검사가 GitHub CI 프로젝트에서만 실행되는지 guard 계약도 포함한다. |
 | 관리자 번역 계약 테스트 | PASS | 2026-10-22 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/admin_locale -p 'test_*.py' -v`: 8/8. 전체 Back Office 번역 커버리지 검증은 아니다. |
 | 우편번호 도메인·주소 검증 테스트 | PASS | 호스트에 PHP CLI가 없어 기존 PrestaShop 컨테이너의 임시 `/tmp` 경로에 테스트 소스만 복사해 실행했다. 정규화, 후보 검색, 복수 후보, 주소 일치/불일치, 건물 입력 및 수동 fallback 통과. 영구 프로젝트 파일/DB 변경 없음. |
 | 우편번호 후보 API 단위 테스트 | PASS | 격리 테스트 더블에서 JSON 후보 및 `manual_entry_available` 응답 확인 |
 | 공식 Japan Post KEN_ALL 데이터 및 DB API | PASS (기존 dev DB) | 공식 ZIP SHA-256 `c976cb0ff691a1aa7480b47b7e1f61bea08c2eadb3278f0366e474cd82dbf4b8`; CSV 124,840행 파싱, 고유 후보 124,839건 DB에 적재. HTTP에서 `1000004`/`100-0004`, 일본어 검색, `004-0000` 후보 2개 확인. 활성 주소 124,839행, staging 0행. |
 | 주소 자동완성 브라우저 동작 | PASS (주소 폼 fixture) | 실제 사이트 origin의 모듈 JS와 DB API를 사용해 1440px·390px에서 우편번호 후보 적용, 일본어 검색, 중복 후보 선택, 건물명 편집 보존을 확인했다. JS page error 0건. 캡처 `artifacts/qa/phase1a/postcode-widget-desktop.png`, `postcode-widget-mobile.png`. 실제 checkout 경로가 아니므로 checkout 검증 PASS가 아니다. |
 | 실제 Japan Post API 및 서버 주소 검증 | PASS (읽기 전용) | live DB에서 `1000004` → 東京都・千代田区・大手町 후보를 확인했다. 1000004/100-0004, 저장 전 시구정촌 불일치 거부, 선택 주소/건물 입력 허용, 후보가 없을 때 수동 입력 허용을 `tests/postcode/verify_live_address_validation.php`로 확인했다. 고객/주소/주문 데이터는 생성하지 않았다. |
-| 관리자 대시보드 브라우저 | PASS (대시보드 한정) | 실제 한국어 관리자 로그인 후 PC 1440×1000에서 `lang=ko`, 대시보드 날짜 필드·요약 한국어, 메뉴, 공식 로그인 로고 기반을 확인했고 브라우저 오류 0건이었다. 캡처 `artifacts/qa/phase1a/admin-dashboard-korean-after-date-overlay.png`. 전체 관리자 100%는 아니다. |
+| 실제 Japan Post HTTP 후보 API | PASS (기존 dev DB, 읽기 전용) | `1000004`와 `100-0004` 모두 `東京都 / 千代田区 / 大手町（次のビルを除く）`, `千代田区大手町` 검색, 복수 후보 `004-0000` 2개, 미일치 검색 0건과 `manual_entry_available=true`를 HTTP 200 응답으로 확인했다. |
+| 우편번호 주문 검증 스크립트 | PASS (문법·가드만) | `tests/postcode/verify_native_order_persistence.php`를 기존 컨테이너에 임시 복사해 `php -l` 통과. 주문 검증은 실행하지 않았고 활성 DB 주문 수는 0건 그대로다. |
+| 관리자 대시보드 및 주문 목록 브라우저 | 부분 PASS | 한국어 관리자 로그인 뒤 주문 목록 메뉴 링크에서 PC 1440×1000·모바일 390×844 HTTP 200, 제목/메뉴/본문 한국어, JavaScript 오류 0건을 확인했다. 실제 주문이 0건이라 배송지 주문 행은 미검증이다. 캡처 `artifacts/qa/phase1a/admin-orders-list-korean-desktop-qa.png`, `admin-orders-list-korean-mobile-qa.png`. 전체 관리자 100%는 아니다. |
 | 우편번호 모듈 PHP 문법 검사 | PASS | 모듈 및 우편번호 테스트 PHP 파일 전체 lint |
 | 셸/JavaScript/Compose 문법 | PASS | `bash -n`, `node --check`, `docker compose config --quiet` |
 | 변경사항 공백 검사 | PASS | `git diff --check` |
-| CI 진단 마스킹·워크플로우 계약 | PASS | 전체 smoke 28/28. startup/later-failure 경로, 민감값 마스킹, post-import staging 검사를 포함한다; workflow YAML 파싱 및 셸 구문 통과 |
+| CI 진단 마스킹·워크플로우 계약 | PASS | smoke 34/34. 분리된 설치 단계, 실패 진단, 민감값 마스킹, 공식 주소 importer, 격리 주문 검증 가드를 포함한다. |
 | 컨테이너 상태 | PASS | PrestaShop 9.2.0 및 MariaDB 10.11 healthy |
 | JPY DB 설정 | PASS | DB 읽기 전용 조회에서 JPY 활성·0자리·기본값, ja/en/ko 통화명 확인; EUR/USD 비활성 |
 | 기존 DB 재시작 보존 | PASS | 기존 MariaDB/PrestaShop 컨테이너를 재시작한 뒤 HTTP 200, 양쪽 healthy, JPY 기본값과 3개 언어 행을 읽기 전용 확인 |
@@ -28,9 +30,9 @@
 
 | 검사 | 결과 | 상세 |
 | --- | --- | --- |
-| 신규 빈 볼륨 설치 | FAIL / 추적 중 | run #20 `39701883450`, #19 `39701310507`, #18 `39701030162`가 `Build and install into unique empty volumes` 단계에서 실패했다. GitHub 공개 페이지에서 상세 stderr/artifact를 읽지 못해 정확한 원인 및 `errno 28` 여부를 확정하지 않았다. 신규 설치 PASS가 아니다. |
+| 신규 빈 볼륨 설치 | FAIL / 추적 중 | run `39703327857`과 `39704824787`은 이미지 빌드·격리 캐시 권한 probe PASS 후 `Start the empty-volume shop`에서 실패했다. #23의 redacted 진단 artifact 4.84 KB 생성은 확인했으나 GitHub API와 익명 artifact 다운로드가 이 환경에서 403/404로 막혀 내부 로그를 확인하지 못했다. `errno 28`인지 단정할 수 없고 신규 설치 PASS가 아니다. 주문 검증 step은 새 설치 실패로 두 run 모두 건너뛰었다. |
 | 신규 설치 DB 적재 및 API lookup | BLOCKED | 기존 dev DB에서는 공식 데이터를 가져와 실제 HTTP lookup을 확인했다. 격리 CI 실패로 새 빈 DB import/조회는 검증하지 못했다. |
-| 실제 checkout 주소 저장, 주문 및 관리자 주문 표시 | 미실행 | 주소 위젯 브라우저는 checkout 대신 폼 fixture이며, live 서버 검증은 읽기 전용이다. 기존 DB에 테스트 고객/주소/주문을 만들지 않았다. 격리 CI 네이티브 Address 저장 스크립트도 설치 실패로 실행되지 않았다. |
+| checkout 주문 연결 및 관리자 배송지 | 미실행 | 무결제 네이티브 Order 생성, `id_address_delivery` 연결, PrestaShop 관리자 조회 주소 formatter를 검사하는 CI 전용 스크립트를 추가·원격 저장했고 PHP 문법 및 격리 가드만 확인했다. 실제 검증은 새 빈 설치 CI가 먼저 통과해야 한다. 브라우저 checkout 경로는 아직 주소 폼 fixture만 검증했다. |
 | PC/모바일 browser regression | 부분 PASS | 홈 빈 카탈로그 안내는 PC 1440px·모바일 390px에서 실제 렌더링했다. 화면별 증거는 위 캡처를 참조한다. 전체 반응형 폭 테스트와 상품 상세·주문 화면은 별도 미완료다. |
 | 관리자 한국어 100% | 미완료 | 로그인과 대시보드에서 한국어 메뉴·날짜 범위를 실제 브라우저로 확인했다. 모듈 계약 테스트는 8/8이지만 전체 메뉴, 모든 설정·주문관리·모듈 화면은 아직 범위별 audit을 하지 않았다. |
 | PWA 기기 설치 | 미실행 | manifest/service worker 정적 검증은 있지만 iOS/Android 홈 화면 설치 테스트는 없다. |

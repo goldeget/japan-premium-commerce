@@ -34,14 +34,25 @@ php modules/kuraneapostcode/bin/import-ken-all.php --file=/absolute/path/to/KEN_
   비우도록 수정했으며, DB 주소 행 124,839건과 staging 행 0건을 확인했다.
 - 실제 로컬 HTTP API에서 `1000004`와 `100-0004` 모두 도쿄도·지요다구·오테마치를
   반환했고, `千代田区大手町` 검색과 중복 우편번호 `004-0000`의 후보 2개도 확인했다.
+- 후속 read-only HTTP 확인에서는 조회되지 않는 주소에 후보 0건과
+  `manual_entry_available=true`를 반환하는 것을 확인했다. 기존 DB의 주문 수는 0건이다.
 - 실제 KURANEA 사이트 origin에서 모듈 JS와 DB API를 연결해 PC 1440px 및 모바일
   390px 브라우저 검증을 했다. 주소 폼 계약 fixture에서 후보 선택, 건물명 수동 편집,
   일본어 검색, 중복 후보 선택이 동작했고 JS 오류는 없었다. 캡처는
   `artifacts/qa/phase1a/postcode-widget-desktop.png` 및
   `artifacts/qa/phase1a/postcode-widget-mobile.png`다. 실제 checkout 페이지 캡처는 아니다.
-- 격리된 빈 설치 Action은 run `39697612835`에서 실패했다. 로그와 진단 artifact를 읽을
-  수 없어 빈 설치, 새 DB 공식 데이터 적재, 네이티브 Address 저장, 실제 주문 및
-  관리자 주문 표시를 PASS로 기록하지 않는다. 브라우저 checkout end-to-end 검증도 남아 있다.
+- `tests/postcode/verify_native_order_persistence.php`는 격리 CI 실행에서만 동작하도록
+  GitHub Actions 실행 ID 및 고유 Compose 프로젝트 이름을 검증한다. 실행 시 공식
+  오프라인 `ps_checkpayment`, 무료 CI 배송사, 일본 우편 주소가 포함된 무결제 네이티브
+  주문을 만들고 관리자 조회 객체의 배송지 포맷을 검사한다. 로컬 컨테이너에서는 PHP
+  문법 검사만 했고 DB 쓰기는 하지 않았다.
+- 빈 설치 Action run `39703327857`은 이미지 빌드와 캐시 권한 검사 이후
+  `Start the empty-volume shop` 단계에서 실패했다. redacted diagnostics artifact는
+  생성됐지만 API/익명 다운로드 제한으로 로그를 읽지 못했다. `errno 28` 여부를 확정하지
+  않으며 새 설치, 신규 DB 공식 데이터 적재, 네이티브 Address/Order 저장, 관리자 주문
+  표시를 PASS로 기록하지 않는다. 주문 테스트가 포함된 run `39704824787`도 같은 설치
+  단계에서 실패했고 주문 검증 step은 건너뛰었다. 브라우저 checkout end-to-end 검증은
+  남아 있다.
 
 ## 보안 및 데이터 보호
 
