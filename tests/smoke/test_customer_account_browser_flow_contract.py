@@ -1,0 +1,126 @@
+"""Lock in the ordered customer account browser flow without Docker."""
+from __future__ import annotations
+
+import ast
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+ACCOUNT_FLOW = ROOT / "tests" / "e2e" / "verify_customer_account_browser.py"
+
+
+def stage_blocks(source: str) -> tuple[list[str], dict[str, str]]:
+    """Return the source blocks delimited by run_viewport's stage assignments."""
+    tree = ast.parse(source)
+    run_viewport = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "run_viewport"
+    )
+    stages: list[tuple[int, str]] = []
+    for node in ast.walk(run_viewport):
+        if not isinstance(node, ast.Assign):
+            continue
+        if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+            continue
+        if node.targets[0].id != "stage" or not isinstance(node.value, ast.Constant):
+            continue
+        if isinstance(node.value.value, str):
+            stages.append((node.lineno, node.value.value))
+
+    stages.sort()
+    lines = source.splitlines(keepends=True)
+    blocks: dict[str, str] = {}
+    for index, (line_number, stage) in enumerate(stages):
+        end_line = stages[index + 1][0] - 1 if index + 1 < len(stages) else run_viewport.end_lineno
+        blocks[stage] = "".join(lines[line_number - 1 : end_line])
+    return [stage for _, stage in stages], blocks
+
+
+class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.source = ACCOUNT_FLOW.read_text(encoding="utf-8")
+        cls.stages, cls.blocks = stage_blocks(cls.source)
+
+    def test_registration_profile_email_login_and_reset_are_ordered(self) -> None:
+        required_stages = (
+            "registration_submit",
+            "registration_post_submit",
+            "profile_update_route",
+            "profile_update_persist_wait",
+            "email_login",
+            "password_reset_request",
+            "password_reset",
+            "password_reset_old_password_rejected",
+            "password_reset_login",
+        )
+        positions = [self.stages.index(stage) for stage in required_stages]
+        self.assertEqual(positions, sorted(positions))
+
+        registration = self.blocks["registration_post_submit"]
+        self.assertIn("wait_for_registration_success(driver)", registration)
+        self.assertIn('assert_my_page(driver, "CI")', registration)
+
+        profile_route = self.blocks["profile_update_route"]
+        self.assertIn('driver.get(f"{BASE}/index.php?controller=identity")', profile_route)
+        self.assertIn('assert_canonical_static_route(driver, "identity")', profile_route)
+
+        profile_save = self.blocks["profile_update_persist_wait"]
+        self.assertIn("expected_first_name", profile_save)
+
+    def test_email_login_and_logout_check_authenticated_and_signed_out_states(self) -> None:
+        email_login = self.blocks["email_login"]
+        self.assertIn("logout(driver)", email_login)
+        self.assertIn('#login-form input[name="email"]', email_login)
+        self.assertIn('get_attribute("type") != "email"', email_login)
+        self.assertIn("assert_my_page(driver, f\"CI-{label.title()}\")", email_login)
+
+        reset_request = self.blocks["password_reset_request"]
+        self.assertIn("logout(driver)", reset_request)
+        self.assertIn("reset_link_for(account_email)", reset_request)
+
+        logout = self.source.split("def logout", 1)[1].split("def run_viewport", 1)[0]
+        self.assertIn("visible_signout_link(driver)", logout)
+        self.assertIn("driver.get(account_url)", logout)
+        self.assertIn('#login-form input[name="email"]', logout)
+        self.assertIn('By.ID, "identity_main_link"', logout)
+
+    def test_mailpit_reset_checks_captured_link_logo_bytes_and_password_change(self) -> None:
+        reset_request = self.blocks["password_reset_request"]
+        self.assertIn("reset_link_for(account_email)", reset_request)
+        self.assertIn('"cid:shop_logo"', reset_request)
+        self.assertIn('attachment.get("ContentID", "")', reset_request)
+        self.assertIn('inline_logo.get("ContentType") != "image/png"', reset_request)
+        self.assertIn("hashlib.sha256(sent_logo).digest()", reset_request)
+        self.assertIn("hashlib.sha256(expected_logo).digest()", reset_request)
+
+        mailpit_helper = self.source.split("def reset_link_for", 1)[1].split("def visible", 1)[0]
+        self.assertIn("/api/v1/messages?", mailpit_helper)
+        self.assertIn("/api/v1/message/", mailpit_helper)
+        self.assertIn("matches_base_origin", mailpit_helper)
+        self.assertIn("has_token", mailpit_helper)
+
+        reset = self.blocks["password_reset"]
+        self.assertIn("driver.get(reset_url)", reset)
+        self.assertIn('assert_canonical_static_route(driver, "password-reset")', reset)
+        self.assertIn('#field-password[name="passwd"]', reset)
+        self.assertIn('#field-confirmation-passwd[name="confirmation"]', reset)
+
+        old_password = self.blocks["password_reset_old_password_rejected"]
+        self.assertIn("assert_login_rejected(driver, account_email, initial_password)", old_password)
+
+        reset_login = self.blocks["password_reset_login"]
+        self.assertIn("submit_login(driver, account_email, reset_password)", reset_login)
+        self.assertIn("assert_my_page(driver, f\"CI-{label.title()}\")", reset_login)
+        self.assertIn("logout(driver)", reset_login)
+
+    def test_browser_flow_runs_on_desktop_and_mobile_viewports(self) -> None:
+        self.assertIn('(1440, 960, "desktop")', self.source)
+        self.assertIn('(390, 844, "mobile")', self.source)
+
+
+if __name__ == "__main__":
+    unittest.main()
