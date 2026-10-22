@@ -57,6 +57,10 @@ postcode_states=$(db_query "SELECT COUNT(*) FROM ps_state s JOIN ps_country c ON
 test "$postcode_states" = 47
 postcode_table=$(db_query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='ps_kuraneapostcode_address'")
 test "$postcode_table" = 1
+postcode_stage_table=$(db_query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='ps_kuraneapostcode_stage'")
+test "$postcode_stage_table" = 1
+postcode_stage_rows=$(db_query 'SELECT COUNT(*) FROM ps_kuraneapostcode_stage')
+test "$postcode_stage_rows" = 0
 table_count_before=$(db_query 'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()')
 
 css_url=$(python3 - <<'PY'

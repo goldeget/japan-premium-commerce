@@ -109,3 +109,14 @@
 - 검증: 테스트 우선으로 수집기 부재 시 회귀 테스트 실패를 확인한 뒤 구현했다. 전체 smoke 26/26, admin locale 계약 6/6, bash 구문, workflow YAML 파싱, `docker compose config --quiet`, `git diff --check` 통과. 현재 실행 중인 컨테이너와 named volume은 유지했고 Docker 빌드/prune을 하지 않았다.
 - 원격 보존: `f636d40738c217f9c1f587b50c70742789583d99`를 `work`로 푸시한 뒤 로컬 HEAD·`git ls-remote`·`origin/work`이 일치하는 것을 확인하고 원격 workflow/수집기/회귀 테스트를 다시 읽었다. 이 커밋은 run `39695971760`을 시작했으며 마지막 확인 시 실행 중이었다.
 - 후속 검증: run `39695971760`은 2분 32초 뒤 같은 시작 단계에서 실패했다. 공개 run 페이지에서 `fresh-install-diagnostics-39695971760-1` artifact ID `12391041696`, 크기 3.71 KB, digest `sha256:d2dbb7b5a52cf41d8fd4663c4823cf0b8bd1d8af6c4ed35a5a2642184bcfabd0`를 확인했다. artifact 본문과 상세 job 로그는 이 환경에서 다운로드/API 403/404로 접근할 수 없어 근본 원인을 추측하거나 PASS로 기록하지 않았다.
+
+## 2026-10-22 — 공식 주소 데이터 로컬 통합 및 staging 공간 회수
+
+- 시작 보호 확인: 현재 `work` 로컬/원격 SHA `e84fb2a238ef6f999d8d508e422c87f0b68e7dff`가 일치했고 `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지됐다. 기존 미추적 QA 캡처와 pycache는 삭제·초기화하지 않았다. MariaDB와 PrestaShop 컨테이너 및 named volume은 계속 실행 상태로 보존했다.
+- 공식 주소 데이터: Japan Post 공식 `ken_all.zip`의 SHA-256 `c976cb0ff691a1aa7480b47b7e1f61bea08c2eadb3278f0366e474cd82dbf4b8`을 기록하고 CSV 124,840행을 파싱했다. 기존 DB의 모듈 주소 테이블에 고유 후보 124,839건을 적재했다. `1000004`와 `100-0004` 모두 도쿄도·지요다구·오테마치를 반환했고, `千代田区大手町` 검색과 복수 주소 `004-0000`의 후보 2개를 HTTP API에서 확인했다.
+- 디스크 안전: import 뒤 active와 staging 테이블이 같은 데이터 124,839건을 보유하는 것을 양방향 전체 비교로 확인했다. 기존 주소 테이블을 유지하면서 staging 테이블만 비웠다. 주소 행은 124,839건 유지되고 staging은 0건이며 workspace 가용 공간은 42 MB에서 118 MB로 늘었다. 운영 중인 named volume, 기존 고객·주문 데이터는 초기화하지 않았다.
+- 코드: importer가 새 주소 데이터의 `COMMIT` 성공 뒤에만 staging 복사본을 비우도록 수정하고, 빈 설치 smoke가 staging 행 0개를 확인하게 했다. 실패한 가져오기는 기존 active 데이터를 교체하지 않는다.
+- 브라우저: 실제 사이트 origin의 모듈 JS와 DB-backed API를 주소 폼 계약 fixture에 연결했다. PC 1440×900 및 모바일 390×844에서 `1000004` 후보 선택, 도도부현/도시/町域 매핑, 일본어 문자열 검색, `004-0000`의 복수 선택, 건물명 수동 편집 보존을 확인했다. 브라우저 JS 오류는 0건이다. 증거 PNG는 `artifacts/qa/phase1a/postcode-widget-desktop.png`, `postcode-widget-mobile.png`다. 실제 checkout 페이지·주문 저장 화면은 아니므로 해당 검증은 미완료다.
+- 테스트: smoke/계약 28/28, 관리자 번역 계약 6/6, PHP importer lint, 주소 도메인 및 후보 API 테스트, `bash -n`, `docker compose config --quiet`, `git diff --check` 통과. 관리자 한국어 100%와 실제 checkout 주소/주문 및 관리자 주문 표시 검증은 미완료다.
+- 신규 설치/환경: 새 빈 설치 run `39697612835`가 `Build and install into unique empty volumes`에서 2분 38초 후 실패했다. 이 실행환경에서는 상세 로그와 artifact를 읽을 수 없어 errno 28 재현 여부를 확정하지 못했다. 로컬 workspace는 117 MB 여유, inode 사용률 95%여서 Docker 재빌드를 하지 않았다. 관측된 클라우드 environment revision은 2이며 사용자 지정 revision 3은 적용 증거가 없다.
+- 커밋 예정 범위: postal importer, 그 계약 테스트/빈 설치 확인, 주소 요구사항 및 QA 현황 문서와 관련 브라우저 캡처만 명시적으로 stage한다. 이미 있던 미추적 QA 파일은 포함하지 않는다.

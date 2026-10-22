@@ -7,6 +7,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "fresh-install.yml"
+POSTAL_IMPORT = ROOT / "modules" / "kuraneapostcode" / "bin" / "import-ken-all.php"
+FRESH_INSTALL_SMOKE = ROOT / "tests" / "smoke" / "fresh_install.sh"
 
 
 class FreshInstallWorkflowContractTests(unittest.TestCase):
@@ -39,6 +41,15 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("steps.compose_bootstrap.outcome == 'success'", capture)
         self.assertIn("bash tests/smoke/collect_failure_diagnostics.sh", capture)
         self.assertNotIn("docker compose", capture)
+
+    def test_successful_postal_import_clears_only_the_staging_copy(self) -> None:
+        importer = POSTAL_IMPORT.read_text(encoding="utf-8")
+        smoke = FRESH_INSTALL_SMOKE.read_text(encoding="utf-8")
+        commit = importer.index("$database->execute('COMMIT')")
+        cleanup = importer.index("$database->execute('TRUNCATE TABLE ' . $stageTable)", commit)
+        self.assertGreater(cleanup, commit, "staging may only be cleared after the new main table commits")
+        self.assertIn("ps_kuraneapostcode_stage", smoke)
+        self.assertIn('test "$postcode_stage_rows" = 0', smoke)
 
 
 if __name__ == "__main__":

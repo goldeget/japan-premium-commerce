@@ -23,18 +23,25 @@ php modules/kuraneapostcode/bin/import-ken-all.php --file=/absolute/path/to/KEN_
 수입기는 UTF-8 및 CP932를 읽고 별도 staging 테이블에 적재한다. 유효 주소가
 확인된 경우에만 기존 모듈 주소 데이터를 트랜잭션으로 교체한다. 빈 파일이나
 잘못된 파일은 현재 주소 데이터를 지우지 않는다. 갱신은 운영자가 공식 페이지에서
-새 CSV를 받아 위 명령을 다시 실행하는 방식이다.
+새 CSV를 받아 위 명령을 다시 실행하는 방식이다. 교체 트랜잭션이 성공하면 staging
+복사본을 비워 운영 주소 데이터가 디스크를 중복 점유하지 않도록 한다. 이번에 사용한
+공식 archive의 SHA-256은 `c976cb0ff691a1aa7480b47b7e1f61bea08c2eadb3278f0366e474cd82dbf4b8`이다.
 
 ## 구현 및 확인 상태
 
-- 모듈 코드와 합성 UTF-8/CP932 fixture 테스트가 있다. 합성 fixture는 실제 Japan
-  Post 주소를 의미하지 않는다.
-- 새 빈 설치 GitHub Actions에서 공식 archive를 가져와 실제 `1000004` 도쿄도
-  지요다구 오테마치 주소를 확인하고, 수동 건물명이 포함된 네이티브 주소 저장을
-  실행하도록 구성했다.
-- Action 결과가 실제로 완료되기 전에는 공식 데이터 조회 및 저장 검증을 PASS로
-  기록하지 않는다. 브라우저 checkout, 실제 주문 생성 및 관리자 주문 화면 검증은
-  별도 QA가 필요하다.
+- 공식 CSV 124,840행을 파싱했고 유효한 고유 후보 124,839건을 기존 개발 DB의
+  `ps_kuraneapostcode_address`에 가져왔다. importer의 성공 커밋 뒤 staging 복사본을
+  비우도록 수정했으며, DB 주소 행 124,839건과 staging 행 0건을 확인했다.
+- 실제 로컬 HTTP API에서 `1000004`와 `100-0004` 모두 도쿄도·지요다구·오테마치를
+  반환했고, `千代田区大手町` 검색과 중복 우편번호 `004-0000`의 후보 2개도 확인했다.
+- 실제 KURANEA 사이트 origin에서 모듈 JS와 DB API를 연결해 PC 1440px 및 모바일
+  390px 브라우저 검증을 했다. 주소 폼 계약 fixture에서 후보 선택, 건물명 수동 편집,
+  일본어 검색, 중복 후보 선택이 동작했고 JS 오류는 없었다. 캡처는
+  `artifacts/qa/phase1a/postcode-widget-desktop.png` 및
+  `artifacts/qa/phase1a/postcode-widget-mobile.png`다. 실제 checkout 페이지 캡처는 아니다.
+- 격리된 빈 설치 Action은 run `39697612835`에서 실패했다. 로그와 진단 artifact를 읽을
+  수 없어 빈 설치, 새 DB 공식 데이터 적재, 네이티브 Address 저장, 실제 주문 및
+  관리자 주문 표시를 PASS로 기록하지 않는다. 브라우저 checkout end-to-end 검증도 남아 있다.
 
 ## 보안 및 데이터 보호
 

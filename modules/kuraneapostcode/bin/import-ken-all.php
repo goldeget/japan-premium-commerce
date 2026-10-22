@@ -88,6 +88,13 @@ try {
         throw new RuntimeException('Postcode data replacement failed; the transaction was rolled back.');
     }
 
+    // Keep the production address table as the source of truth, not a second
+    // full copy of Japan Post's dataset. The staging table is disposable once
+    // the validated replacement transaction has committed.
+    if (!$database->execute('TRUNCATE TABLE ' . $stageTable)) {
+        fwrite(STDERR, "Warning: postcode data is active but the staging table could not be cleared.\n");
+    }
+
     fwrite(STDOUT, sprintf(
         "Imported %d valid CSV rows (%d unique candidates); skipped %d malformed rows.\n",
         $summary->imported,
