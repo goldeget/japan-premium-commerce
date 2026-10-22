@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "fresh-install.yml"
 STOREFRONT_E2E = ROOT / "tests" / "e2e" / "verify_storefront_browser.py"
 PRODUCT_ADMIN_E2E = ROOT / "tests" / "e2e" / "verify_product_admin_browser.py"
+FRESH_INSTALL = ROOT / "tests" / "smoke" / "fresh_install.sh"
 
 
 class BrowserQAArtifactsContractTests(unittest.TestCase):
@@ -114,6 +115,29 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
         )[0]
 
         self.assertIn('driver.save_screenshot(str(DEST / "product-admin-failure.png"))', failure_handler)
+
+    def test_fresh_install_reports_only_named_phase_and_exit_code_on_failure(self) -> None:
+        script = FRESH_INSTALL.read_text(encoding="utf-8")
+
+        self.assertIn("trap 'report_verification_failure \"$?\"' ERR", script)
+        self.assertIn(
+            "FRESH_INSTALL_VERIFICATION_FAILED phase=%s exit_code=%s",
+            script,
+        )
+        self.assertIn('local failure_status=$1', script)
+        self.assertIn('"$verification_phase" "$failure_status"', script)
+        self.assertNotIn("$BASH_COMMAND", script)
+        self.assertNotIn('env |', script)
+        for phase in (
+            "restart_service_recovery",
+            "restart_bootstrap_marker",
+            "restart_persistent_files",
+            "restart_admin_branding",
+            "restart_jpy_currency",
+            "restart_shop_identity_and_schema",
+        ):
+            with self.subTest(phase=phase):
+                self.assertIn(f'verification_phase="{phase}"', script)
 
 
 if __name__ == "__main__":
