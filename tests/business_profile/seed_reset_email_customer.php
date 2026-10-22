@@ -16,14 +16,41 @@ if ($runId === '' || $runAttempt === '') {
 }
 
 $shopId = max(1, (int) Shop::getContextShopID());
+$approvedPrimaryLogoHash = '1ce6b0a015ed6748ef904cdff095ff0f38ab72c9c51fe189c33d19dc797f23fd';
+$manifestBytes = @file_get_contents('/opt/ordenowa-brand/asset-manifest.json');
+$manifest = is_string($manifestBytes) ? json_decode($manifestBytes, true) : null;
+$manifestPrimaryLogoHash = is_array($manifest)
+    ? ($manifest['sources_sha256']['ORDENOWA-logo.png'] ?? null)
+    : null;
+$officialLogoPath = '/opt/ordenowa-brand/official_originals/ORDENOWA-logo.png';
+$officialLogoHash = is_file($officialLogoPath) ? hash_file('sha256', $officialLogoPath) : false;
+if (!is_string($manifestPrimaryLogoHash)
+    || !hash_equals($approvedPrimaryLogoHash, $manifestPrimaryLogoHash)
+    || !is_string($officialLogoHash)
+    || !hash_equals($approvedPrimaryLogoHash, $officialLogoHash)
+) {
+    throw new RuntimeException('The packaged ORDENOWA original does not match the approved image manifest.');
+}
+
 $profile = (new \Kuranea\BusinessProfile\Customer\PublishedProfileProvider(
     new \Kuranea\BusinessProfile\Infrastructure\VersionedProfileRepository()
 ))->forShop($shopId, 'ja');
-$emailLogo = is_array($profile) ? ($profile['brand']['assets']['email_logo'] ?? null) : null;
-if (!is_string($emailLogo)
-    || preg_match('~\Aimg/ordenowa/versions/([a-fA-F0-9]{64})/(?:email-logo|official-email-logo)\.png\z~D', $emailLogo) !== 1
+$publishedPrimaryLogoHash = is_array($profile)
+    ? ($profile['brand']['sources']['primary_logo']['sha256'] ?? null)
+    : null;
+if (!is_string($publishedPrimaryLogoHash)
+    || !hash_equals($approvedPrimaryLogoHash, $publishedPrimaryLogoHash)
 ) {
-    throw new RuntimeException('The published profile does not contain a versioned ORDENOWA email logo.');
+    throw new RuntimeException('The published primary logo is not the approved ORDENOWA original.');
+}
+
+$emailLogo = is_array($profile) ? ($profile['brand']['assets']['email_logo'] ?? null) : null;
+$emailLogoMatches = [];
+if (!is_string($emailLogo)
+    || preg_match('~\Aimg/ordenowa/versions/([a-f0-9]{64})/(?:email-logo|official-email-logo)\.png\z~D', $emailLogo, $emailLogoMatches) !== 1
+    || !hash_equals($approvedPrimaryLogoHash, $emailLogoMatches[1])
+) {
+    throw new RuntimeException('The published email logo is not derived from the approved ORDENOWA original.');
 }
 
 $emailLogoRelative = substr($emailLogo, 4);

@@ -1,6 +1,8 @@
 """Keep password-reset email branding independently verifiable in isolated CI."""
 from __future__ import annotations
 
+import json
+import re
 import unittest
 from pathlib import Path
 
@@ -8,6 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 EMAIL_BROWSER = ROOT / "tests" / "e2e" / "verify_reset_email_brand_browser.py"
 CUSTOMER_SEED = ROOT / "tests" / "business_profile" / "seed_reset_email_customer.php"
+BRAND_MANIFEST = ROOT / "assets" / "brand" / "ordenowa" / "asset-manifest.json"
+FRESH_INSTALL_WORKFLOW = ROOT / ".github" / "workflows" / "fresh-install.yml"
 
 
 class ResetEmailBrandContractTests(unittest.TestCase):
@@ -25,6 +29,46 @@ class ResetEmailBrandContractTests(unittest.TestCase):
         ):
             with self.subTest(source=source):
                 self.assertIn(source, seed)
+
+    def test_seed_requires_the_approved_original_logo_hash_for_source_and_email_derivative(self) -> None:
+        manifest = json.loads(BRAND_MANIFEST.read_text(encoding="utf-8"))
+        approved_hash = manifest["sources_sha256"]["ORDENOWA-logo.png"]
+        seed = CUSTOMER_SEED.read_text(encoding="utf-8")
+        approved_hash_literal = re.search(
+            r"\$approvedPrimaryLogoHash\s*=\s*'([a-f0-9]{64})';", seed
+        )
+
+        self.assertIsNotNone(approved_hash_literal, "email seed must pin the ZIP-approved primary logo SHA")
+        assert approved_hash_literal is not None
+        self.assertEqual(approved_hash_literal.group(1), approved_hash)
+        for source in (
+            "/opt/ordenowa-brand/asset-manifest.json",
+            "/opt/ordenowa-brand/official_originals/ORDENOWA-logo.png",
+            "sources_sha256",
+            "ORDENOWA-logo.png",
+            "hash_file('sha256', $officialLogoPath)",
+            "hash_equals($approvedPrimaryLogoHash, $manifestPrimaryLogoHash)",
+            "hash_equals($approvedPrimaryLogoHash, $officialLogoHash)",
+            "brand']['sources']['primary_logo']['sha256",
+            "preg_match('~\\Aimg/ordenowa/versions/([a-f0-9]{64})/",
+            "$emailLogoMatches[1]",
+            "hash_equals($approvedPrimaryLogoHash, $publishedPrimaryLogoHash)",
+            "hash_equals($approvedPrimaryLogoHash, $emailLogoMatches[1])",
+        ):
+            with self.subTest(source=source):
+                self.assertIn(source, seed)
+
+    def test_reset_email_step_is_independent_of_later_brand_browser_failure(self) -> None:
+        workflow = FRESH_INSTALL_WORKFLOW.read_text(encoding="utf-8")
+        email_step = workflow.split(
+            "- name: Verify the published ORDENOWA password-reset email logo in Chromium", 1
+        )[1].split("- name:", 1)[0]
+
+        self.assertIn("if: always() && !cancelled()", email_step)
+        self.assertIn("steps.compose_up.outcome == 'success'", email_step)
+        self.assertIn("steps.mailpit_setup.outcome == 'success'", email_step)
+        self.assertIn("steps.chromium_setup.outcome == 'success'", email_step)
+        self.assertNotIn("steps.brand_browser_qa.outcome", email_step)
 
     def test_mailpit_logo_is_byte_checked_against_published_derivative_and_rendered_in_chromium(self) -> None:
         self.assertTrue(EMAIL_BROWSER.is_file())

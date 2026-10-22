@@ -292,6 +292,7 @@ jobs:
             php /tmp/verify_native_order_persistence.php
 
       - name: Start disposable Mailpit for customer password-reset email
+        id: mailpit_setup
         shell: bash
         run: |
           set -euo pipefail
@@ -340,6 +341,7 @@ jobs:
             runuser -g www-data -u www-data -- php /tmp/verify_business_profile_install.php
 
       - name: Prepare Chromium browser smoke environment
+        id: chromium_setup
         shell: bash
         run: |
           set -euo pipefail
@@ -408,7 +410,7 @@ jobs:
 
       - name: Verify the published ORDENOWA password-reset email logo in Chromium
         id: reset_email_brand_browser_qa
-        if: steps.brand_browser_qa.outcome == 'success'
+        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && steps.mailpit_setup.outcome == 'success' && steps.chromium_setup.outcome == 'success'
         continue-on-error: true
         shell: bash
         env:

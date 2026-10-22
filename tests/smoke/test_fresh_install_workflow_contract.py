@@ -51,7 +51,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "fresh-install CI does not run the reset-email brand contract",
         )
 
-    def test_published_reset_email_brand_runs_after_publish_before_account_flow(self) -> None:
+    def test_published_reset_email_brand_runs_independently_before_account_flow(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         seed_script = "tests/business_profile/seed_reset_email_customer.php"
         browser_script = "tests/e2e/verify_reset_email_brand_browser.py"
@@ -60,7 +60,11 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         )[1].split("- name:", 1)[0]
 
         self.assertIn("id: reset_email_brand_browser_qa", email_step)
-        self.assertIn("if: steps.brand_browser_qa.outcome == 'success'", email_step)
+        self.assertIn("if: always() && !cancelled()", email_step)
+        self.assertIn("steps.compose_up.outcome == 'success'", email_step)
+        self.assertIn("steps.mailpit_setup.outcome == 'success'", email_step)
+        self.assertIn("steps.chromium_setup.outcome == 'success'", email_step)
+        self.assertNotIn("steps.brand_browser_qa.outcome", email_step)
         self.assertIn("continue-on-error: true", email_step)
         self.assertIn(seed_script, email_step)
         self.assertIn(browser_script, email_step)
