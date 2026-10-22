@@ -7,7 +7,10 @@ on:
     paths:
       - '.github/workflows/catalog-parser.yml'
       - '.github/workflows/fresh-install.yml'
+      - '.gitmodules'
       - 'modules/kuraneacatalog/**'
+      - 'themes/hummingbird'
+      - 'themes/hummingbird/**'
       - 'tests/catalog/**'
       - 'tests/smoke/test_fresh_install_workflow_contract.py'
 
@@ -21,6 +24,8 @@ jobs:
     steps:
       - name: Check out work
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up PHP with the DOM extension
         uses: shivammathur/setup-php@v2

@@ -50,6 +50,23 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("identity_main_link", logout)
         self.assertIn('#login-form input[name="email"]', logout)
 
+    def test_account_signout_selects_a_visible_duplicate_for_mobile_and_desktop(self) -> None:
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        signout = account_flow.split("def visible_signout_link", 1)[1].split("def assert_my_page", 1)[0]
+        my_page = account_flow.split("def assert_my_page", 1)[1].split("def click_required_checkbox_label", 1)[0]
+        logout = account_flow.split("def logout", 1)[1].split("def run_viewport", 1)[0]
+
+        self.assertIn('find_elements(By.CSS_SELECTOR, "a.account-menu__link--signout")', signout)
+        self.assertIn("link.is_displayed()", signout)
+        self.assertIn("link.is_enabled()", signout)
+        self.assertIn("visible_signout_link(driver)", my_page)
+        self.assertNotIn('"#signout_link"', my_page)
+        self.assertIn("link = visible_signout_link(driver)", logout)
+        self.assertIn("if any(", logout)
+        self.assertIn("link.is_displayed()", logout)
+        self.assertIn('driver.find_elements(By.CSS_SELECTOR, "a.account-menu__link--signout")', logout)
+        self.assertNotIn('visible(driver, "a.account-menu__link--signout")', logout)
+
     def test_brand_and_account_e2e_run_before_product_admin_and_checkout_qa(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         step_names = re.findall(r"^\s+- name: (.+)$", workflow, flags=re.MULTILINE)
@@ -412,6 +429,15 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("%0D", failure_branch)
         self.assertIn("%0A", failure_branch)
         self.assertLess(step.index('if [ "$test_status"'), step.index('cat "$test_log"'))
+
+    def test_catalog_parser_contract_checks_out_hummingbird_submodule(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "catalog-parser.yml").read_text(encoding="utf-8")
+        checkout = workflow.split("- name: Check out work", 1)[1].split("- name:", 1)[0]
+        path_filter = workflow.split("    paths:", 1)[1].split("\n\npermissions:", 1)[0]
+
+        self.assertRegex(checkout, r"uses: actions/checkout@v4\s+with:\s+submodules: recursive")
+        self.assertIn(".gitmodules", path_filter)
+        self.assertIn("themes/hummingbird", path_filter)
 
 
 if __name__ == "__main__":

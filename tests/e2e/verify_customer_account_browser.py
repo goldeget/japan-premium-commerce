@@ -210,9 +210,22 @@ def fill(driver: webdriver.Chrome, selector: str, value: str) -> None:
     element.send_keys(value)
 
 
+def visible_signout_link(driver: webdriver.Chrome):
+    return WebDriverWait(driver, 30).until(
+        lambda browser: next(
+            (
+                link
+                for link in browser.find_elements(By.CSS_SELECTOR, "a.account-menu__link--signout")
+                if link.is_displayed() and link.is_enabled()
+            ),
+            False,
+        )
+    )
+
+
 def assert_my_page(driver: webdriver.Chrome, expected_first_name: str) -> None:
-    for selector in ("#identity_main_link", "#signout_link"):
-        visible(driver, selector)
+    visible(driver, "#identity_main_link")
+    visible_signout_link(driver)
 
     page_text = driver.find_element(By.TAG_NAME, "body").text
     if expected_first_name not in page_text or "Customer" not in page_text:
@@ -366,7 +379,7 @@ def submit_login(driver: webdriver.Chrome, email_address: str, password: str) ->
 
 
 def logout(driver: webdriver.Chrome) -> None:
-    link = visible(driver, "a.account-menu__link--signout")
+    link = visible_signout_link(driver)
     link.click()
     driver.get(f"{BASE}/index.php?controller=my-account")
     WebDriverWait(driver, 30).until(
@@ -377,7 +390,10 @@ def logout(driver: webdriver.Chrome) -> None:
         raise AssertionError("the signed-out customer can still open My Page")
     visible(driver, '#login-form input[name="email"]')
     WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.ID, "submit-login")))
-    if driver.find_elements(By.ID, "signout_link") or driver.find_elements(By.CSS_SELECTOR, "a.account-menu__link--signout"):
+    if any(
+        link.is_displayed()
+        for link in driver.find_elements(By.CSS_SELECTOR, "a.account-menu__link--signout")
+    ):
         raise AssertionError("the customer still has an authenticated My Page session after logout")
 
 
