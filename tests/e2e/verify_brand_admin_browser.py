@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from selenium import webdriver
-from selenium.common.exceptions import StaleElementReferenceException
+from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.select import Select
@@ -34,6 +34,7 @@ OFFICIAL_UPLOADS = {
 }
 SEO_TITLE = "ORDENOWA CI QA"
 SEO_DESCRIPTION = "ORDENOWA CI SEO description"
+BRAND_DRAFT_REPLACEMENT_ATTEMPTS = 3
 
 
 def expected_derivative_path(source: Path, filename: str) -> str:
@@ -61,6 +62,86 @@ def find_asset_url(items: list[dict], rel: str, source: Path, filename: str) -> 
 
 def visible(driver: webdriver.Chrome, selector: str):
     return WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.CSS_SELECTOR, selector)))
+
+
+def wait_for_draft_save_confirmation(driver: webdriver.Chrome) -> None:
+    def confirmation_is_visible(browser: webdriver.Chrome) -> bool:
+        try:
+            return "초안을 저장했습니다" in browser.find_element(By.TAG_NAME, "body").text
+        except StaleElementReferenceException:
+            return False
+
+    WebDriverWait(driver, 30).until(
+        confirmation_is_visible
+    )
+
+
+def assert_saved_primary_logo(driver: webdriver.Chrome, source: Path, role: str) -> None:
+    assert_uploaded_derivative_url(
+        asset_preview_url_for_field(driver, "ordenowa-brand-assets-header_desktop"),
+        source,
+        "header-desktop.png",
+        role,
+    )
+
+
+def replace_primary_logo_in_saved_draft(
+    driver: webdriver.Chrome, settings_url: str, source: Path, role: str
+) -> None:
+    upload_selector = 'input[name="brand_uploads[primary_logo]"]'
+    save_selector = 'form.ordenowa-profile-settings button[name="submitOrdenowaSaveDraft"]'
+    last_stale: StaleElementReferenceException | None = None
+
+    # Reload to discard stale references and any confirmation left by the previous draft save.
+    driver.get(settings_url)
+    visible(driver, "form.ordenowa-profile-settings")
+
+    for attempt in range(1, BRAND_DRAFT_REPLACEMENT_ATTEMPTS + 1):
+        try:
+            visible(driver, upload_selector).send_keys(str(source.resolve()))
+        except StaleElementReferenceException as error:
+            last_stale = error
+            if attempt == BRAND_DRAFT_REPLACEMENT_ATTEMPTS:
+                break
+            driver.get(settings_url)
+            visible(driver, "form.ordenowa-profile-settings")
+            continue
+
+        stale_during_save = False
+        try:
+            visible(driver, save_selector).click()
+        except StaleElementReferenceException as error:
+            last_stale = error
+            stale_during_save = True
+            try:
+                wait_for_draft_save_confirmation(driver)
+            except TimeoutException:
+                if attempt == BRAND_DRAFT_REPLACEMENT_ATTEMPTS:
+                    break
+                driver.get(settings_url)
+                visible(driver, "form.ordenowa-profile-settings")
+                continue
+        else:
+            wait_for_draft_save_confirmation(driver)
+
+        try:
+            assert_saved_primary_logo(driver, source, role)
+        except AssertionError:
+            if not stale_during_save or attempt == BRAND_DRAFT_REPLACEMENT_ATTEMPTS:
+                raise
+            driver.get(settings_url)
+            visible(driver, "form.ordenowa-profile-settings")
+            continue
+
+        # A reload proves the draft preview is persisted, not just changed in the upload form.
+        driver.get(settings_url)
+        visible(driver, "form.ordenowa-profile-settings")
+        assert_saved_primary_logo(driver, source, role)
+        return
+
+    if last_stale is not None:
+        raise last_stale
+    raise AssertionError("could not replace the primary logo in the saved draft")
 
 
 def asset_preview_url_for_field(driver: webdriver.Chrome, field_id: str) -> str:
@@ -454,16 +535,10 @@ def run() -> None:
         driver.save_screenshot(str(DEST / "brand-admin-uploaded-draft.png"))
 
         stage = "replace_logo_in_saved_draft"
-        replacement_logo = visible(driver, 'input[name="brand_uploads[primary_logo]"]')
-        replacement_logo.send_keys(str(OFFICIAL_UPLOADS["pwa_icon"].resolve()))
-        visible(driver, 'form.ordenowa-profile-settings button[name="submitOrdenowaSaveDraft"]').click()
-        WebDriverWait(driver, 30).until(
-            lambda browser: "초안을 저장했습니다" in browser.find_element(By.TAG_NAME, "body").text
-        )
-        assert_uploaded_derivative_url(
-            asset_preview_url_for_field(driver, "ordenowa-brand-assets-header_desktop"),
+        replace_primary_logo_in_saved_draft(
+            driver,
+            settings_url,
             OFFICIAL_UPLOADS["pwa_icon"],
-            "header-desktop.png",
             "temporary replacement draft logo",
         )
         driver.save_screenshot(str(DEST / "brand-admin-replacement-draft.png"))

@@ -52,12 +52,15 @@ class BrandE2EContractTests(unittest.TestCase):
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
         preview_check = 'asset_preview_url_for_field(driver, "ordenowa-brand-assets-header_desktop")'
         baseline = browser_flow.index("public_before_draft = public_brand_snapshot(driver)")
-        temporary_upload = browser_flow.index('replacement_logo.send_keys(str(OFFICIAL_UPLOADS["pwa_icon"].resolve()))')
+        temporary_upload = browser_flow.index(
+            'replace_primary_logo_in_saved_draft(\n            driver,\n            settings_url,\n            OFFICIAL_UPLOADS["pwa_icon"]'
+        )
         unchanged_check = browser_flow.index('stage = "public_brand_unchanged_after_replacement_draft"')
         restore = browser_flow.index('restored_logo.send_keys(str(OFFICIAL_UPLOADS["primary_logo"].resolve()))')
         private_preview = browser_flow.index('stage = "private_admin_preview"')
 
-        self.assertIn('replacement_logo.send_keys(str(OFFICIAL_UPLOADS["pwa_icon"].resolve()))', browser_flow)
+        self.assertIn('visible(driver, upload_selector).send_keys(str(source.resolve()))', browser_flow)
+        self.assertIn('OFFICIAL_UPLOADS["pwa_icon"]', browser_flow[temporary_upload:unchanged_check])
         self.assertIn('restored_logo.send_keys(str(OFFICIAL_UPLOADS["primary_logo"].resolve()))', browser_flow)
         self.assertEqual(2, browser_flow[:private_preview].count(preview_check))
         self.assertLess(baseline, temporary_upload)
@@ -74,6 +77,33 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('driver.save_screenshot(str(DEST / "brand-customer-unpublished-replacement.png"))', browser_flow)
         self.assertIn('driver.save_screenshot(str(DEST / "brand-admin-replacement-draft.png"))', browser_flow)
         self.assertIn('driver.save_screenshot(str(DEST / "brand-admin-uploaded-draft-restored.png"))', browser_flow)
+
+    def test_replacement_upload_requeries_stale_elements_and_verifies_saved_derivative(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        self.assertIn("def replace_primary_logo_in_saved_draft(", browser_flow)
+        helper_start = browser_flow.index("def replace_primary_logo_in_saved_draft(")
+        helper_end = browser_flow.index("\ndef ", helper_start + 1)
+        helper = browser_flow[helper_start:helper_end]
+        replacement_stage = browser_flow.split('stage = "replace_logo_in_saved_draft"', 1)[1].split(
+            'stage = "public_brand_unchanged_after_replacement_draft"', 1
+        )[0]
+
+        self.assertIn("for attempt in range(1, BRAND_DRAFT_REPLACEMENT_ATTEMPTS + 1):", helper)
+        self.assertIn('upload_selector = \'input[name="brand_uploads[primary_logo]"]\'', helper)
+        self.assertIn("visible(driver, upload_selector).send_keys(str(source.resolve()))", helper)
+        self.assertIn("except StaleElementReferenceException as error:", helper)
+        self.assertIn("continue", helper)
+        self.assertIn("wait_for_draft_save_confirmation(driver)", helper)
+        saved_logo_check = "assert_saved_primary_logo(driver, source, role)"
+        self.assertEqual(2, helper.count(saved_logo_check), "the derivative is checked before and after reloading the draft")
+        self.assertLess(helper.index("wait_for_draft_save_confirmation(driver)"), helper.index(saved_logo_check))
+        saved_logo_helper = browser_flow.split("def assert_saved_primary_logo(", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("assert_uploaded_derivative_url(", saved_logo_helper)
+        self.assertLess(helper.index(saved_logo_check), helper.rindex("return"))
+        self.assertIn(
+            'OFFICIAL_UPLOADS["pwa_icon"],\n            "temporary replacement draft logo",',
+            replacement_stage,
+        )
 
     def test_browser_asserts_published_open_graph_text_matches_seo_settings(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
