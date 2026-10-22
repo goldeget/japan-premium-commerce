@@ -742,5 +742,29 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("'combination IDs replaced'", edit_verifier)
         self.assertIn("'options' => ($editedEditor['options'] ?? '') === \"色:青|緑\\nサイズ:S|M\"", edit_verifier)
 
+    def test_each_native_combination_has_an_editable_nonnegative_stock_value(self) -> None:
+        draft = (MODULE / "src" / "Domain" / "ProductAdminDraft.php").read_text(encoding="utf-8")
+        manager = (MODULE / "src" / "Integration" / "PrestaShopNativeProductManager.php").read_text(encoding="utf-8")
+        controller = (MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php").read_text(encoding="utf-8")
+        verifier = (ROOT / "tests" / "catalog" / "verify_native_product_admin.php").read_text(encoding="utf-8")
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+
+        self.assertIn("public readonly array $combinationQuantities", draft)
+        self.assertIn("combination_quantities", draft)
+        self.assertIn("'combination_quantities' =>", manager)
+        self.assertIn("combinationStockRows", manager)
+        self.assertIn("product-level stock row", manager)
+        self.assertIn("Tools::getValue('combination_quantities', [])", controller)
+        self.assertIn("renderCombinationQuantities", controller)
+        self.assertIn('name="combination_quantities[', controller)
+        self.assertIn("StockAvailable::setQuantity($productId, $combinationId, $quantity, $shopId)", manager)
+        self.assertIn("array_combine($editedCombinationIds, [0, 2, 4, 6])", verifier)
+        self.assertIn("unique combination quantities", verifier)
+        self.assertIn("missing combination ID", verifier)
+        self.assertIn("foreign combination ID", verifier)
+        self.assertIn('input[name^="combination_quantities["]', browser)
+        self.assertIn("distinct option stock", browser)
+        self.assertIn('product-admin-distinct-combination-stock-desktop.png', browser)
+
 if __name__ == "__main__":
     unittest.main()

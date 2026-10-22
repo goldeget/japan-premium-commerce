@@ -45,6 +45,7 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
             "desktop-customer-account-created.png",
             "mobile-customer-account-created.png",
             "product-admin-created-desktop.png",
+            "product-admin-distinct-combination-stock-desktop.png",
             "product-admin-mobile.png",
             "desktop-home.png",
             "mobile-home.png",

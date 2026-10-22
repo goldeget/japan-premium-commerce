@@ -275,6 +275,12 @@ def product_form_diagnostics(driver: webdriver.Chrome) -> dict[str, object]:
             'name_ja', 'name_ko', 'price_jpy', 'quantity', 'category_ids',
             'options', 'description_ja', 'description_ko', 'product_images',
         ];
+        const combinationStockFields = Array.from(
+            form.querySelectorAll('input[name^="combination_quantities["]')
+        );
+        const invalidCombinationStockCount = combinationStockFields.filter(
+            (field) => field.willValidate && !field.validity.valid
+        ).length;
         const hasValue = (name) => Array.from(form.querySelectorAll(`[name="${name}"], [name="${name}[]"]`)).some((field) => {
             if (field.type === 'checkbox' || field.type === 'radio') return field.checked;
             if (field.type === 'file') return Boolean(field.files?.length);
@@ -307,6 +313,8 @@ def product_form_diagnostics(driver: webdriver.Chrome) -> dict[str, object]:
             submit_control_present: Boolean(submitButton),
             populated_field_names: safeFields.filter(hasValue),
             field_error_names: invalidNames,
+            combination_stock_input_count: combinationStockFields.length,
+            invalid_combination_stock_input_count: invalidCombinationStockCount,
             selected_category_count: form.querySelectorAll('input[name="category_ids[]"]:checked').length,
             selected_file_count: form.querySelector('#product_images')?.files?.length || 0,
         };
@@ -712,6 +720,8 @@ def run() -> None:
             "#description_ja", "#description_ko", "#product_images", 'input[name="category_ids[]"]',
         ):
             visible(driver, selector)
+        if driver.find_elements(By.CSS_SELECTOR, 'input[name^="combination_quantities["]'):
+            raise AssertionError("new product options should not expose stock rows before native combinations exist")
         driver.save_screenshot(str(DEST / "product-admin-empty-desktop.png"))
 
         stage = "native_product_create"
@@ -777,6 +787,9 @@ def run() -> None:
         ):
             if visible(driver, selector).get_attribute("value") != expected:
                 raise AssertionError("a product create field did not persist through PrestaShop")
+        created_stock_inputs = driver.find_elements(By.CSS_SELECTOR, 'input[name^="combination_quantities["]')
+        if len(created_stock_inputs) != 4 or [field.get_attribute("value") for field in created_stock_inputs] != ["3"] * 4:
+            raise AssertionError("the editor did not expose the saved stock for all four native combinations")
         if len(driver.find_elements(By.CSS_SELECTOR, ".ordenowa-product-image img")) != 1:
             raise AssertionError("the new product image is missing from the admin preview")
         created_category_ids = {
@@ -886,14 +899,15 @@ def run() -> None:
         if not isinstance(edit_save_result, dict) or edit_save_result.get("status") != "success":
             raise AssertionError("native product edit did not return a verified success response")
         edit_operation = "verify_edited_fields"
+        expected_edit_fields["#quantity"] = "0"
         if visible(driver, "#name_ja").get_attribute("value") != japanese_name + " 수정":
             raise AssertionError("product name edit did not persist")
         if visible(driver, "#name_ko").get_attribute("value") != korean_name + " 수정":
             raise AssertionError("Korean product name edit did not persist")
         if visible(driver, "#price_jpy").get_attribute("value") != "1490":
             raise AssertionError("product price edit did not persist")
-        if visible(driver, "#quantity").get_attribute("value") != "5":
-            raise AssertionError("product stock edit did not persist")
+        if visible(driver, "#quantity").get_attribute("value") != "0":
+            raise AssertionError("the product-level default stock must remain separate from option stocks")
         if visible(driver, "#options").get_attribute("value") != edited_options:
             raise AssertionError("product option edit did not persist")
         if visible(driver, "#description_ja").get_attribute("value") != "更新した説明":
@@ -922,7 +936,32 @@ def run() -> None:
             raise AssertionError("the updated product list record does not identify the edited native product")
         driver.save_screenshot(str(DEST / "product-admin-edited-desktop.png"))
 
-        print(f"PASS: Chromium created and edited inactive native product ID={product_id}; image {old_image_id} replaced.")
+        edit_operation = "verify_distinct_option_stock_controls"
+        combination_stock_inputs = driver.find_elements(By.CSS_SELECTOR, 'input[name^="combination_quantities["]')
+        if len(combination_stock_inputs) != 4 or [field.get_attribute("value") for field in combination_stock_inputs] != ["5"] * 4:
+            raise AssertionError("changed options should receive the submitted default stock before per-combination editing")
+        expected_combination_quantities = ["0", "2", "4", "6"]
+        edit_operation = "set_distinct_option_stock"
+        for field, quantity in zip(combination_stock_inputs, expected_combination_quantities, strict=True):
+            field.clear()
+            field.send_keys(quantity)
+        if [field.get_attribute("value") for field in combination_stock_inputs] != expected_combination_quantities:
+            raise AssertionError("distinct option stock values could not be entered for each native combination")
+        edit_operation = "submit_distinct_option_stock"
+        clear_product_browser_network_events(driver)
+        visible(driver, 'button[name="submitKuraneaProductSave"]').click()
+        distinct_stock_result = WebDriverWait(driver, 45).until(product_save_result)
+        if not isinstance(distinct_stock_result, dict) or distinct_stock_result.get("status") != "success":
+            raise AssertionError("distinct option stock did not save successfully")
+        edit_operation = "verify_distinct_option_stock"
+        saved_combination_stock_inputs = driver.find_elements(By.CSS_SELECTOR, 'input[name^="combination_quantities["]')
+        if [field.get_attribute("value") for field in saved_combination_stock_inputs] != expected_combination_quantities:
+            raise AssertionError("distinct option stock did not persist for every native combination")
+        if visible(driver, "#quantity").get_attribute("value") != "0":
+            raise AssertionError("per-combination stock editing changed the product-level default quantity")
+        driver.save_screenshot(str(DEST / "product-admin-distinct-combination-stock-desktop.png"))
+
+        print(f"PASS: Chromium created and edited inactive native product ID={product_id}; image {old_image_id} replaced; distinct combination stock saved.")
     except Exception as error:
         if driver is not None:
             try:

@@ -31,6 +31,28 @@ assertProductDraftSame([
     ['name' => '色', 'values' => ['青', '赤']],
     ['name' => 'サイズ', 'values' => ['S', 'M']],
 ], $draft->optionGroups, 'Product drafts should parse native option groups and values.');
+assertProductDraftSame([], $draft->combinationQuantities, 'Product drafts without a posted variant map should retain the legacy shared quantity behavior.');
+
+$variantDraft = ProductAdminDraft::fromArray([
+    'name_ja' => 'CI 合成商品',
+    'name_ko' => 'CI 합성 상품',
+    'price_jpy' => '1280',
+    'quantity' => '6',
+    'category_ids' => ['2'],
+    'description_ja' => '',
+    'description_ko' => '',
+    'options' => "色:青|赤\nサイズ:S|M",
+    'combination_quantities' => [
+        '101' => '0',
+        '102' => '4',
+        '103' => 7,
+    ],
+]);
+assertProductDraftSame(
+    [101 => 0, 102 => 4, 103 => 7],
+    $variantDraft->combinationQuantities,
+    'Product drafts should normalize nonnegative native combination stock values by combination ID.'
+);
 
 $boundaryDraft = ProductAdminDraft::fromArray([
     'name_ja' => str_repeat('日', 128),
@@ -60,6 +82,11 @@ foreach ([
     ['name_ko' => str_repeat('한', 129)],
     ['options' => str_repeat('옵', 65) . ':値'],
     ['options' => '色:' . str_repeat('赤', 129)],
+    ['combination_quantities' => '101=2'],
+    ['combination_quantities' => ['not-a-combination' => '2']],
+    ['combination_quantities' => ['101' => '-1']],
+    ['combination_quantities' => ['101' => '1.5']],
+    ['combination_quantities' => ['101' => '10000000']],
 ] as $invalid) {
     $values = [
         'name_ja' => '合成商品',
@@ -70,6 +97,7 @@ foreach ([
         'description_ja' => '',
         'description_ko' => '',
         'options' => '',
+        'combination_quantities' => [],
     ];
     foreach ($invalid as $key => $value) {
         $values[$key] = $value;

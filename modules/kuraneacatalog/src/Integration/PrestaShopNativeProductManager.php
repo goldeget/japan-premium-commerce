@@ -99,10 +99,14 @@ final class PrestaShopNativeProductManager
         $nameKo = (string) ($localized['ko']['name'] ?? $nameJa);
         $descriptionJa = $this->htmlToPlainText((string) ($localized['ja']['description'] ?? $fallbackDescription));
         $descriptionKo = $this->htmlToPlainText((string) ($localized['ko']['description'] ?? $descriptionJa));
-        $combinationIds = $this->combinationIds($productId);
-        $quantity = $combinationIds === []
-            ? (int) \StockAvailable::getQuantityAvailableByProduct($productId, 0, $shopId)
-            : (int) \StockAvailable::getQuantityAvailableByProduct($productId, $combinationIds[0], $shopId);
+        $combinationStockRows = $this->combinationStockRows($productId, $languageId, $shopId);
+        // The default is the product-level stock row; variant stocks remain
+        // independent and must never seed this value from the first variant.
+        $quantity = (int) \StockAvailable::getQuantityAvailableByProduct($productId, 0, $shopId);
+        $combinationQuantities = [];
+        foreach ($combinationStockRows as $row) {
+            $combinationQuantities[$row['id_product_attribute']] = $row['quantity'];
+        }
 
         return [
             'id_product' => $productId,
@@ -114,8 +118,47 @@ final class PrestaShopNativeProductManager
             'description_ko' => $descriptionKo,
             'category_ids' => array_map('intval', \Product::getProductCategories($productId)),
             'options' => $this->optionText($productId, $languageId, $shopId),
+            'combination_stock_rows' => $combinationStockRows,
+            'combination_quantities' => $combinationQuantities,
             'image_ids' => $this->imageIds($productId),
         ];
+    }
+
+    /** @return list<array{id_product_attribute:int,label:string,quantity:int}> */
+    public function combinationStockRows(int $productId, int $languageId, int $shopId): array
+    {
+        $rows = \Db::getInstance()->executeS('
+            SELECT pa.`id_product_attribute`, agl.`name` AS `group_name`, al.`name` AS `attribute_name`
+            FROM `' . _DB_PREFIX_ . 'product_attribute` pa
+            INNER JOIN `' . _DB_PREFIX_ . 'product_attribute_combination` pac
+                ON pac.`id_product_attribute` = pa.`id_product_attribute`
+            INNER JOIN `' . _DB_PREFIX_ . 'attribute` a ON a.`id_attribute` = pac.`id_attribute`
+            INNER JOIN `' . _DB_PREFIX_ . 'attribute_group` ag ON ag.`id_attribute_group` = a.`id_attribute_group`
+            INNER JOIN `' . _DB_PREFIX_ . 'attribute_group_lang` agl
+                ON agl.`id_attribute_group` = ag.`id_attribute_group` AND agl.`id_lang` = ' . (int) $languageId . '
+            INNER JOIN `' . _DB_PREFIX_ . 'attribute_lang` al
+                ON al.`id_attribute` = a.`id_attribute` AND al.`id_lang` = ' . (int) $languageId . '
+            INNER JOIN `' . _DB_PREFIX_ . 'attribute_group_shop` ags
+                ON ags.`id_attribute_group` = ag.`id_attribute_group` AND ags.`id_shop` = ' . (int) $shopId . '
+            WHERE pa.`id_product` = ' . (int) $productId . '
+            ORDER BY pa.`id_product_attribute` ASC, ag.`position` ASC, a.`position` ASC
+        ');
+        $labels = [];
+        foreach (is_array($rows) ? $rows : [] as $row) {
+            $combinationId = (int) $row['id_product_attribute'];
+            $labels[$combinationId][] = (string) $row['group_name'] . ': ' . (string) $row['attribute_name'];
+        }
+
+        $result = [];
+        foreach ($this->combinationIds($productId) as $combinationId) {
+            $result[] = [
+                'id_product_attribute' => $combinationId,
+                'label' => implode(' / ', $labels[$combinationId] ?? []),
+                'quantity' => (int) \StockAvailable::getQuantityAvailableByProduct($productId, $combinationId, $shopId),
+            ];
+        }
+
+        return $result;
     }
 
     /** @return list<int> */
@@ -163,6 +206,10 @@ final class PrestaShopNativeProductManager
             $draft,
             $languageId,
             $shopId
+        );
+        $this->validateCombinationQuantities(
+            $isNew ? null : (int) $product->id,
+            $draft
         );
         if ($isNew) {
             $product->reference = self::REFERENCE_PREFIX . strtoupper(bin2hex(random_bytes(6)));
@@ -306,7 +353,8 @@ final class PrestaShopNativeProductManager
         $existingGroups = $this->optionGroups($productId, $languageId, $shopId);
         $existingCombinationIds = $this->combinationIds($productId);
         $newGroups = $draft->optionGroups;
-        if ($existingGroups !== $newGroups) {
+        $groupsChanged = $existingGroups !== $newGroups;
+        if ($groupsChanged) {
             if ($existingCombinationIds !== [] && $this->combinationsUsed($existingCombinationIds)) {
                 throw new InvalidArgumentException('장바구니 또는 주문에서 사용된 옵션은 변경할 수 없습니다.');
             }
@@ -336,7 +384,10 @@ final class PrestaShopNativeProductManager
 
         if ($existingCombinationIds !== []) {
             foreach ($existingCombinationIds as $combinationId) {
-                \StockAvailable::setQuantity($productId, $combinationId, $draft->quantity, $shopId);
+                $quantity = !$groupsChanged
+                    ? ($draft->combinationQuantities[$combinationId] ?? $draft->quantity)
+                    : $draft->quantity;
+                \StockAvailable::setQuantity($productId, $combinationId, $quantity, $shopId);
             }
             \StockAvailable::setQuantity($productId, 0, 0, $shopId);
 
@@ -367,6 +418,24 @@ final class PrestaShopNativeProductManager
             \StockAvailable::setQuantity($productId, (int) $combination->id, $draft->quantity, $shopId);
         }
         \StockAvailable::setQuantity($productId, 0, 0, $shopId);
+    }
+
+    private function validateCombinationQuantities(?int $productId, ProductAdminDraft $draft): void
+    {
+        if ($draft->combinationQuantities === []) {
+            return;
+        }
+        if ($productId === null) {
+            throw new InvalidArgumentException('새 상품을 저장한 뒤 옵션 조합별 재고를 입력해 주세요.');
+        }
+
+        $existingIds = $this->combinationIds($productId);
+        $submittedIds = array_map('intval', array_keys($draft->combinationQuantities));
+        sort($existingIds, SORT_NUMERIC);
+        sort($submittedIds, SORT_NUMERIC);
+        if ($submittedIds !== $existingIds) {
+            throw new InvalidArgumentException('현재 상품의 모든 옵션 조합별 재고를 다시 확인해 주세요.');
+        }
     }
 
     /** @param list<int> $combinationIds */

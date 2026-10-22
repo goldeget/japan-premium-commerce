@@ -116,6 +116,7 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
             'description_ja' => Tools::getValue('description_ja', ''),
             'description_ko' => Tools::getValue('description_ko', ''),
             'options' => Tools::getValue('options', ''),
+            'combination_quantities' => Tools::getValue('combination_quantities', []),
         ];
     }
 
@@ -158,9 +159,13 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
             . $this->renderTextField('name_ja', '상품명 (일본어)', (string) ($values['name_ja'] ?? ''), true, '예: ORDENOWA CI 合成商品')
             . $this->renderTextField('name_ko', '상품명 (한국어)', (string) ($values['name_ko'] ?? ''), false, '고객 언어별 상품명을 입력합니다.')
             . $this->renderTextField('price_jpy', '가격 (JPY)', (string) ($values['price_jpy'] ?? ''), true, '예: 1280')
-            . $this->renderTextField('quantity', '재고 수량 (옵션 조합별)', (string) ($values['quantity'] ?? '0'), true, '옵션이 없으면 상품 재고, 옵션이 있으면 각 조합에 적용됩니다.')
+            . $this->renderTextField('quantity', '기본 재고 수량', (string) ($values['quantity'] ?? '0'), true, '옵션이 없는 상품의 상품 재고로 적용됩니다. 옵션 조합을 새로 만들 때는 기본값으로 사용하며, 기존 조합은 아래 개별 재고가 우선합니다.')
             . $this->renderCategories($categories, $selectedCategories)
             . $this->renderTextArea('options', '상품 옵션', (string) ($values['options'] ?? ''), '그룹명:값1|값2 형식으로 한 줄씩 입력합니다. 예: 色:青|赤')
+            . $this->renderCombinationQuantities(
+                (array) ($values['combination_stock_rows'] ?? []),
+                (array) ($values['combination_quantities'] ?? [])
+            )
             . $this->renderTextArea('description_ja', '상세 설명 (일본어)', (string) ($values['description_ja'] ?? ''), '텍스트로 입력하며 HTML은 실행되지 않습니다.')
             . $this->renderTextArea('description_ko', '상세 설명 (한국어)', (string) ($values['description_ko'] ?? ''), '비워 두면 일본어 상세 설명을 사용합니다.')
             . $this->renderImages($imageIds, $this->selectedImageIds)
@@ -229,6 +234,41 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
         return '<div class="form-group"><label for="' . $this->escape($name) . '">' . $this->escape($label) . '</label>'
             . '<textarea class="form-control" id="' . $this->escape($name) . '" name="' . $this->escape($name) . '" rows="' . $rows . '">'
             . $this->escape($value) . '</textarea><p class="help-block">' . $this->escape($hint) . '</p></div>';
+    }
+
+    /**
+     * @param list<array{id_product_attribute:int,label:string,quantity:int}> $rows
+     * @param array<int|string, mixed> $quantities
+     */
+    private function renderCombinationQuantities(array $rows, array $quantities): string
+    {
+        $html = '<fieldset class="form-group"><legend>옵션 조합별 재고</legend>';
+        if ($rows === []) {
+            return $html . '<p>상품과 옵션을 먼저 저장하면 조합마다 재고 수량을 입력할 수 있습니다.</p></fieldset>';
+        }
+
+        $html .= '<p class="help-block">각 옵션 조합의 실제 재고를 입력하세요. 수량은 0 이상이어야 합니다.</p>';
+        foreach ($rows as $row) {
+            $combinationId = (int) ($row['id_product_attribute'] ?? 0);
+            if ($combinationId < 1) {
+                continue;
+            }
+            $rawQuantity = $quantities[$combinationId] ?? $quantities[(string) $combinationId] ?? ($row['quantity'] ?? 0);
+            $quantity = is_string($rawQuantity) || is_int($rawQuantity)
+                ? trim((string) $rawQuantity)
+                : (string) ($row['quantity'] ?? 0);
+            if (preg_match('/\A[0-9]{1,7}\z/D', $quantity) !== 1) {
+                $quantity = (string) ($row['quantity'] ?? 0);
+            }
+            $label = trim((string) ($row['label'] ?? '')) ?: '조합 ' . $combinationId;
+            $html .= '<div class="form-group"><label for="combination-quantity-' . $combinationId . '">'
+                . $this->escape($label) . '</label><input class="form-control" id="combination-quantity-'
+                . $combinationId . '" name="combination_quantities[' . $combinationId
+                . ']" type="number" min="0" max="9999999" step="1" required value="'
+                . $this->escape($quantity) . '"></div>';
+        }
+
+        return $html . '</fieldset>';
     }
 
     /** @param list<int> $imageIds */

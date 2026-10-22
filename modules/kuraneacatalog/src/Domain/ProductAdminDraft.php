@@ -12,6 +12,7 @@ final class ProductAdminDraft
     /**
      * @param list<int> $categoryIds
      * @param list<array{name:string, values:list<string>}> $optionGroups
+     * @param array<int, int> $combinationQuantities
      */
     private function __construct(
         public readonly string $nameJa,
@@ -21,7 +22,8 @@ final class ProductAdminDraft
         public readonly array $categoryIds,
         public readonly string $descriptionJa,
         public readonly string $descriptionKo,
-        public readonly array $optionGroups
+        public readonly array $optionGroups,
+        public readonly array $combinationQuantities
     ) {
     }
 
@@ -86,8 +88,43 @@ final class ProductAdminDraft
             $categoryIds,
             $descriptionJa,
             $descriptionKo,
-            self::parseOptionGroups($values['options'] ?? '')
+            self::parseOptionGroups($values['options'] ?? ''),
+            self::parseCombinationQuantities($values['combination_quantities'] ?? [])
         );
+    }
+
+    /** @return array<int, int> */
+    private static function parseCombinationQuantities(mixed $rawQuantities): array
+    {
+        if (!is_array($rawQuantities) || count($rawQuantities) > 40) {
+            throw new InvalidArgumentException('옵션 조합별 재고 입력값을 확인해 주세요.');
+        }
+
+        $quantities = [];
+        foreach ($rawQuantities as $rawCombinationId => $rawQuantity) {
+            if (is_int($rawCombinationId)) {
+                $combinationId = $rawCombinationId;
+            } elseif (is_string($rawCombinationId)
+                && preg_match('/\A[1-9][0-9]{0,8}\z/D', $rawCombinationId) === 1) {
+                $combinationId = (int) $rawCombinationId;
+            } else {
+                throw new InvalidArgumentException('옵션 조합별 재고 항목이 올바르지 않습니다.');
+            }
+            if ($combinationId < 1 || $combinationId > 999999999
+                || (!is_string($rawQuantity) && !is_int($rawQuantity))) {
+                throw new InvalidArgumentException('옵션 조합별 재고 항목이 올바르지 않습니다.');
+            }
+
+            $quantityValue = trim((string) $rawQuantity);
+            if (preg_match('/\A[0-9]{1,7}\z/D', $quantityValue) !== 1) {
+                throw new InvalidArgumentException('옵션 조합별 재고는 0 이상 정수로 입력해 주세요.');
+            }
+            $quantities[$combinationId] = (int) $quantityValue;
+        }
+
+        ksort($quantities, SORT_NUMERIC);
+
+        return $quantities;
     }
 
     /** @return list<array{name:string, values:list<string>}> */

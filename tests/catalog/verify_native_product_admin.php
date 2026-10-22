@@ -177,6 +177,14 @@ if (!Validate::isLoadedObject($product)
     throw new RuntimeException('The created native product is missing fields or violated its inactive sale gate.');
 }
 
+$createdEditorCombinationIds = array_map('intval', array_keys($createdEditor['combination_quantities'] ?? []));
+sort($createdCombinationIds, SORT_NUMERIC);
+sort($createdEditorCombinationIds, SORT_NUMERIC);
+if ($createdEditorCombinationIds !== $createdCombinationIds
+    || array_values($createdEditor['combination_quantities'] ?? []) !== [3, 3, 3, 3]) {
+    throw new RuntimeException('The product editor did not load stock for each native combination.');
+}
+
 foreach ($combinationRows as $row) {
     if ((int) StockAvailable::getQuantityAvailableByProduct($productId, (int) $row['id_product_attribute'], $shopId) !== 3) {
         throw new RuntimeException('The native stock rows do not contain the submitted per-combination quantity.');
@@ -310,6 +318,78 @@ if ($editFailures !== []) {
 foreach ($editedCombinationRows as $row) {
     if ((int) StockAvailable::getQuantityAvailableByProduct($savedProductId, (int) $row['id_product_attribute'], $shopId) !== 5) {
         throw new RuntimeException('Editing the product did not update every combination stock row.');
+    }
+}
+
+$distinctCombinationQuantities = array_combine($editedCombinationIds, [0, 2, 4, 6]);
+if (!is_array($distinctCombinationQuantities)) {
+    throw new RuntimeException('Could not prepare distinct option stock values for the native combinations.');
+}
+$distinctStockDraft = ProductAdminDraft::fromArray([
+    'name_ja' => 'ORDENOWA CI 合成商品 수정',
+    'name_ko' => 'ORDENOWA CI 합성 상품 수정',
+    'price_jpy' => '1490',
+    'quantity' => '5',
+    'category_ids' => [(string) $editCategoryId],
+    'description_ja' => '更新した説明',
+    'description_ko' => '수정한 상세 설명',
+    'options' => "色:青|緑\nサイズ:S|M",
+    'combination_quantities' => $distinctCombinationQuantities,
+]);
+$manager->save($savedProductId, $distinctStockDraft);
+$distinctStockEditor = $manager->editorData($savedProductId);
+$actualDistinctCombinationQuantities = [];
+foreach ($editedCombinationRows as $row) {
+    $combinationId = (int) $row['id_product_attribute'];
+    $actualDistinctCombinationQuantities[$combinationId] = (int) StockAvailable::getQuantityAvailableByProduct(
+        $savedProductId,
+        $combinationId,
+        $shopId
+    );
+}
+if ($actualDistinctCombinationQuantities !== $distinctCombinationQuantities
+    || ($distinctStockEditor['combination_quantities'] ?? []) !== $distinctCombinationQuantities) {
+    throw new RuntimeException('Saving unique combination quantities did not persist each native stock row.');
+}
+
+$savedProductAfterDistinctStock = new Product($savedProductId, false, $languageId, $shopId);
+$quantityValidationCases = [
+    'missing combination ID' => array_slice($distinctCombinationQuantities, 1, null, true),
+];
+$foreignCombinationId = max($editedCombinationIds) + 1;
+$quantityValidationCases['foreign combination ID'] = $distinctCombinationQuantities + [$foreignCombinationId => 1];
+foreach ($quantityValidationCases as $caseName => $invalidQuantityMap) {
+    $quantityMapRejected = false;
+    try {
+        $manager->save($savedProductId, ProductAdminDraft::fromArray([
+            'name_ja' => 'ORDENOWA CI INVALID STOCK MAP MUST NOT SAVE',
+            'name_ko' => '저장되면 안 되는 옵션 재고 테스트',
+            'price_jpy' => '1490',
+            'quantity' => '5',
+            'category_ids' => [(string) $editCategoryId],
+            'description_ja' => 'Invalid combination stock IDs must fail before product persistence.',
+            'description_ko' => '옵션 재고 조합 검증은 상품 저장 전에 실행되어야 합니다.',
+            'options' => "色:青|緑\nサイズ:S|M",
+            'combination_quantities' => $invalidQuantityMap,
+        ]));
+    } catch (InvalidArgumentException) {
+        $quantityMapRejected = true;
+    }
+
+    $productAfterInvalidQuantityMap = new Product($savedProductId, false, $languageId, $shopId);
+    $stocksAfterInvalidQuantityMap = [];
+    foreach ($editedCombinationRows as $row) {
+        $combinationId = (int) $row['id_product_attribute'];
+        $stocksAfterInvalidQuantityMap[$combinationId] = (int) StockAvailable::getQuantityAvailableByProduct(
+            $savedProductId,
+            $combinationId,
+            $shopId
+        );
+    }
+    if (!$quantityMapRejected
+        || (string) $productAfterInvalidQuantityMap->name !== (string) $savedProductAfterDistinctStock->name
+        || $stocksAfterInvalidQuantityMap !== $distinctCombinationQuantities) {
+        throw new RuntimeException('Invalid ' . $caseName . ' was not rejected before product or stock persistence.');
     }
 }
 
