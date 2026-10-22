@@ -29,6 +29,7 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn("document.body?.innerText", helper)
         self.assertIn("document.title", helper)
         self.assertIn("KURANEA", helper)
+        self.assertIn("collect(visibleBody, 'visible_body')", helper)
         self.assertIn("assert_no_legacy_brand_in_rendered_page(driver, label + \" storefront\")", published_assets)
         self.assertIn('assert_no_legacy_brand_in_rendered_page(driver, "admin login")', admin_login)
 

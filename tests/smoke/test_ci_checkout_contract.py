@@ -376,7 +376,8 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         )[0]
         self.assertIn('search.send_keys("postcode")', search_helper)
         self.assertNotIn("Keys.ENTER", search_helper)
-        self.assertIn("$productName = '[CI ONLY] KURANEA postcode order ' . $suffix;", fixture)
+        self.assertIn("$productName = '[CI ONLY] ORDENOWA postcode order ' . $suffix;", fixture)
+        self.assertIn("$product->reference = 'KURANEA-CI-' . $suffix;", fixture)
         self.assertIn("Search::indexation(false, (int) $product->id);", fixture)
         self.assertIn("enter_product_search_query(driver)", search_flow)
         self.assertIn("ignored_exceptions=(StaleElementReferenceException,)", search_flow)

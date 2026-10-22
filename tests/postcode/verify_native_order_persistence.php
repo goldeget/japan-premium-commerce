@@ -205,7 +205,7 @@ try {
 
     $stage = 'CI-only product creation';
     $suffix = strtoupper(bin2hex(random_bytes(4)));
-    $productName = '[CI ONLY] KURANEA postcode order ' . $suffix;
+    $productName = '[CI ONLY] ORDENOWA postcode order ' . $suffix;
     $product = new Product();
     $product->id_shop_default = $shopId;
     $product->id_category_default = $homeCategoryId;
