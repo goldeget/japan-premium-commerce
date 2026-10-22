@@ -60,8 +60,47 @@ def run_viewport(width, height, label):
         assert_true(bool(buttons), "No add-to-cart control on active synthetic product.")
         button = next((b for b in buttons if b.is_displayed() and b.is_enabled()), None)
         assert_true(button is not None, "All add-to-cart controls are inactive.")
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", button)
-        button.click()
+        # PrestaShop mobile CSS may use smooth scrolling and a fixed bottom
+        # navigation. Wait for scrolling to settle before using a real pointer
+        # click; never bypass a genuine overlap with a JavaScript click.
+        driver.execute_script(
+            "arguments[0].scrollIntoView({behavior:'instant', block:'center', inline:'nearest'});",
+            button,
+        )
+        def button_center_accessible(browser):
+            return browser.execute_script(
+                """
+                const el = arguments[0], box = el.getBoundingClientRect();
+                const x = box.left + box.width / 2, y = box.top + box.height / 2;
+                if (x < 0 || x >= innerWidth || y < 70 || y >= innerHeight - 90) {
+                    return false;
+                }
+                const target = document.elementFromPoint(x, y);
+                return target === el || el.contains(target);
+                """,
+                button,
+            )
+
+        try:
+            WebDriverWait(driver, 15, poll_frequency=0.25).until(button_center_accessible)
+            button.click()
+        except Exception:
+            driver.save_screenshot(str(DEST / f"{label}-add-to-cart-click-failure.png"))
+            details = driver.execute_script(
+                """
+                const el = arguments[0], b = el.getBoundingClientRect();
+                const x = b.left + b.width / 2, y = b.top + b.height / 2;
+                const blocker = document.elementFromPoint(x, Math.min(innerHeight - 1, Math.max(0, y)));
+                return {box:{x:b.x,y:b.y,width:b.width,height:b.height},
+                        viewport:{width:innerWidth,height:innerHeight},
+                        scrollY,scrollHeight:document.documentElement.scrollHeight,
+                        hitTag:blocker && blocker.tagName,
+                        hitClass:blocker && String(blocker.className).slice(0,120)};
+                """,
+                button,
+            )
+            print(f"Browser add-to-cart pointer click failed on {label}: {details}", file=sys.stderr)
+            raise
         time.sleep(2)
         visit(driver, "/index.php?controller=cart&action=show")
         assert_true("[CI ONLY]" in driver.find_element(By.TAG_NAME, "body").text,
