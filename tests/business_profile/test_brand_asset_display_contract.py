@@ -7,6 +7,22 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class BrandAssetDisplayContractTests(unittest.TestCase):
+    def test_brand_directory_creation_rejects_symlinked_ancestor_components(self) -> None:
+        processor = (ROOT / "modules/kuraneabusinessprofile/src/Infrastructure/BrandAssetProcessor.php").read_text(encoding="utf-8")
+        ensure_directory = processor.split("private static function ensureDirectory", 1)[1].split(
+            "private static function denyPublicAccess", 1
+        )[0]
+        runtime_test = (ROOT / "tests/business_profile/brand_assets.php").read_text(encoding="utf-8")
+
+        self.assertIn("foreach ($components as $component)", ensure_directory)
+        self.assertIn("is_link($currentDirectory)", ensure_directory)
+        self.assertIn("mkdir($currentDirectory, $mode)", ensure_directory)
+        self.assertNotIn("mkdir($directory, $mode, true)", ensure_directory)
+        self.assertIn("symlink($outsidePrivateParent, $ancestorSymlinkPrivateRoot . '/source')", runtime_test)
+        self.assertIn("!is_dir($outsidePrivateParent . '/primary_logo')", runtime_test)
+        self.assertIn("symlink($outsidePublicParent, $ancestorSymlinkPublicRoot . '/img/ordenowa/versions')", runtime_test)
+        self.assertIn("!is_dir($outsidePublicParent . '/' . hash('sha256', $original))", runtime_test)
+
     def test_immutable_brand_writer_rejects_symlink_targets_before_following_them(self) -> None:
         processor = (ROOT / "modules/kuraneabusinessprofile/src/Infrastructure/BrandAssetProcessor.php").read_text(encoding="utf-8")
         writer = processor.split("private static function writeImmutable", 1)[1]

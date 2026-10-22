@@ -180,10 +180,36 @@ final class BrandAssetProcessor
 
     private static function ensureDirectory(string $directory, int $mode): void
     {
-        if (!is_dir($directory) && !mkdir($directory, $mode, true) && !is_dir($directory)) {
-            throw new RuntimeException('이미지 저장 디렉터리를 준비하지 못했습니다.');
+        if ($directory === '' || $directory[0] !== DIRECTORY_SEPARATOR) {
+            throw new RuntimeException('이미지 저장 경로는 절대 경로여야 합니다.');
         }
-        if (is_link($directory) || !is_writable($directory)) {
+
+        $components = explode(DIRECTORY_SEPARATOR, trim($directory, DIRECTORY_SEPARATOR));
+        $currentDirectory = DIRECTORY_SEPARATOR;
+        foreach ($components as $component) {
+            if ($component === '' || $component === '.') {
+                continue;
+            }
+            if ($component === '..') {
+                throw new RuntimeException('이미지 저장 경로에 상위 경로 이동을 사용할 수 없습니다.');
+            }
+
+            $currentDirectory = rtrim($currentDirectory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $component;
+            if (is_link($currentDirectory)) {
+                throw new RuntimeException('이미지 경로에는 심볼릭 링크를 사용할 수 없습니다.');
+            }
+            if (!is_dir($currentDirectory)
+                && !mkdir($currentDirectory, $mode)
+                && !is_dir($currentDirectory)
+            ) {
+                throw new RuntimeException('이미지 저장 디렉터리를 준비하지 못했습니다.');
+            }
+            if (is_link($currentDirectory) || !is_dir($currentDirectory)) {
+                throw new RuntimeException('이미지 경로에는 심볼릭 링크를 사용할 수 없습니다.');
+            }
+        }
+
+        if (!is_writable($currentDirectory)) {
             throw new RuntimeException('이미지 저장 디렉터리 권한을 확인해 주세요.');
         }
     }

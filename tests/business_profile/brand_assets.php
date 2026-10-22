@@ -31,7 +31,12 @@ function removeBrandTestDirectory(string $directory): void
         new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS),
         RecursiveIteratorIterator::CHILD_FIRST
     ) as $item) {
-        $item->isDir() ? rmdir($item->getPathname()) : unlink($item->getPathname());
+        $path = $item->getPathname();
+        if (is_link($path) || !$item->isDir()) {
+            unlink($path);
+        } else {
+            rmdir($path);
+        }
     }
     rmdir($directory);
 }
@@ -64,6 +69,56 @@ try {
     );
 }
 assertBusinessProfileTrue(is_link($symlinkTarget), 'The processor must reject and preserve a pre-existing symlink target.');
+
+$outsidePrivateParent = $temporaryRoot . '/outside-private-parent';
+mkdir($outsidePrivateParent, 0700, true);
+$ancestorSymlinkPrivateRoot = $temporaryRoot . '/ancestor-symlink-private';
+mkdir($ancestorSymlinkPrivateRoot, 0700, true);
+symlink($outsidePrivateParent, $ancestorSymlinkPrivateRoot . '/source');
+try {
+    \Kuranea\BusinessProfile\Infrastructure\BrandAssetProcessor::process(
+        'primary_logo',
+        $original,
+        $temporaryRoot . '/ancestor-symlink-private-public',
+        $ancestorSymlinkPrivateRoot
+    );
+    throw new RuntimeException('A symlink in the private source parent chain must be rejected.');
+} catch (RuntimeException $exception) {
+    assertBusinessProfileSame(
+        '이미지 경로에는 심볼릭 링크를 사용할 수 없습니다.',
+        $exception->getMessage(),
+        'A parent symlink must be rejected before the private original is written outside its root.'
+    );
+}
+assertBusinessProfileTrue(
+    !is_dir($outsidePrivateParent . '/primary_logo'),
+    'The processor must not create a private upload directory through an ancestor symlink.'
+);
+
+$outsidePublicParent = $temporaryRoot . '/outside-public-parent';
+mkdir($outsidePublicParent, 0700, true);
+$ancestorSymlinkPublicRoot = $temporaryRoot . '/ancestor-symlink-public';
+mkdir($ancestorSymlinkPublicRoot . '/img/ordenowa', 0700, true);
+symlink($outsidePublicParent, $ancestorSymlinkPublicRoot . '/img/ordenowa/versions');
+try {
+    \Kuranea\BusinessProfile\Infrastructure\BrandAssetProcessor::process(
+        'primary_logo',
+        $original,
+        $ancestorSymlinkPublicRoot,
+        $temporaryRoot . '/ancestor-symlink-public-private'
+    );
+    throw new RuntimeException('A symlink in the public derivative parent chain must be rejected.');
+} catch (RuntimeException $exception) {
+    assertBusinessProfileSame(
+        '이미지 경로에는 심볼릭 링크를 사용할 수 없습니다.',
+        $exception->getMessage(),
+        'A parent symlink must be rejected before derivatives are written outside the public root.'
+    );
+}
+assertBusinessProfileTrue(
+    !is_dir($outsidePublicParent . '/' . hash('sha256', $original)),
+    'The processor must not create a version directory through an ancestor symlink.'
+);
 
 assertBusinessProfileThrows(
     static fn () => \Kuranea\BusinessProfile\Infrastructure\BrandAssetProcessor::process('primary_logo', 'not an image', $publicRoot, $privateRoot),
