@@ -26,6 +26,38 @@ on:
       - 'tests/smoke/test_ci_checkout_contract.py'
       - 'tests/smoke/test_product_admin_contract.py'
       - 'tests/smoke/test_browser_qa_artifacts_contract.py'
+      - 'tests/smoke/test_fresh_install_workflow_contract.py'
+      - 'tests/smoke/test_customer_account_browser_flow_contract.py'
+      - 'tests/fixtures/ci-checkout.compose.yaml'
+      - 'tests/postcode/**'
+      - 'tests/e2e/**'
+      - 'tests/catalog/verify_native_registration.php'
+  pull_request:
+    branches: [work, qa/ordenowa-product-browser-20261022]
+    paths:
+      - '.github/workflows/fresh-install.yml'
+      - 'compose.yaml'
+      - 'Dockerfile'
+      - 'docker/**'
+      - 'themes/**'
+      - 'modules/kuraneapostcode/**'
+      - 'modules/kuraneabackoffice/**'
+      - 'modules/kuraneabusinessprofile/**'
+      - 'modules/kuraneacatalog/**'
+      - 'tests/business_profile/**'
+      - 'tests/catalog/**'
+      - 'assets/brand/ordenowa/**'
+      - 'tests/smoke/fresh_install.sh'
+      - 'tests/smoke/run_postal_updater.sh'
+      - 'tests/smoke/collect_failure_diagnostics.sh'
+      - 'tests/smoke/test_admin_folder_install_order.py'
+      - 'tests/smoke/test_docker_run_recovery.py'
+      - 'tests/smoke/test_ci_diagnostics_script.py'
+      - 'tests/smoke/test_ci_checkout_contract.py'
+      - 'tests/smoke/test_product_admin_contract.py'
+      - 'tests/smoke/test_browser_qa_artifacts_contract.py'
+      - 'tests/smoke/test_fresh_install_workflow_contract.py'
+      - 'tests/smoke/test_customer_account_browser_flow_contract.py'
       - 'tests/fixtures/ci-checkout.compose.yaml'
       - 'tests/postcode/**'
       - 'tests/e2e/**'
@@ -72,7 +104,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_docker_run_recovery -v
 
       - name: Verify fresh-install workflow contracts
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract -v
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_customer_account_browser_flow_contract -v
 
       - name: Verify isolated unpaid checkout contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract -v

@@ -16,6 +16,27 @@ FRESH_INSTALL_SMOKE = ROOT / "tests" / "smoke" / "fresh_install.sh"
 
 
 class FreshInstallWorkflowContractTests(unittest.TestCase):
+    def test_customer_account_flow_contract_is_run_and_triggers_ci(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("  push:\n", workflow)
+        self.assertIn("  pull_request:\n", workflow, "fresh-install CI has no pull request trigger")
+        push_event = workflow.split("  push:\n", 1)[1].split("  pull_request:\n", 1)[0]
+        pull_request_event = workflow.split("  pull_request:\n", 1)[1].split(
+            "  workflow_dispatch:", 1
+        )[0]
+        account_contract_path = "tests/smoke/test_customer_account_browser_flow_contract.py"
+        for event, event_block in (("push", push_event), ("pull_request", pull_request_event)):
+            self.assertIn(account_contract_path, event_block, f"account contract changes do not trigger {event} CI")
+
+        contract_step = workflow.split("- name: Verify fresh-install workflow contracts", 1)[1].split(
+            "- name:", 1
+        )[0]
+        self.assertIn(
+            "tests.smoke.test_customer_account_browser_flow_contract",
+            contract_step,
+            "fresh-install CI does not run the offline customer account flow contract",
+        )
+
     def test_customer_account_e2e_uses_isolated_mailpit_and_publishes_browser_logs(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
