@@ -130,11 +130,6 @@ if ($activeShop->theme_name !== 'kuranea') {
     throw new RuntimeException('KURANEA child theme activation did not persist.');
 }
 
-$adminFolder = trim((string) (getenv('PS_FOLDER_ADMIN') ?: 'admin-kuranea'), '/');
-if (!is_dir('/var/www/html/' . $adminFolder)) {
-    throw new RuntimeException('The configured Back Office directory is missing.');
-}
-
 if (!defined('PS_INSTALLATION_LOCK_FILE')) {
     define('PS_INSTALLATION_LOCK_FILE', '/var/www/html/var/.install.prestashop');
 }
@@ -155,8 +150,35 @@ if (is_file(PS_INSTALLATION_LOCK_FILE)) {
     }
 }
 
-$container->get(AssetsInstaller::class)->installAssets($adminFolder . '/');
 $filesystem = new Filesystem();
+$shopRoot = realpath('/var/www/html');
+$adminFolder = trim((string) (getenv('KURANEA_ADMIN_FOLDER') ?: 'admin-kuranea'), '/');
+if ($shopRoot === false
+    || preg_match('/\A[a-zA-Z0-9_-]+\z/D', $adminFolder) !== 1
+) {
+    throw new RuntimeException('The requested KURANEA Back Office folder name is invalid.');
+}
+
+$installedAdminDir = realpath((string) $container->getParameter('prestashop.admin_dir'));
+$adminDir = $shopRoot . DIRECTORY_SEPARATOR . $adminFolder;
+if ($installedAdminDir === false || dirname($installedAdminDir) !== $shopRoot || !is_dir($installedAdminDir)) {
+    throw new RuntimeException('PrestaShop could not detect the completed installer Back Office directory.');
+}
+if ($installedAdminDir !== $adminDir) {
+    if (file_exists($adminDir)) {
+        throw new RuntimeException('The requested KURANEA Back Office path already exists; refusing to overwrite it.');
+    }
+    $filesystem->rename($installedAdminDir, $adminDir);
+}
+if (!is_dir($adminDir) || is_dir($shopRoot . '/admin-dev')) {
+    throw new RuntimeException('The final KURANEA Back Office path is incomplete or an admin-dev path remains.');
+}
+
+// PrestaShop 9.2's Install::finalize() installs assets before the post-install
+// hook runs. Re-run the official installer against the final path so its
+// generated links and bundle assets are valid after the directory rename.
+$container->get(AssetsInstaller::class)->installAssets($adminFolder . '/');
+
 foreach (['/var/www/html/install', '/var/www/html/install.lock', PS_INSTALLATION_LOCK_FILE] as $path) {
     if (file_exists($path)) {
         $filesystem->remove($path);

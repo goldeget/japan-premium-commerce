@@ -22,6 +22,35 @@ grep -q '로그인' /tmp/kuranea-admin-login.html
 grep -q '비밀번호' /tmp/kuranea-admin-login.html
 ! grep -q 'Sleutelwoord' /tmp/kuranea-admin-login.html
 grep -Fq 'content: url("/modules/kuraneabackoffice/views/img/kuranea-logo.png");' /tmp/kuranea-admin-login.html
+compose exec -T prestashop sh -ec '
+  test -d /var/www/html/admin-kuranea
+  test ! -e /var/www/html/admin-dev
+  test -s /var/www/html/admin-kuranea/themes/new-theme/public/theme.css
+'
+admin_css_url=$(python3 - <<'PY'
+from html.parser import HTMLParser
+from urllib.parse import urljoin
+import os
+
+class Links(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.stylesheets=[]
+    def handle_starttag(self, tag, attrs):
+        values=dict(attrs)
+        if tag == 'link' and values.get('rel') == 'stylesheet':
+            self.stylesheets.append(values.get('href',''))
+
+parser=Links()
+parser.feed(open('/tmp/kuranea-admin-login.html',encoding='utf-8').read())
+base=os.environ['SHOP_BASE_URL'].rstrip('/') + '/'
+links=[urljoin(base, value) for value in parser.stylesheets if '/admin-kuranea/themes/new-theme/public/theme.css' in value]
+if not links:
+    raise SystemExit('PrestaShop Back Office theme CSS link was not rendered')
+print(links[0])
+PY
+)
+curl --fail --silent --show-error "$admin_css_url" -o /tmp/kuranea-admin-theme.css
 
 db_ok=$(db_query 'SELECT 1')
 test "$db_ok" = 1
@@ -115,4 +144,4 @@ table_count_after=$(db_query 'SELECT COUNT(*) FROM information_schema.tables WHE
 test "$table_count_before" = "$table_count_after"
 test "$(db_query 'SELECT theme_name FROM ps_shop WHERE id_shop=1')" = kuranea
 test "$(db_query 'SELECT 1')" = 1
-printf 'PASS: empty-volume install, JPY default currency, cache ownership/writeability, ja/en/ko setup, ko employee locale, active KURANEA theme, CSS, Korean branded BO login, postcode/back-office modules, and restart persistence (%s tables)\n' "$table_count_after"
+printf 'PASS: empty-volume install, JPY default currency, cache ownership/writeability, ja/en/ko setup, ko employee locale, active KURANEA theme, CSS, Korean branded admin-kuranea login/assets with no admin-dev path, postcode/back-office modules, and restart persistence (%s tables)\n' "$table_count_after"

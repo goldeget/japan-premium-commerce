@@ -12,6 +12,7 @@ on:
       - 'modules/**'
       - 'tests/smoke/fresh_install.sh'
       - 'tests/smoke/collect_failure_diagnostics.sh'
+      - 'tests/smoke/test_admin_folder_install_order.py'
       - 'tests/smoke/test_ci_diagnostics_script.py'
       - 'tests/postcode/**'
 
@@ -48,6 +49,9 @@ jobs:
 
       - name: Verify Japan Post refresh command contract
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/postcode -p 'test_*.py' -v
+
+      - name: Verify PrestaShop admin install order contract
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_admin_folder_install_order -v
 
       - name: Build the PrestaShop image
         id: image_build
