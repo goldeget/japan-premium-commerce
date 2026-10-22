@@ -85,6 +85,7 @@ $context->language = new Language($japaneseLanguageId);
 $context->country = new Country($japanCountryId, $japaneseLanguageId);
 $context->currency = new Currency($jpyCurrencyId, null, $shopId);
 $context->employee = new Employee(1);
+$adminEmployeeContext = $context->employee;
 $context->cart = new Cart();
 $kernel->getContainer()
     ->get(PrestaShop\PrestaShop\Core\Context\ContextBuilderPreparer::class)
@@ -266,6 +267,79 @@ try {
         throw new RuntimeException('Could not associate the CI-only Japan carrier with the test customer groups.');
     }
 
+    $stage = 'CI-only payment eligibility';
+    $database = Db::getInstance();
+    $paymentModuleId = (int) $paymentModule->id;
+    $currencyRestrictions = Currency::checkPaymentCurrencies($paymentModuleId, $shopId);
+    $jpyIsAllowed = false;
+    foreach (is_array($currencyRestrictions) ? $currencyRestrictions : [] as $restriction) {
+        if ((int) ($restriction['id_currency'] ?? 0) === $jpyCurrencyId) {
+            $jpyIsAllowed = true;
+            break;
+        }
+    }
+    if (!$jpyIsAllowed) {
+        $insertJpyRestriction = sprintf(
+            'INSERT IGNORE INTO `%smodule_currency` (`id_module`, `id_shop`, `id_currency`) VALUES (%d, %d, %d)',
+            _DB_PREFIX_,
+            $paymentModuleId,
+            $shopId,
+            $jpyCurrencyId
+        );
+        if (!$database->execute($insertJpyRestriction)) {
+            throw new RuntimeException('Could not allow JPY for the isolated offline check-payment module.');
+        }
+    }
+
+    if (!Country::addModuleRestrictions(
+        [$shopId],
+        [['id_country' => $japanCountryId]],
+        [['id_module' => $paymentModuleId]]
+    )) {
+        throw new RuntimeException('Could not allow Japan for the isolated offline check-payment module.');
+    }
+
+    foreach ($customerGroups as $customerGroupId) {
+        $insertGroupRestriction = sprintf(
+            'INSERT IGNORE INTO `%smodule_group` (`id_module`, `id_shop`, `id_group`) VALUES (%d, %d, %d)',
+            _DB_PREFIX_,
+            $paymentModuleId,
+            $shopId,
+            (int) $customerGroupId
+        );
+        if (!$database->execute($insertGroupRestriction)) {
+            throw new RuntimeException('Could not allow the isolated customer group for offline check payment.');
+        }
+    }
+
+    $jpyRestrictionCount = (int) $database->getValue(sprintf(
+        'SELECT COUNT(*) FROM `%smodule_currency` WHERE id_module = %d AND id_shop = %d AND id_currency = %d',
+        _DB_PREFIX_,
+        $paymentModuleId,
+        $shopId,
+        $jpyCurrencyId
+    ));
+    $japanRestrictionCount = (int) $database->getValue(sprintf(
+        'SELECT COUNT(*) FROM `%smodule_country` WHERE id_module = %d AND id_shop = %d AND id_country = %d',
+        _DB_PREFIX_,
+        $paymentModuleId,
+        $shopId,
+        $japanCountryId
+    ));
+    $groupIdList = implode(',', array_map('intval', $customerGroups));
+    $customerGroupRestrictionCount = (int) $database->getValue(sprintf(
+        'SELECT COUNT(DISTINCT id_group) FROM `%smodule_group` WHERE id_module = %d AND id_shop = %d AND id_group IN (%s)',
+        _DB_PREFIX_,
+        $paymentModuleId,
+        $shopId,
+        $groupIdList
+    ));
+    if ($jpyRestrictionCount < 1
+        || $japanRestrictionCount < 1
+        || $customerGroupRestrictionCount !== count($customerGroups)) {
+        throw new RuntimeException('The isolated offline check-payment currency, country, or customer-group restrictions did not persist.');
+    }
+
     $stage = 'native cart and quantity';
     $cart = new Cart();
     $cart->id_customer = (int) $customer->id;
@@ -298,6 +372,25 @@ try {
     if (!$cart->update() || (int) $cart->id_carrier < 1) {
         throw new RuntimeException('The native Japanese delivery option did not persist on the test cart.');
     }
+
+    $stage = 'native payment eligibility verification';
+    if (!$paymentModule->checkCurrency($cart)) {
+        throw new RuntimeException('The official offline payment module does not accept the native CI JPY cart.');
+    }
+    $context->employee = null;
+    $eligiblePaymentModules = Module::getPaymentModules();
+    $context->employee = $adminEmployeeContext;
+    $japanGroupEligible = false;
+    foreach (is_array($eligiblePaymentModules) ? $eligiblePaymentModules : [] as $eligiblePaymentModule) {
+        if ((string) ($eligiblePaymentModule['name'] ?? '') === $paymentModuleName) {
+            $japanGroupEligible = true;
+            break;
+        }
+    }
+    if (!$japanGroupEligible) {
+        throw new RuntimeException('PrestaShop did not list the offline check-payment module for the native CI Japan address and customer groups.');
+    }
+    printf("PASS: CI-only ps_checkpayment is eligible for JPY, Japan, and the test customer groups.\n");
 
     $orderTotal = (float) $cart->getOrderTotal(true, Cart::BOTH);
     if ($orderTotal <= 0) {

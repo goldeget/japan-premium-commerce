@@ -738,6 +738,26 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         ):
             self.assertIn(stage, order_test)
 
+    def test_isolated_native_order_setup_enables_and_verifies_jpy_payment_eligibility(self) -> None:
+        order_test = (ROOT / "tests/postcode/verify_native_order_persistence.php").read_text(encoding="utf-8")
+        payment_setup_marker = "$stage = 'CI-only payment eligibility';"
+        self.assertIn(payment_setup_marker, order_test)
+        payment_setup = order_test.split(payment_setup_marker, 1)[1].split(
+            "$stage = 'native cart and quantity';", 1
+        )[0]
+
+        self.assertIn("KURANEA_ISOLATED_CI", order_test)
+        for restriction_table in ("module_currency", "module_country", "module_group"):
+            with self.subTest(restriction_table=restriction_table):
+                self.assertIn(restriction_table, payment_setup)
+        self.assertIn("$jpyCurrencyId", payment_setup)
+        self.assertIn("$japanCountryId", payment_setup)
+        self.assertIn("$customerGroups", payment_setup)
+        self.assertIn("$paymentModule->checkCurrency($cart)", order_test)
+        self.assertIn("Module::getPaymentModules()", order_test)
+        self.assertIn("$paymentModuleName", order_test)
+        self.assertIn("$context->employee = null", order_test)
+
     def test_postcode_lookup_and_native_address_save_report_separate_ci_failures(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("python3 -m unittest tests.smoke.test_fresh_install_workflow_contract", workflow)
