@@ -385,6 +385,27 @@ def submit_login(driver: webdriver.Chrome, email_address: str, password: str) ->
     WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.ID, "identity_main_link")))
 
 
+def assert_login_rejected(driver: webdriver.Chrome, email_address: str, password: str) -> None:
+    driver.get(f"{BASE}/index.php?controller=authentication")
+    fill(driver, '#login-form input[name="email"]', email_address)
+    fill(driver, '#login-form input[name="password"]', password)
+    visible(driver, "#submit-login").click()
+    WebDriverWait(driver, 30).until(
+        lambda browser: any(
+            alert.is_displayed()
+            for alert in browser.find_elements(By.CSS_SELECTOR, '.alert.alert-danger[role="alert"]')
+        )
+    )
+    visible(driver, '#login-form input[name="email"]')
+    if any(
+        link.is_displayed()
+        for link in driver.find_elements(By.CSS_SELECTOR, "a.account-menu__link--signout")
+    ):
+        raise AssertionError("the prior customer password still authenticates after password reset")
+    if any(element.is_displayed() for element in driver.find_elements(By.ID, "identity_main_link")):
+        raise AssertionError("the prior customer password opened My Page after password reset")
+
+
 def logout(driver: webdriver.Chrome) -> None:
     link = visible_signout_link(driver)
     link.click()
@@ -531,6 +552,9 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         fill(driver, '#field-password[name="passwd"]', reset_password)
         fill(driver, '#field-confirmation-passwd[name="confirmation"]', reset_password)
         visible(driver, 'button[type="submit"][name="submit"]').click()
+
+        stage = "password_reset_old_password_rejected"
+        assert_login_rejected(driver, account_email, initial_password)
 
         stage = "password_reset_login"
         submit_login(driver, account_email, reset_password)

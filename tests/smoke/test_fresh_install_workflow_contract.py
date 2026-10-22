@@ -282,6 +282,29 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("if failed_viewports:", main)
         self.assertIn("raise SystemExit", main)
 
+    def test_password_reset_rejects_the_old_password_before_accepting_the_new_one(self) -> None:
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        self.assertIn("def assert_login_rejected", account_flow)
+        old_password_check = account_flow.split("def assert_login_rejected", 1)[1].split("def logout", 1)[0]
+        reset_login = account_flow.split('stage = "password_reset_old_password_rejected"', 1)[1].split(
+            'driver.save_screenshot(str(DEST / f"{label}-customer-password-reset-login.png"))', 1
+        )[0]
+        login_errors = (ROOT / "themes" / "hummingbird" / "templates" / "_partials" / "form-errors.tpl").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("assert_login_rejected(driver, account_email, initial_password)", reset_login)
+        self.assertLess(
+            reset_login.index("assert_login_rejected(driver, account_email, initial_password)"),
+            reset_login.index("submit_login(driver, account_email, reset_password)"),
+        )
+        self.assertIn(".alert.alert-danger[role=", old_password_check)
+        self.assertIn("#login-form input[name=\"email\"]", old_password_check)
+        self.assertIn('By.ID, "identity_main_link"', old_password_check)
+        self.assertIn('a.account-menu__link--signout', old_password_check)
+        self.assertIn('class="alert alert-danger', login_errors)
+        self.assertIn('role="alert"', login_errors)
+
     def test_ci_uses_the_module_updater_for_the_official_japan_post_archive(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         postal_step = workflow.split("- name: Download and import official Japan Post KEN_ALL data", 1)[1].split("- name:", 1)[0]
