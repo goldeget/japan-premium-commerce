@@ -177,6 +177,19 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("usable_ids = {box.get_attribute(\"value\") for box in usable_category_boxes(driver)}", edit_selection)
         self.assertIn("currently_selected.intersection(usable_ids)", edit_selection)
 
+    def test_native_manager_excludes_root_and_rejects_it_as_a_default_category(self) -> None:
+        service = (MODULE / "src" / "Integration" / "PrestaShopNativeProductManager.php").read_text(encoding="utf-8")
+        categories = service.split("public function categories()", 1)[1].split("public function managedProducts()", 1)[0]
+        validation = service.split("private function validateCategories(", 1)[1].split("private function validateOptionChanges(", 1)[0]
+        save_method = service.split("public function save(", 1)[1].split("public function optionGroups(", 1)[0]
+
+        # PrestaShop's structural Root has id_parent=0. Home has a parent, so it
+        # and other shop categories remain selectable while Root is rejected.
+        self.assertIn("c.`id_parent` > 0", categories)
+        self.assertIn("c.`id_parent` > 0", validation)
+        self.assertLess(validation.index("c.`id_parent` > 0"), validation.index("c.`id_category` IN ("))
+        self.assertLess(save_method.index("$this->validateCategories"), save_method.index("$product->id_category_default = $draft->categoryIds[0]"))
+
     def test_manager_link_discovery_accepts_collapsed_sidebar_entries(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
         manager_link = browser.split("def manager_link(", 1)[1].split("\n\ndef product_links", 1)[0]

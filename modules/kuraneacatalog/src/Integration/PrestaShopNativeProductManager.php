@@ -32,7 +32,7 @@ final class PrestaShopNativeProductManager
                 ON cl.`id_category` = c.`id_category` AND cl.`id_lang` = ' . (int) $languageId . '
             INNER JOIN `' . _DB_PREFIX_ . 'category_shop` cs
                 ON cs.`id_category` = c.`id_category` AND cs.`id_shop` = ' . (int) $shopId . '
-            WHERE c.`active` = 1
+            WHERE c.`active` = 1 AND c.`id_parent` > 0
             ORDER BY c.`nleft` ASC, cl.`name` ASC
         ');
         if (!is_array($rows)) {
@@ -280,7 +280,7 @@ final class PrestaShopNativeProductManager
                 ON cl.`id_category` = c.`id_category` AND cl.`id_lang` = ' . (int) $languageId . '
             INNER JOIN `' . _DB_PREFIX_ . 'category_shop` cs
                 ON cs.`id_category` = c.`id_category` AND cs.`id_shop` = ' . (int) $shopId . '
-            WHERE c.`active` = 1 AND c.`id_category` IN (' . $ids . ')
+            WHERE c.`active` = 1 AND c.`id_parent` > 0 AND c.`id_category` IN (' . $ids . ')
         ');
         if ($count !== count($categoryIds)) {
             throw new InvalidArgumentException('선택한 카테고리 중 현재 쇼핑몰에서 사용할 수 없는 항목이 있습니다.');
