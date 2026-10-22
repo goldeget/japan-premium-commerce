@@ -126,6 +126,10 @@ exit "${PHP_EXIT_CODE:-0}"
         )
 
         self.assertNotEqual(0, result.returncode)
+        self.assertIn(
+            "KURANEA_POSTAL_DOWNLOAD_FAILURE curl_exit=22 http_status=403 effective_host=www.post.japanpost.jp",
+            result.stderr,
+        )
         self.assertIn("HTTP status: 403", result.stderr)
         self.assertIn("effective host: www.post.japanpost.jp", result.stderr)
         self.assertIn("curl exit: 22", result.stderr)
@@ -150,6 +154,10 @@ exit "${PHP_EXIT_CODE:-0}"
         result = self._run(EFFECTIVE_URL="https://example.invalid/ken_all.zip")
 
         self.assertNotEqual(0, result.returncode)
+        self.assertIn(
+            "KURANEA_POSTAL_DOWNLOAD_FAILURE curl_exit=0 http_status=200 effective_host=example.invalid",
+            result.stderr,
+        )
         self.assertFalse((self.log_dir / "php-args").exists())
 
     def test_empty_csv_is_rejected_before_import(self) -> None:

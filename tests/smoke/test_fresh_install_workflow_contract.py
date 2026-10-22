@@ -18,10 +18,23 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         postal_step = workflow.split("- name: Download and import official Japan Post KEN_ALL data", 1)[1].split("- name:", 1)[0]
         updater = POSTAL_UPDATER.read_text(encoding="utf-8")
         self.assertIn("https://www.post.japanpost.jp/service/search/zipcode/download/kogaki/zip/ken_all.zip", updater)
-        self.assertIn("runuser -g www-data -u www-data --", postal_step)
-        self.assertIn("/var/www/html/modules/kuraneapostcode/bin/update-ken-all.sh", postal_step)
+        self.assertIn("bash tests/smoke/run_postal_updater.sh \"$CI_COMPOSE_PROJECT_NAME\"", postal_step)
         self.assertNotIn("curl ", postal_step)
         self.assertNotIn("unzip", postal_step)
+        runner = (ROOT / "tests" / "smoke" / "run_postal_updater.sh").read_text(encoding="utf-8")
+        self.assertIn("runuser -g www-data -u www-data --", runner)
+        self.assertIn("/var/www/html/modules/kuraneapostcode/bin/update-ken-all.sh", runner)
+
+    def test_postal_updater_failure_is_summarized_without_raw_output(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("tests/smoke/run_postal_updater.sh", workflow)
+        self.assertIn("tests/smoke/run_postal_updater.sh", workflow.split("paths:", 1)[1].split("permissions:", 1)[0])
+        runner = (ROOT / "tests" / "smoke" / "run_postal_updater.sh").read_text(encoding="utf-8")
+        self.assertIn("KURANEA_POSTAL_DOWNLOAD_FAILURE curl_exit=", runner)
+        self.assertIn("GITHUB_STEP_SUMMARY", runner)
+        self.assertIn("::error title=Japan Post postcode update::", runner)
+        self.assertIn("updater/import failed; raw updater output was suppressed", runner)
+        self.assertIn('>"$log_file" 2>&1', runner)
 
     def test_failed_compose_bootstrap_uses_the_shared_redacting_diagnostics_script(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")

@@ -70,6 +70,8 @@ case "$authority" in
 esac
 
 if [ "$curl_status" -ne 0 ]; then
+    printf 'KURANEA_POSTAL_DOWNLOAD_FAILURE curl_exit=%s http_status=%s effective_host=%s\n' \
+        "$curl_status" "$http_status" "$effective_host" >&2
     printf 'Japan Post KEN_ALL download failed (curl exit: %s, HTTP status: %s, effective host: %s); active postcode data was not changed.\n' \
         "$curl_status" "$http_status" "$effective_host" >&2
     exit 1
@@ -78,6 +80,8 @@ fi
 case "$effective_url" in
     https://www.post.japanpost.jp/*) ;;
     *)
+        printf 'KURANEA_POSTAL_DOWNLOAD_FAILURE curl_exit=%s http_status=%s effective_host=%s\n' \
+            "$curl_status" "$http_status" "$effective_host" >&2
         printf 'Refusing an unexpected Japan Post archive redirect (HTTP status: %s, effective host: %s).\n' \
             "$http_status" "$effective_host" >&2
         exit 1
