@@ -25,6 +25,19 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
         self.assertIn('path: ${{ runner.temp }}/ordenowa-browser-qa/', workflow)
         self.assertIn("retention-days: 30", workflow)
 
+    def test_brand_stale_publish_target_is_forwarded_to_the_step_summary(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        step = workflow.split(
+            "- name: Verify official ORDENOWA brand upload and publish in Chromium", 1
+        )[1].split("- name:", 1)[0]
+
+        self.assertIn(
+            'stale_target_line=$(rg \'^ORDENOWA_PUBLISH_STALE_TARGET=\' "$log_file" | tail -n 1 || true)',
+            step,
+        )
+        self.assertIn('if [ -n "$stale_target_line" ]; then', step)
+        self.assertIn('printf \'%s\\n\' "$stale_target_line" >> "$GITHUB_STEP_SUMMARY"', step)
+
     def test_browser_qa_runs_independently_then_aggregates_failures(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         for step_name, step_id in (
