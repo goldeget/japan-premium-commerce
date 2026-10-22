@@ -39,7 +39,7 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
         $this->editorProductId = max(0, (int) Tools::getValue('id_product', 0));
 
         try {
-            $this->processSave($manager);
+            $this->processProductSave($manager);
             if ($this->editorProductId > 0) {
                 $editorData = $manager->editorData($this->editorProductId);
                 $this->formValues = $this->formValues === []
@@ -60,7 +60,7 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
         $this->context->smarty->assign('content', $this->content);
     }
 
-    private function processSave(PrestaShopNativeProductManager $manager): void
+    private function processProductSave(PrestaShopNativeProductManager $manager): void
     {
         if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? '')) !== 'POST'
             || !Tools::isSubmit('submitKuraneaProductSave')) {

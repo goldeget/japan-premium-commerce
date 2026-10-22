@@ -45,6 +45,16 @@ class ProductAdminContractTests(unittest.TestCase):
         for access_method in (can_view, can_add, can_edit):
             self.assertNotIn("tabAccess", access_method)
 
+    def test_product_save_helper_does_not_override_prestashop_admin_controller(self) -> None:
+        controller = (MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php").read_text(encoding="utf-8")
+
+        self.assertIn("$this->processProductSave($manager);", controller)
+        self.assertIn(
+            "private function processProductSave(PrestaShopNativeProductManager $manager): void",
+            controller,
+        )
+        self.assertNotIn("function processSave(", controller)
+
     def test_native_product_manager_enforces_safe_state_and_native_fields(self) -> None:
         service_path = MODULE / "src" / "Integration" / "PrestaShopNativeProductManager.php"
         self.assertTrue(service_path.is_file(), "the native product manager service is missing")
@@ -147,6 +157,28 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("replace('%', '%25')", handler)
         self.assertIn("print(annotation", handler)
 
+    def test_chromium_failure_diagnostics_never_emit_raw_exception_or_url(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        handlers = browser.split("except Exception as error:")[1:3]
+        run_all = browser.split("def run_all() -> None:", 1)[1].split('\n\nif __name__ == "__main__":', 1)[0]
+
+        self.assertEqual(len(handlers), 2, "desktop and mobile should each sanitize their scenario failures")
+        for handler in handlers:
+            with self.subTest(handler=handler[:50]):
+                scenario_handler = handler.split("finally:", 1)[0]
+                self.assertIn("type(error).__name__", scenario_handler)
+                self.assertNotIn("{error}", scenario_handler)
+                self.assertNotIn("str(error)", scenario_handler)
+                self.assertNotIn("repr(error)", scenario_handler)
+                self.assertNotIn("current_url", scenario_handler)
+                self.assertIn("raise SystemExit(", scenario_handler)
+                self.assertIn("from None", scenario_handler)
+
+        self.assertIn("except SystemExit:", run_all)
+        self.assertIn('raise SystemExit("product admin browser scenarios failed: " + ", ".join(failures)) from None', run_all)
+        self.assertNotIn("window.location.href", browser)
+        self.assertNotRegex(browser, r"(?m)^\s+raise\s*$")
+
     def test_chromium_startup_is_inside_the_product_failure_handler(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
         run_method = browser.split("def run() -> None:", 1)[1].split("if __name__ == \"__main__\":", 1)[0]
@@ -155,6 +187,20 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertLess(run_method.index("try:"), run_method.index("driver = webdriver.Chrome(options=options)"))
         self.assertIn("if driver is not None:", run_method)
 
+    def test_product_admin_mobile_view_runs_after_desktop_failure(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        run_all = browser.split("def run_all() -> None:", 1)[1].split('\n\nif __name__ == "__main__":', 1)[0]
+
+        self.assertIn("def run_mobile_layout() -> None:", browser)
+        self.assertIn('("desktop", run)', run_all)
+        self.assertIn('("mobile", run_mobile_layout)', run_all)
+        self.assertIn("for label, scenario in", run_all)
+        self.assertIn("try:", run_all)
+        self.assertIn("scenario()", run_all)
+        self.assertIn("except Exception as error:", run_all)
+        self.assertIn("failures.append(label)", run_all)
+        self.assertNotIn("break", run_all)
+
     def test_created_product_id_uses_presence_wait_for_hidden_input(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
         controller = (MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php").read_text(encoding="utf-8")
@@ -162,6 +208,21 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn('<input type="hidden" name="id_product"', controller)
         self.assertIn('presence_of_element_located((By.CSS_SELECTOR, \'input[name="id_product"]\'))', browser)
         self.assertNotIn('visible(driver, \'input[name="id_product"]\')', browser)
+
+    def test_browser_product_edit_verifies_korean_name_and_updated_inactive_list_record(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        edit_flow = browser.split('stage = "native_product_edit"', 1)[1].split(
+            'stage = "mobile_product_admin_layout"', 1
+        )[0]
+
+        self.assertIn(
+            'if visible(driver, "#name_ko").get_attribute("value") != korean_name + " 수정":',
+            edit_flow,
+            "Chromium must verify the edited Korean name on the same product record",
+        )
+        self.assertIn('edited_links = product_links(driver, product_id)', edit_flow)
+        self.assertIn('edited_links[0].find_element(By.XPATH, "./ancestor::li[contains(@class, \'well\')]")', edit_flow)
+        self.assertIn('f"ID {product_id}"', edit_flow)
 
     def test_browser_category_fixture_uses_home_and_excludes_technical_root(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
@@ -197,8 +258,9 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn('parse_qs(urlparse(href).query).get("controller", []) == ["AdminOrdenowaProductManager"]', manager_link)
         self.assertNotIn("is_displayed()", manager_link)
 
-    def test_manager_page_failure_diagnostics_exclude_query_tokens(self) -> None:
+    def test_manager_page_failure_diagnostics_emit_no_raw_url_values(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        diagnostics = browser.split("def manager_page_diagnostics", 1)[1].split("def product_links", 1)[0]
 
         for expected in (
             "product_heading:",
@@ -207,14 +269,26 @@ class ProductAdminContractTests(unittest.TestCase):
             "load_error_marker:",
             "login_form_present:",
             "product_form_present:",
-            "pathname: window.location.pathname",
-            "title: document.title",
+            "manager_route_present:",
             "page_state=",
             "json.dumps",
         ):
             with self.subTest(expected=expected):
-                self.assertIn(expected, browser)
-        self.assertNotIn("window.location.search", browser)
+                self.assertIn(expected, browser if expected in {"page_state=", "json.dumps"} else diagnostics)
+        for unsafe_url_field in (
+            "document.title",
+            "window.location.pathname",
+            "window.location.href",
+            "window.location.host",
+            "window.location.origin",
+            "pathname:",
+            "title:",
+            "href:",
+            "search:",
+            "url:",
+        ):
+            with self.subTest(unsafe_url_field=unsafe_url_field):
+                self.assertNotIn(unsafe_url_field, diagnostics)
 
     def test_install_verifier_checks_product_manager_read_permission(self) -> None:
         verifier = (ROOT / "tests" / "catalog" / "verify_native_product_admin.php").read_text(encoding="utf-8")

@@ -38,11 +38,13 @@ def manager_link(driver: webdriver.Chrome):
     return False
 
 
-def manager_page_diagnostics(driver: webdriver.Chrome) -> dict[str, str | bool]:
+def manager_page_diagnostics(driver: webdriver.Chrome) -> dict[str, bool]:
     return driver.execute_script(
         """
         const bodyText = document.body?.innerText || '';
         const nameField = document.querySelector('#name_ja');
+        const managerRoutePresent = new URLSearchParams(window.location.search)
+            .get('controller') === 'AdminOrdenowaProductManager';
         return {
             product_heading: Array.from(document.querySelectorAll('h3')).some(
                 (heading) => heading.innerText.trim() === '새 상품 등록'
@@ -52,8 +54,7 @@ def manager_page_diagnostics(driver: webdriver.Chrome) -> dict[str, str | bool]:
             load_error_marker: bodyText.includes('상품 관리 화면을 불러오지 못했습니다.'),
             login_form_present: Boolean(document.querySelector('#login_form')),
             product_form_present: Boolean(nameField && nameField.closest('form')),
-            pathname: window.location.pathname,
-            title: document.title,
+            manager_route_present: managerRoutePresent,
         };
         """
     )
@@ -257,6 +258,8 @@ def run() -> None:
         )
         if visible(driver, "#name_ja").get_attribute("value") != japanese_name + " 수정":
             raise AssertionError("product name edit did not persist")
+        if visible(driver, "#name_ko").get_attribute("value") != korean_name + " 수정":
+            raise AssertionError("Korean product name edit did not persist")
         if visible(driver, "#price_jpy").get_attribute("value") != "1490":
             raise AssertionError("product price edit did not persist")
         if visible(driver, "#quantity").get_attribute("value") != "5":
@@ -283,16 +286,11 @@ def run() -> None:
         edited_links = product_links(driver, product_id)
         if len(edited_links) != 1 or edited_links[0].text.strip() not in {japanese_name + " 수정", korean_name + " 수정"}:
             raise AssertionError("the product list should show one updated localized title after editing")
+        edited_record = edited_links[0].find_element(By.XPATH, "./ancestor::li[contains(@class, 'well')]")
+        if f"ID {product_id}" not in edited_record.text:
+            raise AssertionError("the updated product list record does not identify the edited native product")
         driver.save_screenshot(str(DEST / "product-admin-edited-desktop.png"))
 
-        stage = "mobile_product_admin_layout"
-        driver.set_window_size(390, 844)
-        driver.execute_script("window.scrollTo(0, 0)")
-        visible(driver, "#name_ja")
-        overflow = driver.execute_script("return document.documentElement.scrollWidth > window.innerWidth + 2")
-        if overflow:
-            raise AssertionError("Korean product manager form overflows the mobile viewport")
-        driver.save_screenshot(str(DEST / "product-admin-mobile.png"))
         print(f"PASS: Chromium created and edited inactive native product ID={product_id}; image {old_image_id} replaced.")
     except Exception as error:
         if driver is not None:
@@ -300,7 +298,8 @@ def run() -> None:
                 driver.save_screenshot(str(DEST / "product-admin-failure.png"))
             except Exception:
                 pass
-        diagnostic = f"ORDENOWA_PRODUCT_ADMIN_STAGE={stage}; error={type(error).__name__}: {error}"
+        exception_class = type(error).__name__
+        diagnostic = f"ORDENOWA_PRODUCT_ADMIN_STAGE={stage}; exception_class={exception_class}"
         if stage == "korean_product_manager_form" and driver is not None:
             try:
                 manager_page_state = manager_page_diagnostics(driver)
@@ -313,11 +312,100 @@ def run() -> None:
         annotation = f"::error title=ORDENOWA product admin browser::{annotation_message}"
         print(diagnostic, file=sys.stderr)
         print(annotation, file=sys.stdout)
-        raise
+        raise SystemExit(f"product admin browser scenario failed at {stage} ({exception_class})") from None
     finally:
         if driver is not None:
             driver.quit()
 
 
+def run_mobile_layout() -> None:
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=390,844")
+    options.add_argument("--lang=ja-JP")
+    driver: webdriver.Chrome | None = None
+    stage = "mobile_chromium_startup"
+    manager_page_state: dict[str, str | bool] | None = None
+    try:
+        driver = webdriver.Chrome(options=options)
+        driver.set_window_size(390, 844)
+        stage = "mobile_administrator_login"
+        driver.get(ADMIN_LOGIN + "/login")
+        email = visible(driver, '#login_form input[name="email"], input[type="email"]')
+        password = visible(
+            driver,
+            '#login_form input[name="passwd"], #login_form input[name="password"], input[type="password"]',
+        )
+        email.send_keys(ADMIN_EMAIL)
+        password.send_keys(ADMIN_PASSWORD)
+        visible(
+            driver,
+            '#login_form button[type="submit"], #login_form input[type="submit"], button[type="submit"]',
+        ).click()
+        WebDriverWait(driver, 30).until(lambda browser: "/login" not in urlparse(browser.current_url).path)
+
+        stage = "mobile_korean_product_manager_link"
+        href = WebDriverWait(driver, 30).until(manager_link)
+        parsed = urlparse(href)
+        if parsed.hostname not in {"localhost", "127.0.0.1"} or not parsed.path.startswith("/admin-kuranea/"):
+            raise AssertionError("product manager link is outside the isolated Back Office")
+        driver.get(href)
+        stage = "mobile_korean_product_manager_form"
+        driver.save_screenshot(str(DEST / "product-admin-mobile-manager-navigation.png"))
+        manager_page_state = manager_page_diagnostics(driver)
+        if not manager_page_state["product_heading"] or not manager_page_state["product_form_present"]:
+            raise AssertionError("Korean product registration and management UI is missing at mobile width")
+        visible(driver, 'form #name_ja')
+        if "판매 활성화 기능이 없습니다" not in driver.find_element(By.TAG_NAME, "body").text:
+            raise AssertionError("the product page must state that its entries remain inactive")
+        overflow = driver.execute_script("return document.documentElement.scrollWidth > window.innerWidth + 2")
+        if overflow:
+            raise AssertionError("Korean product manager form overflows the mobile viewport")
+        driver.save_screenshot(str(DEST / "product-admin-mobile.png"))
+        print("PASS: Chromium loaded the Korean product manager form without horizontal overflow at 390px.")
+    except Exception as error:
+        if driver is not None:
+            try:
+                driver.save_screenshot(str(DEST / "product-admin-mobile-failure.png"))
+            except Exception:
+                pass
+        exception_class = type(error).__name__
+        diagnostic = f"ORDENOWA_PRODUCT_ADMIN_STAGE={stage}; exception_class={exception_class}"
+        if stage == "mobile_korean_product_manager_form" and driver is not None:
+            try:
+                manager_page_state = manager_page_diagnostics(driver)
+            except Exception:
+                pass
+            if manager_page_state is not None:
+                page_state = json.dumps(manager_page_state, ensure_ascii=False, sort_keys=True)
+                diagnostic += f"; page_state={page_state}"
+        annotation_message = diagnostic.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+        print(diagnostic, file=sys.stderr)
+        print(f"::error title=ORDENOWA mobile product admin browser::{annotation_message}", file=sys.stdout)
+        raise SystemExit(f"mobile product admin browser scenario failed at {stage} ({exception_class})") from None
+    finally:
+        if driver is not None:
+            driver.quit()
+
+
+def run_all() -> None:
+    failures = []
+    for label, scenario in (("desktop", run), ("mobile", run_mobile_layout)):
+        try:
+            scenario()
+        except SystemExit:
+            failures.append(label)
+            print(f"FAIL: {label} product admin browser scenario", file=sys.stderr)
+        except Exception as error:
+            failures.append(label)
+            print(f"FAIL: {label} product admin browser scenario ({type(error).__name__})", file=sys.stderr)
+
+    if failures:
+        raise SystemExit("product admin browser scenarios failed: " + ", ".join(failures)) from None
+
+
 if __name__ == "__main__":
-    run()
+    run_all()
