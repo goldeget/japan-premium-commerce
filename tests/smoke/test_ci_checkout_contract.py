@@ -114,6 +114,73 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertNotIn("click_at_center(driver, account_checkbox)", account_checkbox)
         self.assertIn("WebDriverWait(driver, 5", account_checkbox)
 
+    def test_required_checkout_checkboxes_use_their_visible_label_and_assert_selection(self) -> None:
+        flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        checkbox_helper = flow.split("def click_required_checkbox_label", 1)[1].split(
+            "def prepare_required_customer_fields", 1
+        )[0]
+        field_setup = flow.split("def prepare_required_customer_fields", 1)[1].split(
+            "def search_for_product", 1
+        )[0]
+        checkbox_branch = field_setup.split(
+            'if field_type == "checkbox"', 1
+        )[1].split('elif field_type == "radio"', 1)[0]
+
+        self.assertIn('form.find_elements(By.CSS_SELECTOR, "label[for]")', checkbox_helper)
+        self.assertIn('candidate.get_attribute("for") == checkbox_id', checkbox_helper)
+        self.assertIn("candidate.is_displayed()", checkbox_helper)
+        self.assertIn("click_at_center(driver, label)", checkbox_helper)
+        self.assertIn("lambda _browser: checkbox.is_selected()", checkbox_helper)
+        self.assertIn("click_required_checkbox_label(driver, form, field)", checkbox_branch)
+        self.assertNotIn("click_at_center(driver, field)", checkbox_branch)
+
+    def test_mobile_search_toggle_uses_a_native_webdriver_click(self) -> None:
+        flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        search_flow = flow.split("def search_for_product", 1)[1].split(
+            "def add_product_and_open_checkout", 1
+        )[0]
+
+        self.assertIn("search_toggle.click()", search_flow)
+        self.assertNotIn("click_at_center(driver, search_toggle)", search_flow)
+
+    def test_product_search_refinds_input_once_after_a_stale_reference(self) -> None:
+        flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        search_helper = flow.split("def enter_product_search_query", 1)[1].split(
+            "def prepare_required_customer_fields", 1
+        )[0]
+        search_flow = flow.split("def search_for_product", 1)[1].split(
+            "def add_product_and_open_checkout", 1
+        )[0]
+
+        self.assertIn("for attempt in range(2)", search_helper)
+        self.assertIn('visible(driver, \'input[name="s"]\')', search_helper)
+        self.assertIn("except StaleElementReferenceException", search_helper)
+        self.assertIn("if attempt == 1:", search_helper)
+        self.assertIn("search.clear()", search_helper)
+        self.assertIn('search.send_keys("CI ONLY")', search_helper)
+        self.assertIn("search.send_keys(Keys.ENTER)", search_helper)
+        self.assertNotIn("except Exception", search_helper)
+        self.assertNotIn("except TimeoutException", search_helper)
+        self.assertIn("enter_product_search_query(driver)", search_flow)
+
+    def test_customer_runner_attempts_both_viewports_before_reporting_failure(self) -> None:
+        flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        customer_runner = flow.split("def run_customer_checkouts", 1)[1].split(
+            "def admin_login", 1
+        )[0]
+
+        viewport_loop = customer_runner.index(
+            'for width, height, label in ((1440, 960, "desktop"), (390, 844, "mobile")):'
+        )
+        failure_catch = customer_runner.index("except SystemExit:")
+        aggregate_failure = customer_runner.index(
+            'raise SystemExit(f"isolated customer checkout failed for: {failed_viewports}")'
+        )
+        self.assertLess(viewport_loop, failure_catch)
+        self.assertIn("failures.append(label)", customer_runner)
+        self.assertGreater(aggregate_failure, failure_catch)
+        self.assertIn('", ".join(failures)', customer_runner)
+
     def test_persisted_browser_order_requires_a_non_guest_customer(self) -> None:
         verifier = (ROOT / "tests" / "postcode" / "verify_ci_browser_checkout_order.php").read_text(encoding="utf-8")
         customer_check = verifier.split("$customer = new Customer", 1)[1].split(

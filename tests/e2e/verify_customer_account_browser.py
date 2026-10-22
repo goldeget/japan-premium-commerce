@@ -17,9 +17,10 @@ from urllib.parse import parse_qs, quote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.select import Select
 from selenium.webdriver.support.ui import WebDriverWait
@@ -248,11 +249,17 @@ def click_required_checkbox_label(form, checkbox) -> None:
     if label is None:
         raise AssertionError("required registration checkbox does not have a visible associated label")
 
-    # Use the visible label as a customer would. Selenium performs a normal
-    # browser click and hit-test; do not toggle the checkbox through script.
-    label.click()
+    # Use the visible label as a customer would. If its pointer target is
+    # intercepted, fall back to a native keyboard action on the checkbox.
+    try:
+        label.click()
+    except ElementClickInterceptedException:
+        if not checkbox.is_displayed() or not checkbox.is_enabled():
+            raise
+        if not checkbox.is_selected():
+            checkbox.send_keys(Keys.SPACE)
     if not checkbox.is_selected():
-        raise AssertionError("clicking the required registration checkbox label did not select it")
+        raise AssertionError("activating the required registration checkbox did not select it")
 
 
 def prepare_required_registration_fields(
@@ -397,18 +404,20 @@ def logout(driver: webdriver.Chrome) -> None:
         raise AssertionError("the customer still has an authenticated My Page session after logout")
 
 
-def run_viewport(width: int, height: int, label: str) -> None:
-    options = Options()
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument(f"--window-size={width},{height}")
-    options.add_argument("--lang=ja-JP")
-    driver = webdriver.Chrome(options=options)
+def run_viewport(width: int, height: int, label: str) -> bool:
     stage = "registration_link_load"
     failure_control = {"name": "display-register-form", "type": "anchor"}
+    driver = None
+    success = False
     try:
+        options = Options()
+        options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument(f"--window-size={width},{height}")
+        options.add_argument("--lang=ja-JP")
+        driver = webdriver.Chrome(options=options)
         driver.set_window_size(width, height)
         account_email = f"qa-ordenowa-{RUN_ID}-{RUN_ATTEMPT}-{label}@example.invalid"
         initial_password = f"Ordenowa-CI-{RUN_ID}-{RUN_ATTEMPT}!"
@@ -529,16 +538,18 @@ def run_viewport(width: int, height: int, label: str) -> None:
         driver.save_screenshot(str(DEST / f"{label}-customer-password-reset-login.png"))
         logout(driver)
         print(f"PASS: {label} customer registration, profile update, email login/logout, and Mailpit password reset")
+        success = True
     except Exception as error:
-        try:
-            driver.save_screenshot(str(DEST / f"{label}-customer-account-failure.png"))
-        except Exception:
-            pass
-        if stage.startswith("registration_"):
+        if driver is not None:
             try:
-                emit_registration_diagnostics(driver, stage, failure_control)
+                driver.save_screenshot(str(DEST / f"{label}-customer-account-failure.png"))
             except Exception:
                 pass
+            if stage.startswith("registration_"):
+                try:
+                    emit_registration_diagnostics(driver, stage, failure_control)
+                except Exception:
+                    pass
         print(f"FAIL: {label} customer account flow at {stage} ({type(error).__name__})", file=sys.stderr)
         print(
             f"::error title=Customer account browser QA::{label} failed at {stage} "
@@ -546,11 +557,20 @@ def run_viewport(width: int, height: int, label: str) -> None:
             f"control_type={failure_control.get('type') or 'none'}",
             file=sys.stderr,
         )
-        raise SystemExit("isolated customer account browser flow failed") from None
     finally:
-        driver.quit()
+        if driver is not None:
+            try:
+                driver.quit()
+            except Exception as error:
+                print(f"FAIL: {label} customer account browser cleanup ({type(error).__name__})", file=sys.stderr)
+                success = False
+    return success
 
 
 if __name__ == "__main__":
+    failed_viewports = []
     for viewport in ((1440, 960, "desktop"), (390, 844, "mobile")):
-        run_viewport(*viewport)
+        if not run_viewport(*viewport):
+            failed_viewports.append(viewport[2])
+    if failed_viewports:
+        raise SystemExit(f"isolated customer account browser flow failed for: {', '.join(failed_viewports)}")

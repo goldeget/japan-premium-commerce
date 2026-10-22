@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from selenium import webdriver
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.select import Select
@@ -119,6 +120,42 @@ def click_centered(driver: webdriver.Chrome, element) -> None:
         )
     )
     element.click()
+
+
+def emit_publish_target_diagnostics(driver: webdriver.Chrome, selector: str) -> None:
+    try:
+        metadata = driver.execute_script(
+            r"""
+            const selector = arguments[0];
+            const element = document.querySelector(selector);
+            const safeTokens = value => String(value || '')
+              .split(/[^A-Za-z0-9_-]+/)
+              .filter(Boolean)
+              .slice(0, 12);
+            return {
+              selector,
+              present: Boolean(element),
+              connected: Boolean(element && element.isConnected),
+              tag: element ? element.tagName.toLowerCase() : '',
+              id: safeTokens(element && element.id).join(' '),
+              class: safeTokens(element && element.className)
+            };
+            """,
+            selector,
+        )
+    except Exception:
+        metadata = {
+            "selector": selector,
+            "present": False,
+            "connected": False,
+            "tag": "",
+            "id": "",
+            "class": [],
+        }
+    print(
+        "ORDENOWA_PUBLISH_STALE_TARGET=" + json.dumps(metadata, ensure_ascii=True, sort_keys=True),
+        file=sys.stderr,
+    )
 
 
 def image_is_rendered(driver: webdriver.Chrome, selector: str) -> dict:
@@ -486,9 +523,16 @@ def run() -> None:
         )
         driver.save_screenshot(str(DEST / "brand-admin-private-preview.png"))
 
-        stage = "publish_approved_brand"
-        publish_button = visible(driver, 'form.ordenowa-profile-settings button[name="submitOrdenowaPublish"]')
-        click_centered(driver, publish_button)
+        publish_selector = 'form.ordenowa-profile-settings button[name="submitOrdenowaPublish"]'
+        stage = "publish_button_find"
+        publish_button = visible(driver, publish_selector)
+        stage = "publish_button_click"
+        try:
+            click_centered(driver, publish_button)
+        except StaleElementReferenceException:
+            emit_publish_target_diagnostics(driver, publish_selector)
+            raise
+        stage = "publish_confirmation"
         WebDriverWait(driver, 30).until(lambda browser: "변경사항을 게시했습니다" in browser.find_element(By.TAG_NAME, "body").text)
         if "확인 대기" not in driver.find_element(By.ID, "ordenowa-company").text:
             raise AssertionError("seller authorization must remain pending after brand publication")

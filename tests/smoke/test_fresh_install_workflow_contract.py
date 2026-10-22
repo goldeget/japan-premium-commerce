@@ -146,7 +146,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
     def test_brand_publish_button_is_centered_and_checked_for_obstruction_before_click(self) -> None:
         brand_flow = (ROOT / "tests" / "e2e" / "verify_brand_admin_browser.py").read_text(encoding="utf-8")
         helper = brand_flow.split("def click_centered", 1)[1].split("def image_is_rendered", 1)[0]
-        publish_stage = brand_flow.split('stage = "publish_approved_brand"', 1)[1].split('stage = "published_desktop_customer_brand"', 1)[0]
+        publish_stage = brand_flow.split('stage = "publish_button_click"', 1)[1].split('stage = "publish_confirmation"', 1)[0]
         self.assertIn("scrollIntoView({block: 'center'", helper)
         self.assertIn("EC.element_to_be_clickable(element)", helper)
         self.assertIn("document.elementFromPoint", helper)
@@ -250,6 +250,37 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn('for="{$id_prefix}field-{$field.name}"', hummingbird_fields)
         self.assertNotIn("execute_script", checkbox_click)
         self.assertNotIn(".checked =", checkbox_click)
+
+    def test_required_registration_checkbox_uses_native_keyboard_after_intercepted_label_click(self) -> None:
+        account_path = ROOT / "tests" / "e2e" / "verify_customer_account_browser.py"
+        account_flow = account_path.read_text(encoding="utf-8")
+        checkbox_click = account_flow.split("def click_required_checkbox_label", 1)[1].split(
+            "def prepare_required_registration_fields", 1
+        )[0]
+
+        self.assertIn("from selenium.common.exceptions import ElementClickInterceptedException", account_flow)
+        self.assertIn("from selenium.webdriver.common.keys import Keys", account_flow)
+        self.assertLess(checkbox_click.index("label.click()"), checkbox_click.index("except ElementClickInterceptedException:"))
+        fallback = checkbox_click.split("except ElementClickInterceptedException:", 1)[1]
+        self.assertIn("checkbox.is_displayed()", fallback)
+        self.assertIn("checkbox.is_enabled()", fallback)
+        self.assertIn("if not checkbox.is_selected():", fallback)
+        self.assertIn("checkbox.send_keys(Keys.SPACE)", fallback)
+        self.assertIn("if not checkbox.is_selected():", checkbox_click)
+        self.assertNotIn("execute_script", checkbox_click)
+
+    def test_customer_account_runs_both_viewports_before_reporting_failures(self) -> None:
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        viewport_runner = account_flow.split("def run_viewport", 1)[1].split("if __name__", 1)[0]
+        main = account_flow.split("if __name__ == \"__main__\":", 1)[1]
+
+        self.assertIn("return success", viewport_runner)
+        self.assertIn("driver = None", viewport_runner)
+        self.assertIn("driver.quit()", viewport_runner)
+        self.assertIn("for viewport in ((1440, 960, \"desktop\"), (390, 844, \"mobile\"))", main)
+        self.assertIn("failed_viewports.append(viewport[2])", main)
+        self.assertIn("if failed_viewports:", main)
+        self.assertIn("raise SystemExit", main)
 
     def test_ci_uses_the_module_updater_for_the_official_japan_post_archive(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")

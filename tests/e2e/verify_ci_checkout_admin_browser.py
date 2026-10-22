@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -114,6 +114,43 @@ def wait_for_autocomplete_fields(driver: webdriver.Chrome, form) -> None:
     WebDriverWait(driver, 15, poll_frequency=0.2).until(autocomplete_fields_applied)
 
 
+def click_required_checkbox_label(driver: webdriver.Chrome, form, checkbox) -> None:
+    checkbox_id = checkbox.get_attribute("id") or ""
+    if not checkbox_id:
+        raise AssertionError("required checkout checkbox has no associated label id")
+
+    label = next(
+        (
+            candidate
+            for candidate in form.find_elements(By.CSS_SELECTOR, "label[for]")
+            if candidate.get_attribute("for") == checkbox_id and candidate.is_displayed()
+        ),
+        None,
+    )
+    if label is None:
+        raise AssertionError("required checkout checkbox has no visible associated label")
+
+    click_at_center(driver, label)
+    WebDriverWait(driver, 5, poll_frequency=0.1).until(
+        lambda _browser: checkbox.is_selected(),
+        message="clicking the required checkout checkbox label did not select it",
+    )
+
+
+def enter_product_search_query(driver: webdriver.Chrome) -> None:
+    for attempt in range(2):
+        search = visible(driver, 'input[name="s"]')
+        try:
+            search.clear()
+            search.send_keys("CI ONLY")
+        except StaleElementReferenceException:
+            if attempt == 1:
+                raise
+            continue
+        search.send_keys(Keys.ENTER)
+        return
+
+
 def prepare_required_customer_fields(driver: webdriver.Chrome, form, email: str, password: str) -> None:
     for name, value in (("firstname", "ORDENOWA"), ("lastname", "CI Checkout"), ("email", email)):
         fields = form.find_elements(By.CSS_SELECTOR, f'input[name="{name}"]')
@@ -148,7 +185,7 @@ def prepare_required_customer_fields(driver: webdriver.Chrome, form, email: str,
         field_type = (field.get_attribute("type") or "").lower()
         name = field.get_attribute("name") or ""
         if field_type == "checkbox" and not field.is_selected():
-            click_at_center(driver, field)
+            click_required_checkbox_label(driver, form, field)
         elif field_type == "radio" and name not in selected_radio_groups:
             click_at_center(driver, field)
             selected_radio_groups.add(name)
@@ -166,11 +203,8 @@ def search_for_product(driver: webdriver.Chrome, label: str) -> None:
     visit(driver, BASE + "/")
     if label == "mobile":
         search_toggle = visible(driver, '.ps-searchbar--mobile [data-bs-target="#searchCanvas"]')
-        click_at_center(driver, search_toggle)
-    search = visible(driver, 'input[name="s"]')
-    search.clear()
-    search.send_keys("CI ONLY")
-    search.send_keys(Keys.ENTER)
+        search_toggle.click()
+    enter_product_search_query(driver)
 
     def result(browser: webdriver.Chrome):
         for miniature in browser.find_elements(By.CSS_SELECTOR, ".product-miniature[data-id-product]"):
@@ -434,6 +468,29 @@ def run_customer_checkout(width: int, height: int, label: str) -> None:
         driver.quit()
 
 
+def run_customer_checkouts() -> None:
+    failures: list[str] = []
+    for width, height, label in ((1440, 960, "desktop"), (390, 844, "mobile")):
+        try:
+            run_customer_checkout(width, height, label)
+        except SystemExit:
+            failures.append(label)
+        except Exception as error:
+            failures.append(label)
+            print(
+                f"FAIL: isolated {label} customer checkout startup ({type(error).__name__})",
+                file=sys.stderr,
+            )
+            print(
+                f"::error title=ORDENOWA browser checkout::{label} startup ({type(error).__name__})",
+                file=sys.stderr,
+            )
+
+    if failures:
+        failed_viewports = ", ".join(failures)
+        raise SystemExit(f"isolated customer checkout failed for: {failed_viewports}")
+
+
 def admin_login(driver: webdriver.Chrome) -> None:
     visit(driver, ADMIN_LOGIN + "/login")
     email = visible(
@@ -577,8 +634,7 @@ def run_admin_order_view() -> None:
 
 if __name__ == "__main__":
     if sys.argv[1:] == ["customer"]:
-        for viewport in ((1440, 960, "desktop"), (390, 844, "mobile")):
-            run_customer_checkout(*viewport)
+        run_customer_checkouts()
     elif sys.argv[1:] == ["admin"]:
         run_admin_order_view()
     else:

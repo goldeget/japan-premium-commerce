@@ -75,6 +75,32 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('driver.save_screenshot(str(DEST / "brand-admin-replacement-draft.png"))', browser_flow)
         self.assertIn('driver.save_screenshot(str(DEST / "brand-admin-uploaded-draft-restored.png"))', browser_flow)
 
+    def test_publish_stale_click_is_instrumented_without_retry_or_sensitive_dom_data(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        find_stage = browser_flow.index('stage = "publish_button_find"')
+        click_stage = browser_flow.index('stage = "publish_button_click"')
+        confirmation_stage = browser_flow.index('stage = "publish_confirmation"')
+        stale_handler = browser_flow.index("except StaleElementReferenceException:", click_stage)
+        failure_stage = browser_flow.index('stage = "published_desktop_customer_brand"')
+
+        self.assertLess(find_stage, click_stage)
+        self.assertLess(click_stage, confirmation_stage)
+        self.assertLess(confirmation_stage, failure_stage)
+        self.assertIn("emit_publish_target_diagnostics(driver, publish_selector)", browser_flow[stale_handler:confirmation_stage])
+        self.assertIn("raise", browser_flow[stale_handler:confirmation_stage])
+        self.assertNotIn("retry", browser_flow[click_stage:confirmation_stage].lower())
+
+        helper_start = browser_flow.index("def emit_publish_target_diagnostics(")
+        helper_end = browser_flow.index("\ndef image_is_rendered", helper_start)
+        helper = browser_flow[helper_start:helper_end]
+        for metadata_field in ("selector", "present", "connected", "tag", "id", "class"):
+            with self.subTest(metadata_field=metadata_field):
+                self.assertIn(f"{metadata_field}", helper)
+        for sensitive_dom_field in (".value", "innerText", "textContent", "outerHTML"):
+            with self.subTest(sensitive_dom_field=sensitive_dom_field):
+                self.assertNotIn(sensitive_dom_field, helper)
+        self.assertIn("ORDENOWA_PUBLISH_STALE_TARGET=", helper)
+
     def test_browser_checks_published_derivatives_from_uploaded_official_sources(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
         manifest = json.loads((BRAND_PACK / "asset-manifest.json").read_text(encoding="utf-8"))
