@@ -1,6 +1,6 @@
 # 작업 규칙
 
-이 저장소는 일본 프리미엄 쇼핑몰 KURANEA의 신규 구축 프로젝트다. 사용자가 제공한 전체 요구사항은 `docs/KURANEA_MASTER_DEVELOPMENT_DIRECTIVE.md`와 `docs/ADMIN_KOREAN_REQUIREMENTS.md`를 기준으로 한다.
+이 저장소는 PrestaShop 9.2.0 기반 B2B 쇼핑몰 프로젝트다. 현재 고객용 개발 브랜드는 ORDENOWA(オーデノワ/오데노와)이며, KURANEA는 과거 개발 브랜드와 기존 기술 경로로만 보존한다. 최신 브랜드·법인·운영 기준은 `docs/PROJECT_ARCHITECTURE.md`와 `docs/superpowers/specs/2026-10-22-business-profile-admin-control-design.md`를 따른다. KURANEA 지시서와 이전 기록은 변경 이력 자료이며 새 브랜드 표기와 충돌하는 항목은 최신 ORDENOWA 기준으로 대체한다.
 
 ## GitHub 보존
 
@@ -17,7 +17,8 @@
 - 기반은 공식 PrestaShop 9.2.0과 호환되는 공식 Hummingbird 2.1.2다. 공식 태그 SHA와 호환 범위를 프로젝트 문서에 기록한다.
 - PrestaShop 코어 파일은 수정하지 않는다. 쇼핑몰 변경은 Hummingbird 자식 테마와 독립 모듈로 구현한다.
 - 고객 쇼핑몰 기본 언어는 일본어이며 영어·한국어를 지원한다. Back Office와 신규 관리자 모듈은 한국어 100%를 목표 acceptance criteria로 둔다.
-- 사용자가 제공한 KURANEA 로고와 심벌 원본을 보존한다. 승인 없는 로고 생성·재디자인·대체를 금지한다. 파생물은 원본에서 결정적으로 제작하고 같은 심벌을 사용한다.
+- 사용자가 제공한 ORDENOWA 로고와 심벌 원본을 확인한 뒤 보존한다. 첨부 원본을 사용할 수 없으면 로고 적용을 차단하고 임의 생성·KURANEA 이미지 대체를 금지한다. 파생물은 검증한 ORDENOWA 원본에서 결정적으로 제작한다. 기존 KURANEA 원본과 Git 이력은 삭제하지 않는다.
+- 운영 법인 참조정보와 판매사업 운영정보를 분리한다. LOGISTEED 기업 개요만으로 소속/판매 승인을 추정하거나 공식 판매처·실거래를 공개하지 않는다. 은행 계좌는 전용 권한으로 보호하고 공개 저장소에는 운영 비밀정보를 기록하지 않는다.
 - PWA 캐시는 공개 정적 자산만 대상으로 한다. 계정, 장바구니, 결제, 주문, 고객 정보는 캐시하지 않는다.
 - 일본 배송 주소 자동완성은 필수 주문 기능이다. 일본우편 공식 KEN_ALL CSV 기반 로컬 검색, 7자리 우편번호의 하이픈 정규화, 복수 후보 선택, 수동 입력/수정, 일본어·영어·한국어 UI와 PrestaShop 네이티브 주문 주소 필드 저장을 유지한다. 기존 DB·named volume에 테스트 주문을 만들지 않는다.
 
