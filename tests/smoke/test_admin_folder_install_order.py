@@ -56,14 +56,22 @@ class AdminFolderInstallOrderTests(unittest.TestCase):
         module_install_call = hook.find("php /usr/local/bin/kuran-install-modules.php")
         self.assertGreaterEqual(module_install_call, 0)
         self.assertNotIn(".kuranea-bootstrap-v2", hook.split("php /usr/local/bin/kuran-install-modules.php", 1)[0])
-        self.assertIn("page = \\'order\\'", installer)
+        self.assertIn("foreach (['order' => 'checkout', 'identity' => 'identity', 'password' => 'password-reset']", installer)
+        self.assertIn("WHERE page = '\" . pSQL($page) . \"' LIMIT 1", installer)
         self.assertIn("AND id_shop = 1 AND id_lang = %d", installer)
-        self.assertIn("$checkoutRouteSlug !== 'checkout'", installer)
-        self.assertIn("['url_rewrite' => 'checkout']", installer)
-        self.assertIn("$db->getValue($checkoutRouteQuery, false) !== 'checkout'", installer)
+        self.assertIn("$storedRouteSlug !== $routeSlug", installer)
+        self.assertIn("['url_rewrite' => pSQL($routeSlug)]", installer)
+        self.assertIn("$db->getValue($routeQuery, false) !== $routeSlug", installer)
         self.assertIn("PS_REWRITING_SETTINGS", smoke)
-        self.assertIn("checkout_route", smoke)
-        self.assertIn("checkout_route_after_restart", smoke)
+        for route_check in (
+            "checkout_route",
+            "identity_route",
+            "password_route",
+            "checkout_route_after_restart",
+            "identity_route_after_restart",
+            "password_route_after_restart",
+        ):
+            self.assertIn(route_check, smoke)
 
 
 if __name__ == "__main__":

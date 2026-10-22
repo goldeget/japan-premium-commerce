@@ -38,38 +38,40 @@ $context->cart = new Cart();
 $context->currency = kuraneaConfigureJapaneseCurrency($context);
 $kernel->getContainer()->get(ContextBuilderPreparer::class)->prepareFromLegacyContext($context);
 
-// The database contains a valid UTF-8 Japanese order slug ("注文"), but the
-// runtime canonical redirect double-encodes it into a mojibake path. Keep
-// friendly URLs enabled and use a stable ASCII alias for this controller.
-// This installer runs on every container start, so the narrow repair also
-// applies to shops whose post-install marker already exists.
-$checkoutMetaId = (int) $db->getValue(
-    'SELECT id_meta FROM `' . _DB_PREFIX_ . 'meta` WHERE page = \'order\' LIMIT 1',
-    false
-);
-if ($checkoutMetaId < 1) {
-    throw new RuntimeException('The PrestaShop order page metadata is missing.');
-}
+// PrestaShop's canonical redirect emits static route slugs as raw Location
+// header bytes. Japanese slugs such as "注文" become mojibake paths in browsers.
+// Keep friendly URLs enabled and use stable ASCII aliases for the routes used
+// by checkout and customer account flows. This installer runs on every start,
+// so existing volumes receive the same narrow, idempotent repair.
+foreach (['order' => 'checkout', 'identity' => 'identity', 'password' => 'password-reset'] as $page => $routeSlug) {
+    $metaId = (int) $db->getValue(
+        "SELECT id_meta FROM `" . _DB_PREFIX_ . "meta` WHERE page = '" . pSQL($page) . "' LIMIT 1",
+        false
+    );
+    if ($metaId < 1) {
+        throw new RuntimeException(sprintf('The PrestaShop %s page metadata is missing.', $page));
+    }
 
-$checkoutRouteWhere = sprintf(
-    'id_meta = %d AND id_shop = 1 AND id_lang = %d',
-    $checkoutMetaId,
-    $japaneseLanguageId
-);
-$checkoutRouteQuery = 'SELECT url_rewrite FROM `' . _DB_PREFIX_ . 'meta_lang` WHERE ' . $checkoutRouteWhere;
-$checkoutRouteSlug = $db->getValue($checkoutRouteQuery, false);
-if (!is_string($checkoutRouteSlug)) {
-    throw new RuntimeException('The Japanese PrestaShop order route is missing.');
-}
+    $routeWhere = sprintf(
+        'id_meta = %d AND id_shop = 1 AND id_lang = %d',
+        $metaId,
+        $japaneseLanguageId
+    );
+    $routeQuery = 'SELECT url_rewrite FROM `' . _DB_PREFIX_ . 'meta_lang` WHERE ' . $routeWhere;
+    $storedRouteSlug = $db->getValue($routeQuery, false);
+    if (!is_string($storedRouteSlug)) {
+        throw new RuntimeException(sprintf('The Japanese PrestaShop %s route is missing.', $page));
+    }
 
-if ($checkoutRouteSlug !== 'checkout'
-    && !$db->update('meta_lang', ['url_rewrite' => 'checkout'], $checkoutRouteWhere, 1, false, false)
-) {
-    throw new RuntimeException('Could not normalize the Japanese PrestaShop order route.');
-}
+    if ($storedRouteSlug !== $routeSlug
+        && !$db->update('meta_lang', ['url_rewrite' => pSQL($routeSlug)], $routeWhere, 1, false, false)
+    ) {
+        throw new RuntimeException(sprintf('Could not normalize the Japanese PrestaShop %s route.', $page));
+    }
 
-if ($db->getValue($checkoutRouteQuery, false) !== 'checkout') {
-    throw new RuntimeException('The Japanese PrestaShop order route did not persist as /checkout.');
+    if ($db->getValue($routeQuery, false) !== $routeSlug) {
+        throw new RuntimeException(sprintf('The Japanese PrestaShop %s route did not persist.', $page));
+    }
 }
 
 foreach (['kuraneapostcode', 'kuraneabackoffice', 'kuraneabusinessprofile', 'kuraneacatalog'] as $moduleName) {

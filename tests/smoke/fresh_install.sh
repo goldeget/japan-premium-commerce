@@ -103,6 +103,10 @@ shop_default=$(db_query "SELECT COUNT(*) FROM ps_configuration c JOIN ps_lang l 
 test "$shop_default" = 1
 checkout_route=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='order' AND ml.id_shop=1 AND l.iso_code='ja'")
 test "$checkout_route" = checkout
+identity_route=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='identity' AND ml.id_shop=1 AND l.iso_code='ja'")
+test "$identity_route" = identity
+password_route=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='password' AND ml.id_shop=1 AND l.iso_code='ja'")
+test "$password_route" = password-reset
 checkout_rewriting=$(db_query "SELECT value FROM ps_configuration WHERE name='PS_REWRITING_SETTINGS'")
 test "$checkout_rewriting" = 1
 default_currency=$(db_query "SELECT cur.iso_code FROM ps_configuration cfg JOIN ps_currency cur ON cur.id_currency=CAST(cfg.value AS UNSIGNED) WHERE cfg.name='PS_CURRENCY_DEFAULT'")
@@ -217,6 +221,10 @@ jpy_translations_after_restart=$(db_query "SELECT COUNT(DISTINCT cl.id_lang) FRO
 test "$jpy_translations_after_restart" = 3
 checkout_route_after_restart=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='order' AND ml.id_shop=1 AND l.iso_code='ja'")
 test "$checkout_route_after_restart" = checkout
+identity_route_after_restart=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='identity' AND ml.id_shop=1 AND l.iso_code='ja'")
+test "$identity_route_after_restart" = identity
+password_route_after_restart=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='password' AND ml.id_shop=1 AND l.iso_code='ja'")
+test "$password_route_after_restart" = password-reset
 verification_phase="restart_shop_identity_and_schema"
 test "$(db_query 'SELECT name FROM ps_shop WHERE id_shop=1')" = ORDENOWA
 table_count_after=$(db_query 'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()')
