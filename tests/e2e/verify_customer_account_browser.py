@@ -41,6 +41,14 @@ RUN_ID = re.sub(r"[^0-9]", "", os.environ["GITHUB_RUN_ID"])
 RUN_ATTEMPT = re.sub(r"[^0-9]", "", os.environ["GITHUB_RUN_ATTEMPT"])
 DEST.mkdir(parents=True, exist_ok=True)
 
+KOREAN_EMAIL_ACCESSIBLE_NAME = re.compile(
+    r"(?:이메일|전자\s*우편|메일\s*주소|e[\s-]?mail)", re.IGNORECASE
+)
+USER_ID_LOOKUP_ACCESSIBLE_NAME = re.compile(
+    r"(?:아이디|사용자\s*id|user\s*id|username)", re.IGNORECASE
+)
+PASSWORD_RESET_ACCESSIBLE_NAME = re.compile(r"(?:비밀번호|암호|password)", re.IGNORECASE)
+
 
 class AnchorLinks(HTMLParser):
     def __init__(self) -> None:
@@ -124,6 +132,32 @@ def reset_link_for(email_address: str, timeout_seconds: int = 90) -> tuple[str, 
 
 def visible(driver: webdriver.Chrome, selector: str):
     return WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.CSS_SELECTOR, selector)))
+
+
+def assert_korean_email_login_form(driver: webdriver.Chrome) -> None:
+    driver.get(f"{BASE}/ko/login")
+    assert_canonical_static_route(driver, "ko/login")
+    visible(driver, "#login-form")
+    email_field = visible(driver, '#login-form input[name="email"]')
+    if email_field.get_attribute("type") != "email":
+        raise AssertionError("Korean customer login is not email-based")
+
+    document_language = (driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower()
+    if not document_language.startswith("ko"):
+        raise AssertionError("/ko/login did not render a Korean-language document")
+
+    email_accessible_name = " ".join((email_field.accessible_name or "").split())
+    if not KOREAN_EMAIL_ACCESSIBLE_NAME.search(email_accessible_name):
+        raise AssertionError("Korean login email field has no accessible label that identifies email")
+    if USER_ID_LOOKUP_ACCESSIBLE_NAME.search(email_accessible_name):
+        raise AssertionError("Korean login field's accessible label implies a separate user ID login")
+
+    password_reset_link = visible(driver, '#login-form a[href]')
+    password_reset_name = " ".join((password_reset_link.accessible_name or "").split())
+    if not PASSWORD_RESET_ACCESSIBLE_NAME.search(password_reset_name):
+        raise AssertionError("Korean login recovery link is not identified as password reset")
+    if USER_ID_LOOKUP_ACCESSIBLE_NAME.search(password_reset_name):
+        raise AssertionError("Korean login recovery link implies user ID lookup instead of password reset")
 
 
 def click_centered(driver: webdriver.Chrome, element) -> None:
@@ -746,6 +780,10 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         options.add_argument("--lang=ja-JP")
         driver = webdriver.Chrome(options=options)
         driver.set_window_size(width, height)
+        stage = "korean_email_login_label"
+        assert_korean_email_login_form(driver)
+        driver.save_screenshot(str(DEST / f"{label}-korean-login-email.png"))
+
         account_email = f"qa-ordenowa-{RUN_ID}-{RUN_ATTEMPT}-{label}@example.invalid"
         initial_password = f"Ordenowa-CI-{RUN_ID}-{RUN_ATTEMPT}!"
         reset_password = f"Ordenowa-Reset-{RUN_ID}-{RUN_ATTEMPT}!"
