@@ -295,6 +295,11 @@ def run() -> None:
         driver.save_screenshot(str(DEST / "product-admin-mobile.png"))
         print(f"PASS: Chromium created and edited inactive native product ID={product_id}; image {old_image_id} replaced.")
     except Exception as error:
+        if driver is not None:
+            try:
+                driver.save_screenshot(str(DEST / "product-admin-failure.png"))
+            except Exception:
+                pass
         diagnostic = f"ORDENOWA_PRODUCT_ADMIN_STAGE={stage}; error={type(error).__name__}: {error}"
         if stage == "korean_product_manager_form" and driver is not None:
             try:

@@ -25,6 +25,7 @@ on:
       - 'tests/smoke/test_ci_diagnostics_script.py'
       - 'tests/smoke/test_ci_checkout_contract.py'
       - 'tests/smoke/test_product_admin_contract.py'
+      - 'tests/smoke/test_browser_qa_artifacts_contract.py'
       - 'tests/fixtures/ci-checkout.compose.yaml'
       - 'tests/postcode/**'
       - 'tests/e2e/**'
@@ -71,7 +72,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_docker_run_recovery -v
 
       - name: Verify fresh-install workflow contracts
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract -v
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract -v
 
       - name: Verify isolated unpaid checkout contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract -v
@@ -305,6 +306,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ordenowa-browser-qa"
 
       - name: Verify official ORDENOWA brand upload and publish in Chromium
+        id: brand_browser_qa
+        continue-on-error: true
         shell: bash
         env:
           SHOP_BASE_URL: http://localhost:18080
@@ -332,6 +335,8 @@ jobs:
           fi
 
       - name: Verify customer registration, email login, logout, password reset, and my page in Chromium
+        id: account_browser_qa
+        continue-on-error: true
         shell: bash
         env:
           SHOP_BASE_URL: http://localhost:18080
@@ -359,6 +364,8 @@ jobs:
           fi
 
       - name: Verify Korean admin native product create and edit in Chromium
+        id: product_admin_browser_qa
+        continue-on-error: true
         shell: bash
         env:
           SHOP_BASE_URL: http://localhost:18080
@@ -384,6 +391,8 @@ jobs:
           fi
 
       - name: Verify real product detail and cart in Chromium (no payment)
+        id: storefront_browser_qa
+        continue-on-error: true
         shell: bash
         env:
           SHOP_BASE_URL: http://127.0.0.1:18080
@@ -398,9 +407,12 @@ jobs:
           fi
           CI_TEST_PRODUCT_ID="$product_id" \
             "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
-            tests/e2e/verify_storefront_browser.py
+            tests/e2e/verify_storefront_browser.py \
+            2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/storefront-product-cart-e2e.log"
 
       - name: Enable run-scoped checkout only for the isolated order browser QA
+        id: checkout_override
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -411,6 +423,9 @@ jobs:
             up -d --no-deps --wait --wait-timeout 300 prestashop
 
       - name: Verify browser customer search, Japan checkout, and unpaid offline order
+        id: checkout_customer_browser_qa
+        if: steps.checkout_override.outcome == 'success'
+        continue-on-error: true
         shell: bash
         env:
           SHOP_BASE_URL: http://127.0.0.1:18080
@@ -434,6 +449,9 @@ jobs:
             2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/ci-checkout-customer-e2e.log"
 
       - name: Verify saved browser orders are unpaid and retain Japan addresses
+        id: checkout_order_persistence
+        if: steps.checkout_customer_browser_qa.outcome == 'success'
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -472,6 +490,9 @@ jobs:
           done
 
       - name: Verify a separate admin session can view both browser orders
+        id: checkout_admin_browser_qa
+        if: steps.checkout_customer_browser_qa.outcome == 'success' && steps.checkout_order_persistence.outcome == 'success'
+        continue-on-error: true
         shell: bash
         env:
           SHOP_BASE_URL: http://127.0.0.1:18080
@@ -491,6 +512,8 @@ jobs:
             2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/ci-checkout-admin-e2e.log"
 
       - name: Restore the fail-closed base checkout environment
+        id: checkout_restore
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
@@ -498,6 +521,9 @@ jobs:
             up -d --no-deps --force-recreate --wait --wait-timeout 300 prestashop
 
       - name: Recheck storefront checkout stays gated after unpaid CI order QA
+        id: checkout_gate_after_order
+        if: always() && steps.checkout_override.outcome == 'success' && steps.checkout_restore.outcome == 'success'
+        continue-on-error: true
         shell: bash
         env:
           SHOP_BASE_URL: http://127.0.0.1:18080
@@ -521,14 +547,23 @@ jobs:
           retention-days: 30
 
       - name: Verify the fresh shop and restart persistence
+        id: fresh_install_restart
+        if: steps.checkout_restore.outcome == 'success'
+        continue-on-error: true
         env:
           SHOP_BASE_URL: http://127.0.0.1:18080
         run: bash tests/smoke/fresh_install.sh "$CI_COMPOSE_PROJECT_NAME"
 
       - name: Download and import official Japan Post KEN_ALL data
+        id: postal_import
+        if: steps.checkout_restore.outcome == 'success'
+        continue-on-error: true
         run: bash tests/smoke/run_postal_updater.sh "$CI_COMPOSE_PROJECT_NAME"
 
       - name: Verify official Japan Post import contains national address data
+        id: postal_verify
+        if: steps.postal_import.outcome == 'success'
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -539,6 +574,50 @@ jobs:
             exit 1
           fi
           printf 'PASS: official Japan Post KEN_ALL dataset imported; count=%s\n' "$actual"
+
+      - name: Aggregate browser QA and postal verification failures
+        if: always()
+        env:
+          BRAND_BROWSER_QA_OUTCOME: ${{ steps.brand_browser_qa.outcome }}
+          ACCOUNT_BROWSER_QA_OUTCOME: ${{ steps.account_browser_qa.outcome }}
+          PRODUCT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.product_admin_browser_qa.outcome }}
+          STOREFRONT_BROWSER_QA_OUTCOME: ${{ steps.storefront_browser_qa.outcome }}
+          CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.checkout_override.outcome }}
+          CHECKOUT_CUSTOMER_BROWSER_QA_OUTCOME: ${{ steps.checkout_customer_browser_qa.outcome }}
+          CHECKOUT_ORDER_PERSISTENCE_OUTCOME: ${{ steps.checkout_order_persistence.outcome }}
+          CHECKOUT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.checkout_admin_browser_qa.outcome }}
+          CHECKOUT_RESTORE_OUTCOME: ${{ steps.checkout_restore.outcome }}
+          CHECKOUT_GATE_AFTER_ORDER_OUTCOME: ${{ steps.checkout_gate_after_order.outcome }}
+          FRESH_INSTALL_RESTART_OUTCOME: ${{ steps.fresh_install_restart.outcome }}
+          POSTAL_IMPORT_OUTCOME: ${{ steps.postal_import.outcome }}
+          POSTAL_VERIFY_OUTCOME: ${{ steps.postal_verify.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed_steps=()
+          for entry in \
+            "brand=$BRAND_BROWSER_QA_OUTCOME" \
+            "account=$ACCOUNT_BROWSER_QA_OUTCOME" \
+            "product_admin=$PRODUCT_ADMIN_BROWSER_QA_OUTCOME" \
+            "storefront=$STOREFRONT_BROWSER_QA_OUTCOME" \
+            "checkout_override=$CHECKOUT_OVERRIDE_OUTCOME" \
+            "checkout_customer=$CHECKOUT_CUSTOMER_BROWSER_QA_OUTCOME" \
+            "checkout_order_persistence=$CHECKOUT_ORDER_PERSISTENCE_OUTCOME" \
+            "checkout_admin=$CHECKOUT_ADMIN_BROWSER_QA_OUTCOME" \
+            "checkout_restore=$CHECKOUT_RESTORE_OUTCOME" \
+            "checkout_gate_after_order=$CHECKOUT_GATE_AFTER_ORDER_OUTCOME" \
+            "fresh_install_restart=$FRESH_INSTALL_RESTART_OUTCOME" \
+            "postal_import=$POSTAL_IMPORT_OUTCOME" \
+            "postal_verify=$POSTAL_VERIFY_OUTCOME"; do
+            if [[ "$entry" == *=failure || "$entry" == *=cancelled ]]; then
+              failed_steps+=("${entry%%=*}")
+            fi
+          done
+          if ((${#failed_steps[@]})); then
+            printf '::error title=ORDENOWA isolated QA::Failed steps: %s\n' "${failed_steps[*]}"
+            exit 1
+          fi
+          printf 'PASS: isolated browser QA and official postcode verification completed.\n'
 
       - name: Capture bounded diagnostics on failure
         if: failure()

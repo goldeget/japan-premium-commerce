@@ -120,6 +120,13 @@ def run_viewport(width, height, label):
         )
         assert_true(not overflow, f"Horizontal overflow at {width}px viewport.")
         print(f"PASS: {label} Chromium home, product, cart, sale-gate and responsive assertions")
+    except Exception as error:
+        try:
+            driver.save_screenshot(str(DEST / f"{label}-failure.png"))
+        except Exception:
+            pass
+        print(f"FAIL: {label} storefront browser QA ({type(error).__name__})", file=sys.stderr)
+        raise
     finally:
         driver.quit()
 
