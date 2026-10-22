@@ -77,9 +77,36 @@ assertBusinessProfileTrue(str_contains($english, 'TEST ENGLISH BRAND') && str_co
 
 $profile['_resolved_locale'] = 'ko-KR';
 $profile['brand']['name']['ko-KR'] = '테스트 한국어 브랜드';
+$profile['company_reference']['name']['ko-KR'] = 'DO NOT PUBLISH COMPANY REFERENCE KO';
+$profile['content']['company_profile']['ko-KR'] = 'TEST KOREAN COMPANY PROFILE';
+$profile['seller']['legal_name']['ko-KR'] = 'TEST KOREAN SELLER LEGAL';
+$profile['seller']['address']['ko-KR'] = 'TEST KOREAN SELLER ADDRESS';
+$profile['seller']['representative']['ko-KR'] = 'TEST KOREAN REPRESENTATIVE';
+$profile['seller']['responsible_person']['ko-KR'] = 'TEST KOREAN RESPONSIBLE PERSON';
+$profile['customer_support']['hours']['ko-KR'] = 'TEST KOREAN HOURS';
+$profile['payment']['ko-KR'] = 'TEST KOREAN PAYMENT';
+$profile['shipping']['ko-KR'] = 'TEST KOREAN SHIPPING';
+$profile['refund']['ko-KR'] = 'TEST KOREAN REFUND';
+$profile['content']['terms']['ko-KR'] = 'TEST KOREAN TERMS';
+$profile['content']['privacy']['ko-KR'] = 'TEST KOREAN PRIVACY';
 $profile['content']['specified_commercial_act']['ko-KR'] = 'TEST KOREAN DISCLOSURE';
 $korean = \Kuranea\BusinessProfile\Customer\PublishedLegalPageBuilder::build($profile, true);
 assertBusinessProfileTrue(str_contains($korean, '회사 정보 및 거래 안내'), 'The legal page title should be localized in Korean.');
 assertBusinessProfileTrue(str_contains($korean, '테스트 한국어 브랜드') && str_contains($korean, 'TEST KOREAN DISCLOSURE'), 'Published Korean values should use the Korean locale.');
+foreach ([
+    'TEST KOREAN COMPANY PROFILE', 'TEST KOREAN SELLER LEGAL', 'TEST KOREAN SELLER ADDRESS',
+    'TEST KOREAN REPRESENTATIVE', 'TEST KOREAN RESPONSIBLE PERSON', 'TEST CUSTOMER PHONE',
+    'support@example.invalid', 'TEST KOREAN HOURS', 'TEST KOREAN PAYMENT', 'TEST KOREAN SHIPPING',
+    'TEST KOREAN REFUND', 'TEST KOREAN TERMS', 'TEST KOREAN PRIVACY',
+] as $expectedKoreanDisclosure) {
+    assertBusinessProfileTrue(
+        str_contains($korean, $expectedKoreanDisclosure),
+        'The Korean legal page should publish localized operating setting ' . $expectedKoreanDisclosure . '.'
+    );
+}
+assertBusinessProfileTrue(
+    !str_contains($korean, 'DO NOT PUBLISH COMPANY REFERENCE KO'),
+    'Korean company reference data must never be presented as the verified selling entity.'
+);
 
 echo "PASS: legal page output is localized, escaped, and seller-gated\n";
