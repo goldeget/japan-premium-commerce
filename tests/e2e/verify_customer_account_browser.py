@@ -652,6 +652,15 @@ def emit_korean_login_diagnostics(driver: webdriver.Chrome, state: dict[str, obj
     print("ORDENOWA_KOREAN_LOGIN_SAFE_STATE=" + state_json, file=sys.stderr)
     annotation = state_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
     print(f"::error title=Korean customer login state::{annotation}", file=sys.stderr)
+    stage_json = json.dumps(
+        compact_korean_login_failure_summary(diagnostics), ensure_ascii=True, sort_keys=True
+    )
+    print("ORDENOWA_KOREAN_LOGIN_STAGE_SAFE_STATE=" + stage_json, file=sys.stderr)
+    stage_annotation = stage_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(
+        f"::error title=Korean customer login wait details::{stage_annotation}",
+        file=sys.stderr,
+    )
     raw_events = diagnostics.get("document_navigation_events", [])
     navigation_events = []
     if isinstance(raw_events, list):
@@ -668,6 +677,7 @@ def emit_korean_login_diagnostics(driver: webdriver.Chrome, state: dict[str, obj
                     "path": route.get("path", ""),
                     "controller_category": route.get("controller_category", ""),
                     "status_code": event.get("status_code", 0),
+                    "frame_scope": event.get("frame_scope", "unknown"),
                     "initiator_type": event.get("initiator_type", "unknown"),
                     "initiator_scope": event.get("initiator_scope", "unknown"),
                     "initiator_stack_depth": event.get("initiator_stack_depth", 0),
@@ -769,6 +779,182 @@ def safe_diagnostic_name(value: object, *, field_type: bool = False) -> str:
         return ""
     pattern = r"[^A-Za-z0-9_-]" if field_type else r"[^A-Za-z0-9_.\[\]-]"
     return re.sub(pattern, "_", value)[:80]
+
+
+KOREAN_LOGIN_STAGES = {
+    "korean_storefront_home",
+    "korean_language_selector",
+    "korean_language_destination",
+    "korean_sign_in_link",
+    "korean_login_page_navigation",
+    "korean_login_form",
+    "korean_email_field",
+    "korean_password_reset_link",
+}
+
+
+def safe_korean_login_stage(value: object) -> str:
+    return value if isinstance(value, str) and value in KOREAN_LOGIN_STAGES else "unknown"
+
+
+def safe_document_frame_scope(frame_id: object, main_frame_id: object) -> str:
+    if not isinstance(frame_id, str) or not frame_id:
+        return "unknown"
+    if not isinstance(main_frame_id, str) or not main_frame_id:
+        return "unknown"
+    return "top_frame" if frame_id == main_frame_id else "subframe"
+
+
+def top_level_frame_id(driver) -> str | None:
+    try:
+        frame_tree = driver.execute_cdp_cmd("Page.getFrameTree", {})
+    except Exception:
+        return None
+    if not isinstance(frame_tree, dict):
+        return None
+    tree = frame_tree.get("frameTree")
+    frame = tree.get("frame") if isinstance(tree, dict) else None
+    frame_id = frame.get("id") if isinstance(frame, dict) else None
+    return frame_id if isinstance(frame_id, str) and frame_id else None
+
+
+def compact_korean_login_failure_summary(diagnostics: dict[str, object]) -> dict[str, object]:
+    """Keep the decisive Korean login wait facts below the Actions annotation limit."""
+    allowed_query_keys = {"back", "controller", "id_lang", "isolang", "lang"}
+    allowed_controllers = {"authentication", "password", "other"}
+    allowed_initiator_types = {
+        "address_bar", "other", "parser", "preload", "script", "signedExchange", "serviceWorker"
+    }
+    allowed_initiator_scopes = {
+        "external", "front_controller", "hummingbird_theme", "kuranea_module",
+        "kuranea_theme", "prestashop_module", "same_origin_other", "unknown",
+    }
+    allowed_frame_scopes = {"top_frame", "subframe", "unknown"}
+
+    def bounded_int(value: object, maximum: int) -> int | None:
+        if not isinstance(value, int) or isinstance(value, bool):
+            return None
+        return min(max(value, 0), maximum)
+
+    def safe_route(value: object) -> dict[str, object]:
+        route = value if isinstance(value, dict) else {}
+        path = route.get("path")
+        if not isinstance(path, str) or len(path) > 160 or not path.isascii():
+            path = "/<unknown>"
+        else:
+            path = re.sub(r"[^A-Za-z0-9_/< >-]", "_", path).replace(" ", "")
+            if len(path) > 40:
+                path = path[:37] + "..."
+        controller = route.get("controller_category")
+        query_names = route.get("query_key_names")
+        return {
+            "path": path,
+            "controller_category": controller
+            if isinstance(controller, str) and controller in allowed_controllers
+            else "",
+            "query_key_names": sorted(
+                {key for key in query_names if isinstance(key, str)} & allowed_query_keys
+            ) if isinstance(query_names, list) else [],
+            "same_origin": route.get("same_origin") if isinstance(route.get("same_origin"), bool) else None,
+            "path_has_non_ascii": route.get("path_has_non_ascii") is True,
+            "path_has_percent_escape": route.get("path_has_percent_escape") is True,
+            "back_present": route.get("back_present") is True,
+        }
+
+    def safe_language(value: object) -> str:
+        if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9-]{1,12}", value):
+            return "unknown"
+        return value
+
+    raw_navigation_events = diagnostics.get("document_navigation_events")
+    navigation_events: list[dict[str, object]] = []
+    if isinstance(raw_navigation_events, list):
+        for event in raw_navigation_events[-4:]:
+            if not isinstance(event, dict):
+                continue
+            route = safe_route(event.get("route_metadata"))
+            redirect_from = safe_route(event.get("redirect_from_metadata"))
+            initiator_type = event.get("initiator_type")
+            initiator_scope = event.get("initiator_scope")
+            frame_scope = event.get("frame_scope")
+            event_name = event.get("event")
+            navigation_events.append(
+                {
+                    "event": event_name
+                    if isinstance(event_name, str) and event_name in {"document_request", "document_redirect"}
+                    else "unknown",
+                    "path": route["path"],
+                    "controller_category": route["controller_category"],
+                    "status_code": bounded_int(event.get("status_code"), 599) or 0,
+                    "frame_scope": frame_scope
+                    if isinstance(frame_scope, str) and frame_scope in allowed_frame_scopes
+                    else "unknown",
+                    "initiator_type": initiator_type
+                    if isinstance(initiator_type, str) and initiator_type in allowed_initiator_types
+                    else "unknown",
+                    "initiator_scope": initiator_scope
+                    if isinstance(initiator_scope, str) and initiator_scope in allowed_initiator_scopes
+                    else "unknown",
+                    "initiator_stack_depth": bounded_int(event.get("initiator_stack_depth"), 20) or 0,
+                    "redirect_from_path": redirect_from["path"],
+                    "redirect_from_controller_category": redirect_from["controller_category"],
+                }
+            )
+
+    raw_timeline = diagnostics.get("reset_link_navigation_timeline")
+    navigation_timeline: list[dict[str, object]] = []
+    if isinstance(raw_timeline, list):
+        for event in raw_timeline[-2:]:
+            if not isinstance(event, dict):
+                continue
+            event_name = event.get("event")
+            if not isinstance(event_name, str) or event_name not in {"beforeunload", "pagehide"}:
+                continue
+            navigation_type = event.get("navigation_type")
+            ready_state = event.get("ready_state")
+            navigation_timeline.append(
+                {
+                    "event": event_name,
+                    "elapsed_ms": bounded_int(event.get("elapsed_ms"), 300_000),
+                    "route": safe_route(event.get("route_metadata")),
+                    "document_language": safe_language(event.get("document_language")),
+                    "ready_state": ready_state
+                    if isinstance(ready_state, str) and ready_state in {"loading", "interactive", "complete"}
+                    else "unknown",
+                    "navigation_type": navigation_type
+                    if isinstance(navigation_type, str)
+                    and navigation_type in {"navigate", "reload", "back_forward", "prerender"}
+                    else "unknown",
+                    "navigation_redirect_count": bounded_int(event.get("navigation_redirect_count"), 20) or 0,
+                    "persisted": event.get("persisted") is True,
+                }
+            )
+
+    display = diagnostics.get("reset_link_before_wait_computed_display")
+    visibility = diagnostics.get("reset_link_before_wait_computed_visibility")
+    return {
+        "inner_stage": safe_korean_login_stage(diagnostics.get("stage")),
+        "failed_stage_elapsed_ms": bounded_int(diagnostics.get("failed_stage_elapsed_ms"), 300_000),
+        "document_language": safe_language(diagnostics.get("document_language")),
+        "final_route": safe_route(diagnostics.get("final_url_metadata")),
+        "reset_link_before_wait": {
+            "anchor_count": bounded_int(diagnostics.get("reset_link_before_wait_anchor_count"), 20) or 0,
+            "href_present": diagnostics.get("reset_link_before_wait_href_present") is True,
+            "visible": diagnostics.get("reset_link_before_wait_visible") is True,
+            "display": display if display in {"block", "contents", "flex", "grid", "inline", "inline-block", "inline-flex", "none"} else "other",
+            "visibility": visibility if visibility in {"collapse", "hidden", "visible"} else "other",
+            "text_identifies_password_reset": diagnostics.get("reset_link_before_wait_text_identifies_password_reset") is True,
+            "aria_label_identifies_password_reset": diagnostics.get("reset_link_before_wait_aria_label_identifies_password_reset") is True,
+            "href_route": safe_route(diagnostics.get("reset_link_before_wait_href_metadata")),
+        },
+        "reset_wait_navigation": {
+            "elapsed_ms": bounded_int(diagnostics.get("reset_wait_navigation_elapsed_ms"), 300_000),
+            "document_language": safe_language(diagnostics.get("reset_wait_navigation_document_language")),
+            "route": safe_route(diagnostics.get("reset_wait_navigation_url_metadata")),
+            "timeline": navigation_timeline,
+        },
+        "navigation_events": navigation_events,
+    }
 
 
 def safe_diagnostic_boolean(value: object) -> bool | None:
@@ -958,6 +1144,7 @@ def document_navigation_events(driver: webdriver.Chrome) -> list[dict[str, objec
         except (TypeError, ValueError, json.JSONDecodeError):
             continue
 
+    main_frame_id = top_level_frame_id(driver)
     safe_events: list[dict[str, object]] = []
     for message in decoded_entries:
         if message.get("method") != "Network.requestWillBeSent":
@@ -1005,6 +1192,7 @@ def document_navigation_events(driver: webdriver.Chrome) -> list[dict[str, objec
                 "event": "document_redirect" if isinstance(redirect_response, dict) else "document_request",
                 "route_metadata": route_metadata,
                 "redirect_from_metadata": redirect_metadata or {},
+                "frame_scope": safe_document_frame_scope(params.get("frameId"), main_frame_id),
                 "initiator_type": initiator_type,
                 "initiator_scope": safe_initiator_scope(initiator_url),
                 "initiator_stack_depth": min(len(frames), 20),
@@ -1706,10 +1894,19 @@ def run_viewport(width: int, height: int, label: str) -> bool:
                     )
                 except Exception:
                     pass
-        print(f"FAIL: {label} customer account flow at {stage} ({type(error).__name__})", file=sys.stderr)
+        inner_stage = (
+            safe_korean_login_stage(korean_login_state.get("stage"))
+            if stage == "korean_email_login_label"
+            else ""
+        )
+        inner_stage_detail = f"; inner_stage={inner_stage}" if inner_stage else ""
+        print(
+            f"FAIL: {label} customer account flow at {stage}{inner_stage_detail} ({type(error).__name__})",
+            file=sys.stderr,
+        )
         print(
             f"::error title=Customer account browser QA::{label} failed at {stage} "
-            f"({type(error).__name__}); control_name={failure_control.get('name') or 'none'}; "
+            f"({type(error).__name__}){inner_stage_detail}; control_name={failure_control.get('name') or 'none'}; "
             f"control_type={failure_control.get('type') or 'none'}",
             file=sys.stderr,
         )

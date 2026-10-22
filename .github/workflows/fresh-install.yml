@@ -509,6 +509,7 @@ jobs:
             diagnostics_lines=$(rg '^ORDENOWA_ACCOUNT_REGISTRATION_SAFE_STATE=' "$log_file" || true)
             profile_diagnostics_lines=$(rg '^ORDENOWA_ACCOUNT_PROFILE_UPDATE_SAFE_STATE=' "$log_file" || true)
             korean_login_diagnostics=$(rg '^ORDENOWA_KOREAN_LOGIN_SAFE_STATE=' "$log_file" || true)
+            korean_login_stage_diagnostics=$(rg '^ORDENOWA_KOREAN_LOGIN_STAGE_SAFE_STATE=' "$log_file" || true)
             printf 'ORDENOWA customer account browser failure: %s\n' "${failure_line:-See the uploaded account browser log for the failing stage.}" >> "$GITHUB_STEP_SUMMARY"
             if [ -n "$korean_login_diagnostics" ]; then
               printf '%s\n' "$korean_login_diagnostics" >> "$GITHUB_STEP_SUMMARY"
@@ -516,6 +517,13 @@ jobs:
               korean_login_annotation=${korean_login_annotation//$'\r'/'%0D'}
               korean_login_annotation=${korean_login_annotation//$'\n'/'%0A'}
               printf '::error title=Korean customer login state::%s\n' "$korean_login_annotation"
+            fi
+            if [ -n "$korean_login_stage_diagnostics" ]; then
+              printf '%s\n' "$korean_login_stage_diagnostics" >> "$GITHUB_STEP_SUMMARY"
+              korean_login_stage_annotation=${korean_login_stage_diagnostics//'%'/'%25'}
+              korean_login_stage_annotation=${korean_login_stage_annotation//$'\r'/'%0D'}
+              korean_login_stage_annotation=${korean_login_stage_annotation//$'\n'/'%0A'}
+              printf '::error title=Korean customer login wait details::%s\n' "$korean_login_stage_annotation"
             fi
             if [ -n "$diagnostics_lines" ]; then
               while IFS= read -r diagnostics_line; do

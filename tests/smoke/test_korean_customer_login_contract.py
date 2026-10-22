@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import re
 import unittest
 from pathlib import Path
@@ -93,6 +94,256 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
             "external",
         )
 
+    def test_korean_login_failure_summary_exposes_inner_wait_and_frame_scope_safely(self) -> None:
+        browser_flow_path = ROOT / "tests" / "e2e" / "verify_customer_account_browser.py"
+        syntax_tree = ast.parse(browser_flow_path.read_text(encoding="utf-8"))
+        helper_names = {
+            "safe_korean_login_stage",
+            "safe_document_frame_scope",
+            "compact_korean_login_failure_summary",
+        }
+        helper_nodes = [
+            node
+            for node in syntax_tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in helper_names
+        ]
+        self.assertEqual({node.name for node in helper_nodes}, helper_names)
+
+        namespace: dict[str, object] = {
+            "re": re,
+            "KOREAN_LOGIN_STAGES": {
+                "korean_storefront_home",
+                "korean_language_selector",
+                "korean_language_destination",
+                "korean_sign_in_link",
+                "korean_login_page_navigation",
+                "korean_login_form",
+                "korean_email_field",
+                "korean_password_reset_link",
+            },
+        }
+        exec(
+            compile(ast.Module(body=helper_nodes, type_ignores=[]), str(browser_flow_path), "exec"),
+            namespace,
+        )
+        diagnostics = {
+            "stage": "korean_password_reset_link",
+            "failed_stage_elapsed_ms": 30_715,
+            "document_language": "ja-JP",
+            "final_url_metadata": {"path": "/<redacted>", "same_origin": True},
+            "reset_link_before_wait_anchor_count": 1,
+            "reset_link_before_wait_href_present": True,
+            "reset_link_before_wait_visible": True,
+            "reset_link_before_wait_computed_display": "block",
+            "reset_link_before_wait_computed_visibility": "visible",
+            "reset_link_before_wait_text_identifies_password_reset": True,
+            "reset_link_before_wait_aria_label_identifies_password_reset": False,
+            "reset_link_before_wait_href_metadata": {
+                "path": "/ko/<redacted>",
+                "same_origin": True,
+                "query_key_names": ["back"],
+            },
+            "reset_wait_navigation_elapsed_ms": 1_200,
+            "reset_wait_navigation_document_language": "ja-JP",
+            "reset_wait_navigation_url_metadata": {"path": "/<redacted>", "same_origin": True},
+            "reset_link_navigation_timeline": [
+                {
+                    "event": "beforeunload",
+                    "elapsed_ms": 1_200,
+                    "route_metadata": {"path": "/ko/<redacted>", "same_origin": True},
+                    "document_language": "ko-KR",
+                    "ready_state": "complete",
+                    "navigation_type": "navigate",
+                    "navigation_redirect_count": 0,
+                    "navigation_response_end_ms": 500,
+                    "persisted": False,
+                }
+            ],
+            "document_navigation_events": [
+                {
+                    "event": "document_request",
+                    "route_metadata": {
+                        "path": "/ko/<redacted>",
+                        "controller_category": "",
+                        "query_key_names": ["back"],
+                        "same_origin": True,
+                    },
+                    "redirect_from_metadata": {},
+                    "status_code": 200,
+                    "initiator_type": "other",
+                    "initiator_scope": "unknown",
+                    "initiator_stack_depth": 0,
+                    "frame_scope": "top_frame",
+                },
+                {
+                    "event": "document_request",
+                    "route_metadata": {
+                        "path": "/index.php",
+                        "controller_category": "authentication",
+                        "query_key_names": ["controller"],
+                        "same_origin": True,
+                    },
+                    "redirect_from_metadata": {},
+                    "status_code": 404,
+                    "initiator_type": "other",
+                    "initiator_scope": "unknown",
+                    "initiator_stack_depth": 0,
+                    "frame_scope": "top_frame",
+                },
+            ],
+            "private_sentinel": "never-expose-this",
+        }
+
+        summary = namespace["compact_korean_login_failure_summary"](diagnostics)
+        encoded = json.dumps(summary, ensure_ascii=True, sort_keys=True)
+        self.assertEqual(summary["inner_stage"], "korean_password_reset_link")
+        self.assertEqual(summary["reset_link_before_wait"]["anchor_count"], 1)
+        self.assertTrue(summary["reset_link_before_wait"]["visible"])
+        self.assertEqual(summary["navigation_events"][0]["frame_scope"], "top_frame")
+        self.assertLess(len(encoded), 3_500)
+        self.assertNotIn("never-expose-this", encoded)
+
+        long_route = {
+            "path": ("/<redacted>" * 14)[:160],
+            "controller_category": "authentication",
+            "query_key_names": ["back", "controller", "id_lang", "isolang", "lang"],
+            "same_origin": True,
+            "path_has_non_ascii": False,
+            "path_has_percent_escape": False,
+            "back_present": True,
+        }
+        long_event = {
+            "event": "document_request",
+            "route_metadata": long_route,
+            "redirect_from_metadata": long_route,
+            "status_code": 599,
+            "initiator_type": "serviceWorker",
+            "initiator_scope": "prestashop_module",
+            "initiator_stack_depth": 20,
+            "frame_scope": "subframe",
+        }
+        long_diagnostics = dict(diagnostics)
+        long_diagnostics.update(
+            {
+                "final_url_metadata": long_route,
+                "reset_link_before_wait_href_metadata": long_route,
+                "reset_wait_navigation_url_metadata": long_route,
+                "reset_link_navigation_timeline": [
+                    {"event": "beforeunload", "route_metadata": long_route},
+                    {"event": "pagehide", "route_metadata": long_route},
+                ],
+                "document_navigation_events": [long_event] * 4,
+            }
+        )
+        long_encoded = json.dumps(
+            namespace["compact_korean_login_failure_summary"](long_diagnostics),
+            ensure_ascii=True,
+            sort_keys=True,
+        )
+        self.assertLess(
+            len("::error title=Korean customer login wait details::") + len(long_encoded),
+            4_096,
+        )
+        self.assertLess(
+            len("ORDENOWA_KOREAN_LOGIN_STAGE_SAFE_STATE=") + len(long_encoded),
+            4_096,
+        )
+
+        frame_scope = namespace["safe_document_frame_scope"]
+        self.assertEqual(frame_scope("main-frame-secret", "main-frame-secret"), "top_frame")
+        self.assertEqual(frame_scope("subframe-secret", "main-frame-secret"), "subframe")
+        self.assertEqual(frame_scope("subframe-secret", None), "unknown")
+
+    def test_document_navigation_events_classify_main_and_subframes(self) -> None:
+        browser_flow_path = ROOT / "tests" / "e2e" / "verify_customer_account_browser.py"
+        syntax_tree = ast.parse(browser_flow_path.read_text(encoding="utf-8"))
+        helper_names = {
+            "safe_same_origin_path",
+            "safe_controller_category",
+            "safe_url_metadata",
+            "safe_initiator_scope",
+            "safe_document_frame_scope",
+            "top_level_frame_id",
+            "document_navigation_events",
+        }
+        helper_nodes = [
+            node
+            for node in syntax_tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in helper_names
+        ]
+        self.assertEqual({node.name for node in helper_nodes}, helper_names)
+
+        class FakeDriver:
+            def execute_cdp_cmd(self, command: str, _params: dict) -> dict:
+                if command != "Page.getFrameTree":
+                    raise AssertionError("unexpected CDP command")
+                return {"frameTree": {"frame": {"id": "opaque-main-frame-id"}}}
+
+            def get_log(self, _log_type: str) -> list[dict[str, str]]:
+                messages = [
+                    {
+                        "method": "Network.requestWillBeSent",
+                        "params": {
+                            "type": "Document",
+                            "requestId": "main-request",
+                            "frameId": "opaque-main-frame-id",
+                            "request": {"url": "https://shop.example.test/ko/login"},
+                            "initiator": {"type": "other"},
+                        },
+                    },
+                    {
+                        "method": "Network.responseReceived",
+                        "params": {
+                            "type": "Document",
+                            "requestId": "main-request",
+                            "response": {"status": 200},
+                        },
+                    },
+                    {
+                        "method": "Network.requestWillBeSent",
+                        "params": {
+                            "type": "Document",
+                            "requestId": "sub-request",
+                            "frameId": "opaque-sub-frame-id",
+                            "request": {"url": "https://shop.example.test/index.php?controller=authentication"},
+                            "initiator": {"type": "other"},
+                        },
+                    },
+                    {
+                        "method": "Network.responseReceived",
+                        "params": {
+                            "type": "Document",
+                            "requestId": "sub-request",
+                            "response": {"status": 404},
+                        },
+                    },
+                ]
+                return [
+                    {"message": json.dumps({"message": message})}
+                    for message in messages
+                ]
+
+        webdriver_namespace = type("WebDriverNamespace", (), {"Chrome": object})
+        namespace = {
+            "BASE": "https://shop.example.test",
+            "json": json,
+            "parse_qs": parse_qs,
+            "re": re,
+            "unquote": unquote,
+            "urlparse": urlparse,
+            "webdriver": webdriver_namespace,
+        }
+        exec(
+            compile(ast.Module(body=helper_nodes, type_ignores=[]), str(browser_flow_path), "exec"),
+            namespace,
+        )
+
+        events = namespace["document_navigation_events"](FakeDriver())
+        self.assertEqual([event["frame_scope"] for event in events], ["top_frame", "subframe"])
+        self.assertEqual([event["status_code"] for event in events], [200, 404])
+        self.assertNotIn("opaque-main-frame-id", repr(events))
+        self.assertNotIn("opaque-sub-frame-id", repr(events))
+
     def test_account_browser_checks_korean_email_login_and_separate_password_recovery(self) -> None:
         browser_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(
             encoding="utf-8"
@@ -179,7 +430,10 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
         self.assertIn('"ORDENOWA_KOREAN_LOGIN_SAFE_STATE="', browser_flow)
         self.assertIn('emit_korean_login_diagnostics(driver, korean_login_state)', browser_flow)
         self.assertIn('korean_login_diagnostics=$(rg \'^ORDENOWA_KOREAN_LOGIN_SAFE_STATE=\'', workflow)
+        self.assertIn('korean_login_stage_diagnostics=$(rg \'^ORDENOWA_KOREAN_LOGIN_STAGE_SAFE_STATE=\'', workflow)
         self.assertIn("ORDENOWA_KOREAN_LOGIN_SAFE_STATE", workflow)
+        self.assertIn("ORDENOWA_KOREAN_LOGIN_STAGE_SAFE_STATE", workflow)
+        self.assertIn("inner_stage=", browser_flow)
         for transition_fact in (
             'state["language_url_metadata"] = safe_url_metadata(korean_language_url)',
             'state["sign_in_url_metadata"] = safe_url_metadata(login_url)',
@@ -205,6 +459,8 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
             '"initiator_stack_depth"',
             '"ORDENOWA_KOREAN_LOGIN_NAVIGATION_SAFE_STATE="',
             '::error title=Korean customer login navigation::{navigation_annotation}',
+            '::error title=Korean customer login wait details::{stage_annotation}',
+            '"frame_scope": safe_document_frame_scope',
             "addEventListener('beforeunload'",
             "addEventListener('pagehide'",
             '"performance": "ALL"',
