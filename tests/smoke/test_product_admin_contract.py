@@ -10,6 +10,12 @@ MODULE = ROOT / "modules" / "kuraneacatalog"
 
 
 class ProductAdminContractTests(unittest.TestCase):
+    def test_global_admin_controller_qualifies_builtin_exception_without_global_import(self) -> None:
+        controller = (MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php").read_text(encoding="utf-8")
+
+        self.assertNotIn("use InvalidArgumentException;", controller)
+        self.assertIn("catch (\\InvalidArgumentException $exception)", controller)
+
     def test_korean_product_manager_tab_and_controller_are_registered(self) -> None:
         module = (MODULE / "kuraneacatalog.php").read_text(encoding="utf-8")
         controller_path = MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php"

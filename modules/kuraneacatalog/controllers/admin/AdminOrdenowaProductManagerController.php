@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 require_once dirname(__FILE__, 3) . '/autoload.php';
 
-use InvalidArgumentException;
 use Kuranea\Catalog\Domain\ProductAdminDraft;
 use Kuranea\Catalog\Integration\PrestaShopNativeProductManager;
 
@@ -98,7 +97,7 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
             $this->formValues = $manager->editorData($savedId);
             $this->selectedImageIds = [];
             $this->succeed(sprintf('상품 ID %d를 비활성 상태로 저장했습니다.', $savedId));
-        } catch (InvalidArgumentException $exception) {
+        } catch (\InvalidArgumentException $exception) {
             $this->fail($exception->getMessage());
         } catch (Throwable) {
             $this->fail('상품 저장에 실패했습니다. 입력값, 이미지 파일 및 PrestaShop 상품 설정을 확인해 주세요.');
