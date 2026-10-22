@@ -493,6 +493,55 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertNotIn("alert_text", failure_handler)
         self.assertNotIn("innerText", failure_handler)
 
+    def test_product_edit_timeout_diagnostics_are_bounded_and_value_free(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        helper = browser.split("def product_edit_failure_diagnostics(", 1)[1].split(
+            "\n\ndef product_links", 1
+        )[0]
+        edit_flow = browser.split('stage = "native_product_edit"', 1)[1].split(
+            'stage = "mobile_product_admin_layout"', 1
+        )[0]
+        failure_handler = browser.split("except Exception as error:", 1)[1].split("finally:", 1)[0]
+
+        for expected in (
+            "manager_route_present",
+            "product_form_present",
+            "product_id_present",
+            "product_id_matches",
+            "category_ids_before_submit",
+            "category_ids_after_response",
+            "save_result_category",
+            "error_markers",
+            "final_field_match",
+            ".slice(0, 20)",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, helper)
+
+        self.assertNotIn("window.location.href", helper)
+        self.assertNotIn("alert_text", helper)
+        self.assertNotIn("document.body.innerText", helper)
+        self.assertIn('edit_operation = "wait_edit_save_confirmation"', edit_flow)
+        self.assertIn("product_edit_failure_diagnostics(", failure_handler)
+        self.assertIn('edit_diagnostics=', failure_handler)
+
+    def test_product_edit_category_diagnostics_keep_only_bounded_numeric_ids(self) -> None:
+        browser_path = ROOT / "tests" / "e2e" / "verify_product_admin_browser.py"
+        tree = ast.parse(browser_path.read_text(encoding="utf-8"))
+        sanitizer = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_safe_category_ids"
+        )
+        namespace: dict[str, object] = {}
+        exec(compile(ast.Module(body=[sanitizer], type_ignores=[]), str(browser_path), "exec"), namespace)
+
+        diagnostic_ids = namespace["_safe_category_ids"](
+            ["secret-token-sentinel", -3, 0, True, 2**40, *range(1, 26)]
+        )
+
+        self.assertEqual(diagnostic_ids, list(range(1, 21)))
+        self.assertNotIn("secret-token-sentinel", diagnostic_ids)
+
     def test_browser_product_edit_verifies_korean_name_and_updated_inactive_list_record(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
         edit_flow = browser.split('stage = "native_product_edit"', 1)[1].split(

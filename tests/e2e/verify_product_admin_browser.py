@@ -473,6 +473,120 @@ def product_post_failure_diagnostics(
     }
 
 
+def _safe_category_ids(values: object) -> list[int]:
+    if not isinstance(values, (list, tuple, set)):
+        return []
+
+    safe_ids: set[int] = set()
+    for value in list(values)[:100]:
+        if isinstance(value, bool):
+            continue
+        try:
+            category_id = int(value)
+        except (TypeError, ValueError):
+            continue
+        if 0 < category_id <= 2_147_483_647:
+            safe_ids.add(category_id)
+
+    return sorted(safe_ids)[:20]
+
+
+def product_edit_failure_diagnostics(
+    driver: webdriver.Chrome,
+    product_id: int,
+    expected_field_values: dict[str, str],
+    category_ids_before_submit: object,
+) -> dict[str, object]:
+    """Return bounded edit state, excluding product values, page text, and tokens."""
+    page_state = driver.execute_script(
+        """
+        const expectedProductId = Number(arguments[0]);
+        const expectedFields = arguments[1] || {};
+        const params = new URLSearchParams(window.location.search);
+        const productField = document.querySelector('form #name_ja');
+        const productForm = productField?.closest('form') || null;
+        const idField = productForm?.querySelector('input[name="id_product"]');
+        const currentProductId = Number(idField?.value || 0);
+        const selectedCategoryIds = Array.from(
+            document.querySelectorAll('input[name="category_ids[]"]:checked')
+        )
+            .map((field) => Number(field.value))
+            .filter((id) => Number.isSafeInteger(id) && id > 0 && id <= 2147483647)
+            .slice(0, 20);
+        const expectedFieldEntries = Object.entries(expectedFields);
+        const finalFieldMatch = expectedFieldEntries.length > 0
+            && Boolean(productForm)
+            && expectedFieldEntries.every(
+            ([selector, expected]) => {
+                const field = document.querySelector(selector);
+                return Boolean(field) && field.value === expected;
+            }
+        );
+
+        return {
+            manager_route_present: params.get('controller') === 'AdminOrdenowaProductManager',
+            product_form_present: Boolean(productForm),
+            product_id_present: Number.isSafeInteger(currentProductId) && currentProductId > 0,
+            product_id_matches: expectedProductId > 0 && currentProductId === expectedProductId,
+            category_ids_after_response: selectedCategoryIds,
+            final_field_match: finalFieldMatch,
+        };
+        """,
+        int(product_id or 0),
+        expected_field_values,
+    )
+    if not isinstance(page_state, dict):
+        page_state = {}
+
+    save_result = product_save_result(driver)
+    if isinstance(save_result, dict) and save_result.get("status") == "success":
+        save_result_category = "success"
+    elif isinstance(save_result, dict) and save_result.get("status") == "alert":
+        save_result_category = save_result.get("message_category")
+    else:
+        save_result_category = "none"
+
+    allowed_error_markers = {
+        "admin_token_invalid",
+        "product_add_permission_denied",
+        "product_edit_permission_denied",
+        "product_name_ja_invalid",
+        "product_name_ko_invalid",
+        "price_jpy_invalid",
+        "quantity_invalid",
+        "category_ids_missing",
+        "category_ids_invalid",
+        "product_category_unavailable",
+        "product_options_invalid",
+        "product_option_format_invalid",
+        "product_option_group_invalid",
+        "product_option_value_invalid",
+        "product_option_combination_limit",
+        "product_image_invalid",
+        "product_image_removal_invalid",
+        "managed_product_protected",
+        "native_product_creation_failed",
+        "native_product_update_failed",
+        "native_product_save_failed",
+        "manager_load_failed",
+        "unknown_controller_error",
+    }
+    raw_markers = save_result.get("error_markers", []) if isinstance(save_result, dict) else []
+    error_markers = [marker for marker in raw_markers if isinstance(marker, str) and marker in allowed_error_markers][:12]
+
+    return {
+        "manager_route_present": bool(page_state.get("manager_route_present")),
+        "product_form_present": bool(page_state.get("product_form_present")),
+        "product_id_present": bool(page_state.get("product_id_present")),
+        "product_id_matches": bool(page_state.get("product_id_matches")),
+        "category_ids_before_submit": _safe_category_ids(category_ids_before_submit),
+        "category_ids_after_response": _safe_category_ids(page_state.get("category_ids_after_response")),
+        "save_result_category": save_result_category if isinstance(save_result_category, str) else "unknown",
+        "error_markers": error_markers,
+        "final_field_match": bool(page_state.get("final_field_match")),
+    }
+
+
 def product_links(driver: webdriver.Chrome, product_id: int):
     return [
         link
@@ -526,6 +640,11 @@ def run() -> None:
     driver: webdriver.Chrome | None = None
     stage = "chromium_startup"
     create_operation = "not_started"
+    edit_operation = "not_started"
+    product_id = 0
+    expected_edit_fields: dict[str, str] = {}
+    edit_category_ids_before_submit: list[str] = []
+    expected_category_ids: set[str] = set()
     manager_page_state: dict[str, str | bool] | None = None
     form_before_submit: dict[str, object] | None = None
     save_diagnostics: dict[str, object] | None = None
@@ -639,22 +758,44 @@ def run() -> None:
         driver.save_screenshot(str(DEST / "product-admin-created-desktop.png"))
 
         stage = "native_product_edit"
+        edit_operation = "find_edit_link"
         edit_link = WebDriverWait(driver, 30).until(lambda browser: next(iter(product_links(browser, product_id)), False))
+        edit_operation = "open_edit_link"
         driver.get(edit_link.get_attribute("href"))
+        edit_operation = "wait_for_edit_form"
         visible(driver, "#name_ja")
+        edit_operation = "verify_initial_edit_data"
         if visible(driver, "#name_ja").get_attribute("value") != japanese_name:
             raise AssertionError("the existing product was not loaded into the edit form")
+        edit_operation = "remove_old_image"
         old_image_checkbox = visible(driver, 'input[name="remove_image_ids[]"]')
         old_image_id = old_image_checkbox.get_attribute("value")
         old_image_checkbox.click()
+        edit_operation = "fill_name_ja"
         fill(driver, "#name_ja", japanese_name + " 수정")
+        edit_operation = "fill_name_ko"
         fill(driver, "#name_ko", korean_name + " 수정")
+        edit_operation = "fill_price_jpy"
         fill(driver, "#price_jpy", "1490")
+        edit_operation = "fill_quantity"
         fill(driver, "#quantity", "5")
         edited_options = "色:青|緑\nサイズ:S|M"
+        edit_operation = "fill_options"
         fill(driver, "#options", edited_options)
+        edit_operation = "fill_description_ja"
         fill(driver, "#description_ja", "更新した説明")
+        edit_operation = "fill_description_ko"
         fill(driver, "#description_ko", "수정한 상세 설명")
+        expected_edit_fields = {
+            "#name_ja": japanese_name + " 수정",
+            "#name_ko": korean_name + " 수정",
+            "#price_jpy": "1490",
+            "#quantity": "5",
+            "#options": edited_options,
+            "#description_ja": "更新した説明",
+            "#description_ko": "수정한 상세 설명",
+        }
+        edit_operation = "read_edit_categories"
         category_boxes = driver.find_elements(By.CSS_SELECTOR, 'input[name="category_ids[]"]')
         usable_ids = {box.get_attribute("value") for box in usable_category_boxes(driver)}
         if not usable_ids:
@@ -686,23 +827,31 @@ def run() -> None:
         if not edit_category_id or edit_category_id == initial_category_id:
             raise AssertionError("the isolated CI edit category must differ from the created product category")
         expected_category_ids = {edit_category_id}
+        edit_operation = "select_edit_category"
         for box in category_boxes:
             category_id = box.get_attribute("value")
             if box.is_selected() != (category_id in expected_category_ids):
                 box.click()
+        edit_category_ids_before_submit = [
+            box.get_attribute("value") for box in category_boxes if box.is_selected()
+        ]
         png = base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGNU8qplYGBgYmBgYGBgAAAKuwDtbIwH5AAAAABJRU5ErkJggg=="
         )
         with tempfile.NamedTemporaryFile(prefix="ordenowa-product-replacement-", suffix=".png") as image_file:
             image_file.write(png)
             image_file.flush()
+            edit_operation = "upload_replacement_image"
             visible(driver, "#product_images").send_keys(image_file.name)
+            edit_operation = "submit_edit"
             visible(driver, 'button[name="submitKuraneaProductSave"]').click()
 
+        edit_operation = "wait_edit_save_confirmation"
         WebDriverWait(driver, 45).until(
             lambda browser: "수정했습니다" in browser.find_element(By.TAG_NAME, "body").text
             or "저장했습니다" in browser.find_element(By.TAG_NAME, "body").text
         )
+        edit_operation = "verify_edited_fields"
         if visible(driver, "#name_ja").get_attribute("value") != japanese_name + " 수정":
             raise AssertionError("product name edit did not persist")
         if visible(driver, "#name_ko").get_attribute("value") != korean_name + " 수정":
@@ -722,6 +871,7 @@ def run() -> None:
             for checkbox in driver.find_elements(By.CSS_SELECTOR, 'input[name="category_ids[]"]')
             if checkbox.is_selected()
         }
+        edit_operation = "verify_edited_categories"
         if saved_category_ids != expected_category_ids:
             raise AssertionError("product category edit did not persist")
         if len(driver.find_elements(By.CSS_SELECTOR, ".ordenowa-product-image img")) != 1:
@@ -756,6 +906,21 @@ def run() -> None:
                     save_diagnostics = {"diagnostics_unavailable": True}
             if save_diagnostics is not None:
                 diagnostic += "; save_diagnostics=" + json.dumps(save_diagnostics, ensure_ascii=False, sort_keys=True)
+        if stage == "native_product_edit":
+            diagnostic += f"; operation={edit_operation}"
+            if driver is not None:
+                try:
+                    edit_diagnostics = product_edit_failure_diagnostics(
+                        driver,
+                        product_id,
+                        expected_edit_fields,
+                        edit_category_ids_before_submit,
+                    )
+                except Exception:
+                    edit_diagnostics = {"diagnostics_unavailable": True}
+                diagnostic += "; edit_diagnostics=" + json.dumps(
+                    edit_diagnostics, ensure_ascii=False, sort_keys=True
+                )
         if stage == "korean_product_manager_form" and driver is not None:
             try:
                 manager_page_state = manager_page_diagnostics(driver)
