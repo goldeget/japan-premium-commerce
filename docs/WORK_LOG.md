@@ -221,3 +221,41 @@
 - Order fixture는 `[CI ONLY]` product, 전용 Customer, `1-2-3` 집주소와 CI 전용 건물/호수, native Cart 및 free CI-only carrier를 격리 DB에 만들고 `ps_checkpayment`의 unpaid/non-logable state로 `validateOrder()`를 실행한다. `total_paid_real=0`, delivery address 연결, postcode/도도부현/시구정촌/町域/번지/건물 필드를 확인했다. 실제 결제·은행 입금은 없었다. official `GetOrderForViewing` query로 Back Office 배송지 문자열도 검증했다.
 - Restart smoke는 storefront HTTP 200, 관리자 `admin-kuranea` 로그인 화면/공식 로고, ja 기본 및 en/ko 활성, JPY, KURANEA theme/CSS, 캐시/bootstrap marker와 DB 테이블 수/구성을 재확인했다. 이는 격리된 GitHub runner의 신규 DB만 대상으로 했고 기존 개발 named volume은 건드리지 않았다.
 - 한계: 이 검증은 PrestaShop native model/service를 통한 주소·장바구니·주문 저장이며 실제 고객 브라우저에서 상품 카드→장바구니→checkout UI를 완료한 browser E2E는 아니다. Restart 후 방금 만든 특정 주문/배송지 row를 다시 조회하는 개별 assertion도 없다. 이 두 항목을 후속 격리 browser/persistence QA로 남긴다.
+
+## 2026-10-22 — ORDENOWA 유지보수 이어가기
+
+- 시작 원격 `work` SHA는 `d8896c346215f73ec36f806b17d277ef3a899ec9`, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다. 기존 변경·named volume은 건드리지 않았다.
+- `Offline catalog parser` run `39751104912`는 PHP 8.3 lint, synthetic Amazon Japan/Rakuten parser 테스트, fresh-install 계약 테스트를 통과했다. 실제 외부 페이지 접속·상품 등록은 이 실행으로 검증되지 않는다.
+- fresh-install run `39749482357`는 상점 Compose 시작 뒤 공식 Japan Post KEN_ALL 다운로드 단계에서 curl exit 22로 실패했다. 공개 로그는 상세 HTTP 응답을 숨기고 artifact는 인증 없이 다운로드되지 않아 상태 코드와 응답 본문은 미확정이다. 시작 때 지적된 `admin-dev` 오류는 이 run에서 나타나지 않았다.
+- CI는 모듈의 기존 HTTPS·최종 호스트·ZIP/CSV 검증 및 트랜잭션 importer를 직접 실행하도록 변경했다. 다운로드 실패 시 exit/status와 URL query를 제외한 호스트만 기록하고, 실패 후 importer 미호출을 회귀 테스트로 고정했다. 관련 검사 16/16 통과 후 `ba5de866d2ca771e2cdad5f36d5d40a6ce7573fa`를 `work`에 push했다. `git ls-remote`, 별도 shallow clone 및 원격 파일 재조회로 SHA와 변경 내용을 확인했으며 `main`은 유지됐다. 이 수정 커밋의 fresh-install run `39751809078`은 확인 시점에 진행 중이었다.
+- ORDENOWA 공식 이미지는 사용자 메시지에서 미리보기로 보였지만, 실제 ZIP/PNG 바이트는 이번 실행환경에서 접근할 수 없었다. 이 환경의 attachments에는 기존 KURANEA 원본만 확인됐다. 따라서 신규 ORDENOWA 로고·favicon·PWA/OG 아이콘을 저장하거나 적용했다고 기록하지 않으며 기존 원본/이력을 유지한다.
+- cloud environment의 현재 `spec_revision`과 `observed_spec_revision`은 2다. 일본 우편 호스트는 현재 restricted egress 정책에 없다. revision 3 적용은 확인되지 않았고 환경 draft 변경·게시도 하지 않았다.
+- 신규 설치/주소 자동완성·저장 주문·관리자 배송지 화면, 실제 브라우저 E2E, 전체 관리자 한국어, PWA 실기기 설치, 영업 승인·실거래는 완료로 표시하지 않는다.
+
+## 2026-10-22 — ORDENOWA 카탈로그 parser 체크포인트
+
+- Amazon Japan/Rakuten을 위한 합성 HTML fixture 파서와 독립 Actions workflow를 `d8896c346215f73ec36f806b17d277ef3a899ec9`에 저장했다. run `39751104912`가 성공했다. 페이지 네트워크는 제한을 우회하지 않았고 실제 상품 수집은 0건이다.
+- parser의 검수 큐는 메모리 기반이며 관리자 지속형 검수/승인, PrestaShop 네이티브 상품 생성, TEST/DEMO 상품 10개 등록은 후속 작업이다.
+
+## 2026-10-22 — ORDENOWA 관리자 설정·검증 이어가기
+
+- 시작 시 원격 `work` SHA `6f6ff5e5a99210f916b7064dacd00c73932ded6c`, `main` SHA `ee02a3657448d563508687614a246e05ac61eecd`를 확인했다. `/workspace/japan-premium-commerce`의 기존 미커밋 파일·스크린샷·테스트 폴더 및 named volume은 수정·삭제·초기화하지 않았다. 실제 변경은 별도 `/tmp/kuran-p0-checkpoint` work clone에서 진행했다.
+- `ba508b4`는 관리자 운영 설정의 특정상거래법 필드 라벨을 한국어로 바꿨다. CI `39756576373`가 새 assertion의 다국어 접미어 `· 일본어` 누락을 확인했고, `3ec583c`에서 기대값을 실제 필드 라벨과 일치시켰다.
+- `3404116`은 법률 페이지 PHP 테스트의 실패 메시지를 Workflow summary와 step output에 노출하도록 보완했다. 정확한 예외는 `PublishedLegalPageBuilder::build()`가 locale `title`을 본문 `<h1>`에 렌더링하지 않는 것이었다. `7cf8c41`에 localized `<h1>` 및 회귀 테스트를 추가했다. 같은 커밋에 은행 계좌이체 결제 활성화/계좌 연결을 추가했고, 게시된 법률 페이지·푸터·HTML/텍스트 주문 이메일은 선택된 완전한 활성 계좌 하나만 표시한다. `39757526475`에서 business-profile Actions 전체가 성공했다.
+- `cc448a6`은 `kuraneabackoffice`, `kuraneapostcode` Module Manager 이름과 설명을 한국어로 바꾸고 회귀 테스트를 추가했다. 이번 로컬 실행: business-profile Python 10/10, admin locale 13/13, fresh-install workflow contract 10/10, `git diff --check` 통과.
+- fresh-install run `39756769346`은 빈 볼륨 Compose `--wait` 기동까지 성공했다. 이어 공식 Japan Post KEN_ALL을 받는 단계가 `curl_exit=22 http_status=503 effective_host=www.post.japanpost.jp`로 실패하여 주소 조회, 네이티브 주소·주문 저장, 관리자 주문 조회, 재시작 보존은 실행되지 않았다. 같은 네트워크 실패를 근거 없이 성공 처리하거나 무작정 재시도하지 않는다. 최신 `39757526456`은 당시 실행 중이었다.
+- business-profile run `39756769193`의 실제 예외는 영어 법률 페이지 제목 누락이었다. 이 문제는 `7cf8c41`에서 수정되었고 `39757526475`가 통과했다. 따라서 해당 기능의 PHP 코드 계약은 Actions에서 확인됐으나, 관리자/고객 브라우저 E2E는 별도 미완료다.
+- 첨부 ORDENOWA 세 이미지 미리보기는 대화에서 확인되지만 `download_file`은 `cannot create attachment directory: Not a directory`로 실패했다. `/workspace`와 `/tmp`를 검색해도 ORDENOWA 원본 바이너리가 없었다. 기존 KURANEA `assets/brand/source/` 및 과거 이미지는 보존했고, 공식 ORDENOWA 로고·favicon·PWA·OG 산출물을 만들거나 교체하지 않았다.
+- 현재 cloud environment는 `spec_revision=2`, `observed_spec_revision=2`로 revision 3 적용이 확인되지 않았다. 이전 SHA를 가리키는 draft를 수정하거나 게시하지 않았다. `/workspace` 여유 공간은 0 bytes이고 현재 기존 PrestaShop/MariaDB 컨테이너 모두 unhealthy다. Docker 상태만 읽었으며 기존 named volume을 건드리거나 새 컨테이너를 만들지 않았다.
+- 검증 한계: 이 셸에는 PHP CLI가 없다. PHP 변경은 remote Actions에서 검사했다. 현재 로컬에서 새 browser screenshot, 실제 상품 수집·등록·주문, 기기 PWA 설치 검증은 하지 않았다. 실제 외부 상품 수집 0건, 실제 신규 주문 0건으로 보고한다.
+
+## 2026-10-22 — Catalog CI false-positive 수정 및 원격 확인
+
+- 시작 시 격리 clone `/tmp/kuran-p0-checkpoint`의 원격 `work` SHA는 `940d8a0d5ab5fcf3832983e44a1ad88bd7597ef3`, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다. 원래 `/workspace/japan-premium-commerce`의 미커밋 코드·스크린샷은 읽기만 했으며 기존 named volume, DB와 `main`은 변경하지 않았다.
+- cloud environment status는 revision 2가 활성 관측 상태이며 revision 3 적용 증거가 없다. 읽은 설정 draft는 revision 4이나 저장소 ref가 이전 SHA `2db98927a9ede2b2423456873f0994ddd19ffe4e`를 가리킨다. active network policy state는 `unknown`; draft/활성 설정은 수정하거나 게시하지 않았다.
+- run `39759208949`는 `940d8a0`에서 synthetic parser 테스트가 exit 255로 실패했다. controller 화면의 이미지 메타데이터만 검사하려던 테스트가 전체 페이지에서 `amazon_jp` slug가 없어야 한다고 단언했지만, 화면에는 provider slug가 포함된 deduplication key도 정상 표시된다. 이 테스트 조건이 확인된 false-positive였다.
+- `tests/catalog/admin_review_controller.php`는 deduplication key를 별도 확인하고 `이미지 메타데이터` 블록에서만 한국어 출처명을 검증하도록 수정했다. parser/controller production behavior는 바꾸지 않았다. CI 실패는 기존에 전체 로그를 그대로 출력하고 annotation 특수문자를 escape하지 않아 실제 원인을 보여주지 못했다. 실패 시 summary에는 최근 80줄, annotation에는 500자 이하 마지막 줄을 출력하고 `%`, CR, LF를 escape하며 PHP exit code를 보존하도록 보완했다. 회귀 계약은 먼저 실행해 `%25` 이스케이프가 없어 실패하는 RED를 확인한 뒤 수정 후 GREEN을 확인했다.
+- `fix(ci): scope parser assertion and bound failure logs` 커밋 `5b2a1cb8d2193458a088174eb04228f252cd9e0e`를 `work`에 push했다. `git ls-remote`, fresh shallow clone `/tmp/ordenowa-remote-check`, 원격 파일 재조회 결과가 동일 SHA였다. 원격 `main`은 변하지 않았다.
+- 새 parser run [39760154509](https://github.com/goldeget/japan-premium-commerce/actions/runs/39760154509)은 성공했다. 이는 PHP lint 및 synthetic Amazon Japan/Rakuten parser 검증이다. 실제 외부 상품 수집과 PrestaShop 네이티브 상품 등록은 0건/미검증이다.
+- fresh-install run [39759208769](https://github.com/goldeget/japan-premium-commerce/actions/runs/39759208769)은 image build, isolated cache probe, 빈 볼륨 상점 시작, catalog 모듈 설치 및 PrestaShop 재시작 후 별도 queue 보존까지 통과했다. 공식 Japan Post archive download가 `curl_exit=22 http_status=503 effective_host=www.post.japanpost.jp`로 실패해 lookup/address/order/admin/restart 후속 검사는 건너뛰었다. 후속 run [39760154414](https://github.com/goldeget/japan-premium-commerce/actions/runs/39760154414)도 같은 HTTP 503으로 실패했으며 updater의 기존 `curl --retry 3 --retry-delay 2` 이후에도 지속됐다. 주소/주문 E2E는 여전히 검증되지 않았다.
+- 최신 로컬 확인: business-profile Python 계약 10/10, admin-locale 13/13, fresh-install workflow 계약 12/12, `git diff --check`, `bash -n docker/kuranea-entrypoint.sh`, Compose 및 두 workflow YAML parse 통과. 호스트 PHP CLI가 없어 로컬 PHP 직접 실행은 하지 않았다. 로컬 운영 DB/컨테이너 변경과 브라우저 캡처는 없고 기존 KURANEA/ORDENOWA 자산 상태를 바꾸지 않았다.

@@ -1,36 +1,45 @@
-# KURANEA 개발 현황
+# ORDENOWA 개발 현황
 
 기준일: 2026-10-22
 
 작업 브랜치: `work`
-마지막 검증 원격 코드 체크포인트 SHA: `6b05ae825dbb0f473f2a8776a88a9ccdc5d5335d`
+검증된 코드 체크포인트 `work` SHA: `5b2a1cb8d2193458a088174eb04228f252cd9e0e`
 
 ## 실행 기반
 
-- PrestaShop 9.2.0, Hummingbird 2.1.2, MariaDB 10.11, Docker Compose를 사용한다.
-- 마지막 확인에서 PrestaShop은 healthy, MariaDB는 unhealthy였다. 쇼핑몰 개발 포트는 `127.0.0.1:8080`에 바인딩돼 있으며 기존 컨테이너와 데이터 볼륨은 건드리지 않았다.
+- PrestaShop 9.2.0, Hummingbird 2.1.2, MariaDB 10.11, Docker Compose를 사용한다. 개발 포트는 `127.0.0.1:8080`에 바인딩된다.
+- 현재 실행환경에서 `/workspace` overlay는 0 bytes 여유 공간(100%)이고 `/tmp`에는 약 12 GB가 남아 있다. Docker CLI는 있지만 PHP CLI는 없다. 기존 `kuranea-prestashop-1` 및 `kuranea-mariadb-1` 컨테이너는 unhealthy로 관찰됐다. `kuranea_mariadb_data`, `kuranea_prestashop_html` 및 출처 미확인 볼륨을 그대로 보존했으며 삭제·초기화·중지·prune을 하지 않았다. 신규 컨테이너 생성과 로컬 이미지 빌드는 시도하지 않았다.
+- 원래 `/workspace/japan-premium-commerce` 작업트리는 `175d75dac132ddb0a8f54777519795208df8ae4d`에 있으며 미커밋 파일과 QA 산출물이 다수 있다. 이를 수정하지 않고 `/tmp/kuran-p0-checkpoint`에서 변경을 만들고 원격 `work`에 보존했다.
 - `main`은 `ee02a3657448d563508687614a246e05ac61eecd` 상태로 보존한다.
-- 이 Codex 환경에서 관측한 cloud environment `spec_revision=2`, `observed_spec_revision=2`다. 이후 개정 설정이 실제 적용되지 않았다. 읽기 draft revision 4는 이전 SHA `2db98927a9ede2b2423456873f0994ddd19ffe4e`를 고정하며, 활성 사용자 지정 egress는 `i18n.prestashop-project.org`뿐이다. draft를 현재 SHA와 필요한 개발 도메인으로 갱신하는 작업은 아직 게시 전이다.
-- 호스트 작업공간 overlay는 여유 블록 0 bytes, inode 사용률 100%(약 7천 개 여유)로 고갈됐다. Docker에는 이미지 2.216 GB, 활성 volume 1.114 GB, build cache 8.284 MB가 있다. 활성 named volume `kuranea_mariadb_data`, `kuranea_prestashop_html`과 출처가 확인되지 않은 세 번째 volume을 보존했다. Docker prune, 기존 volume 삭제·초기화, 로컬 재빌드는 하지 않았다. 마지막 관찰에서 MariaDB healthcheck는 unhealthy였고 PrestaShop은 healthy였다.
+- cloud environment revision 2가 활성·관측 상태다. revision 3 적용은 확인되지 않았다. 저장된 draft는 revision 4지만 저장소 ref가 이전 SHA `2db98927a9ede2b2423456873f0994ddd19ffe4e`를 가리킨다. 설정은 수정·게시하지 않았다. 활성 네트워크 정책 상태는 `unknown`이며 custom egress 목록은 `i18n.prestashop-project.org` 및 `www.post.japanpost.jp`(draft)와 다르다.
 
 ## 구현 상태
 
 | 영역 | 상태 | 확인 내용 |
 | --- | --- | --- |
-| KURANEA 공식 브랜드 | 완료 | 첨부한 3개 원본 ZIP과 저장소 `assets/brand/source/` SHA-256이 모두 일치한다. 파생 로고·아이콘은 storefront 및 관리자 로그인에 적용했다. |
-| 일본어 storefront 및 반응형 홈 | 부분 완료 | 일본어 기본값, 영어·한국어 표시, PC/모바일 홈, 카테고리·검색 빈 결과, 푸터 링크 및 모바일 하단 메뉴를 자식 테마로 구현했다. PC 1440px와 모바일 390px 및 10개 뷰포트 폭에서 가로 넘침이 없는 것을 확인했다. 현재 카탈로그는 0개라 실제 상품 카드·상세·구매 여정은 확인하지 못했다. |
-| JPY 기본 통화 | 구현·로컬 확인 | JPY 기본 통화와 ja/en/ko 표시명, 0자리 정밀도를 설정했다. 근거 없는 EUR/USD 환율을 노출하지 않도록 두 통화를 비활성화했다. |
-| 일본 주소 자동완성 | 모듈·API PASS, 실제 checkout/주문 부분 미검증 | 7자리/하이픈/전각 숫자, 일본어 후보 검색, 복수 후보, 네이티브 필드 매핑, 수동 수정, ja/en/ko를 제공한다. 실제 Japan Post 데이터 조회와 주소 검증은 읽기 전용 통합 검사로 확인했다. Japan Post 설명용 `（次のビルを除く）`는 입력 주소에서 제거하고 `以下に掲載がない場合`는 빈 주소란으로 남기도록 수정했다. 고객 checkout 브라우저와 저장된 주문은 격리 CI 설치 실패로 미검증이다. |
-| 공식 주소 데이터·갱신 | 기존 dev DB/API PASS, 신규 설치 및 자동화 미검증 | 공식 KEN_ALL 124,840행을 파싱해 고유 후보 124,839건을 기존 dev DB에 적재했다. 재실행 가능한 수동 갱신 CLI가 Japan Post 공식 HTTPS ZIP, 호스트, ZIP 무결성, CSV 항목을 검증하고 기존 트랜잭션 importer를 호출한다. 실제 재수입은 실행하지 않았다. 관리자 갱신 화면/일정은 없다. |
-| 관리자 한국어 | 로그인·대시보드·주문 목록 부분 검증, 전체 100% 미완료 | 실제 로그인 후 대시보드 및 주문 목록 PC/모바일을 확인했다. 주문 목록은 HTTP 200, 화면 문구와 메뉴 한국어, 브라우저 오류 0건이다. 화면에 주문이 없어 주소 표시 행은 아직 확인하지 못했다. 빈 상태 삽화 안의 샘플 영문/달러 그림도 표시된다. 전체 관리자 화면의 한국어 100%는 완료되지 않았다. |
-| PWA | 부분 완료 | manifest, 아이콘, 공개 정적 자산 전용 service worker 기반을 갖췄다. 실제 iOS/Android 설치 검증은 미실행이다. |
-| 현재 로컬 회귀 실행 | 부분 실패 | 최신 38개 storefront/smoke 실행에서 35건 통과, 빈 카테고리 ja/en/ko 경로 3건이 `Category.php`/`CategoryController.php`의 false 조회 결과 foreach 경고와 함께 HTTP 500으로 실패했다. 주소·관리자 번역 계약은 별도 6/6·8/8 통과했다. 여유 공간·inode가 0/100%인 상태에서 MariaDB도 unhealthy로 관찰되어 DB 변경이나 컨테이너 재시작 없이 중단했다. |
-| 신규 설치 CI | 격리 신규 설치·native order QA PASS, storefront 브라우저 checkout 미완료 | GitHub Actions run `39736745903` (code `6b05ae8`)에서 빈 볼륨 설치, CSV import, `1000004` Tokyo/Otemachi lookup, native Address 재조회, TEST 고객·상품·장바구니를 이용한 무결제 Order 생성, 공식 Back Office `GetOrderForViewing` 배송지 format 및 restart smoke가 모두 통과했다. fresh-install smoke는 ja 기본·en/ko 활성, JPY, Hummingbird 자식 테마, 관리자 로그인/공식 로고, 캐시/DB 재시작 검사를 확인했다. 고객 화면을 통한 실제 브라우저 checkout과 재시작 후 해당 Order 주소 재조회는 별도 미완료다. |
-| Amazon Japan·Rakuten 상품 수집 | 차단 | 공개 홈페이지를 읽기 전용 HTTP 요청했으나 둘 다 개발환경 egress proxy의 CONNECT `403`으로 거부됐다. 우회하지 않았으며 실제 페이지 파싱·상품 수집·등록을 하지 않았다. |
-| 주문·상품 운영 | 일부 CI 검증·브라우저 작업 미완료 | 격리 CI가 TEST 고객/상품/장바구니 및 native unpaid Order와 Back Office 배송지 formatter를 검증했다. 실제 storefront 브라우저 checkout, 일반 catalog TEST/DEMO 상품 10개, 외부 상품 파싱/등록, 주문별 관리자 브라우저 여정은 미완료다. |
+| ORDENOWA 공식 이미지 | BLOCKED | 세 이미지 미리보기는 대화에 표시되지만 첨부 다운로드가 `cannot create attachment directory: Not a directory`로 실패했고 로컬 원본 바이트를 찾지 못했다. 저장소에는 KURANEA 원본만 있어 이를 보존했다. ORDENOWA 로고·파비콘·PWA 아이콘은 생성·교체하지 않았다. |
+| 쇼핑몰 운영 설정 모듈 | 코드·CI PASS, 실제 운영 화면 QA 미완료 | 한국어 설정 폼, 다국어 브랜드·회사 참조/판매자 분리, 이미지 업로드 파생물, 초안·게시·이력·복원, 공개 법률 페이지·푸터·SEO·manifest·메일 연결이 있다. bank transfer는 사용 여부와 계좌 연결을 별도로 선택하고 선택된 활성 계좌 하나만 공개한다. CI run `39757526475`에서 PHP lint와 모듈·법률·메일 계약이 통과했다. 실제 관리자 브라우저 저장·미리보기·게시 및 세 언어 확인은 미실행이다. |
+| LOGISTEED 운영 법인 참조 | 초깃값 구성·미확인 | ロジスティード株式会社, LOGISTEED, Ltd., 법인번호·주소·대표전화·대표자를 참고정보로 분리했다. 실제 판매사업 정보는 별도 빈 설정이고 승인 상태는 pending이므로 공식 판매처 표기와 거래는 fail-closed다. |
+| Storefront 및 반응형 | 기존 화면 일부 확인, ORDENOWA 최종 QA 미실행 | 일본어/영어/한국어 빈 카탈로그 화면과 반응형 자식 테마의 과거 캡처가 남아 있다. 현재 상품은 0개다. 이 작업에서 새로운 ORDENOWA 실제 브라우저 스크린샷, 상품 카드·상세·주문 여정은 확보하지 않았다. |
+| JPY 기본 통화 | 설정 코드·이전 읽기 확인 | JPY 기본 통화와 ja/en/ko 표시명·0자리 정밀도 설정 코드가 있다. 최근 신규 설치 CI는 우편 CSV 단계에서 중단되어 이번 실행에서 JPY·테마·관리자 로그인 설정을 검증하지 못했다. |
+| 일본 주소 자동완성 | 기존 DB/API 확인, 빈 설치·주문 E2E 미검증 | 7자리·하이픈·전각 숫자, 일본어 검색, 후보 선택, 수동 주소 입력, ja/en/ko를 지원한다. 이전 dev DB에 공식 KEN_ALL 고유 후보 124,839건이 있었고 읽기 전용 조회는 통과했다. 새 빈 설치 CI는 Japan Post가 HTTP 503을 반환해 import 이후 lookup·주소·주문 검사가 건너뛰어졌다. |
+| 관리자 한국어 | 부분 적용, 100% 미완료 | 로그인·대시보드·주문 목록의 과거 PC/모바일 점검과 프로젝트 소유 Module Manager 표시명 수정이 있다. CI에서 운영 설정 폼 한국어 계약이 통과했다. 전체 PrestaShop core·모든 메뉴·상품/고객/주문/설정 화면의 100% 한국어와 현재 브라우저 검증은 미완료다. |
+| PWA | manifest·service worker 기반, 공식 아이콘·기기 QA 미완료 | 동적 manifest 및 정적 자산 전용 offline page가 있으나 ORDENOWA 원본 이미지가 없어 아이콘 목록이 비어 있다. iOS·Android 실기기 설치도 미실행이다. |
+| 카탈로그 파서·검수 | fixture parser CI PASS, 실제 상품 등록 미검증 | Amazon Japan/Rakuten HTML fixture 파서, 영속 JSON queue, TEST/DEMO 승인 서비스, 비활성 native product adapter 및 한국어 검수 탭이 있다. run `39760154509`에서 PHP 8.3 lint와 parser/관리자 계약이 성공했다. 빈 설치 CI의 카탈로그 모듈·queue 재시작 보존도 run `39759208769`에서 Japan Post 다운로드 단계 전까지 통과했다. 실제 PrestaShop 상품 생성·브라우저 검수는 아직 미검증이고 외부 수집 0건이다. |
+| 실제 상품·주문 | 0건 / E2E 미실행 | 로컬 DB에서 상품·주문 0건으로 이전 확인됐다. 신규 설치 503 때문에 주소가 들어간 무결제 주문 저장·한국어 관리자 조회·재시작 보존은 이번 작업에서 확인되지 않았다. |
+| 신규 설치 CI | FAIL / Japan Post HTTP 503 | run `39760154414`도 기존 `--retry 3`을 거친 뒤 공식 KEN_ALL 다운로드에서 `curl_exit=22 http_status=503 effective_host=www.post.japanpost.jp`로 실패했다. 앞선 이미지 build/cache/startup/catalog queue 검사가 통과했고, 주소 조회·주소/주문 저장·관리자 조회·최종 재시작 검사는 건너뛰었다. 반복 실행을 성공으로 취급하지 않으며 외부 주소 데이터 단계의 제한을 별도로 기록한다. |
 
 ## 최근 작업
 
+- `6f6ff5e`에서 synthetic Amazon Japan/Rakuten 파서를 파일 기반 검수 큐, 원자적 승인 서비스 및 숨김 상태 PrestaShop Product 등록 어댑터에 연결했다. 전용 Actions run `39756075106`은 PHP lint와 fixture 테스트에서 성공했지만 실제 PrestaShop DB 등록·관리자 화면은 검증되지 않았다.
+- `ba508b4`에서 관리자 특정상거래법 라벨을 한국어로 바꿨다. 후속 run `39756576373`에서 다국어 필드에 붙는 `· 일본어`를 테스트 기대값이 빠뜨린 것이 확인되어 `3ec583c`에서 assertion을 수정했다. 그 뒤 CI는 법률 페이지에서 `<h1>` 제목이 렌더링되지 않는 실제 결함을 드러냈다.
+- `3404116`은 PHP 예외를 Actions 요약에 노출하도록 진단을 보강했다. `7cf8c41`에서 localized `<h1>`와 bank-transfer 계좌 링크를 구현했고 business-profile Actions run `39757526475`는 PHP lint, 설정·법률·공개 프로필·메일 검사 모두 통과했다.
+- `cc448a6`에서 두 프로젝트 모듈의 Module Manager 이름/설명을 한국어로 바꿨다. admin locale Python 검사 13/13, business-profile Python 계약 검사 10/10, fresh-install workflow 계약 10/10이 통과했다. 이 계약 테스트들은 실제 관리자 브라우저 UI 검증을 대신하지 않는다.
+- `940d8a0`에서 카탈로그 파서 검수 모듈·한국어 Back Office 탭과 별도 named volume 영속 queue를 연결했다. fresh-install run `39759208769`에서 해당 모듈 설치와 PrestaShop 재시작 후 queue 유지가 확인됐지만 Japan Post HTTP 503 뒤 주소·주문 단계는 실행되지 않았다.
+- run `39759208949`는 `amazon_jp`가 의도된 중복 키에도 나타나는데 페이지 전체에서 금지하던 과도한 assertion 때문에 실패했다. `5b2a1cb`에서 중복 키와 이미지 메타데이터의 출처 표기를 분리해 검사하고 실패 로그를 80줄/500자로 제한 및 GitHub annotation escape 처리했다. parser run `39760154509`가 성공했다. 이 수정은 실제 파서 로직을 바꾸지 않았다.
+- fresh-install run `39760154414`도 공식 Japan Post host HTTP 503으로 종료됐다. `update-ken-all.sh`에 이미 `curl --retry 3 --retry-delay 2`가 있어 같은 동작의 재실행만으로는 해결되지 않는다. 이 run은 빈 설치의 전체 주문 E2E를 PASS로 만들지 못했다.
+- fresh-install run `39756769346`은 빈 볼륨 Compose 기동까지 통과했으나 `www.post.japanpost.jp`가 HTTP 503을 반환해 KEN_ALL import 이후 주소·주문·재시작 단계를 수행하지 못했다. 해당 실패를 새 설치 PASS로 기록하지 않는다.
+- ORDENOWA 이미지 3장은 대화 미리보기로 보이나 Sediment 파일 다운로드가 staging 오류로 실패했다. 저장소 `assets/brand/source/`의 KURANEA 원본은 보존했고, 이를 새 공식 로고로 가장하지 않았다.
 - JPY 설정을 신규 설치 및 기존 설치 부트스트랩에 연결했다. DB에서 JPY 활성·기본값, ja/en/ko 통화명을 확인했고 상품/주문 수는 각각 0건임을 읽기 전용 조회로 확인했다.
 - 우편번호 테스트는 `1000004` 샘플뿐 아니라 CP932 파싱, 전각 입력, 복수 후보, 후보 선택, 네이티브 주소 필드 및 수동 건물명 매핑을 포함한다.
 - 관리자 계약 테스트는 특정 로그인·번역 오버레이만 확인한다. 전체 관리자 한국어 수용 기준을 충족한다고 표시하지 않는다.
@@ -50,4 +59,4 @@
 
 ## 다음 우선순위
 
-1. TEST 상품으로 일본어 storefront 브라우저 checkout, `100-0004` 자동완성/수동 건물명, 무결제 주문, 한국어 관리자 재로그인 후 주소 확인을 격리 브라우저 E2E로 검증한다. 이어 상품 파서/검수/등록과 관리자 한국어 범위를 진행한다.
+1. 코드 리뷰 후 수정 후보를 `work`에 원격 보존하고 신규 설치 Actions를 한 번 실행한다. 실제 결과로 빈 DB 설치 및 주문 E2E를 판정한다.

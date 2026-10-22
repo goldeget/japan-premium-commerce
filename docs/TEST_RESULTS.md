@@ -1,6 +1,26 @@
-# KURANEA 테스트 결과
+# ORDENOWA 테스트 결과
 
 기준일: 2026-10-22
+
+## 이번 이어가기 작업 결과 (`work` SHA `5b2a1cb8d2193458a088174eb04228f252cd9e0e`)
+
+| 검사 | 결과 | 근거 |
+| --- | --- | --- |
+| 관리자 운영 설정 모듈 Actions | PASS | run `39757526475` 성공. PHP 8.3 lint, profile lifecycle, Korean admin form, brand-derivative contracts, published customer/PWA output, localized legal page, seller gate, email hooks, PrestaShop module wiring을 검사했다. 이는 실제 관리자 브라우저 E2E는 아니다. |
+| 로컬 Python business-profile 계약 | PASS | `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/business_profile -p 'test_*.py' -v`: 10/10. |
+| 로컬 관리자 언어 계약 | PASS | `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/admin_locale -p 'test_*.py' -v`: 13/13. |
+| 신규 설치 workflow 계약 | PASS | `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract -v`: 12/12. |
+| 셸·YAML·공백 정적 검사 | PASS | `bash -n docker/kuranea-entrypoint.sh`, Compose/두 workflow YAML 파싱, `git diff --check` 통과. |
+| 카탈로그 parser Actions | PASS (synthetic fixtures) | run [39760154509](https://github.com/goldeget/japan-premium-commerce/actions/runs/39760154509) on SHA `5b2a1cb` completed successfully, including PHP 8.3 lint and synthetic Amazon Japan/Rakuten tests. It does not prove external collection or PrestaShop native product registration. |
+| 카탈로그 CI 실패 원인·수정 | 수정 후 PASS | 이전 run `39759208949` failed because its admin assertion forbade `amazon_jp` across the entire HTML even though the deduplication key intentionally includes it. The assertion now checks the image-metadata block separately; the production parser was unchanged. Failure output is bounded and annotation-escaped. |
+| 격리 신규 설치 | FAIL / Japan Post HTTP 503 | run [39760154414](https://github.com/goldeget/japan-premium-commerce/actions/runs/39760154414) on SHA `5b2a1cb` failed at official KEN_ALL download with `curl_exit=22 http_status=503 effective_host=www.post.japanpost.jp`, even though the updater already uses `curl --retry 3 --retry-delay 2`. Image build/cache probe and prior startup/catalog steps passed; address lookup, native address/order persistence, admin order view and final restart smoke were skipped. The preceding completed run `39759208769` reported the same external failure. |
+| 실제 상품·주문 E2E | 미검증 | 이 작업에서 TEST/DEMO 상품을 네이티브 PrestaShop DB에 등록하거나 고객 주문을 만들지 않았다. Japan Post 실패로 최신 설치 run의 후속 주소·주문 단계도 실행되지 않았다. |
+| ORDENOWA 공식 이미지 | BLOCKED | 대화 미리보기 외 원본 바이트를 가져올 수 없었다. `download_file`은 첨부 staging 오류로 실패했고 로컬에는 KURANEA 원본만 확인됐다. 새 로고나 아이콘을 만들거나 적용하지 않았다. |
+| 실제 DB/브라우저/PWA 설치 | 미검증 | 이 turn에서는 운영 DB/컨테이너를 실행하거나 수정하지 않았고 새 상품·주문·고객 row 및 스크린샷을 만들지 않았다. `/workspace` 작업트리, 기존 볼륨, `main`을 보존했다. |
+| 코드 체크포인트·복구 확인 | PASS | parser/CI 코드 체크포인트 `5b2a1cb8d2193458a088174eb04228f252cd9e0e`를 `work` 원격에서 확인했고 별도 shallow clone에서 같은 SHA 및 수정 파일을 재조회했다. 문서 후속 체크포인트는 별도 commit이다. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지됐다. |
+| cloud environment 적용 상태 | 확인됨, revision 3 미적용 | 현재 관측 revision 2이며 저장 draft revision 4는 이전 repository SHA `2db98927a9ede2b2423456873f0994ddd19ffe4e`를 참조한다. draft/활성 설정을 변경하거나 게시하지 않았다. |
+
+아래 표는 선행 Phase 1A 작업의 증거·제약을 보존한 기록이며, 위 현재 결과로 덮어쓰지 않는다.
 
 ## 로컬 실행 결과
 
@@ -36,11 +56,12 @@
 
 | 검사 | 결과 | 상세 |
 | --- | --- | --- |
-| P0 신규 설치 부팅 오류 | 격리 신규 설치 및 native order QA PASS | GitHub Actions run `39736745903`은 Success. 이미지 build/cache probe/빈 볼륨 설치, 공식 Japan Post CSV import, `1000004` Tokyo/Otemachi HTTP lookup, native Address save/reload, TEST customer/product/cart를 이용한 결제 없는 Order 생성, unpaid 상태/배송지 연결 확인, 공식 `GetOrderForViewing` 관리자 배송지 formatter 검증, 재시작 smoke가 모두 성공했다. Browser checkout 및 재시작 뒤 해당 Order 배송지 개별 재조회는 별도 미완료다. |
+| P0 신규 설치 부팅 오류 | 부팅 경로 복구, 전체 QA FAIL | run `39732730236`에서 이미지 빌드, 캐시 권한 probe, 빈 볼륨 Compose 기동 및 공식 CSV 가져오기가 성공해 이전 `/install` 중복 삭제로 인한 시작 중단은 재현되지 않았다. API 조회와 네이티브 주소 저장을 묶은 검증 단계는 exit 255로 실패했고 이후 주문·관리자·재시작 검증은 건너뛰었다. 해당 실행의 PHP 예외 상세는 현 공개 실행 페이지에서 읽을 수 없어 세부 실패 원인은 아직 미확정이다. 다음 실행에서 API 조회와 주소 저장을 분리하고 PHP 검증기가 단계별 오류 annotation을 출력하도록 보강했다. 따라서 전체 신규 설치/주소 주문 QA는 아직 PASS가 아니다. |
 | 과거 신규 빈 볼륨 설치 | FAIL (이전 코드) | runs `39703327857`, `39704824787`, `39705702536`, `39706052890`, `39706126218`은 이전 코드에서 실패했다. 최신 사용자가 제공한 상세 로그에서 `assets:install admin-dev`가 부재한 `/var/www/html/admin-dev`를 대상으로 한 직접 원인을 확인했다. 이번 원인은 errno 28로 기록하지 않는다. |
+| 오프라인 Amazon Japan·Rakuten parser | 선행 기록 기준 대기 | 이 선행 결과 표 작성 당시에는 synthetic fixture 기반 PHP 파서 Actions 실행을 기다렸다. 이후 구현·검수 모듈 결과는 위 최신 실행 표의 run `39760154509` 및 현황 문서를 참조한다. 실제 외부 수집과 PrestaShop 네이티브 상품 등록은 여전히 검증되지 않았다. |
 | Amazon Japan·Rakuten 원본 페이지 접근 | BLOCKED | 2026-10-22 읽기 전용 HTTPS 요청 모두 egress proxy CONNECT `403`을 반환했다. 접근통제를 우회하지 않았고 페이지를 수집·파싱하지 않았다. |
-| 신규 설치 DB·주소·주문 | PASS (CI run `39736745903`) | Japan Post 공식 CSV import, `1000004` lookup, building 입력을 포함한 Address 저장/reload, 결제되지 않은 native Order의 `id_address_delivery`, 주문상태 및 한국어 관리자 화면에서 사용하는 공식 order-view address projection을 확인했다. 재시작 smoke도 PASS. 고객 브라우저 checkout은 별도 미실행. |
-| Storefront browser checkout | 미실행 | GitHub Actions run `39736745903`에서 네이티브 Address/Cart/unpaid Order 및 official Back Office address projection 통합 검증은 PASS했다. 고객 브라우저에서 상품 선택→장바구니→주소 자동완성→checkout을 완료하고 로그인/새로고침 후 화면에서 주문 배송지를 재확인하는 단계는 별도 구현·검증이 필요하다. |
+| 신규 설치 DB 적재 및 API lookup | import PASS, lookup/address save 판정 대기 | run `39732730236`은 공식 Japan Post CSV import 단계까지 성공했다. 이어진 lookup+native address 단계가 exit 255로 실패해 해당 단계의 조회 결과를 분리해 판정할 수 없었다. 다음 실행은 두 작업을 독립 step으로 나눈다. |
+| checkout 주문 연결 및 관리자 배송지 | 미실행 | 무결제 네이티브 Order 생성, `id_address_delivery` 연결, PrestaShop 관리자 조회 주소 formatter를 검사하는 CI 전용 스크립트를 추가·원격 저장했고 PHP 문법 및 격리 가드만 확인했다. 실제 검증은 새 빈 설치 CI가 먼저 통과해야 한다. 브라우저 checkout 경로는 아직 주소 폼 fixture만 검증했다. |
 | PC/모바일 browser regression | 부분 PASS | 홈 빈 카탈로그 안내는 PC 1440px·모바일 390px에서 실제 렌더링했다. 화면별 증거는 위 캡처를 참조한다. 전체 반응형 폭 테스트와 상품 상세·주문 화면은 별도 미완료다. |
 | 관리자 한국어 100% | 미완료 | 로그인과 대시보드에서 한국어 메뉴·날짜 범위를 실제 브라우저로 확인했다. 모듈 계약 테스트는 8/8이지만 전체 메뉴, 모든 설정·주문관리·모듈 화면은 아직 범위별 audit을 하지 않았다. |
 | PWA 기기 설치 | 미실행 | manifest/service worker 정적 검증은 있지만 iOS/Android 홈 화면 설치 테스트는 없다. |
