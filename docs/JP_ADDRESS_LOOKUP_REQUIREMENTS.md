@@ -13,8 +13,19 @@
 ## 데이터 갱신
 
 공식 다운로드: <https://www.post.japanpost.jp/service/search/zipcode/download/>.
-운영자가 해당 페이지에서 최신 KEN_ALL 압축 파일을 받아 공개 웹 루트 밖에서
-압축 해제한 뒤 다음 명령으로 가져온다.
+운영자가 설치된 PrestaShop 컨테이너에서 갱신 명령을 실행하면 고정된 공식 HTTPS
+주소에서 ZIP을 임시 경로로 다운로드하고, 최종 호스트·ZIP 무결성·`KEN_ALL.CSV`
+항목·비어 있지 않은 CSV를 확인한 다음 트랜잭션 importer로 교체한다.
+
+```sh
+runuser -g www-data -u www-data -- \
+  /var/www/html/modules/kuraneapostcode/bin/update-ken-all.sh
+```
+
+다운로드나 압축 검사에 실패하면 importer를 호출하지 않는다. 임시 파일은 성공·실패
+모두 정리된다. 이 명령은 수동 실행 방식이며 관리자 화면이나 자동 스케줄은 아직 없다.
+운영자가 별도 공식 CSV를 전달하는 경우에는 파일을 공개 웹 루트 밖에 놓고 다음
+명령으로 가져올 수 있다.
 
 ```sh
 php modules/kuraneapostcode/bin/import-ken-all.php --file=/absolute/path/to/KEN_ALL.CSV
@@ -22,8 +33,7 @@ php modules/kuraneapostcode/bin/import-ken-all.php --file=/absolute/path/to/KEN_
 
 수입기는 UTF-8 및 CP932를 읽고 별도 staging 테이블에 적재한다. 유효 주소가
 확인된 경우에만 기존 모듈 주소 데이터를 트랜잭션으로 교체한다. 빈 파일이나
-잘못된 파일은 현재 주소 데이터를 지우지 않는다. 갱신은 운영자가 공식 페이지에서
-새 CSV를 받아 위 명령을 다시 실행하는 방식이다. 교체 트랜잭션이 성공하면 staging
+잘못된 파일은 현재 주소 데이터를 지우지 않는다. 교체 트랜잭션이 성공하면 staging
 복사본을 비워 운영 주소 데이터가 디스크를 중복 점유하지 않도록 한다. 이번에 사용한
 공식 archive의 SHA-256은 `c976cb0ff691a1aa7480b47b7e1f61bea08c2eadb3278f0366e474cd82dbf4b8`이다.
 
@@ -34,6 +44,10 @@ php modules/kuraneapostcode/bin/import-ken-all.php --file=/absolute/path/to/KEN_
   비우도록 수정했으며, DB 주소 행 124,839건과 staging 행 0건을 확인했다.
 - 실제 로컬 HTTP API에서 `1000004`와 `100-0004` 모두 도쿄도·지요다구·오테마치를
   반환했고, `千代田区大手町` 검색과 중복 우편번호 `004-0000`의 후보 2개도 확인했다.
+- 고객용 주소 저장 및 후보 응답에서는 Japan Post 설명용 `（次のビルを除く）`를
+  제거한다. `以下に掲載がない場合`는 상세 주소로 복사하지 않고 고객이 입력하도록
+  빈 상태로 남긴다. 원본 CSV와 DB 원문은 그대로 유지한다. 새 코드의 PHP 도메인 및
+  controller fixture와 기존 DB read-only 통합 검사에서 확인했다.
 - 후속 read-only HTTP 확인에서는 조회되지 않는 주소에 후보 0건과
   `manual_entry_available=true`를 반환하는 것을 확인했다. 기존 DB의 주문 수는 0건이다.
 - 실제 KURANEA 사이트 origin에서 모듈 JS와 DB API를 연결해 PC 1440px 및 모바일
@@ -46,6 +60,9 @@ php modules/kuraneapostcode/bin/import-ken-all.php --file=/absolute/path/to/KEN_
   오프라인 `ps_checkpayment`, 무료 CI 배송사, 일본 우편 주소가 포함된 무결제 네이티브
   주문을 만들고 관리자 조회 객체의 배송지 포맷을 검사한다. 로컬 컨테이너에서는 PHP
   문법 검사만 했고 DB 쓰기는 하지 않았다.
+- `bin/update-ken-all.sh` 수동 갱신 명령은 공식 HTTPS host/ZIP/CSV를 검증한 뒤 기존
+  트랜잭션 importer를 호출한다. 6개 mock 기반 계약 테스트는 통과했지만 실제
+  다운로드와 DB 교체는 아직 실행하지 않았다.
 - 빈 설치 Action run `39703327857`은 이미지 빌드와 캐시 권한 검사 이후
   `Start the empty-volume shop` 단계에서 실패했다. redacted diagnostics artifact는
   생성됐지만 API/익명 다운로드 제한으로 로그를 읽지 못했다. `errno 28` 여부를 확정하지
