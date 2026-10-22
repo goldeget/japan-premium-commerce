@@ -143,11 +143,11 @@ def enter_product_search_query(driver: webdriver.Chrome) -> None:
         try:
             search.clear()
             search.send_keys("CI ONLY")
+            search.send_keys(Keys.ENTER)
         except StaleElementReferenceException:
             if attempt == 1:
                 raise
             continue
-        search.send_keys(Keys.ENTER)
         return
 
 
@@ -212,7 +212,12 @@ def search_for_product(driver: webdriver.Chrome, label: str) -> None:
                 return miniature
         return False
 
-    miniature = WebDriverWait(driver, 35).until(result)
+    miniature = WebDriverWait(
+        driver,
+        35,
+        poll_frequency=0.2,
+        ignored_exceptions=(StaleElementReferenceException,),
+    ).until(result)
     title_link = miniature.find_element(By.CSS_SELECTOR, "a.product-miniature__title")
     if "[CI ONLY]" not in miniature.text:
         raise AssertionError("the live search result is not the clearly marked CI-only product")
