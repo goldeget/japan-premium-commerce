@@ -95,6 +95,15 @@ class ProductAdminContractTests(unittest.TestCase):
             workflow.index("Download and import official Japan Post KEN_ALL data"),
         )
 
+    def test_chromium_product_failure_emits_a_github_annotation(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        handler = browser.split("except Exception as error:", 1)[1].split("finally:", 1)[0]
+
+        self.assertIn("ORDENOWA_PRODUCT_ADMIN_STAGE=", handler)
+        self.assertIn("::error title=ORDENOWA product admin browser::", handler)
+        self.assertIn("replace('%', '%25')", handler)
+        self.assertIn("print(annotation", handler)
+
 
 if __name__ == "__main__":
     unittest.main()

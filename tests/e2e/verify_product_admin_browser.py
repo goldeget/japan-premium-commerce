@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 import os
+import sys
 import tempfile
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -225,13 +226,15 @@ def run() -> None:
         driver.save_screenshot(str(DEST / "product-admin-mobile.png"))
         print(f"PASS: Chromium created and edited inactive native product ID={product_id}; image {old_image_id} replaced.")
     except Exception as error:
-        print(f"ORDENOWA_PRODUCT_ADMIN_STAGE={stage}; error={type(error).__name__}: {error}", file=sys.stderr)
+        diagnostic = f"ORDENOWA_PRODUCT_ADMIN_STAGE={stage}; error={type(error).__name__}: {error}"
+        annotation_message = diagnostic.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+        annotation = f"::error title=ORDENOWA product admin browser::{annotation_message}"
+        print(diagnostic, file=sys.stderr)
+        print(annotation, file=sys.stdout)
         raise
     finally:
         driver.quit()
 
 
 if __name__ == "__main__":
-    import sys
-
     run()
