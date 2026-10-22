@@ -32,6 +32,8 @@ OFFICIAL_UPLOADS = {
     "favicon_symbol": SOURCES / "ORDENOWA-favicon-source.png",
     "pwa_icon": SOURCES / "ORDENOWA-pwa-icon-source.png",
 }
+SEO_TITLE = "ORDENOWA CI QA"
+SEO_DESCRIPTION = "ORDENOWA CI SEO description"
 
 
 def expected_derivative_path(source: Path, filename: str) -> str:
@@ -83,6 +85,8 @@ def public_brand_snapshot(driver: webdriver.Chrome) -> dict:
             logo: document.querySelector('picture img.kuranea-brand__image')?.currentSrc || '',
             title: document.title,
             description: document.querySelector('meta[name="description"]')?.content || '',
+            ogTitle: document.querySelector('meta[property="og:title"]')?.content || '',
+            ogDescription: document.querySelector('meta[property="og:description"]')?.content || '',
             themeColor: document.querySelector('meta[name="theme-color"]')?.content || '',
             icons: [...document.querySelectorAll('link[rel="icon"],link[rel="apple-touch-icon"]')]
               .map(link => [link.rel, link.href]).sort(),
@@ -221,8 +225,10 @@ def assert_public_brand_assets(driver: webdriver.Chrome, label: str, expected_lo
             icons.push({src: icon.src, sizes: icon.sizes, purpose: icon.purpose, ...await load(icon.src)});
           }
           const description = document.querySelector('meta[name="description"]')?.content || '';
+          const ogTitle = document.querySelector('meta[property="og:title"]')?.content || '';
+          const ogDescription = document.querySelector('meta[property="og:description"]')?.content || '';
           const themeColor = document.querySelector('meta[name="theme-color"]')?.content || '';
-          return {assetLinks, og, ogImage, manifest, icons, title: document.title, description, themeColor};
+          return {assetLinks, og, ogImage, manifest, icons, title: document.title, description, ogTitle, ogDescription, themeColor};
         })().then(done).catch(error => done({error: String(error)}));
         """
     )
@@ -291,10 +297,14 @@ def assert_public_brand_assets(driver: webdriver.Chrome, label: str, expected_lo
             raise AssertionError(
                 "PWA manifest size, purpose, or decoded dimensions are incorrect for " + filename
             )
-    if "ORDENOWA CI QA" not in results["title"]:
+    if SEO_TITLE not in results["title"]:
         raise AssertionError("Korean admin SEO title update did not publish to the customer page")
-    if results["description"] != "ORDENOWA CI SEO description":
+    if results["description"] != SEO_DESCRIPTION:
         raise AssertionError("Korean admin SEO description did not publish to the customer page")
+    if results["ogTitle"] != SEO_TITLE:
+        raise AssertionError("Korean admin SEO title did not publish to Open Graph metadata")
+    if results["ogDescription"] != SEO_DESCRIPTION:
+        raise AssertionError("Korean admin SEO description did not publish to Open Graph metadata")
     if (
         results["manifest"].get("name") != "ORDENOWA CI QA"
         or results["manifest"].get("short_name") != "ORDENOWA CI"
@@ -391,7 +401,7 @@ def run() -> None:
 
         title = visible(driver, 'input[name="profile[seo][title][ja-JP]"]')
         title.clear()
-        title.send_keys("ORDENOWA CI QA")
+        title.send_keys(SEO_TITLE)
         pwa_name = visible(driver, 'input[name="profile[pwa][name][ja-JP]"]')
         pwa_name.clear()
         pwa_name.send_keys("ORDENOWA CI QA")
@@ -424,7 +434,7 @@ def run() -> None:
             'input[name="profile[customer_support][hours][ja-JP]"]': "ORDENOWA CI SUPPORT HOURS",
             'textarea[name="profile[shipping][ja-JP]"]': "ORDENOWA CI SHIPPING POLICY",
             'textarea[name="profile[refund][ja-JP]"]': "ORDENOWA CI REFUND POLICY",
-            'textarea[name="profile[seo][description][ja-JP]"]': "ORDENOWA CI SEO description",
+            'textarea[name="profile[seo][description][ja-JP]"]': SEO_DESCRIPTION,
             'input[name="profile[pwa][short_name][ja-JP]"]': "ORDENOWA CI",
             'input[name="profile[pwa][theme_color]"]': "#244a7d",
             'input[name="profile[pwa][background_color]"]': "#f5f7fa",

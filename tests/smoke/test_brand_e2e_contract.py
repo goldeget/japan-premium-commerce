@@ -75,6 +75,28 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('driver.save_screenshot(str(DEST / "brand-admin-replacement-draft.png"))', browser_flow)
         self.assertIn('driver.save_screenshot(str(DEST / "brand-admin-uploaded-draft-restored.png"))', browser_flow)
 
+    def test_browser_asserts_published_open_graph_text_matches_seo_settings(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        public_snapshot = browser_flow.split("def public_brand_snapshot", 1)[1].split("def click_centered", 1)[0]
+        published_assets = browser_flow.split("def assert_public_brand_assets", 1)[1].split(
+            "def assert_seller_disclosures_remain_gated", 1
+        )[0]
+
+        self.assertIn('ogTitle: document.querySelector(\'meta[property="og:title"]\')?.content || \'\'', public_snapshot)
+        self.assertIn(
+            'ogDescription: document.querySelector(\'meta[property="og:description"]\')?.content || \'\'',
+            public_snapshot,
+        )
+        self.assertIn('const ogTitle = document.querySelector(\'meta[property="og:title"]\')?.content || \'\';', published_assets)
+        self.assertIn(
+            'const ogDescription = document.querySelector(\'meta[property="og:description"]\')?.content || \'\';',
+            published_assets,
+        )
+        self.assertIn("if results[\"ogTitle\"] != SEO_TITLE:", published_assets)
+        self.assertIn("if results[\"ogDescription\"] != SEO_DESCRIPTION:", published_assets)
+        self.assertIn("SEO_TITLE = \"ORDENOWA CI QA\"", browser_flow)
+        self.assertIn("SEO_DESCRIPTION = \"ORDENOWA CI SEO description\"", browser_flow)
+
     def test_publish_stale_click_is_instrumented_without_retry_or_sensitive_dom_data(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
         find_stage = browser_flow.index('stage = "publish_button_find"')
