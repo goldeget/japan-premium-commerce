@@ -43,3 +43,6 @@ jobs:
 
       - name: Run profile lifecycle tests
         run: php tests/business_profile/run.php
+
+      - name: Run Korean admin settings tests
+        run: php tests/business_profile/admin_settings.php
