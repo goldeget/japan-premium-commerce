@@ -325,6 +325,90 @@ def image_is_rendered(driver: webdriver.Chrome, selector: str) -> dict:
     )
 
 
+def publish_saved_brand_draft(
+    driver: webdriver.Chrome,
+    stage_callback: Callable[[str], None],
+    stage_prefix: str,
+) -> None:
+    publish_selector = 'form.ordenowa-profile-settings button[name="submitOrdenowaPublish"]'
+    stage_callback(stage_prefix + "_button_find")
+    publish_button = visible(driver, publish_selector)
+    stage_callback(stage_prefix + "_button_click")
+    try:
+        click_centered(driver, publish_button)
+    except StaleElementReferenceException:
+        emit_publish_target_diagnostics(driver, publish_selector)
+        raise
+    stage_callback(stage_prefix + "_confirmation")
+    wait_for_publish_confirmation(driver)
+
+
+def restore_admin_session(
+    driver: webdriver.Chrome,
+    stage_callback: Callable[[str], None],
+    stage_name: str,
+) -> None:
+    stage_callback(stage_name)
+    email_fields = driver.find_elements(By.CSS_SELECTOR, '#login_form input[name="email"], input[type="email"]')
+    password_fields = driver.find_elements(
+        By.CSS_SELECTOR,
+        '#login_form input[name="passwd"], #login_form input[name="password"], input[type="password"]',
+    )
+    if not email_fields or not password_fields:
+        raise AssertionError("Back Office login form fields are unavailable after checking the published logo")
+    email_fields[0].send_keys(ADMIN_EMAIL)
+    password_fields[0].send_keys(ADMIN_PASSWORD)
+    visible(
+        driver,
+        '#login_form button[type="submit"], #login_form input[type="submit"], button[type="submit"]',
+    ).click()
+    WebDriverWait(driver, 30).until(lambda browser: "/login" not in urlparse(browser.current_url).path)
+
+
+def assert_published_logo_source(
+    driver: webdriver.Chrome,
+    source: Path,
+    *,
+    expected_previous_header_logos: dict[str, str],
+    expected_previous_admin_login_logo: str,
+    stage_callback: Callable[[str], None],
+    stage_prefix: str,
+) -> dict[str, str]:
+    observed: dict[str, str] = {}
+    for viewport, size, filename in (
+        ("desktop", (1440, 960), "header-desktop.png"),
+        ("mobile", (390, 844), "header-mobile.png"),
+    ):
+        stage_callback(stage_prefix + "_" + viewport + "_header_logo")
+        driver.set_window_size(*size)
+        driver.get(BASE + "/")
+        logo = image_is_rendered(driver, "picture img.kuranea-brand__image")
+        if logo["width"] < 1 or filename not in logo["src"]:
+            raise AssertionError("published replacement logo did not decode for " + viewport)
+        assert_uploaded_derivative_url(logo["src"], source, filename, viewport + " header logo")
+        if logo["src"] == expected_previous_header_logos[viewport]:
+            raise AssertionError("publishing the replacement did not switch the " + viewport + " header logo")
+        assert_no_legacy_brand_in_rendered_page(driver, stage_prefix + " " + viewport + " storefront")
+        observed[viewport + "_header"] = logo["src"]
+        driver.save_screenshot(str(DEST / f"brand-{stage_prefix}-{viewport}.png"))
+
+    stage_callback(stage_prefix + "_admin_login_logo")
+    driver.delete_all_cookies()
+    driver.get(ADMIN_LOGIN + "/login")
+    login_logo = image_is_rendered(driver, ".ordenowa-admin-login-brand img")
+    if login_logo["width"] < 1 or "admin-login.png" not in login_logo["src"]:
+        raise AssertionError("published replacement admin login logo did not decode")
+    assert_uploaded_derivative_url(login_logo["src"], source, "admin-login.png", "admin login logo")
+    if login_logo["src"] == expected_previous_admin_login_logo:
+        raise AssertionError("publishing the replacement did not switch the admin login logo")
+    assert_no_legacy_brand_in_rendered_page(driver, stage_prefix + " admin login")
+    observed["admin_login"] = login_logo["src"]
+    driver.save_screenshot(str(DEST / f"brand-{stage_prefix}-admin-login.png"))
+
+    restore_admin_session(driver, stage_callback, stage_prefix + "_admin_session_restore")
+    return observed
+
+
 def sanitize_brand_diagnostic_text(value: str) -> str:
     text = re.sub(r"[\x00-\x1f\x7f]+", " ", str(value or ""))
     text = re.sub(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", "[email]", text, flags=re.I)
@@ -907,8 +991,80 @@ def run() -> None:
         )
         assert_no_legacy_brand_in_rendered_page(driver, "admin login")
         driver.save_screenshot(str(DEST / "brand-admin-login-after-publish.png"))
+        official_admin_login_logo = login_logo["src"]
+        restore_admin_session(
+            driver,
+            set_brand_assertion_stage,
+            "official_publish_admin_session_restore",
+        )
 
-        print("PASS: official ORDENOWA uploads, Korean company profile draft/reload/preview/publish, closed storefront gate, PC/mobile logos, admin login, favicon, Apple icon, PWA, OG, and SEO")
+        stage = "record_official_published_mobile_header_logo"
+        driver.set_window_size(390, 844)
+        driver.get(BASE + "/")
+        official_mobile_header_logo = image_is_rendered(driver, "picture img.kuranea-brand__image")["src"]
+        driver.set_window_size(1440, 960)
+        stage = "record_official_published_header_logo"
+        official_header_logo = public_brand_snapshot(driver)["logo"]
+
+        stage = "replace_published_logo_in_saved_draft"
+        replace_primary_logo_in_saved_draft(
+            driver,
+            settings_url,
+            OFFICIAL_UPLOADS["pwa_icon"],
+            "temporary replacement logo for publication",
+        )
+        driver.save_screenshot(str(DEST / "brand-admin-replacement-before-publish.png"))
+
+        stage = "publish_replacement_logo"
+        publish_saved_brand_draft(driver, set_brand_assertion_stage, "replacement_publish")
+        driver.save_screenshot(str(DEST / "brand-admin-replacement-published.png"))
+
+        stage = "published_replacement_logo"
+        replacement_logos = assert_published_logo_source(
+            driver,
+            OFFICIAL_UPLOADS["pwa_icon"],
+            expected_previous_header_logos={
+                "desktop": official_header_logo,
+                "mobile": official_mobile_header_logo,
+            },
+            expected_previous_admin_login_logo=official_admin_login_logo,
+            stage_callback=set_brand_assertion_stage,
+            stage_prefix="published_replacement_logo",
+        )
+
+        stage = "restore_approved_logo_after_replacement_publish"
+        replace_primary_logo_in_saved_draft(
+            driver,
+            settings_url,
+            OFFICIAL_UPLOADS["primary_logo"],
+            "restore approved logo after replacement publication",
+        )
+        driver.save_screenshot(str(DEST / "brand-admin-approved-logo-before-republish.png"))
+
+        stage = "publish_restored_approved_logo"
+        publish_saved_brand_draft(driver, set_brand_assertion_stage, "restored_publish")
+        driver.save_screenshot(str(DEST / "brand-admin-approved-logo-republished.png"))
+
+        stage = "published_restored_approved_logo"
+        restored_logos = assert_published_logo_source(
+            driver,
+            OFFICIAL_UPLOADS["primary_logo"],
+            expected_previous_header_logos={
+                "desktop": replacement_logos["desktop_header"],
+                "mobile": replacement_logos["mobile_header"],
+            },
+            expected_previous_admin_login_logo=replacement_logos["admin_login"],
+            stage_callback=set_brand_assertion_stage,
+            stage_prefix="published_restored_approved_logo",
+        )
+        if restored_logos["desktop_header"] != official_header_logo:
+            raise AssertionError("republishing the approved source did not restore the original desktop logo URL")
+        if restored_logos["mobile_header"] != official_mobile_header_logo:
+            raise AssertionError("republishing the approved source did not restore the original mobile logo URL")
+        if restored_logos["admin_login"] != official_admin_login_logo:
+            raise AssertionError("republishing the approved source did not restore the original admin login logo URL")
+
+        print("PASS: official ORDENOWA uploads, replacement publish and restoration, Korean company profile draft/reload/preview/publish, closed storefront gate, PC/mobile logos, admin login, favicon, Apple icon, PWA, OG, and SEO")
     except Exception as error:
         try:
             driver.save_screenshot(str(DEST / "brand-admin-failure.png"))

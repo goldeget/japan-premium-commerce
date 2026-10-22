@@ -246,6 +246,66 @@ class BrandE2EContractTests(unittest.TestCase):
             replacement_stage,
         )
 
+    def test_browser_publishes_replacement_logo_then_restores_and_publishes_approved_logo(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        self.assertIn("def assert_published_logo_source(", browser_flow)
+        self.assertIn("def publish_saved_brand_draft(", browser_flow)
+        self.assertIn("def restore_admin_session(", browser_flow)
+        logo_assertion = browser_flow.split("def assert_published_logo_source(", 1)[1].split(
+            "\ndef ", 1
+        )[0]
+        publish_helper = browser_flow.split("def publish_saved_brand_draft(", 1)[1].split(
+            "\ndef ", 1
+        )[0]
+        session_restore = browser_flow.split("def restore_admin_session(", 1)[1].split(
+            "\ndef ", 1
+        )[0]
+        run_flow = browser_flow.split("def run()", 1)[1]
+        initial_restore = run_flow.split('stage = "admin_login_after_publish"', 1)[1].split(
+            'stage = "record_official_published_header_logo"', 1
+        )[0]
+
+        replacement_upload = run_flow.index('stage = "replace_published_logo_in_saved_draft"')
+        replacement = run_flow.index('stage = "publish_replacement_logo"', replacement_upload)
+        replacement_assertion = run_flow.index('stage = "published_replacement_logo"', replacement)
+        restore = run_flow.index('stage = "restore_approved_logo_after_replacement_publish"', replacement_assertion)
+        restore_publish = run_flow.index('stage = "publish_restored_approved_logo"', restore)
+        restored_assertion = run_flow.index('stage = "published_restored_approved_logo"', restore_publish)
+
+        self.assertLess(replacement, replacement_assertion)
+        self.assertLess(replacement_assertion, restore)
+        self.assertLess(restore, restore_publish)
+        self.assertLess(restore_publish, restored_assertion)
+        self.assertIn('OFFICIAL_UPLOADS["pwa_icon"]', run_flow[replacement_upload:replacement])
+        self.assertIn('OFFICIAL_UPLOADS["primary_logo"]', run_flow[restore:restore_publish])
+        self.assertIn('"replacement_publish"', run_flow[replacement:replacement_assertion])
+        self.assertIn('"restored_publish"', run_flow[restore_publish:restored_assertion])
+        self.assertIn("expected_previous_header_logos=", run_flow[replacement_assertion:restore])
+        self.assertIn("expected_previous_admin_login_logo=", run_flow[replacement_assertion:restore])
+        self.assertIn("expected_previous_header_logos=", run_flow[restored_assertion:])
+        self.assertIn("expected_previous_admin_login_logo=", run_flow[restored_assertion:])
+        self.assertIn('expected_previous_header_logos[viewport]', logo_assertion)
+
+        self.assertIn('image_is_rendered(driver, "picture img.kuranea-brand__image")', logo_assertion)
+        self.assertIn('image_is_rendered(driver, ".ordenowa-admin-login-brand img")', logo_assertion)
+        self.assertIn("driver.delete_all_cookies()", logo_assertion)
+        self.assertIn('restore_admin_session(driver, stage_callback, stage_prefix + "_admin_session_restore")', logo_assertion)
+        self.assertIn("restore_admin_session(", initial_restore)
+        self.assertIn('"official_publish_admin_session_restore"', initial_restore)
+        self.assertIn("email_fields[0].send_keys(ADMIN_EMAIL)", session_restore)
+        self.assertIn("password_fields[0].send_keys(ADMIN_PASSWORD)", session_restore)
+        self.assertIn("stage_callback(stage_name)", session_restore)
+        self.assertIn('assert_uploaded_derivative_url(', logo_assertion)
+        self.assertIn('"header-desktop.png"', logo_assertion)
+        self.assertIn('"header-mobile.png"', logo_assertion)
+        self.assertIn('"admin-login.png"', logo_assertion)
+        self.assertIn('logo["src"] == expected_previous_header_logos[viewport]', logo_assertion)
+        self.assertIn('login_logo["src"] == expected_previous_admin_login_logo', logo_assertion)
+        self.assertIn('def publish_saved_brand_draft(', browser_flow)
+        self.assertIn('stage_callback(stage_prefix + "_button_find")', publish_helper)
+        self.assertIn('stage_callback(stage_prefix + "_button_click")', publish_helper)
+        self.assertIn('stage_callback(stage_prefix + "_confirmation")', publish_helper)
+
     def test_browser_asserts_published_open_graph_text_matches_seo_settings(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
         public_snapshot = browser_flow.split("def public_brand_snapshot", 1)[1].split("def click_centered", 1)[0]
