@@ -57,9 +57,36 @@ final class ProfileValidator
             }
         }
 
-        $companyNumber = $profile['company_reference']['corporate_number'] ?? '';
+        $companyReference = is_array($profile['company_reference'] ?? null) ? $profile['company_reference'] : [];
+        $companyNumber = $companyReference['corporate_number'] ?? '';
         if (!is_string($companyNumber) || preg_match('/\A[0-9]{13}\z/D', $companyNumber) !== 1) {
             $errors[] = '회사 참고 법인번호는 숫자 13자리로 입력해 주세요.';
+        }
+
+        $customerSupport = is_array($profile['customer_support'] ?? null) ? $profile['customer_support'] : [];
+        $seller = is_array($profile['seller'] ?? null) ? $profile['seller'] : [];
+        $sellerSupport = is_array($seller['support'] ?? null) ? $seller['support'] : [];
+        foreach ([
+            [$customerSupport['email'] ?? '', '고객센터 이메일 주소를 확인해 주세요.'],
+            [$sellerSupport['email'] ?? '', '판매자 연락 이메일 주소를 확인해 주세요.'],
+        ] as [$email, $message]) {
+            if ($email !== '' && (!is_string($email) || filter_var(trim($email), FILTER_VALIDATE_EMAIL) === false)) {
+                $errors[] = $message;
+            }
+        }
+
+        $sourceUrl = $companyReference['source_url'] ?? '';
+        if ($sourceUrl !== '') {
+            $urlParts = is_string($sourceUrl) ? parse_url(trim($sourceUrl)) : false;
+            $scheme = is_array($urlParts) ? strtolower((string) ($urlParts['scheme'] ?? '')) : '';
+            $host = is_array($urlParts) ? (string) ($urlParts['host'] ?? '') : '';
+            if (!is_string($sourceUrl)
+                || filter_var(trim($sourceUrl), FILTER_VALIDATE_URL) === false
+                || !in_array($scheme, ['http', 'https'], true)
+                || $host === ''
+            ) {
+                $errors[] = '회사 참고정보 출처 URL은 http 또는 https 주소로 입력해 주세요.';
+            }
         }
 
         if (!isset($profile['brand']['assets']) || !is_array($profile['brand']['assets'])

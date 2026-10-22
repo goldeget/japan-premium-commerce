@@ -4,6 +4,35 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/run.php';
 
+$validator = new \Kuranea\BusinessProfile\Domain\ProfileValidator();
+$invalidCustomerSupportEmail = $initial;
+$invalidCustomerSupportEmail['customer_support']['email'] = 'not-an-email';
+assertBusinessProfileTrue(
+    in_array('고객센터 이메일 주소를 확인해 주세요.', $validator->validateDraft($invalidCustomerSupportEmail), true),
+    'The server-side validator must reject malformed public customer support email addresses.'
+);
+$invalidSellerSupportEmail = $initial;
+$invalidSellerSupportEmail['seller']['support']['email'] = 'seller at example.invalid';
+assertBusinessProfileTrue(
+    in_array('판매자 연락 이메일 주소를 확인해 주세요.', $validator->validateDraft($invalidSellerSupportEmail), true),
+    'The server-side validator must reject malformed seller contact email addresses.'
+);
+$invalidCompanyReferenceUrl = $initial;
+$invalidCompanyReferenceUrl['company_reference']['source_url'] = 'javascript:alert(1)';
+assertBusinessProfileTrue(
+    in_array('회사 참고정보 출처 URL은 http 또는 https 주소로 입력해 주세요.', $validator->validateDraft($invalidCompanyReferenceUrl), true),
+    'Company reference URLs must use HTTP or HTTPS.'
+);
+$validContactSettings = $initial;
+$validContactSettings['customer_support']['email'] = 'support@example.invalid';
+$validContactSettings['seller']['support']['email'] = 'seller@example.invalid';
+$validContactSettings['company_reference']['source_url'] = 'https://example.invalid/company';
+assertBusinessProfileSame([], $validator->validateDraft($validContactSettings), 'Valid contact and reference values should remain saveable.');
+$emptyOptionalContacts = $initial;
+$emptyOptionalContacts['customer_support']['email'] = '';
+$emptyOptionalContacts['seller']['support']['email'] = '';
+assertBusinessProfileSame([], $validator->validateDraft($emptyOptionalContacts), 'Optional unpublished contact fields may remain empty in a draft.');
+
 assertBusinessProfileSame(['ja-JP', 'en-US', 'ko-KR'], $initial['localization']['enabled_locales'] ?? null, 'All three supported customer locales should be independently listed in profile settings.');
 assertBusinessProfileSame('ja-JP', $initial['localization']['default_locale'] ?? null, 'Japanese should remain the default customer locale.');
 
