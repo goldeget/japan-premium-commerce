@@ -1,0 +1,62 @@
+"""Keep password-reset email branding independently verifiable in isolated CI."""
+from __future__ import annotations
+
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+EMAIL_BROWSER = ROOT / "tests" / "e2e" / "verify_reset_email_brand_browser.py"
+CUSTOMER_SEED = ROOT / "tests" / "business_profile" / "seed_reset_email_customer.php"
+
+
+class ResetEmailBrandContractTests(unittest.TestCase):
+    def test_run_scoped_seed_uses_current_published_logo_and_never_live_mail(self) -> None:
+        self.assertTrue(CUSTOMER_SEED.is_file())
+        seed = CUSTOMER_SEED.read_text(encoding="utf-8")
+        for source in (
+            "new Customer()",
+            "Configuration::get('PS_LOGO_MAIL'",
+            "PublishedProfileProvider",
+            "email_logo",
+            "example.invalid",
+            "GITHUB_RUN_ID",
+            "GITHUB_RUN_ATTEMPT",
+        ):
+            with self.subTest(source=source):
+                self.assertIn(source, seed)
+
+    def test_mailpit_logo_is_byte_checked_against_published_derivative_and_rendered_in_chromium(self) -> None:
+        self.assertTrue(EMAIL_BROWSER.is_file())
+        browser = EMAIL_BROWSER.read_text(encoding="utf-8")
+        for assertion in (
+            '"cid:shop_logo"',
+            'attachment.get("ContentID", "")',
+            'inline_logo.get("ContentType") != "image/png"',
+            "hashlib.sha256(sent_logo).digest()",
+            "hashlib.sha256(expected_logo).digest()",
+            "naturalWidth",
+            "is_displayed()",
+            'password-reset-email-logo.png',
+        ):
+            with self.subTest(assertion=assertion):
+                self.assertIn(assertion, browser)
+
+    def test_password_reset_request_is_independent_of_the_full_account_browser(self) -> None:
+        browser = EMAIL_BROWSER.read_text(encoding="utf-8")
+        run_function = browser.split("def run() -> bool:", 1)[1].split("if __name__ ==", 1)[0]
+
+        self.assertIn('driver.get(f"{BASE}/")', run_function)
+        self.assertIn("shop_url_from_generated_link(driver, sign_in_link, \"customer sign-in\")", run_function)
+        self.assertIn("driver.get(login_url)", run_function)
+        self.assertIn("#login-form a[href]", run_function)
+        self.assertIn("shop_url_from_generated_link(driver, reset_link, \"password reset\")", run_function)
+        self.assertNotIn('driver.get(f"{BASE}/index.php?controller=password")', run_function)
+        self.assertIn('By.CSS_SELECTOR, "#email"', run_function)
+        self.assertIn('By.CSS_SELECTOR, "#send-reset-link"', run_function)
+        self.assertIn("request_message_for_customer()", run_function)
+        self.assertNotIn("verify_customer_account_browser.py", browser)
+
+
+if __name__ == "__main__":
+    unittest.main()

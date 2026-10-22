@@ -34,10 +34,14 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
         verification = workflow.split(
             "- name: Verify browser QA screenshot coverage", 1
         )[1].split("- name:", 1)[0]
+        self.assertIn('RESET_EMAIL_BRAND_BROWSER_QA_OUTCOME: ${{ steps.reset_email_brand_browser_qa.outcome }}', verification)
+        self.assertIn('"$RESET_EMAIL_BRAND_BROWSER_QA_OUTCOME" == success', verification)
 
         for screenshot in (
             "brand-desktop-published.png",
             "brand-mobile-published.png",
+            "password-reset-email-requested.png",
+            "password-reset-email-logo.png",
             "desktop-customer-account-created.png",
             "mobile-customer-account-created.png",
             "product-admin-created-desktop.png",
@@ -46,6 +50,7 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
             "mobile-home.png",
             "checkout-desktop.png",
             "checkout-mobile.png",
+            "password-reset-email-brand-e2e.log",
         ):
             with self.subTest(screenshot=screenshot):
                 self.assertIn(screenshot, verification)
@@ -72,6 +77,10 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         for step_name, step_id in (
             ("Verify official ORDENOWA brand upload and publish in Chromium", "brand_browser_qa"),
+            (
+                "Verify the published ORDENOWA password-reset email logo in Chromium",
+                "reset_email_brand_browser_qa",
+            ),
             (
                 "Verify customer registration, email login, logout, password reset, and my page in Chromium",
                 "account_browser_qa",
@@ -102,6 +111,7 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
         self.assertIn("if: always()", aggregate)
         for step_id in (
             "brand_browser_qa",
+            "reset_email_brand_browser_qa",
             "account_browser_qa",
             "product_admin_browser_qa",
             "storefront_browser_qa",

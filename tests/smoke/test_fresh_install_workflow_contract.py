@@ -26,9 +26,11 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         )[0]
         account_contract_path = "tests/smoke/test_customer_account_browser_flow_contract.py"
         login_contract_path = "tests/smoke/test_korean_customer_login_contract.py"
+        email_brand_contract_path = "tests/smoke/test_reset_email_brand_contract.py"
         for event, event_block in (("push", push_event), ("pull_request", pull_request_event)):
             self.assertIn(account_contract_path, event_block, f"account contract changes do not trigger {event} CI")
             self.assertIn(login_contract_path, event_block, f"Korean login contract changes do not trigger {event} CI")
+            self.assertIn(email_brand_contract_path, event_block, f"email brand contract changes do not trigger {event} CI")
 
         contract_step = workflow.split("- name: Verify fresh-install workflow contracts", 1)[1].split(
             "- name:", 1
@@ -43,6 +45,37 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             contract_step,
             "fresh-install CI does not run the Korean customer login contract",
         )
+        self.assertIn(
+            "tests.smoke.test_reset_email_brand_contract",
+            contract_step,
+            "fresh-install CI does not run the reset-email brand contract",
+        )
+
+    def test_published_reset_email_brand_runs_after_publish_before_account_flow(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        seed_script = "tests/business_profile/seed_reset_email_customer.php"
+        browser_script = "tests/e2e/verify_reset_email_brand_browser.py"
+        email_step = workflow.split(
+            "- name: Verify the published ORDENOWA password-reset email logo in Chromium", 1
+        )[1].split("- name:", 1)[0]
+
+        self.assertIn("id: reset_email_brand_browser_qa", email_step)
+        self.assertIn("if: steps.brand_browser_qa.outcome == 'success'", email_step)
+        self.assertIn("continue-on-error: true", email_step)
+        self.assertIn(seed_script, email_step)
+        self.assertIn(browser_script, email_step)
+        self.assertIn("GITHUB_RUN_ID", email_step)
+        self.assertIn("GITHUB_RUN_ATTEMPT", email_step)
+        self.assertIn("CUSTOMER_EMAIL=", email_step)
+        self.assertIn("PUBLISHED_EMAIL_LOGO_PATH=", email_step)
+        self.assertIn("password-reset-email-brand-e2e.log", email_step)
+
+        step_names = re.findall(r"^\s+- name: (.+)$", workflow, flags=re.MULTILINE)
+        brand_position = step_names.index("Verify official ORDENOWA brand upload and publish in Chromium")
+        email_position = step_names.index("Verify the published ORDENOWA password-reset email logo in Chromium")
+        account_position = step_names.index("Verify customer registration, email login, logout, password reset, and my page in Chromium")
+        self.assertEqual(email_position, brand_position + 1)
+        self.assertEqual(account_position, email_position + 1)
 
     def test_customer_account_e2e_uses_isolated_mailpit_and_publishes_browser_logs(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -126,7 +159,10 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         brand_position = step_names.index(brand_step)
         account_position = step_names.index(account_step)
         product_admin_position = step_names.index(product_admin_step)
-        self.assertEqual(step_names[brand_position + 1], account_step)
+        email_step = "Verify the published ORDENOWA password-reset email logo in Chromium"
+        email_position = step_names.index(email_step)
+        self.assertEqual(step_names[brand_position + 1], email_step)
+        self.assertEqual(step_names[email_position + 1], account_step)
         self.assertEqual(step_names[account_position + 1], product_admin_step)
         self.assertLess(product_admin_position, step_names.index(storefront_step))
         self.assertLess(product_admin_position, step_names.index(checkout_gate_step))

@@ -29,6 +29,7 @@ on:
       - 'tests/smoke/test_fresh_install_workflow_contract.py'
       - 'tests/smoke/test_customer_account_browser_flow_contract.py'
       - 'tests/smoke/test_korean_customer_login_contract.py'
+      - 'tests/smoke/test_reset_email_brand_contract.py'
       - 'tests/fixtures/ci-checkout.compose.yaml'
       - 'tests/postcode/**'
       - 'tests/e2e/**'
@@ -60,6 +61,7 @@ on:
       - 'tests/smoke/test_fresh_install_workflow_contract.py'
       - 'tests/smoke/test_customer_account_browser_flow_contract.py'
       - 'tests/smoke/test_korean_customer_login_contract.py'
+      - 'tests/smoke/test_reset_email_brand_contract.py'
       - 'tests/fixtures/ci-checkout.compose.yaml'
       - 'tests/postcode/**'
       - 'tests/e2e/**'
@@ -106,7 +108,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_docker_run_recovery -v
 
       - name: Verify fresh-install workflow contracts
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_korean_customer_login_contract -v
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_reset_email_brand_contract -v
 
       - name: Verify isolated unpaid checkout contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract -v
@@ -404,6 +406,79 @@ jobs:
             exit "$browser_status"
           fi
 
+      - name: Verify the published ORDENOWA password-reset email logo in Chromium
+        id: reset_email_brand_browser_qa
+        if: steps.brand_browser_qa.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          SHOP_BASE_URL: http://localhost:18080
+          MAILPIT_API_URL: http://127.0.0.1:8025
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          log_file="$RUNNER_TEMP/ordenowa-browser-qa/password-reset-email-brand-e2e.log"
+          seed_output="$RUNNER_TEMP/reset-email-brand-seed.out"
+          seed_script=/tmp/seed_reset_email_customer.php
+          : > "$log_file"
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c "cat > $seed_script" < tests/business_profile/seed_reset_email_customer.php
+          if ! docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            runuser -g www-data -u www-data -- env \
+              GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+              GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+              php "$seed_script" > "$seed_output" 2>> "$log_file"; then
+            printf 'FAIL: could not seed the disposable reset-email customer or read the published logo.\n' >> "$log_file"
+            exit 1
+          fi
+          if ! seed_values=$(python3 - "$seed_output" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" 2>> "$log_file" <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          marker = "ORDENOWA_RESET_EMAIL_BRAND_SEED="
+          lines = [
+              line[len(marker):]
+              for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+              if line.startswith(marker)
+          ]
+          if len(lines) != 1:
+              raise SystemExit("seed output did not contain one result marker")
+          result = json.loads(lines[0])
+          email = result.get("customer_email") if isinstance(result, dict) else None
+          logo_path = result.get("published_email_logo_path") if isinstance(result, dict) else None
+          run_id, attempt = sys.argv[2], sys.argv[3]
+          expected_email = rf"ordenowa-reset-logo-{re.escape(run_id)}-{re.escape(attempt)}-[a-f0-9]+@example\.invalid"
+          expected_logo = r"ordenowa/versions/[a-fA-F0-9]{64}/(?:email-logo|official-email-logo)\.png"
+          if not isinstance(email, str) or not re.fullmatch(expected_email, email):
+              raise SystemExit("seed output did not contain the run-scoped invalid-domain customer")
+          if not isinstance(logo_path, str) or not re.fullmatch(expected_logo, logo_path):
+              raise SystemExit("seed output did not contain a versioned published ORDENOWA logo path")
+          print(f"{email}\t{logo_path}")
+          PY
+          ); then
+            printf 'FAIL: disposable customer or published logo seed result did not match the CI contract.\n' >> "$log_file"
+            exit 1
+          fi
+          IFS=$'\t' read -r customer_email published_email_logo_path <<< "$seed_values"
+          printf 'PASS: seeded a run-scoped disposable customer and validated the published logo path.\n' >> "$log_file"
+          set +e
+          CUSTOMER_EMAIL="$customer_email" \
+          PUBLISHED_EMAIL_LOGO_PATH="$published_email_logo_path" \
+            "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
+              tests/e2e/verify_reset_email_brand_browser.py \
+              2>&1 | tee -a "$log_file"
+          browser_status=${PIPESTATUS[0]}
+          set -e
+          if [ "$browser_status" -ne 0 ]; then
+            failure_line=$(rg '^FAIL:' "$log_file" | tail -n 1 || true)
+            printf 'ORDENOWA reset-email brand browser failure: %s\n' "${failure_line:-See the uploaded reset-email brand log for details.}" >> "$GITHUB_STEP_SUMMARY"
+            exit "$browser_status"
+          fi
+
       - name: Verify customer registration, email login, logout, password reset, and my page in Chromium
         id: account_browser_qa
         continue-on-error: true
@@ -669,6 +744,7 @@ jobs:
         env:
           BRAND_BROWSER_QA_OUTCOME: ${{ steps.brand_browser_qa.outcome }}
           SHIPPING_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.shipping_admin_browser_qa.outcome }}
+          RESET_EMAIL_BRAND_BROWSER_QA_OUTCOME: ${{ steps.reset_email_brand_browser_qa.outcome }}
           ACCOUNT_BROWSER_QA_OUTCOME: ${{ steps.account_browser_qa.outcome }}
           PRODUCT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.product_admin_browser_qa.outcome }}
           STOREFRONT_BROWSER_QA_OUTCOME: ${{ steps.storefront_browser_qa.outcome }}
@@ -683,6 +759,7 @@ jobs:
           artifact_dir="$RUNNER_TEMP/ordenowa-browser-qa"
           if [[ "$BRAND_BROWSER_QA_OUTCOME" == success \
             && "$SHIPPING_ADMIN_BROWSER_QA_OUTCOME" == success \
+            && "$RESET_EMAIL_BRAND_BROWSER_QA_OUTCOME" == success \
             && "$ACCOUNT_BROWSER_QA_OUTCOME" == success \
             && "$PRODUCT_ADMIN_BROWSER_QA_OUTCOME" == success \
             && "$STOREFRONT_BROWSER_QA_OUTCOME" == success \
@@ -695,6 +772,7 @@ jobs:
             required_artifacts=(
               ordenowa-brand-e2e.log
               shipping-admin-e2e.log
+              password-reset-email-brand-e2e.log
               customer-account-e2e.log
               product-admin-e2e.log
               storefront-product-cart-e2e.log
@@ -705,6 +783,8 @@ jobs:
               brand-mobile-published.png
               shipping-admin-settings-desktop.png
               shipping-admin-settings-mobile.png
+              password-reset-email-requested.png
+              password-reset-email-logo.png
               desktop-customer-account-created.png
               mobile-customer-account-created.png
               product-admin-created-desktop.png
@@ -768,6 +848,7 @@ jobs:
         env:
           BRAND_BROWSER_QA_OUTCOME: ${{ steps.brand_browser_qa.outcome }}
           SHIPPING_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.shipping_admin_browser_qa.outcome }}
+          RESET_EMAIL_BRAND_BROWSER_QA_OUTCOME: ${{ steps.reset_email_brand_browser_qa.outcome }}
           ACCOUNT_BROWSER_QA_OUTCOME: ${{ steps.account_browser_qa.outcome }}
           PRODUCT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.product_admin_browser_qa.outcome }}
           STOREFRONT_BROWSER_QA_OUTCOME: ${{ steps.storefront_browser_qa.outcome }}
@@ -787,6 +868,7 @@ jobs:
           for entry in \
             "brand=$BRAND_BROWSER_QA_OUTCOME" \
             "shipping_admin=$SHIPPING_ADMIN_BROWSER_QA_OUTCOME" \
+            "reset_email_brand=$RESET_EMAIL_BRAND_BROWSER_QA_OUTCOME" \
             "account=$ACCOUNT_BROWSER_QA_OUTCOME" \
             "product_admin=$PRODUCT_ADMIN_BROWSER_QA_OUTCOME" \
             "storefront=$STOREFRONT_BROWSER_QA_OUTCOME" \
