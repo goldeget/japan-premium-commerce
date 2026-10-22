@@ -7,6 +7,7 @@ $runAttempt = trim((string) getenv('GITHUB_RUN_ATTEMPT'));
 $projectName = trim((string) getenv('KURANEA_CI_PROJECT_NAME'));
 $viewport = trim((string) getenv('KURANEA_CI_VIEWPORT'));
 $orderId = (int) getenv('KURANEA_CI_ORDER_ID');
+$productId = (int) getenv('KURANEA_CI_PRODUCT_ID');
 $expectedProjectName = 'kuranea-ci-' . $runId . '-' . $runAttempt;
 
 if (getenv('CI') !== 'true'
@@ -17,6 +18,7 @@ if (getenv('CI') !== 'true'
     || $projectName !== $expectedProjectName
     || !in_array($viewport, ['desktop', 'mobile'], true)
     || $orderId < 1
+    || $productId < 1
 ) {
     fwrite(STDERR, "BLOCKED: browser order verification requires its matching isolated GitHub Actions checkout.\n");
     exit(77);
@@ -74,12 +76,37 @@ if ((string) $order->module !== 'ps_checkpayment'
     throw new RuntimeException('The browser order must be a positive JPY ps_checkpayment order whose state is still unpaid.');
 }
 
+$stage = 'searched product persistence';
+$orderDetails = Db::getInstance()->executeS(
+    'SELECT `product_id`, `product_quantity` FROM `' . _DB_PREFIX_ . 'order_detail`'
+    . ' WHERE `id_order` = ' . (int) $order->id
+);
+if (!is_array($orderDetails)
+    || count($orderDetails) !== 1
+    || (int) $orderDetails[0]['product_id'] !== $productId
+    || (int) $orderDetails[0]['product_quantity'] !== 1
+) {
+    throw new RuntimeException('The browser order must contain exactly one unit of the searched CI-only product.');
+}
+
 $stage = 'Japanese delivery-address persistence';
 $address = new Address((int) $order->id_address_delivery);
+$japanCountryId = (int) Country::getByIso('JP');
+$tokyoStateId = 0;
+$states = State::getStatesByIdCountry($japanCountryId, true, 'iso_code', 'asc');
+foreach (is_array($states) ? $states : [] as $stateRow) {
+    if ((string) ($stateRow['iso_code'] ?? '') === 'JP-13') {
+        $tokyoStateId = (int) $stateRow['id_state'];
+        break;
+    }
+}
 $expectedBuilding = 'ORDENOWA CI ' . strtoupper($viewport) . ' TEST BUILDING 101';
 if (!Validate::isLoadedObject($address)
     || (int) $address->id_customer !== (int) $customer->id
-    || (int) $address->id_country !== (int) Country::getByIso('JP')
+    || $japanCountryId < 1
+    || $tokyoStateId < 1
+    || (int) $address->id_country !== $japanCountryId
+    || (int) $address->id_state !== $tokyoStateId
     || (string) $address->postcode !== '100-0004'
     || (string) $address->city !== '千代田区'
     || !str_contains((string) $address->address1, '大手町')
@@ -93,17 +120,20 @@ echo json_encode([
     'order_id' => (int) $order->id,
     'reference' => (string) $order->reference,
     'email' => (string) $customer->email,
+    'product_id' => $productId,
+    'product_quantity' => (int) $orderDetails[0]['product_quantity'],
     'payment_module' => (string) $order->module,
     'state' => (string) $state->name,
     'total_paid_real' => (float) $order->total_paid_real,
     'currency' => (string) $currency->iso_code,
     'postcode' => (string) $address->postcode,
     'city' => (string) $address->city,
+    'state_iso_code' => 'JP-13',
     'address1' => (string) $address->address1,
     'address2' => (string) $address->address2,
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL;
 fwrite(STDOUT, sprintf(
-    'PASS: browser %s order #%d/%s is an unpaid JPY ps_checkpayment order with Tokyo address 100-0004.\n',
+    'PASS: browser %s order #%d/%s contains one searched product and is unpaid JPY ps_checkpayment with Tokyo address 100-0004.\n',
     $viewport,
     (int) $order->id,
     (string) $order->reference

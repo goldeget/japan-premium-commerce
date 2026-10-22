@@ -92,6 +92,28 @@ def browser_options(width: int, height: int) -> Options:
     return options
 
 
+def wait_for_autocomplete_fields(driver: webdriver.Chrome, form) -> None:
+    expected_fields = {
+        "postcode": "100-0004",
+        "city": "千代田区",
+        "address1": "大手町",
+    }
+
+    def autocomplete_fields_applied(_browser: webdriver.Chrome) -> bool:
+        for name, expected in expected_fields.items():
+            fields = form.find_elements(By.CSS_SELECTOR, f'input[name="{name}"]')
+            if not fields or fields[0].get_attribute("value") != expected:
+                return False
+
+        state_fields = form.find_elements(By.CSS_SELECTOR, 'select[name="id_state"]')
+        return bool(
+            state_fields
+            and Select(state_fields[0]).first_selected_option.get_attribute("value")
+        )
+
+    WebDriverWait(driver, 15, poll_frequency=0.2).until(autocomplete_fields_applied)
+
+
 def prepare_required_customer_fields(driver: webdriver.Chrome, form, email: str, password: str) -> None:
     for name, value in (("firstname", "ORDENOWA"), ("lastname", "CI Checkout"), ("email", email)):
         fields = form.find_elements(By.CSS_SELECTOR, f'input[name="{name}"]')
@@ -247,6 +269,7 @@ def select_japan_address(driver: webdriver.Chrome, label: str) -> None:
     if not all(part in candidate.text for part in ("東京都", "千代田区", "大手町")):
         raise AssertionError("the address lookup did not return the synthetic Tokyo / Chiyoda / Otemachi result")
     click_at_center(driver, candidate)
+    wait_for_autocomplete_fields(driver, form)
 
     for name, value in (
         ("alias", f"ORDENOWA CI {label}"),
@@ -264,11 +287,6 @@ def select_japan_address(driver: webdriver.Chrome, label: str) -> None:
             fields[0].clear()
             fields[0].send_keys(value)
 
-    state_fields = form.find_elements(By.CSS_SELECTOR, 'select[name="id_state"]')
-    if state_fields and state_fields[0].is_displayed():
-        selected_state = Select(state_fields[0]).first_selected_option
-        if not selected_state.get_attribute("value"):
-            raise AssertionError("the selected Tokyo address did not select a native Japanese prefecture")
     driver.save_screenshot(str(DEST / f"checkout-{label}-japan-address.png"))
 
     confirm = visible(driver, '#delivery-address button[name="confirm-addresses"]')

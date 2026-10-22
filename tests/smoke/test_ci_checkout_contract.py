@@ -88,6 +88,52 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertIn("@example.invalid", flow)
         self.assertIn("live payment", flow.lower())
 
+    def test_browser_order_asserts_autocomplete_values_before_manual_address_edits(self) -> None:
+        flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        address_flow = flow.split("def select_japan_address", 1)[1].split(
+            "def choose_delivery_and_offline_payment", 1
+        )[0]
+        autocomplete_helper = flow.partition("def wait_for_autocomplete_fields")[2].partition(
+            "def search_for_product"
+        )[0]
+        autocomplete_call = address_flow.find("wait_for_autocomplete_fields(driver, form)")
+        candidate_click = address_flow.index("click_at_center(driver, candidate)")
+        manual_edits = address_flow.index("for name, value in (")
+        self.assertGreaterEqual(autocomplete_call, 0, "the browser must assert autocomplete fields")
+        self.assertLess(candidate_click, autocomplete_call)
+        self.assertLess(autocomplete_call, manual_edits)
+        for field, expected in (
+            ('"postcode"', '"100-0004"'),
+            ('"city"', '"千代田区"'),
+            ('"address1"', '"大手町"'),
+        ):
+            with self.subTest(field=field):
+                self.assertIn(field, autocomplete_helper)
+                self.assertIn(expected, autocomplete_helper)
+        self.assertIn('select[name="id_state"]', autocomplete_helper)
+        self.assertIn("first_selected_option.get_attribute(\"value\")", autocomplete_helper)
+
+    def test_browser_order_persists_expected_product_quantity_and_tokyo_state(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        verifier = (ROOT / "tests" / "postcode" / "verify_ci_browser_checkout_order.php").read_text(encoding="utf-8")
+        order_step = workflow.split(
+            "- name: Verify saved browser orders are unpaid and retain Japan addresses", 1
+        )[1].split("- name:", 1)[0]
+
+        self.assertIn('"product_id": PRODUCT_ID', flow)
+        self.assertIn('KURANEA_CI_PRODUCT_ID="$product_id"', order_step)
+        for expected in (
+            "getenv('KURANEA_CI_PRODUCT_ID')",
+            "order_detail",
+            "(int) $orderDetails[0]['product_id'] !== $productId",
+            "(int) $orderDetails[0]['product_quantity'] !== 1",
+            "JP-13",
+            "(int) $address->id_state !== $tokyoStateId",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, verifier)
+
     def test_public_checkout_gate_rejects_order_path_and_controller_query(self) -> None:
         flow = STOREFRONT_FLOW.read_text(encoding="utf-8")
         gate_check = flow.split('visit(driver, "/index.php?controller=order")', 1)[1].split(

@@ -443,6 +443,13 @@ jobs:
           for viewport in desktop mobile; do
             order_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["order_id"])' \
               "$RUNNER_TEMP/ordenowa-browser-qa/ci-checkout-$viewport.json")
+            product_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["product_id"])' \
+              "$RUNNER_TEMP/ordenowa-browser-qa/ci-checkout-$viewport.json")
+            if ! [[ "$order_id" =~ ^[0-9]+$ ]] || [ "$order_id" -lt 1 ] \
+              || ! [[ "$product_id" =~ ^[0-9]+$ ]] || [ "$product_id" -lt 1 ]; then
+              echo "Browser checkout artifact for $viewport has an invalid order or product ID." >&2
+              exit 1
+            fi
             verified_json="$RUNNER_TEMP/ordenowa-browser-qa/ci-checkout-$viewport-verified.json"
             verification_log="$RUNNER_TEMP/ordenowa-browser-qa/ci-checkout-$viewport-verification.log"
             if ! docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
@@ -454,6 +461,7 @@ jobs:
               -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
               -e KURANEA_CI_VIEWPORT="$viewport" \
               -e KURANEA_CI_ORDER_ID="$order_id" \
+              -e KURANEA_CI_PRODUCT_ID="$product_id" \
               prestashop runuser -g www-data -u www-data -- \
               php /tmp/verify_ci_browser_checkout_order.php \
               > "$verified_json" 2> "$verification_log"; then
