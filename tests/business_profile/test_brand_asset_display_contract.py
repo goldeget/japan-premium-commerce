@@ -7,6 +7,20 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class BrandAssetDisplayContractTests(unittest.TestCase):
+    def test_immutable_brand_writer_rejects_symlink_targets_before_following_them(self) -> None:
+        processor = (ROOT / "modules/kuraneabusinessprofile/src/Infrastructure/BrandAssetProcessor.php").read_text(encoding="utf-8")
+        writer = processor.split("private static function writeImmutable", 1)[1]
+        self.assertIn("is_link($path)", writer)
+        symlink_guard = writer.index("is_link($path)")
+        existing_file_check = writer.index("is_file($path)")
+        runtime_test = (ROOT / "tests/business_profile/brand_assets.php").read_text(encoding="utf-8")
+
+        self.assertLess(symlink_guard, existing_file_check)
+        self.assertIn("BrandAssetProcessor::process(", runtime_test)
+        self.assertIn("symlink($outsideSource, $symlinkTarget)", runtime_test)
+        self.assertIn("'이미지 경로에는 심볼릭 링크를 사용할 수 없습니다.'", runtime_test)
+        self.assertIn("is_link($symlinkTarget)", runtime_test)
+
     def test_admin_rejects_oversized_upload_before_reading_file_bytes(self) -> None:
         controller = (ROOT / "modules/kuraneabusinessprofile/controllers/admin/AdminBusinessProfileController.php").read_text(encoding="utf-8")
         upload = controller.split("private function applyUploadedBrandAssets", 1)[1]

@@ -199,6 +199,10 @@ final class BrandAssetProcessor
 
     private static function writeImmutable(string $path, string $bytes, string $expectedHash, int $mode): void
     {
+        if (is_link($path)) {
+            throw new RuntimeException('이미지 경로에는 심볼릭 링크를 사용할 수 없습니다.');
+        }
+
         if (is_file($path)) {
             if (hash_file('sha256', $path) !== $expectedHash) {
                 throw new RuntimeException('기존 이미지 원본을 덮어쓰지 않고 안전하게 보존합니다.');

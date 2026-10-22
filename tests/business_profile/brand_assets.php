@@ -42,6 +42,29 @@ $privateRoot = $temporaryRoot . '/private';
 mkdir($temporaryRoot, 0700, true);
 $original = syntheticBrandPng(160, 96);
 
+$symlinkPrivateRoot = $temporaryRoot . '/symlink-private';
+$symlinkTarget = $symlinkPrivateRoot . '/source/primary_logo/' . hash('sha256', $original) . '.png';
+mkdir(dirname($symlinkTarget), 0700, true);
+$outsideSource = $temporaryRoot . '/outside-source.png';
+file_put_contents($outsideSource, $original);
+symlink($outsideSource, $symlinkTarget);
+try {
+    \Kuranea\BusinessProfile\Infrastructure\BrandAssetProcessor::process(
+        'primary_logo',
+        $original,
+        $temporaryRoot . '/symlink-public',
+        $symlinkPrivateRoot
+    );
+    throw new RuntimeException('A pre-existing symlink at an immutable source path must be rejected.');
+} catch (RuntimeException $exception) {
+    assertBusinessProfileSame(
+        '이미지 경로에는 심볼릭 링크를 사용할 수 없습니다.',
+        $exception->getMessage(),
+        'A matching symlink target must not be accepted as an immutable source image.'
+    );
+}
+assertBusinessProfileTrue(is_link($symlinkTarget), 'The processor must reject and preserve a pre-existing symlink target.');
+
 assertBusinessProfileThrows(
     static fn () => \Kuranea\BusinessProfile\Infrastructure\BrandAssetProcessor::process('primary_logo', 'not an image', $publicRoot, $privateRoot),
     'Invalid image bytes must be rejected.'
