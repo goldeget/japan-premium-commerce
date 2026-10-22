@@ -31,6 +31,23 @@ def visible(driver: webdriver.Chrome, selector: str):
     return WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.CSS_SELECTOR, selector)))
 
 
+def click_centered(driver: webdriver.Chrome, element) -> None:
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", element)
+    WebDriverWait(driver, 30).until(EC.element_to_be_clickable(element))
+    WebDriverWait(driver, 10).until(
+        lambda browser: browser.execute_script(
+            """
+            const element = arguments[0];
+            const rect = element.getBoundingClientRect();
+            const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            return Boolean(target && (target === element || element.contains(target)));
+            """,
+            element,
+        )
+    )
+    element.click()
+
+
 def image_is_rendered(driver: webdriver.Chrome, selector: str) -> dict:
     image = visible(driver, selector)
     return driver.execute_script(
@@ -248,7 +265,8 @@ def run() -> None:
         driver.save_screenshot(str(DEST / "brand-admin-private-preview.png"))
 
         stage = "publish_approved_brand"
-        visible(driver, 'form.ordenowa-profile-settings button[name="submitOrdenowaPublish"]').click()
+        publish_button = visible(driver, 'form.ordenowa-profile-settings button[name="submitOrdenowaPublish"]')
+        click_centered(driver, publish_button)
         WebDriverWait(driver, 30).until(lambda browser: "변경사항을 게시했습니다" in browser.find_element(By.TAG_NAME, "body").text)
         if "확인 대기" not in driver.find_element(By.ID, "ordenowa-company").text:
             raise AssertionError("seller authorization must remain pending after brand publication")

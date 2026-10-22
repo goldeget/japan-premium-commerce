@@ -120,6 +120,16 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn('rg \'^ORDENOWA_BRAND_SETTINGS_DIAGNOSTICS=\' "$log_file"', workflow)
         self.assertIn('diagnostics_line', workflow)
 
+    def test_brand_publish_button_is_centered_and_checked_for_obstruction_before_click(self) -> None:
+        brand_flow = (ROOT / "tests" / "e2e" / "verify_brand_admin_browser.py").read_text(encoding="utf-8")
+        helper = brand_flow.split("def click_centered", 1)[1].split("def image_is_rendered", 1)[0]
+        publish_stage = brand_flow.split('stage = "publish_approved_brand"', 1)[1].split('stage = "published_desktop_customer_brand"', 1)[0]
+        self.assertIn("scrollIntoView({block: 'center'", helper)
+        self.assertIn("EC.element_to_be_clickable(element)", helper)
+        self.assertIn("document.elementFromPoint", helper)
+        self.assertIn("element.click()", helper)
+        self.assertIn("click_centered(driver, publish_button)", publish_stage)
+
     def test_ci_uses_the_module_updater_for_the_official_japan_post_archive(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         postal_step = workflow.split("- name: Download and import official Japan Post KEN_ALL data", 1)[1].split("- name:", 1)[0]
