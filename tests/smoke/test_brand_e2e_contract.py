@@ -86,19 +86,27 @@ class BrandE2EContractTests(unittest.TestCase):
 
     def test_browser_replaces_and_restores_the_primary_logo_in_draft(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
-        preview_check = 'asset_preview_url_for_field(driver, "ordenowa-brand-assets-header_desktop")'
         baseline = browser_flow.index("public_before_draft = public_brand_snapshot(driver)")
         temporary_upload = browser_flow.index(
             'replace_primary_logo_in_saved_draft(\n            driver,\n            settings_url,\n            OFFICIAL_UPLOADS["pwa_icon"]'
         )
         unchanged_check = browser_flow.index('stage = "public_brand_unchanged_after_replacement_draft"')
-        restore = browser_flow.index('restored_logo.send_keys(str(OFFICIAL_UPLOADS["primary_logo"].resolve()))')
+        restore_start = browser_flow.index('stage = "restore_approved_logo_in_saved_draft"')
+        restore_stage = browser_flow[restore_start:].split('stage = "private_admin_preview"', 1)[0]
+        restore_call = "replace_primary_logo_in_saved_draft("
+        self.assertIn(restore_call, restore_stage)
+        restore = restore_stage.index(restore_call) + restore_start
         private_preview = browser_flow.index('stage = "private_admin_preview"')
 
         self.assertIn('visible(driver, upload_selector).send_keys(str(source.resolve()))', browser_flow)
         self.assertIn('OFFICIAL_UPLOADS["pwa_icon"]', browser_flow[temporary_upload:unchanged_check])
-        self.assertIn('restored_logo.send_keys(str(OFFICIAL_UPLOADS["primary_logo"].resolve()))', browser_flow)
-        self.assertEqual(2, browser_flow[:private_preview].count(preview_check))
+        run_before_preview = browser_flow.split("def run()", 1)[1].split('stage = "private_admin_preview"', 1)[0]
+        self.assertEqual(2, run_before_preview.count("replace_primary_logo_in_saved_draft("))
+        self.assertIn('OFFICIAL_UPLOADS["primary_logo"]', restore_stage)
+        self.assertIn('"restored approved draft logo"', restore_stage)
+        self.assertNotIn("send_keys", restore_stage)
+        self.assertNotIn("submitOrdenowaSaveDraft", restore_stage)
+        self.assertIn('driver.save_screenshot(str(DEST / "brand-admin-uploaded-draft-restored.png"))', restore_stage)
         self.assertLess(baseline, temporary_upload)
         self.assertLess(temporary_upload, unchanged_check)
         self.assertLess(unchanged_check, restore)

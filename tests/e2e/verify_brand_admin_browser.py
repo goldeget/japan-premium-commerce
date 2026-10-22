@@ -605,16 +605,10 @@ def run() -> None:
         visible(driver, "form.ordenowa-profile-settings")
 
         stage = "restore_approved_logo_in_saved_draft"
-        restored_logo = visible(driver, 'input[name="brand_uploads[primary_logo]"]')
-        restored_logo.send_keys(str(OFFICIAL_UPLOADS["primary_logo"].resolve()))
-        visible(driver, 'form.ordenowa-profile-settings button[name="submitOrdenowaSaveDraft"]').click()
-        WebDriverWait(driver, 30).until(
-            lambda browser: "초안을 저장했습니다" in browser.find_element(By.TAG_NAME, "body").text
-        )
-        assert_uploaded_derivative_url(
-            asset_preview_url_for_field(driver, "ordenowa-brand-assets-header_desktop"),
+        replace_primary_logo_in_saved_draft(
+            driver,
+            settings_url,
             OFFICIAL_UPLOADS["primary_logo"],
-            "header-desktop.png",
             "restored approved draft logo",
         )
         driver.save_screenshot(str(DEST / "brand-admin-uploaded-draft-restored.png"))
