@@ -218,9 +218,27 @@ class ProductAdminContractTests(unittest.TestCase):
 
         self.assertIn('create_operation = "submit_product"', create_flow)
         self.assertIn('create_operation = "wait_for_save_confirmation"', create_flow)
-        self.assertIn("EC.text_to_be_present_in_element", create_flow)
+        self.assertIn("WebDriverWait(driver, 45).until(product_save_result)", create_flow)
+        self.assertIn("bodyText.includes('상품 ID') && bodyText.includes('저장했습니다')", browser)
         self.assertNotIn('browser.find_element(By.TAG_NAME, "body").text', create_flow)
         self.assertIn('operation={create_operation}', failure_handler)
+
+    def test_native_product_save_wait_reports_sanitized_visible_alerts_and_access_markers(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        create_flow = browser.split('stage = "native_product_create"', 1)[1].split(
+            'stage = "native_product_edit"', 1
+        )[0]
+        failure_handler = browser.split("except Exception as error:", 1)[1].split("finally:", 1)[0]
+
+        self.assertIn("def product_save_result", browser)
+        self.assertIn('save_result["status"] != "success"', create_flow)
+        self.assertIn('save_result["status"] == "alert"', create_flow)
+        self.assertIn('"add_denied_marker"', browser)
+        self.assertIn('"edit_denied_marker"', browser)
+        self.assertIn("save_diagnostics", failure_handler)
+        self.assertIn("alert_class", browser)
+        self.assertIn("message_category", browser)
+        self.assertNotIn("alert_text", failure_handler)
 
     def test_browser_product_edit_verifies_korean_name_and_updated_inactive_list_record(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")

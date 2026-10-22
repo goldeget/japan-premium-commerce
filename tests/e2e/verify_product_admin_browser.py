@@ -51,11 +51,44 @@ def manager_page_diagnostics(driver: webdriver.Chrome) -> dict[str, bool]:
             ),
             name_ja_present: Boolean(nameField),
             denied_marker: bodyText.includes('상품을 조회할 권한이 없습니다.'),
+            add_denied_marker: bodyText.includes('상품을 등록할 권한이 없습니다.'),
+            edit_denied_marker: bodyText.includes('상품을 수정할 권한이 없습니다.'),
             load_error_marker: bodyText.includes('상품 관리 화면을 불러오지 못했습니다.'),
             login_form_present: Boolean(document.querySelector('#login_form')),
             product_form_present: Boolean(nameField && nameField.closest('form')),
             manager_route_present: managerRoutePresent,
         };
+        """
+    )
+
+
+def product_save_result(driver: webdriver.Chrome):
+    """Return success or a sanitized visible alert outcome after product POST."""
+    return driver.execute_script(
+        """
+        const bodyText = document.body?.innerText || '';
+        if (bodyText.includes('상품 ID') && bodyText.includes('저장했습니다')) {
+            return {status: 'success'};
+        }
+        const alert = Array.from(document.querySelectorAll('.alert')).find((candidate) => {
+            const style = window.getComputedStyle(candidate);
+            return style.display !== 'none' && style.visibility !== 'hidden' && candidate.getClientRects().length > 0;
+        });
+        if (!alert) return false;
+
+        const text = (alert.innerText || alert.textContent || '').trim();
+        const alertClass = ['success', 'danger', 'warning', 'info'].find(
+            (name) => alert.classList.contains(`alert-${name}`)
+        ) || 'unknown';
+        let messageCategory = 'unknown';
+        if (text.includes('권한') || text.includes('허용')) {
+            messageCategory = 'permission_denied';
+        } else if (text.includes('필수') || text.includes('유효') || text.includes('입력값')) {
+            messageCategory = 'validation_error';
+        } else if (text.includes('저장') || text.includes('실패') || text.includes('오류')) {
+            messageCategory = 'save_error';
+        }
+        return {status: 'alert', alert_class: alertClass, message_category: messageCategory};
         """
     )
 
@@ -113,6 +146,7 @@ def run() -> None:
     stage = "chromium_startup"
     create_operation = "not_started"
     manager_page_state: dict[str, str | bool] | None = None
+    save_diagnostics: dict[str, str | bool] | None = None
     try:
         driver = webdriver.Chrome(options=options)
         stage = "administrator_login"
@@ -182,12 +216,19 @@ def run() -> None:
             visible(driver, 'button[name="submitKuraneaProductSave"]').click()
 
         create_operation = "wait_for_save_confirmation"
-        WebDriverWait(driver, 45).until(
-            EC.all_of(
-                EC.text_to_be_present_in_element((By.TAG_NAME, "body"), "상품 ID"),
-                EC.text_to_be_present_in_element((By.TAG_NAME, "body"), "저장했습니다"),
-            )
-        )
+        save_result = WebDriverWait(driver, 45).until(product_save_result)
+        save_diagnostics = {
+            **{
+                key: value
+                for key, value in manager_page_diagnostics(driver).items()
+                if key in {"manager_route_present", "product_form_present", "add_denied_marker", "edit_denied_marker"}
+            },
+            **save_result,
+        }
+        if save_result["status"] == "alert":
+            raise AssertionError("native product save displayed an alert")
+        if save_result["status"] != "success":
+            raise AssertionError("native product save did not return a verified success response")
         create_operation = "read_saved_product_id"
         product_id = int(
             WebDriverWait(driver, 30)
@@ -318,6 +359,20 @@ def run() -> None:
         diagnostic = f"ORDENOWA_PRODUCT_ADMIN_STAGE={stage}; exception_class={exception_class}"
         if stage == "native_product_create":
             diagnostic += f"; operation={create_operation}"
+            if driver is not None and save_diagnostics is None:
+                try:
+                    save_diagnostics = {
+                        **{
+                            key: value
+                            for key, value in manager_page_diagnostics(driver).items()
+                            if key in {"manager_route_present", "product_form_present", "add_denied_marker", "edit_denied_marker"}
+                        },
+                        **(product_save_result(driver) or {"status": "no_visible_response"}),
+                    }
+                except Exception:
+                    pass
+            if save_diagnostics is not None:
+                diagnostic += "; save_diagnostics=" + json.dumps(save_diagnostics, ensure_ascii=False, sort_keys=True)
         if stage == "korean_product_manager_form" and driver is not None:
             try:
                 manager_page_state = manager_page_diagnostics(driver)
