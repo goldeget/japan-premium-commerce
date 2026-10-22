@@ -198,6 +198,46 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertIn("TimeoutException", selection_wait)
         self.assertIn("emit_checkout_payment_diagnostics(driver)", selection_wait)
 
+    def test_delivery_payment_failures_emit_operation_and_safe_selector_state(self) -> None:
+        flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        diagnostics = flow.split("def emit_checkout_delivery_payment_diagnostics", 1)[1].split(
+            "def wait_for_offline_payment_selection", 1
+        )[0]
+        delivery_payment = flow.split("def choose_delivery_and_offline_payment", 1)[1].split(
+            "def place_unpaid_order", 1
+        )[0]
+
+        self.assertIn('"operation": operation', diagnostics)
+        self.assertIn("path = _safe_checkout_navigation_path(driver.current_url)", diagnostics)
+        self.assertIn('"path": path', diagnostics)
+        for state_key in (
+            "current_step_ids:",
+            "delivery_step_present:",
+            "payment_step_present:",
+            "delivery_radio_count:",
+            "delivery_selected_count:",
+            "delivery_confirm_present:",
+            "payment_option_count:",
+            "payment_module_names:",
+            "payment_selected_count:",
+            "ps_checkpayment_option_count:",
+            "ps_checkpayment_selected_count:",
+        ):
+            with self.subTest(state_key=state_key):
+                self.assertIn(state_key, diagnostics)
+        self.assertNotIn(".value", diagnostics)
+        self.assertNotIn("innerText", diagnostics)
+        self.assertIn("emit_checkout_delivery_payment_diagnostics(driver, label, operation)", delivery_payment)
+        for operation in (
+            "wait_delivery_radios",
+            "wait_delivery_confirm_button",
+            "click_delivery_confirm_button",
+            "wait_ps_checkpayment_option",
+            "wait_ps_checkpayment_selected",
+        ):
+            with self.subTest(operation=operation):
+                self.assertIn(f'operation = "{operation}"', delivery_payment)
+
     def test_legacy_admin_order_detail_route_rejects_invoice_and_download_links(self) -> None:
         self.assertTrue(
             CHECKOUT_ADMIN_ROUTES.is_file(),

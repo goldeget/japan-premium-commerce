@@ -823,6 +823,95 @@ def select_japan_address(driver: webdriver.Chrome, label: str) -> None:
     )
 
 
+def emit_checkout_delivery_payment_diagnostics(
+    driver: webdriver.Chrome,
+    label: str,
+    operation: str,
+) -> None:
+    """Emit bounded checkout controls state without customer values or page text."""
+    path: str | None = None
+    try:
+        path = _safe_checkout_navigation_path(driver.current_url)
+        state = driver.execute_script(
+            """
+            const isVisible = (element) => {
+              if (!element) return false;
+              const box = element.getBoundingClientRect();
+              const style = window.getComputedStyle(element);
+              return box.width > 0 && box.height > 0
+                && style.display !== 'none' && style.visibility !== 'hidden';
+            };
+            const deliverySelector = "#js-delivery input[name^='delivery_option']";
+            const deliveryRadios = [...document.querySelectorAll(deliverySelector)].slice(0, 20);
+            const deliveryConfirm = document.querySelector(
+              '#js-delivery button[name="confirmDeliveryOption"]'
+            );
+            const paymentOptions = [...document.querySelectorAll(
+              'input[name="payment-option"]'
+            )].slice(0, 20);
+            const moduleNames = (options) => [...new Set(options
+              .map((option) => option.getAttribute('data-module-name') || '')
+              .filter(Boolean))].slice(0, 10);
+            return {
+              current_step_ids: [...document.querySelectorAll('section.step--current')]
+                .map((step) => step.id)
+                .filter((stepId) => [
+                  'checkout-personal-information-step', 'checkout-addresses-step',
+                  'checkout-delivery-step', 'checkout-payment-step'
+                ].includes(stepId))
+                .slice(0, 4),
+              delivery_step_present: Boolean(document.querySelector('#checkout-delivery-step')),
+              payment_step_present: Boolean(document.querySelector('#checkout-payment-step')),
+              delivery_radio_count: document.querySelectorAll(deliverySelector).length,
+              delivery_visible_count: deliveryRadios.filter(isVisible).length,
+              delivery_enabled_count: deliveryRadios.filter((radio) => !radio.disabled).length,
+              delivery_selected_count: deliveryRadios.filter((radio) => radio.checked).length,
+              delivery_confirm_present: Boolean(deliveryConfirm),
+              delivery_confirm_visible: isVisible(deliveryConfirm),
+              delivery_confirm_enabled: Boolean(deliveryConfirm && !deliveryConfirm.disabled),
+              payment_option_count: document.querySelectorAll(
+                'input[name="payment-option"]'
+              ).length,
+              payment_option_visible_count: paymentOptions.filter(isVisible).length,
+              payment_module_names: moduleNames(paymentOptions),
+              payment_selected_count: paymentOptions.filter((option) => option.checked).length,
+              ps_checkpayment_option_count: paymentOptions.filter(
+                (option) => option.getAttribute('data-module-name') === 'ps_checkpayment'
+              ).length,
+              ps_checkpayment_selected_count: paymentOptions.filter(
+                (option) => option.checked
+                  && option.getAttribute('data-module-name') === 'ps_checkpayment'
+              ).length,
+              payment_selected_module_names: moduleNames(
+                paymentOptions.filter((option) => option.checked)
+              ),
+            };
+            """
+        )
+        if not isinstance(state, dict):
+            state = {"state_error": "unexpected_browser_result"}
+        diagnostic: dict[str, object] = {
+            "viewport": label,
+            "operation": operation,
+            "path": path,
+            **state,
+        }
+    except Exception as error:
+        diagnostic = {
+            "viewport": label,
+            "operation": operation,
+            "path": path,
+            "diagnostic_error": type(error).__name__,
+        }
+
+    message = json.dumps(diagnostic, sort_keys=True, separators=(",", ":"))
+    annotation_message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(
+        "::error title=ORDENOWA checkout delivery/payment state::" + annotation_message,
+        file=sys.stderr,
+    )
+
+
 def emit_checkout_payment_diagnostics(driver: webdriver.Chrome) -> None:
     payment_selector = 'input[name="payment-option"][data-module-name="ps_checkpayment"]'
     try:
@@ -872,39 +961,53 @@ def wait_for_offline_payment_selection(driver: webdriver.Chrome) -> None:
 
 
 def choose_delivery_and_offline_payment(driver: webdriver.Chrome, label: str) -> None:
-    delivery_radios = WebDriverWait(driver, 30).until(
-        lambda browser: browser.find_elements(
-            By.CSS_SELECTOR, "#js-delivery input[name^='delivery_option']"
+    operation = "wait_delivery_radios"
+    try:
+        delivery_radios = WebDriverWait(driver, 30).until(
+            lambda browser: browser.find_elements(
+                By.CSS_SELECTOR, "#js-delivery input[name^='delivery_option']"
+            )
         )
-    )
-    if not delivery_radios:
-        raise AssertionError("no Japan delivery option is available for the test account")
-    chosen_carrier = next((radio for radio in delivery_radios if radio.is_selected()), delivery_radios[0])
-    if not chosen_carrier.is_selected():
-        click_at_center(driver, chosen_carrier)
-    continue_delivery = visible(driver, '#js-delivery button[name="confirmDeliveryOption"]')
-    click_at_center(driver, continue_delivery)
+        if not delivery_radios:
+            raise AssertionError("no Japan delivery option is available for the test account")
+        chosen_carrier = next((radio for radio in delivery_radios if radio.is_selected()), delivery_radios[0])
+        if not chosen_carrier.is_selected():
+            operation = "select_delivery_radio"
+            click_at_center(driver, chosen_carrier)
+        operation = "wait_delivery_confirm_button"
+        continue_delivery = visible(driver, '#js-delivery button[name="confirmDeliveryOption"]')
+        operation = "click_delivery_confirm_button"
+        click_at_center(driver, continue_delivery)
 
-    offline = WebDriverWait(driver, 35).until(
-        EC.presence_of_element_located(
-            (By.CSS_SELECTOR, 'input[name="payment-option"][data-module-name="ps_checkpayment"]')
+        operation = "wait_ps_checkpayment_option"
+        offline = WebDriverWait(driver, 35).until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, 'input[name="payment-option"][data-module-name="ps_checkpayment"]')
+            )
         )
-    )
-    if not offline.is_selected():
-        click_at_center(driver, offline)
-    wait_for_offline_payment_selection(driver)
-    other_selected = [
-        item.get_attribute("data-module-name")
-        for item in driver.find_elements(By.CSS_SELECTOR, 'input[name="payment-option"]:checked')
-        if item.get_attribute("data-module-name") != "ps_checkpayment"
-    ]
-    if other_selected:
-        raise AssertionError("a payment provider other than offline ps_checkpayment was selected")
+        if not offline.is_selected():
+            operation = "select_ps_checkpayment_option"
+            click_at_center(driver, offline)
+        operation = "wait_ps_checkpayment_selected"
+        wait_for_offline_payment_selection(driver)
+        operation = "verify_selected_payment_module"
+        other_selected = [
+            item.get_attribute("data-module-name")
+            for item in driver.find_elements(By.CSS_SELECTOR, 'input[name="payment-option"]:checked')
+            if item.get_attribute("data-module-name") != "ps_checkpayment"
+        ]
+        if other_selected:
+            raise AssertionError("a payment provider other than offline ps_checkpayment was selected")
 
-    for condition in driver.find_elements(By.CSS_SELECTOR, '#conditions-to-approve input[type="checkbox"]'):
-        if condition.is_displayed() and condition.is_enabled() and not condition.is_selected():
-            click_at_center(driver, condition)
-    driver.save_screenshot(str(DEST / f"checkout-{label}-offline-payment-review.png"))
+        operation = "accept_checkout_conditions"
+        for condition in driver.find_elements(By.CSS_SELECTOR, '#conditions-to-approve input[type="checkbox"]'):
+            if condition.is_displayed() and condition.is_enabled() and not condition.is_selected():
+                click_at_center(driver, condition)
+        operation = "save_payment_review_screenshot"
+        driver.save_screenshot(str(DEST / f"checkout-{label}-offline-payment-review.png"))
+    except Exception:
+        emit_checkout_delivery_payment_diagnostics(driver, label, operation)
+        raise
 
 
 def place_unpaid_order(driver: webdriver.Chrome, label: str, email: str) -> dict:
