@@ -11,17 +11,25 @@
 {/block}
 
 {block name='head_seo'}
+  {if $page.page_name == 'index'}
+    {$ordenowaResolvedSeoTitle = $ordenowaSeoTitle|default:$page.meta.title}
+    {$ordenowaResolvedSeoDescription = $ordenowaSeoDescription|default:$page.meta.description}
+  {else}
+    {$ordenowaResolvedSeoTitle = $page.meta.title|default:$ordenowaSeoTitle}
+    {$ordenowaResolvedSeoDescription = $page.meta.description|default:$ordenowaSeoDescription}
+  {/if}
+
   {block name='head_preload'}
     {include file='_partials/preload.tpl'}
   {/block}
 
-  <title>{block name='head_seo_title'}{$ordenowaSeoTitle|default:$page.meta.title|escape:'htmlall':'UTF-8'}{/block}</title>
+  <title>{block name='head_seo_title'}{$ordenowaResolvedSeoTitle|escape:'htmlall':'UTF-8'}{/block}</title>
 
   {block name='hook_after_title_tag'}
     {hook h='displayAfterTitleTag'}
   {/block}
 
-  <meta name="description" content="{block name='head_seo_description'}{$ordenowaSeoDescription|default:$page.meta.description|escape:'htmlall':'UTF-8'}{/block}">
+  <meta name="description" content="{block name='head_seo_description'}{$ordenowaResolvedSeoDescription|escape:'htmlall':'UTF-8'}{/block}">
 
   {if $page.meta.robots !== 'index'}
     <meta name="robots" content="{$page.meta.robots|escape:'htmlall':'UTF-8'}">
@@ -57,8 +65,8 @@
   {/block}
 
   {block name='head_open_graph'}
-    <meta property="og:title" content="{$ordenowaSeoTitle|default:$page.meta.title|escape:'htmlall':'UTF-8'}">
-    <meta property="og:description" content="{$ordenowaSeoDescription|default:$page.meta.description|escape:'htmlall':'UTF-8'}">
+    <meta property="og:title" content="{$ordenowaResolvedSeoTitle|escape:'htmlall':'UTF-8'}">
+    <meta property="og:description" content="{$ordenowaResolvedSeoDescription|escape:'htmlall':'UTF-8'}">
     <meta property="og:url" content="{$urls.current_url|escape:'htmlall':'UTF-8'}">
     <meta property="og:site_name" content="{$ordenowaBrandName|default:$shop.name|escape:'htmlall':'UTF-8'}">
     {if !isset($product) && $page.page_name != 'product'}<meta property="og:type" content="website">{/if}
