@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -25,6 +26,29 @@ DEST = Path(os.environ["QA_ARTIFACT_DIR"])
 ROOT = Path(__file__).resolve().parents[2]
 SOURCES = ROOT / "assets" / "brand" / "ordenowa" / "official_originals"
 DEST.mkdir(parents=True, exist_ok=True)
+OFFICIAL_UPLOADS = {
+    "primary_logo": SOURCES / "ORDENOWA-logo.png",
+    "favicon_symbol": SOURCES / "ORDENOWA-favicon-source.png",
+    "pwa_icon": SOURCES / "ORDENOWA-pwa-icon-source.png",
+}
+
+
+def assert_uploaded_derivative_url(url: str, source: Path, filename: str, role: str) -> None:
+    source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+    expected_path = f"/img/ordenowa/versions/{source_hash}/{filename}"
+    if not urlparse(url).path.endswith(expected_path):
+        raise AssertionError(f"published {role} does not use the uploaded official source derivative")
+
+
+def find_asset_url(items: list[dict], rel: str, filename: str) -> str:
+    return next(
+        (
+            item["href"]
+            for item in items
+            if item["rel"] == rel and urlparse(item["href"]).path.endswith("/" + filename)
+        ),
+        "",
+    )
 
 
 def visible(driver: webdriver.Chrome, selector: str):
@@ -85,6 +109,9 @@ def assert_public_brand_assets(driver: webdriver.Chrome, label: str, expected_lo
     logo = image_is_rendered(driver, "picture img.kuranea-brand__image")
     if logo["width"] < 1 or expected_logo not in logo["src"]:
         raise AssertionError("approved ORDENOWA header logo did not render for " + label)
+    assert_uploaded_derivative_url(
+        logo["src"], OFFICIAL_UPLOADS["primary_logo"], expected_logo, label + " header logo"
+    )
 
     results = driver.execute_async_script(
         """
@@ -104,7 +131,9 @@ def assert_public_brand_assets(driver: webdriver.Chrome, label: str, expected_lo
           const ogImage = await load(og);
           const manifest = await (await fetch(manifestLink, {cache: 'no-store'})).json();
           const icons = [];
-          for (const icon of manifest.icons || []) icons.push({sizes: icon.sizes, purpose: icon.purpose, ...await load(icon.src)});
+          for (const icon of manifest.icons || []) {
+            icons.push({src: icon.src, sizes: icon.sizes, purpose: icon.purpose, ...await load(icon.src)});
+          }
           const description = document.querySelector('meta[name="description"]')?.content || '';
           const themeColor = document.querySelector('meta[name="theme-color"]')?.content || '';
           return {assetLinks, og, ogImage, manifest, icons, title: document.title, description, themeColor};
@@ -116,10 +145,31 @@ def assert_public_brand_assets(driver: webdriver.Chrome, label: str, expected_lo
     rels = {item["rel"] for item in results["assetLinks"]}
     if "icon" not in rels or "apple-touch-icon" not in rels:
         raise AssertionError("favicon or Apple Touch Icon link is missing")
+    assert_uploaded_derivative_url(
+        find_asset_url(results["assetLinks"], "icon", "favicon.ico"),
+        OFFICIAL_UPLOADS["favicon_symbol"],
+        "favicon.ico",
+        "favicon",
+    )
+    assert_uploaded_derivative_url(
+        find_asset_url(results["assetLinks"], "apple-touch-icon", "apple-touch-icon.png"),
+        OFFICIAL_UPLOADS["pwa_icon"],
+        "apple-touch-icon.png",
+        "Apple Touch Icon",
+    )
+    assert_uploaded_derivative_url(
+        results["og"], OFFICIAL_UPLOADS["primary_logo"], "og-brand.png", "Open Graph image"
+    )
     if results["ogImage"]["width"] != 1200 or results["ogImage"]["height"] != 630:
         raise AssertionError("the approved Open Graph image dimensions are incorrect")
     if len(results["icons"]) != 3 or not any(item["purpose"] == "maskable" for item in results["icons"]):
         raise AssertionError("PWA manifest does not expose the approved any and maskable icons")
+    for filename in ("pwa-192.png", "pwa-512.png", "pwa-maskable-512.png"):
+        icon_url = next(
+            (item["src"] for item in results["icons"] if urlparse(item["src"]).path.endswith("/" + filename)),
+            "",
+        )
+        assert_uploaded_derivative_url(icon_url, OFFICIAL_UPLOADS["pwa_icon"], filename, "PWA icon")
     if "ORDENOWA CI QA" not in results["title"]:
         raise AssertionError("Korean admin SEO title update did not publish to the customer page")
     if results["description"] != "ORDENOWA CI SEO description":
@@ -191,12 +241,7 @@ def run() -> None:
             raise
 
         stage = "official_asset_upload"
-        uploads = {
-            "primary_logo": SOURCES / "ORDENOWA-logo.png",
-            "favicon_symbol": SOURCES / "ORDENOWA-favicon-source.png",
-            "pwa_icon": SOURCES / "ORDENOWA-pwa-icon-source.png",
-        }
-        for slot, source in uploads.items():
+        for slot, source in OFFICIAL_UPLOADS.items():
             if not source.is_file():
                 raise AssertionError("official ORDENOWA source file is missing from the checkout")
             visible(driver, f'input[name="brand_uploads[{slot}]"]').send_keys(str(source.resolve()))
@@ -256,6 +301,25 @@ def run() -> None:
         preview_images = preview.find_elements(By.TAG_NAME, "img")
         if len(preview_images) < 7:
             raise AssertionError("saved brand preview does not show desktop, mobile, email, favicon, Apple, PWA, and OG assets")
+        preview_derivatives = (
+            ("header-desktop.png", "primary_logo"),
+            ("header-mobile.png", "primary_logo"),
+            ("admin-login.png", "primary_logo"),
+            ("email-logo.png", "primary_logo"),
+            ("favicon-32.png", "favicon_symbol"),
+            ("apple-touch-icon.png", "pwa_icon"),
+            ("pwa-512.png", "pwa_icon"),
+            ("og-brand.png", "primary_logo"),
+        )
+        preview_urls = [image.get_attribute("src") or "" for image in preview_images]
+        for filename, slot in preview_derivatives:
+            preview_url = next(
+                (url for url in preview_urls if urlparse(url).path.endswith("/" + filename)),
+                "",
+            )
+            assert_uploaded_derivative_url(
+                preview_url, OFFICIAL_UPLOADS[slot], filename, "admin preview " + filename
+            )
         WebDriverWait(driver, 30).until(
             lambda browser: all(
                 int(image.get_attribute("naturalWidth") or 0) > 0
@@ -287,6 +351,9 @@ def run() -> None:
         login_logo = image_is_rendered(driver, ".ordenowa-admin-login-brand img")
         if login_logo["width"] < 1 or "admin-login.png" not in login_logo["src"]:
             raise AssertionError("published ORDENOWA admin login logo did not render")
+        assert_uploaded_derivative_url(
+            login_logo["src"], OFFICIAL_UPLOADS["primary_logo"], "admin-login.png", "admin login logo"
+        )
         driver.save_screenshot(str(DEST / "brand-admin-login-after-publish.png"))
 
         print("PASS: official ORDENOWA uploads, Korean draft preview, publish, PC/mobile logos, admin login, favicon, Apple icon, PWA, OG, and SEO")
