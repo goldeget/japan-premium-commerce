@@ -501,7 +501,12 @@ def run_viewport(width: int, height: int, label: str) -> None:
             except Exception:
                 pass
         print(f"FAIL: {label} customer account flow at {stage} ({type(error).__name__})", file=sys.stderr)
-        print(f"::error title=Customer account browser QA::{label} failed at {stage} ({type(error).__name__})", file=sys.stderr)
+        print(
+            f"::error title=Customer account browser QA::{label} failed at {stage} "
+            f"({type(error).__name__}); control_name={failure_control.get('name') or 'none'}; "
+            f"control_type={failure_control.get('type') or 'none'}",
+            file=sys.stderr,
+        )
         raise SystemExit("isolated customer account browser flow failed") from None
     finally:
         driver.quit()

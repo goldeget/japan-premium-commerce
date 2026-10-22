@@ -205,6 +205,18 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         control_metadata = account_flow.split("def set_registration_control", 1)[1].split("def emit_registration_diagnostics", 1)[0]
         self.assertIn("re.sub", control_metadata)
 
+    def test_account_browser_error_annotation_reports_sanitized_control_metadata_only(self) -> None:
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        failure = account_flow.split("except Exception as error:", 1)[1].split("raise SystemExit", 1)[0]
+        annotation = failure.split("::error title=Customer account browser QA::", 1)[1].split("file=sys.stderr", 1)[0]
+
+        self.assertIn("control_name={failure_control.get('name') or 'none'}", annotation)
+        self.assertIn("control_type={failure_control.get('type') or 'none'}", annotation)
+        self.assertNotIn("account_email", annotation)
+        self.assertNotIn("initial_password", annotation)
+        self.assertNotIn("reset_password", annotation)
+        self.assertNotIn("str(error)", annotation)
+
     def test_ci_uses_the_module_updater_for_the_official_japan_post_archive(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         postal_step = workflow.split("- name: Download and import official Japan Post KEN_ALL data", 1)[1].split("- name:", 1)[0]
