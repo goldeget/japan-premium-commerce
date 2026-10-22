@@ -109,7 +109,7 @@ def run_viewport(width, height, label):
 
         visit(driver, "/index.php?controller=order")
         assert_true(not re.search(r"(order|checkout)", urlparse(driver.current_url).path.lower())
-                    or "controller=order" not in urlparse(driver.current_url).query.lower(),
+                    and "controller=order" not in urlparse(driver.current_url).query.lower(),
                     "Unauthorized live checkout route did not redirect.")
         assert_true(not driver.find_elements(By.CSS_SELECTOR, ".payment-option, #payment-confirmation"),
                     "Payment controls are publicly accessible before seller authorization.")

@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "fresh-install.yml"
 COMPOSE = ROOT / "compose.yaml"
 CHECKOUT_FLOW = ROOT / "tests" / "e2e" / "verify_ci_checkout_admin_browser.py"
+STOREFRONT_FLOW = ROOT / "tests" / "e2e" / "verify_storefront_browser.py"
 GATE = ROOT / "modules" / "kuraneabusinessprofile" / "src" / "Customer" / "CommerceGate.php"
 SHOP_MODULE = ROOT / "modules" / "kuraneabusinessprofile" / "kuraneabusinessprofile.php"
 
@@ -86,6 +87,24 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertIn("GITHUB_RUN_ID", flow)
         self.assertIn("@example.invalid", flow)
         self.assertIn("live payment", flow.lower())
+
+    def test_public_checkout_gate_rejects_order_path_and_controller_query(self) -> None:
+        flow = STOREFRONT_FLOW.read_text(encoding="utf-8")
+        gate_check = flow.split('visit(driver, "/index.php?controller=order")', 1)[1].split(
+            'driver.save_screenshot', 1
+        )[0]
+        self.assertIn(
+            'not re.search(r"(order|checkout)", urlparse(driver.current_url).path.lower())',
+            gate_check,
+        )
+        self.assertIn(
+            'and "controller=order" not in urlparse(driver.current_url).query.lower()',
+            gate_check,
+        )
+        self.assertNotIn(
+            'or "controller=order" not in urlparse(driver.current_url).query.lower()',
+            gate_check,
+        )
 
     def test_checkout_registration_and_admin_routes_follow_rendered_prestashop_flow(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
