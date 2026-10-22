@@ -168,7 +168,13 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
             script,
         )
         self.assertIn('local failure_status=$1', script)
-        self.assertIn('"$verification_phase" "$failure_status"', script)
+        self.assertIn('local sanitized_phase=${verification_phase:-unknown}', script)
+        self.assertIn('local sanitized_status=$failure_status', script)
+        self.assertIn(
+            "::error title=Fresh install verification::FRESH_INSTALL_VERIFICATION_FAILED",
+            script,
+        )
+        self.assertIn('"$sanitized_phase" "$sanitized_status"', script)
         self.assertNotIn("$BASH_COMMAND", script)
         self.assertNotIn('env |', script)
         for phase in (
@@ -211,13 +217,44 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0)
             self.assertEqual(
                 result.stderr,
-                "FRESH_INSTALL_VERIFICATION_FAILED phase=restart_service_recovery exit_code=7\n",
+                "FRESH_INSTALL_VERIFICATION_FAILED phase=restart_service_recovery exit_code=7\n"
+                "::error title=Fresh install verification::FRESH_INSTALL_VERIFICATION_FAILED "
+                "phase=restart_service_recovery exit_code=7\n",
             )
             self.assertTrue(summary.exists(), "failure phase was not written to the step summary")
             self.assertEqual(
                 summary.read_text(encoding="utf-8"),
                 "FRESH_INSTALL_VERIFICATION_FAILED phase=restart_service_recovery exit_code=7\n",
             )
+
+    def test_fresh_install_error_annotation_sanitizes_workflow_command_fields(self) -> None:
+        script = FRESH_INSTALL.read_text(encoding="utf-8")
+        handler_start = script.index("report_verification_failure() {")
+        handler_end = script.index("\n}\n", handler_start) + 2
+        handler = script[handler_start:handler_end]
+
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                "verification_phase=$'restart\\n::warning::injected'\n"
+                f"{handler}\n"
+                "report_verification_failure $'7\\n::add-mask::secret'\n",
+            ],
+            capture_output=True,
+            check=False,
+            env={"PATH": os.environ["PATH"]},
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertNotIn("::warning::injected", result.stderr)
+        self.assertNotIn("::add-mask::secret", result.stderr)
+        self.assertIn(
+            "::error title=Fresh install verification::FRESH_INSTALL_VERIFICATION_FAILED "
+            "phase=unknown exit_code=unknown\n",
+            result.stderr,
+        )
 
 
 if __name__ == "__main__":

@@ -7,11 +7,21 @@ verification_phase="setup"
 
 report_verification_failure() {
   local failure_status=$1
+  local sanitized_phase=${verification_phase:-unknown}
+  local sanitized_status=$failure_status
+  if [[ ! $sanitized_phase =~ ^[A-Za-z0-9_.-]+$ ]]; then
+    sanitized_phase=unknown
+  fi
+  if [[ ! $sanitized_status =~ ^[0-9]+$ ]]; then
+    sanitized_status=unknown
+  fi
   printf 'FRESH_INSTALL_VERIFICATION_FAILED phase=%s exit_code=%s\n' \
-    "$verification_phase" "$failure_status" >&2
+    "$sanitized_phase" "$sanitized_status" >&2
+  printf '::error title=Fresh install verification::FRESH_INSTALL_VERIFICATION_FAILED phase=%s exit_code=%s\n' \
+    "$sanitized_phase" "$sanitized_status" >&2
   if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     printf 'FRESH_INSTALL_VERIFICATION_FAILED phase=%s exit_code=%s\n' \
-      "$verification_phase" "$failure_status" >> "$GITHUB_STEP_SUMMARY"
+      "$sanitized_phase" "$sanitized_status" >> "$GITHUB_STEP_SUMMARY"
   fi
 }
 
