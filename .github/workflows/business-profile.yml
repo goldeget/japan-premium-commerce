@@ -46,3 +46,6 @@ jobs:
 
       - name: Run Korean admin settings tests
         run: php tests/business_profile/admin_settings.php
+
+      - name: Verify PrestaShop module bundle wiring
+        run: php tests/business_profile/module_bundle.php
