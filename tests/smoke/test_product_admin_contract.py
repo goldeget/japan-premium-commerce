@@ -239,6 +239,23 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("alert_class", browser)
         self.assertIn("message_category", browser)
 
+    def test_native_product_save_wait_ignores_only_the_static_information_banner(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        controller = (MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php").read_text(
+            encoding="utf-8"
+        )
+        save_result = browser.split("def product_save_result", 1)[1].split(
+            "def product_post_failure_diagnostics", 1
+        )[0]
+
+        self.assertIn("candidate.classList.contains('alert-info')", save_result)
+        self.assertIn("상품은 기본적으로 비활성·비노출·주문 불가 상태로 저장됩니다.", save_result)
+        self.assertIn("return !isExpectedInformationalBanner", save_result)
+        self.assertIn(
+            "'<p class=\"alert alert-info\">상품은 기본적으로 비활성·비노출·주문 불가 상태로 저장됩니다.",
+            controller,
+        )
+
     def test_product_post_failure_diagnostics_are_allowlisted_and_token_safe(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
         self.assertIn("def product_post_failure_diagnostics", browser)

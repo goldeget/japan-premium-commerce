@@ -132,9 +132,15 @@ def product_save_result(driver: webdriver.Chrome):
         if (bodyText.includes('상품 ID') && bodyText.includes('저장했습니다')) {
             return {status: 'success'};
         }
-        const alert = Array.from(document.querySelectorAll('.alert')).find((candidate) => {
+        const alerts = Array.from(document.querySelectorAll('.alert')).filter((candidate) => {
             const style = window.getComputedStyle(candidate);
             return style.display !== 'none' && style.visibility !== 'hidden' && candidate.getClientRects().length > 0;
+        });
+        const alert = alerts.find((candidate) => {
+            const text = (candidate.innerText || candidate.textContent || '').trim();
+            const isExpectedInformationalBanner = candidate.classList.contains('alert-info')
+                && text.includes('상품은 기본적으로 비활성·비노출·주문 불가 상태로 저장됩니다.');
+            return !isExpectedInformationalBanner;
         });
         if (!alert) return false;
 
