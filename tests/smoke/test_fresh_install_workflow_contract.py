@@ -13,6 +13,20 @@ FRESH_INSTALL_SMOKE = ROOT / "tests" / "smoke" / "fresh_install.sh"
 
 
 class FreshInstallWorkflowContractTests(unittest.TestCase):
+    def test_customer_account_e2e_uses_isolated_mailpit_and_publishes_browser_logs(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        self.assertTrue("axllent/mailpit:v1.31.6" in workflow, "missing version-pinned disposable mail capture service")
+        self.assertTrue('Configuration::updateValue("PS_MAIL_SERVER", "mailpit")' in workflow, "PrestaShop SMTP is not pointed at the CI-only mail service")
+        self.assertTrue('Configuration::updateValue("PS_MAIL_SMTP_PORT", 1025)' in workflow, "PrestaShop SMTP port is not set for Mailpit")
+        self.assertTrue("tests/e2e/verify_customer_account_browser.py" in workflow, "customer account browser flow is not run")
+        self.assertTrue("MAILPIT_API_URL: http://127.0.0.1:8025" in workflow, "browser test cannot read captured reset mail")
+        self.assertTrue("customer-account-e2e.log" in workflow, "account browser execution log is not preserved")
+        self.assertTrue("docker rm -f \"${CI_COMPOSE_PROJECT_NAME}-mailpit\"" in workflow, "CI mail service cleanup is missing")
+        self.assertTrue('input[name="email"]' in account_flow and 'get_attribute("type") != "email"' in account_flow, "customer login is not verified as email-based")
+        self.assertTrue("reset_link_for(account_email)" in account_flow, "password reset does not follow the captured test email")
+        self.assertTrue('parsed.hostname in {"localhost", "127.0.0.1"}' in account_flow, "reset links are not restricted to the isolated shop")
+
     def test_ci_uses_the_module_updater_for_the_official_japan_post_archive(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         postal_step = workflow.split("- name: Download and import official Japan Post KEN_ALL data", 1)[1].split("- name:", 1)[0]

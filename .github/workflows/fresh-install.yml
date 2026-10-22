@@ -206,6 +206,44 @@ jobs:
             prestashop runuser -g www-data -u www-data -- \
             php /tmp/verify_native_order_persistence.php
 
+      - name: Start disposable Mailpit for customer password-reset email
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --rm \
+            --name "${CI_COMPOSE_PROJECT_NAME}-mailpit" \
+            --network "${CI_COMPOSE_PROJECT_NAME}_default" \
+            --network-alias mailpit \
+            --publish 127.0.0.1:8025:8025 \
+            axllent/mailpit:v1.31.6
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:8025/api/v1/messages >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo 'Mailpit did not become ready for the isolated account test.' >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop php -r '
+            require "/var/www/html/config/config.inc.php";
+            Configuration::updateValue("PS_MAIL_METHOD", 2);
+            Configuration::updateValue("PS_MAIL_SERVER", "mailpit");
+            Configuration::updateValue("PS_MAIL_SMTP_PORT", 1025);
+            Configuration::updateValue("PS_MAIL_USER", "");
+            Configuration::updateValue("PS_MAIL_PASSWD", "");
+            Configuration::updateValue("PS_MAIL_SMTP_ENCRYPTION", "");
+          '
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop php -r '
+            $socket = @fsockopen("mailpit", 1025, $errorCode, $errorMessage, 5);
+            if ($socket === false) {
+                fwrite(STDERR, "PrestaShop cannot reach the disposable Mailpit SMTP listener.\n");
+                exit(1);
+            }
+            fclose($socket);
+          '
+
       - name: Prepare Chromium browser smoke environment
         shell: bash
         run: |
@@ -231,6 +269,20 @@ jobs:
           CI_TEST_PRODUCT_ID="$product_id" \
             "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
             tests/e2e/verify_storefront_browser.py
+
+      - name: Verify customer registration, email login, logout, password reset, and my page in Chromium
+        shell: bash
+        env:
+          SHOP_BASE_URL: http://localhost:18080
+          MAILPIT_API_URL: http://127.0.0.1:8025
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
+            tests/e2e/verify_customer_account_browser.py \
+            2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/customer-account-e2e.log"
 
       - name: Upload browser QA screenshots
         if: always()
@@ -293,4 +345,6 @@ jobs:
 
       - name: Remove only this run's containers and volumes
         if: always()
-        run: docker compose -p "$CI_COMPOSE_PROJECT_NAME" down -v --remove-orphans
+        run: |
+          docker rm -f "${CI_COMPOSE_PROJECT_NAME}-mailpit" >/dev/null 2>&1 || true
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" down -v --remove-orphans
