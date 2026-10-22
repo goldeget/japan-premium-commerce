@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import struct
 import unittest
 from pathlib import Path
@@ -80,7 +81,7 @@ class OrdenowaBrandPackTests(unittest.TestCase):
         self.assertIn("'header_desktop' => ['filename' => 'header-desktop.png'", processor)
         self.assertIn("'email_logo' => ['filename' => 'email-logo.png'", processor)
 
-    def test_existing_kuranea_source_images_remain_unchanged(self) -> None:
+    def test_runtime_brand_writers_preserve_kuranea_source_images(self) -> None:
         expected = {
             "kuranea-logo.png": "ae54c1ae9042cbef7de8c0a81a9d8d9e819f060b90ee2d46841a88f8f498de69",
             "kuranea-favicon.png": "abdcf6dc3145733b62f4732dfeeb38894356dcbebea8566570e796a6fdee7755",
@@ -90,6 +91,44 @@ class OrdenowaBrandPackTests(unittest.TestCase):
         for name, expected_hash in expected.items():
             with self.subTest(source=name):
                 self.assertEqual(expected_hash, hashlib.sha256((legacy / name).read_bytes()).hexdigest())
+
+        seed_script = (ROOT / "docker" / "sync-ordenowa-brand-assets.php").read_text(encoding="utf-8")
+        upload_processor = (
+            ROOT
+            / "modules"
+            / "kuraneabusinessprofile"
+            / "src"
+            / "Infrastructure"
+            / "BrandAssetProcessor.php"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("$relativePath = 'img/ordenowa/versions/' . $sourceHash . '/' . $targetFilename;", seed_script)
+        self.assertIn("installImmutable($webRoot . '/' . $relativePath", seed_script)
+        self.assertIn("installImmutable($privateRoot . '/' . $relativePath", seed_script)
+        self.assertIn("$privateRelative = 'source/' . $slot . '/' . $sourceHash . '.' . $extension;", upload_processor)
+        self.assertIn("$privatePath = rtrim($privateRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $privateRelative;", upload_processor)
+        self.assertIn("$versionRoot = rtrim($webRoot, DIRECTORY_SEPARATOR) . '/img/ordenowa/versions/' . $sourceHash;", upload_processor)
+        self.assertIn("self::writeImmutable($privatePath, $bytes, $sourceHash, 0600);", upload_processor)
+        self.assertIn("self::writeImmutable($path, $output, hash('sha256', $output), 0644);", upload_processor)
+        self.assertEqual(
+            ["$privateRoot . '/' . $relativePath", "$webRoot . '/' . $relativePath", "$accessFile"],
+            re.findall(r"(?m)^\s*installImmutable\(([^,]+),", seed_script),
+            "runtime seeding writes must stay under the ORDENOWA private root or versioned web asset root",
+        )
+        self.assertEqual(
+            ["$privatePath", "$path", "$path"],
+            re.findall(r"self::writeImmutable\(([^,]+),", upload_processor),
+            "uploads may write only their private original, private access file, and versioned derivative paths",
+        )
+        self.assertIn("$accessFile = $privateRoot . '/.htaccess';", seed_script)
+        self.assertIn("if (!is_string($existingHash) || !hash_equals($expectedHash, $existingHash))", seed_script)
+        self.assertIn("if (hash_file('sha256', $path) !== $expectedHash)", upload_processor)
+
+        for writer_name, writer in (("seed script", seed_script), ("upload processor", upload_processor)):
+            with self.subTest(writer=writer_name):
+                self.assertNotIn("assets/brand/source", writer)
+                for filename in expected:
+                    self.assertNotIn(filename, writer)
 
 
 if __name__ == "__main__":
