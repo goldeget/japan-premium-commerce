@@ -272,17 +272,17 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
 
     private function canView(): bool
     {
-        return !empty(($this->tabAccess ?? [])['view']);
+        return $this->viewAccess();
     }
 
     private function canAdd(): bool
     {
-        return $this->canView() && !empty(($this->tabAccess ?? [])['add']);
+        return $this->canView() && $this->access('add');
     }
 
     private function canEdit(): bool
     {
-        return $this->canView() && !empty(($this->tabAccess ?? [])['edit']);
+        return $this->canView() && $this->access('edit');
     }
 
     private function fail(string $message): void

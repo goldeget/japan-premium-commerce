@@ -27,6 +27,18 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("재고", controller)
         self.assertIn("카테고리", controller)
 
+    def test_product_manager_uses_prestashop_lazy_tab_access_checks(self) -> None:
+        controller = (MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php").read_text(encoding="utf-8")
+        can_view = controller.split("private function canView(): bool", 1)[1].split("private function canAdd()", 1)[0]
+        can_add = controller.split("private function canAdd(): bool", 1)[1].split("private function canEdit()", 1)[0]
+        can_edit = controller.split("private function canEdit(): bool", 1)[1].split("private function fail(", 1)[0]
+
+        self.assertIn("return $this->viewAccess();", can_view)
+        self.assertIn("$this->canView() && $this->access('add')", can_add)
+        self.assertIn("$this->canView() && $this->access('edit')", can_edit)
+        for access_method in (can_view, can_add, can_edit):
+            self.assertNotIn("tabAccess", access_method)
+
     def test_native_product_manager_enforces_safe_state_and_native_fields(self) -> None:
         service_path = MODULE / "src" / "Integration" / "PrestaShopNativeProductManager.php"
         self.assertTrue(service_path.is_file(), "the native product manager service is missing")
