@@ -1,6 +1,6 @@
 # ORDENOWA Back Office support
 
-PrestaShop 9.2 module that keeps the anonymous admin login in Korean, reads the published ORDENOWA brand from the business profile module, and provides source controlled Korean XLIFF overlays for missing Back Office strings. While the official ORDENOWA logo originals are unavailable in this workspace, the login shows the confirmed brand name as text and does not use the legacy KURANEA image.
+PrestaShop 9.2 module that keeps the anonymous admin login in Korean, reads the published ORDENOWA brand from the business profile module, and provides source controlled Korean XLIFF overlays for missing Back Office strings. The approved ORDENOWA admin logo is served from the current published profile, with the bundled official logo as the initial display. Legacy KURANEA source images remain preserved separately.
 
 ## Install
 

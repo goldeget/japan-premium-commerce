@@ -44,6 +44,8 @@ sync_module kuraneabackoffice
 sync_module kuraneabusinessprofile
 sync_module kuraneacatalog
 
+php /usr/local/bin/sync-ordenowa-brand-assets.php
+
 catalog_queue_dir="${KURANEA_CATALOG_QUEUE_DIR:-/var/lib/kuranea/catalog-review}"
 case "$catalog_queue_dir" in
     /var/www/html|/var/www/html/*)

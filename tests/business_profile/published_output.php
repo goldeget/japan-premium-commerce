@@ -39,10 +39,16 @@ assertBusinessProfileTrue(
 
 $manifest = \Kuranea\BusinessProfile\Customer\PwaManifestBuilder::build($published, 'https://shop.example/');
 assertBusinessProfileSame('オーデノワ', $manifest['name'], 'The manifest must read the localized published app name.');
-assertBusinessProfileSame([], $manifest['icons'], 'The public manifest must not fabricate icons while official images are unavailable.');
+assertBusinessProfileSame(3, count($manifest['icons']), 'The public manifest should expose the three approved official PWA images.');
+assertBusinessProfileTrue(
+    str_contains($manifest['icons'][2]['src'] ?? '', 'official-pwa-maskable-512.png')
+        && ($manifest['icons'][2]['purpose'] ?? '') === 'maskable',
+    'The published PWA manifest must include the approved maskable icon.'
+);
 $withIcons = $published;
 $withIcons['brand']['assets']['pwa_192'] = 'img/ordenowa/versions/' . str_repeat('a', 64) . '/pwa-192.png';
 $withIcons['brand']['assets']['pwa_512'] = 'https://malicious.example/fake.png';
+$withIcons['brand']['assets']['pwa_maskable_512'] = 'https://malicious.example/fake-maskable.png';
 $manifestWithIcons = \Kuranea\BusinessProfile\Customer\PwaManifestBuilder::build($withIcons, 'https://shop.example/');
 assertBusinessProfileSame('https://shop.example/img/ordenowa/versions/' . str_repeat('a', 64) . '/pwa-192.png', $manifestWithIcons['icons'][0]['src'] ?? null, 'Manifest icons must use only versioned local ORDENOWA assets.');
 assertBusinessProfileSame(1, count($manifestWithIcons['icons']), 'External or unversioned image URLs must not enter the app manifest.');

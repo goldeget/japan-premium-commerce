@@ -260,17 +260,19 @@ class StorefrontSmokeTests(unittest.TestCase):
         self.assertEqual(status, 200)
         metadata = PageMetadata()
         metadata.feed(body)
-        self.assertIn("ORDENOWA", body, "confirmed text brand should render while official artwork is unavailable")
+        self.assertIn("ORDENOWA", body, "confirmed customer brand should render")
         self.assertNotIn("KURANEA", body, "legacy brand should not be shown to customers")
         self.assertFalse(any("kuranea-logo-" in image.get("src", "") for image in metadata.images))
+        self.assertTrue(any("/img/ordenowa/versions/" in image.get("src", "") for image in metadata.images))
         self.assertTrue(any(link.get("rel") == "manifest" for link in metadata.links), "web manifest link is missing")
-        self.assertFalse(any(link.get("rel") == "apple-touch-icon" for link in metadata.links), "unavailable official artwork must not be substituted")
+        self.assertTrue(any(link.get("rel") == "apple-touch-icon" for link in metadata.links), "approved Apple Touch Icon is missing")
         self.assertIn("kuranea-mobile-nav", body)
         manifest_url = next(link["href"] for link in metadata.links if link.get("rel") == "manifest")
         try:
             with urlopen(urljoin(final_url, manifest_url), timeout=20) as response:
                 self.assertEqual(response.status, 200)
                 manifest = json.load(response)
+                self.assertEqual(3, len(manifest["icons"]))
         except HTTPError as error:
             self.fail(f"web app manifest returned HTTP {error.code}")
         self.assertEqual(manifest.get("lang"), "ja-JP")

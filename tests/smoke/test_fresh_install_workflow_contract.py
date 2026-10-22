@@ -26,6 +26,29 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertTrue('input[name="email"]' in account_flow and 'get_attribute("type") != "email"' in account_flow, "customer login is not verified as email-based")
         self.assertTrue("reset_link_for(account_email)" in account_flow, "password reset does not follow the captured test email")
         self.assertTrue('parsed.hostname in {"localhost", "127.0.0.1"}' in account_flow, "reset links are not restricted to the isolated shop")
+        self.assertIn('"cid:shop_logo"', account_flow, "captured reset email must render the approved brand logo")
+
+    def test_official_brand_upload_preview_publish_and_browser_checks_run_in_isolated_ci(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        brand_flow_path = ROOT / "tests" / "e2e" / "verify_brand_admin_browser.py"
+        self.assertTrue(brand_flow_path.is_file(), "official brand admin browser QA is missing")
+        brand_flow = brand_flow_path.read_text(encoding="utf-8")
+        self.assertIn("Verify official ORDENOWA brand upload and publish in Chromium", workflow)
+        self.assertIn("tests/e2e/verify_brand_admin_browser.py", workflow)
+        self.assertIn("ADMIN_MAIL: ci-kuranea@example.invalid", workflow)
+        self.assertIn("ADMIN_PASSWD: Ci-Only-Admin-Password-92!", workflow)
+        self.assertIn("ordenowa-brand-e2e.log", workflow)
+        self.assertIn("brand-desktop-published.png", brand_flow)
+        self.assertIn("brand-mobile-published.png", brand_flow)
+        self.assertIn("submitOrdenowaPreview", brand_flow)
+        self.assertIn("submitOrdenowaPublish", brand_flow)
+        self.assertIn('brand_uploads[{slot}]', brand_flow)
+        for source_slot in ('"primary_logo"', '"favicon_symbol"', '"pwa_icon"'):
+            self.assertIn(source_slot, brand_flow)
+        self.assertIn("확인 대기", brand_flow)
+        self.assertNotIn("submitOrdenowaApproveSeller", brand_flow)
+        storefront_flow = (ROOT / "tests" / "e2e" / "verify_storefront_browser.py").read_text(encoding="utf-8")
+        self.assertIn("payment-option", storefront_flow, "the browser suite must keep live checkout controls inaccessible")
 
     def test_ci_uses_the_module_updater_for_the_official_japan_post_archive(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")

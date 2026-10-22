@@ -116,13 +116,27 @@ assertBusinessProfileSame('LOGISTEED, Ltd.', $initial['company_reference']['name
 assertBusinessProfileSame('pending', $initial['seller']['authorization_status'], 'Seller authorization must remain pending by default.');
 assertBusinessProfileSame('', $initial['seller']['support']['phone'], 'The corporate phone must not be copied to shop support.');
 assertBusinessProfileSame([], $initial['bank_accounts'], 'Real bank details must not be seeded.');
-assertBusinessProfileSame([], $initial['brand']['assets'], 'Official brand assets must remain empty until the uploaded originals are available.');
-assertBusinessProfileSame([], $initial['brand']['sources'], 'Original image metadata must remain empty until the official files are uploaded.');
+assertBusinessProfileSame(
+    'img/ordenowa/versions/1ce6b0a015ed6748ef904cdff095ff0f38ab72c9c51fe189c33d19dc797f23fd/official-header-desktop.png',
+    $initial['brand']['assets']['header_desktop'] ?? null,
+    'The approved ORDENOWA desktop logo should seed the initial brand profile.'
+);
+assertBusinessProfileSame(
+    'img/ordenowa/versions/c357fde8a2942e5ed0483b78d3c1a1a134163a7e5197a80072f30f75b90d72f2/official-favicon.ico',
+    $initial['brand']['assets']['favicon'] ?? null,
+    'The approved ORDENOWA favicon should seed the initial brand profile.'
+);
+assertBusinessProfileSame(
+    'eae5c30405dcd420f03929a3a5fc882d94e057f75e26cf0a564aa7d5cbab3ea8',
+    $initial['brand']['sources']['pwa_icon']['sha256'] ?? null,
+    'The approved PWA source hash should be retained in the initial profile.'
+);
+assertBusinessProfileSame(12, count($initial['brand']['assets']), 'All approved storefront, email, SEO, favicon, and PWA derivatives should be seeded.');
 
 $validator = new \Kuranea\BusinessProfile\Domain\ProfileValidator();
 assertBusinessProfileSame([], $validator->validateDraft($initial), 'Incomplete operational details should still be saveable as a draft.');
 $pendingPublishErrors = $validator->validateForPublish($initial);
-assertBusinessProfileSame([], $pendingPublishErrors, 'A brand profile may publish without seller approval when transactional disclosures and assets remain gated.');
+assertBusinessProfileSame([], $pendingPublishErrors, 'A brand profile may publish without seller approval while transactional disclosures remain gated.');
 $approvedButIncomplete = $initial;
 $approvedButIncomplete['seller']['authorization_status'] = 'approved';
 $publishErrors = $validator->validateForPublish($approvedButIncomplete);

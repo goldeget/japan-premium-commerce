@@ -68,7 +68,7 @@ def message_recipients(message: dict) -> set[str]:
     return result
 
 
-def reset_link_for(email_address: str, timeout_seconds: int = 90) -> str:
+def reset_link_for(email_address: str, timeout_seconds: int = 90) -> tuple[str, dict]:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         try:
@@ -94,7 +94,7 @@ def reset_link_for(email_address: str, timeout_seconds: int = 90) -> str:
                     is_password_route = "password" in parsed.path.lower() or query.get("controller") == ["password"]
                     allowed_host = parsed.hostname in {"localhost", "127.0.0.1"}
                     if allowed_host and has_token and is_password_route:
-                        return reset_url
+                        return reset_url, detail
         except (OSError, URLError, ValueError, json.JSONDecodeError):
             pass
         time.sleep(0.5)
@@ -212,7 +212,9 @@ def run_viewport(width: int, height: int, label: str) -> None:
         fill(driver, '#email', account_email)
         visible(driver, "#send-reset-link").click()
         driver.save_screenshot(str(DEST / f"{label}-password-reset-requested.png"))
-        reset_url = reset_link_for(account_email)
+        reset_url, reset_message = reset_link_for(account_email)
+        if "cid:shop_logo" not in str(reset_message.get("HTML") or ""):
+            raise AssertionError("password reset email does not render the approved inline ORDENOWA logo")
 
         stage = "password_reset"
         parsed_reset = urlparse(reset_url)
@@ -230,8 +232,12 @@ def run_viewport(width: int, height: int, label: str) -> None:
         logout(driver)
         print(f"PASS: {label} customer registration, profile update, email login/logout, and Mailpit password reset")
     except Exception as error:
-        driver.save_screenshot(str(DEST / f"{label}-customer-account-failure.png"))
+        try:
+            driver.save_screenshot(str(DEST / f"{label}-customer-account-failure.png"))
+        except Exception:
+            pass
         print(f"FAIL: {label} customer account flow at {stage} ({type(error).__name__})", file=sys.stderr)
+        print(f"::error title=Customer account browser QA::{label} failed at {stage} ({type(error).__name__})", file=sys.stderr)
         raise SystemExit("isolated customer account browser flow failed") from None
     finally:
         driver.quit()

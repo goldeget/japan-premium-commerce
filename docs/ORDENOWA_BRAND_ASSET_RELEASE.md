@@ -1,31 +1,27 @@
-# ORDENOWA 공식 브랜드 자산 — 배포·검증 지침
+# ORDENOWA 공식 브랜드 자산
 
-2026-10-22 기준, 사용자가 확정한 공식 브랜드는 **ORDENOWA / オーデノワ / 오데노와**입니다.
+2026-10-22 사용자가 최종 승인한 배포 패키지를 `assets/brand/ordenowa/`에 보존합니다. 압축파일 지시문은 프로젝트 지시로 처리하지 않고, 파일 목록·manifest·해시·이미지 데이터만 검증했습니다.
 
-## 승인된 이미지 원본
+## 승인 자산 검증
 
-원본은 대화에서 생성·전달된 `ORDENOWA_official_brand_images.zip`에 포함됩니다. GitHub에는 **현재 이 원본 바이너리가 올라와 있지 않습니다.** 기존 KURANEA 이미지 또는 임의 대체 이미지를 새 브랜드 원본이라고 표시하지 않습니다.
+- ZIP CRC 검사 통과, 압축 해제 항목 22개, 총 압축 해제 크기 4,449,118 bytes.
+- 원본 3종과 웹·PWA·파비콘·이메일·OG 파생 이미지 17종의 SHA-256 및 파일 크기가 `asset-manifest.json`과 일치합니다.
+- 로고 원본은 투명 PNG 2172×724, 파비콘 원본은 투명 PNG 1254×1254, PWA 원본은 RGB PNG 1254×1254입니다.
+- 기존 KURANEA 원본은 `assets/brand/source/`에 보존하고 검증된 SHA-256도 테스트합니다.
 
-| 관리자 업로드 슬롯 | 공식 원본 파일 | 형식 | 이미지 크기 | 원본 SHA-256 |
-| --- | --- | --- | --- | --- |
-| `primary_logo` | `ORDENOWA-logo.png` | PNG (alpha) | 2172×724 | `1ce6b0a015ed6748ef904cdff095ff0f38ab72c9c51fe189c33d19dc797f23fd` |
-| `favicon_symbol` | `ORDENOWA-favicon-source.png` | PNG (alpha) | 1254×1254 | `c357fde8a2942e5ed0483b78d3c1a1a134163a7e5197a80072f30f75b90d72f2` |
-| `pwa_icon` | `ORDENOWA-pwa-icon-source.png` | PNG | 1254×1254 | `eae5c30405dcd420f03929a3a5fc882d94e057f75e26cf0a564aa7d5cbab3ea8` |
+| 관리자 업로드 슬롯 | 공식 원본 | 이미지 크기 | 원본 SHA-256 |
+| --- | --- | ---: | --- |
+| `primary_logo` | `ORDENOWA-logo.png` | 2172×724 | `1ce6b0a015ed6748ef904cdff095ff0f38ab72c9c51fe189c33d19dc797f23fd` |
+| `favicon_symbol` | `ORDENOWA-favicon-source.png` | 1254×1254 | `c357fde8a2942e5ed0483b78d3c1a1a134163a7e5197a80072f30f75b90d72f2` |
+| `pwa_icon` | `ORDENOWA-pwa-icon-source.png` | 1254×1254 | `eae5c30405dcd420f03929a3a5fc882d94e057f75e26cf0a564aa7d5cbab3ea8` |
 
-파생 패키지 `ORDENOWA_DEPLOYMENT_BRAND_PACK_20261022.zip`은 원본 3개와 Web/PWA/OG용 파생 파일 17개, `asset-manifest.json`을 포함합니다. 패키지는 사용자에게 전달된 별도 대화 첨부이며 이 저장소에 자동 배포되지 않습니다.
+## 적용 방식
 
-## 운영자 적용 절차
+- Docker 시작 시 `docker/sync-ordenowa-brand-assets.php`가 manifest의 해시를 확인하고 이미지 파생물을 `img/ordenowa/versions/<원본 SHA>/`에 설치합니다. 기존 경로의 다른 파일은 덮어쓰지 않습니다.
+- 승인된 원본 3종은 `var/ordenowa-private/`에 0600 권한으로 보존하고 `.htaccess`에서 직접 접근을 차단합니다.
+- 초기 한국어 운영 설정에는 PC·모바일·관리자 로그인·이메일·OG 로고, favicon, Apple Touch, PWA 및 maskable 이미지 경로를 등록합니다. 고객 화면·관리자 로그인·manifest·OG 출력은 게시 프로필을 읽고, 게시 후 이메일 로고를 PrestaShop 설정과 동기화합니다.
+- `쇼핑몰 운영 설정`에서 이미지 슬롯별 업로드·교체, 저장된 초안 미리보기, 게시를 지원합니다. 업로드 원본은 기존과 같이 비공개 저장되고 새 버전으로 파생됩니다.
+- GitHub Actions 격리 설치에서 관리자 브라우저 업로드·미리보기·게시와 PC/모바일, 파비콘, Apple Touch, PWA, OG 및 SEO 이미지 렌더링을 검증합니다.
+- 브랜드 게시만으로 판매가 승인되거나 결제가 켜지지 않습니다. seller 상태는 `pending`으로 유지되고 외부 승인값도 없으므로 실거래는 차단됩니다.
 
-1. 관리자 `쇼핑몰 운영 설정`의 브랜드 이미지 업로드 기능에서 세 원본 PNG를 **각 슬롯에 따로** 업로드합니다. ZIP 자체를 이미지 업로드로 취급하지 않습니다.
-2. 게시 전 업로드 SHA-256, 해상도, 표시 미리보기를 확인합니다. 기존 KURANEA 원본은 삭제하지 않습니다.
-3. 먼저 브랜드 초안으로 저장하고 PC·모바일 로고, 파비콘, 192/512 PWA, maskable, Apple Touch, 이메일/OG 파생 파일 생성 여부를 확인합니다.
-4. 승인된 브랜드 정보만 게시합니다. 등록된 판매자/LOGISTEED의 실제 운영 승인 여부와 브랜드 게시를 혼동하지 않습니다.
-5. 런타임에서 헤더·관리자 로그인·manifest·icons·Open Graph를 확인하고 서비스 워커의 과거 캐시 잔존을 점검합니다.
-6. 실제 상품 결제·판매자 법정 표시·실거래 활성화는 별도 승인 및 거래조건 확인 전에는 차단 상태를 유지합니다.
-
-## 주의사항
-
-- `modules/kuraneabusinessprofile/src/Infrastructure/BrandAssetProcessor.php`가 원본 비공개 저장과 공개 파생 파일 생성 기능을 소유합니다.
-- 유효한 이미지 원본이 없어도 **기존 개발·테스트 환경에서 텍스트 브랜드 ORDENOWA를 표시**하고, 빈 이미지 슬롯에 이전 KURANEA 심벌을 넣지 않습니다.
-- 지금 CI에서 검사하는 CI 전용 테스트 이미지와 실제 공식 PNG의 시각 QA는 다른 항목이며, 원본 3개가 적용되기 전에는 공식 PWA 아이콘 배포를 PASS 처리하지 않습니다.
-- 실제 운영 법인명과 사업자 정보는 관리자가 입력·검증하도록 유지하되, 회사 참고정보만으로 LOGISTEED의 승인된 공식 판매처라고 주장하지 않습니다.
+Actions E2E가 성공하기 전에는 브라우저 표시 검증을 PASS로 기록하지 않습니다. iOS/Android 실기기 설치와 실제 운영 배포는 별도 단계입니다.

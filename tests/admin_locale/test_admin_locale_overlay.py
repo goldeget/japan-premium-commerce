@@ -108,7 +108,7 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
                 self.assertTrue(translated.get(source), f"missing Korean overlay for {source!r}")
                 self.assertNotEqual(source, translated[source])
 
-    def test_admin_login_hook_uses_ordenowa_text_until_official_logo_is_available(self) -> None:
+    def test_admin_login_hook_uses_official_ordenowa_logo_without_legacy_fallback(self) -> None:
         module_path = MODULE / "kuraneabackoffice.php"
         template_path = MODULE / "views" / "templates" / "hook" / "admin-login.tpl"
         self.assertTrue(module_path.is_file(), "missing Back Office branding module")
@@ -121,6 +121,7 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertIn("hookDisplayAdminLogin", module_source)
         self.assertIn("ordenowa_backoffice_brand_name", module_source)
         self.assertIn("ordenowa_backoffice_brand_name", hook_template)
+        self.assertIn("ProfileDefaults::initial()", module_source)
         self.assertIn("ORDENOWA", module_source)
         self.assertNotIn("kuranea-logo.png", module_source)
         self.assertNotIn("KURANEA", hook_template)

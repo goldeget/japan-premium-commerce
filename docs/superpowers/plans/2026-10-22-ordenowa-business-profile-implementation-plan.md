@@ -10,13 +10,15 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-22-business-profile-admin-control-design.md`
 
+**Brand asset follow-up:** The final approved `ORDENOWA_DEPLOYMENT_BRAND_PACK_20261022.zip` was received on 2026-10-22 and its 3 source files plus 17 derivatives are recorded in `assets/brand/ordenowa/`. The original empty-slot constraint below is historical and is superseded by that verified pack.
+
 ## Global Constraints
 
 - Work only on `work`; preserve `main`, existing local changes, database data, and named volumes.
 - Do not modify PrestaShop core or the Hummingbird parent theme.
 - The confirmed customer brand is `ORDENOWA`, `オーデノワ`, `오데노와`.
 - Use the confirmed description `法人向け商品調達・受発注サービス` and slogan `企業と商品をつなぐ、次世代のB2B調達プラットフォーム`.
-- Keep KURANEA images and history as legacy assets; do not reuse or create ORDENOWA logos while the attached official ZIP is unavailable.
+- Preserve the KURANEA source images and history as legacy backups. Use only the verified official ORDENOWA images from `assets/brand/ordenowa/` for the customer brand.
 - Keep LOGISTEED company reference data separate from the seller profile; production commerce and official seller claims stay disabled while approval is pending.
 - Customer locales are ja-JP, en-US, and ko-KR; all new module UI and validation errors are Korean.
 - Never persist real account secrets, customer data, or production credentials in GitHub, fixtures, or CI logs.
@@ -28,7 +30,7 @@
 - A normal admin must not read or restore bank account values; rendered history masks sensitive fields.
 - An incomplete or unapproved seller profile must not be published or enable checkout.
 - A preview must not mutate the published version, be indexed, or become visible to anonymous users.
-- Missing/unreadable official image ZIP must leave ORDENOWA image slots empty and must not fall back to KURANEA assets.
+- The approved ORDENOWA set must be verified before it is installed; a missing or corrupt file must fail closed and must not fall back to KURANEA assets.
 
 ---
 

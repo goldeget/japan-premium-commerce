@@ -70,14 +70,16 @@ class Kuraneabackoffice extends Module
             $isoCode = (string) ($this->context->language->iso_code ?? 'ja');
             $repository = new \Kuranea\BusinessProfile\Infrastructure\VersionedProfileRepository();
             $profile = (new \Kuranea\BusinessProfile\Customer\PublishedProfileProvider($repository))->forShop($shopId, $isoCode);
-            if ($profile !== null) {
-                $locale = (string) $profile['_resolved_locale'];
-                $brandName = (string) ($profile['brand']['name'][$locale] ?? $brandName);
-                $assetPath = $profile['brand']['assets']['admin_login'] ?? null;
-                if (is_string($assetPath)
-                    && preg_match('~\Aimg/ordenowa/versions/[A-Fa-f0-9]{64}/[A-Za-z0-9._-]+\.(?:png|webp)\z~D', $assetPath) === 1) {
-                    $logo = rtrim((string) $this->context->link->getBaseLink(), '/') . '/' . $assetPath;
-                }
+            if ($profile === null) {
+                $profile = \Kuranea\BusinessProfile\Domain\ProfileDefaults::initial();
+                $profile['_resolved_locale'] = \Kuranea\BusinessProfile\Customer\PublishedProfileProvider::localeForIso($isoCode);
+            }
+            $locale = (string) $profile['_resolved_locale'];
+            $brandName = (string) ($profile['brand']['name'][$locale] ?? $brandName);
+            $assetPath = $profile['brand']['assets']['admin_login'] ?? null;
+            if (is_string($assetPath)
+                && preg_match('~\Aimg/ordenowa/versions/[A-Fa-f0-9]{64}/[A-Za-z0-9._-]+\.(?:png|webp)\z~D', $assetPath) === 1) {
+                $logo = rtrim((string) $this->context->link->getBaseLink(), '/') . '/' . $assetPath;
             }
         }
 

@@ -24,7 +24,7 @@ class Kuraneabusinessprofile extends Module
     {
         $this->name = 'kuraneabusinessprofile';
         $this->tab = 'administration';
-        $this->version = '1.0.2';
+        $this->version = '1.0.3';
         $this->author = 'ORDENOWA';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -44,6 +44,9 @@ class Kuraneabusinessprofile extends Module
 
         $repository = new VersionedProfileRepository();
         if (!$repository->install() || !$this->ensureInitialDraft($repository) || !$this->installTabs()) {
+            return false;
+        }
+        if (!$this->configureOfficialMailLogo(ProfileDefaults::initial(), $this->shopId())) {
             return false;
         }
 
@@ -95,7 +98,7 @@ class Kuraneabusinessprofile extends Module
         }
 
         $locale = (string) $profile['_resolved_locale'];
-        $assets = $published ? (array) ($profile['brand']['assets'] ?? []) : [];
+        $assets = (array) ($profile['brand']['assets'] ?? []);
         $baseUrl = (string) $this->context->link->getBaseLink();
         $this->context->smarty->assign([
             'ordenowaBrandName' => (string) ($profile['brand']['name'][$locale] ?? $profile['brand']['name']['ja-JP'] ?? 'ORDENOWA'),
@@ -190,9 +193,9 @@ class Kuraneabusinessprofile extends Module
             $locale = $profile['_resolved_locale'] ?? PublishedProfileProvider::localeForIso($isoCode);
             $brandName = (string) ($safeDefaults['brand']['name'][$locale] ?? $safeDefaults['brand']['name']['ja-JP'] ?? 'ORDENOWA');
 
-            $emailLogo = $profile['brand']['assets']['email_logo'] ?? '';
+            $emailLogo = $safeDefaults['brand']['assets']['email_logo'] ?? '';
             $emailLogoRelative = is_string($emailLogo)
-                && preg_match('~\\Aimg/ordenowa/versions/[A-Fa-f0-9]{64}/email-logo\\.png\\z~D', $emailLogo) === 1
+                && preg_match('~\\Aimg/ordenowa/versions/[A-Fa-f0-9]{64}/(?:email-logo|official-email-logo)\\.png\\z~D', $emailLogo) === 1
                 ? substr($emailLogo, 4)
                 : '';
             $emailLogoIsCurrent = $emailLogoRelative !== ''
@@ -330,6 +333,20 @@ class Kuraneabusinessprofile extends Module
         $repository->setDraftPointer($shopId, $version->id);
 
         return $version->id > 0;
+    }
+
+    /** Set the approved email logo on a new install; an admin publish keeps it synchronized later. */
+    public function configureOfficialMailLogo(array $profile, int $shopId): bool
+    {
+        $emailLogo = $profile['brand']['assets']['email_logo'] ?? '';
+        if (!is_string($emailLogo)
+            || preg_match('~\Aimg/ordenowa/versions/[A-Fa-f0-9]{64}/(?:email-logo|official-email-logo)\.png\z~D', $emailLogo) !== 1
+            || !is_file(_PS_ROOT_DIR_ . '/' . $emailLogo)
+        ) {
+            return false;
+        }
+
+        return (bool) \Configuration::updateValue('PS_LOGO_MAIL', substr($emailLogo, 4), false, null, max(1, $shopId));
     }
 
     private function installTabs(): bool

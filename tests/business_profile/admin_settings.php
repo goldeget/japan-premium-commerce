@@ -33,7 +33,7 @@ assertBusinessProfileSame('ORDENOWA 테스트', $editedByAdmin['brand']['name'][
 assertBusinessProfileSame('pending', $initial['seller']['authorization_status'], 'Applying edits must not mutate the input profile version.');
 assertBusinessProfileTrue(!isset($editedByAdmin['unrecognized']), 'The admin form must ignore fields outside its allowlist.');
 assertBusinessProfileSame('pending', $editedByAdmin['seller']['authorization_status'], 'Ordinary profile edits must not grant seller authorization.');
-assertBusinessProfileSame([], $editedByAdmin['brand']['assets'], 'Submitted paths must not bypass the validated image upload pipeline.');
+assertBusinessProfileSame($initial['brand']['assets'], $editedByAdmin['brand']['assets'], 'Submitted paths must not replace verified image paths outside the upload pipeline.');
 
 $renderedForm = \Kuranea\BusinessProfile\Admin\AdminProfileForm::render($initial, '/admin-test', 'csrf-token');
 assertBusinessProfileTrue(str_contains($renderedForm, 'name="profile[brand][name][ja-JP]"'), 'The form should expose localized brand inputs as explicit structured fields.');

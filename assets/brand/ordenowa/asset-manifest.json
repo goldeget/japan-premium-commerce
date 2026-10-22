@@ -1,0 +1,85 @@
+{
+  "brand": "ORDENOWA",
+  "japanese": "オーデノワ",
+  "source": "User-approved official image-generation source ZIP",
+  "sources_sha256": {
+    "ORDENOWA-favicon-source.png": "c357fde8a2942e5ed0483b78d3c1a1a134163a7e5197a80072f30f75b90d72f2",
+    "ORDENOWA-logo.png": "1ce6b0a015ed6748ef904cdff095ff0f38ab72c9c51fe189c33d19dc797f23fd",
+    "ORDENOWA-pwa-icon-source.png": "eae5c30405dcd420f03929a3a5fc882d94e057f75e26cf0a564aa7d5cbab3ea8"
+  },
+  "derived": {
+    "apple-touch-icon.png": {
+      "sha256": "cc9e62abae1ea57a42c8e326f27d4f538304e8c0a4dc0e20b5b555ffacc30f0c",
+      "bytes": 41036
+    },
+    "favicon-128x128.png": {
+      "sha256": "cd4853e2f6b64407264ad1e9b813d1ec1ad4c08ef9cc25eeae1b93af08b2755d",
+      "bytes": 13480
+    },
+    "favicon-16x16.png": {
+      "sha256": "aa4c4b1cfaf5a59fdc771b1692359f563f9a743ffefb584e575a6ecf493634b1",
+      "bytes": 580
+    },
+    "favicon-256x256.png": {
+      "sha256": "0d1ec8314487e8d6cf5f1fcf18011f09b1b9c474688ee4bc043afa3dad309c07",
+      "bytes": 37506
+    },
+    "favicon-32x32.png": {
+      "sha256": "1ce3db743ac22dec7518b56f509a6e4954e2c42c95c92f06587ef6be96b40875",
+      "bytes": 1663
+    },
+    "favicon-48x48.png": {
+      "sha256": "2517c6507b1be3c6b305c81452dedcc5e26f914bc40da418a9075e960fbe9887",
+      "bytes": 3082
+    },
+    "favicon-64x64.png": {
+      "sha256": "41da7e7edc55893ff6748024db18b3152904afd6245651bf9300415398278b53",
+      "bytes": 4798
+    },
+    "favicon.ico": {
+      "sha256": "c6909f6e370657d3205593ab92a4e03cbaad0144f4e897596f8c40463c6d3469",
+      "bytes": 62482
+    },
+    "logo-desktop.png": {
+      "sha256": "0ae2262b39a314d8bf6995172fd66ffc4eef1b2600b4308f1fd8bb6534a12662",
+      "bytes": 262304
+    },
+    "logo-desktop.webp": {
+      "sha256": "b0aa2759ad680e581adb88478758fa694154c88e7838ec3f1d00fd020135c77f",
+      "bytes": 92916
+    },
+    "logo-email.png": {
+      "sha256": "6fc18cf33615a32bf9d503071d5462894e5b0c69582c861955c85eb389101810",
+      "bytes": 84994
+    },
+    "logo-mobile.png": {
+      "sha256": "6fc18cf33615a32bf9d503071d5462894e5b0c69582c861955c85eb389101810",
+      "bytes": 84994
+    },
+    "logo-mobile.webp": {
+      "sha256": "5646e13f32ceeb3207b7f5f4be88f7459bda23ebee4f8ad0911d93861293fb94",
+      "bytes": 36932
+    },
+    "og-1200x630.png": {
+      "sha256": "5716f17f74a11bb9ff159122972749d97dbdab5cd22d2ce9d9a52af5be302792",
+      "bytes": 122486
+    },
+    "pwa-192x192.png": {
+      "sha256": "6e404d0a82241e7b4e72960acad4686868b8e96932f99c29b9e8086674f04e03",
+      "bytes": 45765
+    },
+    "pwa-512x512.png": {
+      "sha256": "969bd720a759d7b1eeb95ebd918ea5e50b5b0d6c593b7f039e01dc50accc5164",
+      "bytes": 274912
+    },
+    "pwa-maskable-512x512.png": {
+      "sha256": "d6a4a82de0052c27c10d61f75c9dce15f6167c56f255468c5abca72920c3a9df",
+      "bytes": 146550
+    }
+  },
+  "notes": [
+    "Derived images are technical resizes from the exact official approved originals.",
+    "Use 192/512 and maskable icons under manifest.webmanifest when approved.",
+    "Do not publish LOGISTEED as an authorized ORDENOWA seller until independently verified."
+  ]
+}

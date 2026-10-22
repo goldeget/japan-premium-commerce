@@ -33,8 +33,41 @@ verifyBusinessProfile(($draft->profile['brand']['name']['en-US'] ?? '') === 'ORD
 verifyBusinessProfile(($draft->profile['brand']['name']['ko-KR'] ?? '') === '오데노와', 'The Korean brand name must be stored in the profile.');
 verifyBusinessProfile(($draft->profile['seller']['authorization_status'] ?? '') === 'pending', 'Seller authorization must remain pending after a fresh install.');
 verifyBusinessProfile(($draft->profile['bank_accounts'] ?? []) === [], 'No production bank account may be seeded into CI.');
-verifyBusinessProfile(($draft->profile['brand']['assets'] ?? []) === [], 'No unavailable or legacy brand asset may seed the ORDENOWA profile.');
-verifyBusinessProfile(($draft->profile['brand']['sources'] ?? []) === [], 'No unavailable source image may seed the ORDENOWA profile.');
+$assets = $draft->profile['brand']['assets'] ?? [];
+verifyBusinessProfile(is_array($assets) && count($assets) === 12, 'The full official brand image set must be available in the current profile.');
+foreach ([
+    'header_desktop', 'header_mobile', 'admin_login', 'email_logo', 'og_image',
+    'favicon', 'favicon_16', 'favicon_32', 'apple_touch', 'pwa_192', 'pwa_512', 'pwa_maskable_512',
+] as $assetKey) {
+    $path = $assets[$assetKey] ?? '';
+    verifyBusinessProfile(
+        is_string($path)
+            && preg_match('~\Aimg/ordenowa/versions/[a-fA-F0-9]{64}/[A-Za-z0-9._-]+\.(?:png|ico)\z~D', $path) === 1
+            && is_file(_PS_ROOT_DIR_ . '/' . $path),
+        'The ' . $assetKey . ' brand image must resolve to an installed versioned asset.'
+    );
+}
+verifyBusinessProfile(
+    is_file(_PS_ROOT_DIR_ . '/img/ordenowa/versions/1ce6b0a015ed6748ef904cdff095ff0f38ab72c9c51fe189c33d19dc797f23fd/official-header-desktop.png'),
+    'The exact approved desktop logo derivative must be installed under its immutable official path.'
+);
+verifyBusinessProfile(
+    ($draft->profile['brand']['sources']['primary_logo']['sha256'] ?? '') === '1ce6b0a015ed6748ef904cdff095ff0f38ab72c9c51fe189c33d19dc797f23fd',
+    'The approved logo source hash must be retained in the initial profile.'
+);
+verifyBusinessProfile(
+    is_file(_PS_ROOT_DIR_ . '/var/ordenowa-private/' . ($draft->profile['brand']['sources']['primary_logo']['path'] ?? '')),
+    'The exact approved source original must be retained in private runtime storage.'
+);
+verifyBusinessProfile(
+    is_file(_PS_ROOT_DIR_ . '/var/ordenowa-private/.htaccess'),
+    'The private official source directory must deny direct web access.'
+);
+$emailLogo = (string) ($draft->profile['brand']['assets']['email_logo'] ?? '');
+verifyBusinessProfile(
+    $emailLogo !== '' && (string) Configuration::get('PS_LOGO_MAIL', null, null, $shopId) === substr($emailLogo, 4),
+    'The PrestaShop email logo configuration must use the approved ORDENOWA image.'
+);
 verifyBusinessProfile(($draft->profile['company_reference']['corporate_number'] ?? '') === '4010001226242', 'The provided LOGISTEED company reference should be present.');
 verifyBusinessProfile(($draft->profile['company_reference']['phone'] ?? '') === '03-6263-2800', 'The company phone should remain in the company reference section.');
 verifyBusinessProfile(($draft->profile['customer_support']['phone'] ?? '') === '', 'The company phone must not be copied into shop support.');

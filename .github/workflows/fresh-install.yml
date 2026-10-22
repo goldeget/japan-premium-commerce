@@ -16,6 +16,7 @@ on:
       - 'modules/kuraneacatalog/**'
       - 'tests/business_profile/**'
       - 'tests/catalog/**'
+      - 'assets/brand/ordenowa/**'
       - 'tests/smoke/fresh_install.sh'
       - 'tests/smoke/run_postal_updater.sh'
       - 'tests/smoke/collect_failure_diagnostics.sh'
@@ -68,6 +69,9 @@ jobs:
 
       - name: Verify fresh-install workflow contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract -v
+
+      - name: Verify official ORDENOWA brand pack integrity and runtime wiring
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ordenowa_brand_pack -v
 
       - name: Build the PrestaShop image
         id: image_build
@@ -253,6 +257,20 @@ jobs:
           command -v google-chrome || command -v chromium
           mkdir -p "$RUNNER_TEMP/ordenowa-browser-qa"
 
+      - name: Verify official ORDENOWA brand upload and publish in Chromium
+        shell: bash
+        env:
+          SHOP_BASE_URL: http://localhost:18080
+          ADMIN_LOGIN_URL: http://localhost:18080/admin-kuranea
+          ADMIN_MAIL: ci-kuranea@example.invalid
+          ADMIN_PASSWD: Ci-Only-Admin-Password-92!
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
+            tests/e2e/verify_brand_admin_browser.py \
+            2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/ordenowa-brand-e2e.log"
+
       - name: Verify real product detail and cart in Chromium (no payment)
         shell: bash
         env:
@@ -291,7 +309,7 @@ jobs:
           name: ordenowa-storefront-browser-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/ordenowa-browser-qa/
           if-no-files-found: ignore
-          retention-days: 3
+          retention-days: 30
 
       - name: Verify the fresh shop and restart persistence
         env:

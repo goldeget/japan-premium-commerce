@@ -215,7 +215,7 @@ class AdminBusinessProfileController extends ModuleAdminController
             );
             $emailLogo = $draft->profile['brand']['assets']['email_logo'] ?? '';
             if (is_string($emailLogo)
-                && preg_match('~\\Aimg/ordenowa/versions/[A-Fa-f0-9]{64}/email-logo\\.png\\z~D', $emailLogo) === 1
+                && preg_match('~\\Aimg/ordenowa/versions/[A-Fa-f0-9]{64}/(?:email-logo|official-email-logo)\\.png\\z~D', $emailLogo) === 1
                 && is_file(_PS_ROOT_DIR_ . '/' . $emailLogo)
             ) {
                 $compatibilityReady = (bool) \Configuration::updateValue('PS_LOGO_MAIL', substr($emailLogo, 4), false, null, $shopId)
