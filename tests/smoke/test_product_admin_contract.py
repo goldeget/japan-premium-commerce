@@ -93,6 +93,10 @@ class ProductAdminContractTests(unittest.TestCase):
             "native_product_create",
             "native_product_edit",
             "expected_category_ids",
+            "def usable_category_boxes(driver: webdriver.Chrome)",
+            'box.get_attribute("value") != "1"',
+            'box.get_attribute("value") == "2"',
+            "created_category_ids != {initial_category_id}",
             "edited_options",
             "product-admin-created-desktop.png",
             "product-admin-mobile.png",
@@ -158,6 +162,20 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn('<input type="hidden" name="id_product"', controller)
         self.assertIn('presence_of_element_located((By.CSS_SELECTOR, \'input[name="id_product"]\'))', browser)
         self.assertNotIn('visible(driver, \'input[name="id_product"]\')', browser)
+
+    def test_browser_category_fixture_uses_home_and_excludes_technical_root(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        category_helper = browser.split("def usable_category_boxes", 1)[1].split("def fill(", 1)[0]
+        edit_selection = browser.split('stage = "native_product_edit"', 1)[1].split(
+            'stage = "mobile_product_admin_layout"', 1
+        )[0]
+
+        self.assertIn('box.get_attribute("value") != "1"', category_helper)
+        self.assertIn('box.get_attribute("value") == "2"', category_helper)
+        self.assertIn("initial_category = default_category_box(driver)", browser)
+        self.assertIn("created_category_ids != {initial_category_id}", browser)
+        self.assertIn("usable_ids = {box.get_attribute(\"value\") for box in usable_category_boxes(driver)}", edit_selection)
+        self.assertIn("currently_selected.intersection(usable_ids)", edit_selection)
 
     def test_manager_link_discovery_accepts_collapsed_sidebar_entries(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")

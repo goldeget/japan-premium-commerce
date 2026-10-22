@@ -67,6 +67,24 @@ def product_links(driver: webdriver.Chrome, product_id: int):
     ]
 
 
+def usable_category_boxes(driver: webdriver.Chrome):
+    # PrestaShop's fresh-install tree starts with the technical Root category
+    # (id 1), followed by the shop's Home/default category (id 2). Root is
+    # active but is not a customer-facing product category.
+    return [
+        box
+        for box in driver.find_elements(By.CSS_SELECTOR, 'input[name="category_ids[]"]')
+        if box.get_attribute("value") != "1"
+    ]
+
+
+def default_category_box(driver: webdriver.Chrome):
+    categories = usable_category_boxes(driver)
+    if not categories:
+        raise AssertionError("no usable native product categories are available")
+    return next((box for box in categories if box.get_attribute("value") == "2"), categories[0])
+
+
 def fill(driver: webdriver.Chrome, selector: str, value: str) -> None:
     field = visible(driver, selector)
     field.clear()
@@ -136,12 +154,10 @@ def run() -> None:
         fill(driver, "#options", "色:青|赤\nサイズ:S|M")
         fill(driver, "#description_ja", "CI用の商品説明")
         fill(driver, "#description_ko", "CI용 상세 설명")
-        categories = driver.find_elements(By.CSS_SELECTOR, 'input[name="category_ids[]"]')
-        if not categories:
-            raise AssertionError("no active native product categories are available")
-        initial_category_id = categories[0].get_attribute("value")
-        if not categories[0].is_selected():
-            categories[0].click()
+        initial_category = default_category_box(driver)
+        initial_category_id = initial_category.get_attribute("value")
+        if not initial_category.is_selected():
+            initial_category.click()
 
         png = base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGNU8qplYGBgYmBgYGBgAAAKuwDtbIwH5AAAAABJRU5ErkJggg=="
@@ -174,6 +190,13 @@ def run() -> None:
                 raise AssertionError("a product create field did not persist through PrestaShop")
         if len(driver.find_elements(By.CSS_SELECTOR, ".ordenowa-product-image img")) != 1:
             raise AssertionError("the new product image is missing from the admin preview")
+        created_category_ids = {
+            checkbox.get_attribute("value")
+            for checkbox in driver.find_elements(By.CSS_SELECTOR, 'input[name="category_ids[]"]')
+            if checkbox.is_selected()
+        }
+        if created_category_ids != {initial_category_id}:
+            raise AssertionError("the product did not retain the selected non-root default category")
         assert_javascript_image_loaded(driver, ".ordenowa-product-image img")
         created_links = product_links(driver, product_id)
         if len(created_links) != 1 or created_links[0].text.strip() not in {japanese_name, korean_name}:
@@ -198,9 +221,23 @@ def run() -> None:
         fill(driver, "#description_ja", "更新した説明")
         fill(driver, "#description_ko", "수정한 상세 설명")
         category_boxes = driver.find_elements(By.CSS_SELECTOR, 'input[name="category_ids[]"]')
+        usable_ids = {box.get_attribute("value") for box in usable_category_boxes(driver)}
+        if not usable_ids:
+            raise AssertionError("no usable native product categories are available for editing")
         currently_selected = {box.get_attribute("value") for box in category_boxes if box.is_selected()}
-        alternate_categories = [box.get_attribute("value") for box in category_boxes if box.get_attribute("value") not in currently_selected]
-        expected_category_ids = {alternate_categories[0]} if alternate_categories else currently_selected
+        alternate_categories = [
+            box.get_attribute("value")
+            for box in category_boxes
+            if box.get_attribute("value") in usable_ids
+            and box.get_attribute("value") not in currently_selected
+        ]
+        expected_category_ids = (
+            {alternate_categories[0]}
+            if alternate_categories
+            else currently_selected.intersection(usable_ids)
+        )
+        if not expected_category_ids:
+            raise AssertionError("the product edit form has no usable category selected")
         for box in category_boxes:
             category_id = box.get_attribute("value")
             if box.is_selected() != (category_id in expected_category_ids):
