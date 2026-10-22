@@ -134,6 +134,188 @@ def visible(driver: webdriver.Chrome, selector: str):
     return WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.CSS_SELECTOR, selector)))
 
 
+def password_reset_link_snapshot(driver: webdriver.Chrome) -> dict[str, object]:
+    """Capture safe link and document facts without retaining raw URL values."""
+    try:
+        snapshot = driver.execute_script(
+            """
+            const form = document.querySelector('#login-form');
+            const anchors = [...(form?.querySelectorAll('a') || [])];
+            const link = anchors.find(anchor => anchor.hasAttribute('href')) || anchors[0] || null;
+            const navigation = performance.getEntriesByType('navigation')[0];
+            const style = link ? window.getComputedStyle(link) : null;
+            const clientRectCount = link ? link.getClientRects().length : 0;
+            const visible = Boolean(
+              style && clientRectCount > 0 && style.display !== 'none' &&
+              style.visibility !== 'hidden' && Number(style.opacity) > 0
+            );
+            return {
+              document_language: document.documentElement?.getAttribute('lang') || '',
+              ready_state: document.readyState || '',
+              anchor_count: anchors.length,
+              href_present: Boolean(link && link.hasAttribute('href') && link.getAttribute('href')),
+              href: link?.getAttribute('href') || '',
+              visible,
+              client_rect_count: clientRectCount,
+              computed_display: style?.display || '',
+              computed_visibility: style?.visibility || '',
+              computed_opacity: style?.opacity || '',
+              aria_label: link?.getAttribute('aria-label') || '',
+              text: (link?.innerText || link?.textContent || '').replace(/\\s+/g, ' ').trim(),
+              navigation_type: navigation?.type || '',
+              navigation_redirect_count: Number.isInteger(navigation?.redirectCount) ? navigation.redirectCount : 0,
+              navigation_response_end_ms: Number.isFinite(navigation?.responseEnd) ? Math.round(navigation.responseEnd) : 0,
+              navigation_dom_interactive_ms: Number.isFinite(navigation?.domInteractive) ? Math.round(navigation.domInteractive) : 0,
+              navigation_load_event_end_ms: Number.isFinite(navigation?.loadEventEnd) ? Math.round(navigation.loadEventEnd) : 0
+            };
+            """
+        )
+    except Exception as error:
+        return {"snapshot_error_type": type(error).__name__}
+
+    if not isinstance(snapshot, dict):
+        return {"snapshot_error_type": "InvalidSnapshot"}
+
+    href = snapshot.get("href")
+    text = snapshot.get("text")
+    aria_label = snapshot.get("aria_label")
+    raw_text = text if isinstance(text, str) else ""
+    raw_aria_label = aria_label if isinstance(aria_label, str) else ""
+    computed_display = snapshot.get("computed_display")
+    computed_visibility = snapshot.get("computed_visibility")
+    computed_opacity = snapshot.get("computed_opacity")
+    return {
+        "document_language": safe_diagnostic_name(snapshot.get("document_language")),
+        "ready_state": safe_diagnostic_name(snapshot.get("ready_state")),
+        "anchor_count": min(snapshot.get("anchor_count", 0), 20)
+        if isinstance(snapshot.get("anchor_count"), int)
+        else 0,
+        "href_present": snapshot.get("href_present") is True,
+        "href_metadata": safe_url_metadata(urljoin(driver.current_url, href))
+        if isinstance(href, str) and href
+        else {},
+        "visible": snapshot.get("visible") is True,
+        "client_rect_count": min(snapshot.get("client_rect_count", 0), 20)
+        if isinstance(snapshot.get("client_rect_count"), int)
+        else 0,
+        "computed_display": computed_display
+        if isinstance(computed_display, str)
+        and computed_display in {"block", "contents", "flex", "grid", "inline", "inline-block", "inline-flex", "none"}
+        else "other",
+        "computed_visibility": computed_visibility
+        if isinstance(computed_visibility, str)
+        and computed_visibility in {"collapse", "hidden", "visible"}
+        else "other",
+        "computed_opacity_zero": computed_opacity == "0",
+        "aria_label_text_length": min(len(raw_aria_label), 200),
+        "aria_label_identifies_password_reset": bool(PASSWORD_RESET_ACCESSIBLE_NAME.search(raw_aria_label)),
+        "aria_label_implies_user_id_lookup": bool(USER_ID_LOOKUP_ACCESSIBLE_NAME.search(raw_aria_label)),
+        "text_length": min(len(raw_text), 200),
+        "text_identifies_password_reset": bool(PASSWORD_RESET_ACCESSIBLE_NAME.search(raw_text)),
+        "text_implies_user_id_lookup": bool(USER_ID_LOOKUP_ACCESSIBLE_NAME.search(raw_text)),
+        "navigation_type": safe_diagnostic_name(snapshot.get("navigation_type")),
+        "navigation_redirect_count": min(snapshot.get("navigation_redirect_count", 0), 20)
+        if isinstance(snapshot.get("navigation_redirect_count"), int)
+        else 0,
+        "navigation_response_end_ms": min(snapshot.get("navigation_response_end_ms", 0), 300_000)
+        if isinstance(snapshot.get("navigation_response_end_ms"), int)
+        else 0,
+        "navigation_dom_interactive_ms": min(snapshot.get("navigation_dom_interactive_ms", 0), 300_000)
+        if isinstance(snapshot.get("navigation_dom_interactive_ms"), int)
+        else 0,
+        "navigation_load_event_end_ms": min(snapshot.get("navigation_load_event_end_ms", 0), 300_000)
+        if isinstance(snapshot.get("navigation_load_event_end_ms"), int)
+        else 0,
+    }
+
+
+def install_reset_link_navigation_observer(driver: webdriver.Chrome) -> None:
+    driver.execute_script(
+        """
+        const key = '__ordenowaKoreanLoginNavigation';
+        try {
+          sessionStorage.removeItem(key);
+          const allowedKeys = new Set(['back', 'controller', 'id_lang', 'isolang', 'lang']);
+          const capture = (eventName, persisted = false) => {
+            try {
+              const navigation = performance.getEntriesByType('navigation')[0];
+              const event = {
+                event: eventName,
+                elapsed_ms: Math.round(performance.now()),
+                pathname: window.location.pathname,
+                query_key_names: [...new URLSearchParams(window.location.search).keys()]
+                  .filter(name => allowedKeys.has(name)).slice(0, 8),
+                document_language: document.documentElement?.getAttribute('lang') || '',
+                ready_state: document.readyState || '',
+                navigation_type: navigation?.type || '',
+                navigation_redirect_count: Number.isInteger(navigation?.redirectCount) ? navigation.redirectCount : 0,
+                navigation_response_end_ms: Number.isFinite(navigation?.responseEnd) ? Math.round(navigation.responseEnd) : 0,
+                persisted: Boolean(persisted)
+              };
+              const events = JSON.parse(sessionStorage.getItem(key) || '[]');
+              events.push(event);
+              sessionStorage.setItem(key, JSON.stringify(events.slice(-4)));
+            } catch (_) {}
+          };
+          window.addEventListener('beforeunload', () => capture('beforeunload'), { once: true });
+          window.addEventListener('pagehide', event => capture('pagehide', Boolean(event.persisted)), { once: true });
+        } catch (_) {}
+        """
+    )
+
+
+def reset_link_navigation_timeline(driver: webdriver.Chrome) -> list[dict[str, object]]:
+    try:
+        raw_events = driver.execute_script(
+            "return sessionStorage.getItem('__ordenowaKoreanLoginNavigation') || '[]';"
+        )
+        events = json.loads(raw_events) if isinstance(raw_events, str) else []
+    except Exception:
+        return []
+    if not isinstance(events, list):
+        return []
+
+    allowed_events = {"beforeunload", "pagehide"}
+    allowed_query_keys = {"back", "controller", "id_lang", "isolang", "lang"}
+    safe_events: list[dict[str, object]] = []
+    for event in events[-4:]:
+        if not isinstance(event, dict) or event.get("event") not in allowed_events:
+            continue
+        pathname = event.get("pathname")
+        if not isinstance(pathname, str):
+            continue
+        route_metadata = safe_url_metadata(urljoin(BASE + "/", pathname))
+        query_keys = event.get("query_key_names")
+        safe_query_keys = sorted(
+            {key for key in query_keys if isinstance(key, str)} & allowed_query_keys
+        ) if isinstance(query_keys, list) else []
+        route_metadata["query_key_names"] = safe_query_keys
+        route_metadata["id_lang_present"] = "id_lang" in safe_query_keys
+        route_metadata["isolang_present"] = "isolang" in safe_query_keys
+        route_metadata["controller_present"] = "controller" in safe_query_keys
+        route_metadata["back_present"] = "back" in safe_query_keys
+        safe_events.append(
+            {
+                "event": event["event"],
+                "elapsed_ms": min(event.get("elapsed_ms", 0), 300_000)
+                if isinstance(event.get("elapsed_ms"), int)
+                else 0,
+                "route_metadata": route_metadata,
+                "document_language": safe_diagnostic_name(event.get("document_language")),
+                "ready_state": safe_diagnostic_name(event.get("ready_state")),
+                "navigation_type": safe_diagnostic_name(event.get("navigation_type")),
+                "navigation_redirect_count": min(event.get("navigation_redirect_count", 0), 20)
+                if isinstance(event.get("navigation_redirect_count"), int)
+                else 0,
+                "navigation_response_end_ms": min(event.get("navigation_response_end_ms", 0), 300_000)
+                if isinstance(event.get("navigation_response_end_ms"), int)
+                else 0,
+                "persisted": event.get("persisted") is True,
+            }
+        )
+    return safe_events
+
+
 def assert_korean_email_login_form(driver: webdriver.Chrome, state: dict[str, object]) -> None:
     # Use PrestaShop's generated language and account links. The Korean route
     # slug is installation metadata and must not be guessed as `/ko/login`.
@@ -192,7 +374,15 @@ def assert_korean_email_login_form(driver: webdriver.Chrome, state: dict[str, ob
         raise AssertionError("the customer sign-in link changed the isolated shop origin")
     state["sign_in_url_metadata"] = safe_url_metadata(login_url)
     mark_stage("korean_login_page_navigation")
+    clear_document_navigation_events(driver)
+    login_navigation_started_at = time.monotonic()
     driver.get(login_url)
+    login_navigation_completed_at = time.monotonic()
+    state["login_navigation_started_at"] = login_navigation_started_at
+    state["login_navigation_completed_at"] = login_navigation_completed_at
+    state["login_navigation_elapsed_ms"] = min(
+        300_000, max(0, int((login_navigation_completed_at - login_navigation_started_at) * 1000))
+    )
     state["login_navigation_document_language"] = safe_diagnostic_name(
         (driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower()
     )
@@ -242,7 +432,83 @@ def assert_korean_email_login_form(driver: webdriver.Chrome, state: dict[str, ob
     state["email_label_assertion_passed"] = True
     state["email_label_url_metadata"] = safe_url_metadata(driver.current_url)
     mark_stage("korean_password_reset_link")
-    password_reset_link = visible(driver, '#login-form a[href]')
+    reset_wait_started_at = time.monotonic()
+    reset_wait_start_url = driver.current_url
+    state["reset_link_before_wait_url_metadata"] = safe_url_metadata(reset_wait_start_url)
+    state["reset_link_before_wait_document_language"] = safe_diagnostic_name(
+        (driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower()
+    )
+    if isinstance(login_navigation_completed_at, float):
+        state["login_navigation_to_reset_wait_elapsed_ms"] = min(
+            300_000, max(0, int((reset_wait_started_at - login_navigation_completed_at) * 1000))
+        )
+    reset_link_snapshot = password_reset_link_snapshot(driver)
+    state["reset_link_before_wait_anchor_count"] = reset_link_snapshot.get("anchor_count", 0)
+    state["reset_link_before_wait_href_present"] = reset_link_snapshot.get("href_present", False)
+    state["reset_link_before_wait_visible"] = reset_link_snapshot.get("visible", False)
+    state["reset_link_before_wait_client_rect_count"] = reset_link_snapshot.get("client_rect_count", 0)
+    state["reset_link_before_wait_computed_display"] = reset_link_snapshot.get("computed_display", "other")
+    state["reset_link_before_wait_computed_visibility"] = reset_link_snapshot.get(
+        "computed_visibility", "other"
+    )
+    state["reset_link_before_wait_computed_opacity_zero"] = reset_link_snapshot.get(
+        "computed_opacity_zero", False
+    )
+    state["reset_link_before_wait_aria_label_text_length"] = reset_link_snapshot.get(
+        "aria_label_text_length", 0
+    )
+    state["reset_link_before_wait_aria_label_identifies_password_reset"] = reset_link_snapshot.get(
+        "aria_label_identifies_password_reset", False
+    )
+    state["reset_link_before_wait_aria_label_implies_user_id_lookup"] = reset_link_snapshot.get(
+        "aria_label_implies_user_id_lookup", False
+    )
+    state["reset_link_before_wait_text_length"] = reset_link_snapshot.get("text_length", 0)
+    state["reset_link_before_wait_text_identifies_password_reset"] = reset_link_snapshot.get(
+        "text_identifies_password_reset", False
+    )
+    state["reset_link_before_wait_text_implies_user_id_lookup"] = reset_link_snapshot.get(
+        "text_implies_user_id_lookup", False
+    )
+    state["reset_link_before_wait_href_metadata"] = reset_link_snapshot.get("href_metadata", {})
+    state["reset_link_before_wait_navigation"] = {
+        key: reset_link_snapshot[key]
+        for key in (
+            "ready_state",
+            "navigation_type",
+            "navigation_redirect_count",
+            "navigation_response_end_ms",
+            "navigation_dom_interactive_ms",
+            "navigation_load_event_end_ms",
+        )
+        if key in reset_link_snapshot
+    }
+    install_reset_link_navigation_observer(driver)
+
+    def reset_link_ready(browser: webdriver.Chrome):
+        try:
+            observed_url = browser.current_url
+            if observed_url != reset_wait_start_url and state.get("reset_wait_navigation_elapsed_ms") is None:
+                state["reset_wait_navigation_elapsed_ms"] = min(
+                    300_000, max(0, int((time.monotonic() - reset_wait_started_at) * 1000))
+                )
+                state["reset_wait_navigation_url_metadata"] = safe_url_metadata(observed_url)
+                state["reset_wait_navigation_document_language"] = safe_diagnostic_name(
+                    (browser.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower()
+                )
+                state["reset_link_navigation_timeline"] = reset_link_navigation_timeline(browser)
+                state["document_navigation_events"] = document_navigation_events(browser)
+            for anchor in browser.find_elements(By.CSS_SELECTOR, "#login-form a[href]"):
+                if anchor.is_displayed():
+                    return anchor
+        except Exception:
+            return False
+        return False
+
+    state["reset_wait_navigation_elapsed_ms"] = None
+    state["reset_wait_navigation_url_metadata"] = {}
+    state["reset_wait_navigation_document_language"] = ""
+    password_reset_link = WebDriverWait(driver, 30, poll_frequency=0.25).until(reset_link_ready)
     password_reset_name = " ".join(
         (
             (password_reset_link.get_attribute("aria-label") or "")
@@ -286,12 +552,49 @@ def emit_korean_login_diagnostics(driver: webdriver.Chrome, state: dict[str, obj
         "email_label_assertion_passed": state.get("email_label_assertion_passed", False),
         "email_label_url_metadata": state.get("email_label_url_metadata", {}),
         "failed_stage_elapsed_ms": 0,
+        "reset_link_before_wait_anchor_count": state.get("reset_link_before_wait_anchor_count", 0),
+        "reset_link_before_wait_href_present": state.get("reset_link_before_wait_href_present", False),
+        "reset_link_before_wait_visible": state.get("reset_link_before_wait_visible", False),
+        "reset_link_before_wait_client_rect_count": state.get("reset_link_before_wait_client_rect_count", 0),
+        "reset_link_before_wait_computed_display": state.get("reset_link_before_wait_computed_display", "other"),
+        "reset_link_before_wait_computed_visibility": state.get("reset_link_before_wait_computed_visibility", "other"),
+        "reset_link_before_wait_computed_opacity_zero": state.get(
+            "reset_link_before_wait_computed_opacity_zero", False
+        ),
+        "reset_link_before_wait_aria_label_text_length": state.get(
+            "reset_link_before_wait_aria_label_text_length", 0
+        ),
+        "reset_link_before_wait_aria_label_identifies_password_reset": state.get(
+            "reset_link_before_wait_aria_label_identifies_password_reset", False
+        ),
+        "reset_link_before_wait_aria_label_implies_user_id_lookup": state.get(
+            "reset_link_before_wait_aria_label_implies_user_id_lookup", False
+        ),
+        "reset_link_before_wait_text_length": state.get("reset_link_before_wait_text_length", 0),
+        "reset_link_before_wait_text_identifies_password_reset": state.get(
+            "reset_link_before_wait_text_identifies_password_reset", False
+        ),
+        "reset_link_before_wait_text_implies_user_id_lookup": state.get(
+            "reset_link_before_wait_text_implies_user_id_lookup", False
+        ),
+        "reset_link_before_wait_url_metadata": state.get("reset_link_before_wait_url_metadata", {}),
+        "reset_link_before_wait_href_metadata": state.get("reset_link_before_wait_href_metadata", {}),
+        "reset_link_before_wait_navigation": state.get("reset_link_before_wait_navigation", {}),
+        "reset_wait_navigation_elapsed_ms": state.get("reset_wait_navigation_elapsed_ms"),
+        "reset_wait_navigation_url_metadata": state.get("reset_wait_navigation_url_metadata", {}),
+        "reset_wait_navigation_document_language": state.get("reset_wait_navigation_document_language", ""),
+        "reset_link_navigation_timeline": state.get("reset_link_navigation_timeline", []),
+        "document_navigation_events": state.get("document_navigation_events", []),
     }
     stage_started_at = state.get("stage_started_at")
     if isinstance(stage_started_at, (int, float)):
         diagnostics["failed_stage_elapsed_ms"] = min(
             300_000, max(0, int((time.monotonic() - stage_started_at) * 1000))
         )
+    if not diagnostics["reset_link_navigation_timeline"]:
+        diagnostics["reset_link_navigation_timeline"] = reset_link_navigation_timeline(driver)
+    if not diagnostics["document_navigation_events"]:
+        diagnostics["document_navigation_events"] = document_navigation_events(driver)
     try:
         page_state = driver.execute_script(
             """
@@ -461,18 +764,29 @@ def safe_same_origin_path(value: object) -> str:
 
     if len(path) > 160:
         return "/<long-path>"
+    known_static_segments = {
+        "index.php",
+        "ja",
+        "ko",
+        "en",
+        "authentication",
+        "login",
+        "register",
+        "registration",
+        "identity",
+        "order",
+        "password",
+        "password-reset",
+        "history",
+    }
     safe_segments = []
     for segment in path.split("/"):
-        token_like_segment = (
-            len(segment) >= 16
-            and re.fullmatch(r"[A-Za-z0-9_-]+", segment)
-            and re.search(r"[A-Za-z]", segment)
-            and re.search(r"[0-9]", segment)
-        )
-        if len(segment) > 20 or token_like_segment or "@" in segment:
-            safe_segments.append("<redacted>")
+        if not segment:
+            safe_segments.append("")
+        elif segment.lower() in known_static_segments:
+            safe_segments.append(segment.lower())
         else:
-            safe_segments.append(re.sub(r"[^A-Za-z0-9_.-]", "_", segment))
+            safe_segments.append("<redacted>")
     return "/".join(safe_segments)[:160] or "/"
 
 
@@ -530,6 +844,82 @@ def safe_url_metadata(value: object) -> dict[str, object]:
         }
     )
     return metadata
+
+
+def clear_document_navigation_events(driver: webdriver.Chrome) -> None:
+    try:
+        driver.get_log("performance")
+    except Exception:
+        pass
+
+
+def document_navigation_events(driver: webdriver.Chrome) -> list[dict[str, object]]:
+    """Summarize same-tab document requests and redirects without URL values."""
+    try:
+        entries = driver.get_log("performance")
+    except Exception as error:
+        return [{"diagnostic_error_type": type(error).__name__}]
+
+    responses: dict[str, int] = {}
+    decoded_entries: list[dict[str, object]] = []
+    for entry in entries:
+        try:
+            envelope = json.loads(entry.get("message", "{}"))
+            message = envelope.get("message", {}) if isinstance(envelope, dict) else {}
+            if not isinstance(message, dict):
+                continue
+            params = message.get("params", {})
+            if not isinstance(params, dict) or params.get("type") != "Document":
+                continue
+            if message.get("method") == "Network.responseReceived":
+                response = params.get("response", {})
+                request_id = params.get("requestId")
+                status = response.get("status") if isinstance(response, dict) else None
+                if isinstance(request_id, str) and isinstance(status, (int, float)):
+                    responses[request_id] = int(status)
+            decoded_entries.append(message)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+
+    safe_events: list[dict[str, object]] = []
+    for message in decoded_entries:
+        if message.get("method") != "Network.requestWillBeSent":
+            continue
+        params = message.get("params", {})
+        if not isinstance(params, dict):
+            continue
+        request = params.get("request", {})
+        request_url = request.get("url") if isinstance(request, dict) else None
+        if not isinstance(request_url, str):
+            continue
+        route_metadata = safe_url_metadata(request_url)
+        redirect_response = params.get("redirectResponse")
+        redirect_metadata = (
+            safe_url_metadata(redirect_response.get("url"))
+            if isinstance(redirect_response, dict)
+            else None
+        )
+        if not route_metadata["same_origin"] and not (
+            isinstance(redirect_metadata, dict) and redirect_metadata["same_origin"]
+        ):
+            continue
+        request_id = params.get("requestId")
+        redirect_status = (
+            redirect_response.get("status")
+            if isinstance(redirect_response, dict)
+            else responses.get(request_id) if isinstance(request_id, str) else None
+        )
+        safe_events.append(
+            {
+                "event": "document_redirect" if isinstance(redirect_response, dict) else "document_request",
+                "route_metadata": route_metadata,
+                "redirect_from_metadata": redirect_metadata or {},
+                "status_code": int(redirect_status)
+                if isinstance(redirect_status, (int, float)) and 0 <= redirect_status <= 599
+                else 0,
+            }
+        )
+    return safe_events[-16:]
 
 
 def safe_registration_path(value: object) -> str:
@@ -1050,6 +1440,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         options.add_argument("--disable-gpu")
         options.add_argument(f"--window-size={width},{height}")
         options.add_argument("--lang=ja-JP")
+        options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
         driver = webdriver.Chrome(options=options)
         driver.set_window_size(width, height)
         stage = "korean_email_login_label"

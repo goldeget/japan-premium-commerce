@@ -42,9 +42,18 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
         self.assertTrue(metadata["id_lang_present"])
         self.assertTrue(metadata["controller_present"])
         self.assertTrue(metadata["path_has_non_ascii"])
+        self.assertEqual(metadata["path"], "/<redacted>")
         self.assertEqual(metadata["query_key_names"], ["controller", "id_lang"])
         self.assertNotIn("secret-token", repr(metadata))
         self.assertNotIn("private@example.test", repr(metadata))
+        self.assertEqual(
+            namespace["safe_same_origin_path"]("https://shop.example.test/a7"),
+            "/<redacted>",
+        )
+        self.assertEqual(
+            namespace["safe_same_origin_path"]("https://shop.example.test/ko/identity"),
+            "/ko/identity",
+        )
         self.assertFalse(
             namespace["safe_url_metadata"]("https://other.example.test/login")["same_origin"]
         )
@@ -143,6 +152,21 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
             '"email_label_document_language"',
             '"login_navigation_document_language"',
             '"failed_stage_elapsed_ms"',
+            '"reset_link_before_wait_href_present"',
+            '"reset_link_before_wait_visible"',
+            '"reset_link_before_wait_computed_display"',
+            '"reset_link_before_wait_computed_visibility"',
+            '"reset_link_before_wait_text_length"',
+            '"reset_link_before_wait_aria_label_text_length"',
+            '"reset_link_before_wait_url_metadata"',
+            '"reset_wait_navigation_elapsed_ms"',
+            '"reset_wait_navigation_url_metadata"',
+            '"reset_wait_navigation_document_language"',
+            '"reset_link_navigation_timeline"',
+            '"document_navigation_events"',
+            "addEventListener('beforeunload'",
+            "addEventListener('pagehide'",
+            '"performance": "ALL"',
             '"query_key_names"',
             '"id_lang_present"',
             '"path_has_non_ascii"',
@@ -163,6 +187,8 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
         ):
             self.assertIn(safe_field, diagnostics)
         self.assertNotIn("password_value", diagnostics)
+        self.assertNotIn('"text":', diagnostics)
+        self.assertNotIn('"aria_label":', diagnostics)
 
 
 if __name__ == "__main__":
