@@ -21,7 +21,7 @@ class FailureDiagnosticsScriptTests(unittest.TestCase):
             docker.write_text(
                 "#!/bin/sh\n"
                 "case \"$*\" in\n"
-                "  *'logs --tail=160'*) printf '%s\\n' 'MARIADB_PASSWORD=ci-only-secret' 'startup cause: errno 28' ;;\n"
+                "  *'logs --tail=160'*) printf '%s\\n' 'MARIADB_PASSWORD=ci-only-secret' 'startup cause: errno 28' 'ORDENOWA_ROUTE_MIGRATION stage=lookup page=order' 'ORDENOWA_ROUTE_MIGRATION status=deferred page=order reason=route_missing' 'ORDENOWA_ROUTE_MIGRATION stage=lookup page=password' 'ORDENOWA_ROUTE_MIGRATION status=deferred page=password reason=exception' 'ORDENOWA_ROUTE_MIGRATION status=deferred reason=retry_next_start' ;;\n"
                 "  *) printf '%s\\n' 'docker status: healthy' ;;\n"
                 "esac\n",
                 encoding="utf-8",
@@ -49,6 +49,10 @@ class FailureDiagnosticsScriptTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("startup cause: errno 28", result.stdout)
+            self.assertIn(
+                "::error title=ORDENOWA route startup diagnostic::ORDENOWA_ROUTE_MIGRATION status=deferred page=password reason=exception",
+                result.stdout,
+            )
             self.assertIn("[REDACTED]", result.stdout)
             self.assertNotIn("ci-only-secret", result.stdout)
             self.assertIn("startup cause: errno 28", summary.read_text(encoding="utf-8"))

@@ -45,6 +45,45 @@ def visit(driver: webdriver.Chrome, url: str) -> None:
     )
 
 
+def assert_canonical_static_route(driver: webdriver.Chrome, route_slug: str) -> None:
+    actual = urlparse(driver.current_url)
+    base = urlparse(BASE)
+    same_origin = (
+        actual.scheme.lower(), actual.hostname, actual.port
+    ) == (
+        base.scheme.lower(), base.hostname, base.port
+    )
+    base_path = base.path.rstrip("/")
+    expected_path = f"{base_path}/{route_slug}" or f"/{route_slug}"
+    actual_path = unquote(actual.path, errors="strict").rstrip("/")
+    if not same_origin or actual_path != expected_path:
+        raise AssertionError(f"the {route_slug} page did not resolve to its canonical friendly route")
+
+
+def assert_canonical_ascii_friendly_route(driver: webdriver.Chrome, controller: str) -> None:
+    actual = urlparse(driver.current_url)
+    base = urlparse(BASE)
+    same_origin = (
+        actual.scheme.lower(), actual.hostname, actual.port
+    ) == (
+        base.scheme.lower(), base.hostname, base.port
+    )
+    base_path = base.path.rstrip("/")
+    path = unquote(actual.path, errors="strict").rstrip("/")
+    inside_base = not base_path or path == base_path or path.startswith(base_path + "/")
+    relative_path = path[len(base_path):] if base_path and inside_base else path
+    route_segment = relative_path.rsplit("/", 1)[-1]
+    if (
+        not same_origin
+        or not inside_base
+        or not relative_path
+        or relative_path == "/index.php"
+        or not re.fullmatch(r"[A-Za-z0-9._~-]+", route_segment)
+        or "controller" in parse_qs(actual.query)
+    ):
+        raise AssertionError(f"the {controller} page did not resolve to an ASCII friendly route")
+
+
 def clear_checkout_network_events(driver: webdriver.Chrome) -> None:
     """Keep later performance records scoped to the order navigation."""
     try:
@@ -681,6 +720,7 @@ def add_product_and_open_checkout(driver: webdriver.Chrome, label: str) -> None:
         operation = "open_order_checkout"
         clear_checkout_network_events(driver)
         visit(driver, BASE + "/index.php?controller=order")
+        assert_canonical_static_route(driver, "checkout")
         operation = "wait_for_initial_checkout_step"
         current = WebDriverWait(driver, 30).until(
             lambda browser: next(
@@ -882,6 +922,7 @@ def place_unpaid_order(driver: webdriver.Chrome, label: str, email: str) -> dict
     driver.save_screenshot(str(DEST / f"checkout-{label}.png"))
 
     visit(driver, BASE + "/index.php?controller=history")
+    assert_canonical_ascii_friendly_route(driver, "history")
     rows = WebDriverWait(driver, 35).until(
         lambda browser: browser.find_elements(By.CSS_SELECTOR, ".order-history__row")
     )

@@ -111,12 +111,17 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             "kuraneapostcode_search",
             "confirm-addresses",
             "order-history__cell--reference",
+            'assert_canonical_static_route(driver, "checkout")',
+            'assert_canonical_ascii_friendly_route(driver, "history")',
             "total_paid_real",
             "ADMIN_LOGIN_URL",
             "checkout-admin-order-{order['viewport']}-detail.png",
             "checkout-{label}.png",
         ):
             self.assertIn(required, flow + order_verifier)
+        self.assertIn("actual.scheme.lower()", flow)
+        self.assertIn("actual_path != expected_path", flow)
+        self.assertIn("inside_base", flow)
         self.assertGreaterEqual(flow.count("webdriver.Chrome("), 2)
         self.assertIn("def run_admin_order_view()", flow)
         self.assertIn("GITHUB_RUN_ID", flow)

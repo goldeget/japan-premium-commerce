@@ -48,7 +48,7 @@ class AdminFolderInstallOrderTests(unittest.TestCase):
         self.assertIn("/var/www/html/admin-dev", smoke)
         self.assertIn("themes/new-theme/public/theme.css", smoke)
 
-    def test_japanese_order_route_is_normalized_on_every_start_and_verified(self) -> None:
+    def test_japanese_static_routes_migrate_once_and_preserve_later_seo_edits(self) -> None:
         hook = POST_INSTALL_HOOK.read_text(encoding="utf-8")
         installer = MODULE_INSTALL.read_text(encoding="utf-8")
         smoke = FRESH_INSTALL_SMOKE.read_text(encoding="utf-8")
@@ -56,13 +56,31 @@ class AdminFolderInstallOrderTests(unittest.TestCase):
         module_install_call = hook.find("php /usr/local/bin/kuran-install-modules.php")
         self.assertGreaterEqual(module_install_call, 0)
         self.assertNotIn(".kuranea-bootstrap-v2", hook.split("php /usr/local/bin/kuran-install-modules.php", 1)[0])
-        self.assertIn("foreach (['order' => 'checkout', 'identity' => 'identity', 'password' => 'password-reset']", installer)
+        self.assertIn("$routeMigrationKey = 'ORDENOWA_ASCII_ROUTE_MIGRATION_V1'", installer)
+        self.assertIn("(string) Configuration::get($routeMigrationKey) !== '1'", installer)
+        self.assertIn("Configuration::updateValue($routeMigrationKey, '1')", installer)
+        self.assertIn("if ($routeMigrationSucceeded)", installer)
+        self.assertIn("reason=retry_next_start", installer)
+        self.assertIn("'order' => 'checkout'", installer)
+        self.assertIn("'identity' => 'identity'", installer)
+        self.assertIn("'password' => 'password-reset'", installer)
+        self.assertIn("'history' => 'history'", installer)
         self.assertIn("WHERE page = '\" . pSQL($page) . \"' LIMIT 1", installer)
         self.assertIn("AND id_shop = 1 AND id_lang = %d", installer)
-        self.assertIn("$storedRouteSlug !== $routeSlug", installer)
+        self.assertIn("preg_match('/[^\\x00-\\x7F]/', $storedRouteSlug) === 1", installer)
+        self.assertIn("$hasNonAsciiRoute", installer)
         self.assertIn("['url_rewrite' => pSQL($routeSlug)]", installer)
         self.assertIn("$db->getValue($routeQuery, false) !== $routeSlug", installer)
         self.assertIn("PS_REWRITING_SETTINGS", smoke)
+        self.assertIn("PS_CANONICAL_REDIRECT", smoke)
+        self.assertIn("route_migration_marker", smoke)
+        self.assertIn("admin_custom_checkout_route", smoke)
+        self.assertIn('test "$checkout_route_after_restart" = "$admin_custom_checkout_route"', smoke)
+        self.assertIn('test "$identity_route_after_restart" = "$admin_custom_identity_route"', smoke)
+        self.assertIn('test "$password_route_after_restart" = "$admin_custom_password_route"', smoke)
+        self.assertIn("canonical_redirect_before_restart", smoke)
+        self.assertIn("canonical_redirect_after_restart", smoke)
+        self.assertIn("route_migration_marker_after_restart", smoke)
         for route_check in (
             "checkout_route",
             "identity_route",
@@ -70,6 +88,8 @@ class AdminFolderInstallOrderTests(unittest.TestCase):
             "checkout_route_after_restart",
             "identity_route_after_restart",
             "password_route_after_restart",
+            "history_route",
+            "history_route_after_restart",
         ):
             self.assertIn(route_check, smoke)
 

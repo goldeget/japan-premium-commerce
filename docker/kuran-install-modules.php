@@ -38,40 +38,68 @@ $context->cart = new Cart();
 $context->currency = kuraneaConfigureJapaneseCurrency($context);
 $kernel->getContainer()->get(ContextBuilderPreparer::class)->prepareFromLegacyContext($context);
 
-// PrestaShop's canonical redirect emits static route slugs as raw Location
-// header bytes. Japanese slugs such as "注文" become mojibake paths in browsers.
-// Keep friendly URLs enabled and use stable ASCII aliases for the routes used
-// by checkout and customer account flows. This installer runs on every start,
-// so existing volumes receive the same narrow, idempotent repair.
-foreach (['order' => 'checkout', 'identity' => 'identity', 'password' => 'password-reset'] as $page => $routeSlug) {
-    $metaId = (int) $db->getValue(
-        "SELECT id_meta FROM `" . _DB_PREFIX_ . "meta` WHERE page = '" . pSQL($page) . "' LIMIT 1",
-        false
-    );
-    if ($metaId < 1) {
-        throw new RuntimeException(sprintf('The PrestaShop %s page metadata is missing.', $page));
-    }
+// PrestaShop can emit non-ASCII static slugs as raw Location header bytes.
+// Convert those defaults once; later administrator SEO edits must persist.
+$routeMigrationKey = 'ORDENOWA_ASCII_ROUTE_MIGRATION_V1';
+try {
+    if ((string) Configuration::get($routeMigrationKey) !== '1') {
+        $routeMigrationSucceeded = true;
+        foreach (['order' => 'checkout', 'identity' => 'identity', 'password' => 'password-reset', 'history' => 'history'] as $page => $routeSlug) {
+            error_log('ORDENOWA_ROUTE_MIGRATION stage=lookup page=' . $page);
+            try {
+                $metaId = (int) $db->getValue(
+                    "SELECT id_meta FROM `" . _DB_PREFIX_ . "meta` WHERE page = '" . pSQL($page) . "' LIMIT 1",
+                    false
+                );
+                if ($metaId < 1 && $page === 'history') {
+                    continue;
+                }
+                if ($metaId < 1) {
+                    error_log('ORDENOWA_ROUTE_MIGRATION status=deferred page=' . $page . ' reason=meta_missing');
+                    $routeMigrationSucceeded = false;
+                    continue;
+                }
 
-    $routeWhere = sprintf(
-        'id_meta = %d AND id_shop = 1 AND id_lang = %d',
-        $metaId,
-        $japaneseLanguageId
-    );
-    $routeQuery = 'SELECT url_rewrite FROM `' . _DB_PREFIX_ . 'meta_lang` WHERE ' . $routeWhere;
-    $storedRouteSlug = $db->getValue($routeQuery, false);
-    if (!is_string($storedRouteSlug)) {
-        throw new RuntimeException(sprintf('The Japanese PrestaShop %s route is missing.', $page));
-    }
+                $routeWhere = sprintf('id_meta = %d AND id_shop = 1 AND id_lang = %d', $metaId, $japaneseLanguageId);
+                $routeQuery = 'SELECT url_rewrite FROM `' . _DB_PREFIX_ . 'meta_lang` WHERE ' . $routeWhere;
+                $storedRouteSlug = $db->getValue($routeQuery, false);
+                if (!is_string($storedRouteSlug)) {
+                    error_log('ORDENOWA_ROUTE_MIGRATION status=deferred page=' . $page . ' reason=route_missing');
+                    $routeMigrationSucceeded = false;
+                    continue;
+                }
 
-    if ($storedRouteSlug !== $routeSlug
-        && !$db->update('meta_lang', ['url_rewrite' => pSQL($routeSlug)], $routeWhere, 1, false, false)
-    ) {
-        throw new RuntimeException(sprintf('Could not normalize the Japanese PrestaShop %s route.', $page));
-    }
+                $hasNonAsciiRoute = preg_match('/[^\x00-\x7F]/', $storedRouteSlug) === 1;
+                if ($hasNonAsciiRoute) {
+                    if (!$db->update('meta_lang', ['url_rewrite' => pSQL($routeSlug)], $routeWhere, 1, false, false)) {
+                        error_log('ORDENOWA_ROUTE_MIGRATION status=deferred page=' . $page . ' reason=update_failed');
+                        $routeMigrationSucceeded = false;
+                        continue;
+                    }
+                    if ($db->getValue($routeQuery, false) !== $routeSlug) {
+                        error_log('ORDENOWA_ROUTE_MIGRATION status=deferred page=' . $page . ' reason=readback_mismatch');
+                        $routeMigrationSucceeded = false;
+                    }
+                }
+            } catch (Throwable $routeMigrationError) {
+                error_log('ORDENOWA_ROUTE_MIGRATION status=deferred page=' . $page . ' reason=exception');
+                $routeMigrationSucceeded = false;
+            }
+        }
 
-    if ($db->getValue($routeQuery, false) !== $routeSlug) {
-        throw new RuntimeException(sprintf('The Japanese PrestaShop %s route did not persist.', $page));
+        if ($routeMigrationSucceeded) {
+            error_log('ORDENOWA_ROUTE_MIGRATION stage=marker');
+            if (Configuration::updateValue($routeMigrationKey, '1')) {
+                error_log('ORDENOWA_ROUTE_MIGRATION status=complete');
+            } else {
+                error_log('ORDENOWA_ROUTE_MIGRATION status=deferred reason=marker_write');
+            }
+        } else {
+            error_log('ORDENOWA_ROUTE_MIGRATION status=deferred reason=retry_next_start');
+        }
     }
+} catch (Throwable $routeMigrationError) {
+    error_log('ORDENOWA_ROUTE_MIGRATION status=deferred reason=configuration_exception');
 }
 
 foreach (['kuraneapostcode', 'kuraneabackoffice', 'kuraneabusinessprofile', 'kuraneacatalog'] as $moduleName) {

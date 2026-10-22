@@ -28,4 +28,14 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   } >> "$GITHUB_STEP_SUMMARY"
 fi
 
+route_migration_signal=$(
+  docker compose -p "$project_name" logs --tail=160 --no-color prestashop 2>&1 \
+    | grep -Eo \
+      'ORDENOWA_ROUTE_MIGRATION status=deferred (page=(order|identity|password|history) reason=(meta_missing|route_missing|update_failed|readback_mismatch|exception)|reason=(marker_write|configuration_exception))' \
+    | tail -n 1 || true
+)
+if [ -n "$route_migration_signal" ]; then
+  printf '::error title=ORDENOWA route startup diagnostic::%s\n' "$route_migration_signal"
+fi
+
 cat "$redacted_diagnostics"

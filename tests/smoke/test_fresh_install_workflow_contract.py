@@ -37,6 +37,10 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn('"cid:shop_logo"', account_flow, "captured reset email must render the approved brand logo")
         self.assertIn('attachment.get("ContentID", "")', account_flow)
         self.assertIn("published ORDENOWA derivative", account_flow)
+        self.assertIn('assert_canonical_static_route(driver, "identity")', account_flow)
+        self.assertGreaterEqual(account_flow.count('assert_canonical_static_route(driver, "password-reset")'), 2)
+        self.assertIn("actual_path != expected_path", account_flow)
+        self.assertIn("same_origin", account_flow)
 
     def test_customer_account_browser_proves_my_page_and_logout_transitions(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")

@@ -186,6 +186,21 @@ def my_account_link_from_header(driver: webdriver.Chrome, *, open_menu: bool = T
     return account_link, account_url
 
 
+def assert_canonical_static_route(driver: webdriver.Chrome, route_slug: str) -> None:
+    actual = urlparse(driver.current_url)
+    base = urlparse(BASE)
+    same_origin = (
+        actual.scheme.lower(), actual.hostname, actual.port
+    ) == (
+        base.scheme.lower(), base.hostname, base.port
+    )
+    base_path = base.path.rstrip("/")
+    expected_path = f"{base_path}/{route_slug}" or f"/{route_slug}"
+    actual_path = unquote(actual.path, errors="strict").rstrip("/")
+    if not same_origin or actual_path != expected_path:
+        raise AssertionError(f"the {route_slug} page did not resolve to its canonical friendly route")
+
+
 def set_registration_control(control: dict[str, str], name: str, field_type: str) -> None:
     control["name"] = re.sub(r"[^A-Za-z0-9_.\[\]-]", "_", name)[:80]
     control["type"] = re.sub(r"[^A-Za-z0-9_-]", "_", field_type)[:40]
@@ -774,6 +789,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
 
         stage = "profile_update_route"
         driver.get(f"{BASE}/index.php?controller=identity")
+        assert_canonical_static_route(driver, "identity")
         stage = "profile_update_first_name"
         first_name = visible(driver, '#customer-form input[name="firstname"]')
         first_name.clear()
@@ -809,6 +825,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         stage = "password_reset_request"
         logout(driver)
         driver.get(f"{BASE}/index.php?controller=password")
+        assert_canonical_static_route(driver, "password-reset")
         fill(driver, '#email', account_email)
         visible(driver, "#send-reset-link").click()
         driver.save_screenshot(str(DEST / f"{label}-password-reset-requested.png"))
@@ -850,6 +867,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         ):
             raise AssertionError("password reset email points outside the isolated shop")
         driver.get(reset_url)
+        assert_canonical_static_route(driver, "password-reset")
         fill(driver, '#field-password[name="passwd"]', reset_password)
         fill(driver, '#field-confirmation-passwd[name="confirmation"]', reset_password)
         visible(driver, 'button[type="submit"][name="submit"]').click()

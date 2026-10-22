@@ -107,8 +107,17 @@ identity_route=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_me
 test "$identity_route" = identity
 password_route=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='password' AND ml.id_shop=1 AND l.iso_code='ja'")
 test "$password_route" = password-reset
+history_meta_count=$(db_query "SELECT COUNT(*) FROM ps_meta m JOIN ps_meta_lang ml ON ml.id_meta=m.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='history' AND ml.id_shop=1 AND l.iso_code='ja'")
+history_route=""
+if [ "$history_meta_count" -gt 0 ]; then
+  history_route=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='history' AND ml.id_shop=1 AND l.iso_code='ja'")
+fi
 checkout_rewriting=$(db_query "SELECT value FROM ps_configuration WHERE name='PS_REWRITING_SETTINGS'")
 test "$checkout_rewriting" = 1
+canonical_redirect_before_restart=$(db_query "SELECT value FROM ps_configuration WHERE name='PS_CANONICAL_REDIRECT' ORDER BY id_shop DESC, id_shop_group DESC LIMIT 1")
+test "$canonical_redirect_before_restart" = 1
+route_migration_marker=$(db_query "SELECT value FROM ps_configuration WHERE name='ORDENOWA_ASCII_ROUTE_MIGRATION_V1' ORDER BY id_shop DESC, id_shop_group DESC LIMIT 1")
+test "$route_migration_marker" = 1
 default_currency=$(db_query "SELECT cur.iso_code FROM ps_configuration cfg JOIN ps_currency cur ON cur.id_currency=CAST(cfg.value AS UNSIGNED) WHERE cfg.name='PS_CURRENCY_DEFAULT'")
 test "$default_currency" = JPY
 jpy_currency=$(db_query "SELECT COUNT(*) FROM ps_currency WHERE iso_code='JPY' AND active=1 AND deleted=0")
@@ -181,6 +190,21 @@ if ! grep -Eq 'ORDENOWA bootstrap: storefront=ja, en/ko=enabled, admin=ko, theme
   false
 fi
 
+verification_phase="simulate_admin_seo_route_edits"
+admin_custom_checkout_route="ci-custom-checkout"
+admin_custom_identity_route="ci-custom-identity"
+admin_custom_password_route="ci-custom-password-reset"
+db_query "UPDATE ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang SET ml.url_rewrite='$admin_custom_checkout_route' WHERE m.page='order' AND ml.id_shop=1 AND l.iso_code='ja'"
+db_query "UPDATE ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang SET ml.url_rewrite='$admin_custom_identity_route' WHERE m.page='identity' AND ml.id_shop=1 AND l.iso_code='ja'"
+db_query "UPDATE ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang SET ml.url_rewrite='$admin_custom_password_route' WHERE m.page='password' AND ml.id_shop=1 AND l.iso_code='ja'"
+if [ "$history_meta_count" -gt 0 ]; then
+  admin_custom_history_route="ci-custom-history"
+  db_query "UPDATE ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang SET ml.url_rewrite='$admin_custom_history_route' WHERE m.page='history' AND ml.id_shop=1 AND l.iso_code='ja'"
+fi
+test "$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='order' AND ml.id_shop=1 AND l.iso_code='ja'")" = "$admin_custom_checkout_route"
+test "$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='identity' AND ml.id_shop=1 AND l.iso_code='ja'")" = "$admin_custom_identity_route"
+test "$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='password' AND ml.id_shop=1 AND l.iso_code='ja'")" = "$admin_custom_password_route"
+
 verification_phase="restart_service_recovery"
 completed_marker_count_before_restart=$(grep -Fc 'KURANEA bootstrap already completed.' <<< "$initial_bootstrap_logs" || true)
 compose restart mariadb prestashop
@@ -220,11 +244,23 @@ test "$default_currency_after_restart" = JPY
 jpy_translations_after_restart=$(db_query "SELECT COUNT(DISTINCT cl.id_lang) FROM ps_currency c JOIN ps_currency_lang cl ON cl.id_currency=c.id_currency JOIN ps_lang l ON l.id_lang=cl.id_lang WHERE c.iso_code='JPY' AND l.iso_code IN ('ja','en','ko')")
 test "$jpy_translations_after_restart" = 3
 checkout_route_after_restart=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='order' AND ml.id_shop=1 AND l.iso_code='ja'")
-test "$checkout_route_after_restart" = checkout
+test "$checkout_route_after_restart" = "$admin_custom_checkout_route"
 identity_route_after_restart=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='identity' AND ml.id_shop=1 AND l.iso_code='ja'")
-test "$identity_route_after_restart" = identity
+test "$identity_route_after_restart" = "$admin_custom_identity_route"
 password_route_after_restart=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='password' AND ml.id_shop=1 AND l.iso_code='ja'")
-test "$password_route_after_restart" = password-reset
+test "$password_route_after_restart" = "$admin_custom_password_route"
+if [ "$history_meta_count" -gt 0 ]; then
+  history_route_after_restart=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='history' AND ml.id_shop=1 AND l.iso_code='ja'")
+  test "$history_route_after_restart" = "$admin_custom_history_route"
+else
+  history_route_after_restart=""
+fi
+checkout_rewriting_after_restart=$(db_query "SELECT value FROM ps_configuration WHERE name='PS_REWRITING_SETTINGS'")
+test "$checkout_rewriting_after_restart" = "$checkout_rewriting"
+canonical_redirect_after_restart=$(db_query "SELECT value FROM ps_configuration WHERE name='PS_CANONICAL_REDIRECT' ORDER BY id_shop DESC, id_shop_group DESC LIMIT 1")
+test "$canonical_redirect_after_restart" = "$canonical_redirect_before_restart"
+route_migration_marker_after_restart=$(db_query "SELECT value FROM ps_configuration WHERE name='ORDENOWA_ASCII_ROUTE_MIGRATION_V1' ORDER BY id_shop DESC, id_shop_group DESC LIMIT 1")
+test "$route_migration_marker_after_restart" = 1
 verification_phase="restart_shop_identity_and_schema"
 test "$(db_query 'SELECT name FROM ps_shop WHERE id_shop=1')" = ORDENOWA
 table_count_after=$(db_query 'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()')
