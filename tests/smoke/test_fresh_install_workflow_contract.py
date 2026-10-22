@@ -166,6 +166,17 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("ps_kuraneapostcode_stage", smoke)
         self.assertIn('test "$postcode_stage_rows" = 0', smoke)
 
+    def test_catalog_parser_failure_diagnostics_are_bounded_and_escaped(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "catalog-parser.yml").read_text(encoding="utf-8")
+        step = workflow.split("- name: Run synthetic offline Amazon Japan and Rakuten parser tests", 1)[1].split("- name:", 1)[0]
+        failure_branch = step.split('if [ "$test_status" -ne 0 ]; then', 1)[1].split("fi", 1)[0]
+        self.assertIn('tail -n 80 "$test_log"', failure_branch)
+        self.assertIn("cut -c1-500", failure_branch)
+        self.assertIn("%25", failure_branch)
+        self.assertIn("%0D", failure_branch)
+        self.assertIn("%0A", failure_branch)
+        self.assertLess(step.index('if [ "$test_status"'), step.index('cat "$test_log"'))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -122,7 +122,15 @@ try {
     $catalogAdminController->initContent();
     assertCatalogAdminTrue(str_contains($catalogAdminController->content, '[TEST FIXTURE] 合成キッチンツール A'), 'The Korean admin controller should render a pending synthetic snapshot.');
     assertCatalogAdminTrue(str_contains($catalogAdminController->content, '아마존 일본'), 'The admin controller should localize Amazon Japan source names.');
-    assertCatalogAdminTrue(!str_contains($catalogAdminController->content, 'amazon_jp'), 'Image metadata should use the Korean marketplace label instead of a provider slug.');
+    assertCatalogAdminTrue(str_contains($catalogAdminController->content, 'amazon_jp:B0KURANEA1'), 'The source-qualified deduplication key should retain its provider identity.');
+    $imageMetadataMatches = [];
+    assertCatalogAdminTrue(
+        preg_match('/<p><strong>이미지 메타데이터<\/strong><\/p><ul>(.*?)<\/ul>/s', $catalogAdminController->content, $imageMetadataMatches) === 1,
+        'The review screen should render image metadata for the synthetic source fixture.'
+    );
+    $imageMetadataHtml = $imageMetadataMatches[1];
+    assertCatalogAdminTrue(str_contains($imageMetadataHtml, '아마존 일본'), 'Image metadata should localize its source provider.');
+    assertCatalogAdminTrue(!str_contains($imageMetadataHtml, 'amazon_jp'), 'Image metadata should use the Korean marketplace label instead of a provider slug.');
     assertCatalogAdminTrue(str_contains($catalogAdminController->content, '중복 식별 키'), 'The admin review screen should expose the deduplication key.');
     assertCatalogAdminTrue(str_contains($catalogAdminController->content, '출처 사이트 후기'), 'Source-site reviews should be distinguished from KURANEA customer reviews.');
     assertCatalogAdminTrue(str_contains($catalogAdminController->content, 'ORDENOWA 고객 후기'), 'Imported source reviews should not be presented as ORDENOWA customer reviews.');

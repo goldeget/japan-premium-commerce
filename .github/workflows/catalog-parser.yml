@@ -36,7 +36,27 @@ jobs:
           find modules/kuraneacatalog tests/catalog -name '*.php' -print0 | xargs -0 -n1 php -l
 
       - name: Run synthetic offline Amazon Japan and Rakuten parser tests
-        run: php tests/catalog/run.php
+        shell: bash
+        run: |
+          set -uo pipefail
+          test_log="$RUNNER_TEMP/catalog-parser-tests.log"
+          php tests/catalog/run.php >"$test_log" 2>&1
+          test_status=$?
+          if [ "$test_status" -ne 0 ]; then
+            {
+              echo '### Catalog parser test failure'
+              echo '```text'
+              tail -n 80 "$test_log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            failure_line=$(tail -n 1 "$test_log" | cut -c1-500)
+            failure_line="${failure_line//'%'/'%25'}"
+            failure_line="${failure_line//$'\r'/'%0D'}"
+            failure_line="${failure_line//$'\n'/'%0A'}"
+            echo "::error title=Offline catalog parser tests::$failure_line"
+            exit "$test_status"
+          fi
+          cat "$test_log"
 
       - name: Validate fresh-install workflow contract
         env:
