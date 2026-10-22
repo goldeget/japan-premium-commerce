@@ -223,7 +223,7 @@ jobs:
         run: |
           set -euo pipefail
           product_id=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
-            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT id_product FROM ps_product WHERE reference LIKE \'KURANEA-CI-%\' AND active=1 ORDER BY id_product DESC LIMIT 1"')
+            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT id_product FROM ps_product WHERE reference LIKE \"KURANEA-CI-%\" AND active=1 ORDER BY id_product DESC LIMIT 1"')
           if ! [[ "$product_id" =~ ^[0-9]+$ ]] || [ "$product_id" -lt 1 ]; then
             echo "::error title=ORDENOWA browser QA::No isolated active test product found."
             exit 1
