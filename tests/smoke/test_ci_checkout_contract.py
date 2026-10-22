@@ -84,11 +84,13 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
 
         self.assertIn("steps.checkout_override.outcome == 'success'", diagnostic_step)
         self.assertIn("steps.checkout_customer_browser_qa.outcome == 'failure'", diagnostic_step)
+        self.assertIn("steps.account_browser_qa.outcome == 'failure'", diagnostic_step)
         self.assertIn('MYSQL_PWD="$MARIADB_ROOT_PASSWORD"', diagnostic_step)
         self.assertIn('"$MARIADB_DATABASE"', diagnostic_step)
-        self.assertIn("::notice title=ORDENOWA checkout rewrite database::", diagnostic_step)
+        self.assertIn("::notice title=ORDENOWA static route rewrite database::", diagnostic_step)
         self.assertIn('"$route_settings_hex"', diagnostic_step)
         self.assertIn('"$japanese_order_rewrite_hex"', diagnostic_step)
+        self.assertIn('"$japanese_identity_rewrite_hex"', diagnostic_step)
         for expected in (
             "PS_REWRITING_SETTINGS",
             "PS_CANONICAL_REDIRECT",
@@ -96,6 +98,7 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             "PS_DEFAULT_LANGUAGE_URL_PREFIX",
             "HEX(\\`value\\`)",
             "HEX(ml.url_rewrite)",
+            "identity",
             "l.iso_code =",
         ):
             with self.subTest(expected=expected):
