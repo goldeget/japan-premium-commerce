@@ -156,7 +156,11 @@ def run() -> None:
             lambda browser: "상품 ID" in browser.find_element(By.TAG_NAME, "body").text
             and "저장했습니다" in browser.find_element(By.TAG_NAME, "body").text
         )
-        product_id = int(visible(driver, 'input[name="id_product"]').get_attribute("value"))
+        product_id = int(
+            WebDriverWait(driver, 30)
+            .until(EC.presence_of_element_located((By.CSS_SELECTOR, 'input[name="id_product"]')))
+            .get_attribute("value")
+        )
         if product_id < 1:
             raise AssertionError("the saved product did not receive a native PrestaShop ID")
         for selector, expected in (

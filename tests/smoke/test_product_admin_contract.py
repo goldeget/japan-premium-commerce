@@ -151,6 +151,14 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertLess(run_method.index("try:"), run_method.index("driver = webdriver.Chrome(options=options)"))
         self.assertIn("if driver is not None:", run_method)
 
+    def test_created_product_id_uses_presence_wait_for_hidden_input(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        controller = (MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php").read_text(encoding="utf-8")
+
+        self.assertIn('<input type="hidden" name="id_product"', controller)
+        self.assertIn('presence_of_element_located((By.CSS_SELECTOR, \'input[name="id_product"]\'))', browser)
+        self.assertNotIn('visible(driver, \'input[name="id_product"]\')', browser)
+
     def test_manager_link_discovery_accepts_collapsed_sidebar_entries(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
         manager_link = browser.split("def manager_link(", 1)[1].split("\n\ndef product_links", 1)[0]
