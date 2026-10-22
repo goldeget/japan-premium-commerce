@@ -56,6 +56,20 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         start = workflow.split("- name: Start the empty-volume shop", 1)[1].split("- name:", 1)[0]
         self.assertIn('docker compose -p "$CI_COMPOSE_PROJECT_NAME" up -d --wait --wait-timeout 900', start)
 
+    def test_catalog_install_and_queue_persistence_check_precedes_postal_download(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        shop_start = workflow.index("- name: Start the empty-volume shop")
+        catalog_check = workflow.index("- name: Verify the installed KURANEA catalog review module and persistent queue")
+        postal_download = workflow.index("- name: Download and import official Japan Post KEN_ALL data")
+        self.assertLess(shop_start, catalog_check)
+        self.assertLess(catalog_check, postal_download)
+
+        catalog_step = workflow[catalog_check:postal_download]
+        self.assertIn("tests/catalog/verify_catalog_installation.php", catalog_step)
+        self.assertIn("tests/catalog/fixtures/amazon-jp-product.synthetic.html", catalog_step)
+        self.assertIn("restart prestashop", catalog_step)
+        self.assertGreaterEqual(catalog_step.count("php /tmp/verify_catalog_installation.php"), 2)
+
     def test_failed_compose_bootstrap_publishes_a_redacted_step_summary(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         capture = workflow.split("- name: Capture bounded diagnostics on failure", 1)[1].split("- name:", 1)[0]

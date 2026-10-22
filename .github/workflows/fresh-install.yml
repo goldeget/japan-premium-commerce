@@ -13,7 +13,9 @@ on:
       - 'modules/kuraneapostcode/**'
       - 'modules/kuraneabackoffice/**'
       - 'modules/kuraneabusinessprofile/**'
+      - 'modules/kuraneacatalog/**'
       - 'tests/business_profile/**'
+      - 'tests/catalog/**'
       - 'tests/smoke/fresh_install.sh'
       - 'tests/smoke/run_postal_updater.sh'
       - 'tests/smoke/collect_failure_diagnostics.sh'
@@ -98,6 +100,25 @@ jobs:
         id: compose_up
         shell: bash
         run: docker compose -p "$CI_COMPOSE_PROJECT_NAME" up -d --wait --wait-timeout 900
+
+      - name: Verify the installed KURANEA catalog review module and persistent queue
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            mkdir -p /tmp/kuranea-catalog-fixtures
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/kuranea-catalog-fixtures/amazon-jp-product.synthetic.html' \
+            < tests/catalog/fixtures/amazon-jp-product.synthetic.html
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/verify_catalog_installation.php' \
+            < tests/catalog/verify_catalog_installation.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            runuser -g www-data -u www-data -- php /tmp/verify_catalog_installation.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" restart prestashop
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" up -d --wait --wait-timeout 300 prestashop
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            runuser -g www-data -u www-data -- php /tmp/verify_catalog_installation.php
 
       - name: Download and import official Japan Post KEN_ALL data
         run: bash tests/smoke/run_postal_updater.sh "$CI_COMPOSE_PROJECT_NAME"

@@ -7,6 +7,7 @@ COPY themes/kuranea/ /opt/kuranea/themes/kuranea/
 COPY modules/kuraneapostcode/ /opt/kuranea/modules/kuraneapostcode/
 COPY modules/kuraneabackoffice/ /opt/kuranea/modules/kuraneabackoffice/
 COPY modules/kuraneabusinessprofile/ /opt/kuranea/modules/kuraneabusinessprofile/
+COPY modules/kuraneacatalog/ /opt/kuranea/modules/kuraneacatalog/
 COPY --chmod=0755 docker/kuranea-entrypoint.sh /usr/local/bin/kuranea-entrypoint
 COPY --chmod=0755 docker/patch-docker-run.sh /usr/local/bin/kuranea-patch-docker-run
 COPY --chown=root:www-data --chmod=0640 docker/kuran-post-install.php /usr/local/bin/kuran-post-install.php

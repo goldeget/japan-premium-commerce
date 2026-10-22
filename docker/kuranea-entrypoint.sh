@@ -42,6 +42,26 @@ sync_module() {
 sync_module kuraneapostcode
 sync_module kuraneabackoffice
 sync_module kuraneabusinessprofile
+sync_module kuraneacatalog
+
+catalog_queue_dir="${KURANEA_CATALOG_QUEUE_DIR:-/var/lib/kuranea/catalog-review}"
+case "$catalog_queue_dir" in
+    /var/www/html|/var/www/html/*)
+        echo "Catalog review storage must stay outside the public PrestaShop webroot." >&2
+        exit 1
+        ;;
+esac
+if [ -L "$catalog_queue_dir" ]; then
+    echo "Catalog review storage directory cannot be a symbolic link." >&2
+    exit 1
+fi
+mkdir -p "$catalog_queue_dir"
+if [ -L "$catalog_queue_dir" ]; then
+    echo "Catalog review storage directory cannot be a symbolic link." >&2
+    exit 1
+fi
+chown www-data:www-data "$catalog_queue_dir"
+chmod 0750 "$catalog_queue_dir"
 
 cp /var/www/html/themes/kuranea/assets/sw.js /var/www/html/sw.js
 cp /var/www/html/themes/kuranea/assets/manifest.webmanifest /var/www/html/manifest.webmanifest
