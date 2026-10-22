@@ -25,6 +25,17 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("bash tests/smoke/collect_failure_diagnostics.sh", workflow)
         self.assertIn("docker compose -p \"$project_name\" logs --tail=160 mariadb prestashop", (ROOT / "tests/smoke/collect_failure_diagnostics.sh").read_text(encoding="utf-8"))
 
+    def test_isolated_preinstall_probe_repairs_a_root_owned_class_index(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        bootstrap = workflow.split("- name: Build and install into unique empty volumes", 1)[1].split("- name:", 1)[0]
+        self.assertIn('probe_project="${CI_COMPOSE_PROJECT_NAME}-cache-probe"', bootstrap)
+        self.assertIn("run --rm --no-deps", bootstrap)
+        self.assertIn('chown -R root:root "$cache_dir"', bootstrap)
+        self.assertIn("/tmp/pre-install-scripts/10-kuranea-cache-ownership.sh", bootstrap)
+        self.assertIn('test "$(stat -c "%U:%G" "$cache_dir/class_index.php")" = www-data:www-data', bootstrap)
+        self.assertIn("runuser -g www-data -u www-data -- test -w", bootstrap)
+        self.assertIn('docker compose -p "$probe_project" down -v --remove-orphans', bootstrap)
+
     def test_failed_compose_bootstrap_publishes_a_redacted_step_summary(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         bootstrap = workflow.split("- name: Build and install into unique empty volumes", 1)[1].split("- name:", 1)[0]

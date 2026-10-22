@@ -21,8 +21,12 @@ class PreinstallOwnershipTests(unittest.TestCase):
             dockerfile,
         )
         self.assertIn("cache_dir=/var/www/html/var/cache/prod", script)
-        self.assertIn('chown www-data:www-data "$cache_dir"', script)
-        self.assertNotIn("chown -R", script)
+        self.assertIn('chown -R www-data:www-data "$cache_dir"', script)
+        self.assertEqual(
+            [line.strip() for line in script.splitlines() if "chown" in line],
+            ['chown -R www-data:www-data "$cache_dir"'],
+            "only the generated production cache tree should be recursively repaired",
+        )
         self.assertNotRegex(script, r"chmod\s+(?:-R\s+)?777")
 
     def test_bundled_module_files_are_readable_by_the_web_user_after_sync(self) -> None:

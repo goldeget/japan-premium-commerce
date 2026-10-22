@@ -50,7 +50,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if ! docker compose -p "$CI_COMPOSE_PROJECT_NAME" up -d --build --wait --wait-timeout 900; then
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" build prestashop
+
+          probe_project="${CI_COMPOSE_PROJECT_NAME}-cache-probe"
+          cleanup_probe() {
+            docker compose -p "$probe_project" down -v --remove-orphans >/dev/null 2>&1 || true
+          }
+          trap cleanup_probe EXIT
+          docker compose -p "$probe_project" run --rm --no-deps --entrypoint /bin/sh prestashop -ec '
+            cache_dir=/var/www/html/var/cache/prod
+            mkdir -p "$cache_dir"
+            printf stale > "$cache_dir/class_index.php"
+            chown -R root:root "$cache_dir"
+            /tmp/pre-install-scripts/10-kuranea-cache-ownership.sh
+            test "$(stat -c "%U:%G" "$cache_dir/class_index.php")" = www-data:www-data
+            runuser -g www-data -u www-data -- test -w "$cache_dir/class_index.php"
+          '
+          cleanup_probe
+          trap - EXIT
+
+          if ! docker compose -p "$CI_COMPOSE_PROJECT_NAME" up -d --wait --wait-timeout 900; then
             bash tests/smoke/collect_failure_diagnostics.sh
             exit 1
           fi
