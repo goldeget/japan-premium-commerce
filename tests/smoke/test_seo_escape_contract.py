@@ -181,13 +181,15 @@ class SeoEscapeContract(unittest.TestCase):
             attachment_child_block,
         )
         self.assertIn(
-            "aria-label=\"{$manufacturer_aria_label|escape:'htmlall':'UTF-8' nofilter}\"",
+            "aria-label=\"{$manufacturer_aria_label|escape:'htmlall':'UTF-8'}\"",
             manufacturer_child_block,
         )
+        self.assertNotIn("nofilter", manufacturer_child_block)
         self.assertIn(
-            "aria-label=\"{$attachment_aria_label|escape:'htmlall':'UTF-8' nofilter}\"",
+            "aria-label=\"{$attachment_aria_label|escape:'htmlall':'UTF-8'}\"",
             attachment_child_block,
         )
+        self.assertNotIn("nofilter", attachment_child_block)
         self.assertNotIn('aria-label="{l', manufacturer_child_block)
         self.assertNotIn('aria-label="{l', attachment_child_block)
 
