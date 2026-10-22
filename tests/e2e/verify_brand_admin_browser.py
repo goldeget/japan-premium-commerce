@@ -6,8 +6,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 from pathlib import Path
+from typing import Callable
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from selenium import webdriver
@@ -37,6 +39,9 @@ SEO_DESCRIPTION = "ORDENOWA CI SEO description"
 SEO_TITLE_KO = "ORDENOWA CI SEO TITLE KO"
 SEO_DESCRIPTION_KO = "ORDENOWA CI SEO DESCRIPTION KO"
 BRAND_DRAFT_REPLACEMENT_ATTEMPTS = 3
+BRAND_DIAGNOSTIC_MAX_MATCHES = 5
+BRAND_DIAGNOSTIC_CONTEXT_CHARS = 64
+BRAND_DIAGNOSTIC_SNIPPET_CHARS = 160
 
 
 def expected_derivative_path(source: Path, filename: str) -> str:
@@ -268,11 +273,56 @@ def image_is_rendered(driver: webdriver.Chrome, selector: str) -> dict:
     )
 
 
+def sanitize_brand_diagnostic_text(value: str) -> str:
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", str(value or ""))
+    text = re.sub(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", "[email]", text, flags=re.I)
+    text = re.sub(r"https?://\S+|\bwww\.\S+", "[url]", text, flags=re.I)
+    text = re.sub(r"(?<!\w)\+?\d[\d\s().-]{5,}\d(?!\w)", "[number]", text)
+    return " ".join(text.split())[:BRAND_DIAGNOSTIC_SNIPPET_CHARS]
+
+
 def assert_no_legacy_brand_in_rendered_page(driver: webdriver.Chrome, label: str) -> None:
-    rendered_text = driver.execute_script(
-        "return [document.title || '', document.body?.innerText || ''].join('\\n');"
+    diagnostics = driver.execute_script(
+        r"""
+        const title = document.title || '';
+        const visibleBody = document.body?.innerText || '';
+        const matches = [];
+        const collect = (value, source) => {
+          const pattern = /kuranea/gi;
+          let match;
+          while (matches.length < arguments[0] && (match = pattern.exec(value))) {
+            const start = Math.max(0, match.index - arguments[1]);
+            const end = Math.min(value.length, match.index + match[0].length + arguments[1]);
+            matches.push({source, snippet: value.slice(start, end)});
+          }
+        };
+        collect(title, 'page_title');
+        collect(visibleBody, 'visible_body');
+        return {title, matches};
+        """,
+        BRAND_DIAGNOSTIC_MAX_MATCHES,
+        BRAND_DIAGNOSTIC_CONTEXT_CHARS,
     )
-    if "kuranea" in rendered_text.casefold():
+    if diagnostics.get("matches"):
+        safe_diagnostics = {
+            "label": sanitize_brand_diagnostic_text(label),
+            "page_title": sanitize_brand_diagnostic_text(diagnostics.get("title", "")),
+            "matches": [
+                {
+                    "source": item.get("source", "unknown"),
+                    "snippet": sanitize_brand_diagnostic_text(item.get("snippet", "")),
+                }
+                for item in diagnostics["matches"][:BRAND_DIAGNOSTIC_MAX_MATCHES]
+                if isinstance(item, dict)
+            ],
+        }
+        diagnostic_json = json.dumps(safe_diagnostics, ensure_ascii=True, sort_keys=True)
+        print("ORDENOWA_LEGACY_BRAND_MATCH=" + diagnostic_json, file=sys.stderr)
+        workflow_data = diagnostic_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print(
+            "::error title=ORDENOWA legacy brand visible text::" + workflow_data,
+            file=sys.stderr,
+        )
         raise AssertionError("legacy KURANEA brand was rendered on " + label)
 
 
@@ -311,19 +361,32 @@ def assert_public_brand_assets(
     seo_description: str = SEO_DESCRIPTION,
     pwa_name: str = "ORDENOWA CI QA",
     pwa_short_name: str = "ORDENOWA CI",
+    stage_prefix: str,
+    stage_callback: Callable[[str], None],
 ) -> None:
+    def set_assertion_stage(phase: str) -> None:
+        stage_callback(stage_prefix + "_" + phase)
+
+    set_assertion_stage("customer_route")
     customer_url = urljoin(BASE + "/", locale_path.lstrip("/"))
     if urlparse(customer_url).netloc != urlparse(BASE).netloc:
         raise AssertionError("the customer locale route left the isolated storefront")
     driver.get(customer_url)
+
+    set_assertion_stage("header_logo_src_decode")
     logo = image_is_rendered(driver, "picture img.kuranea-brand__image")
     if logo["width"] < 1 or expected_logo not in logo["src"]:
         raise AssertionError("approved ORDENOWA header logo did not render for " + label)
+
+    set_assertion_stage("visible_brand_text")
     assert_no_legacy_brand_in_rendered_page(driver, label + " storefront")
+
+    set_assertion_stage("public_asset_derivative_paths")
     assert_uploaded_derivative_url(
         logo["src"], OFFICIAL_UPLOADS["primary_logo"], expected_logo, label + " header logo"
     )
 
+    set_assertion_stage("public_asset_decode")
     results = driver.execute_async_script(
         """
         const done = arguments[0];
@@ -355,6 +418,8 @@ def assert_public_brand_assets(
     )
     if results.get("error"):
         raise AssertionError("brand favicon, Apple icon, OG image, or PWA asset failed browser decoding")
+
+    set_assertion_stage("public_asset_derivative_paths")
     rels = {item["rel"] for item in results["assetLinks"]}
     if "icon" not in rels or "apple-touch-icon" not in rels:
         raise AssertionError("favicon or Apple Touch Icon link is missing")
@@ -386,6 +451,8 @@ def assert_public_brand_assets(
     assert_uploaded_derivative_url(
         results["og"], OFFICIAL_UPLOADS["primary_logo"], "og-brand.png", "Open Graph image"
     )
+
+    set_assertion_stage("metadata_contract")
     if results["ogImage"]["width"] != 1200 or results["ogImage"]["height"] != 630:
         raise AssertionError("the approved Open Graph image dimensions are incorrect")
     if len(results["icons"]) != 3 or not any(item["purpose"] == "maskable" for item in results["icons"]):
@@ -465,6 +532,11 @@ def run() -> None:
     options.add_argument("--lang=ja-JP")
     driver = webdriver.Chrome(options=options)
     stage = "administrator_login"
+
+    def set_brand_assertion_stage(assertion_stage: str) -> None:
+        nonlocal stage
+        stage = assertion_stage
+
     try:
         driver.get(ADMIN_LOGIN + "/login")
         login_logo = image_is_rendered(driver, ".ordenowa-admin-login-brand img")
@@ -689,12 +761,24 @@ def run() -> None:
         driver.save_screenshot(str(DEST / "brand-admin-published.png"))
 
         stage = "published_desktop_customer_brand"
-        assert_public_brand_assets(driver, "desktop", "header-desktop.png")
+        assert_public_brand_assets(
+            driver,
+            "desktop",
+            "header-desktop.png",
+            stage_prefix="published_desktop_customer_brand",
+            stage_callback=set_brand_assertion_stage,
+        )
         driver.save_screenshot(str(DEST / "brand-desktop-published.png"))
 
         stage = "published_mobile_customer_brand"
         driver.set_window_size(390, 844)
-        assert_public_brand_assets(driver, "mobile", "header-mobile.png")
+        assert_public_brand_assets(
+            driver,
+            "mobile",
+            "header-mobile.png",
+            stage_prefix="published_mobile_customer_brand",
+            stage_callback=set_brand_assertion_stage,
+        )
         driver.save_screenshot(str(DEST / "brand-mobile-published.png"))
 
         stage = "published_korean_customer_brand"
@@ -709,6 +793,8 @@ def run() -> None:
             seo_description=SEO_DESCRIPTION_KO,
             pwa_name="ORDENOWA CI APP KO",
             pwa_short_name="ORDENOWA KO",
+            stage_prefix="published_korean_customer_brand",
+            stage_callback=set_brand_assertion_stage,
         )
         driver.save_screenshot(str(DEST / "brand-korean-published.png"))
 

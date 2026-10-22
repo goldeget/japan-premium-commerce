@@ -32,6 +32,47 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn("assert_no_legacy_brand_in_rendered_page(driver, label + \" storefront\")", published_assets)
         self.assertIn('assert_no_legacy_brand_in_rendered_page(driver, "admin login")', admin_login)
 
+    def test_customer_visible_legacy_brand_failure_reports_bounded_sanitized_matches(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        helper_start = browser_flow.index("def assert_no_legacy_brand_in_rendered_page(")
+        helper_end = browser_flow.index("\ndef ", helper_start + 1)
+        helper = browser_flow[helper_start:helper_end]
+        sanitizer = browser_flow.split("def sanitize_brand_diagnostic_text(", 1)[1].split(
+            "\ndef ", 1
+        )[0]
+
+        self.assertIn("document.title", helper)
+        self.assertIn("document.body?.innerText", helper)
+        self.assertIn("/kuranea/gi", helper)
+        self.assertIn("matches", helper)
+        self.assertIn("sanitize_brand_diagnostic_text", helper)
+        self.assertIn("ORDENOWA_LEGACY_BRAND_MATCH=", helper)
+        self.assertIn("::error title=ORDENOWA legacy brand visible text::", helper)
+        self.assertIn("BRAND_DIAGNOSTIC_MAX_MATCHES", helper)
+        self.assertIn("BRAND_DIAGNOSTIC_CONTEXT_CHARS", helper)
+        self.assertIn("BRAND_DIAGNOSTIC_SNIPPET_CHARS", sanitizer)
+        self.assertIn("[email]", sanitizer)
+        self.assertIn("[url]", sanitizer)
+        self.assertIn("[number]", sanitizer)
+
+    def test_published_brand_assertions_report_distinct_failure_stages(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        published_assets = browser_flow.split("def assert_public_brand_assets(", 1)[1].split(
+            "def assert_seller_disclosures_remain_gated", 1
+        )[0]
+        run_flow = browser_flow.split("def run()", 1)[1]
+
+        self.assertIn('set_assertion_stage("header_logo_src_decode")', published_assets)
+        self.assertIn('set_assertion_stage("visible_brand_text")', published_assets)
+        self.assertIn('set_assertion_stage("public_asset_decode")', published_assets)
+        self.assertIn('set_assertion_stage("public_asset_derivative_paths")', published_assets)
+        self.assertIn('set_assertion_stage("metadata_contract")', published_assets)
+        self.assertIn("def set_brand_assertion_stage(", run_flow)
+        self.assertIn("nonlocal stage", run_flow)
+        self.assertIn('stage_prefix="published_desktop_customer_brand"', run_flow)
+        self.assertIn('stage_prefix="published_mobile_customer_brand"', run_flow)
+        self.assertIn('stage_prefix="published_korean_customer_brand"', run_flow)
+
     def test_browser_persists_seller_profile_fields_without_opening_disclosures(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
 
@@ -322,6 +363,8 @@ class BrandE2EContractTests(unittest.TestCase):
             '            seo_description=SEO_DESCRIPTION_KO,\n'
             '            pwa_name="ORDENOWA CI APP KO",\n'
             '            pwa_short_name="ORDENOWA KO",\n'
+            '            stage_prefix="published_korean_customer_brand",\n'
+            '            stage_callback=set_brand_assertion_stage,\n'
             '        )',
             browser_flow,
         )
