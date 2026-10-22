@@ -3,7 +3,7 @@ name: Isolated fresh install
 on:
   workflow_dispatch:
   push:
-    branches: [work]
+    branches: [work, ci/ordenowa-postcode-isolation-20261022]
     paths:
       - '.github/workflows/fresh-install.yml'
       - 'compose.yaml'
@@ -120,10 +120,22 @@ jobs:
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             runuser -g www-data -u www-data -- php /tmp/verify_catalog_installation.php
 
-      - name: Download and import official Japan Post KEN_ALL data
-        run: bash tests/smoke/run_postal_updater.sh "$CI_COMPOSE_PROJECT_NAME"
+      - name: Import synthetic Tokyo postcode fixture for isolated checkout QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This single-record test input follows the public KEN_ALL column layout,
+          # but it is synthetic CI data, NOT an official Japan Post dataset.
+          printf '%s\n' '"13101","","1000004","","","","東京都","千代田区","大手町","","","","","",""' \
+            | docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+                sh -c 'cat > /tmp/ordenowa-ci-only-ken-all.csv'
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            runuser -g www-data -u www-data -- \
+            php /var/www/html/modules/kuraneapostcode/bin/import-ken-all.php \
+              --file=/tmp/ordenowa-ci-only-ken-all.csv
+          printf '%s\n' 'ISOLATED CI FIXTURE: address and order tests below use synthetic Tokyo postcode data; official Japan Post archive import runs separately afterwards.' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Verify real Tokyo postcode lookup
+      - name: Verify isolated CI Tokyo postcode lookup
         env:
           SHOP_BASE_URL: http://127.0.0.1:18080
         run: |
@@ -144,10 +156,10 @@ jobs:
               and item.get("town") == "大手町"
               for item in data.get("candidates", [])
           ), data
-          print("PASS: official Japan Post postcode 1000004 resolves to Tokyo / Chiyoda / Otemachi")
+          print("PASS: synthetic CI postcode 1000004 resolves to Tokyo / Chiyoda / Otemachi")
           PY
 
-      - name: Verify saved native Tokyo address
+      - name: Verify saved native CI Tokyo address
         shell: bash
         run: |
           set -euo pipefail
@@ -159,7 +171,7 @@ jobs:
             prestashop \
             runuser -g www-data -u www-data -- php /tmp/verify_native_address_persistence.php
 
-      - name: Verify Japan Post address in an unpaid native order and Back Office view
+      - name: Verify synthetic Tokyo address in an unpaid native order and Back Office view
         shell: bash
         run: |
           set -euo pipefail
@@ -190,6 +202,21 @@ jobs:
             < tests/business_profile/verify_installation.php
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             runuser -g www-data -u www-data -- php /tmp/verify_business_profile_install.php
+
+      - name: Download and import official Japan Post KEN_ALL data
+        run: bash tests/smoke/run_postal_updater.sh "$CI_COMPOSE_PROJECT_NAME"
+
+      - name: Verify official Japan Post import contains national address data
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
+            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT COUNT(*) FROM ps_kuraneapostcode_address"')
+          if ! [[ "$actual" =~ ^[0-9]+$ ]] || [ "$actual" -lt 100000 ]; then
+            echo "::error title=Japan Post address coverage::Official import did not contain the expected national postcode dataset."
+            exit 1
+          fi
+          printf 'PASS: official Japan Post KEN_ALL dataset imported; count=%s\n' "$actual"
 
       - name: Capture bounded diagnostics on failure
         if: failure()
