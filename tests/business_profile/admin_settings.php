@@ -76,6 +76,32 @@ assertBusinessProfileTrue(str_contains($renderedForm, 'name="brand_uploads[prima
 assertBusinessProfileTrue(str_contains($renderedForm, 'name="brand_uploads[favicon_symbol]"'), 'The favicon source upload slot must be addressable.');
 assertBusinessProfileTrue(str_contains($renderedForm, 'name="brand_uploads[pwa_icon]"'), 'The PWA icon source upload slot must be addressable.');
 
+$shippingAdminForm = \Kuranea\BusinessProfile\Admin\AdminProfileForm::render(
+    $initial,
+    '/admin-test',
+    'csrf-token',
+    false,
+    '',
+    '',
+    '/admin-test?controller=AdminCarriers&token=carrier-token',
+    '/admin-test?controller=AdminShipping&token=shipping-token'
+);
+assertBusinessProfileTrue(
+    str_contains($shippingAdminForm, 'class="alert alert-info ordenowa-shipping-admin-links"')
+        && str_contains($shippingAdminForm, '배송사·배송료 관리')
+        && str_contains($shippingAdminForm, '배송 기본 설정'),
+    'The Korean shipping section should link to the native carrier and shipping preference settings.'
+);
+assertBusinessProfileTrue(
+    str_contains($shippingAdminForm, 'href="/admin-test?controller=AdminCarriers&amp;token=carrier-token"')
+        && str_contains($shippingAdminForm, 'href="/admin-test?controller=AdminShipping&amp;token=shipping-token"'),
+    'Native shipping admin URLs must be HTML escaped before they are rendered as links.'
+);
+assertBusinessProfileTrue(
+    str_contains($shippingAdminForm, 'name="profile[shipping][ko-KR]"'),
+    'Adding native shipping links must preserve the editable Korean shipping policy field.'
+);
+
 $unsafePreviewProfile = $initial;
 $unsafePreviewProfile['brand']['name']['ja-JP'] = '<script>alert(1)</script>';
 $unsafePreviewProfile['content']['company_profile']['ja-JP'] = 'ORDENOWA CI 회사소개 <script>alert(1)</script>';

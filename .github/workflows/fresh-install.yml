@@ -346,6 +346,31 @@ jobs:
           command -v google-chrome || command -v chromium
           mkdir -p "$RUNNER_TEMP/ordenowa-browser-qa"
 
+      - name: Verify Korean admin shipping links resolve in Chromium
+        id: shipping_admin_browser_qa
+        continue-on-error: true
+        shell: bash
+        env:
+          SHOP_BASE_URL: http://localhost:18080
+          ADMIN_LOGIN_URL: http://localhost:18080/admin-kuranea
+          ADMIN_MAIL: ci-ordenowa@example.invalid
+          ADMIN_PASSWD: Ci-Only-Admin-Password-92!
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+        run: |
+          set -euo pipefail
+          log_file="$RUNNER_TEMP/ordenowa-browser-qa/shipping-admin-e2e.log"
+          set +e
+          "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
+            tests/e2e/verify_shipping_admin_links_browser.py \
+            2>&1 | tee "$log_file"
+          browser_status=${PIPESTATUS[0]}
+          set -e
+          if [ "$browser_status" -ne 0 ]; then
+            failure_line=$(rg '^ORDENOWA_SHIPPING_ADMIN_STAGE=' "$log_file" | tail -n 1 || true)
+            printf 'ORDENOWA shipping admin browser failure: %s\n' "${failure_line:-See the uploaded shipping admin browser log for the failing stage.}" >> "$GITHUB_STEP_SUMMARY"
+            exit "$browser_status"
+          fi
+
       - name: Verify official ORDENOWA brand upload and publish in Chromium
         id: brand_browser_qa
         continue-on-error: true
@@ -643,6 +668,7 @@ jobs:
         shell: bash
         env:
           BRAND_BROWSER_QA_OUTCOME: ${{ steps.brand_browser_qa.outcome }}
+          SHIPPING_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.shipping_admin_browser_qa.outcome }}
           ACCOUNT_BROWSER_QA_OUTCOME: ${{ steps.account_browser_qa.outcome }}
           PRODUCT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.product_admin_browser_qa.outcome }}
           STOREFRONT_BROWSER_QA_OUTCOME: ${{ steps.storefront_browser_qa.outcome }}
@@ -656,6 +682,7 @@ jobs:
           set -euo pipefail
           artifact_dir="$RUNNER_TEMP/ordenowa-browser-qa"
           if [[ "$BRAND_BROWSER_QA_OUTCOME" == success \
+            && "$SHIPPING_ADMIN_BROWSER_QA_OUTCOME" == success \
             && "$ACCOUNT_BROWSER_QA_OUTCOME" == success \
             && "$PRODUCT_ADMIN_BROWSER_QA_OUTCOME" == success \
             && "$STOREFRONT_BROWSER_QA_OUTCOME" == success \
@@ -667,6 +694,7 @@ jobs:
             && "$CHECKOUT_GATE_AFTER_ORDER_OUTCOME" == success ]]; then
             required_artifacts=(
               ordenowa-brand-e2e.log
+              shipping-admin-e2e.log
               customer-account-e2e.log
               product-admin-e2e.log
               storefront-product-cart-e2e.log
@@ -675,6 +703,8 @@ jobs:
               storefront-checkout-gate-after-ci-order.log
               brand-desktop-published.png
               brand-mobile-published.png
+              shipping-admin-settings-desktop.png
+              shipping-admin-settings-mobile.png
               desktop-customer-account-created.png
               mobile-customer-account-created.png
               product-admin-created-desktop.png
@@ -737,6 +767,7 @@ jobs:
         if: always()
         env:
           BRAND_BROWSER_QA_OUTCOME: ${{ steps.brand_browser_qa.outcome }}
+          SHIPPING_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.shipping_admin_browser_qa.outcome }}
           ACCOUNT_BROWSER_QA_OUTCOME: ${{ steps.account_browser_qa.outcome }}
           PRODUCT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.product_admin_browser_qa.outcome }}
           STOREFRONT_BROWSER_QA_OUTCOME: ${{ steps.storefront_browser_qa.outcome }}
@@ -755,6 +786,7 @@ jobs:
           failed_steps=()
           for entry in \
             "brand=$BRAND_BROWSER_QA_OUTCOME" \
+            "shipping_admin=$SHIPPING_ADMIN_BROWSER_QA_OUTCOME" \
             "account=$ACCOUNT_BROWSER_QA_OUTCOME" \
             "product_admin=$PRODUCT_ADMIN_BROWSER_QA_OUTCOME" \
             "storefront=$STOREFRONT_BROWSER_QA_OUTCOME" \

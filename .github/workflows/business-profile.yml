@@ -56,6 +56,11 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python3 -m unittest discover -s tests/business_profile -p 'test_brand_asset_display_contract.py' -v
 
+      - name: Check Korean shipping admin links contract
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -m unittest discover -s tests/business_profile -p 'test_shipping_admin_links_contract.py' -v
+
       - name: Check publish blocks unsaved profile changes
         env:
           PYTHONDONTWRITEBYTECODE: '1'

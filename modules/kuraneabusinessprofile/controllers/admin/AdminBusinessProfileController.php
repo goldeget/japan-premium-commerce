@@ -54,6 +54,8 @@ class AdminBusinessProfileController extends ModuleAdminController
         $published = $repository->loadPublished($shopId);
         $adminUrl = (string) $this->context->link->getAdminLink('AdminBusinessProfile');
         $bankUrl = (string) $this->context->link->getAdminLink('AdminBusinessProfileBanks');
+        $carriersAdminUrl = (string) $this->context->link->getAdminLink('AdminCarriers');
+        $shippingPreferencesAdminUrl = (string) $this->context->link->getAdminLink('AdminShipping');
         $token = (string) Tools::getAdminTokenLite('AdminBusinessProfile');
         $canPublish = AdminAccessPolicy::canPublish((array) ($this->tabAccess ?? []));
 
@@ -65,7 +67,9 @@ class AdminBusinessProfileController extends ModuleAdminController
             $token,
             $canPublish,
             $bankUrl,
-            (string) $this->context->link->getBaseLink()
+            (string) $this->context->link->getBaseLink(),
+            $carriersAdminUrl,
+            $shippingPreferencesAdminUrl
         );
         if ($this->ordenowaPreviewProfile !== null) {
             $this->content .= AdminProfileForm::renderPreview(

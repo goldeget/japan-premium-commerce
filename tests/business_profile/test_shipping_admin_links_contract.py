@@ -1,0 +1,50 @@
+from pathlib import Path
+import unittest
+
+
+ROOT = Path(__file__).resolve().parents[2]
+FORM = ROOT / "modules/kuraneabusinessprofile/src/Admin/AdminProfileForm.php"
+CONTROLLER = ROOT / "modules/kuraneabusinessprofile/controllers/admin/AdminBusinessProfileController.php"
+BROWSER = ROOT / "tests/e2e/verify_shipping_admin_links_browser.py"
+WORKFLOW = ROOT / ".github/workflows/fresh-install.yml"
+
+
+class ShippingAdminLinksContractTests(unittest.TestCase):
+    def test_shipping_policy_stays_editable_and_links_are_escaped_in_shipping_section(self) -> None:
+        form = FORM.read_text(encoding="utf-8")
+        self.assertIn("$localized(['shipping'], '배송 조건 및 안내', 'textarea')", form)
+        self.assertIn("string $carriersAdminUrl = ''", form)
+        self.assertIn("string $shippingPreferencesAdminUrl = ''", form)
+        self.assertIn("if ($section['key'] === 'shipping'", form)
+        self.assertIn('class="alert alert-info ordenowa-shipping-admin-links"', form)
+        self.assertIn("self::escape($carriersAdminUrl)", form)
+        self.assertIn("self::escape($shippingPreferencesAdminUrl)", form)
+        self.assertIn("배송사·배송료 관리", form)
+        self.assertIn("배송 기본 설정", form)
+
+    def test_server_generates_links_for_prestashop_92_shipping_controllers(self) -> None:
+        controller = CONTROLLER.read_text(encoding="utf-8")
+        self.assertIn("getAdminLink('AdminCarriers')", controller)
+        self.assertIn("getAdminLink('AdminShipping')", controller)
+        self.assertIn("$carriersAdminUrl", controller)
+        self.assertIn("$shippingPreferencesAdminUrl", controller)
+
+    def test_ci_browser_check_resolves_both_links_in_the_authenticated_admin_session(self) -> None:
+        self.assertTrue(BROWSER.is_file(), "a dedicated isolated Back Office link browser check is required")
+        browser = BROWSER.read_text(encoding="utf-8")
+        self.assertIn("ordenowa-shipping-admin-carriers", browser)
+        self.assertIn("ordenowa-shipping-admin-preferences", browser)
+        self.assertIn("AdminCarriers", browser)
+        self.assertIn("AdminShipping", browser)
+        self.assertIn("credentials: 'same-origin'", browser)
+        self.assertIn("shipping-admin-settings-desktop.png", browser)
+        self.assertIn("shipping-admin-settings-mobile.png", browser)
+
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("Verify Korean admin shipping links resolve in Chromium", workflow)
+        self.assertIn("shipping_admin_browser_qa", workflow)
+        self.assertIn("shipping-admin-e2e.log", workflow)
+
+
+if __name__ == "__main__":
+    unittest.main()

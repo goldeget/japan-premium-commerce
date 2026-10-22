@@ -200,7 +200,9 @@ final class AdminProfileForm
         string $token,
         bool $canPublish = false,
         string $bankUrl = '',
-        string $assetBaseUrl = ''
+        string $assetBaseUrl = '',
+        string $carriersAdminUrl = '',
+        string $shippingPreferencesAdminUrl = ''
     ): string
     {
         $html = '<form method="post" enctype="multipart/form-data" action="' . self::escape($actionUrl) . '" class="ordenowa-profile-settings">';
@@ -219,6 +221,22 @@ final class AdminProfileForm
             }
             if ($section['key'] === 'banks') {
                 $html .= '<a class="btn btn-default" href="' . self::escape($bankUrl) . '">은행 계좌 관리</a>';
+            }
+            if ($section['key'] === 'shipping'
+                && ($carriersAdminUrl !== '' || $shippingPreferencesAdminUrl !== '')
+            ) {
+                $html .= '<div class="alert alert-info ordenowa-shipping-admin-links" role="note">';
+                $html .= '<p>배송사, 배송 지역과 요금은 PrestaShop 기본 배송 설정에서 관리합니다. 배송 안내 문구는 이 설정에서 계속 편집할 수 있습니다.</p>';
+                $html .= '<ul>';
+                if ($carriersAdminUrl !== '') {
+                    $html .= '<li><a class="ordenowa-shipping-admin-carriers" href="'
+                        . self::escape($carriersAdminUrl) . '">배송사·배송료 관리</a></li>';
+                }
+                if ($shippingPreferencesAdminUrl !== '') {
+                    $html .= '<li><a class="ordenowa-shipping-admin-preferences" href="'
+                        . self::escape($shippingPreferencesAdminUrl) . '">배송 기본 설정</a></li>';
+                }
+                $html .= '</ul></div>';
             }
 
             foreach ($section['fields'] as $definition) {
