@@ -174,6 +174,7 @@ if ! grep -Eq 'ORDENOWA bootstrap: storefront=ja, en/ko=enabled, admin=ko, theme
 fi
 
 verification_phase="restart_service_recovery"
+completed_marker_count_before_restart=$(grep -Fc 'KURANEA bootstrap already completed.' <<< "$initial_bootstrap_logs" || true)
 compose restart mariadb prestashop
 for attempt in $(seq 1 60); do
   if curl --fail --silent --show-error --location --output /dev/null "$base_url/" && [ "$(db_query 'SELECT 1')" = 1 ]; then
@@ -188,7 +189,8 @@ done
 
 verification_phase="restart_bootstrap_marker"
 restart_bootstrap_logs=$(compose logs --no-color prestashop 2>&1)
-grep -q 'KURANEA bootstrap already completed.' <<< "$restart_bootstrap_logs"
+completed_marker_count_after_restart=$(grep -Fc 'KURANEA bootstrap already completed.' <<< "$restart_bootstrap_logs" || true)
+test "$completed_marker_count_after_restart" -gt "$completed_marker_count_before_restart"
 
 verification_phase="restart_persistent_files"
 compose exec -T prestashop sh -ec '

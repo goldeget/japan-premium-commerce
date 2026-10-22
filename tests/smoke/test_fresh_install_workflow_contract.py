@@ -177,10 +177,10 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "pathname",
         ):
             self.assertIn(field, diagnostics)
-        self.assertIn("ORDENOWA_ACCOUNT_REGISTRATION_DIAGNOSTICS=", diagnostics)
+        self.assertIn("ORDENOWA_ACCOUNT_REGISTRATION_SAFE_STATE=", diagnostics)
         self.assertNotIn("window.location.search", diagnostics)
         self.assertNotIn("email.value", diagnostics)
-        self.assertIn('rg \'^ORDENOWA_ACCOUNT_REGISTRATION_DIAGNOSTICS=\' "$log_file"', workflow)
+        self.assertIn('rg \'^ORDENOWA_ACCOUNT_REGISTRATION_SAFE_STATE=\' "$log_file"', workflow)
         self.assertIn("customer-account-e2e.log", workflow)
 
     def test_registration_link_is_scrolled_and_hit_tested_before_native_click(self) -> None:
@@ -334,8 +334,8 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertNotIn("str(error)", annotation)
         self.assertIn("browser_status=${PIPESTATUS[0]}", account_step)
         self.assertIn('exit "$browser_status"', account_step)
-        self.assertIn('diagnostics_lines=$(rg \'^ORDENOWA_ACCOUNT_REGISTRATION_DIAGNOSTICS=\' "$log_file" || true)', account_step)
-        self.assertIn('::error title=Customer account registration diagnostics::%s\\n', account_step)
+        self.assertIn('diagnostics_lines=$(rg \'^ORDENOWA_ACCOUNT_REGISTRATION_SAFE_STATE=\' "$log_file" || true)', account_step)
+        self.assertIn('::error title=Customer account registration safe state::%s\\n', account_step)
         self.assertIn('ACCOUNT_BROWSER_QA_OUTCOME: ${{ steps.account_browser_qa.outcome }}', aggregate)
         self.assertIn('"account=$ACCOUNT_BROWSER_QA_OUTCOME"', aggregate)
         self.assertIn('if [[ "$entry" == *=failure || "$entry" == *=cancelled ]]; then', aggregate)
@@ -495,6 +495,16 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("KURANEA bootstrap already completed\\.", marker_check)
         self.assertIn("initial_storefront_http_request", script)
         self.assertIn("initial_admin_login_http_request", script)
+
+    def test_restart_bootstrap_marker_must_be_new_after_restart(self) -> None:
+        script = FRESH_INSTALL_SMOKE.read_text(encoding="utf-8")
+        restart_check = script.split('verification_phase="restart_service_recovery"', 1)[1].split(
+            'verification_phase="restart_persistent_files"', 1
+        )[0]
+        self.assertIn("completed_marker_count_before_restart=", restart_check)
+        self.assertIn("compose restart mariadb prestashop", restart_check)
+        self.assertIn("completed_marker_count_after_restart=", restart_check)
+        self.assertIn('test "$completed_marker_count_after_restart" -gt "$completed_marker_count_before_restart"', restart_check)
 
     def test_isolated_preinstall_probe_repairs_a_root_owned_class_index(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")

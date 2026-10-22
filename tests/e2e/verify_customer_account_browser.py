@@ -303,10 +303,6 @@ def emit_registration_diagnostics(
         ),
     }
     safe_state_json = json.dumps(safe_state, ensure_ascii=True, sort_keys=True)
-    print(
-        "ORDENOWA_ACCOUNT_REGISTRATION_DIAGNOSTICS=" + json.dumps(diagnostics, ensure_ascii=False, sort_keys=True),
-        file=sys.stderr,
-    )
     print("ORDENOWA_ACCOUNT_REGISTRATION_SAFE_STATE=" + safe_state_json, file=sys.stderr)
     annotation = safe_state_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
     print(f"::error title=Customer account registration response state::{annotation}", file=sys.stderr)
