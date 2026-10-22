@@ -16,6 +16,17 @@ function assertBusinessProfileTrue(bool $actual, string $message): void
     }
 }
 
+function assertBusinessProfileThrows(callable $callback, string $message): void
+{
+    try {
+        $callback();
+    } catch (InvalidArgumentException) {
+        return;
+    }
+
+    throw new RuntimeException($message);
+}
+
 $autoload = __DIR__ . '/../../modules/kuraneabusinessprofile/autoload.php';
 assertBusinessProfileTrue(is_file($autoload), 'The business profile module autoloader must exist.');
 require_once $autoload;
@@ -106,14 +117,19 @@ assertBusinessProfileSame('pending', $initial['seller']['authorization_status'],
 assertBusinessProfileSame('', $initial['seller']['support']['phone'], 'The corporate phone must not be copied to shop support.');
 assertBusinessProfileSame([], $initial['bank_accounts'], 'Real bank details must not be seeded.');
 assertBusinessProfileSame([], $initial['brand']['assets'], 'Official brand assets must remain empty until the uploaded originals are available.');
+assertBusinessProfileSame([], $initial['brand']['sources'], 'Original image metadata must remain empty until the official files are uploaded.');
 
 $validator = new \Kuranea\BusinessProfile\Domain\ProfileValidator();
 assertBusinessProfileSame([], $validator->validateDraft($initial), 'Incomplete operational details should still be saveable as a draft.');
-$publishErrors = $validator->validateForPublish($initial);
-assertBusinessProfileTrue($publishErrors !== [], 'An unapproved and incomplete seller profile must not be publishable.');
+$pendingPublishErrors = $validator->validateForPublish($initial);
+assertBusinessProfileSame([], $pendingPublishErrors, 'A brand profile may publish without seller approval when transactional disclosures and assets remain gated.');
+$approvedButIncomplete = $initial;
+$approvedButIncomplete['seller']['authorization_status'] = 'approved';
+$publishErrors = $validator->validateForPublish($approvedButIncomplete);
+assertBusinessProfileTrue($publishErrors !== [], 'An approved seller profile must not publish until required seller disclosures and assets are complete.');
 assertBusinessProfileTrue(
-    in_array('판매사업 운영 승인이 확인되지 않았습니다.', $publishErrors, true),
-    'Publish validation must explain in Korean that seller authorization is pending.'
+    in_array('판매자 정보(ja-JP) 중 필수 항목이 비어 있습니다.', $publishErrors, true),
+    'Publish validation must explain in Korean that approved seller disclosures are incomplete.'
 );
 
 $versions = new InMemoryBusinessProfileRepository();
@@ -129,12 +145,41 @@ $history = $service->history(1);
 
 assertBusinessProfileTrue($firstVersionId !== $secondVersionId, 'Saving edits should create a new immutable version.');
 assertBusinessProfileTrue($restoredVersionId !== $firstVersionId, 'Restore should create a new version instead of overwriting the old one.');
-assertBusinessProfileSame(false, $publishResult['published'], 'An unapproved profile must not publish.');
-assertBusinessProfileSame($firstVersionId, $versions->loadPublished(1)?->id, 'Failed validation must leave the existing published pointer unchanged.');
+assertBusinessProfileSame(true, $publishResult['published'], 'Brand settings may publish while seller approval and commerce remain disabled.');
+assertBusinessProfileSame($secondVersionId, $versions->loadPublished(1)?->id, 'Publishing must update the public pointer to the selected version.');
 assertBusinessProfileSame(3, count($history), 'The history should retain both saved versions and the restore version.');
 assertBusinessProfileSame('오데노와 테스트', $history[1]->profile['brand']['name']['ko-KR'], 'The edited historical version should remain unchanged after restore.');
 assertBusinessProfileSame('오데노와', $history[2]->profile['brand']['name']['ko-KR'], 'Restore should copy the selected version into a new draft.');
 assertBusinessProfileSame($restoredVersionId, $versions->loadDraft(1)?->id, 'Restore should make the new version the current draft.');
+
+
+$oldBankProfile = $initial;
+$oldBankProfile['bank_accounts'] = [[
+    'bank_name' => 'TEST BANK',
+    'branch_name' => 'TOKYO',
+    'account_type' => 'ordinary',
+    'account_number' => '11112222',
+    'account_holder' => 'TEST HOLDER',
+    'active' => true,
+]];
+$bankRepository = new InMemoryBusinessProfileRepository();
+$bankService = new \Kuranea\BusinessProfile\Domain\ProfileVersionService($bankRepository, $validator);
+$oldBankVersionId = $bankService->saveDraft(1, $oldBankProfile, 20);
+$newBankProfile = $oldBankProfile;
+$newBankProfile['bank_accounts'][0]['account_number'] = '99998888';
+$currentBankVersionId = $bankService->saveDraft(1, $newBankProfile, 21);
+assertBusinessProfileThrows(
+    static fn () => $bankService->restoreAsDraft(1, $oldBankVersionId, 22),
+    'A general settings restore must not change bank details without bank-management authorization.'
+);
+assertBusinessProfileSame($currentBankVersionId, $bankRepository->loadDraft(1)?->id, 'A denied bank restore must leave the draft pointer unchanged.');
+$currentProfileWithBrandEdit = $bankRepository->loadDraft(1)?->profile ?? [];
+$currentProfileWithBrandEdit['brand']['name']['ko-KR'] = '현재 브랜드';
+$brandEditedVersionId = $bankService->saveDraft(1, $currentProfileWithBrandEdit, 23);
+$authorizedBankRestoreId = $bankService->restoreBankAccountsAsDraft(1, $oldBankVersionId, 24);
+assertBusinessProfileSame('11112222', $bankRepository->loadDraft(1)?->profile['bank_accounts'][0]['account_number'], 'A bank-only restore should restore the selected account.');
+assertBusinessProfileSame('현재 브랜드', $bankRepository->loadDraft(1)?->profile['brand']['name']['ko-KR'], 'A bank-only restore must preserve unrelated current profile fields.');
+assertBusinessProfileTrue($authorizedBankRestoreId !== $oldBankVersionId && $authorizedBankRestoreId !== $brandEditedVersionId, 'An authorized bank restore must create a new immutable version.');
 
 $schema = \Kuranea\BusinessProfile\Infrastructure\DatabaseSchema::createVersionTableSql('ps_');
 assertBusinessProfileTrue(str_contains($schema, 'CREATE TABLE IF NOT EXISTS `ps_kuraneabusinessprofile_version`'), 'Profile version storage should install idempotently.');

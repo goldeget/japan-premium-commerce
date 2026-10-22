@@ -41,7 +41,9 @@ final class ProfileValidator
             $errors[] = '회사 참고 법인번호는 숫자 13자리로 입력해 주세요.';
         }
 
-        if (!isset($profile['brand']['assets']) || !is_array($profile['brand']['assets'])) {
+        if (!isset($profile['brand']['assets']) || !is_array($profile['brand']['assets'])
+            || !isset($profile['brand']['sources']) || !is_array($profile['brand']['sources'])
+        ) {
             $errors[] = '브랜드 이미지 설정 형식이 올바르지 않습니다.';
         }
 
@@ -56,8 +58,11 @@ final class ProfileValidator
             return $errors;
         }
 
+        // Brand identity can be published before the seller relationship is
+        // approved. Transactional disclosures and seller assets remain hidden
+        // behind CommerceGate until both approvals are confirmed.
         if (($profile['seller']['authorization_status'] ?? 'pending') !== 'approved') {
-            $errors[] = '판매사업 운영 승인이 확인되지 않았습니다.';
+            return [];
         }
 
         foreach (self::REQUIRED_SELLER_LOCALE_FIELDS as $field) {
@@ -86,7 +91,11 @@ final class ProfileValidator
             }
         }
 
-        foreach (['header_desktop', 'header_mobile', 'favicon', 'apple_touch', 'pwa_192', 'pwa_512', 'pwa_maskable_512', 'og_image'] as $asset) {
+        foreach ([
+            'header_desktop', 'header_mobile', 'admin_login', 'email_logo',
+            'favicon', 'favicon_16', 'favicon_32', 'apple_touch',
+            'pwa_192', 'pwa_512', 'pwa_maskable_512', 'og_image',
+        ] as $asset) {
             if (!isset($profile['brand']['assets'][$asset]) || !is_string($profile['brand']['assets'][$asset]) || trim($profile['brand']['assets'][$asset]) === '') {
                 $errors[] = '공식 로고·파비콘·PWA 이미지 세트를 등록해 주세요.';
                 break;

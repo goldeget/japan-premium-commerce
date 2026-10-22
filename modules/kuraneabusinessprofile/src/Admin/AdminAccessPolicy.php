@@ -7,21 +7,33 @@ namespace Kuranea\BusinessProfile\Admin;
 final class AdminAccessPolicy
 {
     /** @param array<string, int|string|bool> $tabAccess */
+    public static function canView(array $tabAccess): bool
+    {
+        return self::granted($tabAccess, 'view');
+    }
+
+    /** @param array<string, int|string|bool> $tabAccess */
     public static function canEdit(array $tabAccess): bool
     {
-        return self::granted($tabAccess, 'edit');
+        return self::canView($tabAccess) && self::granted($tabAccess, 'edit');
     }
 
     /** @param array<string, int|string|bool> $tabAccess */
     public static function canPublish(array $tabAccess): bool
     {
-        return self::granted($tabAccess, 'edit') && self::granted($tabAccess, 'add');
+        return self::canEdit($tabAccess) && self::granted($tabAccess, 'add');
+    }
+
+    /** @param array<string, int|string|bool> $bankTabAccess */
+    public static function canViewBank(array $bankTabAccess): bool
+    {
+        return self::canView($bankTabAccess);
     }
 
     /** @param array<string, int|string|bool> $bankTabAccess */
     public static function canEditBank(array $bankTabAccess): bool
     {
-        return self::granted($bankTabAccess, 'edit');
+        return self::canViewBank($bankTabAccess) && self::granted($bankTabAccess, 'edit');
     }
 
     public static function canApproveSeller(bool $isSuperAdmin): bool

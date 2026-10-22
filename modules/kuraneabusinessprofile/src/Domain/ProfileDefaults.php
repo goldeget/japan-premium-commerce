@@ -29,6 +29,7 @@ final class ProfileDefaults
                     'en-US' => 'The next-generation B2B procurement platform connecting businesses and products',
                     'ko-KR' => '기업과 상품을 연결하는 차세대 B2B 조달 플랫폼',
                 ],
+                'sources' => [],
                 'assets' => [],
             ],
             'company_reference' => [

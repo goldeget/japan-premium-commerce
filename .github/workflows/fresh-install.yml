@@ -7,10 +7,13 @@ on:
     paths:
       - '.github/workflows/fresh-install.yml'
       - 'compose.yaml'
+      - 'Dockerfile'
       - 'docker/**'
       - 'themes/**'
       - 'modules/kuraneapostcode/**'
       - 'modules/kuraneabackoffice/**'
+      - 'modules/kuraneabusinessprofile/**'
+      - 'tests/business_profile/**'
       - 'tests/smoke/fresh_install.sh'
       - 'tests/smoke/collect_failure_diagnostics.sh'
       - 'tests/smoke/test_admin_folder_install_order.py'
@@ -167,6 +170,16 @@ jobs:
         env:
           SHOP_BASE_URL: http://127.0.0.1:18080
         run: bash tests/smoke/fresh_install.sh "$CI_COMPOSE_PROJECT_NAME"
+
+      - name: Verify the installed ORDENOWA business profile module
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/verify_business_profile_install.php' \
+            < tests/business_profile/verify_installation.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            runuser -g www-data -u www-data -- php /tmp/verify_business_profile_install.php
 
       - name: Capture bounded diagnostics on failure
         if: failure()

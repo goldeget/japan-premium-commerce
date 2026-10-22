@@ -37,7 +37,7 @@ $context->cart = new Cart();
 $context->currency = kuraneaConfigureJapaneseCurrency($context);
 $kernel->getContainer()->get(ContextBuilderPreparer::class)->prepareFromLegacyContext($context);
 
-foreach (['kuraneapostcode', 'kuraneabackoffice'] as $moduleName) {
+foreach (['kuraneapostcode', 'kuraneabackoffice', 'kuraneabusinessprofile'] as $moduleName) {
     $module = Module::getInstanceByName($moduleName);
     if (!$module) {
         throw new RuntimeException(sprintf('The bundled %s module could not be loaded.', $moduleName));
@@ -52,4 +52,4 @@ foreach (['kuraneapostcode', 'kuraneabackoffice'] as $moduleName) {
     }
 }
 
-echo "KURANEA modules: postcode=enabled, backoffice-ko=enabled\n";
+echo "Project modules: postcode=enabled, backoffice-ko=enabled, business-profile-ko=enabled\n";

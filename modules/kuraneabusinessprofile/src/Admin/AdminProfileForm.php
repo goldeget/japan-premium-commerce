@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Kuranea\BusinessProfile\Admin;
 
 use Kuranea\BusinessProfile\Domain\ProfileDefaults;
+use Kuranea\BusinessProfile\Domain\ProfileVersion;
 
 final class AdminProfileForm
 {
@@ -51,8 +52,13 @@ final class AdminProfileForm
             [
                 'key' => 'brand',
                 'title' => '브랜드·로고',
-                'description' => 'ORDENOWA 공식 원본을 등록하면 미리보기와 파생 아이콘 관리를 사용할 수 있습니다. 공식 원본이 없을 때는 다른 브랜드 이미지로 대체하지 않습니다.',
-                'fields' => $localized(['brand', 'slogan'], '슬로건', 'text'),
+                'description' => '공식 ORDENOWA PNG·JPEG·WebP 원본을 등록하면 비율을 유지한 PC·모바일·관리자·이메일·파비콘·PWA·OG 파생 이미지를 만듭니다. 기존 원본과 버전은 보존됩니다.',
+                'fields' => [
+                    ...$localized(['brand', 'slogan'], '슬로건', 'text'),
+                    $field(['brand', 'assets', 'header_desktop'], '공식 로고 원본 · PC/모바일/관리자/이메일/OG', 'image_upload', ['slot' => 'primary_logo']),
+                    $field(['brand', 'assets', 'favicon'], '파비콘용 공식 심벌 원본', 'image_upload', ['slot' => 'favicon_symbol']),
+                    $field(['brand', 'assets', 'pwa_512'], 'PWA 앱 아이콘 공식 원본', 'image_upload', ['slot' => 'pwa_icon']),
+                ],
             ],
             [
                 'key' => 'company',
@@ -137,7 +143,7 @@ final class AdminProfileForm
         foreach (self::sections() as $section) {
             foreach ($section['fields'] as $definition) {
                 $type = (string) $definition['type'];
-                if ($type === 'readonly') {
+                if (in_array($type, ['readonly', 'image_upload'], true)) {
                     continue;
                 }
 
@@ -183,9 +189,16 @@ final class AdminProfileForm
         return $next;
     }
 
-    public static function render(array $profile, string $actionUrl, string $token, bool $canPublish = false, string $bankUrl = ''): string
+    public static function render(
+        array $profile,
+        string $actionUrl,
+        string $token,
+        bool $canPublish = false,
+        string $bankUrl = '',
+        string $assetBaseUrl = ''
+    ): string
     {
-        $html = '<form method="post" action="' . self::escape($actionUrl) . '" class="ordenowa-profile-settings">';
+        $html = '<form method="post" enctype="multipart/form-data" action="' . self::escape($actionUrl) . '" class="ordenowa-profile-settings">';
         $html .= '<input type="hidden" name="token" value="' . self::escape($token) . '">';
         $html .= '<nav class="ordenowa-settings-nav" aria-label="쇼핑몰 운영 설정">';
         foreach (self::sections() as $section) {
@@ -204,7 +217,7 @@ final class AdminProfileForm
             }
 
             foreach ($section['fields'] as $definition) {
-                $html .= self::renderField($definition, self::getPath($profile, $definition['path']));
+                $html .= self::renderField($definition, self::getPath($profile, $definition['path']), $assetBaseUrl);
             }
 
             $html .= '</section>';
@@ -212,6 +225,7 @@ final class AdminProfileForm
 
         $html .= '<div class="panel-footer">';
         $html .= '<button class="btn btn-default" type="submit" name="submitOrdenowaSaveDraft" value="1">초안 저장</button>';
+        $html .= '<button class="btn btn-default" type="submit" name="submitOrdenowaPreview" value="1">초안 미리보기</button>';
         if ($canPublish) {
             $html .= '<button class="btn btn-primary" type="submit" name="submitOrdenowaPublish" value="1">변경사항 게시</button>';
         }
@@ -220,7 +234,95 @@ final class AdminProfileForm
         return $html;
     }
 
-    private static function renderField(array $definition, mixed $value): string
+    /** @param list<ProfileVersion> $versions */
+    public static function renderHistory(
+        array $versions,
+        int $draftVersionId,
+        int $publishedVersionId,
+        string $actionUrl,
+        string $token,
+        bool $canRestore = true
+    ): string
+    {
+        $html = '<section class="panel ordenowa-profile-history"><h2>변경 이력</h2>';
+        if ($versions === []) {
+            return $html . '<p>저장된 변경 이력이 없습니다.</p></section>';
+        }
+
+        $html .= '<div class="table-responsive"><table class="table"><thead><tr><th>버전</th><th>변경자 ID</th><th>변경일시</th><th>상태</th><th>작업</th></tr></thead><tbody>';
+        foreach ($versions as $version) {
+            $state = [];
+            if ($version->id === $draftVersionId) {
+                $state[] = '현재 초안';
+            }
+            if ($version->id === $publishedVersionId) {
+                $state[] = '게시 중';
+            }
+            $stateLabel = $state === [] ? '이전 버전' : implode(' · ', $state);
+            $html .= '<tr><td>#' . $version->id . '</td><td>' . $version->employeeId . '</td><td>'
+                . self::escape($version->createdAt) . '</td><td>' . self::escape($stateLabel) . '</td><td>';
+            $html .= '<form method="post" action="' . self::escape($actionUrl) . '" class="ordenowa-history-action">'
+                . '<input type="hidden" name="token" value="' . self::escape($token) . '">'
+                . '<input type="hidden" name="preview_version_id" value="' . $version->id . '">'
+                . '<button class="btn btn-default btn-sm" type="submit" name="submitOrdenowaPreview" value="1">미리보기</button></form> ';
+            if ($canRestore) {
+                $html .= '<form method="post" action="' . self::escape($actionUrl) . '" class="ordenowa-history-action">'
+                    . '<input type="hidden" name="token" value="' . self::escape($token) . '">'
+                    . '<input type="hidden" name="restore_version_id" value="' . $version->id . '">'
+                    . '<button class="btn btn-default btn-sm" type="submit" name="submitOrdenowaRestore" value="1"'
+                    . ($version->id === $draftVersionId ? ' disabled' : '') . '>이 버전을 초안으로 복원</button></form>';
+            }
+            $html .= '</td></tr>';
+        }
+
+        return $html . '</tbody></table></div><p>변경 이력에는 계좌번호와 예금주를 표시하지 않습니다.</p></section>';
+    }
+
+    /** Render a read-only, escaped preview within the authenticated admin page. */
+    public static function renderPreview(array $profile, string $assetBaseUrl = ''): string
+    {
+        $locale = (string) ($profile['localization']['default_locale'] ?? 'ja-JP');
+        $brandName = (string) ($profile['brand']['name'][$locale] ?? '');
+        $html = '<section class="panel ordenowa-profile-preview"><h2>고객 화면 미리보기 · '
+            . self::escape(self::LOCALE_LABELS[$locale] ?? $locale) . '</h2><h3>' . self::escape($brandName) . '</h3>';
+        $assets = (array) ($profile['brand']['assets'] ?? []);
+        foreach ([
+            'header_desktop' => 'PC 헤더 로고',
+            'header_mobile' => '모바일 헤더 로고',
+            'favicon_32' => '브라우저 파비콘',
+            'apple_touch' => 'Apple Touch Icon',
+            'pwa_512' => 'PWA 아이콘',
+            'og_image' => '공유용 OG 이미지',
+        ] as $assetKey => $label) {
+            $path = $assets[$assetKey] ?? null;
+            if (!is_string($path) || preg_match('~\\Aimg/ordenowa/versions/[A-Fa-f0-9]{64}/[A-Za-z0-9._-]+\\.(?:png|ico)\\z~D', $path) !== 1) {
+                continue;
+            }
+            $src = rtrim($assetBaseUrl, '/') . '/' . $path;
+            $html .= '<figure class="ordenowa-preview-asset"><img src="' . self::escape($src) . '" alt="'
+                . self::escape($label) . '" loading="lazy"><figcaption>' . self::escape($label) . '</figcaption></figure>';
+        }
+
+        foreach ([
+            '설명' => $profile['brand']['description'][$locale] ?? '',
+            '슬로건' => $profile['brand']['slogan'][$locale] ?? '',
+            '고객센터' => $profile['customer_support']['phone'] ?? '',
+            '결제 안내' => $profile['payment'][$locale] ?? '',
+            '배송 안내' => $profile['shipping'][$locale] ?? '',
+            '반품·환불' => $profile['refund'][$locale] ?? '',
+            '특정상거래법 표시' => $profile['content']['specified_commercial_act'][$locale] ?? '',
+        ] as $label => $value) {
+            if (!is_scalar($value) || trim((string) $value) === '') {
+                continue;
+            }
+            $html .= '<article><h4>' . self::escape($label) . '</h4><p>'
+                . nl2br(self::escape((string) $value), false) . '</p></article>';
+        }
+
+        return $html . '<p class="help-block">이 미리보기는 관리자 전용입니다. 게시 또는 판매 활성화를 의미하지 않습니다.</p></section>';
+    }
+
+    private static function renderField(array $definition, mixed $value, string $assetBaseUrl = ''): string
     {
         $path = $definition['path'];
         $name = 'profile';
@@ -235,6 +337,18 @@ final class AdminProfileForm
         if ($type === 'readonly') {
             $display = $definition['options'][(string) $value] ?? '확인 대기';
             $html .= '<p id="' . self::escape($id) . '" class="form-control-static">' . self::escape((string) $display) . '</p>';
+        } elseif ($type === 'image_upload') {
+            $slot = (string) ($definition['options']['slot'] ?? '');
+            $html .= '<input class="form-control" type="file" id="' . self::escape($id) . '" name="brand_uploads['
+                . self::escape($slot) . ']" accept="image/png,image/jpeg,image/webp">';
+            $html .= '<p class="help-block">원본 파일은 10MiB 이하, 각 변 32~8192px이어야 합니다.</p>';
+            if (is_string($value) && preg_match('~\\Aimg/ordenowa/versions/[A-Fa-f0-9]{64}/[A-Za-z0-9._-]+\\.(?:png|ico)\\z~D', $value) === 1) {
+                $previewUrl = rtrim($assetBaseUrl, '/') . '/' . $value;
+                $html .= '<img class="ordenowa-asset-preview" src="' . self::escape($previewUrl) . '" alt="'
+                    . self::escape((string) $definition['label']) . ' 미리보기" loading="lazy">';
+            } else {
+                $html .= '<p class="text-muted">등록된 공식 원본이 없습니다.</p>';
+            }
         } elseif ($type === 'textarea') {
             $html .= '<textarea class="form-control" id="' . self::escape($id) . '" name="' . self::escape($name) . '" rows="5">'
                 . self::escape((string) $value) . '</textarea>';

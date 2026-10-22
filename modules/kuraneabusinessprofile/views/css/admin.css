@@ -1,0 +1,53 @@
+.ordenowa-settings-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.ordenowa-settings-nav a {
+  display: inline-block;
+  padding: 8px 12px;
+  border: 1px solid #d8dee7;
+  border-radius: 4px;
+  color: #17304b;
+  background: #fff;
+}
+
+.ordenowa-settings-section,
+.ordenowa-approval {
+  margin: 16px 0;
+  padding: 20px;
+}
+
+.ordenowa-profile-field textarea {
+  min-height: 110px;
+}
+
+.ordenowa-asset-preview,
+.ordenowa-preview-asset img {
+  display: block;
+  max-width: min(100%, 24rem);
+  max-height: 12rem;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid #d8dee7;
+  background: #fff;
+  object-fit: contain;
+}
+
+.ordenowa-preview-asset {
+  display: inline-block;
+  margin: 8px 12px 8px 0;
+  vertical-align: top;
+}
+
+.ordenowa-preview-asset img {
+  max-width: min(100%, 20rem);
+  max-height: 12rem;
+}
+
+.ordenowa-bank-settings fieldset {
+  margin: 16px 0;
+  padding: 20px;
+}

@@ -41,16 +41,8 @@ sync_module() {
 
 sync_module kuraneapostcode
 sync_module kuraneabackoffice
+sync_module kuraneabusinessprofile
 
-brand_dir="/var/www/html/themes/kuranea/assets/img/brand"
-if [ ! -f "$brand_dir/kuranea-logo-desktop.png" ] || [ ! -f "$brand_dir/favicon.ico" ]; then
-    echo "KURANEA brand assets are incomplete: $brand_dir" >&2
-    exit 1
-fi
-mkdir -p /var/www/html/img
-cp "$brand_dir/kuranea-logo-desktop.png" /var/www/html/img/logo.png
-cp "$brand_dir/favicon.ico" /var/www/html/img/favicon.ico
-chown www-data:www-data /var/www/html/img/logo.png /var/www/html/img/favicon.ico
 cp /var/www/html/themes/kuranea/assets/sw.js /var/www/html/sw.js
 cp /var/www/html/themes/kuranea/assets/manifest.webmanifest /var/www/html/manifest.webmanifest
 chown www-data:www-data /var/www/html/sw.js /var/www/html/manifest.webmanifest

@@ -29,6 +29,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
+          extensions: gd
           coverage: none
 
       - name: Lint business profile PHP files
@@ -46,6 +47,15 @@ jobs:
 
       - name: Run Korean admin settings tests
         run: php tests/business_profile/admin_settings.php
+
+      - name: Verify official brand source upload and derivatives
+        run: php tests/business_profile/brand_assets.php
+
+      - name: Verify published customer output and PWA manifest
+        run: php tests/business_profile/published_output.php
+
+      - name: Verify public brand and seller disclosure gating
+        run: php tests/business_profile/public_footer.php
 
       - name: Verify PrestaShop module bundle wiring
         run: php tests/business_profile/module_bundle.php

@@ -71,11 +71,14 @@ $shop = new Shop(1);
 if (!Validate::isLoadedObject($shop)) {
     throw new RuntimeException('The default PrestaShop shop is missing.');
 }
-if ($shop->name !== 'KURANEA') {
-    $shop->name = 'KURANEA';
+if ($shop->name !== 'ORDENOWA') {
+    $shop->name = 'ORDENOWA';
     if (!$shop->update()) {
-        throw new RuntimeException('Could not rename the default shop to KURANEA.');
+        throw new RuntimeException('Could not rename the default shop to ORDENOWA.');
     }
+}
+if (!Configuration::updateValue('PS_SHOP_NAME', 'ORDENOWA', false, null, 1)) {
+    throw new RuntimeException('Could not set the ORDENOWA compatibility shop name.');
 }
 
 $shopUrlId = (int) $db->getValue('SELECT id_shop_url FROM `' . _DB_PREFIX_ . 'shop_url` WHERE id_shop = 1 AND main = 1');
@@ -189,4 +192,4 @@ if (false === file_put_contents($bootstrapMarker, "v2\n", LOCK_EX)) {
     throw new RuntimeException('Could not persist the KURANEA bootstrap marker.');
 }
 
-echo "KURANEA bootstrap: storefront=ja, en/ko=enabled, admin=ko, theme=kuranea\n";
+echo "ORDENOWA bootstrap: storefront=ja, en/ko=enabled, admin=ko, theme=kuranea\n";
