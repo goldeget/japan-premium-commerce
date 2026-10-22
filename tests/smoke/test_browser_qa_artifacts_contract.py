@@ -126,6 +126,25 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
             workflow.index("- name: Capture bounded diagnostics on failure"),
         )
 
+    def test_browser_order_checks_run_only_after_their_producer_succeeds(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        persistence = workflow.split(
+            "- name: Verify saved browser orders are unpaid and retain Japan addresses", 1
+        )[1].split("- name:", 1)[0]
+        admin = workflow.split(
+            "- name: Verify a separate admin session can view both browser orders", 1
+        )[1].split("- name:", 1)[0]
+
+        self.assertIn(
+            "if: steps.checkout_customer_browser_qa.outcome == 'success'",
+            persistence,
+        )
+        self.assertIn(
+            "if: steps.checkout_customer_browser_qa.outcome == 'success' && "
+            "steps.checkout_order_persistence.outcome == 'success'",
+            admin,
+        )
+
     def test_checkout_restore_is_unconditional_and_gate_rechecks_success_or_failure(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         restore = workflow.split("- name: Restore the fail-closed base checkout environment", 1)[1].split(
