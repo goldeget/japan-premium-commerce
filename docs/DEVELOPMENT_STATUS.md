@@ -25,9 +25,9 @@
 | 관리자 한국어 | 로그인·대시보드·주문 목록 부분 검증, 전체 100% 미완료 | 실제 로그인 후 대시보드 및 주문 목록 PC/모바일을 확인했다. 주문 목록은 HTTP 200, 화면 문구와 메뉴 한국어, 브라우저 오류 0건이다. 화면에 주문이 없어 주소 표시 행은 아직 확인하지 못했다. 빈 상태 삽화 안의 샘플 영문/달러 그림도 표시된다. 전체 관리자 화면의 한국어 100%는 완료되지 않았다. |
 | PWA | 부분 완료 | manifest, 아이콘, 공개 정적 자산 전용 service worker 기반을 갖췄다. 실제 iOS/Android 설치 검증은 미실행이다. |
 | 현재 로컬 회귀 실행 | 부분 실패 | 최신 38개 storefront/smoke 실행에서 35건 통과, 빈 카테고리 ja/en/ko 경로 3건이 `Category.php`/`CategoryController.php`의 false 조회 결과 foreach 경고와 함께 HTTP 500으로 실패했다. 주소·관리자 번역 계약은 별도 6/6·8/8 통과했다. 여유 공간·inode가 0/100%인 상태에서 MariaDB도 unhealthy로 관찰되어 DB 변경이나 컨테이너 재시작 없이 중단했다. |
-| 신규 설치 CI | 설치·CSV·lookup·Address PASS, 관리자 projection 수정 후 CI 대기 | run `39736010830`에서 빈 볼륨 기동, 공식 CSV import, `1000004` Tokyo/Otemachi lookup, 네이티브 Address 저장이 통과했다. 실패 stage는 `Back Office shipping address projection`; 예외는 비공개로 최적화된 `CommandBusInterface`를 찾지 못한 `ServiceNotFoundException`이다. PrestaShop 9.2.0 공식 관리자 주문 컨트롤러의 `prestashop.core.query_bus` 경로와 `QuerySorting::DESC` 호출로 QA harness를 수정했다. 이 수정은 아직 CI에서 검증되지 않았으며 Order 조회, 관리자 주소 표시, restart는 PASS가 아니다. |
+| 신규 설치 CI | 격리 신규 설치·native order QA PASS, storefront 브라우저 checkout 미완료 | GitHub Actions run `39736745903` (code `6b05ae8`)에서 빈 볼륨 설치, CSV import, `1000004` Tokyo/Otemachi lookup, native Address 재조회, TEST 고객·상품·장바구니를 이용한 무결제 Order 생성, 공식 Back Office `GetOrderForViewing` 배송지 format 및 restart smoke가 모두 통과했다. fresh-install smoke는 ja 기본·en/ko 활성, JPY, Hummingbird 자식 테마, 관리자 로그인/공식 로고, 캐시/DB 재시작 검사를 확인했다. 고객 화면을 통한 실제 브라우저 checkout과 재시작 후 해당 Order 주소 재조회는 별도 미완료다. |
 | Amazon Japan·Rakuten 상품 수집 | 차단 | 공개 홈페이지를 읽기 전용 HTTP 요청했으나 둘 다 개발환경 egress proxy의 CONNECT `403`으로 거부됐다. 우회하지 않았으며 실제 페이지 파싱·상품 수집·등록을 하지 않았다. |
-| 주문·상품 운영 | 미완료 | 카탈로그가 비어 있고 신규 설치 CI가 실패한다. 실제 상품 수집, 주문, 주문관리 브라우저 여정은 완료되지 않았다. |
+| 주문·상품 운영 | 일부 CI 검증·브라우저 작업 미완료 | 격리 CI가 TEST 고객/상품/장바구니 및 native unpaid Order와 Back Office 배송지 formatter를 검증했다. 실제 storefront 브라우저 checkout, 일반 catalog TEST/DEMO 상품 10개, 외부 상품 파싱/등록, 주문별 관리자 브라우저 여정은 미완료다. |
 
 ## 최근 작업
 
@@ -50,4 +50,4 @@
 
 ## 다음 우선순위
 
-1. run `39728912492`의 실패 단계 로그나 진단 artifact를 확보해 Compose 시작 실패 원인을 확인한다. 코드 변경 없이 같은 신규 설치 CI를 다시 실행하지 않는다. 원인을 고친 뒤 빈 DB 설치와 전체 smoke를 다시 검증한다.
+1. TEST 상품으로 일본어 storefront 브라우저 checkout, `100-0004` 자동완성/수동 건물명, 무결제 주문, 한국어 관리자 재로그인 후 주소 확인을 격리 브라우저 E2E로 검증한다. 이어 상품 파서/검수/등록과 관리자 한국어 범위를 진행한다.

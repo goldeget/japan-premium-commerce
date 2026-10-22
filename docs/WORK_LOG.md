@@ -215,3 +215,9 @@
 - PrestaShop 9.2.0 공식 `FrameworkBundleAdminController::getQueryBus()`가 `prestashop.core.query_bus` 서비스를 사용하고 공식 OrderController가 `GetOrderForViewing($orderId, QuerySorting::DESC)`를 dispatch하는 것을 확인했다. 검증기는 같은 query bus service id 및 정렬값을 사용하도록 바꿨으며 PHP 코어/쇼핑몰 모듈은 변경하지 않았다.
 - 회귀 contract를 먼저 추가해 기존 direct `CommandBusInterface::class` 호출에서 실패를 확인하고, 공식 query bus alias 적용 후 green을 확인했다. fresh-install contract 및 Japan Post refresh 15/15, Compose config, `git diff --check` 통과.
 - 실제 관리자 order projection, unpaid Order의 저장/주소 표시 및 restart/data persistence는 다음 격리 GitHub Actions 실행 전까지 미완료다.
+## 2026-10-22 — 빈 DB 설치·일본 주소 주문 native E2E 통과
+
+- query bus 수정 코드 `6b05ae8`로 실행한 GitHub Actions run `39736745903`은 job 및 workflow `Success`였다. 이미지 build, isolated cache ownership probe, 빈 MariaDB named volume의 신규 설치, Japan Post 공식 KEN_ALL 다운로드/import, postcode `1000004` 도쿄/오테마치 HTTP lookup, native Address 생성 및 재조회, unpaid Order와 Back Office projection, fresh-shop restart smoke 순서로 통과했다.
+- Order fixture는 `[CI ONLY]` product, 전용 Customer, `1-2-3` 집주소와 CI 전용 건물/호수, native Cart 및 free CI-only carrier를 격리 DB에 만들고 `ps_checkpayment`의 unpaid/non-logable state로 `validateOrder()`를 실행한다. `total_paid_real=0`, delivery address 연결, postcode/도도부현/시구정촌/町域/번지/건물 필드를 확인했다. 실제 결제·은행 입금은 없었다. official `GetOrderForViewing` query로 Back Office 배송지 문자열도 검증했다.
+- Restart smoke는 storefront HTTP 200, 관리자 `admin-kuranea` 로그인 화면/공식 로고, ja 기본 및 en/ko 활성, JPY, KURANEA theme/CSS, 캐시/bootstrap marker와 DB 테이블 수/구성을 재확인했다. 이는 격리된 GitHub runner의 신규 DB만 대상으로 했고 기존 개발 named volume은 건드리지 않았다.
+- 한계: 이 검증은 PrestaShop native model/service를 통한 주소·장바구니·주문 저장이며 실제 고객 브라우저에서 상품 카드→장바구니→checkout UI를 완료한 browser E2E는 아니다. Restart 후 방금 만든 특정 주문/배송지 row를 다시 조회하는 개별 assertion도 없다. 이 두 항목을 후속 격리 browser/persistence QA로 남긴다.

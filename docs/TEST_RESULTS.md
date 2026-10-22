@@ -36,11 +36,11 @@
 
 | 검사 | 결과 | 상세 |
 | --- | --- | --- |
-| P0 신규 설치 부팅 오류 | 설치 부팅 복구, Address 저장 PASS, 관리자 조회 API harness 수정 대기 | run `39736010830`에서 empty-volume startup/cache probe/CSV import/`1000004` lookup/native Address 저장이 통과했다. 주문 step은 `Back Office shipping address projection`에서 `ServiceNotFoundException`으로 실패했다: 테스트가 비공개로 인라인된 `CommandBusInterface`를 컨테이너에서 직접 요청했다. 공식 `FrameworkBundleAdminController` 조회 경로(`prestashop.core.query_bus`, `QuerySorting::DESC`)로 수정했으며 미검증이다. Order/Back Office address projection 및 restart QA는 아직 PASS가 아니다. |
+| P0 신규 설치 부팅 오류 | 격리 신규 설치 및 native order QA PASS | GitHub Actions run `39736745903`은 Success. 이미지 build/cache probe/빈 볼륨 설치, 공식 Japan Post CSV import, `1000004` Tokyo/Otemachi HTTP lookup, native Address save/reload, TEST customer/product/cart를 이용한 결제 없는 Order 생성, unpaid 상태/배송지 연결 확인, 공식 `GetOrderForViewing` 관리자 배송지 formatter 검증, 재시작 smoke가 모두 성공했다. Browser checkout 및 재시작 뒤 해당 Order 배송지 개별 재조회는 별도 미완료다. |
 | 과거 신규 빈 볼륨 설치 | FAIL (이전 코드) | runs `39703327857`, `39704824787`, `39705702536`, `39706052890`, `39706126218`은 이전 코드에서 실패했다. 최신 사용자가 제공한 상세 로그에서 `assets:install admin-dev`가 부재한 `/var/www/html/admin-dev`를 대상으로 한 직접 원인을 확인했다. 이번 원인은 errno 28로 기록하지 않는다. |
 | Amazon Japan·Rakuten 원본 페이지 접근 | BLOCKED | 2026-10-22 읽기 전용 HTTPS 요청 모두 egress proxy CONNECT `403`을 반환했다. 접근통제를 우회하지 않았고 페이지를 수집·파싱하지 않았다. |
-| 신규 설치 DB 적재 및 API lookup | import·lookup·native Address PASS, BO projection 미검증 | run `39736010830`은 공식 CSV import, postcode lookup, native Address 저장이 성공했다. 이후 native Order/Back Office projection 단계에서 CI-only QueryBus lookup 오류로 실패했고 restart 검증은 건너뛰었다. query bus 호출 경로를 수정해 다음 격리 실행에서 재검증한다. |
-| checkout 주문 연결 및 관리자 배송지 | 미실행 | 무결제 네이티브 Order 생성, `id_address_delivery` 연결, PrestaShop 관리자 조회 주소 formatter를 검사하는 CI 전용 스크립트를 추가·원격 저장했고 PHP 문법 및 격리 가드만 확인했다. 실제 검증은 새 빈 설치 CI가 먼저 통과해야 한다. 브라우저 checkout 경로는 아직 주소 폼 fixture만 검증했다. |
+| 신규 설치 DB·주소·주문 | PASS (CI run `39736745903`) | Japan Post 공식 CSV import, `1000004` lookup, building 입력을 포함한 Address 저장/reload, 결제되지 않은 native Order의 `id_address_delivery`, 주문상태 및 한국어 관리자 화면에서 사용하는 공식 order-view address projection을 확인했다. 재시작 smoke도 PASS. 고객 브라우저 checkout은 별도 미실행. |
+| Storefront browser checkout | 미실행 | GitHub Actions run `39736745903`에서 네이티브 Address/Cart/unpaid Order 및 official Back Office address projection 통합 검증은 PASS했다. 고객 브라우저에서 상품 선택→장바구니→주소 자동완성→checkout을 완료하고 로그인/새로고침 후 화면에서 주문 배송지를 재확인하는 단계는 별도 구현·검증이 필요하다. |
 | PC/모바일 browser regression | 부분 PASS | 홈 빈 카탈로그 안내는 PC 1440px·모바일 390px에서 실제 렌더링했다. 화면별 증거는 위 캡처를 참조한다. 전체 반응형 폭 테스트와 상품 상세·주문 화면은 별도 미완료다. |
 | 관리자 한국어 100% | 미완료 | 로그인과 대시보드에서 한국어 메뉴·날짜 범위를 실제 브라우저로 확인했다. 모듈 계약 테스트는 8/8이지만 전체 메뉴, 모든 설정·주문관리·모듈 화면은 아직 범위별 audit을 하지 않았다. |
 | PWA 기기 설치 | 미실행 | manifest/service worker 정적 검증은 있지만 iOS/Android 홈 화면 설치 테스트는 없다. |
