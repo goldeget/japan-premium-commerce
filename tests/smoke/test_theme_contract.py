@@ -36,6 +36,25 @@ class ThemeContractTests(unittest.TestCase):
         self.assertIn("getModuleLink($this->name, 'manifest')", module)
         self.assertIn("og:image", module)
 
+    def test_organization_schema_uses_the_published_ordenowa_logo(self) -> None:
+        schema = (THEME / "templates" / "_partials" / "microdata" / "head-jsonld.tpl").read_text(encoding="utf-8")
+        module = (ROOT / "modules" / "kuraneabusinessprofile" / "kuraneabusinessprofile.php").read_text(encoding="utf-8")
+        organization = schema.split('"@type": "Organization"', 1)[1].split("</script>", 1)[0]
+        webpage = schema.split('"@type": "WebPage"', 1)[1].split("</script>", 1)[0]
+        website = schema.split("{if $page.page_name == 'index'}", 1)[1].split("</script>", 1)[0]
+
+        self.assertIn("'ordenowaLogoDesktop' => $this->assetUrl($assets['header_desktop'] ?? null, $baseUrl)", module)
+        self.assertIn('$ordenowaLogoDesktop|@json_encode:321 nofilter', organization)
+        self.assertIn('$ordenowaLogoDesktop|@json_encode:321 nofilter', website)
+        self.assertIn('{if $ordenowaLogoDesktop}', organization)
+        self.assertIn('{if $ordenowaLogoDesktop}', website)
+        self.assertIn('"name": {$ordenowaBrandName|@json_encode:321 nofilter}', organization)
+        self.assertIn('"name": {$ordenowaBrandName|@json_encode:321 nofilter}', webpage)
+        self.assertIn('"name": {$ordenowaBrandName|@json_encode:321 nofilter}', website)
+        self.assertNotIn("$shop.logo_details.src", organization)
+        self.assertNotIn("$shop.logo_details.src", website)
+        self.assertNotIn("$shop.name", schema)
+
     def test_customer_brand_copy_uses_confirmed_ordenowa_names(self) -> None:
         template = (THEME / "templates" / "index.tpl").read_text(encoding="utf-8")
         header = (THEME / "templates" / "_partials" / "header.tpl").read_text(encoding="utf-8")

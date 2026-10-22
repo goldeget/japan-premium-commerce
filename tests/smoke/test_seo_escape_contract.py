@@ -1,4 +1,5 @@
 """SEO escaping contract for the active ORDENOWA Smarty head override."""
+import html
 import re
 import unittest
 from pathlib import Path
@@ -17,6 +18,7 @@ LEGACY_JSONLD = (
 PRODUCT_JSONLD = THEMES / "kuranea" / "templates" / "_partials" / "microdata" / "product-jsonld.tpl"
 PRODUCT_LIST_JSONLD = THEMES / "kuranea" / "templates" / "_partials" / "microdata" / "product-list-jsonld.tpl"
 PRODUCT_TEMPLATE = THEMES / "hummingbird" / "templates" / "catalog" / "product.tpl"
+CHILD_PRODUCT_TEMPLATE = THEMES / "kuranea" / "templates" / "catalog" / "product.tpl"
 PRODUCT_LIST_TEMPLATE = THEMES / "kuranea" / "templates" / "catalog" / "listing" / "product-list.tpl"
 CHILD_THEME_CONFIG = THEMES / "kuranea" / "config" / "theme.yml"
 SEO_WORKFLOW = ROOT / ".github" / "workflows" / "seo-escape.yml"
@@ -27,6 +29,7 @@ SEO_WORKFLOW_PATHS = (
     "themes/kuranea/templates/_partials/microdata/head-jsonld.tpl",
     "themes/kuranea/templates/_partials/microdata/product-jsonld.tpl",
     "themes/kuranea/templates/_partials/microdata/product-list-jsonld.tpl",
+    "themes/kuranea/templates/catalog/product.tpl",
     "themes/kuranea/templates/catalog/listing/product-list.tpl",
     "themes/kuranea/config/theme.yml",
     "themes/hummingbird",
@@ -75,9 +78,9 @@ class SeoEscapeContract(unittest.TestCase):
         source = LEGACY_JSONLD.read_text(encoding="utf-8")
 
         for variable in (
-            "$shop.name",
+            "$ordenowaBrandName",
             "$urls.pages.index",
-            "$shop.logo_details.src",
+            "$ordenowaLogoDesktop",
             "$page.meta.title",
             "$urls.current_url",
             "$ordenowaSearchActionTarget",
@@ -139,6 +142,61 @@ class SeoEscapeContract(unittest.TestCase):
         self.assertTrue(
             PRODUCT_LIST_JSONLD.is_file(), "Smarty should resolve the listing include from the child theme"
         )
+
+    def test_product_attribute_translations_escape_persisted_catalog_names(self):
+        parent_source = PRODUCT_TEMPLATE.read_text(encoding="utf-8")
+        manufacturer_parent_block = parent_source.split(
+            "{block name='product_header_manufacturer'}", 1
+        )[1].split("{/block}", 1)[0]
+        attachment_parent_block = parent_source.split(
+            "{block name='product_attachments'}", 1
+        )[1].split("{/block}", 1)[0]
+
+        manufacturer_translation = (
+            "{l s='Product brand: %brand_name%' "
+            "sprintf=['%brand_name%' => $product_manufacturer->name] d='Shop.Theme.Catalog'}"
+        )
+        attachment_translation = (
+            "{l s='Download %attachment_name%' "
+            "sprintf=['%attachment_name%' => $attachment.name] d='Shop.Theme.Actions'}"
+        )
+        self.assertIn(manufacturer_translation, manufacturer_parent_block)
+        self.assertIn(attachment_translation, attachment_parent_block)
+
+        self.assertTrue(CHILD_PRODUCT_TEMPLATE.is_file(), "child product override is missing")
+        child_source = CHILD_PRODUCT_TEMPLATE.read_text(encoding="utf-8")
+        self.assertIn("{extends file='parent:catalog/product.tpl'}", child_source)
+        manufacturer_child_block = child_source.split(
+            "{block name='product_header_manufacturer'}", 1
+        )[1].split("{/block}", 1)[0]
+        attachment_child_block = child_source.split(
+            "{block name='product_attachments'}", 1
+        )[1].split("{/block}", 1)[0]
+        self.assertIn(
+            "{capture assign='manufacturer_aria_label'}" + manufacturer_translation + "{/capture}",
+            manufacturer_child_block,
+        )
+        self.assertIn(
+            "{capture assign='attachment_aria_label'}" + attachment_translation + "{/capture}",
+            attachment_child_block,
+        )
+        self.assertIn(
+            "aria-label=\"{$manufacturer_aria_label|escape:'htmlall':'UTF-8' nofilter}\"",
+            manufacturer_child_block,
+        )
+        self.assertIn(
+            "aria-label=\"{$attachment_aria_label|escape:'htmlall':'UTF-8' nofilter}\"",
+            attachment_child_block,
+        )
+        self.assertNotIn('aria-label="{l', manufacturer_child_block)
+        self.assertNotIn('aria-label="{l', attachment_child_block)
+
+        hostile_name = 'Brand" onmouseover="alert(1)'
+        escaped_label = html.escape(f"Product brand: {hostile_name}", quote=True)
+        rendered_anchor = f'<a aria-label="{escaped_label}">'
+        self.assertIn("&quot; onmouseover=&quot;alert(1)", rendered_anchor)
+        self.assertNotIn(' onmouseover="alert(1)"', rendered_anchor)
+        self.assertNotIn('aria-label="Product brand: Brand" onmouseover=', rendered_anchor)
 
     def test_seo_contract_workflow_triggers_for_every_template_dependency(self):
         source = SEO_WORKFLOW.read_text(encoding="utf-8")

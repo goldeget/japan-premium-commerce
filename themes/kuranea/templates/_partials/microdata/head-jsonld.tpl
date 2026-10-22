@@ -9,12 +9,12 @@
   {
     "@context": "https://schema.org",
     "@type": "Organization",
-    "name": {$shop.name|@json_encode:321 nofilter},
+    "name": {$ordenowaBrandName|@json_encode:321 nofilter},
     "url": {$urls.pages.index|@json_encode:321 nofilter}
-    {if $shop.logo_details},
+    {if $ordenowaLogoDesktop},
     "logo": {
       "@type": "ImageObject",
-      "url": {$shop.logo_details.src|@json_encode:321 nofilter}
+      "url": {$ordenowaLogoDesktop|@json_encode:321 nofilter}
     }
     {/if}
   }
@@ -27,7 +27,7 @@
     "isPartOf": {
       "@type": "WebSite",
       "url": {$urls.pages.index|@json_encode:321 nofilter},
-      "name": {$shop.name|@json_encode:321 nofilter}
+      "name": {$ordenowaBrandName|@json_encode:321 nofilter}
     },
     "name": {$page.meta.title|@json_encode:321 nofilter},
     "url": {$urls.current_url|@json_encode:321 nofilter}
@@ -40,10 +40,13 @@
       "@context": "https://schema.org",
       "@type": "WebSite",
       "url": {$urls.pages.index|@json_encode:321 nofilter},
+      "name": {$ordenowaBrandName|@json_encode:321 nofilter},
+      {if $ordenowaLogoDesktop}
       "image": {
         "@type": "ImageObject",
-        "url": {$shop.logo_details.src|@json_encode:321 nofilter}
+        "url": {$ordenowaLogoDesktop|@json_encode:321 nofilter}
       },
+      {/if}
       "potentialAction": {
         "@type": "SearchAction",
         "target": {$ordenowaSearchActionTarget|@json_encode:321 nofilter},
