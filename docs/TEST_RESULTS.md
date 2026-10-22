@@ -34,6 +34,7 @@
 | 검사 | 결과 | 상세 |
 | --- | --- | --- |
 | 신규 빈 볼륨 설치 | FAIL / 추적 중 | run `39703327857`과 `39704824787`은 이미지 빌드·격리 cache 권한 probe PASS 후 `Start the empty-volume shop`에서 실패했다. 공개 실행 페이지에서 후속 runs `39705702536`, `39706052890`, `39706126218`도 Failure로 확인했다. 최신 run(`1690a07`, 2분 39초)의 진단 artifact는 3.37 KB지만, 로그 화면 로그인 요구·GitHub API 403·익명 artifact 다운로드 404로 세부 로그를 읽지 못했다. 최신 실패 단계와 `errno 28` 여부는 확정하지 않으며 신규 설치 PASS가 아니다. |
+| Amazon Japan·Rakuten 원본 페이지 접근 | BLOCKED | 2026-10-22 읽기 전용 HTTPS 요청 모두 egress proxy CONNECT `403`을 반환했다. 접근통제를 우회하지 않았고 페이지를 수집·파싱하지 않았다. |
 | 신규 설치 DB 적재 및 API lookup | BLOCKED | 기존 dev DB에서는 공식 데이터를 가져와 실제 HTTP lookup을 확인했다. 격리 CI 실패로 새 빈 DB import/조회는 검증하지 못했다. |
 | checkout 주문 연결 및 관리자 배송지 | 미실행 | 무결제 네이티브 Order 생성, `id_address_delivery` 연결, PrestaShop 관리자 조회 주소 formatter를 검사하는 CI 전용 스크립트를 추가·원격 저장했고 PHP 문법 및 격리 가드만 확인했다. 실제 검증은 새 빈 설치 CI가 먼저 통과해야 한다. 브라우저 checkout 경로는 아직 주소 폼 fixture만 검증했다. |
 | PC/모바일 browser regression | 부분 PASS | 홈 빈 카탈로그 안내는 PC 1440px·모바일 390px에서 실제 렌더링했다. 화면별 증거는 위 캡처를 참조한다. 전체 반응형 폭 테스트와 상품 상세·주문 화면은 별도 미완료다. |
