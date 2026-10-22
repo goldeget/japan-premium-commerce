@@ -24,12 +24,62 @@ class ThemeContractTests(unittest.TestCase):
         self.assertNotIn("{$urls.base_url}new-products", template)
         self.assertNotIn("{$urls.base_url}search", template)
 
-    def test_product_page_uses_product_image_for_open_graph(self) -> None:
+    def test_brand_meta_and_icons_do_not_fall_back_to_legacy_kuranea_assets(self) -> None:
         template = (THEME / "templates" / "_partials" / "head.tpl").read_text(encoding="utf-8")
-        self.assertRegex(
-            template,
-            r"\{if \$page\.page_name != 'product'\}\s*<meta property=\"og:image\"",
-        )
+        module = (ROOT / "modules" / "kuraneabusinessprofile" / "kuraneabusinessprofile.php").read_text(encoding="utf-8")
+        self.assertNotIn("img/brand/og-brand.png", template)
+        self.assertNotIn("img/brand/favicon.ico", template)
+        self.assertIn("ordenowaSeoTitle", template)
+        self.assertIn("getModuleLink($this->name, 'manifest')", module)
+        self.assertIn("og:image", module)
+
+    def test_customer_brand_copy_uses_confirmed_ordenowa_names(self) -> None:
+        template = (THEME / "templates" / "index.tpl").read_text(encoding="utf-8")
+        header = (THEME / "templates" / "_partials" / "header.tpl").read_text(encoding="utf-8")
+        self.assertIn("ORDENOWA", template)
+        self.assertIn("$copyBrandName", template)
+        self.assertIn("$copyBrandDescription", template)
+        self.assertIn("ordenowaBrandName", header)
+        self.assertNotIn("KURANEA", template)
+        self.assertNotIn("kuranea-logo-", header)
+
+    def test_home_uses_published_brand_name_description_and_slogan(self) -> None:
+        template = (THEME / "templates" / "index.tpl").read_text(encoding="utf-8")
+
+        self.assertIn("$ordenowaBrandName", template)
+        self.assertIn("$ordenowaBrandDescription", template)
+        self.assertIn("$ordenowaBrandSlogan", template)
+        self.assertNotIn("ORDENOWA / オーデノワ", template)
+        self.assertNotIn("企業と商品をつなぐ、次世代のB2B調達プラットフォーム", template)
+
+    def test_featured_catalog_heading_uses_published_brand_name(self) -> None:
+        template = (THEME / "modules" / "ps_featuredproducts" / "views" / "templates" / "hook" / "ps_featuredproducts.tpl").read_text(encoding="utf-8")
+
+        self.assertIn("$ordenowaBrandName", template)
+        self.assertIn("{$catalogHeading|escape:'htmlall':'UTF-8'}", template)
+        self.assertNotIn("ORDENOWAの商品カタログ", template)
+        self.assertNotIn("ORDENOWA 상품 카탈로그", template)
+        self.assertNotIn("ORDENOWA product catalog", template)
+
+    def test_footer_brand_descriptions_use_published_brand_name(self) -> None:
+        template = (THEME / "modules" / "ps_linklist" / "views" / "templates" / "hook" / "linkblock.tpl").read_text(encoding="utf-8")
+
+        self.assertIn("$ordenowaBrandName", template)
+        self.assertIn("$footerBrandName", template)
+        self.assertIn("{$footerLinkDescription|escape:'htmlall':'UTF-8'}", template)
+        self.assertNotIn("ORDENOWAのご利用規約です。", template)
+        self.assertNotIn("ORDENOWA 이용약관을 확인하세요.", template)
+        self.assertNotIn("ORDENOWA's terms of use.", template)
+
+    def test_visible_theme_palette_matches_ordenowa_blue_cyan_silver_artwork(self) -> None:
+        css = (THEME / "assets" / "css" / "custom.css").read_text(encoding="utf-8").lower()
+
+        self.assertIn("--ordenowa-navy: #071b3d", css)
+        self.assertIn("--ordenowa-blue: #0755b8", css)
+        self.assertIn("--ordenowa-cyan: #00bbd4", css)
+        self.assertIn("--ordenowa-silver: #b8c3ce", css)
+        self.assertNotIn("#b49a61", css)
+        self.assertNotIn("#d4b874", css)
 
     def test_category_selector_matches_hummingbird_markup(self) -> None:
         css = (THEME / "assets" / "css" / "custom.css").read_text(encoding="utf-8")
@@ -101,10 +151,14 @@ class ThemeContractTests(unittest.TestCase):
         head = (THEME / "templates" / "_partials" / "head.tpl").read_text(encoding="utf-8")
         worker_path = THEME / "assets" / "sw.js"
         self.assertTrue("pwa-register.js" in head, "PWA registration script is missing")
+        module = (ROOT / "modules" / "kuraneabusinessprofile" / "kuraneabusinessprofile.php").read_text(encoding="utf-8")
+        self.assertIn("actionFrontControllerInitBefore", module, "sales must be gated until the seller profile is approved")
         self.assertTrue(worker_path.is_file(), "network-only service worker is missing")
         worker = worker_path.read_text(encoding="utf-8")
         self.assertTrue("addEventListener('fetch'" in worker, "service worker has no fetch policy")
         self.assertNotIn("caches.open", worker, "private or order pages must not be stored by the service worker")
+        self.assertIn("ORDENOWA", worker)
+        self.assertNotIn("KURANEA", worker)
 
 
 if __name__ == "__main__":

@@ -1,15 +1,19 @@
-{** KURANEA empty catalog copy; product cards remain Hummingbird's native output. **}
+{** ORDENOWA empty catalog copy; product cards remain Hummingbird's native output. **}
 {extends file="components/module-products.tpl"}
 
 {block name='module_products_name'}ps-featuredproducts{/block}
 
 {block name='module_products_title'}
+  {$catalogBrandName = $ordenowaBrandName|default:'ORDENOWA'}
   {if $language.locale == 'ja-JP'}
-    {include file='components/section-title.tpl' title='KURANEAのセレクション'}
+    {$catalogHeading = $catalogBrandName|cat:'の商品カタログ'}
+    <h2 class="section-title">{$catalogHeading|escape:'htmlall':'UTF-8'}</h2>
   {elseif $language.locale == 'ko-KR'}
-    {include file='components/section-title.tpl' title='KURANEA 셀렉션'}
+    {$catalogHeading = $catalogBrandName|cat:' 상품 카탈로그'}
+    <h2 class="section-title">{$catalogHeading|escape:'htmlall':'UTF-8'}</h2>
   {else}
-    {include file='components/section-title.tpl' title='The KURANEA edit'}
+    {$catalogHeading = $catalogBrandName|cat:' product catalog'}
+    <h2 class="section-title">{$catalogHeading|escape:'htmlall':'UTF-8'}</h2>
   {/if}
 {/block}
 

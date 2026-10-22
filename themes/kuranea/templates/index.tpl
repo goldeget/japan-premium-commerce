@@ -1,4 +1,4 @@
-{** KURANEA editorial home. Product output remains PrestaShop's native module markup. **}
+{** ORDENOWA storefront home. Product output remains PrestaShop's native module markup. **}
 {extends file=$layout}
 
 {block name='breadcrumb'}{/block}
@@ -16,54 +16,57 @@
             {block name='page_content_top'}{/block}
 
             {block name='page_content'}
+              {$copyBrandName = $ordenowaBrandName|default:'ORDENOWA'}
+              {$copyBrandDescription = $ordenowaBrandDescription|default:''}
+              {$copyBrandSlogan = $ordenowaBrandSlogan|default:''}
               {if $language.locale == 'ja-JP'}
-                {$copyEyebrow = '日本で選び抜いた品々'}
-                {$copyTitle = '丁寧に選ぶ、美しい暮らし。'}
-                {$copyLead = '住まいと自分、日々のひとときを豊かにする品々をご紹介します。'}
-                {$copyExplore = 'コレクションを見る'}
+                {$copyEyebrow = $copyBrandDescription}
+                {$copyTitle = $copyBrandSlogan}
+                {$copyLead = '企業向けの商品調達と受発注を支えるサービスです。'}
+                {$copyExplore = '商品を見る'}
                 {$copySearch = '商品を探す'}
-                {$copyApproach = 'KURANEAのこだわり'}
-                {$copyValueOneTitle = '日々の暮らしに寄り添う'}
-                {$copyValueOneBody = '日常に、ささやかな心地よさを添える品々。'}
-                {$copyValueTwoTitle = '想いを込めて選ぶ'}
-                {$copyValueTwoBody = '日本の感性を大切にしたセレクション。'}
-                {$copyValueThreeTitle = '静かな個性'}
-                {$copyValueThreeBody = '時を重ねても心地よい、細部へのこだわり。'}
-                {$copyEdit = 'KURANEAのセレクション'}
-                {$copyNote = 'あなたの暮らしに寄り添う、選び抜かれたコレクション。'}
-                {$copyDiscover = '新しいアイテムを見る'}
+                {$copyApproach = $copyBrandName|cat:'のサービス'}
+                {$copyValueOneTitle = '商品を探す'}
+                {$copyValueOneBody = '必要な商品情報を確認できます。'}
+                {$copyValueTwoTitle = '条件を確認する'}
+                {$copyValueTwoBody = '商品ごとの価格や取引条件をご案内します。'}
+                {$copyValueThreeTitle = '受発注をつなぐ'}
+                {$copyValueThreeBody = '企業と商品をつなぐ受発注サービスです。'}
+                {$copyEdit = '商品カタログ'}
+                {$copyNote = $copyBrandName}
+                {$copyDiscover = '商品カタログを見る'}
               {elseif $language.locale == 'ko-KR'}
-                {$copyEyebrow = '일본에서 엄선한 상품'}
-                {$copyTitle = '정성껏 고른 아름다운 일상.'}
-                {$copyLead = '집과 나, 그리고 일상의 순간을 풍요롭게 하는 상품을 소개합니다.'}
-                {$copyExplore = '컬렉션 보기'}
+                {$copyEyebrow = $copyBrandDescription}
+                {$copyTitle = $copyBrandSlogan}
+                {$copyLead = '기업 고객을 위한 상품 조달과 발주 서비스를 제공합니다.'}
+                {$copyExplore = '상품 보기'}
                 {$copySearch = '상품 검색'}
-                {$copyApproach = 'KURANEA의 기준'}
-                {$copyValueOneTitle = '매일의 일상에 함께'}
-                {$copyValueOneBody = '일상에 작은 편안함을 더하는 물건.'}
-                {$copyValueTwoTitle = '마음을 담아 고른'}
-                {$copyValueTwoBody = '일본의 감성을 소중히 담은 셀렉션.'}
-                {$copyValueThreeTitle = '차분하고 특별한'}
-                {$copyValueThreeBody = '오래도록 곁에 두고 싶은 세심한 디테일.'}
-                {$copyEdit = 'KURANEA 셀렉션'}
-                {$copyNote = '당신의 일상에 자연스럽게 어우러지는 엄선된 컬렉션.'}
-                {$copyDiscover = '새로운 상품 보기'}
+                {$copyApproach = $copyBrandName|cat:' 서비스'}
+                {$copyValueOneTitle = '상품 검색'}
+                {$copyValueOneBody = '필요한 상품 정보를 확인할 수 있습니다.'}
+                {$copyValueTwoTitle = '거래 조건 확인'}
+                {$copyValueTwoBody = '상품별 가격과 거래 조건을 안내합니다.'}
+                {$copyValueThreeTitle = '주문 연결'}
+                {$copyValueThreeBody = '기업과 상품을 연결하는 발주 서비스입니다.'}
+                {$copyEdit = '상품 카탈로그'}
+                {$copyNote = $copyBrandName}
+                {$copyDiscover = '상품 카탈로그 보기'}
               {else}
-                {$copyEyebrow = 'Curated in Japan'}
-                {$copyTitle = 'A thoughtful life, beautifully chosen.'}
-                {$copyLead = 'Discover considered essentials for home, self, and the moments in between.'}
-                {$copyExplore = 'Explore the collection'}
+                {$copyEyebrow = $copyBrandDescription}
+                {$copyTitle = $copyBrandSlogan}
+                {$copyLead = 'Product sourcing and purchase order services for business customers.'}
+                {$copyExplore = 'Browse products'}
                 {$copySearch = 'Search the store'}
-                {$copyApproach = 'The KURANEA approach'}
-                {$copyValueOneTitle = 'For everyday rituals'}
-                {$copyValueOneBody = 'Objects that bring a little more care to the everyday.'}
-                {$copyValueTwoTitle = 'Selected with intention'}
-                {$copyValueTwoBody = 'A considered edit shaped by Japanese sensibility.'}
-                {$copyValueThreeTitle = 'Quietly distinctive'}
-                {$copyValueThreeBody = 'Timeless details, made to feel at home.'}
-                {$copyEdit = 'The KURANEA edit'}
-                {$copyNote = 'A considered collection for the way you live.'}
-                {$copyDiscover = 'Discover what is new'}
+                {$copyApproach = $copyBrandName|cat:' services'}
+                {$copyValueOneTitle = 'Find products'}
+                {$copyValueOneBody = 'Review product information for your business.'}
+                {$copyValueTwoTitle = 'Review terms'}
+                {$copyValueTwoBody = 'See product pricing and transaction terms.'}
+                {$copyValueThreeTitle = 'Connect orders'}
+                {$copyValueThreeBody = 'A purchase order service connecting businesses and products.'}
+                {$copyEdit = 'Product catalog'}
+                {$copyNote = $copyBrandName}
+                {$copyDiscover = 'Browse the catalog'}
               {/if}
 
               <section class="kuranea-hero" aria-labelledby="kuranea-home-title">
@@ -79,9 +82,10 @@
                   </div>
                   <div class="kuranea-hero__art" aria-hidden="true">
                     <div class="kuranea-hero__frame">
-                      <img src="{$urls.theme_assets}img/brand/pwa-512x512.png" width="512" height="512" alt="" fetchpriority="high">
+                      <span class="ordenowa-hero-wordmark">{$copyBrandName|escape:'htmlall':'UTF-8'}</span>
+                      <span class="ordenowa-hero-kana">{$copyBrandDescription|escape:'htmlall':'UTF-8'}</span>
                     </div>
-                    <span class="kuranea-hero__seal">KURANEA · クラネア</span>
+                    <span class="kuranea-hero__seal">B2B PROCUREMENT</span>
                   </div>
                 </div>
               </section>
@@ -123,7 +127,7 @@
 
               <section class="kuranea-note">
                 <div class="container kuranea-note__inner">
-                  <p class="kuranea-eyebrow">KURANEA / クラネア</p>
+                  <p class="kuranea-eyebrow">{$copyBrandName|escape:'htmlall':'UTF-8'}</p>
                   <p>{$copyNote|escape:'htmlall':'UTF-8'}</p>
                   <a href="{$urls.pages.new_products}" class="kuranea-text-link">{$copyDiscover|escape:'htmlall':'UTF-8'} <span aria-hidden="true">→</span></a>
                 </div>

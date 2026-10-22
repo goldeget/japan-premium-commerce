@@ -3,6 +3,8 @@
  * LICENSE.md file that was distributed with this source code.
  *}
 {if !empty($linkBlocks)}
+  {$footerBrandName = $ordenowaBrandName|default:'ORDENOWA'}
+  {$footerBrandDescription = $ordenowaBrandDescription|default:''}
   {foreach $linkBlocks as $linkBlock}
     <nav
       class="ps-linklist footer-block col-md-6 col-lg-3"
@@ -58,9 +60,9 @@
               {elseif $link.id == 'link-cms-page-2'}
                 {$footerLinkDescription = '特定商取引法に基づく販売者情報です。'}
               {elseif $link.id == 'link-cms-page-3'}
-                {$footerLinkDescription = 'KURANEAのご利用規約です。'}
+                {$footerLinkDescription = $footerBrandName|cat:'のご利用規約です。'}
               {elseif $link.id == 'link-cms-page-4'}
-                {$footerLinkDescription = 'KURANEAの会社概要です。'}
+                {$footerLinkDescription = $footerBrandName|cat:'の会社概要です。 '|cat:$footerBrandDescription}
               {elseif $link.id == 'link-cms-page-5'}
                 {$footerLinkDescription = 'ご利用いただけるお支払い方法をご案内します。'}
               {elseif $link.id == 'link-static-page-contact'}
@@ -86,10 +88,10 @@
                 {$footerLinkDescription = '일본 특정상거래법에 따른 판매자 정보입니다.'}
               {elseif $link.id == 'link-cms-page-3'}
                 {$footerLinkTitle = '이용약관'}
-                {$footerLinkDescription = 'KURANEA 이용약관을 확인하세요.'}
+                {$footerLinkDescription = $footerBrandName|cat:' 이용약관을 확인하세요.'}
               {elseif $link.id == 'link-cms-page-4'}
                 {$footerLinkTitle = '회사 소개'}
-                {$footerLinkDescription = 'KURANEA 회사 소개입니다.'}
+                {$footerLinkDescription = $footerBrandName|cat:' 회사 소개입니다. '|cat:$footerBrandDescription}
               {elseif $link.id == 'link-cms-page-5'}
                 {$footerLinkTitle = '안전한 결제'}
                 {$footerLinkDescription = '이용 가능한 결제 방법을 안내합니다.'}
@@ -99,6 +101,12 @@
               {elseif $link.id == 'link-static-page-sitemap'}
                 {$footerLinkTitle = '사이트맵'}
                 {$footerLinkDescription = '사이트의 페이지 목록을 확인하세요.'}
+              {/if}
+            {else}
+              {if $link.id == 'link-cms-page-3'}
+                {$footerLinkDescription = $footerBrandName|cat:' terms and conditions.'}
+              {elseif $link.id == 'link-cms-page-4'}
+                {$footerLinkDescription = $footerBrandName|cat:' company profile. '|cat:$footerBrandDescription}
               {/if}
             {/if}
             <li>
@@ -113,7 +121,7 @@
               </a>
               {if !empty($footerLinkDescription)}
                 <span id="desc-{$link.id}-{$linkBlock.id}" class="visually-hidden">
-                  {$footerLinkDescription}
+                  {$footerLinkDescription|escape:'htmlall':'UTF-8'}
                 </span>
               {/if}
             </li>
