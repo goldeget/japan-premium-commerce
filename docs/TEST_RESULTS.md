@@ -36,7 +36,7 @@
 
 | 검사 | 결과 | 상세 |
 | --- | --- | --- |
-| P0 관리자 폴더 설치 수정의 실제 CI 검증 | FAIL (후속 수정 필요) | GitHub Actions run `39727310686`, 코드 SHA `175d75dac132ddb0a8f54777519795208df8ae4d`. 이미지 빌드와 사전 계약 검사는 통과했으나 `Start the empty-volume shop`이 실패했다. 현재 환경은 run 로그/artifact 응답을 열지 못해 상세 원인을 확인하지 못했다. 최신 로컬 후보는 `PS_FOLDER_ADMIN=admin-dev`를 통해 실제 관리자 파일을 CLI asset 설치까지 보존한 뒤 post-install에서 이름을 바꾼다. 후보 코드는 로컬 계약 검증만 통과했으며 원격 신규 설치는 미검증이다. |
+| P0 관리자 폴더 설치 수정의 실제 CI 검증 | FAIL (원인 미확정) | GitHub Actions run `39728912492`, 코드 SHA `fcf78ad9f1d538bb79259e83c12c9225e53df999`. Compose 설정, 주소 갱신 계약, 관리자 경로 계약, 이미지 빌드 및 캐시 권한 probe는 통과했다. `Start the empty-volume shop`이 7분 33초 후 exit code 1로 끝났고 이후 주소 import/주문 검사는 건너뛰었다. 진단 artifact `fresh-install-diagnostics-39728912492-1`(4.5 KB, artifact ID `12404443106`)은 업로드됐으나 직접 다운로드와 단계 로그 URL은 이 환경에서 404를 반환했다. 상세 root cause는 아직 모른다. 신규 설치 PASS가 아니다. |
 | 과거 신규 빈 볼륨 설치 | FAIL (이전 코드) | runs `39703327857`, `39704824787`, `39705702536`, `39706052890`, `39706126218`은 이전 코드에서 실패했다. 최신 사용자가 제공한 상세 로그에서 `assets:install admin-dev`가 부재한 `/var/www/html/admin-dev`를 대상으로 한 직접 원인을 확인했다. 이번 원인은 errno 28로 기록하지 않는다. |
 | Amazon Japan·Rakuten 원본 페이지 접근 | BLOCKED | 2026-10-22 읽기 전용 HTTPS 요청 모두 egress proxy CONNECT `403`을 반환했다. 접근통제를 우회하지 않았고 페이지를 수집·파싱하지 않았다. |
 | 신규 설치 DB 적재 및 API lookup | BLOCKED | 기존 dev DB에서는 공식 데이터를 가져와 실제 HTTP lookup을 확인했다. 격리 CI 실패로 새 빈 DB import/조회는 검증하지 못했다. |

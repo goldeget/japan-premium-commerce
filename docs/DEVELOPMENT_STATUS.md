@@ -3,12 +3,12 @@
 기준일: 2026-10-22
 
 작업 브랜치: `work`
-마지막 원격 코드 체크포인트 SHA: `175d75dac132ddb0a8f54777519795208df8ae4d`
+마지막 검증 원격 코드 체크포인트 SHA: `fcf78ad9f1d538bb79259e83c12c9225e53df999`
 
 ## 실행 기반
 
 - PrestaShop 9.2.0, Hummingbird 2.1.2, MariaDB 10.11, Docker Compose를 사용한다.
-- 로컬 실행 중인 PrestaShop과 MariaDB 컨테이너는 healthy이며 쇼핑몰은 `127.0.0.1:8080`에 바인딩돼 있다.
+- 마지막 확인에서 PrestaShop은 healthy, MariaDB는 unhealthy였다. 쇼핑몰 개발 포트는 `127.0.0.1:8080`에 바인딩돼 있으며 기존 컨테이너와 데이터 볼륨은 건드리지 않았다.
 - `main`은 `ee02a3657448d563508687614a246e05ac61eecd` 상태로 보존한다.
 - 이 Codex 환경에서 관측한 cloud environment `spec_revision=2`, `observed_spec_revision=2`다. 이후 개정 설정이 실제 적용되지 않았다. 읽기 draft revision 4는 이전 SHA `2db98927a9ede2b2423456873f0994ddd19ffe4e`를 고정하며, 활성 사용자 지정 egress는 `i18n.prestashop-project.org`뿐이다. draft를 현재 SHA와 필요한 개발 도메인으로 갱신하는 작업은 아직 게시 전이다.
 - 호스트 작업공간 overlay는 여유 블록 0 bytes, inode 사용률 100%(약 7천 개 여유)로 고갈됐다. Docker에는 이미지 2.216 GB, 활성 volume 1.114 GB, build cache 8.284 MB가 있다. 활성 named volume `kuranea_mariadb_data`, `kuranea_prestashop_html`과 출처가 확인되지 않은 세 번째 volume을 보존했다. Docker prune, 기존 volume 삭제·초기화, 로컬 재빌드는 하지 않았다. 마지막 관찰에서 MariaDB healthcheck는 unhealthy였고 PrestaShop은 healthy였다.
@@ -25,7 +25,7 @@
 | 관리자 한국어 | 로그인·대시보드·주문 목록 부분 검증, 전체 100% 미완료 | 실제 로그인 후 대시보드 및 주문 목록 PC/모바일을 확인했다. 주문 목록은 HTTP 200, 화면 문구와 메뉴 한국어, 브라우저 오류 0건이다. 화면에 주문이 없어 주소 표시 행은 아직 확인하지 못했다. 빈 상태 삽화 안의 샘플 영문/달러 그림도 표시된다. 전체 관리자 화면의 한국어 100%는 완료되지 않았다. |
 | PWA | 부분 완료 | manifest, 아이콘, 공개 정적 자산 전용 service worker 기반을 갖췄다. 실제 iOS/Android 설치 검증은 미실행이다. |
 | 현재 로컬 회귀 실행 | 부분 실패 | 최신 38개 storefront/smoke 실행에서 35건 통과, 빈 카테고리 ja/en/ko 경로 3건이 `Category.php`/`CategoryController.php`의 false 조회 결과 foreach 경고와 함께 HTTP 500으로 실패했다. 주소·관리자 번역 계약은 별도 6/6·8/8 통과했다. 여유 공간·inode가 0/100%인 상태에서 MariaDB도 unhealthy로 관찰되어 DB 변경이나 컨테이너 재시작 없이 중단했다. |
-| 신규 설치 CI | 실패·수정 진행 중 | Actions run `39727310686`은 이미지 빌드와 정적 계약 검사를 통과했지만 `Start the empty-volume shop`에서 실패했다. 상세 로그는 이 환경에서 열리지 않아 당시 수정안의 실패 세부를 확인하지 못했다. 현재 후보 수정은 `PS_FOLDER_ADMIN=admin-dev`로 Docker가 실제 관리자 파일을 해당 설치 경로에 유지하게 하고, post-install hook이 PHP 부트스트랩을 호출하도록 한다. PHP는 공식 post-install 단계 이후 감지된 관리자 디렉터리를 `admin-kuranea`로 이동하고 assets를 생성한다. 로컬 계약 검사는 통과했지만 원격 실행 전이며 신규 설치 PASS가 아니다. |
+| 신규 설치 CI | 실패·원인 미확정 | 원격 `work`의 `fcf78ad9f1d538bb79259e83c12c9225e53df999`에서 실행한 Actions run `39728912492`는 이미지 빌드, 설치 순서 계약, 캐시 권한 검사를 통과했으나 `Start the empty-volume shop`에서 7분 33초 만에 실패했다. `PS_FOLDER_ADMIN=admin-dev`로 실제 관리자 파일을 CLI assets 단계까지 보존한 뒤 post-install에서 `admin-kuranea`로 옮기는 수정 후보를 사용했지만, 런타임 설치는 통과하지 못했다. 진단 artifact는 생성됐으나 이 환경의 다운로드 경로가 404라 구체적인 원인은 미확정이다. 같은 CI를 원인 파악·코드 변경 없이 반복하지 않는다. 신규 설치는 PASS가 아니다. |
 | Amazon Japan·Rakuten 상품 수집 | 차단 | 공개 홈페이지를 읽기 전용 HTTP 요청했으나 둘 다 개발환경 egress proxy의 CONNECT `403`으로 거부됐다. 우회하지 않았으며 실제 페이지 파싱·상품 수집·등록을 하지 않았다. |
 | 주문·상품 운영 | 미완료 | 카탈로그가 비어 있고 신규 설치 CI가 실패한다. 실제 상품 수집, 주문, 주문관리 브라우저 여정은 완료되지 않았다. |
 
@@ -46,8 +46,8 @@
 - 2026-10-22: 체크포인트 `06617f6`에서 Japan Post town 설명 접미어를 고객용 주소·API 후보에서 제거하고 `以下に掲載がない場合`를 빈 주소란으로 처리했다. 원본 공식 CSV 값은 변경하지 않는다. `a444238`은 실데이터 검사에서 `大手町` 정규화를 단언하고, `1690a07`은 안전한 공식 데이터 갱신 CLI와 6개 계약 테스트를 CI 앞단에 추가했다. 도메인·응답 fixture 테스트, 실제 dev DB 읽기 전용 주소 검증에서 통과했으며 고객/주소/주문 행은 생성하지 않았다.
 - 2026-10-22: 시작 후 cloud status를 다시 읽었다. 활성 revision 2, 저장 draft revision 4이며 draft의 repository SHA는 이전 기준 `2db9892`다. revision 3 적용 증거는 없고 draft를 수정하거나 게시하지 않았다. active network status에서 `api.github.com`을 확인할 수 없어 실패 실행의 상세 로그는 계속 접근 불가다.
 - 2026-10-22: 최신 Actions 진단에서 이전 `errno 28` 가정과 다른 직접 원인을 확인했다. PrestaShop `Install::finalize()`는 `/admin/`이 없으면 기본 target `admin-dev`를 사용하지만 Docker entrypoint가 설치 전에 관리자 폴더를 옮겼다. 첫 수정안 `175d75d`는 CI run `39727310686`에서 이미지 빌드와 사전 검사를 통과했으나 빈 설치 단계는 실패했다. 현재 환경에서 상세 로그가 제공되지 않아 이 시도의 실패 세부를 확정하지 않는다.
-- 2026-10-22: 후속 로컬 수정안은 신규 설치에서 `PS_FOLDER_ADMIN=admin-dev`를 사용해 Docker entrypoint가 기존 관리자 파일을 해당 경로에 두게 한다. post-install hook은 PHP 부트스트랩을 호출하고, PHP가 공식 post-install 처리 후 감지된 디렉터리를 `admin-kuranea`로 이동해 assets를 다시 생성한다. 셸에서 먼저 경로를 바꾸는 중간안을 회귀 테스트에서 실패시킨 뒤 PHP 단일 책임 경로로 되돌렸다. 관리자 경로 계약 4/4, 주소 갱신 CLI 6/6, 관리자 번역 8/8 통과. 전체 smoke는 카테고리 경로 HTTP 500 3건으로 35/38이며 PHP 컨테이너 lint는 runc exec 오류로 재실행되지 않았다. 빈 폴더를 만들거나 코어/기존 볼륨을 바꾸지 않는다. 이 후보는 아직 원격 푸시·신규 CI 결과 전이다.
+- 2026-10-22: 후속 수정안 `fcf78ad`는 `PS_FOLDER_ADMIN=admin-dev`를 사용해 Docker entrypoint가 실제 관리자 파일을 기본 설치 경로에 유지하고, 공식 post-install 이후 PHP 부트스트랩이 `admin-kuranea`로 이동해 assets를 설치한다. 정적 경로 계약 4/4 통과, 원격 CI run `39728912492`는 Compose의 빈 상점 시작에서 실패했다. 실패 artifact는 존재하지만 현재 환경에서 읽을 수 없어 새 직접 원인은 미확정이다.
 
 ## 다음 우선순위
 
-1. 후속 수정안을 작은 원격 체크포인트로 저장하고 독립 Actions에서 격리 빈 DB 설치·ja/en/ko·테마·최종 `admin-kuranea` assets/login·재시작 보존을 확인한다. CI가 실패하면 상세 stderr를 먼저 확보하고 원인을 좁힌 뒤
+1. run `39728912492`의 실패 단계 로그나 진단 artifact를 확보해 Compose 시작 실패 원인을 확인한다. 코드 변경 없이 같은 신규 설치 CI를 다시 실행하지 않는다. 원인을 고친 뒤 빈 DB 설치와 전체 smoke를 다시 검증한다.

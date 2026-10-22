@@ -1,5 +1,13 @@
 # KURANEA 작업 기록
 
+## 2026-10-22 — 빈 설치 CI 후보의 런타임 실패 기록
+
+- 원격 기준: `work` SHA `fcf78ad9f1d538bb79259e83c12c9225e53df999`; `main` SHA `ee02a3657448d563508687614a246e05ac61eecd`는 변경하지 않았다.
+- Actions run `39728912492`에서 Compose 검증, Japan Post 갱신 계약, 관리자 경로 정적 계약, 이미지 빌드 및 별도 캐시 권한 probe는 통과했다. `Start the empty-volume shop` 단계는 7분 33초 후 exit code 1로 실패했고 주소 import, native order, restart 검사는 실행되지 않았다.
+- 진단 artifact `fresh-install-diagnostics-39728912492-1`은 4.5 KB로 업로드됐다(artifact ID `12404443106`, SHA-256 `8255ea09146ceef4f4d720091ce6f2cf7c5351d8bd79e327bb6aa8636800fde0`). GitHub 공개 상태 페이지와 artifact 존재는 확인했지만 이 환경의 상세 로그 및 artifact 다운로드 경로는 404를 반환해 실제 compose 로그를 읽지 못했다. 실패 원인을 추측하지 않는다.
+- 결과: `PS_FOLDER_ADMIN=admin-dev`를 사용한 수정안은 실제 신규 설치를 통과하지 못했으므로 P0는 미해결이다. 같은 코드를 원인 파악·수정 없이 재실행하지 않는다. CI diagnostics를 전달받거나 로그 접근이 가능한 환경에서 원인을 확인한 뒤 최소 수정과 새 원격 체크포인트를 진행한다.
+- 보존: CI는 고유 Compose 프로젝트에서 실행했고 workflow는 해당 run이 만든 컨테이너·볼륨만 정리했다. 로컬 기존 named volume, 작업 파일, `main`은 수정·삭제하지 않았다.
+
 ## 2026-10-22 — 관리자 폴더 설치 경로 후속 수정
 
 - 원격 최신 SHA는 `175d75dac132ddb0a8f54777519795208df8ae4d`였다. 첫 수정 커밋의 Actions run `39727310686`은 이미지 빌드/정적 검사를 통과했지만 빈 DB 설치 단계에서 실패했다. 이 실행의 상세 로그는 현재 환경에서 404/접근 오류여서 실패 세부를 추정하지 않았다.
