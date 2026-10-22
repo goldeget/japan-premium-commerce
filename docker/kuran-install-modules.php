@@ -38,20 +38,36 @@ $context->cart = new Cart();
 $context->currency = kuraneaConfigureJapaneseCurrency($context);
 $kernel->getContainer()->get(ContextBuilderPreparer::class)->prepareFromLegacyContext($context);
 
-// PrestaShop can emit non-ASCII static slugs as raw Location header bytes.
-// Convert those defaults once; later administrator SEO edits must persist.
-$routeMigrationKey = 'ORDENOWA_ASCII_ROUTE_MIGRATION_V1';
+foreach (['kuraneapostcode', 'kuraneabackoffice', 'kuraneabusinessprofile', 'kuraneacatalog'] as $moduleName) {
+    $module = Module::getInstanceByName($moduleName);
+    if (!$module) {
+        throw new RuntimeException(sprintf('The bundled %s module could not be loaded.', $moduleName));
+    }
+
+    if (!Module::isInstalled($moduleName)) {
+        if (!$module->install()) {
+            throw new RuntimeException(sprintf('Could not install the %s module.', $moduleName));
+        }
+    } elseif (!(bool) $module->active && !$module->enable()) {
+        throw new RuntimeException(sprintf('Could not enable the %s module.', $moduleName));
+    }
+}
+
+// Run after bundled modules have installed so the final localized Meta rows
+// are present. V1 installations get a targeted repair for the confirmed late
+// Japanese identity default, while fresh installs migrate non-ASCII defaults
+// once and preserve subsequent SEO edits.
+$legacyRouteMigrationKey = 'ORDENOWA_ASCII_ROUTE_MIGRATION_V1';
+$routeMigrationKey = 'ORDENOWA_ASCII_ROUTE_MIGRATION_V2';
+$legacyRouteMigrationComplete = (string) Configuration::get($legacyRouteMigrationKey) === '1';
 $optionalMetaPages = ['history'];
 try {
-    if ((string) Configuration::get($routeMigrationKey) !== '1') {
+    if ((string) Configuration::get($routeMigrationKey) !== '2') {
         $routeMigrationSucceeded = true;
+        $lateInstallerRouteDefaults = ['identity' => '識別子'];
         foreach (['order' => 'checkout', 'identity' => 'identity', 'password' => 'password-reset', 'history' => 'history'] as $page => $routeSlug) {
             error_log('ORDENOWA_ROUTE_MIGRATION stage=lookup page=' . $page);
             try {
-                // Match the actual localized route row in one query. A page can
-                // have multiple meta IDs during install/upgrade, and selecting
-                // an arbitrary ID first can strand the Japanese row on the
-                // non-ASCII installer default.
                 $routeQuery = 'SELECT ml.id_meta, ml.url_rewrite'
                     . ' FROM `' . _DB_PREFIX_ . 'meta_lang` ml'
                     . ' INNER JOIN `' . _DB_PREFIX_ . 'meta` m ON m.id_meta = ml.id_meta'
@@ -89,8 +105,15 @@ try {
                         continue;
                     }
 
-                    $hasNonAsciiRoute = preg_match('/[^\x00-\x7F]/', $storedRouteSlug) === 1;
+                    $decodedRouteSlug = rawurldecode($storedRouteSlug);
+                    $hasNonAsciiRoute = preg_match('/[^\x00-\x7F]/', $decodedRouteSlug) === 1;
                     if (!$hasNonAsciiRoute) {
+                        continue;
+                    }
+
+                    $isKnownLateInstallerDefault = isset($lateInstallerRouteDefaults[$page])
+                        && $decodedRouteSlug === $lateInstallerRouteDefaults[$page];
+                    if ($legacyRouteMigrationComplete && !$isKnownLateInstallerDefault) {
                         continue;
                     }
 
@@ -114,7 +137,7 @@ try {
 
         if ($routeMigrationSucceeded) {
             error_log('ORDENOWA_ROUTE_MIGRATION stage=marker');
-            if (Configuration::updateValue($routeMigrationKey, '1')) {
+            if (Configuration::updateValue($routeMigrationKey, '2')) {
                 error_log('ORDENOWA_ROUTE_MIGRATION status=complete');
             } else {
                 error_log('ORDENOWA_ROUTE_MIGRATION status=deferred reason=marker_write');
@@ -125,21 +148,6 @@ try {
     }
 } catch (Throwable $routeMigrationError) {
     error_log('ORDENOWA_ROUTE_MIGRATION status=deferred reason=configuration_exception');
-}
-
-foreach (['kuraneapostcode', 'kuraneabackoffice', 'kuraneabusinessprofile', 'kuraneacatalog'] as $moduleName) {
-    $module = Module::getInstanceByName($moduleName);
-    if (!$module) {
-        throw new RuntimeException(sprintf('The bundled %s module could not be loaded.', $moduleName));
-    }
-
-    if (!Module::isInstalled($moduleName)) {
-        if (!$module->install()) {
-            throw new RuntimeException(sprintf('Could not install the %s module.', $moduleName));
-        }
-    } elseif (!(bool) $module->active && !$module->enable()) {
-        throw new RuntimeException(sprintf('Could not enable the %s module.', $moduleName));
-    }
 }
 
 echo "Project modules: postcode=enabled, backoffice-ko=enabled, business-profile-ko=enabled, catalog-review=enabled\n";

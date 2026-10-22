@@ -127,8 +127,8 @@ verification_phase="initial_database_canonical_redirect"
 canonical_redirect_before_restart=$(db_query "SELECT value FROM ps_configuration WHERE name='PS_CANONICAL_REDIRECT' ORDER BY id_shop DESC, id_shop_group DESC LIMIT 1")
 test "$canonical_redirect_before_restart" = 1
 verification_phase="initial_database_route_migration_marker"
-route_migration_marker=$(db_query "SELECT value FROM ps_configuration WHERE name='ORDENOWA_ASCII_ROUTE_MIGRATION_V1' ORDER BY id_shop DESC, id_shop_group DESC LIMIT 1")
-test "$route_migration_marker" = 1
+route_migration_marker=$(db_query "SELECT value FROM ps_configuration WHERE name='ORDENOWA_ASCII_ROUTE_MIGRATION_V2' ORDER BY id_shop DESC, id_shop_group DESC LIMIT 1")
+test "$route_migration_marker" = 2
 verification_phase="initial_database_default_currency"
 default_currency=$(db_query "SELECT cur.iso_code FROM ps_configuration cfg JOIN ps_currency cur ON cur.id_currency=CAST(cfg.value AS UNSIGNED) WHERE cfg.name='PS_CURRENCY_DEFAULT'")
 test "$default_currency" = JPY
@@ -283,8 +283,49 @@ checkout_rewriting_after_restart=$(db_query "SELECT value FROM ps_configuration 
 test "$checkout_rewriting_after_restart" = "$checkout_rewriting"
 canonical_redirect_after_restart=$(db_query "SELECT value FROM ps_configuration WHERE name='PS_CANONICAL_REDIRECT' ORDER BY id_shop DESC, id_shop_group DESC LIMIT 1")
 test "$canonical_redirect_after_restart" = "$canonical_redirect_before_restart"
-route_migration_marker_after_restart=$(db_query "SELECT value FROM ps_configuration WHERE name='ORDENOWA_ASCII_ROUTE_MIGRATION_V1' ORDER BY id_shop DESC, id_shop_group DESC LIMIT 1")
-test "$route_migration_marker_after_restart" = 1
+route_migration_marker_after_restart=$(db_query "SELECT value FROM ps_configuration WHERE name='ORDENOWA_ASCII_ROUTE_MIGRATION_V2' ORDER BY id_shop DESC, id_shop_group DESC LIMIT 1")
+test "$route_migration_marker_after_restart" = 2
+
+verification_phase="simulate_v1_to_v2_with_custom_japanese_identity"
+admin_custom_japanese_identity_route_hex="E78BACE887AAE38397E383ADE38395E382A3E383BCE383AB"
+db_query "UPDATE ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang SET ml.url_rewrite=CONVERT(0x$admin_custom_japanese_identity_route_hex USING utf8mb4) WHERE m.page='identity' AND ml.id_shop=1 AND l.iso_code='ja'"
+compose exec -T prestashop php -r 'require "/var/www/html/config/config.inc.php"; if (!Configuration::updateGlobalValue("ORDENOWA_ASCII_ROUTE_MIGRATION_V1", "1")) { exit(1); }'
+db_query "DELETE FROM ps_configuration WHERE name='ORDENOWA_ASCII_ROUTE_MIGRATION_V2'"
+compose restart prestashop
+for attempt in $(seq 1 60); do
+  if curl --fail --silent --show-error --location --output /dev/null "$base_url/" && [ "$(db_query 'SELECT 1')" = 1 ]; then
+    break
+  fi
+  if [ "$attempt" -eq 60 ]; then
+    echo 'Shop did not recover after the legacy route marker restart' >&2
+    false
+  fi
+  sleep 5
+done
+unknown_japanese_identity_route_after_restart=$(db_query "SELECT HEX(ml.url_rewrite) FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='identity' AND ml.id_shop=1 AND l.iso_code='ja'")
+test "$unknown_japanese_identity_route_after_restart" = "$admin_custom_japanese_identity_route_hex"
+route_migration_marker_after_legacy_repair=$(db_query "SELECT value FROM ps_configuration WHERE name='ORDENOWA_ASCII_ROUTE_MIGRATION_V2' ORDER BY id_shop DESC, id_shop_group DESC LIMIT 1")
+test "$route_migration_marker_after_legacy_repair" = 2
+
+verification_phase="simulate_late_identity_installer_default_after_v1"
+db_query "UPDATE ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang SET ml.url_rewrite=CONVERT(0xE8AD98E588A5E5AD90 USING utf8mb4) WHERE m.page='identity' AND ml.id_shop=1 AND l.iso_code='ja'"
+db_query "DELETE FROM ps_configuration WHERE name='ORDENOWA_ASCII_ROUTE_MIGRATION_V2'"
+compose restart prestashop
+for attempt in $(seq 1 60); do
+  if curl --fail --silent --show-error --location --output /dev/null "$base_url/" && [ "$(db_query 'SELECT 1')" = 1 ]; then
+    break
+  fi
+  if [ "$attempt" -eq 60 ]; then
+    echo 'Shop did not recover after the late identity default restart' >&2
+    false
+  fi
+  sleep 5
+done
+late_default_identity_route=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='identity' AND ml.id_shop=1 AND l.iso_code='ja'")
+test "$late_default_identity_route" = identity
+route_migration_marker_after_legacy_repair=$(db_query "SELECT value FROM ps_configuration WHERE name='ORDENOWA_ASCII_ROUTE_MIGRATION_V2' ORDER BY id_shop DESC, id_shop_group DESC LIMIT 1")
+test "$route_migration_marker_after_legacy_repair" = 2
+
 verification_phase="restart_shop_identity_and_schema"
 test "$(db_query 'SELECT name FROM ps_shop WHERE id_shop=1')" = ORDENOWA
 table_count_after=$(db_query 'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()')
