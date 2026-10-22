@@ -69,6 +69,10 @@ final class ProfileDefaults
                 'privacy' => $emptyLocales,
                 'specified_commercial_act' => $emptyLocales,
             ],
+            'localization' => [
+                'default_locale' => 'ja-JP',
+                'enabled_locales' => self::LOCALES,
+            ],
             'seo' => [
                 'title' => [
                     'ja-JP' => 'オーデノワ',

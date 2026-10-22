@@ -30,7 +30,7 @@ final class ProfileValidator
             $errors[] = '판매사업 승인 상태가 올바르지 않습니다.';
         }
 
-        foreach (['brand', 'company_reference', 'seller', 'customer_support', 'bank_accounts', 'payment', 'shipping', 'refund', 'content', 'seo', 'pwa'] as $section) {
+        foreach (['brand', 'company_reference', 'seller', 'customer_support', 'bank_accounts', 'payment', 'shipping', 'refund', 'content', 'localization', 'seo', 'pwa'] as $section) {
             if (!array_key_exists($section, $profile) || !is_array($profile[$section])) {
                 $errors[] = '필수 설정 섹션이 올바르지 않습니다: ' . $section;
             }

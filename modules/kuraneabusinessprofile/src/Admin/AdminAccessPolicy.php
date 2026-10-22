@@ -1,0 +1,37 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Kuranea\BusinessProfile\Admin;
+
+final class AdminAccessPolicy
+{
+    /** @param array<string, int|string|bool> $tabAccess */
+    public static function canEdit(array $tabAccess): bool
+    {
+        return self::granted($tabAccess, 'edit');
+    }
+
+    /** @param array<string, int|string|bool> $tabAccess */
+    public static function canPublish(array $tabAccess): bool
+    {
+        return self::granted($tabAccess, 'edit') && self::granted($tabAccess, 'add');
+    }
+
+    /** @param array<string, int|string|bool> $bankTabAccess */
+    public static function canEditBank(array $bankTabAccess): bool
+    {
+        return self::granted($bankTabAccess, 'edit');
+    }
+
+    public static function canApproveSeller(bool $isSuperAdmin): bool
+    {
+        return $isSuperAdmin;
+    }
+
+    /** @param array<string, int|string|bool> $tabAccess */
+    private static function granted(array $tabAccess, string $permission): bool
+    {
+        return in_array($tabAccess[$permission] ?? false, [1, '1', true], true);
+    }
+}
