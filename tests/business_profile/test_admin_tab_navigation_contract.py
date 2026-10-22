@@ -29,6 +29,10 @@ class AdminTabNavigationContractTests(unittest.TestCase):
         self.assertIn("(bool) $shopParametersParent->active", installation_check)
         self.assertIn("isset($shopParametersParent->enabled)", installation_check)
         self.assertIn("AdminBusinessProfileBanks'], true)", installation_check)
+        self.assertIn("Access::isGranted(", installation_check)
+        self.assertIn("Permission::PREFIX_TAB . strtoupper($className) . '_READ'", installation_check)
+        self.assertNotIn("$permissionQuery", installation_check)
+        self.assertNotIn("'id_tab'", installation_check)
         self.assertIn("AdminAccessPolicy::canViewBank(", BANKS_CONTROLLER.read_text(encoding="utf-8"))
 
 

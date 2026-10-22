@@ -98,12 +98,8 @@ foreach (['AdminBusinessProfile' => '쇼핑몰 운영 설정', 'AdminBusinessPro
     verifyBusinessProfile((int) $tab->id_parent === $shopParametersParentId, 'The Korean settings and bank tabs must be siblings under ShopParameters: ' . $className);
     verifyBusinessProfile(in_array($expectedLabel, (array) $tab->name, true), 'The Back Office tab must have its Korean title: ' . $expectedLabel);
     if (in_array($className, ['AdminBusinessProfile', 'AdminBusinessProfileBanks'], true)) {
-        $permissionQuery = 'SELECT ' . chr(96) . 'view' . chr(96)
-            . ' FROM ' . chr(96) . _DB_PREFIX_ . 'access' . chr(96)
-            . ' WHERE ' . chr(96) . 'id_profile' . chr(96) . ' = 1'
-            . ' AND ' . chr(96) . 'id_tab' . chr(96) . ' = ' . $tabId;
-        $viewPermission = (int) Db::getInstance()->getValue($permissionQuery);
-        verifyBusinessProfile($viewPermission === 1, 'SuperAdmin profile 1 must be able to view the Korean admin tab: ' . $className);
+        $canView = Access::isGranted(Permission::PREFIX_TAB . strtoupper($className) . '_READ', 1);
+        verifyBusinessProfile((bool) $canView, 'SuperAdmin profile 1 must be able to view the Korean admin tab: ' . $className);
     }
 }
 
