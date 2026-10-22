@@ -134,10 +134,12 @@ def visible(driver: webdriver.Chrome, selector: str):
     return WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.CSS_SELECTOR, selector)))
 
 
-def assert_korean_email_login_form(driver: webdriver.Chrome) -> None:
+def assert_korean_email_login_form(driver: webdriver.Chrome, state: dict[str, str]) -> None:
     # Use PrestaShop's generated language and account links. The Korean route
     # slug is installation metadata and must not be guessed as `/ko/login`.
+    state["stage"] = "korean_storefront_home"
     driver.get(f"{BASE}/")
+    state["stage"] = "korean_language_selector"
     korean_language_option = WebDriverWait(driver, 30).until(
         EC.presence_of_element_located(
             (By.CSS_SELECTOR, 'select.js-language-selector option[data-iso-code="ko"]')
@@ -155,12 +157,14 @@ def assert_korean_email_login_form(driver: webdriver.Chrome) -> None:
         or korean_language_location.port != base_location.port
     ):
         raise AssertionError("the Korean language selector changed the isolated shop origin")
+    state["stage"] = "korean_language_destination"
     driver.get(korean_language_url)
 
     document_language = (driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower()
     if not document_language.startswith("ko"):
         raise AssertionError("the generated Korean language destination did not render Korean")
 
+    state["stage"] = "korean_sign_in_link"
     sign_in_links = driver.find_elements(
         By.CSS_SELECTOR,
         '#_desktop_ps_customersignin a[href], #_mobile_ps_customersignin a[href]',
@@ -179,9 +183,12 @@ def assert_korean_email_login_form(driver: webdriver.Chrome) -> None:
         or login_location.port != base_location.port
     ):
         raise AssertionError("the customer sign-in link changed the isolated shop origin")
+    state["stage"] = "korean_login_page_navigation"
     driver.get(login_url)
 
+    state["stage"] = "korean_login_form"
     visible(driver, "#login-form")
+    state["stage"] = "korean_email_field"
     email_field = visible(driver, '#login-form input[type="email"]')
     if email_field.get_attribute("name") != "email":
         raise AssertionError("Korean customer login does not submit the email field")
@@ -213,6 +220,7 @@ def assert_korean_email_login_form(driver: webdriver.Chrome) -> None:
     if USER_ID_LOOKUP_ACCESSIBLE_NAME.search(email_accessible_name):
         raise AssertionError("Korean login field's accessible label implies a separate user ID login")
 
+    state["stage"] = "korean_password_reset_link"
     password_reset_link = visible(driver, '#login-form a[href]')
     password_reset_name = " ".join(
         (
@@ -225,6 +233,70 @@ def assert_korean_email_login_form(driver: webdriver.Chrome) -> None:
         raise AssertionError("Korean login recovery link is not identified as password reset")
     if USER_ID_LOOKUP_ACCESSIBLE_NAME.search(password_reset_name):
         raise AssertionError("Korean login recovery link implies user ID lookup instead of password reset")
+
+
+def emit_korean_login_diagnostics(driver: webdriver.Chrome, state: dict[str, str]) -> None:
+    """Report the exact Korean login wait and sanitized page markers on failure."""
+    diagnostics: dict[str, object] = {
+        "stage": safe_diagnostic_name(state.get("stage", "")),
+        "path": safe_same_origin_path(getattr(driver, "current_url", "")),
+        "document_language": "",
+        "language_selector_count": 0,
+        "korean_language_option_count": 0,
+        "customer_sign_in_link_count": 0,
+        "login_form_count": 0,
+        "login_form_visible": False,
+        "email_field_count": 0,
+        "email_field_visible": False,
+        "email_field_name_matches": False,
+        "email_field_type_matches": False,
+        "email_label_present": False,
+        "password_reset_link_count": 0,
+    }
+    try:
+        page_state = driver.execute_script(
+            """
+            const visible = element => Boolean(element && element.getClientRects().length);
+            const form = document.querySelector('#login-form');
+            const email = form?.querySelector('input[type=email]');
+            const emailId = email?.id || '';
+            const hasEmailLabel = Boolean(
+              email?.getAttribute('aria-label') ||
+              [...(form?.querySelectorAll('label[for]') || [])]
+                .some(label => label.getAttribute('for') === emailId && label.innerText.trim())
+            );
+            return {
+              document_language: document.documentElement?.getAttribute('lang') || '',
+              language_selector_count: document.querySelectorAll('select.js-language-selector').length,
+              korean_language_option_count: document.querySelectorAll('select.js-language-selector option[data-iso-code=ko]').length,
+              customer_sign_in_link_count: document.querySelectorAll('#_desktop_ps_customersignin a[href], #_mobile_ps_customersignin a[href]').length,
+              login_form_count: document.querySelectorAll('#login-form').length,
+              login_form_visible: visible(form),
+              email_field_count: form?.querySelectorAll('input[type=email]').length || 0,
+              email_field_visible: visible(email),
+              email_field_name_matches: email?.getAttribute('name') === 'email',
+              email_field_type_matches: email?.getAttribute('type') === 'email',
+              email_label_present: hasEmailLabel,
+              password_reset_link_count: form?.querySelectorAll('a[href]').length || 0
+            };
+            """
+        )
+        if isinstance(page_state, dict):
+            for key in diagnostics.keys() - {"stage", "path"}:
+                value = page_state.get(key)
+                if key == "document_language":
+                    diagnostics[key] = re.sub(r"[^A-Za-z0-9-]", "", str(value or ""))[:12]
+                elif key.endswith("_count"):
+                    diagnostics[key] = value if isinstance(value, int) and not isinstance(value, bool) else 0
+                else:
+                    diagnostics[key] = value if isinstance(value, bool) else False
+    except Exception as error:
+        diagnostics["diagnostic_error_type"] = type(error).__name__
+
+    state_json = json.dumps(diagnostics, ensure_ascii=True, sort_keys=True)
+    print("ORDENOWA_KOREAN_LOGIN_SAFE_STATE=" + state_json, file=sys.stderr)
+    annotation = state_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::error title=Korean customer login state::{annotation}", file=sys.stderr)
 
 
 def click_centered(driver: webdriver.Chrome, element) -> None:
@@ -858,6 +930,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
     stage = "registration_link_load"
     failure_control = {"name": "display-register-form", "type": "anchor"}
     profile_pre_submit: dict[str, object] | None = None
+    korean_login_state: dict[str, str] = {}
     expected_first_name = f"CI-{label.title()}"
     driver = None
     success = False
@@ -872,7 +945,8 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         driver = webdriver.Chrome(options=options)
         driver.set_window_size(width, height)
         stage = "korean_email_login_label"
-        assert_korean_email_login_form(driver)
+        failure_control = {"name": "", "type": ""}
+        assert_korean_email_login_form(driver, korean_login_state)
         driver.save_screenshot(str(DEST / f"{label}-korean-login-email.png"))
 
         account_email = f"qa-ordenowa-{RUN_ID}-{RUN_ATTEMPT}-{label}@example.invalid"
@@ -1025,6 +1099,11 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             if stage.startswith("registration_"):
                 try:
                     emit_registration_diagnostics(driver, stage, failure_control)
+                except Exception:
+                    pass
+            elif stage == "korean_email_login_label":
+                try:
+                    emit_korean_login_diagnostics(driver, korean_login_state)
                 except Exception:
                     pass
             elif stage.startswith("profile_update_"):

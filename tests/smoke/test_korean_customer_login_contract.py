@@ -27,7 +27,7 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("def assert_korean_email_login_form", browser_flow)
-        self.assertIn("assert_korean_email_login_form(driver)", browser_flow)
+        self.assertIn("assert_korean_email_login_form(driver, korean_login_state)", browser_flow)
         browser_check = browser_flow.split("def assert_korean_email_login_form", 1)[1].split(
             "\n\ndef ", 1
         )[0]
@@ -71,6 +71,43 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
         self.assertIn("Forgot your password?", login_template)
         self.assertNotIn("username recovery", login_template.casefold())
         self.assertNotIn("아이디 찾기", login_template)
+
+    def test_korean_login_timeout_reports_the_exact_wait_and_safe_rendered_page_state(self) -> None:
+        browser_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(
+            encoding="utf-8"
+        )
+        workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
+        for stage in (
+            "korean_storefront_home",
+            "korean_language_selector",
+            "korean_language_destination",
+            "korean_sign_in_link",
+            "korean_login_page_navigation",
+            "korean_login_form",
+            "korean_email_field",
+            "korean_password_reset_link",
+        ):
+            self.assertIn(stage, browser_flow)
+        self.assertIn("def emit_korean_login_diagnostics", browser_flow)
+        self.assertIn('"ORDENOWA_KOREAN_LOGIN_SAFE_STATE="', browser_flow)
+        self.assertIn('emit_korean_login_diagnostics(driver, korean_login_state)', browser_flow)
+        self.assertIn('korean_login_diagnostics=$(rg \'^ORDENOWA_KOREAN_LOGIN_SAFE_STATE=\'', workflow)
+        self.assertIn("ORDENOWA_KOREAN_LOGIN_SAFE_STATE", workflow)
+        diagnostics = browser_flow.split("def emit_korean_login_diagnostics", 1)[1].split(
+            "\n\ndef ", 1
+        )[0]
+        for safe_field in (
+            '"path": safe_same_origin_path',
+            '"document_language"',
+            '"korean_language_option_count"',
+            '"customer_sign_in_link_count"',
+            '"login_form_visible"',
+            '"email_field_visible"',
+            '"email_label_present"',
+            '"password_reset_link_count"',
+        ):
+            self.assertIn(safe_field, diagnostics)
+        self.assertNotIn("password_value", diagnostics)
 
 
 if __name__ == "__main__":
