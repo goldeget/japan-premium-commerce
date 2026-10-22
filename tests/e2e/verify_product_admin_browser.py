@@ -87,8 +87,9 @@ def run() -> None:
         if parsed.hostname not in {"localhost", "127.0.0.1"} or not parsed.path.startswith("/admin-kuranea/"):
             raise AssertionError("product manager link is outside the isolated Back Office")
         driver.get(href)
+        stage = "korean_product_manager_form"
         visible(driver, "form")
-        if "상품 등록·관리" not in driver.find_element(By.TAG_NAME, "body").text:
+        if "새 상품 등록" not in driver.find_element(By.TAG_NAME, "body").text:
             raise AssertionError("Korean product registration and management UI is missing")
         if "판매 활성화 기능이 없습니다" not in driver.find_element(By.TAG_NAME, "body").text:
             raise AssertionError("the product page must state that its entries remain inactive")

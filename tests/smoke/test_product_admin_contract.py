@@ -71,7 +71,7 @@ class ProductAdminContractTests(unittest.TestCase):
         for expected in ("saved product ID", "Japanese name", "price", "sale gate", "editor Japanese name", "editor Korean name", "Japanese description", "Korean description", "categories", "options", "combination IDs", "image replacement"):
             self.assertIn(f"'{expected}' =>", integration_text)
         for expected in (
-            "상품 등록·관리",
+            "새 상품 등록",
             "native_product_create",
             "native_product_edit",
             "expected_category_ids",
@@ -80,6 +80,18 @@ class ProductAdminContractTests(unittest.TestCase):
             "product-admin-mobile.png",
         ):
             self.assertIn(expected, browser_text)
+        manager_navigation = browser_text.split('stage = "korean_product_manager_link"', 1)[1].split(
+            'stage = "native_product_create"', 1
+        )[0]
+        self.assertIn('stage = "korean_product_manager_form"', manager_navigation)
+        self.assertLess(
+            manager_navigation.index("driver.get(href)"),
+            manager_navigation.index('stage = "korean_product_manager_form"'),
+        )
+        self.assertLess(
+            manager_navigation.index('stage = "korean_product_manager_form"'),
+            manager_navigation.index('visible(driver, "form")'),
+        )
         for expected in (
             "tests/smoke/test_product_admin_contract.py",
             "tests/catalog/product_admin_draft.php",
