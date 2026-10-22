@@ -12,6 +12,7 @@ use Kuranea\BusinessProfile\Domain\ProfileDefaults;
 use Kuranea\BusinessProfile\Customer\PublishedProfileProvider;
 use Kuranea\BusinessProfile\Customer\PublicFooterBuilder;
 use Kuranea\BusinessProfile\Customer\CommerceGate;
+use Kuranea\BusinessProfile\Customer\PublishedLegalPageBuilder;
 use Kuranea\BusinessProfile\Customer\OrderConfirmationMailContent;
 use Kuranea\BusinessProfile\Infrastructure\VersionedProfileRepository;
 
@@ -148,6 +149,9 @@ class Kuraneabusinessprofile extends Module
         return PublicFooterBuilder::build(
             $profile,
             CommerceGate::isEnabled($profile, $this->externalAuthorizationConfirmed())
+        ) . PublishedLegalPageBuilder::footerLink(
+            $profile,
+            (string) $this->context->link->getModuleLink($this->name, 'legal')
         );
     }
 

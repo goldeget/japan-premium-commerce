@@ -54,6 +54,12 @@ jobs:
       - name: Verify published customer output and PWA manifest
         run: php tests/business_profile/published_output.php
 
+      - name: Verify localized legal page and seller disclosure gating
+        run: php tests/business_profile/legal_pages.php
+
+      - name: Check legal page published-profile route contract
+        run: python3 -m unittest discover -s tests/business_profile -p 'test_published_legal_page_contract.py'
+
       - name: Verify public brand and seller disclosure gating
         run: php tests/business_profile/public_footer.php
 
