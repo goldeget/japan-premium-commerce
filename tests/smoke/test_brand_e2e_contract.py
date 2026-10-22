@@ -13,6 +13,68 @@ BRAND_PACK = ROOT / "assets" / "brand" / "ordenowa"
 
 
 class BrandE2EContractTests(unittest.TestCase):
+    def test_browser_persists_seller_profile_fields_without_opening_disclosures(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+
+        seller_profile_fields = (
+            "profile[seller][legal_name][ja-JP]",
+            "profile[seller][legal_name][en-US]",
+            "profile[seller][legal_name][ko-KR]",
+            "profile[seller][corporate_number]",
+            "profile[seller][address][ja-JP]",
+            "profile[seller][address][en-US]",
+            "profile[seller][address][ko-KR]",
+            "profile[seller][representative][ja-JP]",
+            "profile[seller][representative][en-US]",
+            "profile[seller][representative][ko-KR]",
+            "profile[seller][responsible_person][ja-JP]",
+            "profile[seller][responsible_person][en-US]",
+            "profile[seller][responsible_person][ko-KR]",
+            "profile[seller][support][phone]",
+            "profile[seller][support][email]",
+        )
+        for field in seller_profile_fields:
+            with self.subTest(field=field):
+                self.assertIn(f'input[name="{field}"]', browser_flow, msg=f"missing browser coverage for {field}")
+
+        self.assertEqual(
+            2,
+            browser_flow.count("for selector, expected in ci_settings.items():"),
+            "seller profile settings should be verified after draft save and again after publish",
+        )
+        self.assertIn('if "확인 대기" not in driver.find_element(By.ID, "ordenowa-company").text:', browser_flow)
+        self.assertIn("assert_seller_disclosures_remain_gated(driver, private_values)", browser_flow)
+        self.assertIn('visible(driver, ".ordenowa-legal-page__closed")', browser_flow)
+        self.assertIn("leaked_values = [value for value in private_values if value and value in page.text]", browser_flow)
+        self.assertNotIn("submitOrdenowaApproveSeller", browser_flow)
+
+    def test_browser_replaces_and_restores_the_primary_logo_in_draft(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        preview_check = 'asset_preview_url_for_field(driver, "ordenowa-brand-assets-header_desktop")'
+        baseline = browser_flow.index("public_before_draft = public_brand_snapshot(driver)")
+        temporary_upload = browser_flow.index('replacement_logo.send_keys(str(OFFICIAL_UPLOADS["pwa_icon"].resolve()))')
+        unchanged_check = browser_flow.index('stage = "public_brand_unchanged_after_replacement_draft"')
+        restore = browser_flow.index('restored_logo.send_keys(str(OFFICIAL_UPLOADS["primary_logo"].resolve()))')
+        private_preview = browser_flow.index('stage = "private_admin_preview"')
+
+        self.assertIn('replacement_logo.send_keys(str(OFFICIAL_UPLOADS["pwa_icon"].resolve()))', browser_flow)
+        self.assertIn('restored_logo.send_keys(str(OFFICIAL_UPLOADS["primary_logo"].resolve()))', browser_flow)
+        self.assertEqual(2, browser_flow[:private_preview].count(preview_check))
+        self.assertLess(baseline, temporary_upload)
+        self.assertLess(temporary_upload, unchanged_check)
+        self.assertLess(unchanged_check, restore)
+        self.assertLess(restore, private_preview)
+        self.assertIn('public_after_replacement = public_brand_snapshot(driver)', browser_flow)
+        self.assertIn('if public_after_replacement != public_before_draft:', browser_flow)
+        for key in ("logo", "title", "description", "themeColor", "icons", "ogImage", "manifest"):
+            with self.subTest(snapshot_key=key):
+                self.assertIn(f"{key}:", browser_flow)
+        self.assertIn('"temporary replacement draft logo"', browser_flow[:private_preview])
+        self.assertIn('"restored approved draft logo"', browser_flow[:private_preview])
+        self.assertIn('driver.save_screenshot(str(DEST / "brand-customer-unpublished-replacement.png"))', browser_flow)
+        self.assertIn('driver.save_screenshot(str(DEST / "brand-admin-replacement-draft.png"))', browser_flow)
+        self.assertIn('driver.save_screenshot(str(DEST / "brand-admin-uploaded-draft-restored.png"))', browser_flow)
+
     def test_browser_checks_published_derivatives_from_uploaded_official_sources(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
         manifest = json.loads((BRAND_PACK / "asset-manifest.json").read_text(encoding="utf-8"))

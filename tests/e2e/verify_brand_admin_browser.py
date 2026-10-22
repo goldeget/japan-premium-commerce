@@ -60,6 +60,50 @@ def visible(driver: webdriver.Chrome, selector: str):
     return WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.CSS_SELECTOR, selector)))
 
 
+def asset_preview_url_for_field(driver: webdriver.Chrome, field_id: str) -> str:
+    field = visible(driver, f"#{field_id}")
+    return driver.execute_script(
+        "return arguments[0].closest('.ordenowa-profile-field')?.querySelector('.ordenowa-asset-preview')?.src || '';",
+        field,
+    )
+
+
+def public_brand_snapshot(driver: webdriver.Chrome) -> dict:
+    driver.get(BASE + "/")
+    snapshot = driver.execute_async_script(
+        """
+        const done = arguments[0];
+        (async () => {
+          const manifestHref = document.querySelector('link[rel="manifest"]')?.href || '';
+          const manifest = manifestHref
+            ? await (await fetch(manifestHref, {cache: 'no-store'})).json()
+            : {};
+          return {
+            logo: document.querySelector('picture img.kuranea-brand__image')?.currentSrc || '',
+            title: document.title,
+            description: document.querySelector('meta[name="description"]')?.content || '',
+            themeColor: document.querySelector('meta[name="theme-color"]')?.content || '',
+            icons: [...document.querySelectorAll('link[rel="icon"],link[rel="apple-touch-icon"]')]
+              .map(link => [link.rel, link.href]).sort(),
+            ogImage: document.querySelector('meta[property="og:image"]')?.content || '',
+            manifest: {
+              name: manifest.name || '',
+              short_name: manifest.short_name || '',
+              theme_color: manifest.theme_color || '',
+              background_color: manifest.background_color || '',
+              icons: (manifest.icons || []).map(icon => [icon.src, icon.sizes || '', icon.purpose || ''])
+            }
+          };
+        })().then(done).catch(error => done({error: String(error)}));
+        """
+    )
+    if snapshot.get("error"):
+        raise AssertionError("current public brand metadata could not be read before and after saving the draft")
+    if not snapshot.get("logo") or not snapshot.get("title") or not snapshot.get("manifest", {}).get("name"):
+        raise AssertionError("the current public brand logo, SEO title, or PWA metadata is missing")
+    return snapshot
+
+
 def click_centered(driver: webdriver.Chrome, element) -> None:
     driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", element)
     WebDriverWait(driver, 30).until(EC.element_to_be_clickable(element))
@@ -225,6 +269,22 @@ def assert_public_brand_assets(driver: webdriver.Chrome, label: str, expected_lo
         raise AssertionError("Korean admin PWA theme color did not publish to customer metadata")
 
 
+def assert_seller_disclosures_remain_gated(driver: webdriver.Chrome, private_values: list[str]) -> None:
+    driver.get(BASE + "/")
+    legal_link = visible(driver, ".ordenowa-legal-page-link a")
+    legal_url = urljoin(driver.current_url, legal_link.get_attribute("href") or "")
+    if urlparse(legal_url).netloc != urlparse(BASE).netloc:
+        raise AssertionError("published legal page link left the isolated storefront")
+
+    driver.get(legal_url)
+    page = visible(driver, ".ordenowa-legal-page")
+    visible(driver, ".ordenowa-legal-page__closed")
+    leaked_values = [value for value in private_values if value and value in page.text]
+    if leaked_values:
+        raise AssertionError("pending seller disclosures leaked to the customer legal page")
+    driver.save_screenshot(str(DEST / "brand-legal-page-gated.png"))
+
+
 def run() -> None:
     options = Options()
     options.add_argument("--headless=new")
@@ -280,6 +340,12 @@ def run() -> None:
             emit_brand_settings_diagnostics(driver)
             raise
 
+        stage = "public_brand_baseline_before_draft"
+        public_before_draft = public_brand_snapshot(driver)
+        driver.save_screenshot(str(DEST / "brand-customer-before-draft.png"))
+        driver.get(settings_url)
+        visible(driver, "form.ordenowa-profile-settings")
+
         stage = "official_asset_upload"
         for slot, source in OFFICIAL_UPLOADS.items():
             if not source.is_file():
@@ -293,6 +359,21 @@ def run() -> None:
         pwa_name.clear()
         pwa_name.send_keys("ORDENOWA CI QA")
         ci_settings = {
+            'input[name="profile[seller][legal_name][ja-JP]"]': "ORDENOWA CI SELLER JP",
+            'input[name="profile[seller][legal_name][en-US]"]': "ORDENOWA CI SELLER EN",
+            'input[name="profile[seller][legal_name][ko-KR]"]': "ORDENOWA CI SELLER KR",
+            'input[name="profile[seller][corporate_number]"]': "1234567890123",
+            'input[name="profile[seller][address][ja-JP]"]': "ORDENOWA CI SELLER ADDRESS JP",
+            'input[name="profile[seller][address][en-US]"]': "ORDENOWA CI SELLER ADDRESS EN",
+            'input[name="profile[seller][address][ko-KR]"]': "ORDENOWA CI SELLER ADDRESS KR",
+            'input[name="profile[seller][representative][ja-JP]"]': "ORDENOWA CI REPRESENTATIVE JP",
+            'input[name="profile[seller][representative][en-US]"]': "ORDENOWA CI REPRESENTATIVE EN",
+            'input[name="profile[seller][representative][ko-KR]"]': "ORDENOWA CI REPRESENTATIVE KR",
+            'input[name="profile[seller][responsible_person][ja-JP]"]': "ORDENOWA CI RESPONSIBLE JP",
+            'input[name="profile[seller][responsible_person][en-US]"]': "ORDENOWA CI RESPONSIBLE EN",
+            'input[name="profile[seller][responsible_person][ko-KR]"]': "ORDENOWA CI RESPONSIBLE KR",
+            'input[name="profile[seller][support][phone]"]': "03-1111-2222",
+            'input[name="profile[seller][support][email]"]': "seller-ci@example.invalid",
             'input[name="profile[company_reference][name][ja-JP]"]': "ORDENOWA CI REFERENCE",
             'input[name="profile[company_reference][corporate_number]"]': "0000000000000",
             'input[name="profile[company_reference][postal_code]"]': "000-0000",
@@ -324,6 +405,43 @@ def run() -> None:
             if visible(driver, selector).get_attribute("value") != expected:
                 raise AssertionError("a Korean admin operating setting did not persist in its draft")
         driver.save_screenshot(str(DEST / "brand-admin-uploaded-draft.png"))
+
+        stage = "replace_logo_in_saved_draft"
+        replacement_logo = visible(driver, 'input[name="brand_uploads[primary_logo]"]')
+        replacement_logo.send_keys(str(OFFICIAL_UPLOADS["pwa_icon"].resolve()))
+        visible(driver, 'form.ordenowa-profile-settings button[name="submitOrdenowaSaveDraft"]').click()
+        WebDriverWait(driver, 30).until(
+            lambda browser: "초안을 저장했습니다" in browser.find_element(By.TAG_NAME, "body").text
+        )
+        assert_uploaded_derivative_url(
+            asset_preview_url_for_field(driver, "ordenowa-brand-assets-header_desktop"),
+            OFFICIAL_UPLOADS["pwa_icon"],
+            "header-desktop.png",
+            "temporary replacement draft logo",
+        )
+        driver.save_screenshot(str(DEST / "brand-admin-replacement-draft.png"))
+        stage = "public_brand_unchanged_after_replacement_draft"
+        public_after_replacement = public_brand_snapshot(driver)
+        if public_after_replacement != public_before_draft:
+            raise AssertionError("saving an alternate-logo draft changed the current public storefront brand or SEO")
+        driver.save_screenshot(str(DEST / "brand-customer-unpublished-replacement.png"))
+        driver.get(settings_url)
+        visible(driver, "form.ordenowa-profile-settings")
+
+        stage = "restore_approved_logo_in_saved_draft"
+        restored_logo = visible(driver, 'input[name="brand_uploads[primary_logo]"]')
+        restored_logo.send_keys(str(OFFICIAL_UPLOADS["primary_logo"].resolve()))
+        visible(driver, 'form.ordenowa-profile-settings button[name="submitOrdenowaSaveDraft"]').click()
+        WebDriverWait(driver, 30).until(
+            lambda browser: "초안을 저장했습니다" in browser.find_element(By.TAG_NAME, "body").text
+        )
+        assert_uploaded_derivative_url(
+            asset_preview_url_for_field(driver, "ordenowa-brand-assets-header_desktop"),
+            OFFICIAL_UPLOADS["primary_logo"],
+            "header-desktop.png",
+            "restored approved draft logo",
+        )
+        driver.save_screenshot(str(DEST / "brand-admin-uploaded-draft-restored.png"))
 
         stage = "private_admin_preview"
         current_draft_row = WebDriverWait(driver, 30).until(
@@ -374,6 +492,9 @@ def run() -> None:
         WebDriverWait(driver, 30).until(lambda browser: "변경사항을 게시했습니다" in browser.find_element(By.TAG_NAME, "body").text)
         if "확인 대기" not in driver.find_element(By.ID, "ordenowa-company").text:
             raise AssertionError("seller authorization must remain pending after brand publication")
+        for selector, expected in ci_settings.items():
+            if visible(driver, selector).get_attribute("value") != expected:
+                raise AssertionError("a Korean admin operating setting did not persist after publication")
         driver.save_screenshot(str(DEST / "brand-admin-published.png"))
 
         stage = "published_desktop_customer_brand"
@@ -384,6 +505,15 @@ def run() -> None:
         driver.set_window_size(390, 844)
         assert_public_brand_assets(driver, "mobile", "header-mobile.png")
         driver.save_screenshot(str(DEST / "brand-mobile-published.png"))
+
+        stage = "pending_seller_disclosures_remain_gated"
+        private_disclosure_groups = ("seller", "company_reference", "customer_support", "shipping", "refund")
+        private_values = [
+            value
+            for selector, value in ci_settings.items()
+            if any(f"[{group}]" in selector for group in private_disclosure_groups)
+        ]
+        assert_seller_disclosures_remain_gated(driver, private_values)
 
         stage = "admin_login_after_publish"
         driver.delete_all_cookies()
