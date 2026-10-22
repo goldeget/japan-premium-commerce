@@ -371,7 +371,11 @@ jobs:
           set -e
           if [ "$browser_status" -ne 0 ]; then
             failure_line=$(rg '^ORDENOWA_SHIPPING_ADMIN_STAGE=' "$log_file" | tail -n 1 || true)
-            printf 'ORDENOWA shipping admin browser failure: %s\n' "${failure_line:-See the uploaded shipping admin browser log for the failing stage.}" >> "$GITHUB_STEP_SUMMARY"
+            detail_line=$(rg '^ORDENOWA_SHIPPING_ADMIN_DETAIL=' "$log_file" | tail -n 1 || true)
+            printf 'ORDENOWA shipping admin browser failure: %s %s\n' \
+              "${failure_line:-ORDENOWA_SHIPPING_ADMIN_STAGE=unknown}" \
+              "${detail_line:-ORDENOWA_SHIPPING_ADMIN_DETAIL=diagnostic unavailable}" \
+              >> "$GITHUB_STEP_SUMMARY"
             exit "$browser_status"
           fi
 

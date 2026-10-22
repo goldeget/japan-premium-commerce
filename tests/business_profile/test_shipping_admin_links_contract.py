@@ -45,6 +45,20 @@ class ShippingAdminLinksContractTests(unittest.TestCase):
         self.assertIn("shipping_admin_browser_qa", workflow)
         self.assertIn("shipping-admin-e2e.log", workflow)
 
+    def test_browser_failure_reports_exact_stage_and_safe_detail_to_github(self) -> None:
+        browser = BROWSER.read_text(encoding="utf-8")
+        self.assertIn('stage = "resolve_admin_carriers"', browser)
+        self.assertIn('stage = "resolve_admin_shipping"', browser)
+        self.assertIn("::error title=ORDENOWA shipping admin browser QA::", browser)
+        self.assertIn("safe_failure_detail(error)", browser)
+        self.assertIn('return "timed out waiting for the expected browser state"', browser)
+        self.assertIn('f"{controller} native admin page did not return HTTP 200 in the admin session"', browser)
+        self.assertNotIn("{error}", browser)
+        self.assertIn("ORDENOWA_SHIPPING_ADMIN_DETAIL=", browser)
+
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("detail_line=$(rg '^ORDENOWA_SHIPPING_ADMIN_DETAIL='", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
