@@ -12,6 +12,7 @@ use Kuranea\BusinessProfile\Domain\ProfileDefaults;
 use Kuranea\BusinessProfile\Customer\PublishedProfileProvider;
 use Kuranea\BusinessProfile\Customer\PublicFooterBuilder;
 use Kuranea\BusinessProfile\Customer\CommerceGate;
+use Kuranea\BusinessProfile\Customer\OrderConfirmationMailContent;
 use Kuranea\BusinessProfile\Infrastructure\VersionedProfileRepository;
 
 class Kuraneabusinessprofile extends Module
@@ -20,7 +21,7 @@ class Kuraneabusinessprofile extends Module
     {
         $this->name = 'kuraneabusinessprofile';
         $this->tab = 'administration';
-        $this->version = '1.0.0';
+        $this->version = '1.0.1';
         $this->author = 'ORDENOWA';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -49,6 +50,7 @@ class Kuraneabusinessprofile extends Module
             'displayFooter',
             'actionFrontControllerInitBefore',
             'actionGetExtraMailTemplateVars',
+            'actionEmailAddAfterContent',
         ]);
     }
 
@@ -172,10 +174,9 @@ class Kuraneabusinessprofile extends Module
             return;
         }
 
-        $profile = $this->publicProfile();
+        [$shopId, $isoCode] = $this->mailShopAndIsoCode($params);
+        $profile = (new PublishedProfileProvider(new VersionedProfileRepository()))->forShop($shopId, $isoCode);
         $safeDefaults = $profile ?? ProfileDefaults::initial();
-        $language = new Language((int) ($params['id_lang'] ?? 0));
-        $isoCode = (string) ($language->iso_code ?? $this->context->language->iso_code ?? 'ja');
         $locale = $profile['_resolved_locale'] ?? PublishedProfileProvider::localeForIso($isoCode);
         $brandName = (string) ($safeDefaults['brand']['name'][$locale] ?? $safeDefaults['brand']['name']['ja-JP'] ?? 'ORDENOWA');
 
@@ -185,7 +186,7 @@ class Kuraneabusinessprofile extends Module
             ? substr($emailLogo, 4)
             : '';
         $emailLogoIsCurrent = $emailLogoRelative !== ''
-            && (string) \Configuration::get('PS_LOGO_MAIL') === $emailLogoRelative
+            && (string) \Configuration::get('PS_LOGO_MAIL', null, null, $shopId) === $emailLogoRelative
             && is_file(_PS_IMG_DIR_ . $emailLogoRelative);
 
         // Suppress any pre-existing KURANEA or PrestaShop default mail logo until an ORDENOWA asset is published.
@@ -211,6 +212,36 @@ class Kuraneabusinessprofile extends Module
         $params['extra_template_vars']['{ordenowa_seller_responsible_person}'] = (string) ($profile['seller']['responsible_person'][$locale] ?? '');
     }
 
+    /** @param array<string, mixed> $params */
+    public function hookActionEmailAddAfterContent(array $params): void
+    {
+        if (($params['template'] ?? '') !== 'order_conf'
+            || !isset($params['template_html'], $params['template_txt'])
+            || !is_string($params['template_html'])
+            || !is_string($params['template_txt'])) {
+            return;
+        }
+
+        [$shopId, $isoCode] = $this->mailShopAndIsoCode($params);
+        $profile = (new PublishedProfileProvider(new VersionedProfileRepository()))->forShop($shopId, $isoCode);
+        if ($profile === null) {
+            return;
+        }
+
+        $templateHtml = $params['template_html'];
+        $templateTxt = $params['template_txt'];
+        OrderConfirmationMailContent::append(
+            'order_conf',
+            $templateHtml,
+            $templateTxt,
+            $profile,
+            CommerceGate::isEnabled($profile, $this->externalAuthorizationConfirmed())
+        );
+
+        $params['template_html'] = $templateHtml;
+        $params['template_txt'] = $templateTxt;
+    }
+
     /** @return array<string, mixed>|null */
     public function publicProfile(): ?array
     {
@@ -218,6 +249,18 @@ class Kuraneabusinessprofile extends Module
         $isoCode = (string) ($this->context->language->iso_code ?? 'ja');
 
         return (new PublishedProfileProvider(new VersionedProfileRepository()))->forShop($shopId, $isoCode);
+    }
+
+    /** @param array<string, mixed> $params
+     *  @return array{0: int, 1: string}
+     */
+    private function mailShopAndIsoCode(array $params): array
+    {
+        $language = new Language((int) ($params['id_lang'] ?? 0));
+        $isoCode = (string) ($language->iso_code ?? $this->context->language->iso_code ?? 'ja');
+        $shopId = (int) ($params['id_shop'] ?? $this->context->shop->id ?? 0);
+
+        return [$shopId, $isoCode];
     }
 
     /** @param mixed $path */

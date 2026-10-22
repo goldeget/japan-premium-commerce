@@ -57,5 +57,11 @@ jobs:
       - name: Verify public brand and seller disclosure gating
         run: php tests/business_profile/public_footer.php
 
+      - name: Verify order confirmation email profile integration
+        run: php tests/business_profile/order_confirmation_mail.php
+
+      - name: Check order confirmation email hook contract
+        run: python3 -m unittest discover -s tests/business_profile -p 'test_order_confirmation_mail_contract.py'
+
       - name: Verify PrestaShop module bundle wiring
         run: php tests/business_profile/module_bundle.php
