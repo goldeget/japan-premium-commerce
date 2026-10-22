@@ -164,7 +164,7 @@ def fill(driver: webdriver.Chrome, selector: str, value: str) -> None:
 
 
 def assert_my_page(driver: webdriver.Chrome, expected_first_name: str) -> None:
-    for selector in ("#identity_main_link", "#history_main_link", "#signout_link"):
+    for selector in ("#identity_main_link", "#signout_link"):
         visible(driver, selector)
 
     page_text = driver.find_element(By.TAG_NAME, "body").text
@@ -176,15 +176,22 @@ def prepare_required_registration_fields(driver: webdriver.Chrome, email_address
     form = visible(driver, "#customer-form")
     for name, value in (("firstname", "CI"), ("lastname", "Customer"), ("email", email_address)):
         fields = form.find_elements(By.CSS_SELECTOR, f'input[name="{name}"]')
-        if fields:
-            fields[0].clear()
-            fields[0].send_keys(value)
+        if not fields:
+            raise AssertionError(f"registration form is missing the required {name} field")
+        visible_fields = [field for field in fields if field.is_displayed() and field.is_enabled()]
+        if not visible_fields:
+            raise AssertionError(f"registration form has no usable {name} field")
+        for field in visible_fields:
+            field.clear()
+            field.send_keys(value)
 
     password_fields = form.find_elements(By.CSS_SELECTOR, 'input[type="password"]')
-    if not password_fields:
-        raise AssertionError("registration form does not expose a password field")
-    password_fields[0].clear()
-    password_fields[0].send_keys(password)
+    usable_password_fields = [field for field in password_fields if field.is_displayed() and field.is_enabled()]
+    if not usable_password_fields:
+        raise AssertionError("registration form does not expose a usable password field")
+    for field in usable_password_fields:
+        field.clear()
+        field.send_keys(password)
 
     selected_radio_groups: set[str] = set()
     for element in form.find_elements(By.CSS_SELECTOR, "input[required]"):
@@ -197,14 +204,53 @@ def prepare_required_registration_fields(driver: webdriver.Chrome, email_address
         elif field_type == "radio" and name not in selected_radio_groups:
             element.click()
             selected_radio_groups.add(name)
+        elif not element.get_attribute("value"):
+            fixture_values = {
+                "date": "1990-01-01",
+                "datetime-local": "1990-01-01T12:00",
+                "email": email_address,
+                "month": "1990-01",
+                "number": element.get_attribute("min") or "1",
+                "password": password,
+                "search": "CI Test",
+                "tel": "09012345678",
+                "text": "CI Test",
+                "time": "12:00",
+                "url": "https://example.invalid",
+                "week": "1990-W01",
+            }
+            fixture = fixture_values.get(field_type)
+            if fixture is not None:
+                element.clear()
+                element.send_keys(fixture)
+
+    for element in form.find_elements(By.CSS_SELECTOR, "textarea[required]"):
+        if element.is_displayed() and element.is_enabled() and not element.get_attribute("value"):
+            element.clear()
+            element.send_keys("CI Test")
 
     for element in form.find_elements(By.CSS_SELECTOR, "select[required]"):
         if not element.is_displayed() or not element.is_enabled():
             continue
         select = Select(element)
-        option = next((item for item in select.options if item.get_attribute("value")), None)
+        option = next(
+            (
+                item for item in select.options
+                if (item.get_attribute("value") or "").strip() not in {"", "0"}
+                and item.is_enabled()
+            ),
+            None,
+        )
         if option is not None:
             select.select_by_value(option.get_attribute("value"))
+
+    invalid_fields = []
+    for element in form.find_elements(By.CSS_SELECTOR, ":invalid"):
+        field_name = element.get_attribute("name") or element.get_attribute("id") or element.tag_name.lower()
+        field_type = element.get_attribute("type") or element.tag_name.lower()
+        invalid_fields.append(f"{field_name}:{field_type}")
+    if invalid_fields:
+        raise AssertionError("registration form has invalid controls: " + ", ".join(invalid_fields))
 
 
 def submit_login(driver: webdriver.Chrome, email_address: str, password: str) -> None:
@@ -247,7 +293,18 @@ def run_viewport(width: int, height: int, label: str) -> None:
         initial_password = f"Ordenowa-CI-{RUN_ID}-{RUN_ATTEMPT}!"
         reset_password = f"Ordenowa-Reset-{RUN_ID}-{RUN_ATTEMPT}!"
 
-        driver.get(f"{BASE}/index.php?controller=authentication&create_account=1")
+        driver.get(f"{BASE}/index.php?controller=authentication")
+        registration_link = visible(driver, 'a[data-link-action="display-register-form"]')
+        registration_url = urljoin(driver.current_url, registration_link.get_attribute("href") or "")
+        registration_location = urlparse(registration_url)
+        base_location = urlparse(BASE)
+        if (
+            registration_location.scheme != base_location.scheme
+            or registration_location.hostname not in {"localhost", "127.0.0.1"}
+            or registration_location.port != base_location.port
+        ):
+            raise AssertionError("PrestaShop registration link is outside the isolated shop")
+        registration_link.click()
         prepare_required_registration_fields(driver, account_email, initial_password)
         stage = "registration_submit"
         visible(driver, "#customer-form button.form-control-submit").click()
@@ -318,7 +375,11 @@ def run_viewport(width: int, height: int, label: str) -> None:
         stage = "password_reset"
         parsed_reset = urlparse(reset_url)
         base = urlparse(BASE)
-        if parsed_reset.hostname not in {"localhost", "127.0.0.1"} or parsed_reset.port != base.port:
+        if (
+            parsed_reset.scheme != base.scheme
+            or parsed_reset.hostname not in {"localhost", "127.0.0.1"}
+            or parsed_reset.port != base.port
+        ):
             raise AssertionError("password reset email points outside the isolated shop")
         driver.get(reset_url)
         fill(driver, '#field-password[name="passwd"]', reset_password)

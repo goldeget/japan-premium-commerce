@@ -27,6 +27,12 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertTrue('input[name="email"]' in account_flow and 'get_attribute("type") != "email"' in account_flow, "customer login is not verified as email-based")
         self.assertTrue("reset_link_for(account_email)" in account_flow, "password reset does not follow the captured test email")
         self.assertTrue('parsed.hostname in {"localhost", "127.0.0.1"}' in account_flow, "reset links are not restricted to the isolated shop")
+        self.assertIn('a[data-link-action="display-register-form"]', account_flow, "registration must follow the theme's actual registration link")
+        self.assertIn("registration_link.click()", account_flow)
+        self.assertNotIn("controller=authentication&create_account=1", account_flow, "registration must not rely on a legacy authentication query")
+        self.assertIn("registration form is missing the required", account_flow)
+        self.assertIn("registration form has invalid controls:", account_flow)
+        self.assertIn("parsed_reset.scheme != base.scheme", account_flow, "password reset must remain on the isolated shop protocol")
         self.assertIn('"cid:shop_logo"', account_flow, "captured reset email must render the approved brand logo")
         self.assertIn('attachment.get("ContentID", "")', account_flow)
         self.assertIn("published ORDENOWA derivative", account_flow)
@@ -37,8 +43,11 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         my_page = account_flow.split("def assert_my_page", 1)[1].split("def prepare_required_registration_fields", 1)[0]
         logout = account_flow.split("def logout", 1)[1].split("def run_viewport", 1)[0]
         self.assertEqual(account_flow.count("        assert_my_page(driver,"), 3)
-        for selector in ("identity_main_link", "history_main_link", "signout_link"):
+        for selector in ("identity_main_link", "signout_link"):
             self.assertIn(selector, my_page)
+        hummingbird_account_template = (ROOT / "themes" / "hummingbird" / "templates" / "customer" / "my-account.tpl").read_text(encoding="utf-8")
+        self.assertIn("{if !$configuration.is_catalog}", hummingbird_account_template, "order history is conditional in catalog mode")
+        self.assertIn('id="history_main_link"', hummingbird_account_template)
         self.assertIn("expected_first_name", my_page)
         self.assertIn('driver.get(f"{BASE}/index.php?controller=my-account")', logout)
         self.assertIn("identity_main_link", logout)
