@@ -19,7 +19,7 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
             node
             for node in syntax_tree.body
             if isinstance(node, ast.FunctionDef)
-            and node.name in {"safe_same_origin_path", "safe_url_metadata"}
+            and node.name in {"safe_same_origin_path", "safe_controller_category", "safe_url_metadata"}
         ]
         namespace = {
             "BASE": "https://shop.example.test",
@@ -41,6 +41,7 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
         self.assertTrue(metadata["same_origin"])
         self.assertTrue(metadata["id_lang_present"])
         self.assertTrue(metadata["controller_present"])
+        self.assertEqual(metadata["controller_category"], "authentication")
         self.assertTrue(metadata["path_has_non_ascii"])
         self.assertEqual(metadata["path"], "/<redacted>")
         self.assertEqual(metadata["query_key_names"], ["controller", "id_lang"])
@@ -56,6 +57,40 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
         )
         self.assertFalse(
             namespace["safe_url_metadata"]("https://other.example.test/login")["same_origin"]
+        )
+
+        other_controller = namespace["safe_url_metadata"](
+            "https://shop.example.test/index.php?controller=unknown%40private"
+        )
+        self.assertEqual(other_controller["controller_category"], "other")
+        self.assertNotIn("unknown@private", repr(other_controller))
+
+    def test_browser_redirect_initiator_is_reduced_to_a_safe_scope(self) -> None:
+        browser_flow_path = ROOT / "tests" / "e2e" / "verify_customer_account_browser.py"
+        syntax_tree = ast.parse(browser_flow_path.read_text(encoding="utf-8"))
+        helper = next(
+            node
+            for node in syntax_tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "safe_initiator_scope"
+        )
+        namespace = {
+            "BASE": "https://shop.example.test",
+            "unquote": unquote,
+            "urlparse": urlparse,
+        }
+        exec(compile(ast.Module(body=[helper], type_ignores=[]), str(browser_flow_path), "exec"), namespace)
+
+        self.assertEqual(
+            namespace["safe_initiator_scope"]("https://shop.example.test/themes/kuranea/assets/app.js"),
+            "kuranea_theme",
+        )
+        self.assertEqual(
+            namespace["safe_initiator_scope"]("https://shop.example.test/modules/kuraneabusinessprofile/app.js"),
+            "kuranea_module",
+        )
+        self.assertEqual(
+            namespace["safe_initiator_scope"]("https://external.example.test/app.js"),
+            "external",
         )
 
     def test_account_browser_checks_korean_email_login_and_separate_password_recovery(self) -> None:
@@ -164,6 +199,12 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
             '"reset_wait_navigation_document_language"',
             '"reset_link_navigation_timeline"',
             '"document_navigation_events"',
+            '"controller_category"',
+            '"initiator_type"',
+            '"initiator_scope"',
+            '"initiator_stack_depth"',
+            '"ORDENOWA_KOREAN_LOGIN_NAVIGATION_SAFE_STATE="',
+            '::error title=Korean customer login navigation::{navigation_annotation}',
             "addEventListener('beforeunload'",
             "addEventListener('pagehide'",
             '"performance": "ALL"',

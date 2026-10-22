@@ -652,6 +652,36 @@ def emit_korean_login_diagnostics(driver: webdriver.Chrome, state: dict[str, obj
     print("ORDENOWA_KOREAN_LOGIN_SAFE_STATE=" + state_json, file=sys.stderr)
     annotation = state_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
     print(f"::error title=Korean customer login state::{annotation}", file=sys.stderr)
+    raw_events = diagnostics.get("document_navigation_events", [])
+    navigation_events = []
+    if isinstance(raw_events, list):
+        for event in raw_events[-4:]:
+            if not isinstance(event, dict):
+                continue
+            route = event.get("route_metadata", {})
+            redirect_from = event.get("redirect_from_metadata", {})
+            route = route if isinstance(route, dict) else {}
+            redirect_from = redirect_from if isinstance(redirect_from, dict) else {}
+            navigation_events.append(
+                {
+                    "event": event.get("event", ""),
+                    "path": route.get("path", ""),
+                    "controller_category": route.get("controller_category", ""),
+                    "status_code": event.get("status_code", 0),
+                    "initiator_type": event.get("initiator_type", "unknown"),
+                    "initiator_scope": event.get("initiator_scope", "unknown"),
+                    "initiator_stack_depth": event.get("initiator_stack_depth", 0),
+                    "redirect_from_path": redirect_from.get("path", ""),
+                    "redirect_from_controller_category": redirect_from.get("controller_category", ""),
+                }
+            )
+    navigation_json = json.dumps(navigation_events, ensure_ascii=True, sort_keys=True)
+    print("ORDENOWA_KOREAN_LOGIN_NAVIGATION_SAFE_STATE=" + navigation_json, file=sys.stderr)
+    navigation_annotation = navigation_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(
+        f"::error title=Korean customer login navigation::{navigation_annotation}",
+        file=sys.stderr,
+    )
 
 
 def click_centered(driver: webdriver.Chrome, element) -> None:
@@ -790,6 +820,51 @@ def safe_same_origin_path(value: object) -> str:
     return "/".join(safe_segments)[:160] or "/"
 
 
+def safe_controller_category(value: object) -> str:
+    """Expose only known front-controller names in browser route diagnostics."""
+    if not isinstance(value, str):
+        return ""
+    try:
+        values = parse_qs(urlparse(value).query, keep_blank_values=True).get("controller", [])
+    except (TypeError, ValueError):
+        return ""
+    if not values:
+        return ""
+    if len(values) != 1:
+        return "other"
+    controller = values[0].strip().lower()
+    return controller if controller in {"authentication", "password"} else "other"
+
+
+def safe_initiator_scope(value: object) -> str:
+    """Classify a Chrome initiator URL without logging its raw path or query."""
+    if not isinstance(value, str) or not value:
+        return "unknown"
+    try:
+        location = urlparse(value)
+        base_location = urlparse(BASE)
+        if (
+            location.scheme.lower() != base_location.scheme.lower()
+            or location.hostname != base_location.hostname
+            or location.port != base_location.port
+        ):
+            return "external"
+        path = unquote(location.path or "/").lower()
+    except (TypeError, ValueError):
+        return "unknown"
+    if "/themes/kuranea/" in path:
+        return "kuranea_theme"
+    if "/themes/hummingbird/" in path:
+        return "hummingbird_theme"
+    if "/modules/kuranea" in path:
+        return "kuranea_module"
+    if "/modules/" in path:
+        return "prestashop_module"
+    if path.endswith("/index.php"):
+        return "front_controller"
+    return "same_origin_other"
+
+
 def safe_url_metadata(value: object) -> dict[str, object]:
     """Return route shape without exposing URL values, tokens, or customer data."""
     metadata: dict[str, object] = {
@@ -805,6 +880,7 @@ def safe_url_metadata(value: object) -> dict[str, object]:
         "id_lang_present": False,
         "isolang_present": False,
         "controller_present": False,
+        "controller_category": "",
         "back_present": False,
     }
     if not isinstance(value, str):
@@ -840,6 +916,7 @@ def safe_url_metadata(value: object) -> dict[str, object]:
             "id_lang_present": "id_lang" in query_keys,
             "isolang_present": "isolang" in query_keys,
             "controller_present": "controller" in query_keys,
+            "controller_category": safe_controller_category(value),
             "back_present": "back" in query_keys,
         }
     )
@@ -909,11 +986,28 @@ def document_navigation_events(driver: webdriver.Chrome) -> list[dict[str, objec
             if isinstance(redirect_response, dict)
             else responses.get(request_id) if isinstance(request_id, str) else None
         )
+        initiator = params.get("initiator", {})
+        initiator = initiator if isinstance(initiator, dict) else {}
+        initiator_type = initiator.get("type")
+        allowed_initiator_types = {
+            "address_bar", "other", "parser", "preload", "script", "signedExchange", "serviceWorker"
+        }
+        if not isinstance(initiator_type, str) or initiator_type not in allowed_initiator_types:
+            initiator_type = "unknown"
+        stack = initiator.get("stack", {})
+        stack = stack if isinstance(stack, dict) else {}
+        frames = stack.get("callFrames", [])
+        frames = frames if isinstance(frames, list) else []
+        first_frame = frames[0] if frames and isinstance(frames[0], dict) else {}
+        initiator_url = first_frame.get("url") or initiator.get("url")
         safe_events.append(
             {
                 "event": "document_redirect" if isinstance(redirect_response, dict) else "document_request",
                 "route_metadata": route_metadata,
                 "redirect_from_metadata": redirect_metadata or {},
+                "initiator_type": initiator_type,
+                "initiator_scope": safe_initiator_scope(initiator_url),
+                "initiator_stack_depth": min(len(frames), 20),
                 "status_code": int(redirect_status)
                 if isinstance(redirect_status, (int, float)) and 0 <= redirect_status <= 599
                 else 0,
