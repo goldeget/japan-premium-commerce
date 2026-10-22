@@ -57,6 +57,46 @@ class ThemeContractTests(unittest.TestCase):
         self.assertIn("상품명 또는 키워드 검색", template)
         self.assertIn("name=\"s\"", template)
 
+    def test_empty_featured_collection_has_localized_manual_discovery_state(self) -> None:
+        template_path = (
+            THEME
+            / "modules"
+            / "ps_featuredproducts"
+            / "views"
+            / "templates"
+            / "hook"
+            / "ps_featuredproducts.tpl"
+        )
+        self.assertTrue(template_path.is_file(), "KURANEA featured-products override is missing")
+        template = template_path.read_text(encoding="utf-8")
+        for message in (
+            "ただいま、セレクションを準備しています。",
+            "We're preparing our first collection.",
+            "첫 컬렉션을 준비하고 있습니다.",
+        ):
+            self.assertIn(message, template)
+        self.assertIn("{if $products}", template)
+        self.assertIn("catalog/_partials/productlist.tpl", template)
+        self.assertIn("{$urls.pages.search}", template)
+        self.assertIn('role="status"', template)
+        self.assertNotIn("Our special products", template)
+
+        home = (THEME / "templates" / "index.tpl").read_text(encoding="utf-8")
+        for message in (
+            "ただいま、セレクションを準備しています。",
+            "We're preparing our first collection.",
+            "첫 컬렉션을 준비하고 있습니다.",
+        ):
+            self.assertIn(message, home)
+        self.assertIn("kuranea-catalog-empty--home", home)
+
+        css = (THEME / "assets" / "css" / "custom.css").read_text(encoding="utf-8")
+        self.assertIn(
+            ".kuranea-featured:has(.ps-featuredproducts .module-products__list) .kuranea-catalog-empty--home",
+            css,
+            "the home empty state should yield to real featured product cards",
+        )
+
     def test_pwa_registers_network_only_service_worker(self) -> None:
         head = (THEME / "templates" / "_partials" / "head.tpl").read_text(encoding="utf-8")
         worker_path = THEME / "assets" / "sw.js"

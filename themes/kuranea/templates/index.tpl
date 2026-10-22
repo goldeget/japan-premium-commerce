@@ -104,12 +104,22 @@
                 </div>
               </section>
 
-              {if !empty($HOOK_HOME)}
-                <section class="kuranea-featured container" aria-label="{$copyEdit|escape:'htmlall':'UTF-8'}">
-                  <p class="kuranea-eyebrow">{$copyEdit|escape:'htmlall':'UTF-8'}</p>
-                  {$HOOK_HOME nofilter}
-                </section>
-              {/if}
+              <section class="kuranea-featured container" aria-label="{$copyEdit|escape:'htmlall':'UTF-8'}">
+                <p class="kuranea-eyebrow">{$copyEdit|escape:'htmlall':'UTF-8'}</p>
+                {$HOOK_HOME nofilter}
+                <div class="kuranea-catalog-empty kuranea-catalog-empty--home" role="status" aria-live="polite">
+                  {if $language.locale == 'ja-JP'}
+                    <p class="kuranea-catalog-empty__message">ただいま、セレクションを準備しています。</p>
+                    <a class="kuranea-catalog-empty__link" href="{$urls.pages.search}">商品を探す <span aria-hidden="true">→</span></a>
+                  {elseif $language.locale == 'ko-KR'}
+                    <p class="kuranea-catalog-empty__message">첫 컬렉션을 준비하고 있습니다.</p>
+                    <a class="kuranea-catalog-empty__link" href="{$urls.pages.search}">상품 검색 <span aria-hidden="true">→</span></a>
+                  {else}
+                    <p class="kuranea-catalog-empty__message">We're preparing our first collection.</p>
+                    <a class="kuranea-catalog-empty__link" href="{$urls.pages.search}">Search the store <span aria-hidden="true">→</span></a>
+                  {/if}
+                </div>
+              </section>
 
               <section class="kuranea-note">
                 <div class="container kuranea-note__inner">

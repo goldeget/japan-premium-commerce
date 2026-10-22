@@ -1,5 +1,14 @@
 # KURANEA 작업 기록
 
+## 2026-10-22 — 빈 카탈로그 메인 화면 보완
+
+- 시작 기준: `work` 로컬·원격 SHA `15a3d82de3df746994eac88c194bdf3caf4e1779`, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`; 기존 미추적 파일과 named volume을 보존했다.
+- 원인: Hummingbird `ps_featuredproducts::getWidgetVariables()`는 상품이 없으면 `false`를 반환해 테마 모듈 템플릿을 호출하지 않는다. 실행 중인 PrestaShop은 수정 전 Smarty 컴파일본과 CSS 합본 캐시도 사용하고 있었다.
+- 변경: 자식 테마 메인 템플릿에 ja/en/ko 안내와 검색 링크를 넣고, 실제 featured product list가 있을 때만 안내를 숨긴다. 모듈 템플릿은 Hummingbird의 네이티브 상품 카드 출력을 유지한다. CSS는 작은 화면에서 문구와 링크를 세로로 배치한다.
+- 검증: 상품 상태 계약 테스트를 먼저 실행해 실패를 확인한 뒤 구현했다. Smarty 홈 컴파일 캐시와 CSS 합본 한 파일만 `/tmp`에 백업 후 무효화해 재생성했다. 실제 페이지 HTTP 200, ja/en/ko 홈 문구, Chromium 데스크톱 1440×1000 및 모바일 390×844, 수평 넘침 0, 브라우저 오류 0을 확인했다. Python smoke/계약 27/27, 관리자 계약 6/6, postcode PHP lint 및 도메인/API 단위 테스트 통과, `docker compose config --quiet`, healthy 컨테이너 및 `git diff --check` 확인.
+- 캡처: `artifacts/qa/phase1a/home-empty-state-desktop-v2.png` 및 `home-empty-state-mobile-v2.png`.
+- 범위: 실제 상품이 아직 0개이므로 상품 카드의 숨김 조건은 계약 검사로 확인했고, 실상품 카드 UI는 아직 브라우저에서 검증하지 않았다. DB와 기존 주문은 변경하지 않았다.
+
 ## 2026-10-21 — 검색 다국어와 모바일 내비게이션 대비 개선
 
 - 시작 기준: `work` 원격 SHA `d1b2166d6380348e855989b6dbe79650cc9ecedc`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다.

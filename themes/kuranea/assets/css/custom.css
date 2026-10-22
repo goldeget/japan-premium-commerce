@@ -376,6 +376,45 @@ body {
   gap: 1.25rem;
 }
 
+.kuranea-catalog-empty {
+  display: flex;
+  min-height: 6.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding-block: 1.5rem;
+  border-block: 1px solid var(--kuranea-line);
+}
+
+.kuranea-catalog-empty__message {
+  margin: 0;
+  color: var(--kuranea-muted);
+  font-family: var(--kuranea-serif);
+  font-size: clamp(1rem, 1.5vw, 1.2rem);
+  line-height: 1.8;
+}
+
+.kuranea-catalog-empty__link {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.65rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--kuranea-gold);
+  color: var(--kuranea-ink);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.kuranea-catalog-empty__link:hover {
+  color: #8d7546;
+}
+
+.kuranea-featured:has(.ps-featuredproducts .module-products__list) .kuranea-catalog-empty--home {
+  display: none;
+}
+
 .kuranea-note {
   color: #f8f6f0;
   background: var(--kuranea-navy);
@@ -694,6 +733,13 @@ body {
 
   .kuranea-featured {
     padding-block: 3.25rem;
+  }
+
+  .kuranea-catalog-empty {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.85rem;
+    padding-block: 1.25rem;
   }
 
   .kuranea-section-heading {

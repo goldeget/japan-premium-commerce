@@ -63,11 +63,11 @@ class StorefrontSmokeTests(unittest.TestCase):
 
     def test_homepage_copy_and_mobile_navigation_follow_store_locale(self) -> None:
         cases = (
-            ("/", "ja-JP", "丁寧に選ぶ、美しい暮らし。", "ホーム", "検索", "マイページ", "カート"),
-            ("/en/", "en-US", "A thoughtful life, beautifully chosen.", "Home", "Search", "Account", "Cart"),
-            ("/ko/", "ko-KR", "정성껏 고른 아름다운 일상.", "홈", "검색", "내 계정", "장바구니"),
+            ("/", "ja-JP", "丁寧に選ぶ、美しい暮らし。", "ただいま、セレクションを準備しています。", "ホーム", "検索", "マイページ", "カート"),
+            ("/en/", "en-US", "A thoughtful life, beautifully chosen.", "We're preparing our first collection.", "Home", "Search", "Account", "Cart"),
+            ("/ko/", "ko-KR", "정성껏 고른 아름다운 일상.", "첫 컬렉션을 준비하고 있습니다.", "홈", "검색", "내 계정", "장바구니"),
         )
-        for path, language, title, *navigation in cases:
+        for path, language, title, empty_copy, *navigation in cases:
             with self.subTest(path=path):
                 status, _, body = fetch(f"{BASE_URL}{path}")
                 metadata = PageMetadata()
@@ -75,6 +75,7 @@ class StorefrontSmokeTests(unittest.TestCase):
                 self.assertEqual(status, 200)
                 self.assertEqual(metadata.html_lang, language)
                 self.assertIn(title, body)
+                self.assertIn(empty_copy, body)
                 for label in navigation:
                     self.assertIn(f">{label}<", body)
 
