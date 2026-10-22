@@ -645,6 +645,22 @@ def assert_javascript_image_loaded(driver: webdriver.Chrome, selector: str) -> N
         raise AssertionError("uploaded product image preview did not render")
 
 
+def write_temporary_png(contents: bytes, prefix: str) -> Path:
+    """Write a browser upload fixture whose path remains available until cleanup."""
+    image_file = tempfile.NamedTemporaryFile(prefix=prefix, suffix=".png", delete=False)
+    image_path = Path(image_file.name)
+    write_completed = False
+    try:
+        with image_file:
+            image_file.write(contents)
+            image_file.flush()
+        write_completed = True
+        return image_path
+    finally:
+        if not write_completed:
+            image_path.unlink(missing_ok=True)
+
+
 def run() -> None:
     options = Options()
     options.add_argument("--headless=new")
@@ -665,6 +681,7 @@ def run() -> None:
     manager_page_state: dict[str, str | bool] | None = None
     form_before_submit: dict[str, object] | None = None
     save_diagnostics: dict[str, object] | None = None
+    temporary_upload_paths: list[Path] = []
     try:
         driver = webdriver.Chrome(options=options)
         stage = "administrator_login"
@@ -725,15 +742,14 @@ def run() -> None:
         png = base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGNU8qplYGBgYmBgYGBgAAAKuwDtbIwH5AAAAABJRU5ErkJggg=="
         )
-        with tempfile.NamedTemporaryFile(prefix="ordenowa-product-", suffix=".png") as image_file:
-            image_file.write(png)
-            image_file.flush()
-            create_operation = "upload_image"
-            visible(driver, "#product_images").send_keys(image_file.name)
-            create_operation = "submit_product"
-            form_before_submit = product_form_diagnostics(driver)
-            clear_product_browser_network_events(driver)
-            visible(driver, 'button[name="submitKuraneaProductSave"]').click()
+        image_path = write_temporary_png(png, "ordenowa-product-")
+        temporary_upload_paths.append(image_path)
+        create_operation = "upload_image"
+        visible(driver, "#product_images").send_keys(str(image_path))
+        create_operation = "submit_product"
+        form_before_submit = product_form_diagnostics(driver)
+        clear_product_browser_network_events(driver)
+        visible(driver, 'button[name="submitKuraneaProductSave"]').click()
 
         create_operation = "wait_for_save_confirmation"
         save_result = WebDriverWait(driver, 45).until(product_save_result)
@@ -855,14 +871,13 @@ def run() -> None:
         png = base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGNU8qplYGBgYmBgYGBgAAAKuwDtbIwH5AAAAABJRU5ErkJggg=="
         )
-        with tempfile.NamedTemporaryFile(prefix="ordenowa-product-replacement-", suffix=".png") as image_file:
-            image_file.write(png)
-            image_file.flush()
-            edit_operation = "upload_replacement_image"
-            visible(driver, "#product_images").send_keys(image_file.name)
-            edit_operation = "submit_edit"
-            clear_product_browser_network_events(driver)
-            visible(driver, 'button[name="submitKuraneaProductSave"]').click()
+        image_path = write_temporary_png(png, "ordenowa-product-replacement-")
+        temporary_upload_paths.append(image_path)
+        edit_operation = "upload_replacement_image"
+        visible(driver, "#product_images").send_keys(str(image_path))
+        edit_operation = "submit_edit"
+        clear_product_browser_network_events(driver)
+        visible(driver, 'button[name="submitKuraneaProductSave"]').click()
 
         edit_operation = "wait_edit_save_confirmation"
         WebDriverWait(driver, 45).until(
@@ -953,8 +968,12 @@ def run() -> None:
         print(annotation, file=sys.stdout)
         raise SystemExit(f"product admin browser scenario failed at {stage} ({exception_class})") from None
     finally:
-        if driver is not None:
-            driver.quit()
+        try:
+            if driver is not None:
+                driver.quit()
+        finally:
+            for image_path in temporary_upload_paths:
+                image_path.unlink(missing_ok=True)
 
 
 def run_mobile_layout() -> None:

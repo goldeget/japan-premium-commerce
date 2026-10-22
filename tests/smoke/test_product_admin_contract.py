@@ -168,6 +168,24 @@ class ProductAdminContractTests(unittest.TestCase):
             workflow.index("Download and import official Japan Post KEN_ALL data"),
         )
 
+    def test_browser_upload_fixtures_remain_available_until_chrome_closes(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        run = browser.split("def run() -> None:", 1)[1].split("def run_mobile_layout() -> None:", 1)[0]
+        create_flow = run.split('stage = "native_product_create"', 1)[1].split(
+            'stage = "native_product_edit"', 1
+        )[0]
+        edit_flow = run.split('stage = "native_product_edit"', 1)[1].split(
+            "except Exception as error:", 1
+        )[0]
+        cleanup = run.split("    finally:", 1)[1]
+
+        self.assertIn("temporary_upload_paths: list[Path] = []", run)
+        self.assertIn("def write_temporary_png", browser)
+        self.assertIn("write_temporary_png(png,", create_flow)
+        self.assertIn("write_temporary_png(png,", edit_flow)
+        self.assertNotIn("with tempfile.NamedTemporaryFile", create_flow + edit_flow)
+        self.assertLess(cleanup.index("driver.quit()"), cleanup.index("image_path.unlink(missing_ok=True)"))
+
     def test_chromium_product_failure_emits_a_github_annotation(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
         handler = browser.split("except Exception as error:", 1)[1].split("finally:", 1)[0]
