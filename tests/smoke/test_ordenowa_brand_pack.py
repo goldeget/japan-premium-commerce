@@ -11,9 +11,47 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PACK = ROOT / "assets" / "brand" / "ordenowa"
+LEGACY_WEBROOT_ARCHIVE = ROOT / "assets" / "brand" / "legacy-kuranea-webroot-archive"
+LEGACY_WEBROOT_SHA256 = {
+    "themes/kuranea/assets/img/brand/apple-touch-icon.png": "b7cc027940312212e2286f73bed947fb1d779da5eabb7bafdb7c4ecb22aece16",
+    "themes/kuranea/assets/img/brand/favicon-16x16.png": "ac48fbd542b5b73804e843099d8a1c15ea4a8d8f6d853cd4da4fef5cf73b9df2",
+    "themes/kuranea/assets/img/brand/favicon-32x32.png": "be8dbd1753cb7ea4cd868719d4b43bd24b881a8b91b4eb2464c942aeadff7316",
+    "themes/kuranea/assets/img/brand/favicon.ico": "c970b09739475c82b74cf38922613579fe4ec1c6c12e91c31cbbe438cd9b10c5",
+    "themes/kuranea/assets/img/brand/kuranea-logo-desktop.png": "ebb48eae7847c80f9618e7ba785889cc81b26fbbf3294b27591d2c44154954e1",
+    "themes/kuranea/assets/img/brand/kuranea-logo-desktop.webp": "ad560064bd33ab50a08630d0f33c58d0bbec25cb44ee440c3497f411c87a7649",
+    "themes/kuranea/assets/img/brand/kuranea-logo-light.png": "7067a06d739b3408058b54fcd6b983738d46c09c8cc4fd7d77844528e713c572",
+    "themes/kuranea/assets/img/brand/kuranea-logo-light.webp": "77f9d962148018195dbc50f55d5e2d6d86135772284ae64e80f7c2943b0c2387",
+    "themes/kuranea/assets/img/brand/kuranea-logo-mobile.png": "8d2c7bd0a8094c2e063980b93479cfbb6dddcbf03527207ba928f64d2633d006",
+    "themes/kuranea/assets/img/brand/kuranea-logo-mobile.webp": "2f350c1a8d0c9e1be193851efdb67883544590f3dc56ebc2b56ad7527fb30cb1",
+    "themes/kuranea/assets/img/brand/og-brand.png": "2ffd9bd643dce65389547762120df0420020a9c4162d31204cf0398a595585ce",
+    "themes/kuranea/assets/img/brand/pwa-192x192.png": "99abcce8626721b278493929a36d7e2435ff229b4761245d2fcf588847fcbb8c",
+    "themes/kuranea/assets/img/brand/pwa-512x512.png": "58ecda279cf4f6b9ad7c4ca522869bf601d23d1d5282a1bee8c6edc46a5838aa",
+    "themes/kuranea/assets/img/brand/pwa-maskable-512x512.png": "7abde140ea39ec7e903745297cf1a429585153cf4f80d0423efb99f5d64d27e5",
+    "modules/kuraneabackoffice/views/img/kuranea-logo.png": "ae54c1ae9042cbef7de8c0a81a9d8d9e819f060b90ee2d46841a88f8f498de69",
+}
 
 
 class OrdenowaBrandPackTests(unittest.TestCase):
+    def test_legacy_kuranea_webroot_assets_are_archived_byte_for_byte(self) -> None:
+        expected_sums = [
+            f"{expected_hash}  {relative_path}"
+            for relative_path, expected_hash in sorted(LEGACY_WEBROOT_SHA256.items())
+        ]
+        sums_file = LEGACY_WEBROOT_ARCHIVE / "SHA256SUMS.txt"
+        self.assertEqual(expected_sums, sums_file.read_text(encoding="utf-8").splitlines())
+
+        for public_relative_path, expected_hash in LEGACY_WEBROOT_SHA256.items():
+            with self.subTest(public_path=public_relative_path):
+                self.assertFalse((ROOT / public_relative_path).exists(), "legacy asset remains under the public webroot")
+                archived = LEGACY_WEBROOT_ARCHIVE / public_relative_path
+                self.assertTrue(archived.is_file(), f"legacy asset was not moved into the archive: {public_relative_path}")
+                self.assertEqual(expected_hash, hashlib.sha256(archived.read_bytes()).hexdigest())
+
+    def test_legacy_asset_generator_does_not_write_into_public_theme_assets(self) -> None:
+        generator = (ROOT / "assets" / "brand" / "generate_assets.py").read_text(encoding="utf-8")
+        self.assertNotIn("THEME_BRAND", generator)
+        self.assertNotIn("themes/kuranea/assets/img/brand", generator)
+
     def test_all_approved_sources_and_derived_files_match_the_asset_manifest(self) -> None:
         manifest = json.loads((PACK / "asset-manifest.json").read_text(encoding="utf-8"))
         self.assertEqual("ORDENOWA", manifest["brand"])

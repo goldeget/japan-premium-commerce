@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -130,9 +131,23 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertIn("#shop-img img", hook_template)
         self.assertIn("display: none !important", hook_template)
         self.assertIn("content: \"←\";", hook_template)
-        # Keep the historical KURANEA source image intact; it is no longer wired as the active brand.
-        self.assertTrue(logo.is_file())
-        self.assertEqual(b"\x89PNG\r\n\x1a\n", logo.read_bytes()[:8])
+        # Preserve the original outside the served module webroot.
+        source_logo = ROOT / "assets" / "brand" / "source" / "kuranea-logo.png"
+        source_manifest = ROOT / "assets" / "brand" / "source" / "SHA256SUMS.txt"
+        self.assertFalse(logo.exists(), "legacy KURANEA logo must not remain in the public module webroot")
+        self.assertTrue(source_logo.is_file(), "preserved KURANEA source logo is missing")
+        source_bytes = source_logo.read_bytes()
+        self.assertEqual(b"\x89PNG\r\n\x1a\n", source_bytes[:8])
+        source_sha256 = hashlib.sha256(source_bytes).hexdigest()
+        self.assertEqual(
+            "ae54c1ae9042cbef7de8c0a81a9d8d9e819f060b90ee2d46841a88f8f498de69",
+            source_sha256,
+            "preserved KURANEA source logo no longer matches the verified original",
+        )
+        self.assertIn(
+            f"{source_sha256}  kuranea-logo.png",
+            source_manifest.read_text(encoding="utf-8").splitlines(),
+        )
 
 
 if __name__ == "__main__":
