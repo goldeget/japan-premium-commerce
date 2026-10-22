@@ -52,6 +52,13 @@ class OrdenowaBrandPackTests(unittest.TestCase):
         self.assertNotIn("THEME_BRAND", generator)
         self.assertNotIn("themes/kuranea/assets/img/brand", generator)
 
+    def test_legacy_webroot_archive_is_excluded_from_docker_build_context(self) -> None:
+        dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
+        dockerfile = (ROOT / "docker" / "Dockerfile").read_text(encoding="utf-8")
+
+        self.assertIn("assets/brand/legacy-kuranea-webroot-archive/", dockerignore)
+        self.assertNotIn("legacy-kuranea-webroot-archive", dockerfile)
+
     def test_all_approved_sources_and_derived_files_match_the_asset_manifest(self) -> None:
         manifest = json.loads((PACK / "asset-manifest.json").read_text(encoding="utf-8"))
         self.assertEqual("ORDENOWA", manifest["brand"])

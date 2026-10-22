@@ -8,3 +8,4 @@ node_modules
 !.env.example
 var/cache
 var/logs
+assets/brand/legacy-kuranea-webroot-archive/
