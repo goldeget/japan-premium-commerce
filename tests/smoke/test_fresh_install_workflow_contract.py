@@ -46,10 +46,22 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         for selector in ("identity_main_link", "signout_link"):
             self.assertIn(selector, my_page)
         self.assertIn("expected_first_name", my_page)
-        self.assertIn("my_account_link_from_header(driver)", logout)
+        self.assertIn("my_account_link_from_header(driver, open_menu=False)", logout)
         self.assertIn("driver.get(account_url)", logout)
         self.assertIn("identity_main_link", logout)
         self.assertIn('#login-form input[name="email"]', logout)
+
+    def test_logout_resolves_canonical_account_route_without_opening_header_menu(self) -> None:
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        route_helper = account_flow.split("def my_account_link_from_header", 1)[1].split(
+            "def set_registration_control", 1
+        )[0]
+        logout = account_flow.split("def logout", 1)[1].split("def run_viewport", 1)[0]
+
+        self.assertIn("my_account_link_from_header(driver, open_menu=False)", logout)
+        self.assertIn("if open_menu:", route_helper)
+        self.assertIn("account_link = driver.find_element(By.CSS_SELECTOR, account_selector)", route_helper)
+        self.assertIn("account_link = visible(driver, account_selector)", route_helper)
 
     def test_account_signout_selects_a_visible_duplicate_for_mobile_and_desktop(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")

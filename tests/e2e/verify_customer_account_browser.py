@@ -159,13 +159,19 @@ def wait_for_registration_success(driver: webdriver.Chrome) -> None:
         visible(driver, "#identity_main_link")
 
 
-def my_account_link_from_header(driver: webdriver.Chrome):
-    """Open the authenticated header menu and resolve its canonical My Page link."""
-    button = visible(driver, "#userMenuButton")
-    if button.get_attribute("aria-expanded") != "true":
-        click_centered(driver, button)
+def my_account_link_from_header(driver: webdriver.Chrome, *, open_menu: bool = True):
+    """Resolve the canonical My Page link, opening its menu only when needed for interaction."""
+    account_selector = 'div.dropdown-menu[aria-labelledby="userMenuButton"] a[href]'
+    if open_menu:
+        button = visible(driver, "#userMenuButton")
+        if button.get_attribute("aria-expanded") != "true":
+            click_centered(driver, button)
+        account_link = visible(driver, account_selector)
+    else:
+        # The hidden dropdown anchor is still rendered, so logout can read its URL
+        # without opening an overlay above the separate My Page signout link.
+        account_link = driver.find_element(By.CSS_SELECTOR, account_selector)
 
-    account_link = visible(driver, 'div.dropdown-menu[aria-labelledby="userMenuButton"] a[href]')
     href = account_link.get_attribute("href") or ""
     account_url = urljoin(driver.current_url, href)
     account_location = urlparse(account_url)
@@ -532,7 +538,7 @@ def assert_login_rejected(driver: webdriver.Chrome, email_address: str, password
 
 
 def logout(driver: webdriver.Chrome) -> None:
-    _, account_url = my_account_link_from_header(driver)
+    _, account_url = my_account_link_from_header(driver, open_menu=False)
     link = visible_signout_link(driver)
     link.click()
     driver.get(account_url)
