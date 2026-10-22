@@ -8,6 +8,17 @@ from urllib.parse import parse_qs, urlparse
 _DETAIL_ACTIONS = {"detail", "details", "view", "vieworder"}
 
 
+def is_modern_admin_order_detail_url(href: str, expected_order_id: int | str) -> bool:
+    """Accept only the matching PrestaShop Symfony order detail route."""
+    path_segments = [segment for segment in urlparse(href).path.rstrip("/").split("/") if segment]
+    return len(path_segments) >= 4 and path_segments[-4:] == [
+        "sell",
+        "orders",
+        str(expected_order_id),
+        "view",
+    ]
+
+
 def is_legacy_admin_order_detail_url(href: str, expected_order_id: int | str) -> bool:
     """Accept only the matching legacy AdminOrders detail action URL."""
     parsed = urlparse(href)

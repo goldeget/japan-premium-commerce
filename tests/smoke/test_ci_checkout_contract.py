@@ -305,8 +305,29 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertFalse(is_detail(bare_order_id, 42))
         self.assertFalse(is_detail(wrong_order, 42))
 
+        modern_detail_matcher = route_helper.is_modern_admin_order_detail_url
+        self.assertTrue(
+            modern_detail_matcher(
+                "http://localhost/admin-kuranea/sell/orders/42/view",
+                42,
+            )
+        )
+        self.assertFalse(
+            modern_detail_matcher(
+                "http://localhost/admin-kuranea/sell/orders/420/view",
+                42,
+            )
+        )
+        self.assertFalse(
+            modern_detail_matcher(
+                "http://localhost/admin-kuranea/sell/orders/orders/42/view",
+                42,
+            )
+        )
+
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
-        self.assertIn("is_legacy_admin_order_detail_url(href, order_id)", flow)
+        self.assertIn("is_legacy_admin_order_detail_url(", flow)
+        self.assertIn("is_modern_admin_order_detail_url(", flow)
 
     def test_browser_checkout_explicitly_creates_a_registered_customer(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
@@ -973,13 +994,17 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         admin_detail = flow.split("def find_admin_detail_url", 1)[1].split("def run_admin_order_view", 1)[0]
         self.assertIn("#checkout-continue-form button", registration)
         self.assertNotIn("identity_main_link", registration)
-        self.assertIn('ADMIN_LOGIN + "/sell/orders/orders"', admin_detail)
+        self.assertIn('ADMIN_LOGIN + "/sell/orders"', admin_detail)
+        self.assertNotIn('ADMIN_LOGIN + "/sell/orders/orders"', admin_detail)
         self.assertIn('order["reference"] not in row_text and order["email"] not in row_text', admin_detail)
-        self.assertIn("is_legacy_admin_order_detail_url(href, order_id)", admin_detail)
+        self.assertIn("is_legacy_admin_order_detail_url(", admin_detail)
         self.assertNotIn('query.get("id_order") == [order_id]', admin_detail)
-        self.assertIn('rf"/sell/orders/orders/{re.escape(order_id)}', admin_detail)
+        self.assertIn("is_modern_admin_order_detail_url(href, order_id)", admin_detail)
         self.assertIn("raise AssertionError", admin_detail)
         self.assertIn("matching Back Office order-list result", admin_detail)
+        self.assertIn('"matched_row_link_hints"', admin_detail)
+        self.assertIn('"query_keys": query_keys', admin_detail)
+        self.assertNotIn('"href": href', admin_detail)
         self.assertNotIn('return ADMIN_LOGIN + f"/sell/orders/orders/{order[\'order_id\']}/view"', admin_detail)
         self.assertNotIn("controller=AdminOrders&vieworder&id_order=", admin_detail)
         self.assertNotIn('root + "/sell/orders/orders"', admin_detail)

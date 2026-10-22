@@ -18,7 +18,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.select import Select
 from selenium.webdriver.support.ui import WebDriverWait
 
-from checkout_admin_routes import is_legacy_admin_order_detail_url
+from checkout_admin_routes import is_legacy_admin_order_detail_url, is_modern_admin_order_detail_url
 
 
 BASE = os.environ["SHOP_BASE_URL"].rstrip("/")
@@ -1181,11 +1181,13 @@ def admin_login(driver: webdriver.Chrome, set_stage=None) -> None:
 
 def find_admin_detail_url(driver: webdriver.Chrome, order: dict) -> str:
     candidate_pages = (
-        ADMIN_LOGIN + "/sell/orders/orders",
+        ADMIN_LOGIN + "/sell/orders",
         ADMIN_LOGIN + "/index.php?controller=AdminOrders",
     )
     rows_inspected = 0
     matching_rows = 0
+    candidate_route_paths: list[str] = []
+    matching_link_hints: list[dict[str, object]] = []
     for listing_url in candidate_pages:
         visit(driver, listing_url)
         try:
@@ -1195,6 +1197,9 @@ def find_admin_detail_url(driver: webdriver.Chrome, order: dict) -> str:
             )
         except TimeoutException:
             continue
+        safe_route_path = _safe_checkout_navigation_path(driver.current_url)
+        if safe_route_path:
+            candidate_route_paths.append(safe_route_path)
         if "/login" in urlparse(driver.current_url).path:
             continue
         for row in driver.find_elements(By.CSS_SELECTOR, "tr, [role='row']"):
@@ -1207,12 +1212,30 @@ def find_admin_detail_url(driver: webdriver.Chrome, order: dict) -> str:
                 href = link.get_attribute("href") or ""
                 parsed = urlparse(href)
                 order_id = str(order["order_id"])
-                modern_detail = re.search(
-                    rf"/sell/orders/orders/{re.escape(order_id)}(?:/view)?/?$",
-                    parsed.path,
-                )
-                if modern_detail or is_legacy_admin_order_detail_url(href, order_id):
+                safe_link_path = _safe_checkout_navigation_path(href)
+                if safe_link_path:
+                    query_keys = sorted(
+                        key
+                        for key in parse_qs(parsed.query, keep_blank_values=True)
+                        if re.fullmatch(r"[A-Za-z0-9_.-]{1,40}", key)
+                    )
+                    hint = {"path": safe_link_path, "query_keys": query_keys}
+                    if hint not in matching_link_hints:
+                        matching_link_hints.append(hint)
+                if is_modern_admin_order_detail_url(href, order_id) or is_legacy_admin_order_detail_url(
+                    href, order_id
+                ):
                     return href
+    diagnostic = {
+        "listing_paths": candidate_route_paths,
+        "matched_rows": matching_rows,
+        "matched_row_link_hints": matching_link_hints[:30],
+    }
+    print(
+        "::notice title=ORDENOWA admin order lookup routes::"
+        + json.dumps(diagnostic, sort_keys=True),
+        file=sys.stderr,
+    )
     print(
         "::error title=ORDENOWA admin order lookup::"
         "No matching Back Office order-list result with a detail link was found "
