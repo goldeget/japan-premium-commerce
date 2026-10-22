@@ -108,7 +108,7 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
                 self.assertTrue(translated.get(source), f"missing Korean overlay for {source!r}")
                 self.assertNotEqual(source, translated[source])
 
-    def test_admin_login_hook_renders_the_official_logo(self) -> None:
+    def test_admin_login_hook_uses_ordenowa_text_until_official_logo_is_available(self) -> None:
         module_path = MODULE / "kuraneabackoffice.php"
         template_path = MODULE / "views" / "templates" / "hook" / "admin-login.tpl"
         self.assertTrue(module_path.is_file(), "missing Back Office branding module")
@@ -119,15 +119,17 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
 
         self.assertIn("displayAdminLogin", module_source)
         self.assertIn("hookDisplayAdminLogin", module_source)
-        self.assertIn("kuranea-logo.png", module_source)
-        self.assertIn("kuranea_backoffice_logo", hook_template)
-        self.assertIn('alt="KURANEA"', hook_template)
+        self.assertIn("ordenowa_backoffice_brand_name", module_source)
+        self.assertIn("ordenowa_backoffice_brand_name", hook_template)
+        self.assertIn("ORDENOWA", module_source)
+        self.assertNotIn("kuranea-logo.png", module_source)
+        self.assertNotIn("KURANEA", hook_template)
         self.assertIn("#login-header", hook_template)
         self.assertIn("#login-footer", hook_template)
         self.assertIn("#shop-img img", hook_template)
-        self.assertIn("content: url(", hook_template)
-        self.assertIn('content: url("{/literal}{$kuranea_backoffice_logo', hook_template)
+        self.assertIn("display: none !important", hook_template)
         self.assertIn("content: \"←\";", hook_template)
+        # Keep the historical KURANEA source image intact; it is no longer wired as the active brand.
         self.assertTrue(logo.is_file())
         self.assertEqual(b"\x89PNG\r\n\x1a\n", logo.read_bytes()[:8])
 

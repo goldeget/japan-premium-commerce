@@ -15,16 +15,13 @@
     {include file='_partials/preload.tpl'}
   {/block}
 
-  <title>{block name='head_seo_title'}{$page.meta.title}{/block}</title>
+  <title>{block name='head_seo_title'}{$ordenowaSeoTitle|default:$page.meta.title}{/block}</title>
 
   {block name='hook_after_title_tag'}
     {hook h='displayAfterTitleTag'}
   {/block}
 
-  <meta name="description" content="{block name='head_seo_description'}{$page.meta.description}{/block}">
-  {if $page.page_name != 'product'}
-    <meta property="og:image" content="{$urls.theme_assets}img/brand/og-brand.png">
-  {/if}
+  <meta name="description" content="{block name='head_seo_description'}{$ordenowaSeoDescription|default:$page.meta.description}{/block}">
 
   {if $page.meta.robots !== 'index'}
     <meta name="robots" content="{$page.meta.robots}">
@@ -60,10 +57,10 @@
   {/block}
 
   {block name='head_open_graph'}
-    <meta property="og:title" content="{$page.meta.title}">
-    <meta property="og:description" content="{$page.meta.description}">
+    <meta property="og:title" content="{$ordenowaSeoTitle|default:$page.meta.title}">
+    <meta property="og:description" content="{$ordenowaSeoDescription|default:$page.meta.description}">
     <meta property="og:url" content="{$urls.current_url}">
-    <meta property="og:site_name" content="{$shop.name}">
+    <meta property="og:site_name" content="{$ordenowaBrandName|default:$shop.name}">
     {if !isset($product) && $page.page_name != 'product'}<meta property="og:type" content="website">{/if}
   {/block}
 {/block}
@@ -73,12 +70,6 @@
 {/block}
 
 {block name='head_icons'}
-  <link rel="icon" type="image/x-icon" href="{$urls.theme_assets}img/brand/favicon.ico">
-  <link rel="icon" type="image/png" sizes="16x16" href="{$urls.theme_assets}img/brand/favicon-16x16.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="{$urls.theme_assets}img/brand/favicon-32x32.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="{$urls.theme_assets}img/brand/apple-touch-icon.png">
-  <link rel="manifest" href="{$urls.base_url}manifest.webmanifest">
-  <meta name="theme-color" content="#0b1b30">
   <script defer src="{$urls.theme_assets}js/pwa-register.js" data-service-worker="{$urls.base_url}sw.js" data-scope="{$urls.base_url}"></script>
 {/block}
 

@@ -109,7 +109,7 @@ class DockerRunRecoveryTests(unittest.TestCase):
         self.assertTrue(INIT_HOOK.is_file())
         self.assertIn("kuranea-patch-docker-run", entrypoint)
         self.assertIn("tests/smoke/test_docker_run_recovery.py", workflow)
-        self.assertIn("KURANEA bootstrap: storefront=ja, en/ko=enabled, admin=ko, theme=kuranea", smoke)
+        self.assertIn("ORDENOWA bootstrap: storefront=ja, en/ko=enabled, admin=ko, theme=kuranea", smoke)
         self.assertIn("KURANEA bootstrap already completed.", smoke)
         self.assertIn("admin_status_after_restart", smoke)
         self.assertIn("/var/www/html/var/cache/prod/appParameters.php", smoke)

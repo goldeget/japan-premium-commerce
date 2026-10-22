@@ -17,11 +17,12 @@ test "$storefront_status" = 200
 grep -q '<html[^>]*lang="ja-JP"' /tmp/kuranea-home.html
 admin_status=$(curl --fail --silent --show-error --location --output /tmp/kuranea-admin-login.html --write-out '%{http_code}' "$base_url/admin-kuranea/login")
 test "$admin_status" = 200
-grep -q 'kuraneabackoffice/views/img/kuranea-logo.png' /tmp/kuranea-admin-login.html
+grep -q 'ORDENOWA' /tmp/kuranea-admin-login.html
 grep -q '로그인' /tmp/kuranea-admin-login.html
 grep -q '비밀번호' /tmp/kuranea-admin-login.html
 ! grep -q 'Sleutelwoord' /tmp/kuranea-admin-login.html
-grep -Fq 'content: url("/modules/kuraneabackoffice/views/img/kuranea-logo.png");' /tmp/kuranea-admin-login.html
+! grep -q 'kuraneabackoffice/views/img/kuranea-logo.png' /tmp/kuranea-admin-login.html
+! grep -q 'KURANEA' /tmp/kuranea-admin-login.html
 compose exec -T prestashop sh -ec '
   test -s /var/www/html/app/config/parameters.php
   test -s /var/www/html/var/cache/prod/appParameters.php
@@ -129,7 +130,7 @@ test "$cache_index_owner" = www-data:www-data
 compose exec -T prestashop sh -ec 'runuser -g www-data -u www-data -- test -w /var/www/html/var/cache/prod/class_index.php'
 
 initial_bootstrap_logs=$(compose logs --no-color prestashop 2>&1)
-grep -q 'KURANEA bootstrap: storefront=ja, en/ko=enabled, admin=ko, theme=kuranea' <<< "$initial_bootstrap_logs"
+grep -q 'ORDENOWA bootstrap: storefront=ja, en/ko=enabled, admin=ko, theme=kuranea' <<< "$initial_bootstrap_logs"
 
 compose restart mariadb prestashop
 for attempt in $(seq 1 60); do
@@ -154,14 +155,16 @@ compose exec -T prestashop sh -ec '
 '
 admin_status_after_restart=$(curl --silent --show-error --location --output /tmp/kuranea-admin-login-after-restart.html --write-out '%{http_code}' "$base_url/admin-kuranea/login")
 test "$admin_status_after_restart" = 200
-grep -q 'kuraneabackoffice/views/img/kuranea-logo.png' /tmp/kuranea-admin-login-after-restart.html
+grep -q 'ORDENOWA' /tmp/kuranea-admin-login-after-restart.html
+! grep -q 'KURANEA' /tmp/kuranea-admin-login-after-restart.html
 
 default_currency_after_restart=$(db_query "SELECT cur.iso_code FROM ps_configuration cfg JOIN ps_currency cur ON cur.id_currency=CAST(cfg.value AS UNSIGNED) WHERE cfg.name='PS_CURRENCY_DEFAULT'")
 test "$default_currency_after_restart" = JPY
 jpy_translations_after_restart=$(db_query "SELECT COUNT(DISTINCT cl.id_lang) FROM ps_currency c JOIN ps_currency_lang cl ON cl.id_currency=c.id_currency JOIN ps_lang l ON l.id_lang=cl.id_lang WHERE c.iso_code='JPY' AND l.iso_code IN ('ja','en','ko')")
 test "$jpy_translations_after_restart" = 3
+test "$(db_query 'SELECT name FROM ps_shop WHERE id_shop=1')" = ORDENOWA
 table_count_after=$(db_query 'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()')
 test "$table_count_before" = "$table_count_after"
 test "$(db_query 'SELECT theme_name FROM ps_shop WHERE id_shop=1')" = kuranea
 test "$(db_query 'SELECT 1')" = 1
-printf 'PASS: empty-volume install, JPY default currency, cache ownership/writeability, ja/en/ko setup, ko employee locale, active KURANEA theme, CSS, Korean branded admin-kuranea login/assets with no admin-dev path, postcode/back-office modules, and restart persistence (%s tables)\n' "$table_count_after"
+printf 'PASS: empty-volume install, JPY default currency, cache ownership/writeability, ja/en/ko setup, ko employee locale, active storefront theme, ORDENOWA text branding without legacy logo fallback, Korean admin-kuranea login with no admin-dev path, postcode/back-office/business-profile modules, and restart persistence (%s tables)\n' "$table_count_after"

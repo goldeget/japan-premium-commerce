@@ -1,4 +1,4 @@
-"""HTTP smoke checks for the running KURANEA PrestaShop instance."""
+"""HTTP smoke checks for the ORDENOWA PrestaShop instance."""
 from __future__ import annotations
 
 import os
@@ -74,9 +74,9 @@ class StorefrontSmokeTests(unittest.TestCase):
         self.assertIn(final.hostname, {base.hostname, "localhost"})
         self.assertEqual(final.port, base.port)
         self.assertTrue(metadata.html_lang.startswith("ja"), metadata.html_lang)
-        self.assertIn("KURANEA", body)
-        self.assertIn("丁寧に選ぶ、美しい暮らし。", body)
-        self.assertNotIn("A thoughtful life, beautifully chosen.", body)
+        self.assertIn("ORDENOWA", body)
+        self.assertIn("企業と商品をつなぐ、次世代のB2B調達プラットフォーム", body)
+        self.assertNotIn("KURANEA", body)
         css_urls = [urljoin(final_url, href) for href in metadata.stylesheets if ".css" in href]
         css = "\n".join(fetch(url)[2] for url in css_urls)
         self.assertIn('.page-index .ps-imageslider:has(img[src*="/sample-"])', css)
@@ -85,9 +85,9 @@ class StorefrontSmokeTests(unittest.TestCase):
 
     def test_homepage_copy_and_mobile_navigation_follow_store_locale(self) -> None:
         cases = (
-            ("/", "ja-JP", "丁寧に選ぶ、美しい暮らし。", "ただいま、セレクションを準備しています。", "ホーム", "検索", "マイページ", "カート"),
-            ("/en/", "en-US", "A thoughtful life, beautifully chosen.", "We're preparing our first collection.", "Home", "Search", "Account", "Cart"),
-            ("/ko/", "ko-KR", "정성껏 고른 아름다운 일상.", "첫 컬렉션을 준비하고 있습니다.", "홈", "검색", "내 계정", "장바구니"),
+            ("/", "ja-JP", "企業と商品をつなぐ、次世代のB2B調達プラットフォーム", "ただいま、セレクションを準備しています。", "ホーム", "検索", "マイページ", "カート"),
+            ("/en/", "en-US", "A next-generation B2B procurement platform connecting businesses and products", "We're preparing our first collection.", "Home", "Search", "Account", "Cart"),
+            ("/ko/", "ko-KR", "기업과 상품을 연결하는 차세대 B2B 조달 플랫폼", "첫 컬렉션을 준비하고 있습니다.", "홈", "검색", "내 계정", "장바구니"),
         )
         for path, language, title, empty_copy, *navigation in cases:
             with self.subTest(path=path):
@@ -255,18 +255,17 @@ class StorefrontSmokeTests(unittest.TestCase):
         self.assertIn(":focus-visible", css)
         self.assertIn(".container", css)
 
-    def test_brand_logo_manifest_and_mobile_navigation_are_present(self) -> None:
+    def test_brand_text_manifest_and_mobile_navigation_avoid_legacy_assets(self) -> None:
         status, final_url, body = fetch(f"{BASE_URL}/")
         self.assertEqual(status, 200)
         metadata = PageMetadata()
         metadata.feed(body)
-        logo = next((image for image in metadata.images if "kuranea-logo-desktop.png" in image.get("src", "")), None)
-        self.assertIsNotNone(logo, "official desktop brand logo was not rendered")
-        self.assertEqual(logo.get("alt"), "KURANEA クラネア")
+        self.assertIn("ORDENOWA", body, "confirmed text brand should render while official artwork is unavailable")
+        self.assertNotIn("KURANEA", body, "legacy brand should not be shown to customers")
+        self.assertFalse(any("kuranea-logo-" in image.get("src", "") for image in metadata.images))
         self.assertTrue(any(link.get("rel") == "manifest" for link in metadata.links), "web manifest link is missing")
-        self.assertTrue(any(link.get("rel") == "apple-touch-icon" for link in metadata.links), "Apple touch icon is missing")
+        self.assertFalse(any(link.get("rel") == "apple-touch-icon" for link in metadata.links), "unavailable official artwork must not be substituted")
         self.assertIn("kuranea-mobile-nav", body)
-        self.assertIn("kuranea-logo-mobile.webp", body)
         manifest_url = next(link["href"] for link in metadata.links if link.get("rel") == "manifest")
         try:
             with urlopen(urljoin(final_url, manifest_url), timeout=20) as response:
@@ -275,14 +274,16 @@ class StorefrontSmokeTests(unittest.TestCase):
         except HTTPError as error:
             self.fail(f"web app manifest returned HTTP {error.code}")
         self.assertEqual(manifest.get("lang"), "ja-JP")
-        self.assertEqual({icon.get("sizes") for icon in manifest.get("icons", [])}, {"192x192", "512x512"})
+        self.assertEqual(manifest.get("name"), "オーデノワ")
+        self.assertEqual(manifest.get("icons"), [])
+        self.assertNotIn("KURANEA", json.dumps(manifest, ensure_ascii=False))
 
     def test_admin_login_is_reachable(self) -> None:
         status, final_url, body = fetch(f"{BASE_URL}/admin-kuranea/")
         self.assertEqual(status, 200)
         self.assertIn("/admin-kuranea/login", final_url)
         self.assertGreaterEqual(len(re.findall(r'<input[^>]+type=[\"\'](?:email|password)', body)), 2)
-        self.assertIn("KURANEA", body)
+        self.assertIn("ORDENOWA", body)
 
     def test_postcode_lookup_endpoint_keeps_manual_entry_available(self) -> None:
         query = urlencode({

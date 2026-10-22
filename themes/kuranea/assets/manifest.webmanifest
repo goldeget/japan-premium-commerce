@@ -1,19 +1,15 @@
 {
   "id": "/",
-  "name": "KURANEA — クラネア",
-  "short_name": "KURANEA",
-  "description": "A considered collection for the way you live.",
+  "name": "ORDENOWA — オーデノワ",
+  "short_name": "ORDENOWA",
+  "description": "法人向け商品調達・受発注サービス",
   "lang": "ja-JP",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
   "orientation": "any",
-  "background_color": "#faf8f3",
-  "theme_color": "#0b1b30",
-  "icons": [
-    {"src": "img/brand/pwa-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
-    {"src": "img/brand/pwa-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
-    {"src": "img/brand/pwa-maskable-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
-  ]
+  "background_color": "#ffffff",
+  "theme_color": "#10243a",
+  "icons": []
 }

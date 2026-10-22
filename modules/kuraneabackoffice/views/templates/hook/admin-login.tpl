@@ -1,12 +1,13 @@
-<div class="kuranea-admin-login-brand" style="margin: 1.25rem auto 0; text-align: center;">
-  <img
-    src="{$kuranea_backoffice_logo|escape:'htmlall':'UTF-8'}"
-    width="240"
-    height="66"
-    alt="KURANEA"
-    decoding="async"
-    style="display: inline-block; object-fit: cover; object-position: center 51%;"
-  >
+<div class="ordenowa-admin-login-brand">
+  {if $ordenowa_backoffice_logo}
+    <img
+      src="{$ordenowa_backoffice_logo|escape:'htmlall':'UTF-8'}"
+      alt="{$ordenowa_backoffice_brand_name|escape:'htmlall':'UTF-8'}"
+      decoding="async"
+    >
+  {else}
+    <span>{$ordenowa_backoffice_brand_name|escape:'htmlall':'UTF-8'}</span>
+  {/if}
 </div>
 
 <style>
@@ -17,15 +18,22 @@
   }
 
   #shop-img img {
-    content: url("{/literal}{$kuranea_backoffice_logo|escape:'htmlall':'UTF-8'}{literal}");
-    width: 240px !important;
-    height: 66px !important;
-    object-fit: cover;
-    object-position: center 51%;
+    display: none !important;
   }
 
-  .kuranea-admin-login-brand {
-    display: none !important;
+  .ordenowa-admin-login-brand {
+    margin: 1.25rem auto 0;
+    text-align: center;
+    color: #10243a;
+    font: 600 1.75rem/1.2 Georgia, "Noto Serif JP", serif;
+    letter-spacing: .12em;
+  }
+
+  .ordenowa-admin-login-brand img {
+    display: inline-block;
+    max-width: min(15rem, 70vw);
+    max-height: 5rem;
+    object-fit: contain;
   }
 
   #login .login-back .material-icons {

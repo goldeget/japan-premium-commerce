@@ -5,7 +5,7 @@ const offlinePage = (language) => {
       ? ['You are offline', 'Reconnect to the internet and try again.']
       : ['インターネットに接続できません', '接続を確認してから、もう一度お試しください。'];
 
-  return `<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1b30"><title>KURANEA</title><body style="margin:0;background:#faf8f3;color:#172638;font:16px/1.8 sans-serif"><main style="max-width:38rem;margin:18vh auto;padding:2rem"><p style="color:#b49a61;letter-spacing:.16em">KURANEA / クラネア</p><h1>${copy[0]}</h1><p>${copy[1]}</p></main></body></html>`;
+  return `<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#10243a"><title>ORDENOWA</title><body style="margin:0;background:#fff;color:#10243a;font:16px/1.8 sans-serif"><main style="max-width:38rem;margin:18vh auto;padding:2rem"><p style="letter-spacing:.16em">ORDENOWA / オーデノワ</p><h1>${copy[0]}</h1><p>${copy[1]}</p></main></body></html>`;
 };
 
 self.addEventListener('install', (event) => {

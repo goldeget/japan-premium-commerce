@@ -1,10 +1,10 @@
-# KURANEA Back Office support
+# ORDENOWA Back Office support
 
-PrestaShop 9.2 module that keeps the anonymous admin login in Korean, displays the supplied official KURANEA logo through `displayAdminLogin`, and provides source controlled Korean XLIFF overlays for missing Back Office strings.
+PrestaShop 9.2 module that keeps the anonymous admin login in Korean, reads the published ORDENOWA brand from the business profile module, and provides source controlled Korean XLIFF overlays for missing Back Office strings. While the official ORDENOWA logo originals are unavailable in this workspace, the login shows the confirmed brand name as text and does not use the legacy KURANEA image.
 
 ## Install
 
-New empty Compose installations bundle and install this module during the first KURANEA bootstrap. For an already-installed shop, deploy the directory as `modules/kuraneabackoffice` and install it from **Modules > Module Manager**. PrestaShop rebuilds its Symfony cache while loading the module's XLIFF translations so it can discover `config/services.yml` and the subscriber. This module does not change PrestaShop core or the `psgdpr` module.
+New empty Compose installations bundle and install this module during the first project bootstrap. For an already-installed shop, deploy the directory as `modules/kuraneabackoffice` and install it from **Modules > Module Manager**. PrestaShop rebuilds its Symfony cache while loading the module's XLIFF translations so it can discover `config/services.yml` and the subscriber. This module does not change PrestaShop core or the `psgdpr` module.
 
 ## Translation behavior
 

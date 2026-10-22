@@ -13,15 +13,15 @@ class Kuraneabackoffice extends Module
         $this->name = 'kuraneabackoffice';
         $this->tab = 'administration';
         $this->version = '1.0.0';
-        $this->author = 'KURANEA';
+        $this->author = 'ORDENOWA';
         $this->need_instance = 0;
         $this->bootstrap = true;
         $this->ps_versions_compliancy = ['min' => '9.2.0', 'max' => '9.99.99'];
 
         parent::__construct();
 
-        $this->displayName = 'KURANEA Back Office support';
-        $this->description = 'Korean Back Office login language, branding, and translation overlays.';
+        $this->displayName = 'ORDENOWA Back Office support';
+        $this->description = 'Korean Back Office language, published brand display, and translation overlays.';
     }
 
     public function install(): bool
@@ -41,8 +41,29 @@ class Kuraneabackoffice extends Module
 
     public function hookDisplayAdminLogin(array $params = []): string
     {
+        $brandName = 'ORDENOWA';
+        $logo = '';
+        $autoload = _PS_MODULE_DIR_ . 'kuraneabusinessprofile/autoload.php';
+        if (is_file($autoload)) {
+            require_once $autoload;
+            $shopId = max(1, (int) ($this->context->shop->id ?? 1));
+            $isoCode = (string) ($this->context->language->iso_code ?? 'ja');
+            $repository = new \Kuranea\BusinessProfile\Infrastructure\VersionedProfileRepository();
+            $profile = (new \Kuranea\BusinessProfile\Customer\PublishedProfileProvider($repository))->forShop($shopId, $isoCode);
+            if ($profile !== null) {
+                $locale = (string) $profile['_resolved_locale'];
+                $brandName = (string) ($profile['brand']['name'][$locale] ?? $brandName);
+                $assetPath = $profile['brand']['assets']['admin_login'] ?? null;
+                if (is_string($assetPath)
+                    && preg_match('~\Aimg/ordenowa/versions/[A-Fa-f0-9]{64}/[A-Za-z0-9._-]+\.(?:png|webp)\z~D', $assetPath) === 1) {
+                    $logo = rtrim((string) $this->context->link->getBaseLink(), '/') . '/' . $assetPath;
+                }
+            }
+        }
+
         $this->context->smarty->assign([
-            'kuranea_backoffice_logo' => $this->_path . 'views/img/kuranea-logo.png',
+            'ordenowa_backoffice_brand_name' => $brandName,
+            'ordenowa_backoffice_logo' => $logo,
         ]);
 
         return $this->fetch('module:' . $this->name . '/views/templates/hook/admin-login.tpl');

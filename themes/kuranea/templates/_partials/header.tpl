@@ -42,16 +42,16 @@
     <div class="{$headerBottom}__container container-md">
       <div class="{$headerBottom}__row row gx-2 gx-md-4 align-items-stretch">
         <div class="{$headerBottom}__logo d-flex align-items-center col-auto me-auto me-md-0">
-          {if $shop.logo_details}
-            <a class="navbar-brand kuranea-brand d-block" href="{$urls.pages.index}" aria-label="KURANEA クラネア">
+          <a class="navbar-brand kuranea-brand d-block" href="{$urls.pages.index}" aria-label="{$ordenowaBrandName|default:$shop.name|escape:'htmlall':'UTF-8'}">
+            {if $ordenowaLogoDesktop}
               <picture>
-                <source media="(max-width: 767.98px)" type="image/webp" srcset="{$urls.theme_assets}img/brand/kuranea-logo-mobile.webp">
-                <source media="(max-width: 767.98px)" srcset="{$urls.theme_assets}img/brand/kuranea-logo-mobile.png">
-                <source type="image/webp" srcset="{$urls.theme_assets}img/brand/kuranea-logo-desktop.webp">
-                <img class="logo img-fluid kuranea-brand__image" src="{$urls.theme_assets}img/brand/kuranea-logo-desktop.png" alt="KURANEA クラネア" width="1337" height="420" fetchpriority="high">
+                {if $ordenowaLogoMobile}<source media="(max-width: 767.98px)" srcset="{$ordenowaLogoMobile|escape:'htmlall':'UTF-8'}">{/if}
+                <img class="logo img-fluid kuranea-brand__image" src="{$ordenowaLogoDesktop|escape:'htmlall':'UTF-8'}" alt="{$ordenowaBrandName|default:$shop.name|escape:'htmlall':'UTF-8'}" fetchpriority="high">
               </picture>
-            </a>
-          {/if}
+            {else}
+              <span class="ordenowa-brand__text">{$ordenowaBrandName|default:$shop.name|escape:'htmlall':'UTF-8'}</span>
+            {/if}
+          </a>
         </div>
 
         {hook h='displayTop'}
