@@ -261,6 +261,20 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             gate_check,
         )
 
+    def test_storefront_cart_contains_the_exact_ci_product_id(self) -> None:
+        flow = STOREFRONT_FLOW.read_text(encoding="utf-8")
+        cart_check = flow.split(
+            'visit(driver, "/index.php?controller=cart&action=show")', 1
+        )[1].split('driver.save_screenshot', 1)[0]
+
+        self.assertIn(
+            '[data-link-action="delete-from-cart"][data-id-product]',
+            cart_check,
+        )
+        self.assertIn('get_attribute("data-id-product")', cart_check)
+        self.assertIn('cart_product_ids == [str(PRODUCT_ID)]', cart_check)
+        self.assertIn('[CI ONLY]', cart_check)
+
     def test_checkout_registration_and_admin_routes_follow_rendered_prestashop_flow(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
         registration = flow.split("def register_checkout_account", 1)[1].split("def select_japan_address", 1)[0]

@@ -103,8 +103,21 @@ def run_viewport(width, height, label):
             raise
         time.sleep(2)
         visit(driver, "/index.php?controller=cart&action=show")
-        assert_true("[CI ONLY]" in driver.find_element(By.TAG_NAME, "body").text,
-                    "Browser cart does not contain the CI-only test product.")
+        cart_product_ids = [
+            item.get_attribute("data-id-product")
+            for item in driver.find_elements(
+                By.CSS_SELECTOR,
+                '.cart__item [data-link-action="delete-from-cart"][data-id-product]',
+            )
+        ]
+        assert_true(
+            cart_product_ids == [str(PRODUCT_ID)],
+            "Browser cart does not contain exactly the active CI-only test product.",
+        )
+        assert_true(
+            "[CI ONLY]" in driver.find_element(By.TAG_NAME, "body").text,
+            "Browser cart does not contain the CI-only test product.",
+        )
         driver.save_screenshot(str(DEST / f"{label}-cart.png"))
 
         visit(driver, "/index.php?controller=order")
