@@ -564,7 +564,8 @@ def assert_public_brand_assets(
 
 
 def assert_seller_disclosures_remain_gated(driver: webdriver.Chrome, private_values: list[str]) -> None:
-    driver.get(BASE + "/")
+    customer_url = urljoin(BASE + "/", "ko/")
+    driver.get(customer_url)
     legal_link = visible(driver, ".ordenowa-legal-page-link a")
     legal_url = urljoin(driver.current_url, legal_link.get_attribute("href") or "")
     if urlparse(legal_url).netloc != urlparse(BASE).netloc:
@@ -572,6 +573,8 @@ def assert_seller_disclosures_remain_gated(driver: webdriver.Chrome, private_val
 
     driver.get(legal_url)
     page = visible(driver, ".ordenowa-legal-page")
+    if page.get_attribute("lang") != "ko-KR":
+        raise AssertionError("the company profile gate check did not load the Korean customer information page")
     visible(driver, ".ordenowa-legal-page__closed")
     leaked_values = [value for value in private_values if value and value in page.text]
     if leaked_values:
@@ -651,6 +654,8 @@ def run() -> None:
                 raise AssertionError("official ORDENOWA source file is missing from the checkout")
             visible(driver, f'input[name="brand_uploads[{slot}]"]').send_keys(str(source.resolve()))
 
+        company_profile_ja = "ORDENOWA CI COMPANY PROFILE JA"
+        company_profile_ko = "ORDENOWA CI 한국어 회사소개"
         ci_settings = {
             'input[name="profile[brand][name][ja-JP]"]': SEO_JSONLD_BRAND_NAME,
             'input[name="profile[brand][name][en-US]"]': "ORDENOWA CI BRAND EN",
@@ -711,6 +716,8 @@ def run() -> None:
             'input[name="profile[pwa][short_name][ko-KR]"]': "ORDENOWA KO",
             'input[name="profile[pwa][theme_color]"]': "#244a7d",
             'input[name="profile[pwa][background_color]"]': "#f5f7fa",
+            'textarea[name="profile[content][company_profile][ja-JP]"]': company_profile_ja,
+            'textarea[name="profile[content][company_profile][ko-KR]"]': company_profile_ko,
         }
         for selector, value in ci_settings.items():
             field = visible(driver, selector)
@@ -724,6 +731,14 @@ def run() -> None:
         for selector, expected in ci_settings.items():
             if visible(driver, selector).get_attribute("value") != expected:
                 raise AssertionError("a Korean admin operating setting did not persist in its draft")
+
+        stage = "company_profile_draft_reload"
+        driver.get(settings_url)
+        visible(driver, "form.ordenowa-profile-settings")
+        company_profile_selector = 'textarea[name="profile[content][company_profile][ko-KR]"]'
+        if visible(driver, company_profile_selector).get_attribute("value") != company_profile_ko:
+            raise AssertionError("the Korean company profile did not persist after reloading the admin settings")
+        driver.save_screenshot(str(DEST / "brand-company-profile-draft-reloaded.png"))
         driver.save_screenshot(str(DEST / "brand-admin-uploaded-draft.png"))
 
         stage = "replace_logo_in_saved_draft"
@@ -767,9 +782,12 @@ def run() -> None:
             "000-0000-0000",
             "ORDENOWA CI SHIPPING POLICY",
             "ORDENOWA CI REFUND POLICY",
+            company_profile_ja,
         ):
             if expected not in preview.text:
                 raise AssertionError("Korean admin operating settings are missing from the private preview")
+        if company_profile_ko not in visible(driver, company_profile_selector).get_attribute("value"):
+            raise AssertionError("the Korean company profile was not retained in the draft before preview")
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", preview)
         preview_images = preview.find_elements(By.TAG_NAME, "img")
         if len(preview_images) < 7:
@@ -856,8 +874,10 @@ def run() -> None:
         )
         driver.save_screenshot(str(DEST / "brand-korean-published.png"))
 
-        stage = "pending_seller_disclosures_remain_gated"
-        private_disclosure_groups = ("seller", "company_reference", "customer_support", "shipping", "refund")
+        stage = "published_company_profile_and_seller_disclosures_remain_gated"
+        private_disclosure_groups = (
+            "seller", "company_reference", "customer_support", "shipping", "refund", "company_profile"
+        )
         private_values = [
             value
             for selector, value in ci_settings.items()
@@ -877,7 +897,7 @@ def run() -> None:
         assert_no_legacy_brand_in_rendered_page(driver, "admin login")
         driver.save_screenshot(str(DEST / "brand-admin-login-after-publish.png"))
 
-        print("PASS: official ORDENOWA uploads, Korean draft preview, publish, PC/mobile logos, admin login, favicon, Apple icon, PWA, OG, and SEO")
+        print("PASS: official ORDENOWA uploads, Korean company profile draft/reload/preview/publish, closed storefront gate, PC/mobile logos, admin login, favicon, Apple icon, PWA, OG, and SEO")
     except Exception as error:
         try:
             driver.save_screenshot(str(DEST / "brand-admin-failure.png"))

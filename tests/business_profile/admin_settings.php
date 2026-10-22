@@ -78,9 +78,14 @@ assertBusinessProfileTrue(str_contains($renderedForm, 'name="brand_uploads[pwa_i
 
 $unsafePreviewProfile = $initial;
 $unsafePreviewProfile['brand']['name']['ja-JP'] = '<script>alert(1)</script>';
+$unsafePreviewProfile['content']['company_profile']['ja-JP'] = 'ORDENOWA CI 회사소개 <script>alert(1)</script>';
 $unsafePreviewProfile['localization']['default_locale'] = 'ja-JP';
 $previewHtml = \Kuranea\BusinessProfile\Admin\AdminProfileForm::renderPreview($unsafePreviewProfile);
 assertBusinessProfileTrue(!str_contains($previewHtml, '<script>alert(1)</script>'), 'Admin previews must escape editable customer content.');
+assertBusinessProfileTrue(
+    str_contains($previewHtml, 'ORDENOWA CI 회사소개 &lt;script&gt;alert(1)&lt;/script&gt;'),
+    'The authenticated company profile preview should render editable Japanese-locale content as escaped text.'
+);
 assertBusinessProfileTrue(str_contains($previewHtml, '관리자 전용'), 'Admin previews must state that they do not publish the profile.');
 $imagePreviewProfile = $initial;
 $imagePreviewProfile['brand']['assets']['header_desktop'] = 'img/ordenowa/versions/' . str_repeat('c', 64) . '/header-desktop.png';

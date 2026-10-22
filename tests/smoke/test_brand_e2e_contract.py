@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BRAND_E2E = ROOT / "tests" / "e2e" / "verify_brand_admin_browser.py"
 BRAND_PACK = ROOT / "assets" / "brand" / "ordenowa"
+ADMIN_PROFILE_FORM = ROOT / "modules" / "kuraneabusinessprofile" / "src" / "Admin" / "AdminProfileForm.php"
 
 
 class BrandE2EContractTests(unittest.TestCase):
@@ -108,6 +109,42 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('visible(driver, ".ordenowa-legal-page__closed")', browser_flow)
         self.assertIn("leaked_values = [value for value in private_values if value and value in page.text]", browser_flow)
         self.assertNotIn("submitOrdenowaApproveSeller", browser_flow)
+
+    def test_browser_persists_korean_company_profile_and_checks_preview_and_closed_storefront(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        ci_settings = browser_flow.split("ci_settings = {", 1)[1].split(
+            "\n        }\n        for selector, value in ci_settings.items():", 1
+        )[0]
+        run_flow = browser_flow.split("def run()", 1)[1]
+        self.assertIn('stage = "company_profile_draft_reload"', run_flow)
+        draft_reload = run_flow.split('stage = "company_profile_draft_reload"', 1)[1].split(
+            'stage = "replace_logo_in_saved_draft"', 1
+        )[0]
+        private_preview = run_flow.split('stage = "private_admin_preview"', 1)[1].split(
+            'publish_selector =', 1
+        )[0]
+        gated_page = browser_flow.split("def assert_seller_disclosures_remain_gated(", 1)[1].split(
+            "\ndef run()", 1
+        )[0]
+
+        company_profile_selector = 'textarea[name="profile[content][company_profile][ko-KR]"]'
+        self.assertIn(company_profile_selector, ci_settings)
+        self.assertIn('company_profile_ko = "ORDENOWA CI 한국어 회사소개"', browser_flow)
+        self.assertIn('driver.get(settings_url)', draft_reload)
+        self.assertIn("visible(driver, company_profile_selector).get_attribute(\"value\")", draft_reload)
+        self.assertIn("company_profile_ko", draft_reload)
+        self.assertIn("company_profile_ja", private_preview)
+        self.assertIn("company_profile_ko", private_preview)
+        self.assertIn("if expected not in preview.text:", private_preview)
+        self.assertIn('customer_url = urljoin(BASE + "/", "ko/")', gated_page)
+        self.assertIn('visible(driver, ".ordenowa-legal-page__closed")', gated_page)
+        self.assertIn("leaked_values = [value for value in private_values if value and value in page.text]", gated_page)
+        self.assertIn('"company_profile"', browser_flow)
+
+        preview_renderer = ADMIN_PROFILE_FORM.read_text(encoding="utf-8").split(
+            "public static function renderPreview", 1
+        )[1].split("private static function renderField", 1)[0]
+        self.assertIn("'회사소개' => $profile['content']['company_profile'][$locale] ?? ''", preview_renderer)
 
     def test_browser_persists_localized_brand_and_operating_settings_for_every_locale(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")

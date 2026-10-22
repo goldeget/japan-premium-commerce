@@ -317,6 +317,7 @@ final class AdminProfileForm
             '결제 안내' => $profile['payment'][$locale] ?? '',
             '배송 안내' => $profile['shipping'][$locale] ?? '',
             '반품·환불' => $profile['refund'][$locale] ?? '',
+            '회사소개' => $profile['content']['company_profile'][$locale] ?? '',
             '특정상거래법 표시' => $profile['content']['specified_commercial_act'][$locale] ?? '',
         ] as $label => $value) {
             if (!is_scalar($value) || trim((string) $value) === '') {
