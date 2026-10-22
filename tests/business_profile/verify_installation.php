@@ -13,6 +13,9 @@ require_once '/var/www/html/modules/kuraneabusinessprofile/autoload.php';
 function verifyBusinessProfile(bool $condition, string $message): void
 {
     if (!$condition) {
+        $annotation = str_replace(['%', "\r", "\n"], ['%25', '%0D', '%0A'], $message);
+        fwrite(STDERR, 'ORDENOWA_BUSINESS_PROFILE_ASSERTION=' . $message . PHP_EOL);
+        fwrite(STDOUT, '::error title=ORDENOWA business profile verifier::' . $annotation . PHP_EOL);
         throw new RuntimeException($message);
     }
 }
