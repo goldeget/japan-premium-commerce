@@ -18,11 +18,13 @@ use Kuranea\BusinessProfile\Infrastructure\VersionedProfileRepository;
 
 class Kuraneabusinessprofile extends Module
 {
+    private ?int $activeMailShopId = null;
+
     public function __construct()
     {
         $this->name = 'kuraneabusinessprofile';
         $this->tab = 'administration';
-        $this->version = '1.0.1';
+        $this->version = '1.0.2';
         $this->author = 'ORDENOWA';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -51,6 +53,7 @@ class Kuraneabusinessprofile extends Module
             'displayFooter',
             'actionFrontControllerInitBefore',
             'actionGetExtraMailTemplateVars',
+            'actionEmailSendBefore',
             'actionEmailAddAfterContent',
         ]);
     }
@@ -219,6 +222,9 @@ class Kuraneabusinessprofile extends Module
     /** @param array<string, mixed> $params */
     public function hookActionEmailAddAfterContent(array $params): void
     {
+        $mailContextShopId = $this->activeMailShopId;
+        $this->activeMailShopId = null;
+
         if (($params['template'] ?? '') !== 'order_conf'
             || !isset($params['template_html'], $params['template_txt'])
             || !is_string($params['template_html'])
@@ -226,7 +232,7 @@ class Kuraneabusinessprofile extends Module
             return;
         }
 
-        [$shopId, $isoCode] = $this->mailShopAndIsoCode($params);
+        [$shopId, $isoCode] = $this->mailShopAndIsoCode($params, $mailContextShopId);
         $profile = (new PublishedProfileProvider(new VersionedProfileRepository()))->forShop($shopId, $isoCode);
         if ($profile === null) {
             return;
@@ -246,6 +252,13 @@ class Kuraneabusinessprofile extends Module
         $params['template_txt'] = $templateTxt;
     }
 
+    /** @param array<string, mixed> $params */
+    public function hookActionEmailSendBefore(array $params): void
+    {
+        $shopId = (int) ($params['idShop'] ?? 0);
+        $this->activeMailShopId = $shopId > 0 ? $shopId : null;
+    }
+
     /** @return array<string, mixed>|null */
     public function publicProfile(): ?array
     {
@@ -258,11 +271,14 @@ class Kuraneabusinessprofile extends Module
     /** @param array<string, mixed> $params
      *  @return array{0: int, 1: string}
      */
-    private function mailShopAndIsoCode(array $params): array
+    private function mailShopAndIsoCode(array $params, ?int $mailShopId = null): array
     {
         $language = new Language((int) ($params['id_lang'] ?? 0));
         $isoCode = (string) ($language->iso_code ?? $this->context->language->iso_code ?? 'ja');
-        $shopId = (int) ($params['id_shop'] ?? $this->context->shop->id ?? 0);
+        $shopId = (int) ($params['id_shop'] ?? 0);
+        if ($shopId < 1) {
+            $shopId = (int) ($mailShopId ?? $this->activeMailShopId ?? $this->context->shop->id ?? 0);
+        }
 
         return [$shopId, $isoCode];
     }

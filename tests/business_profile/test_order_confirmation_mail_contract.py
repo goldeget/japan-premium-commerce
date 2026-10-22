@@ -20,13 +20,25 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
     def test_mail_profile_resolution_uses_mail_language_and_shop(self):
         module = MODULE_PATH.read_text(encoding="utf-8")
         self.assertIn("new Language((int) ($params['id_lang'] ?? 0))", module)
-        self.assertIn("$params['id_shop'] ?? $this->context->shop->id", module)
+        self.assertIn("$params['id_shop'] ?? 0", module)
+        self.assertIn("$mailShopId ?? $this->activeMailShopId ?? $this->context->shop->id", module)
         self.assertIn("->forShop($shopId, $isoCode)", module)
+
+    def test_mail_shop_id_comes_from_the_pre_send_hook_for_multishop_delivery(self):
+        module = MODULE_PATH.read_text(encoding="utf-8")
+        upgrade_path = ROOT / "modules/kuraneabusinessprofile/upgrade/upgrade-1.0.2.php"
+        self.assertIn("'actionEmailSendBefore'", module)
+        self.assertIn("function hookActionEmailSendBefore(array $params)", module)
+        self.assertIn("$params['idShop']", module)
+        self.assertIn("$this->activeMailShopId", module)
+        self.assertIn("$this->version = '1.0.2'", module)
+        self.assertTrue(upgrade_path.is_file(), "existing installations need a 1.0.2 hook upgrade")
+        self.assertIn("registerHook('actionEmailSendBefore')", upgrade_path.read_text(encoding="utf-8"))
 
     def test_existing_install_upgrade_registers_the_new_hook(self):
         module = MODULE_PATH.read_text(encoding="utf-8")
         upgrade = UPGRADE_PATH.read_text(encoding="utf-8")
-        self.assertIn("$this->version = '1.0.1'", module)
+        self.assertIn("$this->version = '1.0.2'", module)
         self.assertIn("function upgrade_module_1_0_1", upgrade)
         self.assertIn("registerHook('actionEmailAddAfterContent')", upgrade)
 
