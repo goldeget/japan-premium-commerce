@@ -233,12 +233,44 @@ def install_reset_link_navigation_observer(driver: webdriver.Chrome) -> None:
     driver.execute_script(
         """
         const key = '__ordenowaKoreanLoginNavigation';
+        const interactionKey = '__ordenowaKoreanLoginInteractions';
         try {
           sessionStorage.removeItem(key);
+          sessionStorage.removeItem(interactionKey);
           const allowedKeys = new Set(['back', 'controller', 'id_lang', 'isolang', 'lang']);
+          const interactionState = {
+            click_count: 0,
+            trusted_click_count: 0,
+            login_recovery_link_click_count: 0,
+            login_form_submit_count: 0,
+            other_form_submit_count: 0
+          };
+          const persistInteractions = () => {
+            try { sessionStorage.setItem(interactionKey, JSON.stringify(interactionState)); } catch (_) {}
+          };
+          document.addEventListener('click', event => {
+            const target = event.target instanceof Element ? event.target : null;
+            interactionState.click_count = Math.min(20, interactionState.click_count + 1);
+            if (event.isTrusted) {
+              interactionState.trusted_click_count = Math.min(20, interactionState.trusted_click_count + 1);
+            }
+            if (target?.closest('#login-form a[href]')) {
+              interactionState.login_recovery_link_click_count = Math.min(
+                20, interactionState.login_recovery_link_click_count + 1
+              );
+            }
+            persistInteractions();
+          }, true);
+          document.addEventListener('submit', event => {
+            const form = event.target instanceof HTMLFormElement ? event.target : null;
+            const keyName = form?.id === 'login-form' ? 'login_form_submit_count' : 'other_form_submit_count';
+            interactionState[keyName] = Math.min(20, interactionState[keyName] + 1);
+            persistInteractions();
+          }, true);
           const capture = (eventName, persisted = false) => {
             try {
               const navigation = performance.getEntriesByType('navigation')[0];
+              const interactions = JSON.parse(sessionStorage.getItem(interactionKey) || '{}');
               const event = {
                 event: eventName,
                 elapsed_ms: Math.round(performance.now()),
@@ -250,6 +282,11 @@ def install_reset_link_navigation_observer(driver: webdriver.Chrome) -> None:
                 navigation_type: navigation?.type || '',
                 navigation_redirect_count: Number.isInteger(navigation?.redirectCount) ? navigation.redirectCount : 0,
                 navigation_response_end_ms: Number.isFinite(navigation?.responseEnd) ? Math.round(navigation.responseEnd) : 0,
+                interaction_click_count: Number.isInteger(interactions.click_count) ? interactions.click_count : 0,
+                interaction_trusted_click_count: Number.isInteger(interactions.trusted_click_count) ? interactions.trusted_click_count : 0,
+                interaction_login_recovery_link_click_count: Number.isInteger(interactions.login_recovery_link_click_count) ? interactions.login_recovery_link_click_count : 0,
+                interaction_login_form_submit_count: Number.isInteger(interactions.login_form_submit_count) ? interactions.login_form_submit_count : 0,
+                interaction_other_form_submit_count: Number.isInteger(interactions.other_form_submit_count) ? interactions.other_form_submit_count : 0,
                 persisted: Boolean(persisted)
               };
               const events = JSON.parse(sessionStorage.getItem(key) || '[]');
@@ -310,6 +347,21 @@ def reset_link_navigation_timeline(driver: webdriver.Chrome) -> list[dict[str, o
                 "navigation_response_end_ms": min(event.get("navigation_response_end_ms", 0), 300_000)
                 if isinstance(event.get("navigation_response_end_ms"), int)
                 else 0,
+                "interaction_click_count": min(event.get("interaction_click_count", 0), 20)
+                if isinstance(event.get("interaction_click_count"), int)
+                else 0,
+                "interaction_trusted_click_count": min(event.get("interaction_trusted_click_count", 0), 20)
+                if isinstance(event.get("interaction_trusted_click_count"), int)
+                else 0,
+                "interaction_login_recovery_link_click_count": min(
+                    event.get("interaction_login_recovery_link_click_count", 0), 20
+                ) if isinstance(event.get("interaction_login_recovery_link_click_count"), int) else 0,
+                "interaction_login_form_submit_count": min(
+                    event.get("interaction_login_form_submit_count", 0), 20
+                ) if isinstance(event.get("interaction_login_form_submit_count"), int) else 0,
+                "interaction_other_form_submit_count": min(
+                    event.get("interaction_other_form_submit_count", 0), 20
+                ) if isinstance(event.get("interaction_other_form_submit_count"), int) else 0,
                 "persisted": event.get("persisted") is True,
             }
         )
@@ -904,7 +956,9 @@ def compact_korean_login_failure_summary(diagnostics: dict[str, object]) -> dict
     raw_timeline = diagnostics.get("reset_link_navigation_timeline")
     navigation_timeline: list[dict[str, object]] = []
     if isinstance(raw_timeline, list):
-        for event in raw_timeline[-2:]:
+        # beforeunload and pagehide are duplicate observations of the same navigation;
+        # keep the last one with the safe interaction counters to stay under the annotation limit.
+        for event in raw_timeline[-1:]:
             if not isinstance(event, dict):
                 continue
             event_name = event.get("event")
@@ -926,6 +980,17 @@ def compact_korean_login_failure_summary(diagnostics: dict[str, object]) -> dict
                     and navigation_type in {"navigate", "reload", "back_forward", "prerender"}
                     else "unknown",
                     "navigation_redirect_count": bounded_int(event.get("navigation_redirect_count"), 20) or 0,
+                    "interaction_click_count": bounded_int(event.get("interaction_click_count"), 20) or 0,
+                    "interaction_trusted_click_count": bounded_int(event.get("interaction_trusted_click_count"), 20) or 0,
+                    "interaction_login_recovery_link_click_count": bounded_int(
+                        event.get("interaction_login_recovery_link_click_count"), 20
+                    ) or 0,
+                    "interaction_login_form_submit_count": bounded_int(
+                        event.get("interaction_login_form_submit_count"), 20
+                    ) or 0,
+                    "interaction_other_form_submit_count": bounded_int(
+                        event.get("interaction_other_form_submit_count"), 20
+                    ) or 0,
                     "persisted": event.get("persisted") is True,
                 }
             )

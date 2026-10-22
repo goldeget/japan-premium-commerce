@@ -156,6 +156,11 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
                     "navigation_type": "navigate",
                     "navigation_redirect_count": 0,
                     "navigation_response_end_ms": 500,
+                    "interaction_click_count": 0,
+                    "interaction_trusted_click_count": 0,
+                    "interaction_login_recovery_link_click_count": 0,
+                    "interaction_login_form_submit_count": 0,
+                    "interaction_other_form_submit_count": 0,
                     "persisted": False,
                 }
             ],
@@ -200,6 +205,10 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
         self.assertEqual(summary["reset_link_before_wait"]["anchor_count"], 1)
         self.assertTrue(summary["reset_link_before_wait"]["visible"])
         self.assertEqual(summary["navigation_events"][0]["frame_scope"], "top_frame")
+        self.assertEqual(summary["reset_wait_navigation"]["timeline"][0]["interaction_click_count"], 0)
+        self.assertEqual(
+            summary["reset_wait_navigation"]["timeline"][0]["interaction_login_form_submit_count"], 0
+        )
         self.assertLess(len(encoded), 3_500)
         self.assertNotIn("never-expose-this", encoded)
 
@@ -461,6 +470,12 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
             '::error title=Korean customer login navigation::{navigation_annotation}',
             '::error title=Korean customer login wait details::{stage_annotation}',
             '"frame_scope": safe_document_frame_scope',
+            "const interactionKey = '__ordenowaKoreanLoginInteractions';",
+            "interactionState.trusted_click_count",
+            "interactionState.login_recovery_link_click_count",
+            "const keyName = form?.id === 'login-form' ? 'login_form_submit_count' : 'other_form_submit_count'",
+            '"interaction_login_recovery_link_click_count"',
+            '"interaction_login_form_submit_count"',
             "addEventListener('beforeunload'",
             "addEventListener('pagehide'",
             '"performance": "ALL"',

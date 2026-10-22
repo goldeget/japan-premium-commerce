@@ -70,6 +70,16 @@ class ResetEmailBrandContractTests(unittest.TestCase):
         self.assertIn("steps.chromium_setup.outcome == 'success'", email_step)
         self.assertNotIn("steps.brand_browser_qa.outcome", email_step)
 
+    def test_reset_email_failure_diagnostics_are_redacted_ci_annotations(self) -> None:
+        workflow = FRESH_INSTALL_WORKFLOW.read_text(encoding="utf-8")
+        email_step = workflow.split(
+            "- name: Verify the published ORDENOWA password-reset email logo in Chromium", 1
+        )[1].split("- name:", 1)[0]
+
+        self.assertIn("safe_state_line=$(rg '^ORDENOWA_RESET_EMAIL_SAFE_STATE='", email_step)
+        self.assertIn('::error title=ORDENOWA reset-email logo state::%s\\n', email_step)
+        self.assertIn('safe_state_annotation=${safe_state_annotation//$\'\\n\'/\'%0A\'}', email_step)
+
     def test_mailpit_logo_is_byte_checked_against_published_derivative_and_rendered_in_chromium(self) -> None:
         self.assertTrue(EMAIL_BROWSER.is_file())
         browser = EMAIL_BROWSER.read_text(encoding="utf-8")
@@ -111,6 +121,26 @@ class ResetEmailBrandContractTests(unittest.TestCase):
         self.assertIn('"inline_sha256": inline_sha256', assertion)
         self.assertIn('stage = "mailpit_message_lookup"', browser)
         self.assertIn("assert_published_inline_logo(message, set_logo_assertion_stage)", browser)
+
+    def test_failure_state_reports_only_mailpit_logo_structure_booleans(self) -> None:
+        browser = EMAIL_BROWSER.read_text(encoding="utf-8")
+        safe_state = browser.split("def reset_email_logo_safe_state(", 1)[1].split(
+            "def render_captured_logo", 1
+        )[0]
+        for field in (
+            '"html_is_string"',
+            '"html_nonempty"',
+            '"html_has_shop_logo_cid"',
+            '"inline_is_list"',
+            '"inline_part_count"',
+            '"shop_logo_inline_part_present"',
+            '"shop_logo_inline_part_is_png"',
+        ):
+            with self.subTest(field=field):
+                self.assertIn(field, safe_state)
+        self.assertIn('ORDENOWA_RESET_EMAIL_SAFE_STATE=', browser)
+        self.assertNotIn('"HTML":', safe_state)
+        self.assertNotIn('"To":', safe_state)
 
     def test_password_reset_request_is_independent_of_the_full_account_browser(self) -> None:
         browser = EMAIL_BROWSER.read_text(encoding="utf-8")

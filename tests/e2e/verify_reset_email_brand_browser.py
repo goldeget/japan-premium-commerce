@@ -190,6 +190,31 @@ def assert_published_inline_logo(
     return sent_logo
 
 
+def reset_email_logo_safe_state(message: dict) -> dict[str, bool | int]:
+    """Expose only structural Mailpit facts when the email logo assertion fails."""
+    message_html = message.get("HTML")
+    inline_items = message.get("Inline")
+    inline_parts = inline_items if isinstance(inline_items, list) else []
+    shop_logo_parts = [
+        item
+        for item in inline_parts
+        if isinstance(item, dict)
+        and str(item.get("ContentID", "")).strip("<>").lower() == "shop_logo"
+    ]
+    return {
+        "html_is_string": isinstance(message_html, str),
+        "html_nonempty": isinstance(message_html, str) and bool(message_html.strip()),
+        "html_has_shop_logo_cid": isinstance(message_html, str)
+        and "cid:shop_logo" in message_html.lower(),
+        "inline_is_list": isinstance(inline_items, list),
+        "inline_part_count": min(len(inline_parts), 20),
+        "shop_logo_inline_part_present": bool(shop_logo_parts),
+        "shop_logo_inline_part_is_png": any(
+            item.get("ContentType") == "image/png" for item in shop_logo_parts
+        ),
+    }
+
+
 def render_captured_logo(driver: webdriver.Chrome, logo_bytes: bytes) -> None:
     encoded_logo = base64.b64encode(logo_bytes).decode("ascii")
     preview_path = DEST / "password-reset-email-logo-preview.html"
@@ -228,6 +253,7 @@ def render_captured_logo(driver: webdriver.Chrome, logo_bytes: bytes) -> None:
 def run() -> bool:
     driver = None
     stage = "password_recovery_request"
+    message: dict | None = None
 
     def set_logo_assertion_stage(stage_name: str) -> None:
         nonlocal stage
@@ -283,6 +309,11 @@ def run() -> bool:
                 driver.save_screenshot(str(DEST / "password-reset-email-brand-failure.png"))
             except Exception:
                 pass
+        if isinstance(message, dict):
+            safe_state = json.dumps(
+                reset_email_logo_safe_state(message), sort_keys=True, separators=(",", ":")
+            )
+            print("ORDENOWA_RESET_EMAIL_SAFE_STATE=" + safe_state, file=sys.stderr)
         print(
             f"FAIL: password-reset email brand QA at {stage} ({type(error).__name__})",
             file=sys.stderr,

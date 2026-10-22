@@ -405,6 +405,10 @@ jobs:
             printf 'ORDENOWA brand browser failure: %s\n' "${failure_line:-See the uploaded brand browser log for the failing stage.}" >> "$GITHUB_STEP_SUMMARY"
             if [ -n "$diagnostics_line" ]; then
               printf '%s\n' "$diagnostics_line" >> "$GITHUB_STEP_SUMMARY"
+              diagnostics_annotation=${diagnostics_line//'%'/'%25'}
+              diagnostics_annotation=${diagnostics_annotation//$'\r'/'%0D'}
+              diagnostics_annotation=${diagnostics_annotation//$'\n'/'%0A'}
+              printf '::error title=ORDENOWA brand page state::%s\n' "$diagnostics_annotation"
             fi
             if [ -n "$stale_target_line" ]; then
               printf '%s\n' "$stale_target_line" >> "$GITHUB_STEP_SUMMARY"
@@ -481,7 +485,15 @@ jobs:
           set -e
           if [ "$browser_status" -ne 0 ]; then
             failure_line=$(rg '^FAIL:' "$log_file" | tail -n 1 || true)
+            safe_state_line=$(rg '^ORDENOWA_RESET_EMAIL_SAFE_STATE=' "$log_file" | tail -n 1 || true)
             printf 'ORDENOWA reset-email brand browser failure: %s\n' "${failure_line:-See the uploaded reset-email brand log for details.}" >> "$GITHUB_STEP_SUMMARY"
+            if [ -n "$safe_state_line" ]; then
+              printf '%s\n' "$safe_state_line" >> "$GITHUB_STEP_SUMMARY"
+              safe_state_annotation=${safe_state_line//'%'/'%25'}
+              safe_state_annotation=${safe_state_annotation//$'\r'/'%0D'}
+              safe_state_annotation=${safe_state_annotation//$'\n'/'%0A'}
+              printf '::error title=ORDENOWA reset-email logo state::%s\n' "$safe_state_annotation"
+            fi
             exit "$browser_status"
           fi
 
