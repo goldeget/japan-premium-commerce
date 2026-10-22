@@ -617,6 +617,16 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn('edited_links[0].find_element(By.XPATH, "./ancestor::li[contains(@class, \'well\')]")', edit_flow)
         self.assertIn('f"ID {product_id}"', edit_flow)
 
+    def test_browser_product_create_reads_back_both_localized_descriptions(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        create_flow = browser.split('stage = "native_product_create"', 1)[1].split(
+            'stage = "native_product_edit"', 1
+        )[0]
+        persisted_fields = create_flow.split("for selector, expected in (", 1)[1].split("):", 1)[0]
+
+        self.assertIn('("#description_ja", "CI用の商品説明")', persisted_fields)
+        self.assertIn('("#description_ko", "CI용 상세 설명")', persisted_fields)
+
     def test_browser_category_fixture_uses_home_and_excludes_technical_root(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
         category_helper = browser.split("def usable_category_boxes", 1)[1].split("def fill(", 1)[0]

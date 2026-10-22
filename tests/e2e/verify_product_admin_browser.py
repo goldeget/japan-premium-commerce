@@ -772,6 +772,8 @@ def run() -> None:
             ("#price_jpy", "1280"),
             ("#quantity", "3"),
             ("#options", "色:青|赤\nサイズ:S|M"),
+            ("#description_ja", "CI用の商品説明"),
+            ("#description_ko", "CI용 상세 설명"),
         ):
             if visible(driver, selector).get_attribute("value") != expected:
                 raise AssertionError("a product create field did not persist through PrestaShop")
