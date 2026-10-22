@@ -21,6 +21,8 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn("hashlib.sha256(source.read_bytes()).hexdigest()", browser_flow)
         self.assertIn('f"/img/ordenowa/versions/{source_hash}/{filename}"', browser_flow)
         self.assertIn("urlparse(url).path.endswith(expected_path)", browser_flow)
+        self.assertIn("urlparse(item[\"href\"]).path.endswith(expected_path)", browser_flow)
+        self.assertIn("def find_asset_url(items: list[dict], rel: str, source: Path, filename: str)", browser_flow)
 
         upload_sources = {
             "primary_logo": "ORDENOWA-logo.png",
@@ -54,8 +56,10 @@ class BrandE2EContractTests(unittest.TestCase):
                 self.assertIn(derivative, browser_flow)
 
         source_bindings = (
-            ('find_asset_url(results["assetLinks"], "icon", "favicon.ico")', 'OFFICIAL_UPLOADS["favicon_symbol"]'),
-            ('find_asset_url(results["assetLinks"], "apple-touch-icon", "apple-touch-icon.png")', 'OFFICIAL_UPLOADS["pwa_icon"]'),
+            ('results["assetLinks"], "icon", OFFICIAL_UPLOADS["favicon_symbol"], "favicon.ico"',),
+            (
+                'results["assetLinks"], "apple-touch-icon", OFFICIAL_UPLOADS["pwa_icon"], "apple-touch-icon.png"',
+            ),
             ('results["og"], OFFICIAL_UPLOADS["primary_logo"], "og-brand.png"',),
             ('icon_url, OFFICIAL_UPLOADS["pwa_icon"], filename',),
             ('("email-logo.png", "primary_logo")',),

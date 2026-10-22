@@ -33,19 +33,24 @@ OFFICIAL_UPLOADS = {
 }
 
 
-def assert_uploaded_derivative_url(url: str, source: Path, filename: str, role: str) -> None:
+def expected_derivative_path(source: Path, filename: str) -> str:
     source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
-    expected_path = f"/img/ordenowa/versions/{source_hash}/{filename}"
+    return f"/img/ordenowa/versions/{source_hash}/{filename}"
+
+
+def assert_uploaded_derivative_url(url: str, source: Path, filename: str, role: str) -> None:
+    expected_path = expected_derivative_path(source, filename)
     if not urlparse(url).path.endswith(expected_path):
         raise AssertionError(f"published {role} does not use the uploaded official source derivative")
 
 
-def find_asset_url(items: list[dict], rel: str, filename: str) -> str:
+def find_asset_url(items: list[dict], rel: str, source: Path, filename: str) -> str:
+    expected_path = expected_derivative_path(source, filename)
     return next(
         (
             item["href"]
             for item in items
-            if item["rel"] == rel and urlparse(item["href"]).path.endswith("/" + filename)
+            if item["rel"] == rel and urlparse(item["href"]).path.endswith(expected_path)
         ),
         "",
     )
@@ -146,13 +151,17 @@ def assert_public_brand_assets(driver: webdriver.Chrome, label: str, expected_lo
     if "icon" not in rels or "apple-touch-icon" not in rels:
         raise AssertionError("favicon or Apple Touch Icon link is missing")
     assert_uploaded_derivative_url(
-        find_asset_url(results["assetLinks"], "icon", "favicon.ico"),
+        find_asset_url(
+            results["assetLinks"], "icon", OFFICIAL_UPLOADS["favicon_symbol"], "favicon.ico"
+        ),
         OFFICIAL_UPLOADS["favicon_symbol"],
         "favicon.ico",
         "favicon",
     )
     assert_uploaded_derivative_url(
-        find_asset_url(results["assetLinks"], "apple-touch-icon", "apple-touch-icon.png"),
+        find_asset_url(
+            results["assetLinks"], "apple-touch-icon", OFFICIAL_UPLOADS["pwa_icon"], "apple-touch-icon.png"
+        ),
         OFFICIAL_UPLOADS["pwa_icon"],
         "apple-touch-icon.png",
         "Apple Touch Icon",
