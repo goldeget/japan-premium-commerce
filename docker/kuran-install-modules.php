@@ -41,42 +41,67 @@ $kernel->getContainer()->get(ContextBuilderPreparer::class)->prepareFromLegacyCo
 // PrestaShop can emit non-ASCII static slugs as raw Location header bytes.
 // Convert those defaults once; later administrator SEO edits must persist.
 $routeMigrationKey = 'ORDENOWA_ASCII_ROUTE_MIGRATION_V1';
+$optionalMetaPages = ['history'];
 try {
     if ((string) Configuration::get($routeMigrationKey) !== '1') {
         $routeMigrationSucceeded = true;
         foreach (['order' => 'checkout', 'identity' => 'identity', 'password' => 'password-reset', 'history' => 'history'] as $page => $routeSlug) {
             error_log('ORDENOWA_ROUTE_MIGRATION stage=lookup page=' . $page);
             try {
-                $metaId = (int) $db->getValue(
-                    "SELECT id_meta FROM `" . _DB_PREFIX_ . "meta` WHERE page = '" . pSQL($page) . "' LIMIT 1",
-                    false
-                );
-                if ($metaId < 1 && $page === 'history') {
-                    continue;
-                }
-                if ($metaId < 1) {
-                    error_log('ORDENOWA_ROUTE_MIGRATION status=deferred page=' . $page . ' reason=meta_missing');
+                // Match the actual localized route row in one query. A page can
+                // have multiple meta IDs during install/upgrade, and selecting
+                // an arbitrary ID first can strand the Japanese row on the
+                // non-ASCII installer default.
+                $routeQuery = 'SELECT ml.id_meta, ml.url_rewrite'
+                    . ' FROM `' . _DB_PREFIX_ . 'meta_lang` ml'
+                    . ' INNER JOIN `' . _DB_PREFIX_ . 'meta` m ON m.id_meta = ml.id_meta'
+                    . " WHERE m.page = '" . pSQL($page) . "' AND ml.id_shop = 1 AND ml.id_lang = " . $japaneseLanguageId
+                    . ' ORDER BY ml.id_meta ASC';
+                $routeRows = $db->executeS($routeQuery, true, false);
+
+                if (!is_array($routeRows)) {
+                    error_log('ORDENOWA_ROUTE_MIGRATION status=deferred page=' . $page . ' reason=query_failed');
                     $routeMigrationSucceeded = false;
                     continue;
                 }
 
-                $routeWhere = sprintf('id_meta = %d AND id_shop = 1 AND id_lang = %d', $metaId, $japaneseLanguageId);
-                $routeQuery = 'SELECT url_rewrite FROM `' . _DB_PREFIX_ . 'meta_lang` WHERE ' . $routeWhere;
-                $storedRouteSlug = $db->getValue($routeQuery, false);
-                if (!is_string($storedRouteSlug)) {
-                    error_log('ORDENOWA_ROUTE_MIGRATION status=deferred page=' . $page . ' reason=route_missing');
+                if (!$routeRows) {
+                    $metaExists = (int) $db->getValue(
+                        "SELECT COUNT(*) FROM `" . _DB_PREFIX_ . "meta` WHERE page = '" . pSQL($page) . "'",
+                        false
+                    ) > 0;
+                    if (!$metaExists && in_array($page, $optionalMetaPages, true)) {
+                        continue;
+                    }
+
+                    $missingReason = $metaExists ? 'route_missing' : 'meta_missing';
+                    error_log('ORDENOWA_ROUTE_MIGRATION status=deferred page=' . $page . ' reason=' . $missingReason);
                     $routeMigrationSucceeded = false;
                     continue;
                 }
 
-                $hasNonAsciiRoute = preg_match('/[^\x00-\x7F]/', $storedRouteSlug) === 1;
-                if ($hasNonAsciiRoute) {
+                foreach ($routeRows as $routeRow) {
+                    $metaId = (int) ($routeRow['id_meta'] ?? 0);
+                    $storedRouteSlug = $routeRow['url_rewrite'] ?? null;
+                    if ($metaId < 1 || !is_string($storedRouteSlug)) {
+                        error_log('ORDENOWA_ROUTE_MIGRATION status=deferred page=' . $page . ' reason=route_missing');
+                        $routeMigrationSucceeded = false;
+                        continue;
+                    }
+
+                    $hasNonAsciiRoute = preg_match('/[^\x00-\x7F]/', $storedRouteSlug) === 1;
+                    if (!$hasNonAsciiRoute) {
+                        continue;
+                    }
+
+                    $routeWhere = sprintf('id_meta = %d AND id_shop = 1 AND id_lang = %d', $metaId, $japaneseLanguageId);
+                    $routeReadbackQuery = 'SELECT url_rewrite FROM `' . _DB_PREFIX_ . 'meta_lang` WHERE ' . $routeWhere;
                     if (!$db->update('meta_lang', ['url_rewrite' => pSQL($routeSlug)], $routeWhere, 1, false, false)) {
                         error_log('ORDENOWA_ROUTE_MIGRATION status=deferred page=' . $page . ' reason=update_failed');
                         $routeMigrationSucceeded = false;
                         continue;
                     }
-                    if ($db->getValue($routeQuery, false) !== $routeSlug) {
+                    if ($db->getValue($routeReadbackQuery, false) !== $routeSlug) {
                         error_log('ORDENOWA_ROUTE_MIGRATION status=deferred page=' . $page . ' reason=readback_mismatch');
                         $routeMigrationSucceeded = false;
                     }
