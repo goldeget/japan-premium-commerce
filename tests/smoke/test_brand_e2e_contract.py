@@ -158,8 +158,10 @@ class BrandE2EContractTests(unittest.TestCase):
             'const ogDescription = document.querySelector(\'meta[property="og:description"]\')?.content || \'\';',
             published_assets,
         )
-        self.assertIn("if results[\"ogTitle\"] != SEO_TITLE:", published_assets)
-        self.assertIn("if results[\"ogDescription\"] != SEO_DESCRIPTION:", published_assets)
+        self.assertIn('seo_title: str = SEO_TITLE', published_assets)
+        self.assertIn('seo_description: str = SEO_DESCRIPTION', published_assets)
+        self.assertIn('if results["ogTitle"] != seo_title:', published_assets)
+        self.assertIn('if results["ogDescription"] != seo_description:', published_assets)
         self.assertIn("SEO_TITLE = \"ORDENOWA CI QA\"", browser_flow)
         self.assertIn("SEO_DESCRIPTION = \"ORDENOWA CI SEO description\"", browser_flow)
 
@@ -273,6 +275,31 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('("pwa-512.png", "512x512", "any", 512, 512)', browser_flow)
         self.assertIn('("pwa-maskable-512.png", "512x512", "maskable", 512, 512)', browser_flow)
         self.assertIn('(icon_url["sizes"], icon_url["purpose"], icon_url["width"], icon_url["height"])', browser_flow)
+
+    def test_browser_checks_published_brand_metadata_and_images_on_korean_customer_route(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+
+        self.assertIn('SEO_TITLE_KO = "ORDENOWA CI SEO TITLE KO"', browser_flow)
+        self.assertIn('SEO_DESCRIPTION_KO = "ORDENOWA CI SEO DESCRIPTION KO"', browser_flow)
+        self.assertIn('customer_url = urljoin(BASE + "/", locale_path.lstrip("/"))', browser_flow)
+        self.assertIn('driver.get(customer_url)', browser_flow)
+        self.assertIn('expected_html_lang="ko-KR"', browser_flow)
+        self.assertIn('htmlLang: document.documentElement.lang', browser_flow)
+        self.assertIn(
+            'assert_public_brand_assets(\n'
+            '            driver,\n'
+            '            "Korean",\n'
+            '            "header-desktop.png",\n'
+            '            locale_path="/ko/",\n'
+            '            expected_html_lang="ko-KR",\n'
+            '            seo_title=SEO_TITLE_KO,\n'
+            '            seo_description=SEO_DESCRIPTION_KO,\n'
+            '            pwa_name="ORDENOWA CI APP KO",\n'
+            '            pwa_short_name="ORDENOWA KO",\n'
+            '        )',
+            browser_flow,
+        )
+        self.assertIn('driver.save_screenshot(str(DEST / "brand-korean-published.png"))', browser_flow)
 
 
 if __name__ == "__main__":

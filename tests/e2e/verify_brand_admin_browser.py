@@ -34,6 +34,8 @@ OFFICIAL_UPLOADS = {
 }
 SEO_TITLE = "ORDENOWA CI QA"
 SEO_DESCRIPTION = "ORDENOWA CI SEO description"
+SEO_TITLE_KO = "ORDENOWA CI SEO TITLE KO"
+SEO_DESCRIPTION_KO = "ORDENOWA CI SEO DESCRIPTION KO"
 BRAND_DRAFT_REPLACEMENT_ATTEMPTS = 3
 
 
@@ -290,8 +292,22 @@ def emit_brand_settings_diagnostics(driver: webdriver.Chrome) -> None:
     )
 
 
-def assert_public_brand_assets(driver: webdriver.Chrome, label: str, expected_logo: str) -> None:
-    driver.get(BASE + "/")
+def assert_public_brand_assets(
+    driver: webdriver.Chrome,
+    label: str,
+    expected_logo: str,
+    *,
+    locale_path: str = "/",
+    expected_html_lang: str = "ja-JP",
+    seo_title: str = SEO_TITLE,
+    seo_description: str = SEO_DESCRIPTION,
+    pwa_name: str = "ORDENOWA CI QA",
+    pwa_short_name: str = "ORDENOWA CI",
+) -> None:
+    customer_url = urljoin(BASE + "/", locale_path.lstrip("/"))
+    if urlparse(customer_url).netloc != urlparse(BASE).netloc:
+        raise AssertionError("the customer locale route left the isolated storefront")
+    driver.get(customer_url)
     logo = image_is_rendered(driver, "picture img.kuranea-brand__image")
     if logo["width"] < 1 or expected_logo not in logo["src"]:
         raise AssertionError("approved ORDENOWA header logo did not render for " + label)
@@ -324,7 +340,7 @@ def assert_public_brand_assets(driver: webdriver.Chrome, label: str, expected_lo
           const ogTitle = document.querySelector('meta[property="og:title"]')?.content || '';
           const ogDescription = document.querySelector('meta[property="og:description"]')?.content || '';
           const themeColor = document.querySelector('meta[name="theme-color"]')?.content || '';
-          return {assetLinks, og, ogImage, manifest, icons, title: document.title, description, ogTitle, ogDescription, themeColor};
+          return {assetLinks, og, ogImage, manifest, icons, title: document.title, htmlLang: document.documentElement.lang, description, ogTitle, ogDescription, themeColor};
         })().then(done).catch(error => done({error: String(error)}));
         """
     )
@@ -393,17 +409,19 @@ def assert_public_brand_assets(driver: webdriver.Chrome, label: str, expected_lo
             raise AssertionError(
                 "PWA manifest size, purpose, or decoded dimensions are incorrect for " + filename
             )
-    if SEO_TITLE not in results["title"]:
+    if results["htmlLang"] != expected_html_lang:
+        raise AssertionError("the customer locale route did not render the expected language")
+    if seo_title not in results["title"]:
         raise AssertionError("Korean admin SEO title update did not publish to the customer page")
-    if results["description"] != SEO_DESCRIPTION:
+    if results["description"] != seo_description:
         raise AssertionError("Korean admin SEO description did not publish to the customer page")
-    if results["ogTitle"] != SEO_TITLE:
+    if results["ogTitle"] != seo_title:
         raise AssertionError("Korean admin SEO title did not publish to Open Graph metadata")
-    if results["ogDescription"] != SEO_DESCRIPTION:
+    if results["ogDescription"] != seo_description:
         raise AssertionError("Korean admin SEO description did not publish to Open Graph metadata")
     if (
-        results["manifest"].get("name") != "ORDENOWA CI QA"
-        or results["manifest"].get("short_name") != "ORDENOWA CI"
+        results["manifest"].get("name") != pwa_name
+        or results["manifest"].get("short_name") != pwa_short_name
         or results["manifest"].get("theme_color") != "#244a7d"
         or results["manifest"].get("background_color") != "#f5f7fa"
     ):
@@ -543,10 +561,10 @@ def run() -> None:
             'textarea[name="profile[refund][ko-KR]"]': "ORDENOWA CI REFUND POLICY KO",
             'input[name="profile[seo][title][ja-JP]"]': SEO_TITLE,
             'input[name="profile[seo][title][en-US]"]': "ORDENOWA CI SEO TITLE EN",
-            'input[name="profile[seo][title][ko-KR]"]': "ORDENOWA CI SEO TITLE KO",
+            'input[name="profile[seo][title][ko-KR]"]': SEO_TITLE_KO,
             'textarea[name="profile[seo][description][ja-JP]"]': SEO_DESCRIPTION,
             'textarea[name="profile[seo][description][en-US]"]': "ORDENOWA CI SEO DESCRIPTION EN",
-            'textarea[name="profile[seo][description][ko-KR]"]': "ORDENOWA CI SEO DESCRIPTION KO",
+            'textarea[name="profile[seo][description][ko-KR]"]': SEO_DESCRIPTION_KO,
             'input[name="profile[pwa][name][ja-JP]"]': "ORDENOWA CI QA",
             'input[name="profile[pwa][name][en-US]"]': "ORDENOWA CI APP EN",
             'input[name="profile[pwa][name][ko-KR]"]': "ORDENOWA CI APP KO",
@@ -675,6 +693,21 @@ def run() -> None:
         driver.set_window_size(390, 844)
         assert_public_brand_assets(driver, "mobile", "header-mobile.png")
         driver.save_screenshot(str(DEST / "brand-mobile-published.png"))
+
+        stage = "published_korean_customer_brand"
+        driver.set_window_size(1440, 960)
+        assert_public_brand_assets(
+            driver,
+            "Korean",
+            "header-desktop.png",
+            locale_path="/ko/",
+            expected_html_lang="ko-KR",
+            seo_title=SEO_TITLE_KO,
+            seo_description=SEO_DESCRIPTION_KO,
+            pwa_name="ORDENOWA CI APP KO",
+            pwa_short_name="ORDENOWA KO",
+        )
+        driver.save_screenshot(str(DEST / "brand-korean-published.png"))
 
         stage = "pending_seller_disclosures_remain_gated"
         private_disclosure_groups = ("seller", "company_reference", "customer_support", "shipping", "refund")
