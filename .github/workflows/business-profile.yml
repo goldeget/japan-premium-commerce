@@ -72,7 +72,10 @@ jobs:
             tail -n 50 "$output_file"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          failure_line="$(head -n 1 "$output_file" | cut -c1-180)"
+          failure_line="$(grep -E 'PHP Fatal error|PHP Parse error|Uncaught (RuntimeException|Throwable|Error|Exception)|AssertionError|Failed asserting|Expected .* but got' "$output_file" | tail -n 1 | cut -c1-220 || true)"
+          if [[ -z "$failure_line" ]]; then
+            failure_line="$(tail -n 8 "$output_file" | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g' | cut -c1-220)"
+          fi
           failure_line="${failure_line//%/%25}"
           failure_line="${failure_line//$'\r'/%0D}"
           failure_line="${failure_line//$'\n'/%0A}"
