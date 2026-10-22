@@ -111,6 +111,7 @@ def run() -> None:
     options.add_argument("--lang=ja-JP")
     driver: webdriver.Chrome | None = None
     stage = "chromium_startup"
+    create_operation = "not_started"
     manager_page_state: dict[str, str | bool] | None = None
     try:
         driver = webdriver.Chrome(options=options)
@@ -148,31 +149,46 @@ def run() -> None:
         suffix = os.environ.get("GITHUB_RUN_ID", "local")
         japanese_name = f"ORDENOWA CI 合成商品 {suffix}"
         korean_name = f"ORDENOWA CI 합성 상품 {suffix}"
+        create_operation = "fill_name_ja"
         fill(driver, "#name_ja", japanese_name)
+        create_operation = "fill_name_ko"
         fill(driver, "#name_ko", korean_name)
+        create_operation = "fill_price_jpy"
         fill(driver, "#price_jpy", "1280")
+        create_operation = "fill_quantity"
         fill(driver, "#quantity", "3")
+        create_operation = "fill_options"
         fill(driver, "#options", "色:青|赤\nサイズ:S|M")
+        create_operation = "fill_description_ja"
         fill(driver, "#description_ja", "CI用の商品説明")
+        create_operation = "fill_description_ko"
         fill(driver, "#description_ko", "CI용 상세 설명")
+        create_operation = "select_default_category"
         initial_category = default_category_box(driver)
         initial_category_id = initial_category.get_attribute("value")
         if not initial_category.is_selected():
             initial_category.click()
 
+        create_operation = "prepare_image_file"
         png = base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGNU8qplYGBgYmBgYGBgAAAKuwDtbIwH5AAAAABJRU5ErkJggg=="
         )
         with tempfile.NamedTemporaryFile(prefix="ordenowa-product-", suffix=".png") as image_file:
             image_file.write(png)
             image_file.flush()
+            create_operation = "upload_image"
             visible(driver, "#product_images").send_keys(image_file.name)
+            create_operation = "submit_product"
             visible(driver, 'button[name="submitKuraneaProductSave"]').click()
 
+        create_operation = "wait_for_save_confirmation"
         WebDriverWait(driver, 45).until(
-            lambda browser: "상품 ID" in browser.find_element(By.TAG_NAME, "body").text
-            and "저장했습니다" in browser.find_element(By.TAG_NAME, "body").text
+            EC.all_of(
+                EC.text_to_be_present_in_element((By.TAG_NAME, "body"), "상품 ID"),
+                EC.text_to_be_present_in_element((By.TAG_NAME, "body"), "저장했습니다"),
+            )
         )
+        create_operation = "read_saved_product_id"
         product_id = int(
             WebDriverWait(driver, 30)
             .until(EC.presence_of_element_located((By.CSS_SELECTOR, 'input[name="id_product"]')))
@@ -300,6 +316,8 @@ def run() -> None:
                 pass
         exception_class = type(error).__name__
         diagnostic = f"ORDENOWA_PRODUCT_ADMIN_STAGE={stage}; exception_class={exception_class}"
+        if stage == "native_product_create":
+            diagnostic += f"; operation={create_operation}"
         if stage == "korean_product_manager_form" and driver is not None:
             try:
                 manager_page_state = manager_page_diagnostics(driver)
