@@ -441,7 +441,7 @@ Db::$resultRows = [
         'jis_code' => '13101',
         'prefecture' => '東京都',
         'municipality' => '千代田区',
-        'town' => '大手町',
+        'town' => '大手町（次のビルを除く）',
     ],
     [
         'postcode' => '100-0004',
@@ -469,7 +469,7 @@ $makeJapanAddressForm = static function (int $stateId, string $city, string $tow
 assertSameValue(
     true,
     $module->hookActionValidateCustomerAddressForm(['form' => $makeJapanAddressForm($tokyoStateId, '千代田区', '大手町1-2', '大手町タワー101号')]),
-    'An official postcode candidate with matching prefecture, municipality, town area, and editable building should pass.'
+    'An official postcode candidate with the Japan Post building qualifier removed from town text and editable building should pass.'
 );
 assertSameValue(
     true,

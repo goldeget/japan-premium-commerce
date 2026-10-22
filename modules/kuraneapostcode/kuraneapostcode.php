@@ -166,8 +166,9 @@ class Kuraneapostcode extends Module
             // Japan Post uses an empty town for entries where the postal data
             // has no specific town-area subdivision. In those cases the
             // customer can still enter the street/building details manually.
-            if ($native['address1'] === '' || $native['address1'] === '以下に掲載がない場合'
-                || str_starts_with($address, $native['address1'])) {
+            $townForValidation = str_replace('（次のビルを除く）', '', $native['address1']);
+            if ($townForValidation === '' || $native['address1'] === '以下に掲載がない場合'
+                || str_starts_with($address, $townForValidation)) {
                 return true;
             }
         }

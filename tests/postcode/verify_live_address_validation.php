@@ -72,7 +72,8 @@ $makeForm = static function (string $postcode, int $stateId, string $city, strin
 
 $module = new Kuraneapostcode();
 Context::getContext()->language->iso_code = 'ja';
-$validForm = $makeForm('1000004', $native['id_state'], $native['city'], $native['address1'] . '1-2', 'KURANEA QA Bldg 101');
+$editableTown = str_replace('（次のビルを除く）', '', $native['address1']);
+$validForm = $makeForm('1000004', $native['id_state'], $native['city'], $editableTown . '1-2', 'KURANEA QA Bldg 101');
 if ($module->hookActionValidateCustomerAddressForm(['form' => $validForm]) !== true) {
     throw new RuntimeException('A valid 1000004 address with a manually entered building was rejected.');
 }

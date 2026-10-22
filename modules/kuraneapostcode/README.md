@@ -67,6 +67,8 @@ When official postcode candidates are available, the server validates the
 selected native prefecture, municipality, and town area against the postcode
 before saving. Building and room fields remain customer-editable. If the
 postcode index has no rows or cannot be queried, manual entry remains enabled.
+Japan Post's explanatory suffix `（次のビルを除く）` is stripped for this
+comparison so customers can enter the actual town area and street number.
 
 Widget and validation strings are provided in Japanese, English, and Korean.
 Because saved orders use the same native PrestaShop address fields, the
