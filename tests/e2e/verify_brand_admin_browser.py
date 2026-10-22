@@ -194,56 +194,85 @@ def assert_saved_primary_logo(driver: webdriver.Chrome, source: Path, role: str)
 
 
 def replace_primary_logo_in_saved_draft(
-    driver: webdriver.Chrome, settings_url: str, source: Path, role: str
+    driver: webdriver.Chrome,
+    settings_url: str,
+    source: Path,
+    role: str,
+    stage_callback: Callable[[str], None] | None = None,
+    stage_prefix: str = "replacement_draft",
 ) -> None:
     upload_selector = 'input[name="brand_uploads[primary_logo]"]'
     save_selector = 'form.ordenowa-profile-settings button[name="submitOrdenowaSaveDraft"]'
     last_stale: StaleElementReferenceException | None = None
 
+    def report(stage_name: str) -> None:
+        if stage_callback is not None:
+            stage_callback(stage_prefix + "_" + stage_name)
+
     # Reload to discard stale references and any confirmation left by the previous draft save.
+    report("initial_reload")
     driver.get(settings_url)
+    report("draft_form_wait")
     visible(driver, "form.ordenowa-profile-settings")
 
     for attempt in range(1, BRAND_DRAFT_REPLACEMENT_ATTEMPTS + 1):
         try:
-            visible(driver, upload_selector).send_keys(str(source.resolve()))
+            report(f"upload_input_wait_attempt_{attempt}")
+            upload_input = visible(driver, upload_selector)
+            report(f"upload_attempt_{attempt}")
+            upload_input.send_keys(str(source.resolve()))
         except StaleElementReferenceException as error:
             last_stale = error
             if attempt == BRAND_DRAFT_REPLACEMENT_ATTEMPTS:
                 break
+            report(f"stale_upload_retry_reload_attempt_{attempt}")
             driver.get(settings_url)
+            report(f"stale_upload_retry_form_wait_attempt_{attempt}")
             visible(driver, "form.ordenowa-profile-settings")
             continue
 
         stale_during_save = False
         try:
-            visible(driver, save_selector).click()
+            report(f"save_button_wait_attempt_{attempt}")
+            save_button = visible(driver, save_selector)
+            report(f"save_attempt_{attempt}")
+            save_button.click()
         except StaleElementReferenceException as error:
             last_stale = error
             stale_during_save = True
             try:
+                report(f"save_confirmation_attempt_{attempt}")
                 wait_for_draft_save_confirmation(driver)
             except TimeoutException:
                 if attempt == BRAND_DRAFT_REPLACEMENT_ATTEMPTS:
                     break
+                report(f"stale_save_retry_reload_attempt_{attempt}")
                 driver.get(settings_url)
+                report(f"stale_save_retry_form_wait_attempt_{attempt}")
                 visible(driver, "form.ordenowa-profile-settings")
                 continue
         else:
+            report(f"save_confirmation_attempt_{attempt}")
             wait_for_draft_save_confirmation(driver)
 
         try:
+            report(f"saved_derivative_requery_attempt_{attempt}")
             assert_saved_primary_logo(driver, source, role)
         except AssertionError:
             if not stale_during_save or attempt == BRAND_DRAFT_REPLACEMENT_ATTEMPTS:
                 raise
+            report(f"stale_derivative_retry_reload_attempt_{attempt}")
             driver.get(settings_url)
+            report(f"stale_derivative_retry_form_wait_attempt_{attempt}")
             visible(driver, "form.ordenowa-profile-settings")
             continue
 
         # A reload proves the draft preview is persisted, not just changed in the upload form.
+        report("persisted_draft_reload")
         driver.get(settings_url)
+        report("persisted_form_wait")
         visible(driver, "form.ordenowa-profile-settings")
+        report("persisted_derivative_requery")
         assert_saved_primary_logo(driver, source, role)
         return
 
@@ -1050,6 +1079,8 @@ def run() -> None:
             settings_url,
             OFFICIAL_UPLOADS["pwa_icon"],
             "temporary replacement logo for publication",
+            stage_callback=set_brand_assertion_stage,
+            stage_prefix="replace_published_logo_in_saved_draft",
         )
         driver.save_screenshot(str(DEST / "brand-admin-replacement-before-publish.png"))
 

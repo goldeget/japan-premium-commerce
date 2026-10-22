@@ -195,7 +195,8 @@ class BrandE2EContractTests(unittest.TestCase):
         restore = restore_stage.index(restore_call) + restore_start
         private_preview = browser_flow.index('stage = "private_admin_preview"')
 
-        self.assertIn('visible(driver, upload_selector).send_keys(str(source.resolve()))', browser_flow)
+        self.assertIn("upload_input = visible(driver, upload_selector)", browser_flow)
+        self.assertIn("upload_input.send_keys(str(source.resolve()))", browser_flow)
         self.assertIn('OFFICIAL_UPLOADS["pwa_icon"]', browser_flow[temporary_upload:unchanged_check])
         run_before_preview = browser_flow.split("def run()", 1)[1].split('stage = "private_admin_preview"', 1)[0]
         self.assertEqual(2, run_before_preview.count("replace_primary_logo_in_saved_draft("))
@@ -231,7 +232,8 @@ class BrandE2EContractTests(unittest.TestCase):
 
         self.assertIn("for attempt in range(1, BRAND_DRAFT_REPLACEMENT_ATTEMPTS + 1):", helper)
         self.assertIn('upload_selector = \'input[name="brand_uploads[primary_logo]"]\'', helper)
-        self.assertIn("visible(driver, upload_selector).send_keys(str(source.resolve()))", helper)
+        self.assertIn("upload_input = visible(driver, upload_selector)", helper)
+        self.assertIn("upload_input.send_keys(str(source.resolve()))", helper)
         self.assertIn("except StaleElementReferenceException as error:", helper)
         self.assertIn("continue", helper)
         self.assertIn("wait_for_draft_save_confirmation(driver)", helper)
@@ -245,6 +247,39 @@ class BrandE2EContractTests(unittest.TestCase):
             'OFFICIAL_UPLOADS["pwa_icon"],\n            "temporary replacement draft logo",',
             replacement_stage,
         )
+
+    def test_published_logo_replacement_reports_internal_draft_stages(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        helper_start = browser_flow.index("def replace_primary_logo_in_saved_draft(")
+        helper_end = browser_flow.index("\ndef ", helper_start + 1)
+        helper = browser_flow[helper_start:helper_end]
+        run_flow = browser_flow.split("def run()", 1)[1]
+        replacement_start = run_flow.index('stage = "replace_published_logo_in_saved_draft"')
+        replacement_end = run_flow.index('stage = "publish_replacement_logo"', replacement_start)
+        replacement_call = run_flow[replacement_start:replacement_end]
+
+        expected_stages = (
+            'report("initial_reload")',
+            'report("draft_form_wait")',
+            'report(f"upload_input_wait_attempt_{attempt}")',
+            'report(f"upload_attempt_{attempt}")',
+            'report(f"save_button_wait_attempt_{attempt}")',
+            'report(f"save_attempt_{attempt}")',
+            'report(f"save_confirmation_attempt_{attempt}")',
+            'report(f"saved_derivative_requery_attempt_{attempt}")',
+            'report("persisted_draft_reload")',
+            'report("persisted_form_wait")',
+            'report("persisted_derivative_requery")',
+        )
+        for stage in expected_stages:
+            with self.subTest(stage=stage):
+                self.assertIn(stage, helper)
+        positions = [helper.find(stage) for stage in expected_stages]
+        self.assertEqual(sorted(positions), positions, "replacement diagnostics should follow the browser flow")
+        self.assertIn("stage_callback: Callable[[str], None] | None = None", helper)
+        self.assertIn('stage_prefix: str = "replacement_draft"', helper)
+        self.assertIn("stage_callback=set_brand_assertion_stage", replacement_call)
+        self.assertIn('stage_prefix="replace_published_logo_in_saved_draft"', replacement_call)
 
     def test_browser_publishes_replacement_logo_then_restores_and_publishes_approved_logo(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
