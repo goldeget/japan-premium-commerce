@@ -36,7 +36,7 @@
 
 | 검사 | 결과 | 상세 |
 | --- | --- | --- |
-| P0 관리자 폴더 설치 수정의 실제 CI 검증 | FAIL (원인 미확정) | GitHub Actions run `39728912492`, 코드 SHA `fcf78ad9f1d538bb79259e83c12c9225e53df999`. Compose 설정, 주소 갱신 계약, 관리자 경로 계약, 이미지 빌드 및 캐시 권한 probe는 통과했다. `Start the empty-volume shop`이 7분 33초 후 exit code 1로 끝났고 이후 주소 import/주문 검사는 건너뛰었다. 진단 artifact `fresh-install-diagnostics-39728912492-1`(4.5 KB, artifact ID `12404443106`)은 업로드됐으나 직접 다운로드와 단계 로그 URL은 이 환경에서 404를 반환했다. 상세 root cause는 아직 모른다. 신규 설치 PASS가 아니다. |
+| P0 신규 설치 부팅 오류 | FAIL (원인 확인, 수정 CI 대기) | 사용자가 제공한 run `39728912492` 로그: PrestaShop 설치 성공 및 `/install` 제거 후 공식 `docker_run.sh`가 같은 경로를 다시 `rm`해 `set -e`로 종료했다. `restart: unless-stopped` 재시작은 `PrestaShop Core already installed` 분기로 들어가 first-install 전용 후처리를 건너뛰었고, KURANEA bootstrap이 실행되지 않아 Apache 시작 요청에서 `var/cache/prod/appParameters.php` 누락 fatal이 발생했다. 공식 PHP 코어는 수정하지 않고 중복 삭제 가드, init hook 재배치, 회귀 테스트를 추가했다. 격리된 새 빈 DB Actions 검증 전이므로 수정 결과와 신규 설치는 아직 PASS가 아니다. |
 | 과거 신규 빈 볼륨 설치 | FAIL (이전 코드) | runs `39703327857`, `39704824787`, `39705702536`, `39706052890`, `39706126218`은 이전 코드에서 실패했다. 최신 사용자가 제공한 상세 로그에서 `assets:install admin-dev`가 부재한 `/var/www/html/admin-dev`를 대상으로 한 직접 원인을 확인했다. 이번 원인은 errno 28로 기록하지 않는다. |
 | Amazon Japan·Rakuten 원본 페이지 접근 | BLOCKED | 2026-10-22 읽기 전용 HTTPS 요청 모두 egress proxy CONNECT `403`을 반환했다. 접근통제를 우회하지 않았고 페이지를 수집·파싱하지 않았다. |
 | 신규 설치 DB 적재 및 API lookup | BLOCKED | 기존 dev DB에서는 공식 데이터를 가져와 실제 HTTP lookup을 확인했다. 격리 CI 실패로 새 빈 DB import/조회는 검증하지 못했다. |

@@ -1,12 +1,13 @@
 # KURANEA 작업 기록
 
-## 2026-10-22 — 빈 설치 CI 후보의 런타임 실패 기록
+## 2026-10-22 — P0 Docker 설치 후처리 실패 진단 및 로컬 수정
 
-- 원격 기준: `work` SHA `fcf78ad9f1d538bb79259e83c12c9225e53df999`; `main` SHA `ee02a3657448d563508687614a246e05ac61eecd`는 변경하지 않았다.
-- Actions run `39728912492`에서 Compose 검증, Japan Post 갱신 계약, 관리자 경로 정적 계약, 이미지 빌드 및 별도 캐시 권한 probe는 통과했다. `Start the empty-volume shop` 단계는 7분 33초 후 exit code 1로 실패했고 주소 import, native order, restart 검사는 실행되지 않았다.
-- 진단 artifact `fresh-install-diagnostics-39728912492-1`은 4.5 KB로 업로드됐다(artifact ID `12404443106`, SHA-256 `8255ea09146ceef4f4d720091ce6f2cf7c5351d8bd79e327bb6aa8636800fde0`). GitHub 공개 상태 페이지와 artifact 존재는 확인했지만 이 환경의 상세 로그 및 artifact 다운로드 경로는 404를 반환해 실제 compose 로그를 읽지 못했다. 실패 원인을 추측하지 않는다.
-- 결과: `PS_FOLDER_ADMIN=admin-dev`를 사용한 수정안은 실제 신규 설치를 통과하지 못했으므로 P0는 미해결이다. 같은 코드를 원인 파악·수정 없이 재실행하지 않는다. CI diagnostics를 전달받거나 로그 접근이 가능한 환경에서 원인을 확인한 뒤 최소 수정과 새 원격 체크포인트를 진행한다.
-- 보존: CI는 고유 Compose 프로젝트에서 실행했고 workflow는 해당 run이 만든 컨테이너·볼륨만 정리했다. 로컬 기존 named volume, 작업 파일, `main`은 수정·삭제하지 않았다.
+- 시작 기준: 원격 `work`는 `c2e3d9f11dc0cfeb3c116fde8d0c03274d7e88a3`, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다. checkpoint clone에 있던 미커밋 카탈로그 파서·workflow·문서 변경을 보존했고 main이나 기존 개발 DB/named volume을 수정하지 않았다.
+- 사용자가 전달한 run `39728912492` 로그에서 설치 CLI가 성공해 `/install`을 제거한 뒤, 공식 Docker 스크립트가 같은 경로를 다시 삭제하다 실패한 것을 확인했다. 스크립트는 `set -e`라 post-install hook과 뒤쪽 설치 완료 단계까지 진행하지 않는다. Compose `restart: unless-stopped`는 parameters 파일을 보고 `PrestaShop Core already installed` 분기로 재시작했고, first-install 전용 후처리를 건너뛰었다. 이후 HTTP 진입점에서 `var/cache/prod/appParameters.php` 누락 fatal이 발생했다.
+- 검증 출처: 고정 이미지의 `/tmp/docker_run.sh` 원본 SHA-256 `422f08ac00c69614936f0eb2d9e5ea8316de6dd6e4b2fa5904720b1f901b9f2f`; PrestaShop 9.2.0 공식 `Install::postInstall()`은 `install.lock`, `Install::finalize()`는 install 디렉터리를 제거한다. 설정 캐시 파일은 실제 PrestaShop config bootstrap으로 생성되어야 하며 테스트나 초기화에서 가짜 파일은 만들지 않는다.
+- 수정 후보: 두 중복 삭제를 대상 존재 시에만 수행하도록 고정 upstream 구문을 fail-closed patcher로 바꾼다. KURANEA bootstrap과 module setup을 first-install post hook에서 모든 시작 시 호출되는 init hook으로 이동해 최초 부팅·재시작에서 실행되게 한다. `/var/www/html/var/cache/prod`만 `www-data` 소유로 맞추고 신규 smoke에 `parameters.php`, 실 cache 파일, marker, 초기화 로그 및 재시작 실행 로그를 확인하도록 추가했다. PrestaShop PHP 코어는 변경하지 않았다.
+- 검증: P0 회귀 계약 3/3, 관리자 경로 계약 4/4, 주소 갱신 계약 6/6, shell 구문 및 upstream 스크립트 복사본의 patch/idempotence 통과. 전체 storefront/smoke 계약의 기존 로컬 사이트 카테고리 3건은 빈 카테고리 URL에서 HTTP 500으로 실패했고 이는 이미 기록된 별도 결함이다. 로컬 Docker 설치/DB 접근은 공간 및 실행환경 문제 때문에 시도하지 않았다.
+- 이 커밋은 원격 저장 및 신규 설치 Actions 실행 전이다. 코드 리뷰 후 `work`에 저장해 격리된 fresh-install workflow를 단 한 번 실행한다. 그때 신규 설치 성공이 확인되기 전까지 주문/address E2E는 PASS로 기록하지 않는다.
 
 ## 2026-10-22 — 관리자 폴더 설치 경로 후속 수정
 

@@ -52,7 +52,7 @@ PrestaShop 자동 설치가 완료되면 `http://localhost:8080`에서 확인합
 PrestaShop 설치 시 기존 DB 볼륨이 이미 초기화되어 있으면 공식 이미지의 첫 설치 후크가 다시 실행되지 않습니다. 이미지의 멱등 후크를 수동으로 실행하면 일본어 기본 언어, 영어·한국어 추가, 한국어 관리자 직원 언어와 KURANEA 자식 테마를 설정합니다. 완료 표식이 있으면 변경 없이 종료합니다.
 
 ```sh
-docker compose exec -T prestashop /tmp/post-install-scripts/10-kuranea-bootstrap.sh
+docker compose exec -T prestashop /tmp/init-scripts/10-kuranea-bootstrap.sh
 ```
 
 이 스크립트는 DB를 초기화하거나 테이블을 지우지 않습니다. DB 초기화 옵션을 변경하거나 named volume을 삭제하지 마세요.

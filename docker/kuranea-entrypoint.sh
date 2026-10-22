@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+/usr/local/bin/kuranea-patch-docker-run /tmp/docker_run.sh
+/tmp/pre-install-scripts/10-kuranea-cache-ownership.sh
+
 sync_theme() {
     theme_name="$1"
     source_dir="/opt/kuranea/themes/${theme_name}"

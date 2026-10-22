@@ -7,11 +7,12 @@ COPY themes/kuranea/ /opt/kuranea/themes/kuranea/
 COPY modules/kuraneapostcode/ /opt/kuranea/modules/kuraneapostcode/
 COPY modules/kuraneabackoffice/ /opt/kuranea/modules/kuraneabackoffice/
 COPY --chmod=0755 docker/kuranea-entrypoint.sh /usr/local/bin/kuranea-entrypoint
+COPY --chmod=0755 docker/patch-docker-run.sh /usr/local/bin/kuranea-patch-docker-run
 COPY --chown=root:www-data --chmod=0640 docker/kuran-post-install.php /usr/local/bin/kuran-post-install.php
 COPY --chown=root:www-data --chmod=0640 docker/kuran-install-modules.php /usr/local/bin/kuran-install-modules.php
 COPY --chown=root:www-data --chmod=0640 docker/kuran-configure-jpy.php /usr/local/bin/kuran-configure-jpy.php
 COPY --chmod=0755 docker/pre-install/10-kuranea-cache-ownership.sh /tmp/pre-install-scripts/10-kuranea-cache-ownership.sh
-COPY --chmod=0755 docker/post-install/10-kuranea-bootstrap.sh /tmp/post-install-scripts/10-kuranea-bootstrap.sh
+COPY --chmod=0755 docker/init/10-kuranea-bootstrap.sh /tmp/init-scripts/10-kuranea-bootstrap.sh
 
 ENTRYPOINT ["/usr/local/bin/kuranea-entrypoint"]
 CMD ["/tmp/docker_run.sh"]

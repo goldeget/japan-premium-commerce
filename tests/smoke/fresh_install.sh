@@ -23,6 +23,10 @@ grep -q '비밀번호' /tmp/kuranea-admin-login.html
 ! grep -q 'Sleutelwoord' /tmp/kuranea-admin-login.html
 grep -Fq 'content: url("/modules/kuraneabackoffice/views/img/kuranea-logo.png");' /tmp/kuranea-admin-login.html
 compose exec -T prestashop sh -ec '
+  test -s /var/www/html/app/config/parameters.php
+  test -s /var/www/html/var/cache/prod/appParameters.php
+  test -s /var/www/html/var/.kuranea-bootstrap-v2
+  test ! -e /var/www/html/install
   test -d /var/www/html/admin-kuranea
   test ! -e /var/www/html/admin-dev
   test -s /var/www/html/admin-kuranea/themes/new-theme/public/theme.css
@@ -124,6 +128,9 @@ cache_index_owner=$(compose exec -T prestashop stat -c '%U:%G' /var/www/html/var
 test "$cache_index_owner" = www-data:www-data
 compose exec -T prestashop sh -ec 'runuser -g www-data -u www-data -- test -w /var/www/html/var/cache/prod/class_index.php'
 
+initial_bootstrap_logs=$(compose logs --no-color prestashop 2>&1)
+grep -q 'KURANEA bootstrap: storefront=ja, en/ko=enabled, admin=ko, theme=kuranea' <<< "$initial_bootstrap_logs"
+
 compose restart mariadb prestashop
 for attempt in $(seq 1 60); do
   if curl --fail --silent --show-error --location --output /dev/null "$base_url/" && [ "$(db_query 'SELECT 1')" = 1 ]; then
@@ -135,6 +142,19 @@ for attempt in $(seq 1 60); do
   fi
   sleep 5
 done
+
+restart_bootstrap_logs=$(compose logs --no-color prestashop 2>&1)
+grep -q 'KURANEA bootstrap already completed.' <<< "$restart_bootstrap_logs"
+compose exec -T prestashop sh -ec '
+  test -s /var/www/html/app/config/parameters.php
+  test -s /var/www/html/var/cache/prod/appParameters.php
+  test -s /var/www/html/var/.kuranea-bootstrap-v2
+  test ! -e /var/www/html/install
+  test ! -e /var/www/html/admin-dev
+'
+admin_status_after_restart=$(curl --silent --show-error --location --output /tmp/kuranea-admin-login-after-restart.html --write-out '%{http_code}' "$base_url/admin-kuranea/login")
+test "$admin_status_after_restart" = 200
+grep -q 'kuraneabackoffice/views/img/kuranea-logo.png' /tmp/kuranea-admin-login-after-restart.html
 
 default_currency_after_restart=$(db_query "SELECT cur.iso_code FROM ps_configuration cfg JOIN ps_currency cur ON cur.id_currency=CAST(cfg.value AS UNSIGNED) WHERE cfg.name='PS_CURRENCY_DEFAULT'")
 test "$default_currency_after_restart" = JPY

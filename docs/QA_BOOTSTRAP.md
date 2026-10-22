@@ -46,9 +46,11 @@ SHOP_BASE_URL=http://127.0.0.1:8080 PYTHONDONTWRITEBYTECODE=1 python3 -m unittes
 
 QA/테스트/캡처 커밋 `ecd528ce5e2d2f9e91de89d92d379bcad3bde274`는 `work` 원격 SHA와 일치했다. 새 shallow clone `/tmp/kuran-final-recovery-ecd528c`에서 이 SHA, 스모크 테스트, QA 문서와 세 캡처 파일을 조회했고 복제본은 clean이었다. 자세한 복구 절차는 `docs/CLOUD_RECOVERY.md`에 있다.
 
-## 2026-10-22 — P0 관리자 폴더 설치 순서 수정
+## 2026-10-22 — P0 Docker 설치 후처리 중단 원인 및 수정 후보
 
-- 최신 실패 로그에서 확인한 직접 오류는 디스크 부족이나 캐시 권한이 아니라 `assets:install admin-dev --symlink=1`의 target 경로 부재다. PrestaShop 9.2.0 `Install::finalize()`는 `/admin/`이 있을 때만 다른 관리자 경로로 이름을 바꾸고 그 경로에 자산을 설치한다. 공식 Docker `docker_run.sh`가 `PS_FOLDER_ADMIN`으로 `/admin`을 먼저 옮겨 설치기의 기본값 `admin-dev`가 사라졌다.
-- 원격 체크포인트 `175d75dac132ddb0a8f54777519795208df8ae4d`는 신규 설치에 `PS_FOLDER_ADMIN=admin`을 전달하는 첫 수정안이었다. 공식 설치기 실행이 시작됐지만 run `39727310686`은 `Start the empty-volume shop`에서 실패했다. 현재 환경에서 세부 stderr/log를 열 수 없어 그 수정안의 남은 원인을 추측하지 않는다.
-- 후속 로컬 후보는 `PS_FOLDER_ADMIN=admin-dev`로 실제 관리자 파일을 설치 동안 유지하고, Docker post-install hook이 PHP 부트스트랩을 호출한다. PHP가 official post-install 처리를 끝낸 뒤 감지한 디렉터리를 `admin-kuranea`로 옮기고 최종 경로 assets를 설치한다. 계약 테스트는 셸에서 먼저 이동하는 중간안을 실패시켰고, 현재 경로가 순서를 보장하는지 다시 검증 중이다. 새 빈 폴더 생성, 기존 named volume 변경, 코어 수정은 없다.
-- 안전: 최신 overlay 여유는 0 bytes/inode 100%다. 기존 PrestaShop·MariaDB 컨테이너와 `kuranea_mariadb_data`, `kuranea_prestashop_html`, 출처 불명 volume을 유지했고 재시작·DB 조작·prune·재빌드는 하지 않았다. MariaDB가 unhealthy로 관찰되어 신규 설치/주문은 격리 CI에서만 진행한다.
+- run `39728912492`의 사용자가 제공한 실제 로그는 설치 CLI의 `Installation successful`, `/var/www/html/install/` 재삭제 실패, Compose 재시작 뒤 `PrestaShop Core already installed`, 그리고 Apache 요청 중 `/var/www/html/var/cache/prod/appParameters.php`를 열지 못한 fatal을 보여준다.
+- 고정 이미지 `prestashop/prestashop:9.2.0@sha256:2b8f90176b3fad68f8f5c7fbdeaa137f2f05578d2ccff92ab581efa6b317c1d8`의 `/tmp/docker_run.sh`(추출 SHA-256 `422f08ac00c69614936f0eb2d9e5ea8316de6dd6e4b2fa5904720b1f901b9f2f`)는 `set -e`를 설정하고 설치 후 이미 제거된 install 경로를 무조건 `rm -r`한다. 같은 스크립트가 `install.lock`도 무조건 삭제한다. 공식 PrestaShop 9.2.0 `Install::finalize()`는 설치 디렉터리를 제거하고 `Install::postInstall()`은 lock을 먼저 제거하므로 Docker의 중복 삭제가 실패할 수 있다.
+- 첫 `/install` 재삭제에서 `set -e`가 시작 스크립트를 끝내므로 Docker의 post-install hook과 후속 setup이 실행되지 않는다. `restart: unless-stopped` 재시작은 parameters 파일이 있어 “Core already installed” 분기로 들어가고 first-install 전용 post-install hook을 건너뛴다. 따라서 KURANEA 초기화가 실행되지 않는다. `appParameters.php`는 PrestaShop 설정 bootstrap에서 실제 생성되어야 하며 임의 파일을 만들면 안 된다.
+- 수정 후보는 공식 `docker_run.sh`의 두 중복 `rm`만 존재 확인 조건으로 바꾸는 fail-closed patcher다. 고정 upstream 줄과 달라지면 시작을 중단한다. KURANEA bootstrap 및 모듈 설정은 `/tmp/init-scripts/`로 옮겨 첫 설치와 재시작 모두에서 실행하고, marker로 초기화만 멱등화한다. 생성 cache 경로는 기존처럼 `www-data`에 한정해 복구하며 전체 권한을 열지 않는다. PHP 코어와 DB 볼륨은 수정하지 않는다.
+- 로컬 회귀 테스트 3/3 및 관리자 설치 순서 테스트 4/4, shell 구문 검사, 고정 upstream script 복사본 patcher 적용·멱등 재실행을 통과했다. 실제 빈 named volume 신규 설치와 HTTP 200, 주문 E2E는 독립 Actions 결과 대기 중이며 PASS가 아니다. 로컬 전체 `tests/smoke`의 카테고리 3건은 기존 개발 서버에서 HTTP 500으로 실패했고(기존 기록과 같은 빈 카테고리 결함), P0 계약 테스트와는 별개다.
+- 기존 로컬 named volume과 DB는 손대지 않았다. 현재 수정은 격리 CI 검증 전이다.

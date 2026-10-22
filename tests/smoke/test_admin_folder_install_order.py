@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "compose.yaml"
 POST_INSTALL = ROOT / "docker" / "kuran-post-install.php"
-POST_INSTALL_HOOK = ROOT / "docker" / "post-install" / "10-kuranea-bootstrap.sh"
+POST_INSTALL_HOOK = ROOT / "docker" / "init" / "10-kuranea-bootstrap.sh"
 FRESH_INSTALL_SMOKE = ROOT / "tests" / "smoke" / "fresh_install.sh"
 
 

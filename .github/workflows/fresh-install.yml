@@ -9,10 +9,12 @@ on:
       - 'compose.yaml'
       - 'docker/**'
       - 'themes/**'
-      - 'modules/**'
+      - 'modules/kuraneapostcode/**'
+      - 'modules/kuraneabackoffice/**'
       - 'tests/smoke/fresh_install.sh'
       - 'tests/smoke/collect_failure_diagnostics.sh'
       - 'tests/smoke/test_admin_folder_install_order.py'
+      - 'tests/smoke/test_docker_run_recovery.py'
       - 'tests/smoke/test_ci_diagnostics_script.py'
       - 'tests/postcode/**'
 
@@ -52,6 +54,9 @@ jobs:
 
       - name: Verify PrestaShop admin install order contract
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_admin_folder_install_order -v
+
+      - name: Verify Docker startup cleanup regression contract
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_docker_run_recovery -v
 
       - name: Build the PrestaShop image
         id: image_build
