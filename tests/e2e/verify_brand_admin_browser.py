@@ -123,6 +123,40 @@ def visible(driver: webdriver.Chrome, selector: str):
     return WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.CSS_SELECTOR, selector)))
 
 
+def restore_approved_logo_after_failure(
+    driver: webdriver.Chrome,
+    settings_url: str,
+    stage_callback: Callable[[str], None],
+) -> None:
+    """Republish the approved source if a replacement test aborts mid-flight."""
+    driver.delete_all_cookies()
+    driver.get(ADMIN_LOGIN + "/login")
+    restore_admin_session(driver, stage_callback, "replacement_failure_cleanup_admin_login")
+    driver.get(settings_url)
+    visible(driver, "form.ordenowa-profile-settings")
+    replace_primary_logo_in_saved_draft(
+        driver,
+        settings_url,
+        OFFICIAL_UPLOADS["primary_logo"],
+        "failure cleanup restore approved logo",
+    )
+    publish_saved_brand_draft(driver, stage_callback, "replacement_failure_cleanup_publish")
+    alternate_source = OFFICIAL_UPLOADS["pwa_icon"]
+    assert_published_logo_source(
+        driver,
+        OFFICIAL_UPLOADS["primary_logo"],
+        expected_previous_header_logos={
+            "desktop": urljoin(BASE, expected_derivative_path(alternate_source, "header-desktop.png")),
+            "mobile": urljoin(BASE, expected_derivative_path(alternate_source, "header-mobile.png")),
+        },
+        expected_previous_admin_login_logo=urljoin(
+            BASE, expected_derivative_path(alternate_source, "admin-login.png")
+        ),
+        stage_callback=stage_callback,
+        stage_prefix="replacement_failure_cleanup_verify",
+    )
+
+
 def wait_for_draft_save_confirmation(driver: webdriver.Chrome) -> None:
     def confirmation_is_visible(browser: webdriver.Chrome) -> bool:
         try:
@@ -687,12 +721,16 @@ def run() -> None:
     options.add_argument("--lang=ja-JP")
     driver = webdriver.Chrome(options=options)
     stage = "administrator_login"
+    settings_url = ""
+    replacement_publish_started = False
 
     def set_brand_assertion_stage(assertion_stage: str) -> None:
         nonlocal stage
         stage = assertion_stage
 
     try:
+        driver.execute_cdp_cmd("Network.enable", {})
+        driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": True})
         driver.get(ADMIN_LOGIN + "/login")
         login_logo = image_is_rendered(driver, ".ordenowa-admin-login-brand img")
         if login_logo["width"] < 1 or "official-admin-login.png" not in login_logo["src"]:
@@ -1016,6 +1054,9 @@ def run() -> None:
         driver.save_screenshot(str(DEST / "brand-admin-replacement-before-publish.png"))
 
         stage = "publish_replacement_logo"
+        # Set this before clicking because the server may publish successfully
+        # even if the confirmation page or following assertion fails.
+        replacement_publish_started = True
         publish_saved_brand_draft(driver, set_brand_assertion_stage, "replacement_publish")
         driver.save_screenshot(str(DEST / "brand-admin-replacement-published.png"))
 
@@ -1063,6 +1104,7 @@ def run() -> None:
             raise AssertionError("republishing the approved source did not restore the original mobile logo URL")
         if restored_logos["admin_login"] != official_admin_login_logo:
             raise AssertionError("republishing the approved source did not restore the original admin login logo URL")
+        replacement_publish_started = False
 
         print("PASS: official ORDENOWA uploads, replacement publish and restoration, Korean company profile draft/reload/preview/publish, closed storefront gate, PC/mobile logos, admin login, favicon, Apple icon, PWA, OG, and SEO")
     except Exception as error:
@@ -1074,6 +1116,15 @@ def run() -> None:
         print(f"::error title=ORDENOWA brand browser QA::{stage} ({type(error).__name__})", file=sys.stderr)
         raise SystemExit("isolated ORDENOWA brand browser flow failed") from None
     finally:
+        if replacement_publish_started and settings_url:
+            try:
+                restore_approved_logo_after_failure(driver, settings_url, set_brand_assertion_stage)
+                print("ORDENOWA_BRAND_RESTORE_CLEANUP=passed", file=sys.stderr)
+            except Exception as cleanup_error:
+                print(
+                    "ORDENOWA_BRAND_RESTORE_CLEANUP=failed (" + type(cleanup_error).__name__ + ")",
+                    file=sys.stderr,
+                )
         driver.quit()
 
 

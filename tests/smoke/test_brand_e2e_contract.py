@@ -306,6 +306,27 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('stage_callback(stage_prefix + "_button_click")', publish_helper)
         self.assertIn('stage_callback(stage_prefix + "_confirmation")', publish_helper)
 
+    def test_replacement_browser_flow_restores_approved_logo_after_failure_without_cache(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        restore_helper = browser_flow.split("def restore_approved_logo_after_failure", 1)[1].split(
+            "def wait_for_draft_save_confirmation", 1
+        )[0]
+        run_flow = browser_flow.split("def run()", 1)[1].split("if __name__ ==", 1)[0]
+        cleanup = run_flow.split("finally:", 1)[1]
+
+        self.assertIn('driver.execute_cdp_cmd("Network.enable", {})', run_flow)
+        self.assertIn(
+            'driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": True})',
+            run_flow,
+        )
+        self.assertIn("replacement_publish_started = True", run_flow)
+        self.assertIn("replacement_publish_started = False", run_flow)
+        self.assertIn("if replacement_publish_started and settings_url:", cleanup)
+        self.assertIn("restore_approved_logo_after_failure(driver, settings_url", cleanup)
+        self.assertIn('"failure cleanup restore approved logo"', restore_helper)
+        self.assertIn('"replacement_failure_cleanup_publish"', restore_helper)
+        self.assertIn('stage_prefix="replacement_failure_cleanup_verify"', restore_helper)
+
     def test_browser_asserts_published_open_graph_text_matches_seo_settings(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
         public_snapshot = browser_flow.split("def public_brand_snapshot", 1)[1].split("def click_centered", 1)[0]
