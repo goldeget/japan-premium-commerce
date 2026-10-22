@@ -177,53 +177,58 @@ class Kuraneabusinessprofile extends Module
     /** @param array<string, mixed> $params */
     public function hookActionGetExtraMailTemplateVars(array $params): void
     {
-        if (!isset($params['extra_template_vars']) || !is_array($params['extra_template_vars'])) {
-            return;
+        $mailContextShopId = $this->activeMailShopId;
+
+        try {
+            if (!isset($params['extra_template_vars']) || !is_array($params['extra_template_vars'])) {
+                return;
+            }
+
+            [$shopId, $isoCode] = $this->mailShopAndIsoCode($params, $mailContextShopId);
+            $profile = (new PublishedProfileProvider(new VersionedProfileRepository()))->forShop($shopId, $isoCode);
+            $safeDefaults = $profile ?? ProfileDefaults::initial();
+            $locale = $profile['_resolved_locale'] ?? PublishedProfileProvider::localeForIso($isoCode);
+            $brandName = (string) ($safeDefaults['brand']['name'][$locale] ?? $safeDefaults['brand']['name']['ja-JP'] ?? 'ORDENOWA');
+
+            $emailLogo = $profile['brand']['assets']['email_logo'] ?? '';
+            $emailLogoRelative = is_string($emailLogo)
+                && preg_match('~\\Aimg/ordenowa/versions/[A-Fa-f0-9]{64}/email-logo\\.png\\z~D', $emailLogo) === 1
+                ? substr($emailLogo, 4)
+                : '';
+            $emailLogoIsCurrent = $emailLogoRelative !== ''
+                && (string) \Configuration::get('PS_LOGO_MAIL', null, null, $shopId) === $emailLogoRelative
+                && is_file(_PS_IMG_DIR_ . $emailLogoRelative);
+
+            // Suppress any pre-existing KURANEA or PrestaShop default mail logo until an ORDENOWA asset is published.
+            $params['extra_template_vars']['{shop_logo}'] = $emailLogoIsCurrent ? 'cid:shop_logo' : '';
+            $params['extra_template_vars']['{shop_name}'] = $brandName;
+            $params['extra_template_vars']['{ordenowa_brand_name}'] = $brandName;
+            if (!CommerceGate::isEnabled($profile, $this->externalAuthorizationConfirmed())) {
+                return;
+            }
+
+            $params['extra_template_vars']['{ordenowa_customer_support}'] = trim(implode(' · ', array_filter([
+                (string) ($profile['customer_support']['phone'] ?? ''),
+                (string) ($profile['customer_support']['email'] ?? ''),
+            ])));
+            $params['extra_template_vars']['{ordenowa_payment_policy}'] = (string) ($profile['payment'][$locale] ?? '');
+            $params['extra_template_vars']['{ordenowa_shipping_policy}'] = (string) ($profile['shipping'][$locale] ?? '');
+            $params['extra_template_vars']['{ordenowa_refund_policy}'] = (string) ($profile['refund'][$locale] ?? '');
+            $params['extra_template_vars']['{ordenowa_bank_accounts}'] = PublicFooterBuilder::bankDetailsText($profile, (string) $locale);
+            $params['extra_template_vars']['{ordenowa_seller_name}'] = (string) ($profile['seller']['legal_name'][$locale] ?? '');
+            $params['extra_template_vars']['{ordenowa_seller_corporate_number}'] = (string) ($profile['seller']['corporate_number'] ?? '');
+            $params['extra_template_vars']['{ordenowa_seller_address}'] = (string) ($profile['seller']['address'][$locale] ?? '');
+            $params['extra_template_vars']['{ordenowa_seller_representative}'] = (string) ($profile['seller']['representative'][$locale] ?? '');
+            $params['extra_template_vars']['{ordenowa_seller_responsible_person}'] = (string) ($profile['seller']['responsible_person'][$locale] ?? '');
+        } finally {
+            $this->activeMailShopId = null;
         }
-
-        [$shopId, $isoCode] = $this->mailShopAndIsoCode($params);
-        $profile = (new PublishedProfileProvider(new VersionedProfileRepository()))->forShop($shopId, $isoCode);
-        $safeDefaults = $profile ?? ProfileDefaults::initial();
-        $locale = $profile['_resolved_locale'] ?? PublishedProfileProvider::localeForIso($isoCode);
-        $brandName = (string) ($safeDefaults['brand']['name'][$locale] ?? $safeDefaults['brand']['name']['ja-JP'] ?? 'ORDENOWA');
-
-        $emailLogo = $profile['brand']['assets']['email_logo'] ?? '';
-        $emailLogoRelative = is_string($emailLogo)
-            && preg_match('~\\Aimg/ordenowa/versions/[A-Fa-f0-9]{64}/email-logo\\.png\\z~D', $emailLogo) === 1
-            ? substr($emailLogo, 4)
-            : '';
-        $emailLogoIsCurrent = $emailLogoRelative !== ''
-            && (string) \Configuration::get('PS_LOGO_MAIL', null, null, $shopId) === $emailLogoRelative
-            && is_file(_PS_IMG_DIR_ . $emailLogoRelative);
-
-        // Suppress any pre-existing KURANEA or PrestaShop default mail logo until an ORDENOWA asset is published.
-        $params['extra_template_vars']['{shop_logo}'] = $emailLogoIsCurrent ? 'cid:shop_logo' : '';
-        $params['extra_template_vars']['{shop_name}'] = $brandName;
-        $params['extra_template_vars']['{ordenowa_brand_name}'] = $brandName;
-        if (!CommerceGate::isEnabled($profile, $this->externalAuthorizationConfirmed())) {
-            return;
-        }
-
-        $params['extra_template_vars']['{ordenowa_customer_support}'] = trim(implode(' · ', array_filter([
-            (string) ($profile['customer_support']['phone'] ?? ''),
-            (string) ($profile['customer_support']['email'] ?? ''),
-        ])));
-        $params['extra_template_vars']['{ordenowa_payment_policy}'] = (string) ($profile['payment'][$locale] ?? '');
-        $params['extra_template_vars']['{ordenowa_shipping_policy}'] = (string) ($profile['shipping'][$locale] ?? '');
-        $params['extra_template_vars']['{ordenowa_refund_policy}'] = (string) ($profile['refund'][$locale] ?? '');
-        $params['extra_template_vars']['{ordenowa_bank_accounts}'] = PublicFooterBuilder::bankDetailsText($profile, (string) $locale);
-        $params['extra_template_vars']['{ordenowa_seller_name}'] = (string) ($profile['seller']['legal_name'][$locale] ?? '');
-        $params['extra_template_vars']['{ordenowa_seller_corporate_number}'] = (string) ($profile['seller']['corporate_number'] ?? '');
-        $params['extra_template_vars']['{ordenowa_seller_address}'] = (string) ($profile['seller']['address'][$locale] ?? '');
-        $params['extra_template_vars']['{ordenowa_seller_representative}'] = (string) ($profile['seller']['representative'][$locale] ?? '');
-        $params['extra_template_vars']['{ordenowa_seller_responsible_person}'] = (string) ($profile['seller']['responsible_person'][$locale] ?? '');
     }
 
     /** @param array<string, mixed> $params */
     public function hookActionEmailAddAfterContent(array $params): void
     {
         $mailContextShopId = $this->activeMailShopId;
-        $this->activeMailShopId = null;
 
         if (($params['template'] ?? '') !== 'order_conf'
             || !isset($params['template_html'], $params['template_txt'])

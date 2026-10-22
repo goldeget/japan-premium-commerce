@@ -35,6 +35,39 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         self.assertTrue(upgrade_path.is_file(), "existing installations need a 1.0.2 hook upgrade")
         self.assertIn("registerHook('actionEmailSendBefore')", upgrade_path.read_text(encoding="utf-8"))
 
+    def test_mail_shop_context_reaches_both_content_and_extra_vars_before_cleanup(self):
+        module = MODULE_PATH.read_text(encoding="utf-8")
+
+        def method_body(name):
+            start = module.index(f"public function {name}")
+            opening = module.index("{", start)
+            depth = 0
+            for index in range(opening, len(module)):
+                if module[index] == "{":
+                    depth += 1
+                elif module[index] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return module[opening + 1:index]
+            self.fail(f"Could not find closing brace for {name}")
+
+        after_content = method_body("hookActionEmailAddAfterContent")
+        extra_vars = method_body("hookActionGetExtraMailTemplateVars")
+
+        self.assertIn("$mailContextShopId = $this->activeMailShopId", after_content)
+        self.assertIn("$this->mailShopAndIsoCode($params, $mailContextShopId)", after_content)
+        self.assertIn("->forShop($shopId, $isoCode)", after_content)
+        self.assertNotIn("$this->activeMailShopId = null", after_content)
+
+        self.assertIn("$mailContextShopId = $this->activeMailShopId", extra_vars)
+        self.assertIn("$this->mailShopAndIsoCode($params, $mailContextShopId)", extra_vars)
+        self.assertIn("->forShop($shopId, $isoCode)", extra_vars)
+        self.assertRegex(
+            extra_vars,
+            r"finally\s*\{\s*\$this->activeMailShopId\s*=\s*null;\s*\}",
+            "the captured mail shop should be cleared after extra vars, including early returns",
+        )
+
     def test_existing_install_upgrade_registers_the_new_hook(self):
         module = MODULE_PATH.read_text(encoding="utf-8")
         upgrade = UPGRADE_PATH.read_text(encoding="utf-8")
