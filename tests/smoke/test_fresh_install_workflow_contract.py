@@ -28,7 +28,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertTrue("reset_link_for(account_email)" in account_flow, "password reset does not follow the captured test email")
         self.assertTrue('parsed.hostname in {"localhost", "127.0.0.1"}' in account_flow, "reset links are not restricted to the isolated shop")
         self.assertIn('a[data-link-action="display-register-form"]', account_flow, "registration must follow the theme's actual registration link")
-        self.assertIn("registration_link.click()", account_flow)
+        self.assertIn("click_centered(driver, registration_link)", account_flow)
         self.assertNotIn("controller=authentication&create_account=1", account_flow, "registration must not rely on a legacy authentication query")
         self.assertIn("registration form is missing the required", account_flow)
         self.assertIn("registration form has invalid controls:", account_flow)
@@ -144,6 +144,9 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertLess(registration.index('stage = "registration_submit"'), registration.index('stage = "registration_post_submit"'))
         for field in (
             "registration_form_visible",
+            "registration_link_visible",
+            "registration_center_unobstructed",
+            "registration_center_target_tag",
             "identity_link_visible",
             "submit_button_enabled",
             "registration_form_valid",
@@ -160,6 +163,16 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertNotIn("email.value", diagnostics)
         self.assertIn('rg \'^ORDENOWA_ACCOUNT_REGISTRATION_DIAGNOSTICS=\' "$log_file"', workflow)
         self.assertIn("customer-account-e2e.log", workflow)
+
+    def test_registration_link_is_scrolled_and_hit_tested_before_native_click(self) -> None:
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        helper = account_flow.split("def click_centered", 1)[1].split("def emit_registration_diagnostics", 1)[0]
+        registration = account_flow.split('stage = "registration_form_load"', 1)[1].split('stage = "registration_submit"', 1)[0]
+        self.assertIn("scrollIntoView({block: 'center'", helper)
+        self.assertIn("EC.element_to_be_clickable(element)", helper)
+        self.assertIn("document.elementFromPoint", helper)
+        self.assertIn("element.click()", helper)
+        self.assertIn("click_centered(driver, registration_link)", registration)
 
     def test_ci_uses_the_module_updater_for_the_official_japan_post_archive(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")

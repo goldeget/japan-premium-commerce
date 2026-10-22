@@ -120,6 +120,23 @@ def visible(driver: webdriver.Chrome, selector: str):
     return WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.CSS_SELECTOR, selector)))
 
 
+def click_centered(driver: webdriver.Chrome, element) -> None:
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", element)
+    WebDriverWait(driver, 30).until(EC.element_to_be_clickable(element))
+    WebDriverWait(driver, 10).until(
+        lambda browser: browser.execute_script(
+            """
+            const element = arguments[0];
+            const rect = element.getBoundingClientRect();
+            const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            return Boolean(target && (target === element || element.contains(target)));
+            """,
+            element,
+        )
+    )
+    element.click()
+
+
 def emit_registration_diagnostics(driver: webdriver.Chrome) -> None:
     diagnostics = driver.execute_script(
         r"""
@@ -129,10 +146,26 @@ def emit_registration_diagnostics(driver: webdriver.Chrome) -> None:
         const email = form?.querySelector('input[name="email"]');
         const passwords = form ? [...form.querySelectorAll('input[type="password"]')] : [];
         const submit = form?.querySelector('button.form-control-submit');
+        const registrationLink = document.querySelector('a[data-link-action="display-register-form"]');
+        let registrationTarget = null;
+        if (registrationLink) {
+          const rect = registrationLink.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            registrationTarget = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+          }
+        }
+        const registrationTargetClass = registrationTarget && typeof registrationTarget.className === 'string'
+          ? registrationTarget.className.slice(0, 120)
+          : '';
         const firstInvalid = invalid[0];
         const bodyText = document.body?.innerText || '';
         return {
           registration_form_visible: isVisible(form),
+          registration_link_visible: isVisible(registrationLink),
+          registration_center_unobstructed: Boolean(registrationTarget && (registrationTarget === registrationLink || registrationLink.contains(registrationTarget))),
+          registration_center_target_tag: registrationTarget?.tagName.toLowerCase() || '',
+          registration_center_target_id: registrationTarget?.id || '',
+          registration_center_target_class: registrationTargetClass,
           identity_link_visible: isVisible(document.querySelector('#identity_main_link')),
           login_form_visible: isVisible(document.querySelector('#login-form')),
           submit_button_visible: isVisible(submit),
@@ -304,7 +337,7 @@ def run_viewport(width: int, height: int, label: str) -> None:
             or registration_location.port != base_location.port
         ):
             raise AssertionError("PrestaShop registration link is outside the isolated shop")
-        registration_link.click()
+        click_centered(driver, registration_link)
         prepare_required_registration_fields(driver, account_email, initial_password)
         stage = "registration_submit"
         visible(driver, "#customer-form button.form-control-submit").click()
