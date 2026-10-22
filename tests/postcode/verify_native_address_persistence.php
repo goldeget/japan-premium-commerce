@@ -79,7 +79,6 @@ try {
     $address->postcode = (string) $native['postcode'];
     $address->city = (string) $native['city'];
     $address->phone = '0312345678';
-    $address->id_shop = 1;
     if (!$address->add()) {
         throw new RuntimeException('Could not save the native PrestaShop test address.');
     }

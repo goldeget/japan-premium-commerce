@@ -192,3 +192,9 @@
 - 진단 보강: CI를 도쿄 API 조회와 PrestaShop 네이티브 주소 저장으로 분리했다. PHP 저장 검증은 bootstrap, Japan/state 조회, CSV 후보, 고객 생성, 주소 저장, reload 단계를 기록하고 예외 클래스·메시지를 GitHub error annotation으로 제한 출력한다. 회귀 계약 테스트가 두 workflow step 분리와 진단 단계를 고정한다. 프로덕션 모듈/코어는 수정하지 않았다.
 - 로컬 검증: fresh-install workflow contract 및 주소 데이터 갱신 계약 테스트 14개 통과, Docker Compose 정적 config와 `git diff --check` 통과. 호스트에 PHP CLI가 없고 활성 로컬 Docker/DB 상태를 보존하기 위해 실행 DB에 테스트 데이터를 넣지 않았다.
 - 다음 검증은 새 원격 커밋에 의해 실행되는 격리 Actions 1회다. 주소 API, 네이티브 Address, 무결제 Order, 관리자 배송지 표시, 일본어/다국어·JPY·테마·관리자 로그인, 재시작 후 지속성은 실제 각 단계가 성공하기 전까지 미검증이다.
+## 2026-10-22 — Native Address 저장 CI 오류 수정
+
+- 격리 Actions run `39734469874`에서 workflow contract, 이미지 build, cache ownership probe, 빈 볼륨 shop 기동, 공식 Japan Post CSV import와 `1000004` postcode API lookup이 모두 통과했다. 실패 단계 annotation은 `KURANEA_NATIVE_ADDRESS_STAGE=native address save; exception=Error; message=Cannot access protected property Address::$id_shop`였다. 이후 native order와 restart smoke는 실행되지 않았다.
+- PrestaShop 9.2.0 공식 `AddressCore`를 확인해 `id_shop`가 Address public property나 ObjectModel field가 아닌 것을 대조했다. 테스트 harness의 불필요한 `$address->id_shop = 1`만 제거했고 코어/운영 모듈을 수정하지 않았다.
+- TDD: 먼저 Address의 미지원 shop 속성 대입을 금지하는 workflow contract를 추가하고 실패를 확인한 다음 잘못된 대입을 지웠다. postcode workflow 및 Japan Post refresh contract 15/15 통과, Compose 정적 설정과 `git diff --check` 통과.
+- 새 격리 CI에서 native address save, unpaid Order 생성, 관리자 배송지 조회, restart/data persistence는 다시 확인해야 하므로 아직 PASS가 아니다. 기존 개발 DB, named volume 및 미커밋 catalog parser 변경은 보존했다.
