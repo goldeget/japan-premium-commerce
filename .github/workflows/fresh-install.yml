@@ -102,16 +102,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          archive="$RUNNER_TEMP/ken_all.zip"
-          csv="$RUNNER_TEMP/KEN_ALL.CSV"
-          curl --fail --location --retry 3 --retry-delay 2 --max-time 180 \
-            'https://www.post.japanpost.jp/service/search/zipcode/download/kogaki/zip/ken_all.zip' \
-            --output "$archive"
-          unzip -p "$archive" KEN_ALL.CSV > "$csv"
-          test -s "$csv"
-          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop sh -c 'cat > /tmp/KEN_ALL.CSV' < "$csv"
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
-            php /var/www/html/modules/kuraneapostcode/bin/import-ken-all.php --file=/tmp/KEN_ALL.CSV
+            runuser -g www-data -u www-data -- \
+            /var/www/html/modules/kuraneapostcode/bin/update-ken-all.sh
 
       - name: Verify real Tokyo postcode lookup
         env:

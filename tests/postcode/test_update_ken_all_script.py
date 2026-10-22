@@ -34,13 +34,15 @@ url=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --output) output=$2; shift 2 ;;
+    --write-out) shift 2 ;;
     https://*) url=$1; shift ;;
     *) shift ;;
   esac
 done
 printf '%s' "$url" > "$TEST_LOG/curl-url"
 printf 'ZIP TEST DATA' > "$output"
-printf '%s' "${EFFECTIVE_URL:-https://www.post.japanpost.jp/service/search/zipcode/download/kogaki/zip/ken_all.zip}"
+printf '%s\n%s' "${HTTP_STATUS:-200}" "${EFFECTIVE_URL:-https://www.post.japanpost.jp/service/search/zipcode/download/kogaki/zip/ken_all.zip}"
+exit "${CURL_EXIT_CODE:-0}"
 """,
         )
         self._write_command(
@@ -109,11 +111,27 @@ exit "${PHP_EXIT_CODE:-0}"
         curl_args = (self.log_dir / "curl-args").read_text(encoding="utf-8")
         self.assertIn("--proto", curl_args)
         self.assertIn("--proto-redir", curl_args)
+        self.assertIn("--write-out", curl_args)
         self.assertIn("-tq", (self.log_dir / "unzip-calls").read_text(encoding="utf-8"))
         php_args = (self.log_dir / "php-args").read_text(encoding="utf-8").splitlines()
         self.assertTrue(php_args[0].endswith("/modules/kuraneapostcode/bin/import-ken-all.php"))
         self.assertTrue(php_args[1].startswith("--file="))
         self.assertFalse(list(self.tmp_dir.iterdir()), "temporary download files should be removed after success")
+
+    def test_http_download_failure_reports_status_and_host_without_importing(self) -> None:
+        result = self._run(
+            CURL_EXIT_CODE="22",
+            HTTP_STATUS="403",
+            EFFECTIVE_URL="https://www.post.japanpost.jp/error?request=private-token",
+        )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("HTTP status: 403", result.stderr)
+        self.assertIn("effective host: www.post.japanpost.jp", result.stderr)
+        self.assertIn("curl exit: 22", result.stderr)
+        self.assertNotIn("private-token", result.stderr)
+        self.assertFalse((self.log_dir / "php-args").exists())
+        self.assertFalse(list(self.tmp_dir.iterdir()), "temporary download files should be removed after failure")
 
     def test_bad_archive_is_rejected_before_the_database_importer_runs(self) -> None:
         result = self._run(UNZIP_TEST_STATUS="9")

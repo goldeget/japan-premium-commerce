@@ -8,16 +8,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "fresh-install.yml"
 POSTAL_IMPORT = ROOT / "modules" / "kuraneapostcode" / "bin" / "import-ken-all.php"
+POSTAL_UPDATER = ROOT / "modules" / "kuraneapostcode" / "bin" / "update-ken-all.sh"
 FRESH_INSTALL_SMOKE = ROOT / "tests" / "smoke" / "fresh_install.sh"
 
 
 class FreshInstallWorkflowContractTests(unittest.TestCase):
-    def test_downloads_ken_all_from_the_current_japan_post_archive_path(self) -> None:
+    def test_ci_uses_the_module_updater_for_the_official_japan_post_archive(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn(
-            "https://www.post.japanpost.jp/service/search/zipcode/download/kogaki/zip/ken_all.zip",
-            workflow,
-        )
+        postal_step = workflow.split("- name: Download and import official Japan Post KEN_ALL data", 1)[1].split("- name:", 1)[0]
+        updater = POSTAL_UPDATER.read_text(encoding="utf-8")
+        self.assertIn("https://www.post.japanpost.jp/service/search/zipcode/download/kogaki/zip/ken_all.zip", updater)
+        self.assertIn("runuser -g www-data -u www-data --", postal_step)
+        self.assertIn("/var/www/html/modules/kuraneapostcode/bin/update-ken-all.sh", postal_step)
+        self.assertNotIn("curl ", postal_step)
+        self.assertNotIn("unzip", postal_step)
 
     def test_failed_compose_bootstrap_uses_the_shared_redacting_diagnostics_script(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")

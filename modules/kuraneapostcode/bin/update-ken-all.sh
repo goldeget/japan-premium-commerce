@@ -5,7 +5,7 @@ official_url='https://www.post.japanpost.jp/service/search/zipcode/download/koga
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 importer="$script_dir/import-ken-all.php"
 
-for tool in curl unzip php mktemp grep; do
+for tool in curl unzip php mktemp grep sed; do
     if ! command -v "$tool" >/dev/null 2>&1; then
         printf 'Required command is missing: %s\n' "$tool" >&2
         exit 127
@@ -28,7 +28,8 @@ archive="$tmp_dir/ken_all.zip"
 csv="$tmp_dir/KEN_ALL.CSV"
 
 printf '%s\n' 'Downloading the official Japan Post KEN_ALL archive.'
-if ! effective_url=$(curl \
+download_details=''
+if download_details=$(curl \
     --fail \
     --silent \
     --show-error \
@@ -39,16 +40,46 @@ if ! effective_url=$(curl \
     --proto '=https' \
     --proto-redir '=https' \
     --output "$archive" \
-    --write-out '%{url_effective}' \
+    --write-out '%{http_code}\n%{url_effective}' \
     "$official_url"); then
-    printf '%s\n' 'Japan Post KEN_ALL download failed; active postcode data was not changed.' >&2
+    curl_status=0
+else
+    curl_status=$?
+fi
+
+http_status=$(printf '%s\n' "$download_details" | sed -n '1p')
+effective_url=$(printf '%s\n' "$download_details" | sed -n '2p')
+case "$http_status" in
+    [0-9][0-9][0-9]) ;;
+    *) http_status='unknown' ;;
+esac
+
+effective_host='unavailable'
+case "$effective_url" in
+    https://*) authority=${effective_url#https://} ;;
+    http://*) authority=${effective_url#http://} ;;
+    *) authority='' ;;
+esac
+authority=${authority%%/*}
+authority=${authority%%\?*}
+authority=${authority%%\#*}
+authority=${authority##*@}
+case "$authority" in
+    ''|*[!A-Za-z0-9.-]*) ;;
+    *) effective_host=$authority ;;
+esac
+
+if [ "$curl_status" -ne 0 ]; then
+    printf 'Japan Post KEN_ALL download failed (curl exit: %s, HTTP status: %s, effective host: %s); active postcode data was not changed.\n' \
+        "$curl_status" "$http_status" "$effective_host" >&2
     exit 1
 fi
 
 case "$effective_url" in
     https://www.post.japanpost.jp/*) ;;
     *)
-        printf 'Refusing an unexpected Japan Post archive redirect: %s\n' "$effective_url" >&2
+        printf 'Refusing an unexpected Japan Post archive redirect (HTTP status: %s, effective host: %s).\n' \
+            "$http_status" "$effective_host" >&2
         exit 1
         ;;
 esac
