@@ -304,6 +304,43 @@ jobs:
           command -v google-chrome || command -v chromium
           mkdir -p "$RUNNER_TEMP/ordenowa-browser-qa"
 
+      - name: Verify official ORDENOWA brand upload and publish in Chromium
+        shell: bash
+        env:
+          SHOP_BASE_URL: http://localhost:18080
+          ADMIN_LOGIN_URL: http://localhost:18080/admin-kuranea
+          ADMIN_MAIL: ci-kuranea@example.invalid
+          ADMIN_PASSWD: Ci-Only-Admin-Password-92!
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+        run: |
+          set -euo pipefail
+          log_file="$RUNNER_TEMP/ordenowa-browser-qa/ordenowa-brand-e2e.log"
+          set +e
+          "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
+            tests/e2e/verify_brand_admin_browser.py \
+            2>&1 | tee "$log_file"
+          browser_status=${PIPESTATUS[0]}
+          set -e
+          if [ "$browser_status" -ne 0 ]; then
+            failure_line=$(rg '^FAIL:' "$log_file" | tail -n 1 || true)
+            printf 'ORDENOWA brand browser failure: %s\n' "${failure_line:-See the uploaded brand browser log for the failing stage.}" >> "$GITHUB_STEP_SUMMARY"
+            exit "$browser_status"
+          fi
+
+      - name: Verify customer registration, email login, logout, password reset, and my page in Chromium
+        shell: bash
+        env:
+          SHOP_BASE_URL: http://localhost:18080
+          MAILPIT_API_URL: http://127.0.0.1:8025
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
+            tests/e2e/verify_customer_account_browser.py \
+            2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/customer-account-e2e.log"
+
       - name: Verify Korean admin native product create and edit in Chromium
         shell: bash
         env:
@@ -326,29 +363,6 @@ jobs:
           if [ "$browser_status" -ne 0 ]; then
             failure_line=$(rg '^ORDENOWA_PRODUCT_ADMIN_STAGE=' "$log_file" | tail -n 1 || true)
             printf 'ORDENOWA product admin browser failure: %s\n' "${failure_line:-See the uploaded product admin browser log for the failing stage.}" >> "$GITHUB_STEP_SUMMARY"
-            exit "$browser_status"
-          fi
-
-      - name: Verify official ORDENOWA brand upload and publish in Chromium
-        shell: bash
-        env:
-          SHOP_BASE_URL: http://localhost:18080
-          ADMIN_LOGIN_URL: http://localhost:18080/admin-kuranea
-          ADMIN_MAIL: ci-kuranea@example.invalid
-          ADMIN_PASSWD: Ci-Only-Admin-Password-92!
-          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
-        run: |
-          set -euo pipefail
-          log_file="$RUNNER_TEMP/ordenowa-browser-qa/ordenowa-brand-e2e.log"
-          set +e
-          "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
-            tests/e2e/verify_brand_admin_browser.py \
-            2>&1 | tee "$log_file"
-          browser_status=${PIPESTATUS[0]}
-          set -e
-          if [ "$browser_status" -ne 0 ]; then
-            failure_line=$(rg '^FAIL:' "$log_file" | tail -n 1 || true)
-            printf 'ORDENOWA brand browser failure: %s\n' "${failure_line:-See the uploaded brand browser log for the failing stage.}" >> "$GITHUB_STEP_SUMMARY"
             exit "$browser_status"
           fi
 
@@ -471,20 +485,6 @@ jobs:
             "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
             tests/e2e/verify_storefront_browser.py \
             2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/storefront-checkout-gate-after-ci-order.log"
-
-      - name: Verify customer registration, email login, logout, password reset, and my page in Chromium
-        shell: bash
-        env:
-          SHOP_BASE_URL: http://localhost:18080
-          MAILPIT_API_URL: http://127.0.0.1:8025
-          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
-          GITHUB_RUN_ID: ${{ github.run_id }}
-          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -euo pipefail
-          "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
-            tests/e2e/verify_customer_account_browser.py \
-            2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/customer-account-e2e.log"
 
       - name: Upload browser QA screenshots
         if: always()

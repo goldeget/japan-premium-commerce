@@ -1,6 +1,7 @@
 """Keep the isolated installer pointed at Japan Post's published KEN_ALL archive."""
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -42,6 +43,25 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn('driver.get(f"{BASE}/index.php?controller=my-account")', logout)
         self.assertIn("identity_main_link", logout)
         self.assertIn('#login-form input[name="email"]', logout)
+
+    def test_brand_and_account_e2e_run_before_product_admin_and_checkout_qa(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        step_names = re.findall(r"^\s+- name: (.+)$", workflow, flags=re.MULTILINE)
+        brand_step = "Verify official ORDENOWA brand upload and publish in Chromium"
+        account_step = "Verify customer registration, email login, logout, password reset, and my page in Chromium"
+        product_admin_step = "Verify Korean admin native product create and edit in Chromium"
+        storefront_step = "Verify real product detail and cart in Chromium (no payment)"
+        checkout_gate_step = "Enable run-scoped checkout only for the isolated order browser QA"
+        order_step = "Verify browser customer search, Japan checkout, and unpaid offline order"
+
+        brand_position = step_names.index(brand_step)
+        account_position = step_names.index(account_step)
+        product_admin_position = step_names.index(product_admin_step)
+        self.assertEqual(step_names[brand_position + 1], account_step)
+        self.assertEqual(step_names[account_position + 1], product_admin_step)
+        self.assertLess(product_admin_position, step_names.index(storefront_step))
+        self.assertLess(product_admin_position, step_names.index(checkout_gate_step))
+        self.assertLess(product_admin_position, step_names.index(order_step))
 
     def test_official_brand_upload_preview_publish_and_browser_checks_run_in_isolated_ci(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
