@@ -65,6 +65,9 @@ class ProductAdminContractTests(unittest.TestCase):
         browser_text = browser.read_text(encoding="utf-8")
         for expected in ("OWA-ADMIN-", "combinationRows", "createdCombinationIds", "editorData", "ShopParameters", "StockAvailable", "id_category_default", "available_for_order", "tooManyImagesRejected"):
             self.assertIn(expected, integration_text)
+        self.assertIn("Native product edit failed checks:", integration_text)
+        for expected in ("saved product ID", "Japanese name", "price", "sale gate", "editor Japanese name", "editor Korean name", "Japanese description", "Korean description", "categories", "options", "combination IDs", "image replacement"):
+            self.assertIn(f"'{expected}' =>", integration_text)
         for expected in (
             "상품 등록·관리",
             "native_product_create",

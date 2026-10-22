@@ -201,27 +201,33 @@ $editedManagedProducts = array_values(array_filter(
     $manager->managedProducts(),
     static fn (array $row): bool => (int) $row['id_product'] === $savedProductId
 ));
-if ($savedProductId !== $productId
-    || (string) $editedProduct->name !== 'ORDENOWA CI 合成商品 수정'
-    || (int) round((float) $editedProduct->price) !== 1490
-    || (bool) $editedProduct->active
-    || (string) $editedProduct->visibility !== 'none'
-    || (bool) $editedProduct->available_for_order
-    || ($editedEditor['name_ja'] ?? '') !== 'ORDENOWA CI 合成商品 수정'
-    || ($editedEditor['name_ko'] ?? '') !== 'ORDENOWA CI 합성 상품 수정'
-    || ($editedEditor['description_ja'] ?? '') !== '更新した説明'
-    || ($editedEditor['description_ko'] ?? '') !== '수정한 상세 설명'
-    || !in_array($categoryId, $editedEditor['category_ids'] ?? [], true)
-    || ($editedEditor['options'] ?? '') !== "色:青|赤\nサイズ:S|M"
-    || count($editedManagedProducts) !== 1
-    || $editedManagedProducts[0]['name'] !== 'ORDENOWA CI 合成商品 수정'
-    || count($editedCombinationRows) !== 4
-    || $editedCombinationIds !== $createdCombinationIds
-    || $manager->optionGroups($savedProductId, $languageId, $shopId) !== $storedGroups
-    || count($newImageIds) !== 1
-    || $newImageIds[0] === $imageIds[0]
-    || file_exists($oldImagePath)) {
-    throw new RuntimeException('The native product edit did not update fields, replace its image, or preserve the sale gate.');
+// Report each persistence signal separately so CI annotations point to the data
+// that failed instead of hiding it behind one aggregate assertion.
+$editChecks = [
+    'saved product ID' => $savedProductId === $productId,
+    'Japanese name' => (string) $editedProduct->name === 'ORDENOWA CI 合成商品 수정',
+    'price' => (int) round((float) $editedProduct->price) === 1490,
+    'sale gate' => !(bool) $editedProduct->active
+        && (string) $editedProduct->visibility === 'none'
+        && !(bool) $editedProduct->available_for_order,
+    'editor Japanese name' => ($editedEditor['name_ja'] ?? '') === 'ORDENOWA CI 合成商品 수정',
+    'editor Korean name' => ($editedEditor['name_ko'] ?? '') === 'ORDENOWA CI 합성 상품 수정',
+    'Japanese description' => ($editedEditor['description_ja'] ?? '') === '更新した説明',
+    'Korean description' => ($editedEditor['description_ko'] ?? '') === '수정한 상세 설명',
+    'categories' => in_array($categoryId, $editedEditor['category_ids'] ?? [], true),
+    'options' => ($editedEditor['options'] ?? '') === "色:青|赤\nサイズ:S|M",
+    'managed product row count' => count($editedManagedProducts) === 1,
+    'managed product name' => ($editedManagedProducts[0]['name'] ?? '') === 'ORDENOWA CI 合成商品 수정',
+    'combination count' => count($editedCombinationRows) === 4,
+    'combination IDs' => $editedCombinationIds === $createdCombinationIds,
+    'option groups' => $manager->optionGroups($savedProductId, $languageId, $shopId) === $storedGroups,
+    'image count' => count($newImageIds) === 1,
+    'image replacement' => count($newImageIds) === 1 && $newImageIds[0] !== $imageIds[0],
+    'old image removal' => !file_exists($oldImagePath),
+];
+$editFailures = array_keys(array_filter($editChecks, static fn (bool $passed): bool => !$passed));
+if ($editFailures !== []) {
+    throw new RuntimeException('Native product edit failed checks: ' . implode(', ', $editFailures) . '.');
 }
 foreach ($editedCombinationRows as $row) {
     if ((int) StockAvailable::getQuantityAvailableByProduct($savedProductId, (int) $row['id_product_attribute'], $shopId) !== 5) {
