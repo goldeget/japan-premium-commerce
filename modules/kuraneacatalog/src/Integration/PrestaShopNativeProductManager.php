@@ -148,6 +148,11 @@ final class PrestaShopNativeProductManager
         $product = $isNew
             ? new \Product()
             : $this->loadManagedProduct((int) $productId, $languageId, $shopId);
+        if (!$isNew) {
+            // PrestaShop 9.2 updates only ObjectModel::$id_lang when it is set.
+            // Reload without a language so localized name and description edits persist together.
+            $product = new \Product((int) $product->id, false, null, $shopId);
+        }
         $validatedRemovalIds = $this->validateImageChanges(
             $isNew ? null : (int) $product->id,
             $uploads,

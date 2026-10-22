@@ -53,6 +53,8 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertLess(save_method.index("validateImageChanges"), save_method.index("$product->update()"))
         self.assertLess(save_method.index("validateOptionChanges"), save_method.index("$product->add()"))
         self.assertLess(save_method.index("validateOptionChanges"), save_method.index("$product->update()"))
+        self.assertIn("new \\Product((int) $product->id, false, null, $shopId)", save_method)
+        self.assertLess(save_method.index("$this->loadManagedProduct"), save_method.index("new \\Product((int) $product->id, false, null, $shopId)"))
         self.assertIn("Tools::getAdminTokenLite", (MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php").read_text(encoding="utf-8"))
 
     def test_ci_product_persistence_and_browser_flows_cover_create_and_edit(self) -> None:
