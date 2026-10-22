@@ -573,6 +573,7 @@ def product_edit_failure_diagnostics(
     }
     raw_markers = save_result.get("error_markers", []) if isinstance(save_result, dict) else []
     error_markers = [marker for marker in raw_markers if isinstance(marker, str) and marker in allowed_error_markers][:12]
+    network_diagnostics = product_post_network_diagnostics(driver)
 
     return {
         "manager_route_present": bool(page_state.get("manager_route_present")),
@@ -584,6 +585,9 @@ def product_edit_failure_diagnostics(
         "save_result_category": save_result_category if isinstance(save_result_category, str) else "unknown",
         "error_markers": error_markers,
         "final_field_match": bool(page_state.get("final_field_match")),
+        "post_network_capture_available": bool(network_diagnostics.get("available")),
+        "post_network_records_truncated": bool(network_diagnostics.get("truncated")),
+        "post_network_records": network_diagnostics.get("records", [])[:8],
     }
 
 
@@ -844,6 +848,7 @@ def run() -> None:
             edit_operation = "upload_replacement_image"
             visible(driver, "#product_images").send_keys(image_file.name)
             edit_operation = "submit_edit"
+            clear_product_browser_network_events(driver)
             visible(driver, 'button[name="submitKuraneaProductSave"]').click()
 
         edit_operation = "wait_edit_save_confirmation"

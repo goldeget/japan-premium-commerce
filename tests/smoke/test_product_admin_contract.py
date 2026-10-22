@@ -513,6 +513,9 @@ class ProductAdminContractTests(unittest.TestCase):
             "save_result_category",
             "error_markers",
             "final_field_match",
+            "post_network_capture_available",
+            "post_network_records_truncated",
+            "post_network_records",
             ".slice(0, 20)",
         ):
             with self.subTest(expected=expected):
@@ -522,6 +525,7 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertNotIn("alert_text", helper)
         self.assertNotIn("document.body.innerText", helper)
         self.assertIn('edit_operation = "wait_edit_save_confirmation"', edit_flow)
+        self.assertIn("clear_product_browser_network_events(driver)", edit_flow)
         self.assertIn("product_edit_failure_diagnostics(", failure_handler)
         self.assertIn('edit_diagnostics=', failure_handler)
 
