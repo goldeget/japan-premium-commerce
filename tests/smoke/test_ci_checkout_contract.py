@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
+import subprocess
+import textwrap
 import unittest
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -119,6 +122,54 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertIn("GITHUB_RUN_ID", flow)
         self.assertIn("@example.invalid", flow)
         self.assertIn("live payment", flow.lower())
+
+    def test_required_checkout_outcomes_must_succeed_and_use_original_outcome(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        aggregate = workflow.split(
+            "      - name: Aggregate browser QA and postal verification failures", 1
+        )[1].split("      - name:", 1)[0]
+        run_block = aggregate.split("        run: |\n", 1)[1]
+        script = textwrap.dedent(run_block)
+        outcome_sources = dict(
+            re.findall(
+                r"^\s*([A-Z_]+_OUTCOME): \$\{\{ steps\.([a-z0-9_]+)\.outcome \}\}$",
+                aggregate,
+                re.MULTILINE,
+            )
+        )
+
+        required_checkout = {
+            "CHECKOUT_ORDER_PERSISTENCE_OUTCOME": (
+                "checkout_order_persistence",
+                "checkout_order_persistence",
+            ),
+            "CHECKOUT_ADMIN_BROWSER_QA_OUTCOME": (
+                "checkout_admin_browser_qa",
+                "checkout_admin",
+            ),
+        }
+        for variable, (step_id, _) in required_checkout.items():
+            with self.subTest(variable=variable):
+                self.assertEqual(outcome_sources.get(variable), step_id)
+
+        environment = {variable: "success" for variable in outcome_sources}
+        for variable, (_, aggregate_name) in required_checkout.items():
+            for outcome in ("skipped", ""):
+                with self.subTest(variable=variable, outcome=outcome):
+                    case_environment = {**os.environ, **environment, variable: outcome}
+                    result = subprocess.run(
+                        ["bash", "-c", script],
+                        env=case_environment,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertNotEqual(
+                        result.returncode,
+                        0,
+                        f"required step {aggregate_name} with outcome {outcome!r} must fail the aggregate",
+                    )
+                    self.assertIn(f"{aggregate_name}={outcome}", result.stdout + result.stderr)
 
     def test_offline_payment_is_selected_before_order_submission(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")

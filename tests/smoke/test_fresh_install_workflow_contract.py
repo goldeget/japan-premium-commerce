@@ -467,7 +467,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn('::error title=Customer account registration safe state::%s\\n', account_step)
         self.assertIn('ACCOUNT_BROWSER_QA_OUTCOME: ${{ steps.account_browser_qa.outcome }}', aggregate)
         self.assertIn('"account=$ACCOUNT_BROWSER_QA_OUTCOME"', aggregate)
-        self.assertIn('if [[ "$entry" == *=failure || "$entry" == *=cancelled ]]; then', aggregate)
+        self.assertIn('if [[ "$entry" != *=success ]]; then', aggregate)
 
     def test_account_registration_failure_annotation_exposes_only_safe_response_state(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")

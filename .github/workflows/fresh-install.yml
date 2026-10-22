@@ -721,8 +721,8 @@ jobs:
             "fresh_install_restart=$FRESH_INSTALL_RESTART_OUTCOME" \
             "postal_import=$POSTAL_IMPORT_OUTCOME" \
             "postal_verify=$POSTAL_VERIFY_OUTCOME"; do
-            if [[ "$entry" == *=failure || "$entry" == *=cancelled ]]; then
-              failed_steps+=("${entry%%=*}")
+            if [[ "$entry" != *=success ]]; then
+              failed_steps+=("$entry")
             fi
           done
           if ((${#failed_steps[@]})); then
