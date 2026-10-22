@@ -35,6 +35,7 @@
 ### Task 1: Profile defaults, validation, and immutable version storage
 
 **Files:**
+- Create: `.github/workflows/business-profile.yml`
 - Create: `modules/kuraneabusinessprofile/autoload.php`
 - Create: `modules/kuraneabusinessprofile/src/Domain/ProfileDefaults.php`
 - Create: `modules/kuraneabusinessprofile/src/Domain/ProfileValidator.php`
@@ -50,10 +51,10 @@
 - [ ] Write `test_initial_profile_separates_brand_company_reference_and_pending_seller` asserting exact ORDENOWA values, LOGISTEED reference values, empty seller-specific contact/account fields, pending approval, and no KURANEA image paths.
 - [ ] Write `test_profile_versions_restore_without_overwriting_history` asserting saved versions are immutable and restore creates a new draft.
 - [ ] Write `test_unapproved_or_incomplete_profile_cannot_publish` asserting publish validation reports Korean errors and the published pointer does not change.
-- [ ] Run: `docker run --rm -v "$PWD:/src" -w /src php:8.3-cli php tests/business_profile/run.php`
-- [ ] Expected: tests fail because the profile module classes do not exist.
+- [ ] Run the PHP suite in the disposable PHP 8.3 container. If Docker cannot allocate storage, push the test-only checkpoint and use the isolated GitHub Actions runner as the red-test executor; do not prune images or volumes to make room.
+- [ ] Expected: the test fails because the profile module autoloader/classes do not exist.
 - [ ] Implement the minimal domain and idempotent schema/repository methods; uninstall must preserve tables and rows.
-- [ ] Run: `docker run --rm -v "$PWD:/src" -w /src php:8.3-cli php tests/business_profile/run.php`
+- [ ] Run the same PHP suite in a fresh PHP 8.3 GitHub Actions job after implementation; a successful test-only result is required before moving on.
 - [ ] Expected: all domain/version assertions pass.
 - [ ] Commit only Task 1 module and test files; push and verify the remote SHA and file contents.
 
@@ -162,3 +163,5 @@
 ## Completion Notes
 
 The attached ORDENOWA official image archive is currently inaccessible in the execution workspace. Its image replacement and browser/PWA icon QA remain blocked until the user-provided source bytes are available; no replacement logo may be generated. Live seller authorization, production payment/sales, real bank details, and real customer data remain out of scope.
+
+The current local Docker daemon has no free bytes on its root filesystem while existing application and MariaDB containers/named volumes are active. Preserve them; run module PHP checks on the disposable GitHub Actions runner until the user-managed Docker storage is recovered.

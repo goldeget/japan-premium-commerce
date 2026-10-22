@@ -1,0 +1,45 @@
+name: ORDENOWA business profile module
+
+on:
+  push:
+    branches: [work]
+    paths:
+      - '.github/workflows/business-profile.yml'
+      - 'modules/kuraneabusinessprofile/**'
+      - 'tests/business_profile/**'
+  pull_request:
+    paths:
+      - '.github/workflows/business-profile.yml'
+      - 'modules/kuraneabusinessprofile/**'
+      - 'tests/business_profile/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  module-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out work
+        uses: actions/checkout@v4
+
+      - name: Set up PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Lint business profile PHP files
+        shell: bash
+        run: |
+          set -euo pipefail
+          find tests/business_profile -name '*.php' -print0 > "$RUNNER_TEMP/business-profile-files"
+          if [ -d modules/kuraneabusinessprofile ]; then
+            find modules/kuraneabusinessprofile -name '*.php' -print0 >> "$RUNNER_TEMP/business-profile-files"
+          fi
+          xargs -0 -n1 php -l < "$RUNNER_TEMP/business-profile-files"
+
+      - name: Run profile lifecycle tests
+        run: php tests/business_profile/run.php
