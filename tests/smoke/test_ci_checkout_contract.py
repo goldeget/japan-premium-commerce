@@ -169,6 +169,29 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertNotIn("except Exception", search_helper)
         self.assertNotIn("except TimeoutException", search_helper)
 
+    def test_product_search_navigation_matches_the_selected_suggestion_url(self) -> None:
+        flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        search_flow = flow.split("def search_for_product", 1)[1].split(
+            "def add_product_and_open_checkout", 1
+        )[0]
+        navigation_wait = search_flow.split("WebDriverWait(driver, 30).until(", 1)[1].split(
+            'if "[CI ONLY]" not in driver.find_element', 1
+        )[0]
+
+        self.assertIn('f"result_product_option_{PRODUCT_ID}"', search_flow)
+        self.assertIn('product_url = urlparse(product_link.get_attribute("href"))', search_flow)
+        self.assertLess(
+            search_flow.index("click_at_center(driver, product_link)"),
+            search_flow.index("WebDriverWait(driver, 30).until("),
+        )
+        for component in ("netloc", "path", "query"):
+            with self.subTest(component=component):
+                self.assertIn(
+                    f"urlparse(browser.current_url).{component} == product_url.{component}",
+                    navigation_wait,
+                )
+        self.assertNotIn("driver.find_element(By.TAG_NAME, \"body\")", navigation_wait)
+
     def test_customer_runner_attempts_both_viewports_before_reporting_failure(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
         customer_runner = flow.split("def run_customer_checkouts", 1)[1].split(

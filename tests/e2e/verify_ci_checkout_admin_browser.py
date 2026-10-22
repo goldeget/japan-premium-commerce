@@ -230,6 +230,7 @@ def search_for_product(driver: webdriver.Chrome, label: str) -> None:
         lambda browser: (
             urlparse(browser.current_url).netloc == product_url.netloc
             and urlparse(browser.current_url).path == product_url.path
+            and urlparse(browser.current_url).query == product_url.query
         ),
         message=f"clicking the exact search result for product {PRODUCT_ID} did not open its detail page",
     )
