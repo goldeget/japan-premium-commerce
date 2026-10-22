@@ -191,6 +191,16 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("element.click()", helper)
         self.assertIn("click_centered(driver, registration_link)", registration)
 
+    def test_registration_submit_uses_the_centered_native_click_helper(self) -> None:
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
+        registration = account_flow.split('stage = "registration_submit"', 1)[1].split(
+            'stage = "registration_post_submit"', 1
+        )[0]
+
+        self.assertIn('visible(driver, "#customer-form button.form-control-submit")', registration)
+        self.assertIn("click_centered(driver,", registration)
+        self.assertNotIn('button.form-control-submit").click()', registration)
+
     def test_account_registration_reports_link_and_required_control_stages_safely(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
         registration = account_flow.split("def run_viewport", 1)[1].split("if __name__", 1)[0]

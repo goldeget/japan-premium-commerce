@@ -473,7 +473,8 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         )
         stage = "registration_submit"
         set_registration_control(failure_control, "save-customer", "submit")
-        visible(driver, "#customer-form button.form-control-submit").click()
+        submit_button = visible(driver, "#customer-form button.form-control-submit")
+        click_centered(driver, submit_button)
         stage = "registration_post_submit"
         failure_control = {"name": "", "type": ""}
         WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.ID, "identity_main_link")))
