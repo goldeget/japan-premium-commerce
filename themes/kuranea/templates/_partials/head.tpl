@@ -15,33 +15,33 @@
     {include file='_partials/preload.tpl'}
   {/block}
 
-  <title>{block name='head_seo_title'}{$ordenowaSeoTitle|default:$page.meta.title}{/block}</title>
+  <title>{block name='head_seo_title'}{$ordenowaSeoTitle|default:$page.meta.title|escape:'htmlall':'UTF-8'}{/block}</title>
 
   {block name='hook_after_title_tag'}
     {hook h='displayAfterTitleTag'}
   {/block}
 
-  <meta name="description" content="{block name='head_seo_description'}{$ordenowaSeoDescription|default:$page.meta.description}{/block}">
+  <meta name="description" content="{block name='head_seo_description'}{$ordenowaSeoDescription|default:$page.meta.description|escape:'htmlall':'UTF-8'}{/block}">
 
   {if $page.meta.robots !== 'index'}
-    <meta name="robots" content="{$page.meta.robots}">
+    <meta name="robots" content="{$page.meta.robots|escape:'htmlall':'UTF-8'}">
   {/if}
 
   {if $page.canonical}
-    <link rel="canonical" href="{$page.canonical}">
+    <link rel="canonical" href="{$page.canonical|escape:'htmlall':'UTF-8'}">
   {/if}
 
   {block name='head_hreflang'}
     {foreach from=$urls.alternative_langs item=pageUrl key=code}
-      <link rel="alternate" href="{$pageUrl}" hreflang="{$code}">
+      <link rel="alternate" href="{$pageUrl|escape:'htmlall':'UTF-8'}" hreflang="{$code|escape:'htmlall':'UTF-8'}">
     {/foreach}
   {/block}
 
   {** Render structured data from the core. Available since PrestaShop 9.2 **}
   {if !empty($structured_data)}
     {foreach from=$structured_data item="element"}
-      {** 320 in the method parameter means JSON_UNESCAPED_SLASHES (64) + JSON_UNESCAPED_UNICODE (256) **}
-    <script type="application/ld+json">{$element|@json_encode:320 nofilter}</script>
+      {** 321 means JSON_HEX_TAG (1) + JSON_UNESCAPED_SLASHES (64) + JSON_UNESCAPED_UNICODE (256); protects embedded structured data from literal </script> delimiters **}
+    <script type="application/ld+json">{$element|@json_encode:321 nofilter}</script>
     {/foreach}
 
   {** Or render them in a legacy, manual way. This will be removed in future versions of this theme. **}
@@ -57,10 +57,10 @@
   {/block}
 
   {block name='head_open_graph'}
-    <meta property="og:title" content="{$ordenowaSeoTitle|default:$page.meta.title}">
-    <meta property="og:description" content="{$ordenowaSeoDescription|default:$page.meta.description}">
-    <meta property="og:url" content="{$urls.current_url}">
-    <meta property="og:site_name" content="{$ordenowaBrandName|default:$shop.name}">
+    <meta property="og:title" content="{$ordenowaSeoTitle|default:$page.meta.title|escape:'htmlall':'UTF-8'}">
+    <meta property="og:description" content="{$ordenowaSeoDescription|default:$page.meta.description|escape:'htmlall':'UTF-8'}">
+    <meta property="og:url" content="{$urls.current_url|escape:'htmlall':'UTF-8'}">
+    <meta property="og:site_name" content="{$ordenowaBrandName|default:$shop.name|escape:'htmlall':'UTF-8'}">
     {if !isset($product) && $page.page_name != 'product'}<meta property="og:type" content="website">{/if}
   {/block}
 {/block}
@@ -70,7 +70,7 @@
 {/block}
 
 {block name='head_icons'}
-  <script defer src="{$urls.theme_assets}js/pwa-register.js" data-service-worker="{$urls.base_url}sw.js" data-scope="{$urls.base_url}"></script>
+  <script defer src="{$urls.theme_assets|escape:'htmlall':'UTF-8'}js/pwa-register.js" data-service-worker="{$urls.base_url|escape:'htmlall':'UTF-8'}sw.js" data-scope="{$urls.base_url|escape:'htmlall':'UTF-8'}"></script>
 {/block}
 
 {block name='stylesheets'}

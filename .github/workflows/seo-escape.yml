@@ -1,0 +1,30 @@
+name: ORDENOWA SEO escape contract
+
+on:
+  push:
+    branches: [work]
+    paths:
+      - '.github/workflows/seo-escape.yml'
+      - 'tests/smoke/test_seo_escape_contract.py'
+      - 'themes/kuranea/templates/_partials/head.tpl'
+  pull_request:
+    paths:
+      - '.github/workflows/seo-escape.yml'
+      - 'tests/smoke/test_seo_escape_contract.py'
+      - 'themes/kuranea/templates/_partials/head.tpl'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  seo-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out SEO change
+        uses: actions/checkout@v4
+      - name: Assert HTML escaping and JSON-LD tag safety
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -m unittest discover -s tests/smoke -p 'test_seo_escape_contract.py' -v
