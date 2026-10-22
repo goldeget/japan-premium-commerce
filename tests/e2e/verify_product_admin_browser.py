@@ -129,7 +129,20 @@ def _safe_network_failure_category(value: object) -> str:
     }
     if not isinstance(value, str):
         return "other_failure"
-    return categories.get(value, "network_failure" if value.startswith("net::ERR_") else "other_failure")
+    category = categories.get(value)
+    if category is not None:
+        return category
+    prefix = "net::ERR_"
+    if not value.startswith(prefix):
+        return "other_failure"
+    error_name = value[len(prefix) :]
+    if (
+        not error_name
+        or len(error_name) > 64
+        or any(character not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_" for character in error_name)
+    ):
+        return "other_failure"
+    return f"net_error_{error_name.lower()}"
 
 
 def product_post_network_diagnostics(driver: webdriver.Chrome) -> dict[str, object]:

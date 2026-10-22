@@ -463,6 +463,34 @@ class ProductAdminContractTests(unittest.TestCase):
             with self.subTest(secret_marker=secret_marker):
                 self.assertNotIn(secret_marker, rendered)
 
+    def test_product_network_failure_category_preserves_only_safe_error_enums(self) -> None:
+        browser_path = ROOT / "tests" / "e2e" / "verify_product_admin_browser.py"
+        tree = ast.parse(browser_path.read_text(encoding="utf-8"))
+        helper = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_safe_network_failure_category"
+        )
+        namespace: dict[str, object] = {}
+        exec(compile(ast.Module(body=[helper], type_ignores=[]), str(browser_path), "exec"), namespace)
+        categorize = namespace["_safe_network_failure_category"]
+
+        self.assertEqual(categorize("net::ERR_ABORTED"), "aborted")
+        self.assertEqual(categorize("net::ERR_CONNECTION_RESET"), "connection_reset")
+        self.assertEqual(categorize("net::ERR_HTTP2_PROTOCOL_ERROR"), "net_error_http2_protocol_error")
+        for value in (
+            "net::ERR_",
+            "net::ERR_BAD ERROR private-token",
+            "net::ERR_" + "A" * 65,
+            "net::ERR_ÄRGER",
+            "untrusted secret-token",
+            {"errorText": "net::ERR_SECRET"},
+            None,
+        ):
+            with self.subTest(value=repr(value)):
+                result = categorize(value)
+                self.assertEqual(result, "other_failure")
+                self.assertNotIn("SECRET", result)
+
     def test_native_product_alert_diagnostics_identify_only_safe_controller_and_field_markers(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
         controller = (MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php").read_text(encoding="utf-8")
