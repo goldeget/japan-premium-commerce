@@ -181,7 +181,8 @@ $createdEditorCombinationIds = array_map('intval', array_keys($createdEditor['co
 sort($createdCombinationIds, SORT_NUMERIC);
 sort($createdEditorCombinationIds, SORT_NUMERIC);
 if ($createdEditorCombinationIds !== $createdCombinationIds
-    || array_values($createdEditor['combination_quantities'] ?? []) !== [3, 3, 3, 3]) {
+    || array_values($createdEditor['combination_quantities'] ?? []) !== [3, 3, 3, 3]
+    || (int) ($createdEditor['quantity'] ?? -1) !== 0) {
     throw new RuntimeException('The product editor did not load stock for each native combination.');
 }
 

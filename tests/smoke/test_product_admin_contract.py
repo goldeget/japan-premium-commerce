@@ -762,7 +762,9 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("unique combination quantities", verifier)
         self.assertIn("missing combination ID", verifier)
         self.assertIn("foreign combination ID", verifier)
+        self.assertIn("($createdEditor['quantity'] ?? -1) !== 0", verifier)
         self.assertIn('input[name^="combination_quantities["]', browser)
+        self.assertIn('("#quantity", "0")', browser)
         self.assertIn("distinct option stock", browser)
         self.assertIn('product-admin-distinct-combination-stock-desktop.png', browser)
 

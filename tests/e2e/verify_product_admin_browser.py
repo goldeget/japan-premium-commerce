@@ -780,7 +780,7 @@ def run() -> None:
             ("#name_ja", japanese_name),
             ("#name_ko", korean_name),
             ("#price_jpy", "1280"),
-            ("#quantity", "3"),
+            ("#quantity", "0"),
             ("#options", "色:青|赤\nサイズ:S|M"),
             ("#description_ja", "CI用の商品説明"),
             ("#description_ko", "CI용 상세 설명"),
