@@ -719,6 +719,81 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         self.assertNotIn("pwa-{label}-failure.png", self.source)
         self.assertNotIn("print(body_text", self.source)
 
+    def test_logged_out_private_route_reports_only_safe_cache_response_metadata(self) -> None:
+        shop_url = "http://localhost:18080"
+        secret_url = shop_url + "/ko/my-account?token=private-token-sentinel"
+
+        class Driver:
+            def __init__(self, entries: list[dict[str, str]]) -> None:
+                self.entries = entries
+
+            def get_log(self, _log_type: str) -> list[dict[str, str]]:
+                return self.entries
+
+        with self.assertRaises(AssertionError) as no_response:
+            pwa_browser.assert_private_document_cache_headers(
+                Driver([]), secret_url, shop_url, "logged-out account"
+            )
+        self.assertEqual(no_response.exception.diagnostic_code, "document_response_missing")
+        self.assertEqual(no_response.exception.safe_metadata, {"response_count": 0})
+        self.assertNotIn("private-token-sentinel", str(no_response.exception))
+
+        missing_policy_event = {
+            "message": json.dumps(
+                {
+                    "message": {
+                        "method": "Network.responseReceived",
+                        "params": {
+                            "type": "Document",
+                            "response": {
+                                "url": secret_url,
+                                "status": 302,
+                                "headers": {"Cache-Control": "no-cache, max-age=0"},
+                                "fromServiceWorker": True,
+                                "fromDiskCache": False,
+                            },
+                        },
+                    }
+                }
+            )
+        }
+        with self.assertRaises(AssertionError) as missing_policy:
+            pwa_browser.assert_private_document_cache_headers(
+                Driver([missing_policy_event] * 25), secret_url, shop_url, "logged-out account"
+            )
+        self.assertEqual(missing_policy.exception.diagnostic_code, "cache_policy_missing")
+        self.assertEqual(
+            missing_policy.exception.safe_metadata,
+            {
+                "response_count": 20,
+                "status": 302,
+                "cache_control_directives": ["max-age", "no-cache"],
+                "pragma_present": False,
+                "expires_present": False,
+                "from_disk_cache": False,
+                "from_service_worker": True,
+            },
+        )
+        self.assertNotIn("private-token-sentinel", str(missing_policy.exception))
+        self.assertEqual(
+            pwa_browser.response_count_diagnostic(missing_policy.exception.safe_metadata["response_count"]),
+            "; response_count=20",
+        )
+        self.assertEqual(pwa_browser.response_count_diagnostic(1000), "; response_count=20")
+
+    def test_emitted_private_response_count_uses_the_bounded_formatter(self) -> None:
+        viewport = function_source(self.source, "run_viewport")
+        self.assertIn('response_count_diagnostic(metadata.get("response_count"))', viewport)
+
+    def test_logged_out_private_navigation_reports_its_sanitized_substage(self) -> None:
+        navigate = function_source(self.source, "navigate_private_document")
+        self.assertIn("set_substage", navigate)
+        self.assertIn('mark_substage("same_origin")', navigate)
+        self.assertIn('mark_substage("performance_log")', navigate)
+        self.assertIn('mark_substage("document_request")', navigate)
+        self.assertIn('mark_substage("document_ready")', navigate)
+        self.assertIn('mark_substage("cache_policy")', navigate)
+
     def test_authenticated_order_qa_uses_the_canonical_checkout_link_from_the_cart(self) -> None:
         checkout_url = getattr(pwa_browser, "customer_checkout_url_from_cart", None)
         self.assertTrue(callable(checkout_url), "PWA QA must use PrestaShop's generated checkout link")

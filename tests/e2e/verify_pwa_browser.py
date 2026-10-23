@@ -31,6 +31,22 @@ except ImportError:  # Pure manifest contract helpers remain importable without 
     WebDriverWait = None
 
 EXPECTED_SHOP_PORT = 18080
+MAX_PWA_DIAGNOSTIC_RESPONSE_COUNT = 20
+
+
+class PwaDiagnosticAssertionError(AssertionError):
+    """An assertion with bounded machine-readable context safe for CI annotations."""
+
+    def __init__(self, message: str, diagnostic_code: str, safe_metadata: dict[str, object]) -> None:
+        super().__init__(message)
+        self.diagnostic_code = diagnostic_code
+        self.safe_metadata = safe_metadata
+
+
+def response_count_diagnostic(value: object) -> str:
+    count = value if type(value) is int else 0
+    bounded_count = min(max(count, 0), MAX_PWA_DIAGNOSTIC_RESPONSE_COUNT)
+    return f"; response_count={bounded_count}"
 
 
 def validate_isolated_ci_target(base_url: str) -> None:
@@ -332,7 +348,11 @@ def assert_private_document_cache_headers(
     if not responses:
         message = f"UNVERIFIED: document cache headers could not be observed for {route_label}."
         print(message, file=sys.stderr)
-        raise AssertionError(message)
+        raise PwaDiagnosticAssertionError(
+            message,
+            "document_response_missing",
+            {"response_count": 0},
+        )
 
     response = responses[-1]
     raw_headers = response.get("headers")
@@ -358,36 +378,67 @@ def assert_private_document_cache_headers(
         "from_service_worker": response.get("fromServiceWorker") is True,
     }
     if not response_has_private_cache_policy(headers):
-        directives = ",".join(
-            sorted({part.split("=", 1)[0].strip().lower() for part in observed["cache_control"].split(",") if part.strip()})
-        ) or "missing"
+        directives = sorted({
+            part.split("=", 1)[0].strip().lower()
+            for part in observed["cache_control"].split(",")
+            if part.strip()
+        })
+        safe_directives = [
+            directive if re.fullmatch(r"[a-z0-9-]{1,32}", directive) else "other"
+            for directive in directives
+        ][:8]
+        status = observed["status"]
+        safe_status = int(status) if isinstance(status, (int, float)) and 100 <= status <= 599 else None
+        safe_metadata = {
+            "response_count": min(len(responses), MAX_PWA_DIAGNOSTIC_RESPONSE_COUNT),
+            "status": safe_status,
+            "cache_control_directives": safe_directives,
+            "pragma_present": observed["pragma_present"],
+            "expires_present": observed["expires_present"],
+            "from_disk_cache": observed["from_disk_cache"],
+            "from_service_worker": observed["from_service_worker"],
+        }
+        directive_summary = ",".join(safe_directives) or "missing"
         message = (
             f"FAIL: {route_label} response lacks Cache-Control private/no-store semantics "
-            f"(observed directives={directives}, pragma={observed['pragma_present']}, "
+            f"(observed directives={directive_summary}, pragma={observed['pragma_present']}, "
             f"expires={observed['expires_present']})."
         )
         print(message, file=sys.stderr)
-        raise AssertionError(message)
+        raise PwaDiagnosticAssertionError(message, "cache_policy_missing", safe_metadata)
     policy = "no-store" if "no-store" in observed["cache_control"].lower() else "private"
     print(f"PASS: {route_label} response uses Cache-Control {policy}.")
     return observed
 
 
 def navigate_private_document(
-    driver: webdriver.Chrome, requested_url: str, shop_url: str, route_label: str
+    driver: webdriver.Chrome,
+    requested_url: str,
+    shop_url: str,
+    route_label: str,
+    set_substage: Callable[[str], None] | None = None,
 ) -> dict[str, object]:
+    def mark_substage(name: str) -> None:
+        if set_substage is not None:
+            set_substage(name)
+
+    mark_substage("same_origin")
     if not same_origin(shop_url, requested_url):
         raise AssertionError(f"{route_label} link left the isolated shop origin")
+    mark_substage("performance_log")
     try:
         driver.get_log("performance")
     except Exception:
         message = f"UNVERIFIED: Chrome performance response logging is unavailable for {route_label}."
         print(message, file=sys.stderr)
         raise AssertionError(message)
+    mark_substage("document_request")
     driver.get(requested_url)
+    mark_substage("document_ready")
     WebDriverWait(driver, 30).until(
         lambda browser: browser.execute_script("return document.readyState") == "complete"
     )
+    mark_substage("cache_policy")
     return assert_private_document_cache_headers(driver, requested_url, shop_url, route_label)
 
 
@@ -1037,7 +1088,13 @@ def verify_logout_protection(
         )
     )
     mark_stage("request_protected_account")
-    navigate_private_document(driver, account_url, shop_url, "logged-out account")
+    navigate_private_document(
+        driver,
+        account_url,
+        shop_url,
+        "logged-out account",
+        set_substage=lambda name: mark_stage(f"request_protected_account_{name}"),
+    )
     mark_stage("wait_protected_document")
     WebDriverWait(driver, 30).until(
         lambda browser: browser.execute_script("return document.readyState") == "complete"
@@ -1240,6 +1297,27 @@ def run_viewport(
         diagnostic = ""
         if re.fullmatch(r"[a-z][a-z0-9_]{0,63}", logout_substage):
             diagnostic = f"; substage={logout_substage}"
+        if isinstance(error, PwaDiagnosticAssertionError):
+            code = error.diagnostic_code
+            if re.fullmatch(r"[a-z][a-z0-9_]{0,63}", code):
+                diagnostic += f"; diagnostic={code}"
+                metadata = error.safe_metadata
+                if code in {"document_response_missing", "cache_policy_missing"}:
+                    diagnostic += response_count_diagnostic(metadata.get("response_count"))
+                if code == "cache_policy_missing":
+                    safe_status = metadata.get("status")
+                    if isinstance(safe_status, int) and 100 <= safe_status <= 599:
+                        diagnostic += f"; response_status={safe_status}"
+                    directives = metadata.get("cache_control_directives")
+                    if isinstance(directives, list) and all(
+                        isinstance(item, str) and re.fullmatch(r"[a-z0-9-]{1,32}", item)
+                        for item in directives
+                    ):
+                        diagnostic += f"; cache_control_directives={','.join(directives) or 'missing'}"
+                    for key in ("pragma_present", "expires_present", "from_disk_cache", "from_service_worker"):
+                        value = metadata.get(key)
+                        if isinstance(value, bool):
+                            diagnostic += f"; {key}={str(value).lower()}"
         if isinstance(error, ChromeBrowserCdpError):
             code = getattr(error, "diagnostic_code", "")
             cause = getattr(error, "cause_type", "")
