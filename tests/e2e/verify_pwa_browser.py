@@ -32,6 +32,8 @@ except ImportError:  # Pure manifest contract helpers remain importable without 
 
 EXPECTED_SHOP_PORT = 18080
 MAX_PWA_DIAGNOSTIC_RESPONSE_COUNT = 20
+MAX_PWA_DIAGNOSTIC_ELEMENT_COUNT = 20
+PWA_LOGOUT_ROUTE_CLASSES = {"authentication", "account", "home", "other"}
 
 
 class PwaDiagnosticAssertionError(AssertionError):
@@ -163,6 +165,184 @@ def same_origin(reference_url: str, candidate_url: str) -> bool:
         )
     except (TypeError, ValueError):
         return False
+
+
+def customer_route_class(candidate_url: str, shop_url: str) -> str:
+    """Classify a same-origin customer page without returning any URL components."""
+    if not same_origin(shop_url, candidate_url):
+        return "other"
+    try:
+        shop = urlparse(shop_url)
+        candidate = urlparse(candidate_url)
+        base_path = shop.path.rstrip("/")
+        candidate_path = candidate.path.rstrip("/") or "/"
+        if base_path and (candidate_path == base_path or candidate_path.startswith(base_path + "/")):
+            relative_path = candidate_path[len(base_path) :].strip("/")
+        else:
+            relative_path = candidate_path.strip("/")
+        segments = [segment.casefold() for segment in relative_path.split("/") if segment]
+        controllers = parse_qs(candidate.query).get("controller", [])
+        controller = controllers[-1].casefold() if controllers else ""
+    except (TypeError, ValueError, IndexError):
+        return "other"
+
+    if controller == "authentication" or any(
+        segment in {"authentication", "login", "password-reset", "password-recovery"}
+        for segment in segments
+    ):
+        return "authentication"
+    if controller in {
+        "my-account",
+        "identity",
+        "addresses",
+        "address",
+        "history",
+        "order-detail",
+        "order-follow",
+        "discount",
+        "guest-tracking",
+    } or any(
+        segment in {
+            "my-account",
+            "account",
+            "identity",
+            "addresses",
+            "address",
+            "history",
+            "order-detail",
+            "order-follow",
+            "discount",
+            "guest-tracking",
+        }
+        for segment in segments
+    ):
+        return "account"
+
+    if segments and re.fullmatch(r"[a-z]{2}(?:-[a-z]{2})?", segments[0]):
+        segments = segments[1:]
+    if not segments or segments == ["index.php"]:
+        return "home"
+    return "other"
+
+
+def _bounded_logout_element_count(value: object) -> int | None:
+    if type(value) is not int:
+        return None
+    return min(max(value, 0), MAX_PWA_DIAGNOSTIC_ELEMENT_COUNT)
+
+
+def safe_logout_wait_diagnostics(driver: webdriver.Chrome, shop_url: str) -> dict[str, object]:
+    """Read only allowlisted route/form state from the final same-origin document."""
+    metadata: dict[str, object] = {
+        "final_route_class": "other",
+        "final_document_status": None,
+        "login_form_count": None,
+        "login_form_visible": None,
+        "email_field_count": None,
+        "email_field_visible": None,
+        "ready_state": "unknown",
+    }
+    try:
+        current_url = driver.current_url
+    except Exception:
+        return metadata
+    if not isinstance(current_url, str) or not same_origin(shop_url, current_url):
+        return metadata
+
+    metadata["final_route_class"] = customer_route_class(current_url, shop_url)
+    snapshot = driver.execute_script(
+        """
+        const visible = (element) => {
+          if (!element) return false;
+          const style = window.getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.display !== 'none' && style.visibility !== 'hidden'
+            && rect.width > 0 && rect.height > 0;
+        };
+        const loginForms = [...document.querySelectorAll('#login-form')];
+        const emailFields = [...document.querySelectorAll("#login-form input[name='email']")];
+        const navigation = performance.getEntriesByType('navigation')[0];
+        let navigationSameOrigin = false;
+        try {
+          navigationSameOrigin = Boolean(
+            navigation && new URL(navigation.name, window.location.href).origin === window.location.origin
+          );
+        } catch (_) {}
+        const status = navigationSameOrigin ? navigation.responseStatus : null;
+        return {
+          navigation_same_origin: navigationSameOrigin,
+          response_status: Number.isInteger(status) ? status : null,
+          login_form_count: loginForms.length,
+          login_form_visible: loginForms.some(visible),
+          email_field_count: emailFields.length,
+          email_field_visible: emailFields.some(visible),
+          ready_state: document.readyState,
+        };
+        """
+    )
+    if not isinstance(snapshot, dict):
+        return metadata
+
+    status = snapshot.get("response_status")
+    if (
+        snapshot.get("navigation_same_origin") is True
+        and type(status) is int
+        and 100 <= status <= 599
+    ):
+        metadata["final_document_status"] = status
+    metadata["login_form_count"] = _bounded_logout_element_count(snapshot.get("login_form_count"))
+    metadata["email_field_count"] = _bounded_logout_element_count(snapshot.get("email_field_count"))
+    for key in ("login_form_visible", "email_field_visible"):
+        value = snapshot.get(key)
+        metadata[key] = value if type(value) is bool else None
+    ready_state = snapshot.get("ready_state")
+    metadata["ready_state"] = (
+        ready_state
+        if isinstance(ready_state, str) and ready_state in {"loading", "interactive", "complete"}
+        else "unknown"
+    )
+    return metadata
+
+
+def format_logout_wait_diagnostic(metadata: dict[str, object]) -> str:
+    """Format only bounded, allowlisted logout diagnostics for CI annotations."""
+    route_class = metadata.get("final_route_class")
+    if not isinstance(route_class, str) or route_class not in PWA_LOGOUT_ROUTE_CLASSES:
+        route_class = "other"
+    status = metadata.get("final_document_status")
+    safe_status = status if type(status) is int and 100 <= status <= 599 else "unavailable"
+    ready_state = metadata.get("ready_state")
+    if not isinstance(ready_state, str) or ready_state not in {"loading", "interactive", "complete"}:
+        ready_state = "unknown"
+
+    def count_label(value: object) -> str:
+        bounded = _bounded_logout_element_count(value)
+        return str(bounded) if bounded is not None else "unavailable"
+
+    def boolean_label(value: object) -> str:
+        return str(value).lower() if type(value) is bool else "unknown"
+
+    return (
+        f"; final_route_class={route_class}"
+        f"; final_document_status={safe_status}"
+        f"; login_form_count={count_label(metadata.get('login_form_count'))}"
+        f"; login_form_visible={boolean_label(metadata.get('login_form_visible'))}"
+        f"; email_field_count={count_label(metadata.get('email_field_count'))}"
+        f"; email_field_visible={boolean_label(metadata.get('email_field_visible'))}"
+        f"; ready_state={ready_state}"
+    )
+
+
+def wait_for_logout_login_form(driver: webdriver.Chrome, shop_url: str):
+    try:
+        return wait_visible(driver, "#login-form input[name='email']")
+    except TimeoutException as error:
+        try:
+            error.pwa_logout_diagnostics = safe_logout_wait_diagnostics(driver, shop_url)
+        except Exception:
+            # Diagnostic capture must never replace the original login-form timeout.
+            pass
+        raise
 
 
 def response_has_private_cache_policy(headers: dict[str, object]) -> bool:
@@ -1152,7 +1332,7 @@ def verify_logout_protection(
     ):
         raise AssertionError("logged-out browser still shows an authenticated user menu")
     mark_stage("require_login_form")
-    wait_visible(driver, "#login-form input[name='email']")
+    wait_for_logout_login_form(driver, shop_url)
     mark_stage("assert_no_identity_on_protected_page")
     body_text = driver.find_element(By.TAG_NAME, "body").text
     if exposes_test_identity(body_text, first_name, last_name, email):
@@ -1180,7 +1360,7 @@ def verify_logout_protection(
     mark_stage("reopen_protected_account")
     driver.get(account_url)
     mark_stage("require_login_form_after_history")
-    wait_visible(driver, "#login-form input[name='email']")
+    wait_for_logout_login_form(driver, shop_url)
     mark_stage("assert_empty_account_cache_after_history")
     assert_empty_cache_storage(driver, "account route after browser back")
 
@@ -1346,6 +1526,9 @@ def run_viewport(
         diagnostic = ""
         if re.fullmatch(r"[a-z][a-z0-9_]{0,63}", logout_substage):
             diagnostic = f"; substage={logout_substage}"
+        logout_diagnostics = getattr(error, "pwa_logout_diagnostics", None)
+        if isinstance(logout_diagnostics, dict):
+            diagnostic += format_logout_wait_diagnostic(logout_diagnostics)
         if isinstance(error, PwaDiagnosticAssertionError):
             code = error.diagnostic_code
             if re.fullmatch(r"[a-z][a-z0-9_]{0,63}", code):

@@ -664,10 +664,12 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
 
     def test_logout_and_history_require_login_form_and_check_both_test_names(self) -> None:
         logout = function_source(self.source, "verify_logout_protection")
+        login_wait = function_source(self.source, "wait_for_logout_login_form")
         identity_check = function_source(self.source, "exposes_test_identity")
         viewport = function_source(self.source, "run_viewport")
 
-        self.assertIn('wait_visible(driver, "#login-form input[name=\'email\']")', logout)
+        self.assertIn("wait_for_logout_login_form(driver, shop_url)", logout)
+        self.assertIn('wait_visible(driver, "#login-form input[name=\'email\']")', login_wait)
         self.assertIn(
             'for history_stage in ("browser_history_first_back", "browser_history_second_back"):',
             logout,
