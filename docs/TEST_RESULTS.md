@@ -1,25 +1,25 @@
 # ORDENOWA 테스트 결과
 
-## 출시 가격 정책 격리 QA (2026-10-23 10:57 UTC)
+## 출시 가격 정책 격리 QA (상태: 2026-10-23 13:00 UTC)
 
-코드 SHA `29766718481a2c594ab7aa7896bb563de784c856` (`work`); `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지한다.
+기준 `work` SHA `6a371a912d436c354b0ab91f67c458a3d9131439`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지한다.
 
 | 검사 | 결과 | 근거 |
 | --- | --- | --- |
-| 통합 가격·세금·배송·workflow 계약 | PASS (로컬 계약) | `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -q`로 182개 통과. 지역 SQL 인자 따옴표, Osaka 독립 실행, 주문확인 금액 대조, postcode 실패 격리, 세금 그룹·저장 주문 및 브라우저 대상 guard를 포함한다. |
-| 계정·브랜드 및 business-profile 계약 | PASS (로컬 계약) | 회원/브랜드/재설정 이메일 65개와 business-profile 35개 통과. |
-| checkout·상품·브랜드·CI 계약 | PASS (로컬 계약) | 75개 통과. 오프라인 주문, native 상품, 공식 브랜드 자산 및 관련 관리자 계약을 포함한다. |
-| Japan Post updater 계약 | PASS (로컬 계약) | 7개 통과. 실제 주소 ZIP download/import 검증과 구분한다. |
-| workflow YAML·셸 구문 | PASS (정적) | YAML parsing, 63개 workflow step, 40개 고유 ID 및 60개 `run` 셸 블록 `bash -n` 통과. |
-| Actions #39940305981 (business-profile module) | PASS | 최신 `2976671`의 사업자 프로필 PHP·설정·브랜드 계약 run 성공. |
-| Actions #39940305885 (Isolated fresh install) | FAIL | `2976671`; 사전 계약·이미지 빌드 통과. synthetic postcode fixture와 tax fixture의 unpaid order 합계 확인이 실패했다. 이후 브라우저·무료배송 단계는 건너뛰었다. 로그 접근이 Forbidden이라 세금 불일치 필드는 아직 미확정이다. |
-| Actions #39940187556 (Isolated fresh install) | FAIL (이전 SHA) | 가격 코드 SHA `561cba7`; aggregate 실패로 종료했고 최신 통합 정책 실행을 대체하지 않는다. |
-| Actions #39940265549 (중간 계정·브랜드 commit) | FAIL (최신 판정 아님) | 통합 workflow보다 먼저 push되어 `Verify fresh-install workflow contracts`에서 image build 전에 실패했다. 다음 최신 통합 run #39940305885에서는 이 계약 단계가 통과했다. 상세 로그 endpoint는 이 실행에서 Forbidden이었다. |
-| 운영 DB·실결제 | 실행하지 않음 | 테스트는 run별 격리 Compose DB를 사용하도록 구성했다. 운영 DB, named volume, carrier 설정과 결제는 수정하지 않았다. |
+| Smoke/계약 테스트 | PASS (로컬 정적 QA) | `test_storefront.py` 네트워크 검사 파일을 제외한 smoke 361개와 무료배송·세금 집중 계약 23개 통과. 실제 PrestaShop/DB/Chromium 실행 PASS를 뜻하지 않는다. |
+| 최종 코드 Full fresh-install Actions [#39957544456](https://github.com/goldeget/japan-premium-commerce/actions/runs/39957544456) | 실행 중 | SHA `6a371a9`. 격리 설치와 브라우저/DB 가격 검증 결과는 해당 단계 완료 전 미확정이다. |
+| 상태 행 재사용 확인 run [#39957326795](https://github.com/goldeget/japan-premium-commerce/actions/runs/39957326795) | 실행 중 | SHA `0aafdd8`; final SHA의 추가 fail-closed 변경 전 단계다. |
+| 이전 full run [#39956044032](https://github.com/goldeget/japan-premium-commerce/actions/runs/39956044032) | FAIL | 모든 지원 도도부현이 중복 상태로 판정돼 무료배송 fixture가 실패했다. 배송/가격 브라우저 단계는 건너뛰었다. |
+| 가격·배송·세금·주문/관리자 runtime | PASS 근거 없음 | 배송비 ¥0, 상품 표시 가격과 checkout 금액, 저장 주문·주문내역·관리자 금액의 일치에 대한 실제 브라우저/DB PASS는 아직 없다. |
+| 운영 DB·실결제·배포 | 실행하지 않음 | 운영 DB/named volume/carrier 설정 변경, 실제 결제, 운영 배포는 수행하지 않았다. |
 
-CI 전용 합성 10% tax fixture는 산술/저장 검증용이며 일본의 적법한 세율 판단이 아니다. Tokyo/Osaka 두 테스트 주소는 모든 일본 prefecture의 운영 배송 설정을 입증하지 않는다. 최신 full fresh-install은 실패했고 가격·세금·무료배송 브라우저 결과는 아직 확인되지 않았다. 수정된 postcode fixture와 금액 진단을 포함하는 별도 `work` SHA에서 다시 검증한다.
+배송 구역 범위: 최신 fixture는 기본 State API를 이용해 카탈로그의 47개 행을 재사용하고, 조회 오류/중복 행/비지원 활성 행의 국가 구역 fallback을 거부한다. 브라우저 주문 표본은 Tokyo 데스크톱 수량 2+쿠폰과 같은 장바구니의 모바일 뷰포트 대조, Osaka 모바일 수량 1+쿠폰 없음, 별도 합성 과세 Tokyo 주문이다. 47개 지역별 브라우저 주문이나 모든 조건 조합 검증은 아니다.
 
-## 최신 검증 현황 (2026-10-23 02:26 UTC)
+세금 계약은 규칙 미할당 픽스처와 CI 전용 합성 10% 픽스처를 분리한다. ¥1,100 = ¥1,000 세전 + ¥100 합성 세액은 일본의 법정 세율 또는 판매자의 세무 설정을 뜻하지 않는다. 실제 세율·면세 처리는 판매자 및 상품의 적법한 세금 규칙에 따라 별도 확인해야 한다. 현재 실행이 완료되기 전까지 가격·배송·세금·주문·관리자 런타임을 PASS로 기록하지 않는다.
+
+운영 배송료는 변경하지 않았다. 한국어 배송 설정은 PrestaShop 기본 AdminCarriers/AdminShipping으로 연결되며, 무료 운송사 설정·저장·재조회는 run-scoped GitHub Actions DB에서만 검증한다. 운영 적용과 실제 결제는 별도 실행하지 않았다.
+
+## 이전 검증 현황 (2026-10-23 02:26 UTC; 당시 결과)
 
 최신 기능 및 full Chromium 검증 `work` SHA: `dfa30a1127a50d2eb4926d7c1fb6d75030a64121`. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다.
 

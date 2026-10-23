@@ -1,6 +1,18 @@
+## 2026-10-23 — 출시 가격 정책 QA 상태 갱신 (13:00 UTC)
+
+- 현재 기준 `work` SHA `6a371a912d436c354b0ab91f67c458a3d9131439`; `main` SHA `ee02a3657448d563508687614a246e05ac61eecd`는 변경하지 않았다.
+- 사용자가 확정한 가격 정책은 일본 지원 지역 배송비 ¥0, 상품 표시 세금 포함 판매가격과 결제 상품 금액의 일치, 결제 단계 추가 배송비·세금·플랫폼 이용료 미청구다. 과세 대상은 실제로 지정된 판매자·상품 세금 규칙을 유지하고, 규칙 미할당을 면세 또는 0%로 허위 기록하지 않는 범위로 QA한다.
+- 로컬에서 storefront 네트워크 검사 파일을 제외한 smoke 361개와 무료배송·세금 집중 계약 23개가 통과했다. 이 결과는 계약/정적 테스트이며 실제 브라우저, PrestaShop 주문 저장, 관리자 금액 검증이 아니다. Codex Cloud에서 Docker 빌드를 하지 않는다.
+- 최종 코드 SHA `6a371a9`의 격리 fresh-install Actions [#39957544456](https://github.com/goldeget/japan-premium-commerce/actions/runs/39957544456)는 진행 중이다. 이전 코드 SHA `0aafdd8`의 [#39957326795](https://github.com/goldeget/japan-premium-commerce/actions/runs/39957326795)도 상태 행 재사용을 검증하기 위해 실행 중이다. 실제 설치·가격 QA 결과는 관련 단계 완료 전 미확정이다.
+- 이전 full run [#39956044032](https://github.com/goldeget/japan-premium-commerce/actions/runs/39956044032)은 일본 지원 도도부현 행이 중복이라고 판정되어 무료배송 fixture에서 실패했다. checkout 가격 브라우저 단계는 실행되지 않았다.
+- 최신 배송 fixture는 PrestaShop State API로 47개 카탈로그 행을 재사용한다. 상태 조회가 실패하거나 중복 ISO 코드가 존재하면 쓰기 전에 중단하고, 비지원 활성 상태가 country zone fallback으로 무료배송을 받는 것도 거부한다. 브라우저 표본은 Tokyo desktop qty 2+coupon와 같은 장바구니 mobile viewport 대조, Osaka mobile qty 1/no coupon, 별도 synthetic-tax Tokyo 주문이며 모든 지역·조건 조합을 의미하지 않는다.
+- 한국어 배송 패널은 현재 PrestaShop AdminCarriers/AdminShipping 설정을 링크한다. 이번 QA는 그 native 화면에서 무료 운송사를 run-scoped 일본 zone에 저장하고 재조회하는 동작을 CI 격리 DB에서만 수행하며, 운영 배송 설정을 변경하지 않는다.
+- 합성 10% 세금은 산술·저장 검증용 CI fixture이며 일본의 적법한 세율이나 판매자의 실제 세무 판단이 아니다. 실제 과세/면세 구분은 판매자·상품 세금 규칙으로 확인해야 한다.
+- 현 시점에는 무료배송 가격, 브라우저 주문, 저장 주문, 주문내역, 관리자 주문액의 runtime PASS가 없다. Actions 각 단계가 완료되고 성공한 뒤에만 결과를 갱신한다. 운영 DB/named volume/carrier 설정은 변경하지 않았고, 실결제와 운영 배포를 실행하지 않았다.
+
 # KURANEA 작업 기록
 
-## 2026-10-23 — ORDENOWA 출시 가격 정책 격리 QA (통합 Actions 실패 진단 중)
+## 2026-10-23 — ORDENOWA 출시 가격 정책 격리 QA (이전 checkpoint)
 
 - 시작 기준 local `HEAD`, live remote `work`는 `8808791057349c46dd37f4bab055c84a9fd04319`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다. Codex Cloud에서 Docker 이미지 빌드나 production DB 접근을 하지 않았다.
 - 세금 포함 상품 가격 구현은 고객 표시 가격을 기준으로 PrestaShop 저장가격을 환산하고, 선택 세금 규칙·주문 세액을 검증한다. 일본 규칙을 알 수 없을 때 실제 세금을 0으로 기록하지 않고 저장을 거부한다. 합성 10%는 CI 전용이며 법정 세율 근거가 아니다.

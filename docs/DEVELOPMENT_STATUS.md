@@ -1,22 +1,23 @@
 # ORDENOWA 개발 현황
 
-## 출시 가격 정책 QA 체크포인트 (2026-10-23 10:57 UTC)
+## 출시 가격 정책 QA 상태 (2026-10-23 13:00 UTC)
 
-현재 기능 코드 기준 `work` SHA: **29766718481a2c594ab7aa7896bb563de784c856**
+현재 `work` 기준 커밋: **6a371a912d436c354b0ab91f67c458a3d9131439**
 `main`: **ee02a3657448d563508687614a246e05ac61eecd** (변경하지 않음)
 
-- JPY 방문자·비회원·회원 그룹 가격 표시는 PrestaShop의 세금 포함 모드로 설정하고, 한국어 상품 관리자는 명시한 native 세금 규칙 그룹에 따라 고객 표시 총액과 세전 저장 가격을 변환한다. 일본 주소별로 서로 다른 규칙이 선택된 경우 허위 0세율로 저장하지 않고 거부한다.
-- 출시 QA는 run-scoped 일본 전용 구역과 무료 운송사를 격리 Compose에 만들고, 관리자 저장·재시작 후 재조회 및 배송비 ¥0을 검증한다. 도쿄 PC(수량 2·쿠폰), 오사카 모바일(수량 1·쿠폰 없음), 합성 과세 상품 주문을 실행하도록 구성했다. 이는 운영 운송사 설정이나 일본 전 지역을 대신 검증하지 않는다.
-- 세금 포함 ¥1,100 → 세전 ¥1,000, 합성 CI 세액 ¥100은 테스트 fixture에만 적용한다. 이는 일본의 적법한 세율 판단이 아니며, 운영 DB를 변경하거나 실제 결제하지 않는다.
-- 로컬 검증: 통합 workflow/가격/세금/배송 계약 182개, business-profile 계약 35개, 별도 checkout/상품/브랜드 계약 75개, Japan Post updater 계약 7개 통과. PHP·PrestaShop·Chromium 실행은 로컬에서 하지 않았다. workflow YAML, 63개 step, 고유 step ID 40개 및 60개 셸 블록 구문을 검증했다.
-- 독립 코드 체크포인트: `561cba7`(상품 가격/세금), `081e0b8`(회원·브랜드 QA), `2976671`(세금·무료배송 CI 통합). 세 SHA 모두 원격 `work`에서 확인했고, 원격 `main`은 위 SHA로 유지된다.
-- 최신 full fresh-install Actions [#39940305885](https://github.com/goldeget/japan-premium-commerce/actions/runs/39940305885)는 `2976671`에서 실패했다. 사전 계약과 이미지 빌드는 통과했지만 synthetic Tokyo/Osaka postcode fixture와 독립 tax fixture가 각각 실패했다. 나머지 브라우저·배송 단계는 건너뛰어 출시 가격 런타임 QA는 미완료다. 로그 artifact 접근이 Forbidden이라 세금 불일치 필드는 아직 확인되지 않았다.
-- Osaka `State.name` 형식 오류를 scalar string으로 수정하고 회귀 계약을 추가했다. tax fixture는 다음 격리 실행에서 실제 기대/관측된 합성 주문 금액 필드만 출력하도록 진단을 보강했다. 주문 확인 화면에서 상품 합계·배송·세금·최종 합계를 읽고 주문내역으로 이동 전에 대조한다. postcode fixture 오류가 나도 독립 브라우저 QA는 계속 실행하며 실패/건너뜀은 aggregate에 남긴다. 현재 통합 계약 182개가 통과했고 새로운 Actions runtime 검증은 대기 중이다.
-- 이전 가격 코드 Actions [#39940187556](https://github.com/goldeget/japan-premium-commerce/actions/runs/39940187556)도 aggregate 실패로 완료되어 최종 정책 검증 근거로 쓰지 않는다. 계정·브랜드 중간 커밋 run [#39940265549](https://github.com/goldeget/japan-premium-commerce/actions/runs/39940265549)은 통합 workflow보다 먼저 실행되어 preflight 계약에서 실패했다. business-profile module run [#39940305981](https://github.com/goldeget/japan-premium-commerce/actions/runs/39940305981)은 성공했다.
+- 출시 정책: 일본 지원 지역의 배송비는 ¥0이며, 상품에 표시된 세금 포함 판매가격이 최종 상품 금액이다. 판매자·상품 세금 규칙에 따라 실제 세금이 있으면 그 세액을 저장하고, 세금 규칙 미할당을 면세로 간주하거나 세율을 허위 0으로 기록하지 않는다. 배송비·세금·쿠폰 할인 외의 플랫폼 추가 이용료는 ¥0이어야 한다.
+- 가격 QA 코드는 장바구니의 상품·배송·할인·세금·합계를 주문 확인, 회원 주문내역, PrestaShop 저장 주문 및 관리자 주문 금액과 대조한다. 모든 보이는 배송 옵션과 저장 주문 배송비가 0이어야 하며, 설명되지 않는 추가 금액은 실패 처리한다.
+- 격리 배송 fixture는 PrestaShop 기본 API로 기존 상태 행을 재사용하고 조회 실패 또는 중복 ISO 코드에서 중단한다. 주소 카탈로그의 47개 도도부현만 run-scoped 무료배송 구역에 넣으며, 미지원 활성 상태가 국가 기본 구역으로 무료배송을 우회할 가능성도 거부한다. 브라우저 표본은 Tokyo 데스크톱 수량 2+쿠폰 및 같은 장바구니의 모바일 뷰포트 대조, Osaka 모바일 수량 1+쿠폰 없음, 별도 합성 과세 Tokyo 주문이다. 47개 지역별 브라우저 주문이나 모든 조건 조합을 실행하는 범위는 아니다.
+- 과세 가격 시나리오는 CI 전용 합성 10% 규칙으로 ¥1,100 총액 = ¥1,000 세전 + ¥100 세액을 검증한다. 이는 일본의 법정 세율·판매자 세무 설정·상품 면세 여부를 판단하지 않는다. 운영 세율은 판매자와 상품의 적법한 설정으로 별도 확인해야 한다.
+- 로컬 검증: network storefront 검사 파일을 제외한 smoke 테스트 361개와 무료배송·세금 집중 계약 테스트 23개가 통과했다. 계약/정적 검사이며 PrestaShop·DB·Chromium 실제 실행 결과가 아니다. Codex Cloud에서 Docker 빌드를 하지 않았고, 브라우저/DB 실행은 격리 GitHub Actions에 둔다.
+- 최종 코드 SHA `6a371a9`의 GitHub Actions [#39957544456](https://github.com/goldeget/japan-premium-commerce/actions/runs/39957544456)는 격리 fresh-install 실행 중이다. 이전 코드 SHA `0aafdd8`의 [#39957326795](https://github.com/goldeget/japan-premium-commerce/actions/runs/39957326795)도 기존 상태 행 재사용을 검증하기 위해 실행 중이다. 가격 브라우저·저장 주문·관리자 검증 결과는 두 실행의 해당 단계가 완료되기 전까지 미확정이다.
+- SHA `b725b1d`의 [#39956044032](https://github.com/goldeget/japan-premium-commerce/actions/runs/39956044032)는 지원 도도부현 상태가 중복됐다는 fixture 검증 오류로 실패했고, 무료배송 checkout 단계 42–54는 실행되지 않았다. 현재 fixture는 상태 API 조회를 재사용하도록 수정했다.
+- 한국어 배송 패널은 PrestaShop 기본 AdminCarriers/AdminShipping 화면을 연결한다. 무료 운송사 저장·재조회는 Actions의 격리 DB에서만 실행하며, 운영 carrier 설정이나 운영 주문은 이 작업에서 변경하지 않는다.
+- 현 시점에서 무료배송 상품 checkout, 주문 저장·내역, 관리자 주문 금액의 실제 브라우저/DB 런타임 PASS는 없다. 실행이 끝나고 각 단계가 성공한 뒤에만 PASS로 갱신한다.
 
-이번 가격 정책 검증은 아직 운영 운송사 설정 반영이나 출시 허가가 아니다. 배포·실거래 활성화 전 운영 설정과 세무 판단은 별도 승인·검증이 필요하다.
+운영 DB·named volume·운영 carrier 설정은 변경하지 않았고, 실결제·운영 배포도 하지 않았다. QA의 합성 세금 규칙과 Tokyo/Osaka 브라우저 표본은 출시 세무 적법성이나 일본 전 지역의 운영 운송사 설정을 입증하지 않는다.
 
-## 최신 이어가기 기준 (2026-10-23 02:33 UTC)
+## 이전 이어가기 기준 (2026-10-23 02:33 UTC; 과거 검증 이력)
 
 작업 브랜치: **work**
 최신 기능 코드 및 full Chromium 검증 SHA: **dfa30a1127a50d2eb4926d7c1fb6d75030a64121**
