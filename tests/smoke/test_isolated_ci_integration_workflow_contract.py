@@ -14,12 +14,14 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/fresh-install.yml"
 NEW_STEP_IDS = (
     "postcode_fixture", "tax_fixture", "shipping_product_fixture",
+    "exemption_product_fixture",
     "variant_fixture", "cart_controls_browser_qa",
     "security_fixture", "admin_security_browser_qa", "reset_token_browser_qa",
     "pwa_browser_qa", "shipping_free_fixture", "shipping_free_admin_access", "shipping_free_admin_configure",
     "shipping_free_restart", "shipping_free_admin_readback",
     "shipping_free_customer_browser_qa", "shipping_free_osaka_mobile_browser_qa",
     "shipping_free_taxable_browser_qa", "shipping_free_order_persistence",
+    "shipping_free_exemption_browser_qa",
     "shipping_free_admin_browser_qa",
 )
 
@@ -100,6 +102,7 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             "test_account_address_routes", "test_product_tax_rules_contract", "test_variant_fixture_contract",
             "test_cart_controls_browser_contract", "test_security_runtime_e2e_contract",
             "test_pwa_service_worker", "test_taxable_checkout_browser_contract",
+            "test_free_shipping_exemption_contract",
             "test_isolated_browser_target_guards", "test_isolated_ci_integration_workflow_contract",
             "test_currency_bootstrap_contract", "test_saved_order_tax_contract",
             "test_product_admin_browser_guard",
@@ -123,6 +126,32 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
         self.assertIn('if [[ "$SHIPPING_PRODUCT_FIXTURE_OUTCOME" == success ]]; then', coverage)
         self.assertIn("free-shipping-product-fixture.log", coverage)
         self.assertIn("free-shipping-product-fixture.json", coverage)
+
+    def test_explicit_exemption_fixture_browser_order_and_admin_view_are_aggregated(self) -> None:
+        fixture = step("Prepare isolated explicit exemption product fixture")
+        browser = step("Verify explicit exemption free-shipping checkout with Chromium")
+        persistence = step("Verify free-shipping orders and totals in the isolated database")
+        admin = step("Verify free-shipping orders in a separate admin browser session")
+        coverage = step("Verify browser QA screenshot coverage")
+        for marker in (
+            "KURANEA_ISOLATED_CI=1",
+            "CI_TEST_EXEMPT_PRODUCT_ID",
+            "CI_TEST_EXEMPT_TAX_RULES_GROUP_ID",
+            '"$GITHUB_ENV"',
+        ):
+            self.assertIn(marker, fixture)
+        self.assertIn("steps.exemption_product_fixture.outcome == 'success'", browser)
+        self.assertIn("CI_TEST_PRODUCT_ID=\"$CI_TEST_EXEMPT_PRODUCT_ID\"", browser)
+        self.assertIn("CI_TEST_PRODUCT_TAX_GROUP=\"$CI_TEST_EXEMPT_TAX_RULES_GROUP_ID\"", browser)
+        self.assertIn("steps.shipping_free_exemption_browser_qa.outcome == 'success'", persistence)
+        self.assertIn("verify_ci_free_shipping_exemption_order.php", persistence)
+        self.assertIn("shipping-free-exemption-order.json", persistence)
+        self.assertIn("shipping-free-exemption-verified.json", persistence)
+        self.assertIn("steps.shipping_free_order_persistence.outcome == 'success'", admin)
+        self.assertIn("verify_ci_free_shipping_browser.py admin", admin)
+        self.assertIn("EXEMPTION_PRODUCT_FIXTURE_OUTCOME", coverage)
+        self.assertIn("SHIPPING_FREE_EXEMPTION_BROWSER_QA_OUTCOME", coverage)
+        self.assertIn("shipping-free-order-admin-exemption-desktop.png", coverage)
 
     def test_tax_and_variant_ids_are_validated_and_forwarded_to_consumers(self) -> None:
         tax = step("Create isolated synthetic tax product and reconcile native unpaid order")

@@ -28,6 +28,7 @@ from checkout_total_math import (
     reconcile_inclusive_and_exclusive_totals,
     reconcile_no_assigned_tax_rule_display,
     reconcile_order_confirmation_total_rows,
+    reconcile_explicit_zero_rate_checkout,
     reconcile_tax_included_display,
 )
 from shipping_admin_routes import carrier_action_url, carrier_id_from_edit_url, matches_admin_controller_url
@@ -666,6 +667,7 @@ def _cart_snapshot(
     driver,
     tax_rule_group_id: int | None = None,
     pre_discount_tax_total: int | None = None,
+    explicit_zero_rate_rule: bool = False,
 ) -> dict[str, int | None | bool | str]:
     tax_rule_group_id = PRODUCT_TAX_RULE_GROUP_ID if tax_rule_group_id is None else tax_rule_group_id
     product_text = _visible_text(driver, "#cart-subtotal-products .cart-summary__value")
@@ -701,6 +703,21 @@ def _cart_snapshot(
         total_rows.append((lines[-1][0], _parse_yen(lines[-1][1])))
 
     total_amounts = [amount for _label, amount in total_rows]
+    if explicit_zero_rate_rule:
+        labeled_totals = labeled_tax_total_amounts(total_rows)
+        total_tax_incl = labeled_totals["total_tax_incl"]
+        if total_tax_incl is None:
+            total_tax_incl = total_amounts[-1]
+        return reconcile_explicit_zero_rate_checkout(
+            products_tax_incl=product_total,
+            shipping_tax_incl=shipping_total,
+            discounts_tax_incl=discount_total,
+            total_tax_incl=total_tax_incl,
+            total_tax_excl=labeled_totals["total_tax_excl"],
+            explicit_tax_rules_group_id=tax_rule_group_id,
+            resolved_tax_rate_percent=0.0,
+            tax_amounts=tax_amounts,
+        )
     if tax_rule_group_id == 0:
         if any(amount != 0 for amount in tax_amounts):
             raise AssertionError("the fixture with no assigned tax rule displayed a nonzero tax row")
@@ -927,6 +944,7 @@ def _select_free_carrier_and_assert_zero(
     carrier: dict[str, object],
     tax_rule_group_id: int | None = None,
     pre_discount_tax_total: int | None = None,
+    explicit_zero_rate_rule: bool = False,
 ) -> dict[str, int | None | bool | str]:
     available_options = [
         item for item in driver.find_elements(By.CSS_SELECTOR, ".delivery-option__item")
@@ -959,6 +977,7 @@ def _select_free_carrier_and_assert_zero(
                 driver,
                 tax_rule_group_id,
                 pre_discount_tax_total,
+                explicit_zero_rate_rule,
             ))["shipping_tax_incl"] == 0
             else False
         ),
@@ -989,6 +1008,7 @@ def _order_confirmation_totals(
     driver,
     *,
     allow_unassigned_tax_rule: bool = False,
+    explicit_zero_rate_tax_rules_group_id: int | None = None,
 ) -> dict[str, int | None | bool | str]:
     """Read the rendered Hummingbird confirmation amounts without leaving the page."""
     _wait_present(driver, ".order-confirmation__table")
@@ -1043,6 +1063,7 @@ def _order_confirmation_totals(
         total_rows=total_rows,
         tax_amounts=tax_amounts,
         allow_unassigned_tax_rule=allow_unassigned_tax_rule,
+        explicit_zero_rate_tax_rules_group_id=explicit_zero_rate_tax_rules_group_id,
     )
 
     return {
@@ -1072,9 +1093,15 @@ def _place_unpaid_order_and_verify_confirmation(
     if "[CI ONLY]" not in confirmation:
         raise AssertionError("order confirmation does not contain the clearly marked CI-only product")
 
+    explicit_zero_rate_group_id = (
+        int(expected_totals["tax_rules_group_id"])
+        if expected_totals.get("tax_display_mode") == "explicit_zero_rate_rule"
+        else None
+    )
     observed = _order_confirmation_totals(
         driver,
         allow_unassigned_tax_rule=expected_totals.get("tax_display_mode") == "no_assigned_tax_rule",
+        explicit_zero_rate_tax_rules_group_id=explicit_zero_rate_group_id,
     )
     expected = {
         "products_tax_incl": int(expected_totals["products_tax_incl"]),
@@ -1568,6 +1595,125 @@ def run_japan_taxable_customer_checkout() -> None:
         driver.quit()
 
 
+def run_japan_explicit_exemption_customer_checkout() -> None:
+    """Exercise an explicit CI-only zero-rate Japan rule through an unpaid order."""
+    validate_isolated_ci_compose_project()
+    validate_loopback_admin_targets()
+    if PRODUCT_TAX_RULE_GROUP_ID < 1:
+        raise AssertionError("the exemption scenario requires its positive run-scoped zero-rate group ID")
+    carrier = _read_config()
+    driver = checkout.webdriver.Chrome(options=checkout.browser_options(1440, 960))
+    stage = "explicit_exemption_product_search_and_price"
+    try:
+        unit_price = _add_quantity_and_open_checkout(
+            driver,
+            "shipping-free-explicit-exemption",
+            1,
+            "exemption",
+        )
+        if unit_price != 1000:
+            raise AssertionError(
+                f"the explicit zero-rate product detail showed ¥{unit_price}; expected its ¥1,000 TTC price"
+            )
+
+        stage = "explicit_exemption_customer_registration"
+        email = checkout.register_checkout_account(driver, "shipping-free-explicit-exemption")
+        stage = "explicit_exemption_japan_address"
+        checkout.select_japan_address(driver, "shipping-free-explicit-exemption")
+        stage = "explicit_exemption_free_carrier_checkout"
+        browser_totals = _select_free_carrier_and_assert_zero(
+            driver,
+            carrier,
+            tax_rule_group_id=PRODUCT_TAX_RULE_GROUP_ID,
+            explicit_zero_rate_rule=True,
+        )
+        expected_totals = {
+            "products_tax_incl": 1000,
+            "products_tax_excl": 1000,
+            "shipping_tax_incl": 0,
+            "shipping_tax_excl": 0,
+            "discounts_tax_incl": 0,
+            "discounts_tax_excl": 0,
+            "tax": 0,
+            "total_tax_incl": 1000,
+            "total_tax_excl": 1000,
+            "tax_display_mode": "explicit_zero_rate_rule",
+            "tax_rules_group_id": PRODUCT_TAX_RULE_GROUP_ID,
+        }
+        for key, expected in expected_totals.items():
+            if browser_totals.get(key) != expected:
+                raise AssertionError(
+                    f"explicit exemption checkout {key}={browser_totals.get(key)!r}; expected {expected!r}"
+                )
+        if browser_totals["products_tax_incl"] != unit_price:
+            raise AssertionError("the explicit exemption cart subtotal differs from the product detail price")
+        browser_totals.update({
+            "displayed_unit_price": unit_price,
+            "quantity": 1,
+            "tax_status": "explicit_exemption_test",
+        })
+        driver.save_screenshot(str(QA_DIR / "shipping-free-exemption-checkout-desktop.png"))
+
+        stage = "explicit_exemption_offline_payment"
+        _click_offline_payment(driver)
+        stage = "explicit_exemption_unpaid_order"
+        order, confirmation_totals = _place_unpaid_order_and_verify_confirmation(
+            driver,
+            "shipping-free-explicit-exemption",
+            email,
+            browser_totals,
+            "shipping-free-exemption-order-confirmation-desktop.png",
+        )
+        history_total = _order_history_total(driver, order["reference"])
+        if history_total != 1000 or history_total != browser_totals["total_tax_incl"]:
+            raise AssertionError(
+                f"explicit exemption customer history shows ¥{history_total}; checkout showed ¥1,000"
+            )
+        order.update({
+            "carrier_id": int(carrier["id"]),
+            "carrier_name": str(carrier["name"]),
+            "carrier_tax_rule_group_id": carrier["carrier_tax_rule_group_id"],
+            "expected_shipping_fee": 0,
+            "quantity": 1,
+            "displayed_unit_price": unit_price,
+            "browser_totals": browser_totals,
+            "order_history_total": history_total,
+            "order_confirmation_totals": confirmation_totals,
+            "coupon": {"code": None, "applied": False},
+            "product_tax_rule_group_id": PRODUCT_TAX_RULE_GROUP_ID,
+            "tax_status": "explicit_exemption_test",
+            "tax_rate_percent": 0,
+            "tax_fixture_scope": (
+                "CI-only explicit zero-rate exemption test fixture; not a legal tax rate or tax determination"
+            ),
+            "destination_scope": "synthetic Tokyo address 100-0004, served through the run-scoped Japan-only zone",
+            "destination": {
+                "postcode": "100-0004",
+                "city": "千代田区",
+                "state_iso_code": "JP-13",
+                "address1_fragment": "大手町",
+            },
+        })
+        exemption_order_path = QA_DIR / "shipping-free-exemption-order.json"
+        exemption_order_path.write_text(
+            json.dumps(order, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        print(
+            "PASS: explicit CI-only Japan zero-rate rule preserved ¥1,000 product/checkout/confirmation/history "
+            "totals and ¥0 shipping; actual order tax is verified separately in the isolated database."
+        )
+    except Exception as error:
+        try:
+            driver.save_screenshot(str(QA_DIR / "shipping-free-exemption-checkout-failure.png"))
+        except Exception:
+            pass
+        _emit_failure(stage, error, driver)
+        raise SystemExit(f"explicit exemption free-shipping checkout failed at {stage}") from None
+    finally:
+        driver.quit()
+
+
 def _parse_order_amount(driver, selector: str) -> int:
     return _parse_yen(_wait_present(driver, selector).text)
 
@@ -1591,13 +1737,18 @@ def _expected_admin_order_totals(
         "total": int(browser_totals["total_tax_incl"]),
     }
     if product_tax_group_id > 0:
-        if native_tax <= 0:
-            raise AssertionError("the configured taxable order has no persisted tax amount")
-        if browser_tax is not None and int(browser_tax) != native_tax:
-            raise AssertionError(
-                f"displayed tax amount ¥{browser_tax} differs from native saved tax ¥{native_tax}"
-            )
-        expected["tax"] = native_tax
+        if order.get("tax_status") == "explicit_exemption_test":
+            if native_tax != 0 or browser_tax != 0:
+                raise AssertionError("the explicit zero-rate group must resolve to zero native/browser tax")
+            expected["tax"] = 0
+        else:
+            if native_tax <= 0:
+                raise AssertionError("the configured taxable order has no persisted tax amount")
+            if browser_tax is not None and int(browser_tax) != native_tax:
+                raise AssertionError(
+                    f"displayed tax amount ¥{browser_tax} differs from native saved tax ¥{native_tax}"
+                )
+            expected["tax"] = native_tax
     else:
         if native_tax != 0:
             raise AssertionError(
@@ -1640,6 +1791,7 @@ def run_free_carrier_admin_order_view() -> None:
         ("tokyo", ORDER_PATH),
         ("osaka", QA_DIR / "shipping-free-mobile-order.json"),
         ("taxable", QA_DIR / "shipping-free-taxable-order.json"),
+        ("exemption", QA_DIR / "shipping-free-exemption-order.json"),
     )
     driver = checkout.webdriver.Chrome(options=checkout.browser_options(1440, 960))
     stage = "separate_administrator_login"
@@ -1686,6 +1838,16 @@ def run_free_carrier_admin_order_view() -> None:
                         verified,
                     )
                     continue
+                if key == "tax" and order.get("tax_status") == "explicit_exemption_test":
+                    tax_elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                    tax_values = [
+                        _parse_yen(text)
+                        for element in tax_elements
+                        if element.is_displayed() and (text := element.text.strip())
+                    ]
+                    if any(value != 0 for value in tax_values):
+                        raise AssertionError("the Back Office displayed positive tax for the explicit zero-rate fixture")
+                    continue
                 if key not in expected:
                     tax_elements = driver.find_elements(By.CSS_SELECTOR, selector)
                     _assert_unknown_admin_tax_display(
@@ -1697,9 +1859,12 @@ def run_free_carrier_admin_order_view() -> None:
                     )
                     continue
                 actual[key] = _parse_order_amount(driver, selector)
-            if actual != expected:
+            expected_display_totals = dict(expected)
+            if order.get("tax_status") == "explicit_exemption_test":
+                expected_display_totals.pop("tax", None)
+            if actual != expected_display_totals:
                 raise AssertionError(
-                    f"{order_kind} Back Office totals {actual} differ from customer checkout {expected}"
+                    f"{order_kind} Back Office totals {actual} differ from customer checkout {expected_display_totals}"
                 )
 
             stage = f"verify_{order_kind}_admin_carrier_line"
@@ -1716,7 +1881,7 @@ def run_free_carrier_admin_order_view() -> None:
         driver.set_window_size(390, 844)
         driver.save_screenshot(str(QA_DIR / "shipping-free-order-admin-mobile.png"))
         print(
-            "PASS: separate admin login reconciled Tokyo, Osaka, and taxable order totals and ¥0 shipping; "
+            "PASS: separate admin login reconciled Tokyo, Osaka, taxable, and explicit exemption orders with ¥0 shipping; "
             "tax amounts came from verified native saved orders."
         )
     except Exception as error:
@@ -1766,10 +1931,11 @@ if __name__ == "__main__":
         "customer": run_japan_customer_checkout,
         "osaka-mobile": run_japan_mobile_osaka_checkout,
         "taxable-customer": run_japan_taxable_customer_checkout,
+        "explicit-exemption-customer": run_japan_explicit_exemption_customer_checkout,
         "admin": run_free_carrier_admin_order_view,
     }
     if len(sys.argv) != 2 or sys.argv[1] not in modes:
         raise SystemExit(
-            "Usage: verify_ci_free_shipping_browser.py configure|readback|customer|osaka-mobile|taxable-customer|admin"
+            "Usage: verify_ci_free_shipping_browser.py configure|readback|customer|osaka-mobile|taxable-customer|explicit-exemption-customer|admin"
         )
     modes[sys.argv[1]]()

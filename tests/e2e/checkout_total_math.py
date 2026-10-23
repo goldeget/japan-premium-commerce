@@ -1,6 +1,8 @@
 """Small, testable arithmetic for the isolated free-shipping checkout QA."""
 from __future__ import annotations
 
+import math
+
 
 def _label_has_any(label: str, markers: tuple[str, ...]) -> bool:
     normalized = " ".join(label.casefold().split())
@@ -45,6 +47,7 @@ def reconcile_order_confirmation_total_rows(
     total_rows: list[tuple[str, int]],
     tax_amounts: list[int],
     allow_unassigned_tax_rule: bool = False,
+    explicit_zero_rate_tax_rules_group_id: int | None = None,
 ) -> dict[str, int | None | bool | str]:
     """Read the final order amount and tax evidence from confirmation labels."""
     if not total_rows:
@@ -53,7 +56,20 @@ def reconcile_order_confirmation_total_rows(
     total_incl = labeled["total_tax_incl"]
     total_excl = labeled["total_tax_excl"]
 
-    if allow_unassigned_tax_rule:
+    if explicit_zero_rate_tax_rules_group_id is not None:
+        if explicit_zero_rate_tax_rules_group_id < 1:
+            raise AssertionError("an explicit zero-rate fixture must retain its positive tax-rule group ID")
+        if any(amount != 0 for amount in tax_amounts):
+            raise AssertionError("the explicitly configured zero-rate fixture displayed positive tax")
+        if total_incl is not None and total_excl is not None and total_incl != total_excl:
+            raise AssertionError("the explicit zero-rate fixture has different gross and net confirmation totals")
+        if total_incl is None:
+            total_incl = total_rows[-1][1]
+        if total_excl is None:
+            total_excl = total_incl
+        tax = 0
+        display_mode = "explicit_zero_rate_rule"
+    elif allow_unassigned_tax_rule:
         if any(amount != 0 for amount in tax_amounts):
             raise AssertionError("confirmation displayed tax despite the fixture having no assigned tax rule")
         if total_incl is not None and total_excl is not None and total_incl != total_excl:
@@ -90,6 +106,50 @@ def reconcile_order_confirmation_total_rows(
         "tax_display_mode": display_mode,
         "total_tax_incl": total_incl,
         "total_tax_excl": total_excl,
+    }
+
+
+def reconcile_explicit_zero_rate_checkout(
+    *,
+    products_tax_incl: int,
+    shipping_tax_incl: int,
+    discounts_tax_incl: int,
+    total_tax_incl: int,
+    explicit_tax_rules_group_id: int,
+    resolved_tax_rate_percent: float,
+    tax_amounts: list[int],
+    total_tax_excl: int | None = None,
+) -> dict[str, int | None | bool | str]:
+    """Reconcile a test-only explicit zero-rate rule without confusing it with unknown tax."""
+    if explicit_tax_rules_group_id < 1:
+        raise AssertionError("an explicit zero-rate fixture requires a positive tax-rule group ID")
+    if not math.isfinite(resolved_tax_rate_percent) or abs(resolved_tax_rate_percent) > 0.000001:
+        raise AssertionError("the explicit exemption fixture must resolve to its configured zero tax rate")
+    if any(amount != 0 for amount in tax_amounts):
+        raise AssertionError("the explicit zero-rate fixture displayed positive tax")
+    amounts = (products_tax_incl, shipping_tax_incl, discounts_tax_incl, total_tax_incl)
+    if any(amount < 0 for amount in amounts):
+        raise AssertionError("checkout totals cannot contain negative amounts")
+    if shipping_tax_incl != 0:
+        raise AssertionError("the supported Japan carrier must keep shipping at ¥0")
+    if total_tax_incl != products_tax_incl + shipping_tax_incl - discounts_tax_incl:
+        raise AssertionError("checkout total has an unexplained amount (possible platform fee)")
+    if total_tax_excl is not None and total_tax_excl != total_tax_incl:
+        raise AssertionError("explicit zero-rate gross and net checkout totals must match")
+
+    return {
+        "products_tax_incl": products_tax_incl,
+        "products_tax_excl": products_tax_incl,
+        "shipping_tax_incl": shipping_tax_incl,
+        "shipping_tax_excl": 0,
+        "discounts_tax_incl": discounts_tax_incl,
+        "discounts_tax_excl": discounts_tax_incl,
+        "tax": 0,
+        "total_tax_incl": total_tax_incl,
+        "total_tax_excl": total_tax_incl,
+        "tax_breakdown_displayed": bool(tax_amounts),
+        "tax_display_mode": "explicit_zero_rate_rule",
+        "tax_rules_group_id": explicit_tax_rules_group_id,
     }
 
 

@@ -33,6 +33,7 @@ on:
       - 'tests/smoke/test_reset_email_brand_contract.py'
       - 'tests/smoke/test_free_shipping_e2e_contract.py'
       - 'tests/smoke/test_free_shipping_taxable_coupon_contract.py'
+      - 'tests/smoke/test_free_shipping_exemption_contract.py'
       - 'tests/smoke/test_product_tax_rules_contract.py'
       - 'tests/smoke/test_variant_fixture_contract.py'
       - 'tests/smoke/test_cart_controls_browser_contract.py'
@@ -79,6 +80,7 @@ on:
       - 'tests/smoke/test_reset_email_brand_contract.py'
       - 'tests/smoke/test_free_shipping_e2e_contract.py'
       - 'tests/smoke/test_free_shipping_taxable_coupon_contract.py'
+      - 'tests/smoke/test_free_shipping_exemption_contract.py'
       - 'tests/smoke/test_product_tax_rules_contract.py'
       - 'tests/smoke/test_variant_fixture_contract.py'
       - 'tests/smoke/test_cart_controls_browser_contract.py'
@@ -137,7 +139,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_docker_run_recovery -v
 
       - name: Verify fresh-install workflow contracts
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard -v
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard -v
 
       - name: Verify isolated unpaid checkout contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract tests.business_profile.test_shipping_admin_links_contract -v
@@ -530,6 +532,50 @@ jobs:
           product_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["product_id"])' "$fixture_json")
           product_tax_group_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["tax_rules_group_id"])' "$fixture_json")
           printf 'CI_TEST_PRODUCT_ID=%s\nCI_TEST_PRODUCT_TAX_GROUP=%s\n' "$product_id" "$product_tax_group_id" >> "$GITHUB_ENV"
+
+      - name: Prepare isolated explicit exemption product fixture
+        id: exemption_product_fixture
+        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && steps.tax_fixture.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ordenowa-browser-qa"
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/prepare_ci_free_shipping_exemption_product.php' \
+            < tests/catalog/prepare_ci_free_shipping_exemption_product.php
+          fixture_log="$RUNNER_TEMP/ordenowa-browser-qa/free-shipping-exemption-product-fixture.log"
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e CI=true -e GITHUB_ACTIONS=true \
+            -e GITHUB_RUN_ID="$GITHUB_RUN_ID" -e GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            -e KURANEA_ISOLATED_CI=1 -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            prestashop runuser -g www-data -u www-data -- \
+            php /tmp/prepare_ci_free_shipping_exemption_product.php 2>&1 | tee "$fixture_log"
+          fixture_json="$RUNNER_TEMP/ordenowa-browser-qa/free-shipping-exemption-product-fixture.json"
+          python3 - "$fixture_log" "$fixture_json" <<'PY'
+          import json, pathlib, sys
+          lines = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+          payloads = [line for line in lines if line.startswith("{\"product_id\"")]
+          assert len(payloads) == 1, "explicit exemption product fixture JSON is missing or ambiguous"
+          fixture = json.loads(payloads[0])
+          assert fixture["product_id"] > 0
+          assert fixture["price_jpy"] == fixture["price_tax_excl_jpy"] == 1000
+          assert fixture["tax_status"] == "explicit_exemption_test"
+          assert fixture["tax_rules_group_id"] > 0
+          assert fixture["tax_rate_percent"] == 0
+          assert fixture["tax_fixture_scope"] == "CI-only explicit zero-rate exemption test fixture; not a legal tax rate or tax determination"
+          assert fixture["fixture_scope"] == "run-scoped isolated GitHub Actions disposable checkout database"
+          pathlib.Path(sys.argv[2]).write_text(json.dumps(fixture, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          print(f"CI_TEST_EXEMPT_PRODUCT_ID={fixture['product_id']}")
+          print(f"CI_TEST_EXEMPT_TAX_RULES_GROUP_ID={fixture['tax_rules_group_id']}")
+          PY
+          product_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["product_id"])' "$fixture_json")
+          group_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["tax_rules_group_id"])' "$fixture_json")
+          if [ "$group_id" = "$CI_TEST_TAX_RULES_GROUP_ID" ]; then
+            echo '::error title=ORDENOWA exemption fixture::The explicit zero-rate group reused the taxable fixture group.'
+            exit 1
+          fi
+          printf 'CI_TEST_EXEMPT_PRODUCT_ID=%s\nCI_TEST_EXEMPT_TAX_RULES_GROUP_ID=%s\n' "$product_id" "$group_id" >> "$GITHUB_ENV"
 
       - name: Prepare isolated taxable variant fixture
         id: variant_fixture
@@ -1375,9 +1421,30 @@ jobs:
             tests/e2e/verify_ci_free_shipping_browser.py taxable-customer \
             2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-taxable-customer-e2e.log"
 
+      - name: Verify explicit exemption free-shipping checkout with Chromium
+        id: shipping_free_exemption_browser_qa
+        if: always() && !cancelled() && steps.shipping_free_admin_readback.outcome == 'success' && steps.checkout_override.outcome == 'success' && steps.exemption_product_fixture.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          SHOP_BASE_URL: http://localhost:18080
+          ADMIN_LOGIN_URL: http://localhost:18080/admin-kuranea
+          ADMIN_MAIL: ci-ordenowa@example.invalid
+          ADMIN_PASSWD: Ci-Only-Admin-Password-92!
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          CI_TEST_PRODUCT_ID="$CI_TEST_EXEMPT_PRODUCT_ID" \
+            CI_TEST_PRODUCT_TAX_GROUP="$CI_TEST_EXEMPT_TAX_RULES_GROUP_ID" \
+            "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
+            tests/e2e/verify_ci_free_shipping_browser.py explicit-exemption-customer \
+            2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-exemption-customer-e2e.log"
+
       - name: Verify free-shipping orders and totals in the isolated database
         id: shipping_free_order_persistence
-        if: always() && !cancelled() && steps.shipping_free_customer_browser_qa.outcome == 'success' && steps.shipping_free_osaka_mobile_browser_qa.outcome == 'success' && steps.shipping_free_taxable_browser_qa.outcome == 'success'
+        if: always() && !cancelled() && steps.shipping_free_customer_browser_qa.outcome == 'success' && steps.shipping_free_osaka_mobile_browser_qa.outcome == 'success' && steps.shipping_free_taxable_browser_qa.outcome == 'success' && steps.shipping_free_exemption_browser_qa.outcome == 'success'
         continue-on-error: true
         shell: bash
         run: |
@@ -1436,6 +1503,49 @@ jobs:
             fi
             cat "$verification_log"
           done
+          exemption_order="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-exemption-order.json"
+          exemption_order_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["order_id"])' "$exemption_order")
+          exemption_product_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["product_id"])' "$exemption_order")
+          exemption_carrier_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["carrier_id"])' "$exemption_order")
+          exemption_group_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["product_tax_rule_group_id"])' "$exemption_order")
+          if ! [[ "$exemption_order_id" =~ ^[0-9]+$ ]] || [ "$exemption_order_id" -lt 1 ] \
+            || [ "$exemption_product_id" != "$CI_TEST_EXEMPT_PRODUCT_ID" ] \
+            || [ "$exemption_group_id" != "$CI_TEST_EXEMPT_TAX_RULES_GROUP_ID" ] \
+            || ! [[ "$exemption_carrier_id" =~ ^[0-9]+$ ]] || [ "$exemption_carrier_id" -lt 1 ]; then
+            echo 'Explicit exemption browser artifact has invalid or mismatched run-scoped product/order identifiers.' >&2
+            exit 1
+          fi
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/verify_ci_free_shipping_exemption_order.php' \
+            < tests/postcode/verify_ci_free_shipping_exemption_order.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/ci-shipping-free-exemption-order.json' < "$exemption_order"
+          exemption_verified_json="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-exemption-verified.json"
+          exemption_verification_log="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-exemption-verification.log"
+          if ! docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e CI=true \
+            -e GITHUB_ACTIONS=true \
+            -e GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            -e GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            -e KURANEA_ISOLATED_CI=1 \
+            -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            -e KURANEA_CI_ORDER_ID="$exemption_order_id" \
+            -e KURANEA_CI_PRODUCT_ID="$exemption_product_id" \
+            -e KURANEA_CI_CARRIER_ID="$exemption_carrier_id" \
+            -e KURANEA_CI_TAX_RULES_GROUP_ID="$CI_TEST_EXEMPT_TAX_RULES_GROUP_ID" \
+            -e KURANEA_CI_BROWSER_ORDER_PATH=/tmp/ci-shipping-free-exemption-order.json \
+            prestashop runuser -g www-data -u www-data -- \
+            php /tmp/verify_ci_free_shipping_exemption_order.php \
+            > "$exemption_verified_json" 2> "$exemption_verification_log"; then
+            cat "$exemption_verification_log" >&2
+            if [ -s "$exemption_verified_json" ]; then
+              cat "$exemption_verified_json"
+            else
+              echo '::error title=ORDENOWA exemption order verifier::No structured PHP diagnostic was produced.'
+            fi
+            exit 1
+          fi
+          cat "$exemption_verification_log"
 
       - name: Verify free-shipping orders in a separate admin browser session
         id: shipping_free_admin_browser_qa
@@ -1496,6 +1606,7 @@ jobs:
         shell: bash
         env:
           SHIPPING_PRODUCT_FIXTURE_OUTCOME: ${{ steps.shipping_product_fixture.outcome }}
+          EXEMPTION_PRODUCT_FIXTURE_OUTCOME: ${{ steps.exemption_product_fixture.outcome }}
           TAX_FIXTURE_OUTCOME: ${{ steps.tax_fixture.outcome }}
           VARIANT_FIXTURE_OUTCOME: ${{ steps.variant_fixture.outcome }}
           CART_CONTROLS_BROWSER_QA_OUTCOME: ${{ steps.cart_controls_browser_qa.outcome }}
@@ -1511,6 +1622,7 @@ jobs:
           SHIPPING_FREE_CUSTOMER_BROWSER_QA_OUTCOME: ${{ steps.shipping_free_customer_browser_qa.outcome }}
           SHIPPING_FREE_OSAKA_MOBILE_BROWSER_QA_OUTCOME: ${{ steps.shipping_free_osaka_mobile_browser_qa.outcome }}
           SHIPPING_FREE_TAXABLE_BROWSER_QA_OUTCOME: ${{ steps.shipping_free_taxable_browser_qa.outcome }}
+          SHIPPING_FREE_EXEMPTION_BROWSER_QA_OUTCOME: ${{ steps.shipping_free_exemption_browser_qa.outcome }}
           SHIPPING_FREE_ORDER_PERSISTENCE_OUTCOME: ${{ steps.shipping_free_order_persistence.outcome }}
           SHIPPING_FREE_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.shipping_free_admin_browser_qa.outcome }}
           BRAND_BROWSER_QA_OUTCOME: ${{ steps.brand_browser_qa.outcome }}
@@ -1533,6 +1645,12 @@ jobs:
             required_artifacts+=(
               free-shipping-product-fixture.log
               free-shipping-product-fixture.json
+            )
+          fi
+          if [[ "$EXEMPTION_PRODUCT_FIXTURE_OUTCOME" == success ]]; then
+            required_artifacts+=(
+              free-shipping-exemption-product-fixture.log
+              free-shipping-exemption-product-fixture.json
             )
           fi
           if [[ "$BRAND_BROWSER_QA_OUTCOME" == success ]]; then
@@ -1722,6 +1840,15 @@ jobs:
               shipping-free-taxable-order-confirmation-desktop.png
             )
           fi
+          if [[ "$SHIPPING_FREE_EXEMPTION_BROWSER_QA_OUTCOME" == success ]]; then
+            required_artifacts+=(
+              shipping-free-exemption-customer-e2e.log
+              shipping-free-exemption-order.json
+              shipping-free-customer-cart-shipping-free-explicit-exemption.png
+              shipping-free-exemption-checkout-desktop.png
+              shipping-free-exemption-order-confirmation-desktop.png
+            )
+          fi
           if [[ "$SHIPPING_FREE_ORDER_PERSISTENCE_OUTCOME" == success ]]; then
             required_artifacts+=(
               shipping-free-tokyo-verified.json
@@ -1730,6 +1857,8 @@ jobs:
               shipping-free-osaka-verification.log
               shipping-free-taxable-verified.json
               shipping-free-taxable-verification.log
+              shipping-free-exemption-verified.json
+              shipping-free-exemption-verification.log
             )
           fi
           if [[ "$SHIPPING_FREE_ADMIN_BROWSER_QA_OUTCOME" == success ]]; then
@@ -1739,6 +1868,7 @@ jobs:
               shipping-free-order-admin-tokyo-desktop.png
               shipping-free-order-admin-osaka-desktop.png
               shipping-free-order-admin-taxable-desktop.png
+              shipping-free-order-admin-exemption-desktop.png
             )
           fi
           if [[ "$CHECKOUT_GATE_AFTER_ORDER_OUTCOME" == success ]]; then
@@ -1798,6 +1928,7 @@ jobs:
         if: always()
         env:
           SHIPPING_PRODUCT_FIXTURE_OUTCOME: ${{ steps.shipping_product_fixture.outcome }}
+          EXEMPTION_PRODUCT_FIXTURE_OUTCOME: ${{ steps.exemption_product_fixture.outcome }}
           TAX_FIXTURE_OUTCOME: ${{ steps.tax_fixture.outcome }}
           VARIANT_FIXTURE_OUTCOME: ${{ steps.variant_fixture.outcome }}
           CART_CONTROLS_BROWSER_QA_OUTCOME: ${{ steps.cart_controls_browser_qa.outcome }}
@@ -1813,6 +1944,7 @@ jobs:
           SHIPPING_FREE_CUSTOMER_BROWSER_QA_OUTCOME: ${{ steps.shipping_free_customer_browser_qa.outcome }}
           SHIPPING_FREE_OSAKA_MOBILE_BROWSER_QA_OUTCOME: ${{ steps.shipping_free_osaka_mobile_browser_qa.outcome }}
           SHIPPING_FREE_TAXABLE_BROWSER_QA_OUTCOME: ${{ steps.shipping_free_taxable_browser_qa.outcome }}
+          SHIPPING_FREE_EXEMPTION_BROWSER_QA_OUTCOME: ${{ steps.shipping_free_exemption_browser_qa.outcome }}
           SHIPPING_FREE_ORDER_PERSISTENCE_OUTCOME: ${{ steps.shipping_free_order_persistence.outcome }}
           SHIPPING_FREE_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.shipping_free_admin_browser_qa.outcome }}
           POSTCODE_FIXTURE_OUTCOME: ${{ steps.postcode_fixture.outcome }}
@@ -1840,6 +1972,7 @@ jobs:
           failed_steps=()
           for entry in \
             "shipping_product_fixture=$SHIPPING_PRODUCT_FIXTURE_OUTCOME" \
+            "exemption_product_fixture=$EXEMPTION_PRODUCT_FIXTURE_OUTCOME" \
             "tax_fixture=$TAX_FIXTURE_OUTCOME" \
             "variant_fixture=$VARIANT_FIXTURE_OUTCOME" \
             "cart_controls_browser_qa=$CART_CONTROLS_BROWSER_QA_OUTCOME" \
@@ -1855,6 +1988,7 @@ jobs:
             "shipping_free_customer_browser_qa=$SHIPPING_FREE_CUSTOMER_BROWSER_QA_OUTCOME" \
             "shipping_free_osaka_mobile_browser_qa=$SHIPPING_FREE_OSAKA_MOBILE_BROWSER_QA_OUTCOME" \
             "shipping_free_taxable_browser_qa=$SHIPPING_FREE_TAXABLE_BROWSER_QA_OUTCOME" \
+            "shipping_free_exemption_browser_qa=$SHIPPING_FREE_EXEMPTION_BROWSER_QA_OUTCOME" \
             "shipping_free_order_persistence=$SHIPPING_FREE_ORDER_PERSISTENCE_OUTCOME" \
             "shipping_free_admin_browser_qa=$SHIPPING_FREE_ADMIN_BROWSER_QA_OUTCOME" \
             "postcode_fixture=$POSTCODE_FIXTURE_OUTCOME" \
