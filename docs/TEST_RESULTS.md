@@ -1,23 +1,22 @@
 # ORDENOWA 테스트 결과
 
-## 출시 가격 정책 격리 QA (상태: 2026-10-23 13:00 UTC)
+## 출시 가격 정책 격리 QA (상태: 2026-10-23 23:06 UTC)
 
-기준 `work` SHA `6a371a912d436c354b0ab91f67c458a3d9131439`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지한다.
+기준 `work` 및 `origin/work` SHA `c60a851e114ff00f6e4d8c8c708ad3016bc980bd`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지한다.
 
 | 검사 | 결과 | 근거 |
 | --- | --- | --- |
-| Smoke/계약 테스트 | PASS (로컬 정적 QA) | `test_storefront.py` 네트워크 검사 파일을 제외한 smoke 361개와 무료배송·세금 집중 계약 23개 통과. 실제 PrestaShop/DB/Chromium 실행 PASS를 뜻하지 않는다. |
-| 최종 코드 Full fresh-install Actions [#39957544456](https://github.com/goldeget/japan-premium-commerce/actions/runs/39957544456) | 실행 중 | SHA `6a371a9`. 격리 설치와 브라우저/DB 가격 검증 결과는 해당 단계 완료 전 미확정이다. |
-| 상태 행 재사용 확인 run [#39957326795](https://github.com/goldeget/japan-premium-commerce/actions/runs/39957326795) | 실행 중 | SHA `0aafdd8`; final SHA의 추가 fail-closed 변경 전 단계다. |
-| 이전 full run [#39956044032](https://github.com/goldeget/japan-premium-commerce/actions/runs/39956044032) | FAIL | 모든 지원 도도부현이 중복 상태로 판정돼 무료배송 fixture가 실패했다. 배송/가격 브라우저 단계는 건너뛰었다. |
-| 가격·배송·세금·주문/관리자 runtime | PASS 근거 없음 | 배송비 ¥0, 상품 표시 가격과 checkout 금액, 저장 주문·주문내역·관리자 금액의 일치에 대한 실제 브라우저/DB PASS는 아직 없다. |
-| 운영 DB·실결제·배포 | 실행하지 않음 | 운영 DB/named volume/carrier 설정 변경, 실제 결제, 운영 배포는 수행하지 않았다. |
+| Focused checkout/free-shipping 계약 | PASS (로컬 정적 QA) | 최신 CI 이메일 길이 회귀 수정 후 77개 계약 통과. |
+| Pricing/tax focused suite | PASS (로컬 정적 QA) | 무료배송·세금 집중 83개 테스트 통과. Python 구문 및 `git diff --check` 통과. |
+| 격리 fresh-install Actions [#40036387808](https://github.com/goldeget/japan-premium-commerce/actions/runs/40036387808) | FAIL (aggregate) | SHA `c60a851`. Step 65가 보고한 유일한 실패는 `pwa_browser_qa=failure`이며 desktop logout 후 로그인 폼 대신 HTTP 404 경로에 도달했다. 가격 검증 Steps 52–57은 모두 통과했다. |
+| 브라우저 가격 및 무료배송 QA | PASS (격리 Chromium) | Tokyo PC 수량 2+쿠폰, Osaka 모바일 수량 1, 합성 과세 상품, 명시적 0% QA 상품에서 배송비 ¥0 확인. 상품 상세·장바구니·체크아웃·주문 확인·주문내역 금액 일치. |
+| 저장 주문 및 관리자 합계 | PASS (격리 DB/별도 관리자 브라우저) | Step 56에서 네이티브 미결제 주문의 JPY 상품·세금·배송·할인·총액을 확인했고, Step 57에서 별도 관리자 세션의 주문 금액을 확인했다. 저장 배송비 ¥0, 설명되지 않는 플랫폼 수수료 없음. |
+| CI 복구·캡처·재시작·주소 데이터 | PASS | 체크아웃 fail-closed 복구와 재확인(Steps 58–59), PC·모바일 screenshot coverage(Steps 60–61), 재시작 지속성(Step 62), Japan Post import/verify(Steps 63–64), 격리 리소스 정리(Step 68). |
+| 운영 DB·실결제·운영 배포 | 실행하지 않음 | run 전용 Compose 프로젝트·DB·volume과 `ps_checkpayment` 미결제 주문만 사용했다. |
 
-배송 구역 범위: 최신 fixture는 기본 State API를 이용해 카탈로그의 47개 행을 재사용하고, 조회 오류/중복 행/비지원 활성 행의 국가 구역 fallback을 거부한다. 브라우저 주문 표본은 Tokyo 데스크톱 수량 2+쿠폰과 같은 장바구니의 모바일 뷰포트 대조, Osaka 모바일 수량 1+쿠폰 없음, 별도 합성 과세 Tokyo 주문이다. 47개 지역별 브라우저 주문이나 모든 조건 조합 검증은 아니다.
+배송 fixture는 47개 지원 도도부현을 무료배송 구역에 구성했지만 실제 브라우저 주문은 Tokyo와 Osaka 표본만 포함한다. 모든 지역·수량·쿠폰 조합의 주문 QA는 아니다. 과세 fixture의 10%와 명시적 0% 규칙은 격리 테스트 데이터다. 일본 법정 세율, 판매자 세무 상태 또는 실제 상품의 과세·면세 적법성을 검증하지 않으며, 운영 상품의 세금은 판매자·상품별 적법한 규칙으로 별도 확인해야 한다.
 
-세금 계약은 규칙 미할당 픽스처와 CI 전용 합성 10% 픽스처를 분리한다. ¥1,100 = ¥1,000 세전 + ¥100 합성 세액은 일본의 법정 세율 또는 판매자의 세무 설정을 뜻하지 않는다. 실제 세율·면세 처리는 판매자 및 상품의 적법한 세금 규칙에 따라 별도 확인해야 한다. 현재 실행이 완료되기 전까지 가격·배송·세금·주문·관리자 런타임을 PASS로 기록하지 않는다.
-
-운영 배송료는 변경하지 않았다. 한국어 배송 설정은 PrestaShop 기본 AdminCarriers/AdminShipping으로 연결되며, 무료 운송사 설정·저장·재조회는 run-scoped GitHub Actions DB에서만 검증한다. 운영 적용과 실제 결제는 별도 실행하지 않았다.
+전체 workflow aggregate는 PWA logout 후 로그인 리다이렉트가 HTTP 404가 된 문제로 실패했다. 이 결과는 전체 QA PASS를 뜻하지 않지만 가격·배송·주문 저장·관리자 금액 단계는 모두 통과했다. 운영 배송 설정과 named volume은 변경하지 않았고 실결제 및 운영 배포도 하지 않았다.
 
 ## 이전 검증 현황 (2026-10-23 02:26 UTC; 당시 결과)
 

@@ -1,3 +1,23 @@
+# KURANEA 작업 기록
+
+## 2026-10-23 — 출시 가격 정책 최종 격리 QA (23:06 UTC)
+
+- `work`와 `origin/work`는 `c60a851e114ff00f6e4d8c8c708ad3016bc980bd`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다. CI 테스트 계정 이메일 로컬 파트 길이 수정 후 focused checkout/free-shipping 계약 77개, pricing/tax suite 83개, Python 구문 및 diff 검사가 통과했다.
+- 최신 isolated fresh-install run [#40036387808](https://github.com/goldeget/japan-premium-commerce/actions/runs/40036387808)은 완료됐으며 Step 65 aggregate는 `Failed steps: pwa_browser_qa=failure`다. 안전한 주석은 desktop logout 후 로그인 폼을 기다리다 final document HTTP 404로 끝났다고 보고한다. 이는 가격과 무관한 PWA logout/redirect blocker다.
+- 가격 Steps 52–57은 전부 PASS다. Tokyo PC 수량 2+쿠폰 및 같은 장바구니 모바일 뷰포트 대조, Osaka 모바일 수량 1, 합성 과세 상품, 명시적 0% QA 상품에서 배송비 ¥0을 확인했다. 상품 상세·장바구니·체크아웃·주문 확인·주문내역 totals를 대조했다. Step 56 네이티브 미결제 주문의 상품·세금·배송·할인·총액 저장 검증과 Step 57 별도 관리자 세션의 네 주문 금액 검증도 통과했다.
+- Free Japan carrier는 격리 Back Office에서 설정 후 재조회했다. 체크아웃 fail-closed 상태 복구·재확인, PC/모바일 캡처 coverage, shop restart persistence, Japan Post import/count, run 전용 cleanup도 통과했다. checkout 주문은 `ps_checkpayment` 미결제 fixture이며 실제 결제는 실행하지 않았다.
+- 배송 구역 fixture는 47개 지원 도도부현을 포함하지만 browser 주문은 Tokyo/Osaka 표본뿐이다. 10% 과세와 명시적 0%는 CI 전용 합성 규칙이며 일본 법정 세율이나 실제 판매자·상품 세무 판단의 증거가 아니다. 운영 DB·named volume·운영 배송 설정을 변경하거나 운영 배포를 하지 않았다.
+
+
+## 2026-10-23 — 가격 정책 격리 QA 결과 (20:44 UTC)
+
+- 원격 `work` 및 로컬 HEAD는 `92818b73bc849e69a8ac9f9241524c4236ac4f94`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 변경하지 않았다.
+- 최신 전체 fresh-install run [#40019954429](https://github.com/goldeget/japan-premium-commerce/actions/runs/40019954429)은 완료됐으며 Step 63 aggregate 결과는 FAIL이다. Steps 51–55는 Tokyo desktop 수량 2+쿠폰, Osaka mobile 수량 1+쿠폰 없음, 합성 과세 checkout, 저장 주문 재조정, 별도 관리자 금액 확인에서 각각 성공했다. Step 49–50은 건너뛰었다.
+- Aggregate 진단: `admin_security_browser_qa=failure`, `pwa_browser_qa=failure`, `account=failure`, `checkout_customer=failure`, `checkout_order_persistence=skipped`, `checkout_admin=skipped`. 안전한 주석에는 고객 PC·모바일 상품 검색 timeout, 모바일 계정 수정 후 `/identity`에 남으며 현재 비밀번호와 `customer_privacy`·`psgdpr` 필수값이 invalid인 상태, 관리자 누락 토큰 응답을 식별하지 못한 상태(HTTP 200), PWA 주문 경로 assertion 실패가 기록됐다. 따라서 전체 QA를 PASS로 표시하지 않는다.
+- Steps 41–45의 격리 무료 운송사 설정·재조회, 51–55의 pricing-only 검사, 56–57의 fail-closed 복구, 58–62의 캡처·재시작·Japan Post 가져오기/주소 검증은 성공했다. 개별 성공 step을 aggregate 결론과 구분해 보존한다.
+- 세금 fixture는 CI 전용 합성 10% 규칙으로 계산을 검증한다. 일본 세법·판매자 세무 상태·상품별 면세 판단 근거가 아니며 면세 상품 시나리오도 미검증이다. Carrier zone은 47개 지원 도도부현을 포함하지만 브라우저 주문은 Tokyo와 Osaka 표본이다.
+- 이 QA는 격리 Actions 환경에서 수행했다. 운영 DB/named volume/carrier 설정을 변경하거나 실결제·운영 배포를 하지 않았다.
+
 ## 2026-10-23 — 출시 가격 정책 QA 상태 갱신 (13:00 UTC)
 
 - 현재 기준 `work` SHA `6a371a912d436c354b0ab91f67c458a3d9131439`; `main` SHA `ee02a3657448d563508687614a246e05ac61eecd`는 변경하지 않았다.
@@ -9,8 +29,6 @@
 - 한국어 배송 패널은 현재 PrestaShop AdminCarriers/AdminShipping 설정을 링크한다. 이번 QA는 그 native 화면에서 무료 운송사를 run-scoped 일본 zone에 저장하고 재조회하는 동작을 CI 격리 DB에서만 수행하며, 운영 배송 설정을 변경하지 않는다.
 - 합성 10% 세금은 산술·저장 검증용 CI fixture이며 일본의 적법한 세율이나 판매자의 실제 세무 판단이 아니다. 실제 과세/면세 구분은 판매자·상품 세금 규칙으로 확인해야 한다.
 - 현 시점에는 무료배송 가격, 브라우저 주문, 저장 주문, 주문내역, 관리자 주문액의 runtime PASS가 없다. Actions 각 단계가 완료되고 성공한 뒤에만 결과를 갱신한다. 운영 DB/named volume/carrier 설정은 변경하지 않았고, 실결제와 운영 배포를 실행하지 않았다.
-
-# KURANEA 작업 기록
 
 ## 2026-10-23 — ORDENOWA 출시 가격 정책 격리 QA (이전 checkpoint)
 
