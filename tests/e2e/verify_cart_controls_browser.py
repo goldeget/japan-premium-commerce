@@ -78,6 +78,28 @@ def visible(driver: webdriver.Chrome, selector: str, timeout: int = 30):
     )
 
 
+def click_at_center(driver: webdriver.Chrome, element) -> None:
+    """Scroll the control into a clear viewport area before its native click."""
+    driver.execute_script(
+        "arguments[0].scrollIntoView({behavior:'instant', block:'center', inline:'nearest'});",
+        element,
+    )
+    WebDriverWait(driver, 15, poll_frequency=0.25).until(
+        lambda browser: browser.execute_script(
+            """
+            const el = arguments[0], box = el.getBoundingClientRect();
+            const x = box.left + box.width / 2, y = box.top + box.height / 2;
+            if (x < 0 || x >= innerWidth || y < 70 || y >= innerHeight - 90) return false;
+            const target = document.elementFromPoint(x, y);
+            return target === el || el.contains(target);
+            """,
+            element,
+        ),
+        message="the cart control center is outside the unobstructed viewport",
+    )
+    element.click()
+
+
 def parse_yen(raw_value: str) -> int:
     tokens = re.findall(r"\d[\d,]*(?:\.\d+)?", raw_value.replace("\u00a0", " "))
     if not tokens:
@@ -318,10 +340,12 @@ def assert_cart_has_only_test_product(
         if parse_yen(unit_price_fields[0].text) != EXPECTED_GROSS_PRICE_JPY:
             raise AssertionError("cart line does not display the tax-inclusive JPY 550 unit price")
         if parse_yen(line_total_fields[0].text) != expected_line_total:
-            raise AssertionError("cart line total does not match the displayed tax-inclusive unit price and quantity")
+            # Hummingbird increments the live input before the debounced cart
+            # request returns and refreshes prices. Keep polling through that gap.
+            return False
         subtotal_fields = browser.find_elements(By.CSS_SELECTOR, "#cart-subtotal-products .cart-summary__value")
         if not subtotal_fields or parse_yen(subtotal_fields[0].text) != expected_line_total:
-            raise AssertionError("cart product subtotal does not match its tax-inclusive unit price and quantity")
+            return False
         return row
 
     WebDriverWait(
@@ -329,7 +353,10 @@ def assert_cart_has_only_test_product(
         30,
         poll_frequency=0.2,
         ignored_exceptions=(StaleElementReferenceException,),
-    ).until(exact_line)
+    ).until(
+        exact_line,
+        message="cart line and subtotal did not match the displayed price and quantity",
+    )
 
 
 def add_product_from_detail(
@@ -386,7 +413,7 @@ def add_product_from_detail(
         });
         """
     )
-    button.click()
+    click_at_center(driver, button)
     mark_substage("blockcart_confirmation_wait")
     modal = WebDriverWait(driver, 25).until(
         lambda browser: next(
@@ -498,7 +525,7 @@ def run_viewport(width: int, height: int, label: str) -> dict[str, object]:
         if quantity.get_attribute("value") != "1":
             raise AssertionError("newly added CI product did not start at quantity one")
         increment = visible(driver, ".cart__item .js-increment-button")
-        increment.click()
+        click_at_center(driver, increment)
         def quantity_updated(browser: webdriver.Chrome) -> bool:
             fields = browser.find_elements(
                 By.CSS_SELECTOR, ".cart__item .js-cart-line-product-quantity"
@@ -524,7 +551,7 @@ def run_viewport(width: int, height: int, label: str) -> dict[str, object]:
         )
         if remove_link.get_attribute("data-id-product") != str(PRODUCT_ID):
             raise AssertionError("cart removal control does not belong to the isolated CI product")
-        remove_link.click()
+        click_at_center(driver, remove_link)
         wait_for_empty_cart(driver)
         driver.save_screenshot(str(DEST / f"cart-controls-{label}-empty.png"))
 

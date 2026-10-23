@@ -27,10 +27,10 @@ class CartControlsBrowserContractTests(unittest.TestCase):
             "webdriver.Chrome(",
             '".js-cart-line-product-quantity"',
             "js-increment-button",
-            "button.click()",
+            "click_at_center(driver, button)",
             'button[data-bs-dismiss="modal"]',
             'data-link-action="delete-from-cart"',
-            "remove_link.click()",
+            "click_at_center(driver, remove_link)",
             "cart-controls-{label}-initial.png",
             "cart-controls-{label}-quantity-updated.png",
             "cart-controls-{label}-empty.png",
@@ -179,6 +179,153 @@ class CartControlsBrowserContractTests(unittest.TestCase):
         self.assertTrue('variant_result["product_attribute_id"] = cart_attribute_id' in self.source)
         self.assertTrue('data-id-product-attribute' in self.source)
 
+    def test_cart_totals_are_allowed_to_catch_up_after_quantity_input_changes(self) -> None:
+        """Hummingbird updates the input first, then refreshes prices after its AJAX response."""
+        tree = ast.parse(self.source, filename=str(CART_CONTROLS_E2E))
+        functions = {
+            node.name: node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name in {"assert_cart_has_only_test_product", "visible_product_line"}
+        }
+        self.assertEqual(set(functions), {"assert_cart_has_only_test_product", "visible_product_line"})
+
+        class Text:
+            def __init__(self, browser, stale: str, updated: str) -> None:
+                self.browser = browser
+                self.stale = stale
+                self.updated = updated
+
+            @property
+            def text(self) -> str:
+                return self.updated if self.browser.poll >= 2 else self.stale
+
+        class Field:
+            def get_attribute(self, name: str) -> str | None:
+                return "2" if name == "value" else None
+
+        class Row:
+            def __init__(self, browser) -> None:
+                self.browser = browser
+
+            def find_elements(self, _by, selector):
+                if selector == ".js-cart-line-product-quantity":
+                    return [Field()]
+                if selector == ".product-line__item-value":
+                    return []
+                if selector == ".product-line__item-price":
+                    return [Text(self.browser, "¥550", "¥550")]
+                if selector == ".product-line__price":
+                    return [Text(self.browser, "¥550", "¥1,100")]
+                return []
+
+        class Browser:
+            poll = 0
+
+            def __init__(self) -> None:
+                self.row = Row(self)
+
+            def find_elements(self, _by, selector):
+                if selector == ".cart__item":
+                    return [self.row]
+                if selector == "#cart-subtotal-products .cart-summary__value":
+                    return [Text(self, "¥550", "¥1,100")]
+                return []
+
+        class PollingWait:
+            def __init__(self, browser, _timeout, **_kwargs) -> None:
+                self.browser = browser
+
+            def until(self, predicate, message=""):
+                for self.browser.poll in (1, 2, 3):
+                    result = predicate(self.browser)
+                    if result:
+                        return result
+                raise AssertionError(message or "cart line and subtotal did not catch up with quantity two")
+
+        browser = Browser()
+        namespace = {
+            "By": SimpleNamespace(CSS_SELECTOR="css selector"),
+            "EXPECTED_GROSS_PRICE_JPY": 550,
+            "StaleElementReferenceException": RuntimeError,
+            "WebDriverWait": PollingWait,
+            "visible_product_line": lambda _browser, _attribute_id: browser.row,
+            "parse_yen": lambda raw: int(raw.replace("¥", "").replace(",", "")),
+        }
+        module = ast.Module(
+            body=[functions["assert_cart_has_only_test_product"]],
+            type_ignores=[],
+        )
+        exec(compile(ast.fix_missing_locations(module), str(CART_CONTROLS_E2E), "exec"), namespace)
+
+        namespace["assert_cart_has_only_test_product"](browser, "2", 27, [])
+        self.assertEqual(browser.poll, 2)
+
+    def test_product_add_click_waits_for_an_unobstructed_center(self) -> None:
+        tree = ast.parse(self.source, filename=str(CART_CONTROLS_E2E))
+        functions = {
+            node.name: node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name in {"add_product_from_detail", "click_at_center"}
+        }
+        self.assertIn("click_at_center", functions)
+        self.assertIn("add_product_from_detail", functions)
+        self.assertTrue(
+            any(
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "click_at_center"
+                and len(node.args) == 2
+                for node in ast.walk(functions["add_product_from_detail"])
+            ),
+            "product add must use the guarded center click instead of Selenium auto-scrolling",
+        )
+
+        class Element:
+            clicked = False
+
+            def click(self) -> None:
+                if not driver.unobstructed:
+                    raise AssertionError("the click target is still covered by the fixed mobile UI")
+                self.clicked = True
+
+        class Driver:
+            unobstructed = False
+            checks = 0
+
+            def execute_script(self, script, _element):
+                if "scrollIntoView" in script:
+                    self.scrolled = True
+                    return None
+                if "elementFromPoint" in script:
+                    self.checks += 1
+                    return self.unobstructed
+                raise AssertionError("click helper ran an unexpected browser script")
+
+        driver = Driver()
+        element = Element()
+
+        class UnobstructedWait:
+            def __init__(self, _driver, _timeout, **_kwargs) -> None:
+                pass
+
+            def until(self, predicate, message=""):
+                if predicate(driver):
+                    return True
+                driver.unobstructed = True
+                if predicate(driver):
+                    return True
+                raise AssertionError(message or "the target center never became unobstructed")
+
+        module = ast.Module(body=[functions["click_at_center"]], type_ignores=[])
+        namespace = {"WebDriverWait": UnobstructedWait}
+        exec(compile(ast.fix_missing_locations(module), str(CART_CONTROLS_E2E), "exec"), namespace)
+        namespace["click_at_center"](driver, element)
+        self.assertTrue(driver.scrolled)
+        self.assertEqual(driver.checks, 2)
+        self.assertTrue(element.clicked)
+
     def test_continue_shopping_waits_until_modal_show_transition_finishes(self) -> None:
         """Bootstrap ignores dismiss clicks between visible and shown.bs.modal."""
         tree = ast.parse(self.source)
@@ -243,6 +390,7 @@ class CartControlsBrowserContractTests(unittest.TestCase):
             "WebDriverWait": TransitionWait,
             "By": SimpleNamespace(CSS_SELECTOR="css selector"),
             "mark_substage": stages.append,
+            "click_at_center": lambda _driver, element: element.click(),
         }
         module = ast.Module(body=add.body[start:end], type_ignores=[])
         exec(compile(ast.fix_missing_locations(module), str(CART_CONTROLS_E2E), "exec"), namespace)
