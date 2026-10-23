@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import ast
+from contextlib import redirect_stderr
+import io
 import json
 import os
 import shutil
@@ -14,6 +16,7 @@ from tests.e2e.verify_pwa_browser import (
     exposes_test_identity,
     manifest_installability_issues,
     response_has_private_cache_policy,
+    restore_offline_network_state,
     same_origin,
     validate_isolated_ci_target,
 )
@@ -303,6 +306,76 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         path_diagnostics = failure_handler.split("try:", 1)[1].split("error_type =", 1)[0]
         self.assertIn("except Exception:", path_diagnostics)
         self.assertIn('current_path = ""', path_diagnostics)
+
+    def test_offline_fallback_bypasses_http_cache_and_restores_network_state(self) -> None:
+        offline = function_source(self.source, "verify_offline_fallback")
+        disable_cache = offline.index(
+            'driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": True})'
+        )
+        offline_navigation = offline.index('driver.get(base_url + "/")')
+        offline_mode = offline.index('"offline": True')
+        cleanup = function_source(self.source, "restore_offline_network_state")
+        finally_block = offline.split("    finally:\n", 1)[1]
+
+        self.assertLess(disable_cache, offline_mode)
+        self.assertLess(offline_mode, offline_navigation)
+        self.assertIn("restore_offline_network_state(driver, primary_error)", finally_block)
+        self.assertIn('"offline": False', cleanup)
+        restore_cache = cleanup.index('"Network.setCacheDisabled", {"cacheDisabled": False}')
+        restore_network = cleanup.index('"offline": False')
+        self.assertLess(restore_network, restore_cache)
+        self.assertIn("for command, parameters in resets:", cleanup)
+        self.assertIn("driver.execute_cdp_cmd(command, parameters)", cleanup)
+        self.assertIn("cleanup_errors.append(error)", cleanup)
+        self.assertIn("if primary_error is not None:", cleanup)
+        self.assertIn("raise cleanup_errors[0]", cleanup)
+        self.assertIn('assert_empty_cache_storage(driver, "offline navigation")', offline)
+
+        self.assertIn("primary_error: BaseException | None = None", offline)
+        self.assertIn("except BaseException as error:", offline)
+        self.assertIn("primary_error = error", offline)
+        self.assertIn("restore_offline_network_state(driver, primary_error)", offline)
+
+    def test_offline_cleanup_attempts_both_resets_and_preserves_primary_failure(self) -> None:
+        class FakeDriver:
+            def __init__(self) -> None:
+                self.commands: list[str] = []
+
+            def execute_cdp_cmd(self, command: str, _params: dict[str, object]) -> None:
+                self.commands.append(command)
+                if command == "Network.emulateNetworkConditions":
+                    raise RuntimeError("sensitive cleanup details")
+
+        driver = FakeDriver()
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            restore_offline_network_state(driver, AssertionError("offline assertion failed"))
+
+        self.assertEqual(
+            driver.commands,
+            ["Network.emulateNetworkConditions", "Network.setCacheDisabled"],
+        )
+        self.assertIn("RuntimeError", stderr.getvalue())
+        self.assertNotIn("sensitive cleanup details", stderr.getvalue())
+
+    def test_offline_cleanup_failure_fails_when_there_is_no_primary_failure(self) -> None:
+        class FakeDriver:
+            def __init__(self) -> None:
+                self.commands: list[str] = []
+
+            def execute_cdp_cmd(self, command: str, _params: dict[str, object]) -> None:
+                self.commands.append(command)
+                if command == "Network.setCacheDisabled":
+                    raise RuntimeError("offline cleanup failed")
+
+        driver = FakeDriver()
+        with self.assertRaisesRegex(RuntimeError, "offline cleanup failed"):
+            restore_offline_network_state(driver, None)
+
+        self.assertEqual(
+            driver.commands,
+            ["Network.emulateNetworkConditions", "Network.setCacheDisabled"],
+        )
 
 
 if __name__ == "__main__":

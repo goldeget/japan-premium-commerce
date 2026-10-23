@@ -387,13 +387,52 @@ def navigate_private_document(
     return assert_private_document_cache_headers(driver, requested_url, shop_url, route_label)
 
 
+def restore_offline_network_state(
+    driver: webdriver.Chrome, primary_error: BaseException | None
+) -> None:
+    """Attempt both browser resets without replacing an earlier QA failure."""
+    resets = (
+        (
+            "Network.emulateNetworkConditions",
+            {"offline": False, "latency": 0, "downloadThroughput": -1, "uploadThroughput": -1},
+        ),
+        ("Network.setCacheDisabled", {"cacheDisabled": False}),
+    )
+    cleanup_errors: list[Exception] = []
+    for command, parameters in resets:
+        try:
+            driver.execute_cdp_cmd(command, parameters)
+        except Exception as error:
+            cleanup_errors.append(error)
+
+    if not cleanup_errors:
+        return
+
+    error_types = []
+    for error in cleanup_errors:
+        error_type = type(error).__name__
+        error_types.append(error_type if error_type.isidentifier() else "unexpected exception")
+
+    if primary_error is not None:
+        print(
+            "WARNING: PWA network cleanup failed after the primary QA failure; "
+            f"exception_types={','.join(error_types)}",
+            file=sys.stderr,
+        )
+        return
+
+    raise cleanup_errors[0]
+
+
 def verify_offline_fallback(driver: webdriver.Chrome, base_url: str, screenshot: Path) -> None:
     driver.execute_cdp_cmd("Network.enable", {})
-    driver.execute_cdp_cmd(
-        "Network.emulateNetworkConditions",
-        {"offline": True, "latency": 0, "downloadThroughput": 0, "uploadThroughput": 0},
-    )
+    primary_error: BaseException | None = None
     try:
+        driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": True})
+        driver.execute_cdp_cmd(
+            "Network.emulateNetworkConditions",
+            {"offline": True, "latency": 0, "downloadThroughput": 0, "uploadThroughput": 0},
+        )
         driver.get(base_url + "/")
         body = driver.find_element(By.TAG_NAME, "body").text
         if not any(text in body for text in (
@@ -404,11 +443,11 @@ def verify_offline_fallback(driver: webdriver.Chrome, base_url: str, screenshot:
             raise AssertionError("offline navigation did not show the localized fallback")
         driver.save_screenshot(str(screenshot))
         assert_empty_cache_storage(driver, "offline navigation")
+    except BaseException as error:
+        primary_error = error
+        raise
     finally:
-        driver.execute_cdp_cmd(
-            "Network.emulateNetworkConditions",
-            {"offline": False, "latency": 0, "downloadThroughput": -1, "uploadThroughput": -1},
-        )
+        restore_offline_network_state(driver, primary_error)
     driver.get(base_url + "/")
     if "ORDENOWA" not in driver.page_source.upper():
         raise AssertionError("the online storefront did not recover after offline navigation")
