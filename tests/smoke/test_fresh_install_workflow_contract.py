@@ -565,7 +565,10 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("registration_stage: arguments[0]", diagnostics)
         self.assertIn("registration_control_name: arguments[1].name || ''", diagnostics)
         self.assertIn("registration_control_type: arguments[1].type || ''", diagnostics)
-        self.assertIn('emit_registration_diagnostics(driver, stage, failure_control)', account_flow)
+        self.assertIn(
+            'emit_registration_diagnostics(driver, stage, failure_control, registration_state)',
+            account_flow,
+        )
         self.assertIn('set_registration_control(failure_control, "display-register-form", "anchor")', registration)
         self.assertIn('set_registration_control(failure_control, "customer-form", "form")', registration)
         self.assertIn('set_registration_control(failure_control, "save-customer", "submit")', registration)

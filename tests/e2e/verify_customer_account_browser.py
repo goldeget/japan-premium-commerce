@@ -414,7 +414,7 @@ def reset_link_navigation_timeline(driver: webdriver.Chrome) -> list[dict[str, o
     return safe_events
 
 
-def assert_korean_email_login_form(driver: webdriver.Chrome, state: dict[str, object]) -> None:
+def assert_korean_email_login_form(driver: webdriver.Chrome, state: dict[str, object]) -> str:
     # Use PrestaShop's generated language and account links. The Korean route
     # slug is installation metadata and must not be guessed as `/ko/login`.
     def mark_stage(name: str) -> None:
@@ -625,6 +625,7 @@ def assert_korean_email_login_form(driver: webdriver.Chrome, state: dict[str, ob
         raise AssertionError("Korean login recovery link is not identified as password reset")
     if USER_ID_LOOKUP_ACCESSIBLE_NAME.search(password_reset_name):
         raise AssertionError("Korean login recovery link implies user ID lookup instead of password reset")
+    return login_url
 
 
 def emit_korean_login_diagnostics(driver: webdriver.Chrome, state: dict[str, object]) -> None:
@@ -815,10 +816,10 @@ def emit_korean_login_diagnostics(driver: webdriver.Chrome, state: dict[str, obj
     )
 
 
-def click_centered(driver: webdriver.Chrome, element) -> None:
+def click_centered(driver: webdriver.Chrome, element) -> bool:
     driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", element)
     WebDriverWait(driver, 30).until(EC.element_to_be_clickable(element))
-    WebDriverWait(driver, 10).until(
+    center_unobstructed = WebDriverWait(driver, 10).until(
         lambda browser: browser.execute_script(
             """
             const element = arguments[0];
@@ -830,6 +831,7 @@ def click_centered(driver: webdriver.Chrome, element) -> None:
         )
     )
     element.click()
+    return bool(center_unobstructed)
 
 
 def wait_for_registration_success(driver: webdriver.Chrome) -> None:
@@ -1328,6 +1330,87 @@ def safe_url_metadata(value: object) -> dict[str, object]:
     return metadata
 
 
+def safe_generated_route_match(actual_url: object, expected_url: object) -> bool:
+    """Compare generated same-shop routes without exposing their path or query values."""
+    if not isinstance(actual_url, str) or not isinstance(expected_url, str):
+        return False
+    try:
+        actual = urlparse(actual_url)
+        expected = urlparse(expected_url)
+        base = urlparse(BASE)
+        actual_origin = (actual.scheme.lower(), actual.hostname, actual.port)
+        expected_origin = (expected.scheme.lower(), expected.hostname, expected.port)
+        base_origin = (base.scheme.lower(), base.hostname, base.port)
+        if actual_origin != expected_origin or actual_origin != base_origin:
+            return False
+        actual_path = unquote(actual.path or "/", errors="strict").rstrip("/") or "/"
+        expected_path = unquote(expected.path or "/", errors="strict").rstrip("/") or "/"
+        if actual_path != expected_path:
+            return False
+        actual_controller = parse_qs(actual.query, keep_blank_values=True).get("controller", [])
+        expected_controller = parse_qs(expected.query, keep_blank_values=True).get("controller", [])
+        return actual_controller == expected_controller
+    except (TypeError, UnicodeDecodeError, ValueError):
+        return False
+
+
+def safe_registration_navigation_summary(events: object) -> list[dict[str, object]]:
+    """Keep only bounded route shapes and HTTP status codes from browser navigation events."""
+    if not isinstance(events, list):
+        return []
+
+    def safe_route(metadata: object) -> dict[str, object]:
+        if not isinstance(metadata, dict):
+            metadata = {}
+        path = metadata.get("path")
+        if not isinstance(path, str) or len(path) > 160 or not path.isascii():
+            path = "/<unknown>"
+        elif re.fullmatch(r"/[A-Za-z0-9<>/_-]*", path) is None:
+            path = "/<unknown>"
+        else:
+            allowed_segments = {
+                "index.php", "ja", "ko", "en", "authentication", "login", "register",
+                "registration", "identity", "order", "password", "password-reset", "history",
+                "<redacted>", "<unknown>",
+            }
+            path = "/".join(
+                segment.lower() if not segment or segment.lower() in allowed_segments else "<redacted>"
+                for segment in path.split("/")
+            )
+        category = metadata.get("controller_category")
+        if not isinstance(category, str) or category not in {"authentication", "password", "other"}:
+            category = ""
+        return {
+            "same_origin": metadata.get("same_origin") is True,
+            "path": path,
+            "controller_category": category,
+            "back_present": metadata.get("back_present") is True,
+        }
+
+    def safe_status(value: object) -> int:
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not 0 <= value <= 599:
+            return 0
+        return int(value)
+
+    summary: list[dict[str, object]] = []
+    for event in events[-6:]:
+        if not isinstance(event, dict):
+            continue
+        event_name = event.get("event")
+        if not isinstance(event_name, str) or event_name not in {"document_request", "document_redirect"}:
+            event_name = "other"
+        summary.append(
+            {
+                "event": event_name,
+                "route": safe_route(event.get("route_metadata")),
+                "redirect_from": safe_route(event.get("redirect_from_metadata")),
+                "status_code": safe_status(event.get("status_code")),
+                "redirect_status_code": safe_status(event.get("redirect_status_code")),
+            }
+        )
+    return summary
+
+
 def safe_refresh_header_metadata(value: object, response_url: object) -> dict[str, object]:
     """Reduce a Refresh response header to a delay and sanitized destination route."""
     result: dict[str, object] = {
@@ -1609,6 +1692,7 @@ def emit_registration_diagnostics(
     driver: webdriver.Chrome,
     stage: str,
     control: dict[str, str],
+    state: dict[str, object],
 ) -> None:
     diagnostics: dict[str, object] = {
         "registration_stage": stage,
@@ -1725,6 +1809,19 @@ def emit_registration_diagnostics(
         "login_form_visible": safe_diagnostic_boolean(diagnostics.get("login_form_visible")),
         "header_user_menu_button_visible": safe_diagnostic_boolean(
             diagnostics.get("header_user_menu_button_visible")
+        ),
+        "registration_target_route_metadata": state.get("target_route_metadata", {}),
+        "registration_before_click_route_metadata": state.get("before_click_route_metadata", {}),
+        "registration_after_click_route_metadata": state.get("after_click_route_metadata", {}),
+        "registration_target_route_matched": safe_diagnostic_boolean(
+            state.get("target_route_matched")
+        ),
+        "registration_url_changed": safe_diagnostic_boolean(state.get("url_changed")),
+        "registration_center_unobstructed": safe_diagnostic_boolean(
+            state.get("center_unobstructed", diagnostics.get("registration_center_unobstructed"))
+        ),
+        "registration_navigation_events": safe_registration_navigation_summary(
+            state.get("navigation_events")
         ),
     }
     safe_state_json = json.dumps(safe_state, ensure_ascii=True, sort_keys=True)
@@ -2071,7 +2168,9 @@ def submit_login(driver: webdriver.Chrome, email_address: str, password: str) ->
     fill(driver, '#login-form input[name="email"]', email_address)
     fill(driver, '#login-form input[name="password"]', password)
     visible(driver, "#submit-login").click()
-    WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.ID, "identity_main_link")))
+    login_result = WebDriverWait(driver, 30).until(collect_email_login_result)
+    if login_result == "rejected":
+        raise AssertionError("customer email login was rejected")
 
 
 def assert_login_rejected(driver: webdriver.Chrome, email_address: str, password: str) -> None:
@@ -2101,10 +2200,12 @@ def collect_email_login_result(driver: webdriver.Chrome) -> str | bool:
         const identityLink = document.getElementById('identity_main_link');
         const signOutLink = document.querySelector('a.account-menu__link--signout');
         const loginForm = document.getElementById('login-form');
+        const userMenuButton = document.getElementById('userMenuButton');
         const dangerAlerts = [...document.querySelectorAll('.alert.alert-danger[role="alert"]')]
           .filter(isVisible);
-        if (isVisible(identityLink) && isVisible(signOutLink)) return 'authenticated';
+        if ((isVisible(identityLink) && isVisible(signOutLink)) || isVisible(userMenuButton)) return 'authenticated';
         if (isVisible(loginForm) && dangerAlerts.length) return 'rejected';
+        if (!isVisible(loginForm) && document.readyState === 'complete') return 'transitioned';
         return false;
         """
     )
@@ -2254,9 +2355,10 @@ def wait_for_signed_out_state(driver: webdriver.Chrome) -> None:
 def logout(
     driver: webdriver.Chrome,
     *,
+    login_url: str,
     substage_callback: Callable[[str], None] | None = None,
     account_route_callback: Callable[[str], None] | None = None,
-) -> None:
+) -> str:
     def mark_substage(value: str) -> None:
         if substage_callback is not None:
             substage_callback(value)
@@ -2280,20 +2382,25 @@ def logout(
 
     mark_substage("reopen_account")
     driver.get(account_url)
-    mark_substage("wait_login_form")
-    WebDriverWait(driver, 30).until(
-        lambda browser: bool(browser.find_elements(By.CSS_SELECTOR, '#login-form input[name="email"]'))
-        or bool(browser.find_elements(By.ID, "identity_main_link"))
-    )
-    if driver.find_elements(By.ID, "identity_main_link"):
+    mark_substage("verify_protected_route_signed_out")
+    WebDriverWait(driver, 30).until(lambda browser: browser.execute_script("return document.readyState") == "complete")
+    if any(element.is_displayed() for element in driver.find_elements(By.ID, "identity_main_link")):
         raise AssertionError("the signed-out customer can still open My Page")
-    visible(driver, '#login-form input[name="email"]')
-    WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.ID, "submit-login")))
+    if any(element.is_displayed() for element in driver.find_elements(By.ID, "userMenuButton")):
+        raise AssertionError("the protected account route still shows an authenticated user menu")
+
     if any(
         link.is_displayed()
         for link in driver.find_elements(By.CSS_SELECTOR, "a.account-menu__link--signout")
     ):
-        raise AssertionError("the customer still has an authenticated My Page session after logout")
+        raise AssertionError("the protected account route still shows an authenticated signout control")
+
+    mark_substage("open_generated_login")
+    driver.get(login_url)
+    mark_substage("wait_login_form")
+    visible(driver, '#login-form input[name="email"]')
+    WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.ID, "submit-login")))
+    return account_url
 
 
 def run_viewport(width: int, height: int, label: str) -> bool:
@@ -2301,6 +2408,9 @@ def run_viewport(width: int, height: int, label: str) -> bool:
     failure_control = {"name": "display-register-form", "type": "anchor"}
     profile_pre_submit: dict[str, object] | None = None
     korean_login_state: dict[str, object] = {}
+    registration_state: dict[str, object] = {}
+    login_url = ""
+    account_url = ""
     email_login_substage = ""
     email_login_account_route_classification = "unavailable"
     expected_first_name = f"CI-{label.title()}"
@@ -2334,7 +2444,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             korean_login_state["async_stack_capture_enabled"] = False
         stage = "korean_email_login_label"
         failure_control = {"name": "", "type": ""}
-        assert_korean_email_login_form(driver, korean_login_state)
+        login_url = assert_korean_email_login_form(driver, korean_login_state)
         driver.save_screenshot(str(DEST / f"{label}-korean-login-email.png"))
 
         account_email = f"qa-ordenowa-{RUN_ID}-{RUN_ATTEMPT}-{label}@example.invalid"
@@ -2354,9 +2464,30 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             or registration_location.port != base_location.port
         ):
             raise AssertionError("PrestaShop registration link is outside the isolated shop")
+        registration_state["target_route_metadata"] = safe_url_metadata(registration_url)
+        registration_state["before_click_route_metadata"] = safe_url_metadata(driver.current_url)
+        registration_pre_click_url = driver.current_url
         stage = "registration_link_click"
         set_registration_control(failure_control, "display-register-form", "anchor")
-        click_centered(driver, registration_link)
+        clear_document_navigation_events(driver)
+        try:
+            registration_state["center_unobstructed"] = click_centered(driver, registration_link)
+        finally:
+            try:
+                registration_after_click_url = driver.current_url
+            except Exception:
+                registration_after_click_url = ""
+            registration_state["after_click_route_metadata"] = safe_url_metadata(
+                registration_after_click_url
+            )
+            registration_state["url_changed"] = (
+                bool(registration_after_click_url)
+                and registration_after_click_url != registration_pre_click_url
+            )
+            registration_state["target_route_matched"] = safe_generated_route_match(
+                registration_after_click_url, registration_url
+            )
+            registration_state["navigation_events"] = document_navigation_events(driver)
         stage = "registration_form_load"
         set_registration_control(failure_control, "customer-form", "form")
         form = visible(driver, "#customer-form")
@@ -2408,8 +2539,9 @@ def run_viewport(width: int, height: int, label: str) -> bool:
 
         stage = "email_login"
         email_login_substage = "logout"
-        logout(
+        account_url = logout(
             driver,
+            login_url=login_url,
             substage_callback=mark_email_login_substage,
             account_route_callback=mark_email_login_account_route_classification,
         )
@@ -2423,14 +2555,15 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         visible(driver, "#submit-login").click()
         email_login_substage = "auth_result"
         login_result = WebDriverWait(driver, 30).until(collect_email_login_result)
-        if login_result != "authenticated":
+        if login_result not in {"authenticated", "transitioned"}:
             raise AssertionError("customer email login was rejected")
         email_login_substage = "my_page"
+        driver.get(account_url)
         assert_my_page(driver, f"CI-{label.title()}")
         driver.save_screenshot(str(DEST / f"{label}-customer-email-login.png"))
 
         stage = "password_reset_request"
-        logout(driver)
+        logout(driver, login_url=login_url)
         recovery_link = visible(driver, "#login-form a[href]")
         recovery_url = urljoin(driver.current_url, recovery_link.get_attribute("href") or "")
         recovery_location = urlparse(recovery_url)
@@ -2466,15 +2599,17 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         visible(driver, 'button[type="submit"][name="submit"]').click()
 
         stage = "password_reset_old_password_rejected"
+        driver.get(account_url)
         assert_my_page(driver, f"CI-{label.title()}")
-        logout(driver)
+        logout(driver, login_url=login_url)
         assert_login_rejected(driver, account_email, initial_password)
 
         stage = "password_reset_login"
         submit_login(driver, account_email, reset_password)
+        driver.get(account_url)
         assert_my_page(driver, f"CI-{label.title()}")
         driver.save_screenshot(str(DEST / f"{label}-customer-password-reset-login.png"))
-        logout(driver)
+        logout(driver, login_url=login_url)
         print(f"PASS: {label} customer registration, profile update, email login/logout, and Mailpit password reset")
         success = True
     except Exception as error:
@@ -2485,7 +2620,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
                 pass
             if stage.startswith("registration_"):
                 try:
-                    emit_registration_diagnostics(driver, stage, failure_control)
+                    emit_registration_diagnostics(driver, stage, failure_control, registration_state)
                 except Exception:
                     pass
             elif stage == "korean_email_login_label":

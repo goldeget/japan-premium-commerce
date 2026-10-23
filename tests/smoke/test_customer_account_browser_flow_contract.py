@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import re
 import sys
 import unittest
 from contextlib import redirect_stderr
@@ -79,26 +80,31 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
     def test_email_login_and_logout_check_authenticated_and_signed_out_states(self) -> None:
         email_login = self.blocks["email_login"]
         self.assertIn("logout(", email_login)
-        self.assertNotIn("login_url", email_login)
+        self.assertIn("login_url=login_url", email_login)
         self.assertIn('#login-form input[name="email"]', email_login)
         self.assertIn('get_attribute("type") != "email"', email_login)
+        self.assertIn("driver.get(account_url)", email_login)
         self.assertIn("assert_my_page(driver, f\"CI-{label.title()}\")", email_login)
 
         for substage in ("logout", "login_form", "submit", "auth_result"):
             self.assertIn(f'email_login_substage = "{substage}"', email_login)
         self.assertIn("WebDriverWait(driver, 30).until(collect_email_login_result)", email_login)
+        self.assertIn('login_result not in {"authenticated", "transitioned"}', email_login)
         self.assertIn("emit_email_login_diagnostics(", self.source)
         self.assertIn("email_login_account_route_classification", self.source)
 
         reset_request = self.blocks["password_reset_request"]
-        self.assertIn("logout(driver)", reset_request)
+        self.assertIn("logout(driver, login_url=login_url)", reset_request)
         self.assertIn("reset_link_for(account_email, recovery_route_path)", reset_request)
 
         logout = self.source.split("def logout", 1)[1].split("def run_viewport", 1)[0]
         self.assertIn("visible_signout_link(driver)", logout)
         self.assertIn("driver.get(account_url)", logout)
+        self.assertIn("driver.get(login_url)", logout)
+        self.assertIn("return account_url", logout)
         self.assertIn('#login-form input[name="email"]', logout)
         self.assertIn('By.ID, "identity_main_link"', logout)
+        self.assertIn('By.ID, "userMenuButton"', logout)
 
     def test_logout_navigates_to_authenticated_account_before_resolving_signout(self) -> None:
         logout = self.source.split("def logout", 1)[1].split("def run_viewport", 1)[0]
@@ -119,6 +125,10 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertLess(signout_lookup, click_signout)
         self.assertLess(click_signout, wait_signed_out)
         self.assertLess(wait_signed_out, reopen_account)
+        login_route = logout.index("driver.get(login_url)", reopen_account)
+        wait_login_form = logout.index("#login-form input[name=\"email\"]", login_route)
+        self.assertLess(reopen_account, login_route)
+        self.assertLess(login_route, wait_login_form)
         self.assertIn("WebDriverWait(driver, 30).until", helper)
         self.assertIn("document.getElementById('userMenuButton')", helper)
         self.assertIn("document.querySelectorAll('a.account-menu__link--signout')", helper)
@@ -127,7 +137,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             helper,
         )
 
-    def test_logout_uses_the_generated_protected_account_route_for_signed_out_login(self) -> None:
+    def test_logout_uses_generated_account_and_login_routes_for_signed_out_access(self) -> None:
         login_form = self.source.split("def assert_korean_email_login_form", 1)[1].split(
             "\n\ndef emit_korean_login_diagnostics", 1
         )[0]
@@ -141,13 +151,13 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             signed_out_section,
             "logout must revisit the generated protected account route after signout",
         )
-        self.assertTrue("return login_url" not in login_form, "login form check retains a stale login URL")
+        self.assertIn("return login_url", login_form)
         self.assertTrue(
-            "login_url = assert_korean_email_login_form" not in run_viewport,
-            "run_viewport retains the stale homepage login URL",
+            "login_url = assert_korean_email_login_form(driver, korean_login_state)" in run_viewport,
+            "run_viewport must retain the validated generated login URL",
         )
-        logout_header = self.source.split("def logout(", 1)[1].split(") -> None:", 1)[0]
-        self.assertTrue("login_url" not in logout_header, "logout still accepts the stale login URL")
+        logout_header = self.source.split("def logout(", 1)[1].split(") -> str:", 1)[0]
+        self.assertIn("login_url: str", logout_header)
         self.assertIn("my_account_link_from_header(driver, open_menu=False)", logout)
         run_viewport_node = next(
             node
@@ -167,20 +177,68 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
                 len(call.args) == 1
                 and isinstance(call.args[0], ast.Name)
                 and call.args[0].id == "driver"
-                and all(keyword.arg != "login_url" for keyword in call.keywords)
+                and any(keyword.arg == "login_url" for keyword in call.keywords)
                 for call in logout_calls
             ),
-            "logout calls must use the generated protected account URL without a stale login URL",
+            "logout calls must use the validated generated login URL",
         )
 
         click_signout = logout.index("link.click()")
         wait_signed_out = logout.index("wait_for_signed_out_state(driver)")
         reopen_account = logout.index("driver.get(account_url)", wait_signed_out)
-        wait_login_form = logout.index("#login-form input[name=\"email\"]")
+        login_route = logout.index("driver.get(login_url)", reopen_account)
+        wait_login_form = logout.index("#login-form input[name=\"email\"]", login_route)
         self.assertLess(click_signout, wait_signed_out)
         self.assertLess(wait_signed_out, reopen_account)
-        self.assertLess(reopen_account, wait_login_form)
-        self.assertIn('visible(driver, "#identity_main_link")', logout)
+        self.assertLess(reopen_account, login_route)
+        self.assertIn('"identity_main_link"', logout[reopen_account:login_route])
+
+        for stage in ("email_login", "password_reset_request", "password_reset_old_password_rejected"):
+            self.assertIn("login_url=login_url", self.blocks[stage])
+        for stage in ("verify_protected_route_signed_out", "open_generated_login", "wait_login_form"):
+            self.assertIn(f'"{stage}"', logout)
+
+    def test_generated_login_helper_returns_only_its_validated_same_origin_url(self) -> None:
+        helper = self.source.split("def assert_korean_email_login_form", 1)[1].split(
+            "\n\ndef emit_korean_login_diagnostics", 1
+        )[0]
+        self.assertIn("login_location.hostname != base_location.hostname", helper)
+        self.assertIn("return login_url", helper)
+        self.assertIn("driver.get(account_url)", self.blocks["email_login"])
+        self.assertIn("driver.get(account_url)", self.blocks["password_reset_login"])
+
+    def test_generated_route_match_requires_same_shop_and_same_route(self) -> None:
+        helper_node = next(
+            node
+            for node in ast.parse(self.source).body
+            if isinstance(node, ast.FunctionDef) and node.name == "safe_generated_route_match"
+        )
+        namespace = {
+            "BASE": "https://shop.example.test/shop",
+            "parse_qs": parse_qs,
+            "unquote": unquote,
+            "urlparse": urlparse,
+        }
+        exec(compile(ast.Module(body=[helper_node], type_ignores=[]), str(ACCOUNT_FLOW), "exec"), namespace)
+        matches = namespace["safe_generated_route_match"]
+        self.assertTrue(
+            matches(
+                "https://shop.example.test/shop/ko/register?back=%2Fko",
+                "https://shop.example.test/shop/ko/register?back=%2Fko%2Fmy-page",
+            )
+        )
+        self.assertFalse(
+            matches(
+                "https://attacker.example.test/shop/ko/register",
+                "https://shop.example.test/shop/ko/register",
+            )
+        )
+        self.assertFalse(
+            matches(
+                "https://shop.example.test/shop/ko/login",
+                "https://shop.example.test/shop/ko/register",
+            )
+        )
 
     def test_logout_diagnostics_report_only_safe_stages_and_route_markers(self) -> None:
         logout = self.source.split("def logout", 1)[1].split("def run_viewport", 1)[0]
@@ -196,6 +254,8 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             "click_signout",
             "wait_signed_out",
             "reopen_account",
+            "verify_protected_route_signed_out",
+            "open_generated_login",
             "wait_login_form",
         )
         for stage in stages:
@@ -209,7 +269,9 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             ('mark_substage("click_signout")', "link.click()"),
             ('mark_substage("wait_signed_out")', "wait_for_signed_out_state(driver)"),
             ('mark_substage("reopen_account")', "driver.get(account_url)"),
-            ('mark_substage("wait_login_form")', "WebDriverWait(driver, 30).until"),
+            ('mark_substage("verify_protected_route_signed_out")', "document.readyState"),
+            ('mark_substage("open_generated_login")', "driver.get(login_url)"),
+            ('mark_substage("wait_login_form")', "visible(driver, '#login-form input[name=\"email\"]')"),
         )
         previous_position = -1
         for checkpoint, operation in checkpoint_operations:
@@ -335,7 +397,61 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         validation = self.blocks["registration_link_validation"]
         self.assertIn('registration_link.get_attribute("href")', validation)
         self.assertIn("registration_location.hostname != base_location.hostname", validation)
-        self.assertIn("click_centered(driver, registration_link)", self.blocks["registration_link_click"])
+        click = self.blocks["registration_link_click"]
+        self.assertIn("clear_document_navigation_events(driver)", click)
+        self.assertIn('registration_state["center_unobstructed"] = click_centered(driver, registration_link)', click)
+        self.assertIn("finally:", click)
+        self.assertIn("document_navigation_events(driver)", click)
+        self.assertIn("safe_generated_route_match(\n                registration_after_click_url, registration_url", click)
+
+        emitter = self.source.split("def emit_registration_diagnostics", 1)[1].split(
+            "\n\ndef collect_profile_update_diagnostics", 1
+        )[0]
+        self.assertIn("registration_center_unobstructed", emitter)
+        self.assertIn("registration_target_route_metadata", emitter)
+        self.assertIn("registration_navigation_events", emitter)
+        self.assertNotIn('"registration_url":', emitter)
+        self.assertNotIn('"href":', emitter)
+
+    def test_registration_navigation_summary_discards_raw_urls_and_query_values(self) -> None:
+        helper_node = next(
+            node
+            for node in ast.parse(self.source).body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "safe_registration_navigation_summary"
+        )
+        namespace: dict[str, object] = {}
+        namespace["re"] = re
+        exec(compile(ast.Module(body=[helper_node], type_ignores=[]), str(ACCOUNT_FLOW), "exec"), namespace)
+        summary = namespace["safe_registration_navigation_summary"](
+            [
+                {
+                    "event": "document_redirect",
+                    "route_metadata": {
+                        "same_origin": True,
+                        "path": "/secret",
+                        "controller_category": "other",
+                        "back_present": True,
+                        "url": "https://shop.invalid/secret?email=qa@example.invalid&token=abc",
+                    },
+                    "redirect_from_metadata": {
+                        "same_origin": True,
+                        "path": "/ko/login",
+                        "controller_category": "authentication",
+                        "url": "https://shop.invalid/private?password=secret",
+                    },
+                    "status_code": 200,
+                    "redirect_status_code": 302,
+                    "request_url": "https://shop.invalid/private?email=qa@example.invalid",
+                }
+            ]
+        )
+        serialized = repr(summary)
+        self.assertIn("/<redacted>", serialized)
+        self.assertIn("authentication", serialized)
+        self.assertIn("302", serialized)
+        for forbidden in ("shop.invalid", "qa@example.invalid", "abc", "secret", "request_url", "password"):
+            self.assertNotIn(forbidden, serialized)
 
     def test_login_reuses_the_current_generated_route_without_direct_authentication_gets(self) -> None:
         self.assertNotIn('driver.get(f"{BASE}/index.php?controller=authentication")', self.source)
@@ -344,13 +460,22 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             helper = self.source.split(f"def {helper_name}", 1)[1].split("\n\ndef ", 1)[0]
             self.assertNotIn("driver.get(", helper)
             self.assertIn("fill(driver, '#login-form input[name=\"email\"]'", helper)
+        submit_login = self.source.split("def submit_login", 1)[1].split("\n\ndef assert_login_rejected", 1)[0]
+        self.assertIn("collect_email_login_result", submit_login)
+        self.assertNotIn("identity_main_link", submit_login)
+        self.assertIn('login_result == "rejected"', submit_login)
+        login_result = self.source.split("def collect_email_login_result", 1)[1].split(
+            "\n\ndef collect_email_login_diagnostics", 1
+        )[0]
+        self.assertIn("!isVisible(loginForm)", login_result)
+        self.assertIn("return 'transitioned'", login_result)
         old_password = self.blocks["password_reset_old_password_rejected"]
         self.assertLess(
             old_password.index("assert_my_page(driver,"),
-            old_password.index("logout(driver)"),
+            old_password.index("logout(driver, login_url=login_url)"),
         )
         self.assertLess(
-            old_password.index("logout(driver)"),
+            old_password.index("logout(driver, login_url=login_url)"),
             old_password.index("assert_login_rejected(driver,"),
         )
 
@@ -489,7 +614,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         reset_login = self.blocks["password_reset_login"]
         self.assertIn("submit_login(driver, account_email, reset_password)", reset_login)
         self.assertIn("assert_my_page(driver, f\"CI-{label.title()}\")", reset_login)
-        self.assertIn("logout(driver)", reset_login)
+        self.assertIn("logout(driver, login_url=login_url)", reset_login)
 
     def test_browser_flow_runs_on_desktop_and_mobile_viewports(self) -> None:
         self.assertIn('(1440, 960, "desktop")', self.source)
