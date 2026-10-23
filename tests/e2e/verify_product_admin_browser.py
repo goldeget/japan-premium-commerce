@@ -13,7 +13,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from selenium import webdriver
-from selenium.common.exceptions import ElementClickInterceptedException
+from selenium.common.exceptions import (
+    ElementClickInterceptedException,
+    StaleElementReferenceException,
+)
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -32,6 +35,30 @@ DEST.mkdir(parents=True, exist_ok=True)
 
 def visible(driver: webdriver.Chrome, selector: str):
     return WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.CSS_SELECTOR, selector)))
+
+
+def combination_stock_values(driver: webdriver.Chrome) -> list[str]:
+    """Read all native combination stocks from one fresh DOM snapshot."""
+    return driver.execute_script(
+        """
+        return Array.from(document.querySelectorAll('input[name^="combination_quantities["]'))
+            .map((field) => field.value);
+        """
+    )
+
+
+def wait_for_combination_stock_values(driver: webdriver.Chrome, expected: list[str]) -> list[str]:
+    """Retry fresh stock snapshots while the post-save form finishes replacing its DOM."""
+
+    def read_expected_stock(browser: webdriver.Chrome):
+        values = combination_stock_values(browser)
+        return values if values == expected else False
+
+    return WebDriverWait(
+        driver,
+        30,
+        ignored_exceptions=(StaleElementReferenceException,),
+    ).until(read_expected_stock)
 
 
 def manager_link(driver: webdriver.Chrome):
@@ -964,15 +991,20 @@ def run() -> None:
             field.send_keys(quantity)
         if [field.get_attribute("value") for field in combination_stock_inputs] != expected_combination_quantities:
             raise AssertionError("distinct option stock values could not be entered for each native combination")
+        distinct_stock_form = visible(driver, "form #name_ja")
         edit_operation = "submit_distinct_option_stock"
         clear_product_browser_network_events(driver)
         visible(driver, 'button[name="submitKuraneaProductSave"]').click()
+        WebDriverWait(driver, 45).until(EC.staleness_of(distinct_stock_form))
         distinct_stock_result = WebDriverWait(driver, 45).until(product_save_result)
         if not isinstance(distinct_stock_result, dict) or distinct_stock_result.get("status") != "success":
             raise AssertionError("distinct option stock did not save successfully")
         edit_operation = "verify_distinct_option_stock"
-        saved_combination_stock_inputs = driver.find_elements(By.CSS_SELECTOR, 'input[name^="combination_quantities["]')
-        if [field.get_attribute("value") for field in saved_combination_stock_inputs] != expected_combination_quantities:
+        saved_combination_stock_values = wait_for_combination_stock_values(
+            driver,
+            expected_combination_quantities,
+        )
+        if saved_combination_stock_values != expected_combination_quantities:
             raise AssertionError("distinct option stock did not persist for every native combination")
         if visible(driver, "#quantity").get_attribute("value") != "0":
             raise AssertionError("per-combination stock editing changed the product-level default quantity")

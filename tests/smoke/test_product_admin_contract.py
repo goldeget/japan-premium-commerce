@@ -585,6 +585,88 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn('edit_save_result.get("status") != "success"', edit_flow)
         self.assertNotIn('find_element(By.TAG_NAME, "body").text', edit_flow)
 
+    def test_distinct_option_stock_readback_waits_for_fresh_form_and_retries_stale_snapshot(self) -> None:
+        browser_path = ROOT / "tests" / "e2e" / "verify_product_admin_browser.py"
+        browser = browser_path.read_text(encoding="utf-8")
+        edit_flow = browser.split('stage = "native_product_edit"', 1)[1].split(
+            "    except Exception as error:", 1
+        )[0]
+        submit_flow = edit_flow.split('edit_operation = "submit_distinct_option_stock"', 1)[1].split(
+            'driver.save_screenshot(str(DEST / "product-admin-distinct-combination-stock-desktop.png"))', 1
+        )[0]
+
+        self.assertIn('distinct_stock_form = visible(driver, "form #name_ja")', edit_flow)
+        self.assertIn("WebDriverWait(driver, 45).until(EC.staleness_of(distinct_stock_form))", submit_flow)
+        self.assertIn("distinct_stock_result = WebDriverWait(driver, 45).until(product_save_result)", submit_flow)
+        self.assertIn("saved_combination_stock_values = wait_for_combination_stock_values(", submit_flow)
+        self.assertIn("expected_combination_quantities,", submit_flow)
+        self.assertIn("saved_combination_stock_values != expected_combination_quantities", submit_flow)
+        self.assertNotIn("saved_combination_stock_inputs = driver.find_elements", submit_flow)
+        self.assertLess(
+            submit_flow.index("EC.staleness_of(distinct_stock_form)"),
+            submit_flow.index("product_save_result"),
+        )
+        self.assertLess(
+            submit_flow.index("product_save_result"),
+            submit_flow.index("wait_for_combination_stock_values"),
+        )
+
+        tree = ast.parse(browser)
+        helper_names = {"combination_stock_values", "wait_for_combination_stock_values"}
+        helper_nodes = [
+            node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in helper_names
+        ]
+        self.assertEqual({node.name for node in helper_nodes}, helper_names)
+
+        class StaleElementReferenceException(Exception):
+            pass
+
+        class FakeWebDriverWait:
+            def __init__(self, driver, timeout, ignored_exceptions=()):
+                self.driver = driver
+                self.ignored_exceptions = ignored_exceptions
+
+            def until(self, condition):
+                for _attempt in range(3):
+                    try:
+                        result = condition(self.driver)
+                    except self.ignored_exceptions:
+                        continue
+                    if result:
+                        return result
+                raise AssertionError("the stock readback did not become available")
+
+        class FakeDriver:
+            def __init__(self):
+                self.snapshot_attempts = 0
+
+            def execute_script(self, script):
+                self.assert_stock_selector(script)
+                self.snapshot_attempts += 1
+                if self.snapshot_attempts == 1:
+                    raise StaleElementReferenceException()
+                if self.snapshot_attempts == 2:
+                    return ["0", "0", "0", "0"]
+                return ["0", "2", "4", "6"]
+
+            @staticmethod
+            def assert_stock_selector(script):
+                if 'input[name^="combination_quantities["]' not in script:
+                    raise AssertionError("stock readback must query fresh combination inputs")
+
+        namespace = {
+            "StaleElementReferenceException": StaleElementReferenceException,
+            "WebDriverWait": FakeWebDriverWait,
+            "webdriver": SimpleNamespace(Chrome=object),
+        }
+        exec(compile(ast.Module(body=helper_nodes, type_ignores=[]), str(browser_path), "exec"), namespace)
+        driver = FakeDriver()
+        self.assertEqual(
+            namespace["wait_for_combination_stock_values"](driver, ["0", "2", "4", "6"]),
+            ["0", "2", "4", "6"],
+        )
+        self.assertEqual(driver.snapshot_attempts, 3)
+
     def test_product_edit_category_diagnostics_keep_only_bounded_numeric_ids(self) -> None:
         browser_path = ROOT / "tests" / "e2e" / "verify_product_admin_browser.py"
         tree = ast.parse(browser_path.read_text(encoding="utf-8"))
