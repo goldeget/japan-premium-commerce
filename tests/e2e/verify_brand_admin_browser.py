@@ -517,6 +517,7 @@ def verify_browser_asset_bytes(
 def assert_initial_official_brand_assets(
     driver: webdriver.Chrome,
     stage_callback: Callable[[str], None],
+    admin_login_logo_url: str,
 ) -> dict:
     """Verify the fresh-install public brand before the browser uploads any sources."""
     expected_assets: list[dict[str, str | int]] = []
@@ -626,11 +627,9 @@ def assert_initial_official_brand_assets(
     )
 
     stage_callback("initial_admin_login_logo")
-    driver.get(ADMIN_LOGIN + "/login")
-    login_logo = image_is_rendered(driver, ".ordenowa-admin-login-brand img")
     expect_asset(
         "admin login logo",
-        login_logo["src"],
+        admin_login_logo_url,
         OFFICIAL_UPLOADS["primary_logo"],
         "official-admin-login.png",
         "logo-desktop.png",
@@ -1311,6 +1310,7 @@ def run() -> None:
         public_before_draft = assert_initial_official_brand_assets(
             driver,
             set_brand_assertion_stage,
+            login_logo["src"],
         )
         driver.save_screenshot(str(DEST / "brand-customer-before-draft.png"))
         driver.get(settings_url)

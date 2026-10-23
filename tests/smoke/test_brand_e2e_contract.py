@@ -107,6 +107,20 @@ class BrandE2EContractTests(unittest.TestCase):
         upload = run_flow.index('stage = "official_asset_upload"', baseline)
         self.assertLess(assertion, upload)
 
+    def test_initial_brand_check_reuses_logo_captured_before_admin_login(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        initial_check = browser_flow.split("def assert_initial_official_brand_assets(", 1)[1].split(
+            "\ndef ", 1
+        )[0]
+        run_flow = browser_flow.split("def run()", 1)[1]
+
+        self.assertIn("admin_login_logo_url: str", initial_check)
+        self.assertNotIn('driver.get(ADMIN_LOGIN + "/login")', initial_check)
+        self.assertIn('"admin login logo",\n        admin_login_logo_url,', initial_check)
+        self.assertIn('"initial_admin_login_logo"', initial_check)
+        self.assertIn("login_logo[\"src\"]", run_flow)
+        self.assertIn("set_brand_assertion_stage,\n            login_logo[\"src\"],", run_flow)
+
     def test_browser_asserts_served_manifest_identity_and_launch_scope(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
         public_snapshot = browser_flow.split("def public_brand_snapshot(", 1)[1].split(
