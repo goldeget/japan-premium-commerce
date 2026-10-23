@@ -235,12 +235,13 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('if slot == "favicon_symbol":', slot_url_helper)
         self.assertIn('if slot == "pwa_icon":', slot_url_helper)
 
-        for slot, replacement, approved, field_id, preview_files in (
+        for slot, replacement, approved, field_id, form_preview_filename, preview_files in (
             (
                 "favicon_symbol",
                 'OFFICIAL_UPLOADS["pwa_icon"]',
                 'OFFICIAL_UPLOADS["favicon_symbol"]',
                 "ordenowa-brand-assets-favicon",
+                "favicon.ico",
                 ("favicon-32.png",),
             ),
             (
@@ -248,6 +249,7 @@ class BrandE2EContractTests(unittest.TestCase):
                 'OFFICIAL_UPLOADS["favicon_symbol"]',
                 'OFFICIAL_UPLOADS["pwa_icon"]',
                 "ordenowa-brand-assets-pwa_512",
+                "pwa-512.png",
                 ("apple-touch-icon.png", "pwa-512.png"),
             ),
         ):
@@ -260,12 +262,19 @@ class BrandE2EContractTests(unittest.TestCase):
                 self.assertIn(f"replacement_source={replacement}", call)
                 self.assertIn(f"approved_source={approved}", call)
                 self.assertIn(f'preview_field_id="{field_id}"', call)
+                self.assertIn(f'form_preview_filename="{form_preview_filename}"', call)
                 for filename in preview_files:
                     self.assertIn(f'"{filename}"', call)
 
         replacement_helper = browser_flow.split("def replace_publish_restore_brand_icon(", 1)[1].split(
             "def ", 1
         )[0]
+        self.assertIn("form_preview_filename: str", replacement_helper)
+        self.assertIn("replacement_source,\n            form_preview_filename,", replacement_helper)
+        self.assertIn("approved_source,\n            form_preview_filename,", replacement_helper)
+        self.assertNotIn("replacement_previews[0][0]", replacement_helper)
+        self.assertNotIn("approved_previews[0][0]", replacement_helper)
+        self.assertIn("form_preview_filename=form_preview_filename", replacement_helper)
         self.assertIn("restore_approved_brand_icon_after_failure(", replacement_helper)
         self.assertIn("approved_source=approved_source", replacement_helper)
         self.assertIn("stage_callback=lambda cleanup_assertion_stage: cleanup_stage.update(", replacement_helper)
@@ -303,8 +312,9 @@ class BrandE2EContractTests(unittest.TestCase):
         cleanup_helper = browser_flow.split("def restore_approved_brand_icon_after_failure(", 1)[1].split(
             "\ndef ", 1
         )[0]
+        self.assertIn("form_preview_filename: str", cleanup_helper)
         self.assertIn("replace_brand_asset_in_saved_draft(", cleanup_helper)
-        self.assertIn("approved_source,\n        approved_filename,", cleanup_helper)
+        self.assertIn("approved_source,\n        form_preview_filename,", cleanup_helper)
         self.assertIn("publish_saved_brand_draft(", cleanup_helper)
         self.assertIn("assert_public_brand_assets(", cleanup_helper)
         self.assertIn(

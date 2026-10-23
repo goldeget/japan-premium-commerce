@@ -866,6 +866,7 @@ def restore_approved_brand_icon_after_failure(
     slot: str,
     approved_source: Path,
     preview_field_id: str,
+    form_preview_filename: str,
     approved_previews: tuple[tuple[str, Path], ...],
     public_before_draft: dict,
     stage_callback: Callable[[str], None],
@@ -877,7 +878,6 @@ def restore_approved_brand_icon_after_failure(
     driver.get(ADMIN_LOGIN + "/login")
     restore_admin_session(driver, stage_callback, stage_prefix + "_failure_restore_admin_login")
     settings_url = business_profile_settings_url(driver)
-    approved_filename = approved_previews[0][0]
     stage_callback(stage_prefix + "_failure_restore_save_draft")
     replace_brand_asset_in_saved_draft(
         driver,
@@ -885,7 +885,7 @@ def restore_approved_brand_icon_after_failure(
         slot,
         preview_field_id,
         approved_source,
-        approved_filename,
+        form_preview_filename,
         slot + " failure restore",
         stage_callback,
         stage_prefix + "_failure_restore",
@@ -915,6 +915,7 @@ def replace_publish_restore_brand_icon(
     replacement_source: Path,
     approved_source: Path,
     preview_field_id: str,
+    form_preview_filename: str,
     replacement_previews: tuple[tuple[str, Path], ...],
     approved_previews: tuple[tuple[str, Path], ...],
     stage_callback: Callable[[str], None],
@@ -926,7 +927,6 @@ def replace_publish_restore_brand_icon(
 
     restore_required = False
     try:
-        replacement_filename = replacement_previews[0][0]
         restore_required = True
         stage_callback(stage_prefix + "_save_replacement_draft")
         replace_brand_asset_in_saved_draft(
@@ -935,7 +935,7 @@ def replace_publish_restore_brand_icon(
             slot,
             preview_field_id,
             replacement_source,
-            replacement_filename,
+            form_preview_filename,
             slot,
             stage_callback,
             stage_prefix + "_replacement",
@@ -967,7 +967,6 @@ def replace_publish_restore_brand_icon(
         if public_brand_slot_urls(public_after_replacement, slot) == public_brand_slot_urls(public_before_draft, slot):
             raise AssertionError("publishing the " + slot + " replacement did not change its public image URLs")
 
-        approved_filename = approved_previews[0][0]
         stage_callback(stage_prefix + "_save_approved_restore_draft")
         replace_brand_asset_in_saved_draft(
             driver,
@@ -975,7 +974,7 @@ def replace_publish_restore_brand_icon(
             slot,
             preview_field_id,
             approved_source,
-            approved_filename,
+            form_preview_filename,
             slot + " approved restore",
             stage_callback,
             stage_prefix + "_restore",
@@ -1017,6 +1016,7 @@ def replace_publish_restore_brand_icon(
                     slot=slot,
                     approved_source=approved_source,
                     preview_field_id=preview_field_id,
+                    form_preview_filename=form_preview_filename,
                     approved_previews=approved_previews,
                     public_before_draft=public_before_draft,
                     stage_callback=lambda cleanup_assertion_stage: cleanup_stage.update(
@@ -1383,6 +1383,7 @@ def run() -> None:
             replacement_source=OFFICIAL_UPLOADS["pwa_icon"],
             approved_source=OFFICIAL_UPLOADS["favicon_symbol"],
             preview_field_id="ordenowa-brand-assets-favicon",
+            form_preview_filename="favicon.ico",
             replacement_previews=(("favicon-32.png", OFFICIAL_UPLOADS["pwa_icon"]),),
             approved_previews=(("favicon-32.png", OFFICIAL_UPLOADS["favicon_symbol"]),),
             stage_callback=set_brand_assertion_stage,
@@ -1396,6 +1397,7 @@ def run() -> None:
             replacement_source=OFFICIAL_UPLOADS["favicon_symbol"],
             approved_source=OFFICIAL_UPLOADS["pwa_icon"],
             preview_field_id="ordenowa-brand-assets-pwa_512",
+            form_preview_filename="pwa-512.png",
             replacement_previews=(
                 ("apple-touch-icon.png", OFFICIAL_UPLOADS["favicon_symbol"]),
                 ("pwa-512.png", OFFICIAL_UPLOADS["favicon_symbol"]),
