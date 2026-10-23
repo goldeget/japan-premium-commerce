@@ -318,7 +318,7 @@ def submit_settings_attempt(driver: webdriver.Chrome, mode: str) -> dict[str, ob
             responseUrl: response.url,
             bodyHasSettingsForm: responseBody.includes('ordenowa-profile-settings'),
             bodyHasDangerAlert: responseBody.includes('alert-danger'),
-            bodyHasNativeCompromisedPage: nativeCompromisedPage,
+            ...nativeCompromisedPage,
             ...tokenPage,
             bodyHasAdminLoginForm: Boolean(
               loginForm && loginForm.querySelector('input[name="email"]') && loginForm.querySelector('input[name="passwd"]')

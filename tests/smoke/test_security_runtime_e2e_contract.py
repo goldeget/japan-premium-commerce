@@ -98,6 +98,16 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertNotIn("str(error)", handler)
         self.assertNotIn("{error}", handler)
 
+    def test_admin_security_attempt_exposes_compromised_page_evidence_to_classifier(self):
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+        submit = source.split("def submit_settings_attempt(", 1)[1].split("\n\ndef ", 1)[0]
+
+        self.assertIn("...nativeCompromisedPage,", submit)
+        self.assertNotIn(
+            "bodyHasNativeCompromisedPage: nativeCompromisedPage",
+            submit,
+        )
+
     def test_admin_browser_cleanup_attempts_both_drivers_and_keeps_failure_redacted(self):
         namespace: dict[str, object] = {"sys": sys}
         close_drivers = load_function(ADMIN_FLOW, "close_browser_drivers", namespace)
