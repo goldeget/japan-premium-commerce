@@ -194,6 +194,14 @@ def _select_japan_zone(driver, zone_id: int) -> str:
     return zone_name
 
 
+def _open_shipping_settings_tab(driver) -> None:
+    shipping_tab = _wait_visible(
+        driver,
+        'a[href="#carrier_shipping_settings-tab"]',
+    )
+    checkout.click_at_center(driver, shipping_tab)
+
+
 def _fill_free_carrier_form(
     driver,
     name: str,
@@ -225,11 +233,7 @@ def _fill_free_carrier_form(
     # CarrierType is rendered as a three-tab NavigationTabType form. The
     # shipping controls exist in the DOM while hidden until this tab is active.
     mark_stage("open_shipping_settings_tab")
-    shipping_tab = _wait_visible(
-        driver,
-        'a[href="#carrier_shipping_settings-tab"]',
-    )
-    checkout.click_at_center(driver, shipping_tab)
+    _open_shipping_settings_tab(driver)
 
     mark_stage("select_japan_zone")
     _select_japan_zone(driver, JAPAN_ZONE_ID)
@@ -257,6 +261,10 @@ def _assert_free_carrier_form(driver, carrier: dict[str, object]) -> dict[str, o
 
     if not _switch_is_selected(driver, "carrier[general_settings][active]", True):
         raise AssertionError("the saved Japan free carrier is not active")
+
+    # PrestaShop opens carrier edit pages on the general tab. Activate shipping
+    # settings before waiting for its zone selector or reading the free switch.
+    _open_shipping_settings_tab(driver)
     if not _switch_is_selected(driver, "carrier[shipping_settings][is_free]", True):
         raise AssertionError("the saved carrier is not marked as free shipping in AdminCarriers")
 

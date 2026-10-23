@@ -283,15 +283,25 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertIn("_wait_visible(driver, 'input[name=\"carrier[general_settings][name]\"]')", form_visit)
         self.assertNotIn("checkout.visit(driver, _carrier_edit_url", browser)
         self.assertIn('stage = "navigate_to_saved_free_japan_carrier"', browser)
+        free_carrier_assertion = browser.split("def _assert_free_carrier_form(", 1)[1].split(
+            "def configure_free_carrier(", 1
+        )[0]
+        self.assertLess(
+            free_carrier_assertion.index("_open_shipping_settings_tab(driver)"),
+            free_carrier_assertion.index('"#carrier_shipping_settings_zones"'),
+        )
         self.assertNotIn('ADMIN_LOGIN + "/index.php/improve/shipping/carriers/create"', browser)
+        open_tab = browser.split("def _open_shipping_settings_tab(", 1)[1].split(
+            "def _fill_free_carrier_form(", 1
+        )[0]
+        self.assertIn('a[href="#carrier_shipping_settings-tab"]', open_tab)
+        self.assertIn("checkout.click_at_center(driver, shipping_tab)", open_tab)
         form_fill = browser.split("def _fill_free_carrier_form(", 1)[1].split(
             "def _assert_free_carrier_form(", 1
         )[0]
-        shipping_tab = form_fill.index('a[href="#carrier_shipping_settings-tab"]')
-        tab_activation = form_fill.index("checkout.click_at_center(driver, shipping_tab)")
+        tab_activation = form_fill.index("_open_shipping_settings_tab(driver)")
         zone_selection = form_fill.index("_select_japan_zone(driver, JAPAN_ZONE_ID)")
         free_shipping = form_fill.index('_set_switch(driver, "carrier[shipping_settings][is_free]", True)')
-        self.assertLess(shipping_tab, tab_activation)
         self.assertLess(tab_activation, zone_selection)
         self.assertLess(zone_selection, free_shipping)
         self.assertIn('mark_stage("open_shipping_settings_tab")', form_fill)
