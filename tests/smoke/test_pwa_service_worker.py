@@ -668,10 +668,39 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         viewport = function_source(self.source, "run_viewport")
 
         self.assertIn('wait_visible(driver, "#login-form input[name=\'email\']")', logout)
-        self.assertIn("for _ in range(2):", logout)
+        self.assertIn(
+            'for history_stage in ("browser_history_first_back", "browser_history_second_back"):',
+            logout,
+        )
         self.assertGreaterEqual(logout.count("exposes_test_identity(body_text, first_name, last_name, email)"), 2)
         self.assertIn("for name in (first_name, last_name):", identity_check)
         self.assertIn('"Pwa",\n                "Session",', viewport)
+
+    def test_logout_qa_reports_only_a_bounded_substage_for_assertion_failures(self) -> None:
+        logout = function_source(self.source, "verify_logout_protection")
+        viewport = function_source(self.source, "run_viewport")
+        for substage in (
+            "resolve_signout_link",
+            "click_signout",
+            "wait_signed_out_header",
+            "request_protected_account",
+            "wait_protected_document",
+            "assert_no_account_links",
+            "require_login_form",
+            "assert_no_identity_on_protected_page",
+            "assert_empty_logged_out_cache",
+            "browser_history_first_back",
+            "browser_history_second_back",
+            "reopen_protected_account",
+            "require_login_form_after_history",
+            "assert_empty_account_cache_after_history",
+        ):
+            with self.subTest(substage=substage):
+                self.assertIn(f'"{substage}"', logout)
+        self.assertIn('set_substage=update_logout_substage', viewport)
+        self.assertIn('re.fullmatch(r"[a-z][a-z0-9_]{0,63}", logout_substage)', viewport)
+        self.assertIn('diagnostic = f"; substage={logout_substage}"', viewport)
+        self.assertNotIn("str(error)", viewport)
 
     def test_private_routes_fail_closed_when_document_cache_headers_are_unavailable(self) -> None:
         matcher = function_source(self.source, "matching_document_responses")

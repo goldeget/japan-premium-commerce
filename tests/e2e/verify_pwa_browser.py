@@ -1014,7 +1014,12 @@ def verify_logout_protection(
     last_name: str,
     email: str,
     screenshot: Path,
+    set_substage: Callable[[str], None],
 ) -> None:
+    def mark_stage(name: str) -> None:
+        set_substage(name)
+
+    mark_stage("resolve_signout_link")
     signout = WebDriverWait(driver, 30).until(
         lambda browser: next(
             (link for link in browser.find_elements(By.CSS_SELECTOR, "a.account-menu__link--signout")
@@ -1022,17 +1027,22 @@ def verify_logout_protection(
             False,
         )
     )
+    mark_stage("click_signout")
     signout.click()
+    mark_stage("wait_signed_out_header")
     WebDriverWait(driver, 30).until(
         lambda browser: not any(
             link.is_displayed()
             for link in browser.find_elements(By.CSS_SELECTOR, "a.account-menu__link--signout")
         )
     )
+    mark_stage("request_protected_account")
     navigate_private_document(driver, account_url, shop_url, "logged-out account")
+    mark_stage("wait_protected_document")
     WebDriverWait(driver, 30).until(
         lambda browser: browser.execute_script("return document.readyState") == "complete"
     )
+    mark_stage("assert_no_account_links")
     if any(
         element.is_displayed() for element in driver.find_elements(By.ID, "identity_main_link")
     ):
@@ -1041,23 +1051,31 @@ def verify_logout_protection(
         element.is_displayed() for element in driver.find_elements(By.ID, "userMenuButton")
     ):
         raise AssertionError("logged-out browser still shows an authenticated user menu")
+    mark_stage("require_login_form")
     wait_visible(driver, "#login-form input[name='email']")
+    mark_stage("assert_no_identity_on_protected_page")
     body_text = driver.find_element(By.TAG_NAME, "body").text
     if exposes_test_identity(body_text, first_name, last_name, email):
         raise AssertionError("protected account page exposed the synthetic customer's name after logout")
     driver.save_screenshot(str(screenshot))
+    mark_stage("assert_empty_logged_out_cache")
     assert_empty_cache_storage(driver, "logged-out protected account route")
 
-    for _ in range(2):
+    for history_stage in ("browser_history_first_back", "browser_history_second_back"):
+        mark_stage(history_stage)
         driver.back()
         WebDriverWait(driver, 15).until(
             lambda browser: browser.execute_script("return document.readyState") == "complete"
         )
+        mark_stage("assert_no_identity_in_history")
         body_text = driver.find_element(By.TAG_NAME, "body").text
         if exposes_test_identity(body_text, first_name, last_name, email):
             raise AssertionError("browser history exposed the synthetic customer's name after logout")
+    mark_stage("reopen_protected_account")
     driver.get(account_url)
+    mark_stage("require_login_form_after_history")
     wait_visible(driver, "#login-form input[name='email']")
+    mark_stage("assert_empty_account_cache_after_history")
     assert_empty_cache_storage(driver, "account route after browser back")
 
 
@@ -1080,10 +1098,15 @@ def run_viewport(
     driver = None
     stage = "chrome_start"
     primary_failure = False
+    logout_substage = ""
 
     def update_offline_stage(next_stage: str) -> None:
         nonlocal stage
         stage = next_stage
+
+    def update_logout_substage(next_substage: str) -> None:
+        nonlocal logout_substage
+        logout_substage = next_substage
 
     try:
         driver = webdriver.Chrome(options=options)
@@ -1182,7 +1205,9 @@ def run_viewport(
                 "Session",
                 email,
                 artifact_dir / "pwa-desktop-logged-out-account.png",
+                set_substage=update_logout_substage,
             )
+            logout_substage = ""
         else:
             for route_stage, route in (
                 ("guest_authentication_route", "index.php?controller=authentication"),
@@ -1213,11 +1238,13 @@ def run_viewport(
         if not error_type.isidentifier():
             error_type = "unexpected exception"
         diagnostic = ""
+        if re.fullmatch(r"[a-z][a-z0-9_]{0,63}", logout_substage):
+            diagnostic = f"; substage={logout_substage}"
         if isinstance(error, ChromeBrowserCdpError):
             code = getattr(error, "diagnostic_code", "")
             cause = getattr(error, "cause_type", "")
             if isinstance(code, str) and re.fullmatch(r"[a-z0-9_]+", code):
-                diagnostic = f"; diagnostic={code}"
+                diagnostic += f"; diagnostic={code}"
             if isinstance(cause, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", cause):
                 diagnostic += f"; cause={cause}"
         print(
