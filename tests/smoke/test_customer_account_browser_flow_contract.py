@@ -88,6 +88,19 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn('#login-form input[name="email"]', logout)
         self.assertIn('By.ID, "identity_main_link"', logout)
 
+    def test_registration_link_wait_has_its_own_failure_stage_after_korean_check(self) -> None:
+        korean_check = self.blocks["korean_email_login_label"]
+        self.assertIn("assert_korean_email_login_form(driver, korean_login_state)", korean_check)
+        self.assertNotIn('driver.get(f"{BASE}/index.php?controller=authentication")', korean_check)
+        registration = self.blocks["registration_link_load"]
+        self.assertNotIn("driver.get(", registration)
+        self.assertIn('visible(driver, \'a[data-link-action="display-register-form"]\')', registration)
+        self.assertIn('set_registration_control(failure_control, "display-register-form", "anchor")', registration)
+        validation = self.blocks["registration_link_validation"]
+        self.assertIn('registration_link.get_attribute("href")', validation)
+        self.assertIn("registration_location.hostname != base_location.hostname", validation)
+        self.assertIn("click_centered(driver, registration_link)", self.blocks["registration_link_click"])
+
     def test_mailpit_reset_checks_captured_link_logo_bytes_and_password_change(self) -> None:
         reset_request = self.blocks["password_reset_request"]
         self.assertIn("reset_link_for(account_email)", reset_request)

@@ -2071,7 +2071,8 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         initial_password = f"Ordenowa-CI-{RUN_ID}-{RUN_ATTEMPT}!"
         reset_password = f"Ordenowa-Reset-{RUN_ID}-{RUN_ATTEMPT}!"
 
-        driver.get(f"{BASE}/index.php?controller=authentication")
+        stage = "registration_link_load"
+        set_registration_control(failure_control, "display-register-form", "anchor")
         registration_link = visible(driver, 'a[data-link-action="display-register-form"]')
         stage = "registration_link_validation"
         registration_url = urljoin(driver.current_url, registration_link.get_attribute("href") or "")
