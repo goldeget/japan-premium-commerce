@@ -79,6 +79,11 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn('get_attribute("type") != "email"', email_login)
         self.assertIn("assert_my_page(driver, f\"CI-{label.title()}\")", email_login)
 
+        for substage in ("logout", "login_form", "submit", "auth_result"):
+            self.assertIn(f'email_login_substage = "{substage}"', email_login)
+        self.assertIn("WebDriverWait(driver, 30).until(collect_email_login_result)", email_login)
+        self.assertIn("emit_email_login_diagnostics(driver, email_login_substage)", self.source)
+
         reset_request = self.blocks["password_reset_request"]
         self.assertIn("logout(driver)", reset_request)
         self.assertIn("reset_link_for(account_email, recovery_route_path)", reset_request)
@@ -88,6 +93,36 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn("driver.get(account_url)", logout)
         self.assertIn('#login-form input[name="email"]', logout)
         self.assertIn('By.ID, "identity_main_link"', logout)
+
+    def test_email_login_failure_diagnostics_expose_state_without_page_text_or_values(self) -> None:
+        result_helper = self.source.split("def collect_email_login_result", 1)[1].split(
+            "\n\ndef collect_email_login_diagnostics", 1
+        )[0]
+        collector = self.source.split("def collect_email_login_diagnostics", 1)[1].split(
+            "\n\ndef emit_email_login_diagnostics", 1
+        )[0]
+        emitter = self.source.split("def emit_email_login_diagnostics", 1)[1].split(
+            "\n\ndef logout", 1
+        )[0]
+
+        self.assertIn("return 'authenticated'", result_helper)
+        self.assertIn("return 'rejected'", result_helper)
+        for field in (
+            '"substage"',
+            '"path"',
+            '"login_result"',
+            '"login_result_error_type"',
+            '"login_form_visible"',
+            '"identity_link_visible"',
+            '"signout_link_visible"',
+            '"danger_alert_visible"',
+            '"alert_classification"',
+        ):
+            self.assertIn(field, collector)
+        self.assertNotIn("innerText", collector)
+        self.assertNotIn("textContent", collector)
+        self.assertNotIn(".value", collector)
+        self.assertIn("ORDENOWA_ACCOUNT_EMAIL_LOGIN_SAFE_STATE=", emitter)
 
     def test_registration_link_wait_has_its_own_failure_stage_after_korean_check(self) -> None:
         korean_check = self.blocks["korean_email_login_label"]

@@ -2054,6 +2054,121 @@ def assert_login_rejected(driver: webdriver.Chrome, email_address: str, password
         raise AssertionError("the prior customer password opened My Page after password reset")
 
 
+def collect_email_login_result(driver: webdriver.Chrome) -> str | bool:
+    return driver.execute_script(
+        r"""
+        const isVisible = element => Boolean(element && element.getClientRects().length);
+        const identityLink = document.getElementById('identity_main_link');
+        const signOutLink = document.querySelector('a.account-menu__link--signout');
+        const loginForm = document.getElementById('login-form');
+        const dangerAlerts = [...document.querySelectorAll('.alert.alert-danger[role="alert"]')]
+          .filter(isVisible);
+        if (isVisible(identityLink) && isVisible(signOutLink)) return 'authenticated';
+        if (isVisible(loginForm) && dangerAlerts.length) return 'rejected';
+        return false;
+        """
+    )
+
+
+def collect_email_login_diagnostics(driver: webdriver.Chrome, substage: str) -> dict[str, object]:
+    try:
+        current_url = driver.current_url
+    except Exception:
+        current_url = ""
+    try:
+        page_state = driver.execute_script(
+            r"""
+            const isVisible = element => Boolean(element && element.getClientRects().length);
+            const alerts = [...document.querySelectorAll('.alert, [role="alert"]')].filter(isVisible);
+            const alertClass = alerts[0]?.className;
+            const alertClasses = typeof alertClass === 'string' ? alertClass.toLowerCase().split(/\s+/) : [];
+            let alertClassification = 'none';
+            if (alerts.length) {
+              if (alertClasses.some(name => ['alert-danger', 'is-danger', 'error'].includes(name))) alertClassification = 'danger';
+              else if (alertClasses.some(name => ['alert-success', 'is-success'].includes(name))) alertClassification = 'success';
+              else if (alertClasses.some(name => ['alert-warning', 'is-warning'].includes(name))) alertClassification = 'warning';
+              else if (alertClasses.some(name => ['alert-info', 'is-info'].includes(name))) alertClassification = 'info';
+              else alertClassification = 'unknown';
+            }
+            const loginForm = document.getElementById('login-form');
+            const emailField = loginForm?.querySelector('input[name="email"]');
+            const submit = document.getElementById('submit-login');
+            const identityLink = document.getElementById('identity_main_link');
+            const signOutLink = document.querySelector('a.account-menu__link--signout');
+            const dangerAlertVisible = alerts.some(alert => {
+              const classes = typeof alert.className === 'string' ? alert.className.toLowerCase().split(/\s+/) : [];
+              return classes.includes('alert-danger') || classes.includes('is-danger');
+            });
+            return {
+              document_language: document.documentElement?.getAttribute('lang') || '',
+              ready_state: document.readyState || '',
+              login_form_visible: isVisible(loginForm),
+              email_field_visible: isVisible(emailField),
+              email_field_type_is_email: Boolean(emailField && emailField.getAttribute('type') === 'email'),
+              login_submit_visible: isVisible(submit),
+              login_submit_enabled: Boolean(submit && !submit.disabled),
+              identity_link_visible: isVisible(identityLink),
+              signout_link_visible: isVisible(signOutLink),
+              danger_alert_visible: dangerAlertVisible,
+              visible_alert_count: Math.min(alerts.length, 20),
+              alert_classification: alertClassification
+            };
+            """
+        )
+    except Exception as error:
+        page_state = {"diagnostic_error_type": type(error).__name__}
+
+    if not isinstance(page_state, dict):
+        page_state = {"diagnostic_error_type": "InvalidSnapshot"}
+    alert_classification = page_state.get("alert_classification")
+    if alert_classification not in {"none", "success", "danger", "warning", "info", "unknown"}:
+        alert_classification = "unavailable"
+    visible_alert_count = page_state.get("visible_alert_count")
+    if not isinstance(visible_alert_count, int) or isinstance(visible_alert_count, bool):
+        visible_alert_count = None
+    else:
+        visible_alert_count = min(max(visible_alert_count, 0), 20)
+    try:
+        login_result = collect_email_login_result(driver)
+        login_result_error_type = ""
+    except Exception as error:
+        login_result = "unavailable"
+        login_result_error_type = safe_diagnostic_name(type(error).__name__, field_type=True)
+    if login_result is False:
+        login_result = "pending"
+    elif login_result not in {"authenticated", "rejected", "unavailable"}:
+        login_result = "unknown"
+    safe_state: dict[str, object] = {
+        "substage": safe_diagnostic_name(substage),
+        "path": safe_same_origin_path(current_url),
+        "login_result": login_result,
+        "login_result_error_type": login_result_error_type,
+        "document_language": re.sub(r"[^A-Za-z0-9-]", "", str(page_state.get("document_language") or ""))[:12],
+        "ready_state": safe_diagnostic_name(page_state.get("ready_state")),
+        "login_form_visible": safe_diagnostic_boolean(page_state.get("login_form_visible")),
+        "email_field_visible": safe_diagnostic_boolean(page_state.get("email_field_visible")),
+        "email_field_type_is_email": safe_diagnostic_boolean(page_state.get("email_field_type_is_email")),
+        "login_submit_visible": safe_diagnostic_boolean(page_state.get("login_submit_visible")),
+        "login_submit_enabled": safe_diagnostic_boolean(page_state.get("login_submit_enabled")),
+        "identity_link_visible": safe_diagnostic_boolean(page_state.get("identity_link_visible")),
+        "signout_link_visible": safe_diagnostic_boolean(page_state.get("signout_link_visible")),
+        "danger_alert_visible": safe_diagnostic_boolean(page_state.get("danger_alert_visible")),
+        "visible_alert_count": visible_alert_count,
+        "alert_classification": alert_classification,
+    }
+    diagnostic_error = page_state.get("diagnostic_error_type")
+    if isinstance(diagnostic_error, str):
+        safe_state["diagnostic_error_type"] = safe_diagnostic_name(diagnostic_error, field_type=True)
+    return safe_state
+
+
+def emit_email_login_diagnostics(driver: webdriver.Chrome, substage: str) -> None:
+    safe_state_json = json.dumps(
+        collect_email_login_diagnostics(driver, substage), ensure_ascii=True, sort_keys=True
+    )
+    print("ORDENOWA_ACCOUNT_EMAIL_LOGIN_SAFE_STATE=" + safe_state_json, file=sys.stderr)
+
+
 def logout(driver: webdriver.Chrome) -> None:
     _, account_url = my_account_link_from_header(driver, open_menu=False)
     link = visible_signout_link(driver)
@@ -2079,6 +2194,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
     failure_control = {"name": "display-register-form", "type": "anchor"}
     profile_pre_submit: dict[str, object] | None = None
     korean_login_state: dict[str, object] = {}
+    email_login_substage = ""
     expected_first_name = f"CI-{label.title()}"
     driver = None
     success = False
@@ -2174,14 +2290,21 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         driver.save_screenshot(str(DEST / f"{label}-customer-account-profile.png"))
 
         stage = "email_login"
+        email_login_substage = "logout"
         logout(driver)
+        email_login_substage = "login_form"
         email_field = visible(driver, '#login-form input[name="email"]')
         if email_field.get_attribute("type") != "email":
             raise AssertionError("customer login is not email-based")
         fill(driver, '#login-form input[name="email"]', account_email)
         fill(driver, '#login-form input[name="password"]', initial_password)
+        email_login_substage = "submit"
         visible(driver, "#submit-login").click()
-        WebDriverWait(driver, 30).until(EC.visibility_of_element_located((By.ID, "identity_main_link")))
+        email_login_substage = "auth_result"
+        login_result = WebDriverWait(driver, 30).until(collect_email_login_result)
+        if login_result != "authenticated":
+            raise AssertionError("customer email login was rejected")
+        email_login_substage = "my_page"
         assert_my_page(driver, f"CI-{label.title()}")
         driver.save_screenshot(str(DEST / f"{label}-customer-email-login.png"))
 
@@ -2256,19 +2379,31 @@ def run_viewport(width: int, height: int, label: str) -> bool:
                     )
                 except Exception:
                     pass
+            elif stage == "email_login":
+                try:
+                    emit_email_login_diagnostics(driver, email_login_substage)
+                except Exception:
+                    pass
         inner_stage = (
             safe_korean_login_stage(korean_login_state.get("stage"))
             if stage == "korean_email_login_label"
             else ""
         )
         inner_stage_detail = f"; inner_stage={inner_stage}" if inner_stage else ""
+        email_login_substage_detail = (
+            f"; email_login_substage={safe_diagnostic_name(email_login_substage)}"
+            if stage == "email_login" and email_login_substage
+            else ""
+        )
         print(
-            f"FAIL: {label} customer account flow at {stage}{inner_stage_detail} ({type(error).__name__})",
+            f"FAIL: {label} customer account flow at {stage}{inner_stage_detail}{email_login_substage_detail} "
+            f"({type(error).__name__})",
             file=sys.stderr,
         )
         print(
             f"::error title=Customer account browser QA::{label} failed at {stage} "
-            f"({type(error).__name__}){inner_stage_detail}; control_name={failure_control.get('name') or 'none'}; "
+            f"({type(error).__name__}){inner_stage_detail}{email_login_substage_detail}; "
+            f"control_name={failure_control.get('name') or 'none'}; "
             f"control_type={failure_control.get('type') or 'none'}",
             file=sys.stderr,
         )

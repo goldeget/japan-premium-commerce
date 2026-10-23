@@ -90,6 +90,8 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertTrue("tests/e2e/verify_customer_account_browser.py" in workflow, "customer account browser flow is not run")
         self.assertTrue("MAILPIT_API_URL: http://127.0.0.1:8025" in workflow, "browser test cannot read captured reset mail")
         self.assertTrue("customer-account-e2e.log" in workflow, "account browser execution log is not preserved")
+        self.assertIn("ORDENOWA_ACCOUNT_EMAIL_LOGIN_SAFE_STATE", account_flow)
+        self.assertIn("email_login_diagnostics=$(rg '^ORDENOWA_ACCOUNT_EMAIL_LOGIN_SAFE_STATE='", workflow)
         self.assertTrue("docker rm -f \"${CI_COMPOSE_PROJECT_NAME}-mailpit\"" in workflow, "CI mail service cleanup is missing")
         self.assertTrue('input[name="email"]' in account_flow and 'get_attribute("type") != "email"' in account_flow, "customer login is not verified as email-based")
         self.assertTrue(
