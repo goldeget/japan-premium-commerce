@@ -2,10 +2,17 @@
 from __future__ import annotations
 
 import ast
+import contextlib
+import hashlib
+import io
 import json
 import re
+import sys
 import unittest
+from html.parser import HTMLParser
 from pathlib import Path
+from typing import Callable
+from urllib.parse import quote, unquote, urljoin
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -16,6 +23,93 @@ FRESH_INSTALL_WORKFLOW = ROOT / ".github" / "workflows" / "fresh-install.yml"
 
 
 class ResetEmailBrandContractTests(unittest.TestCase):
+    def email_assertion_namespace(self):
+        tree = ast.parse(EMAIL_BROWSER.read_text(encoding="utf-8"))
+        selected = [
+            node for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef))
+            and node.name in {
+                "InlineLogoParser", "assert_published_inline_logo", "reset_email_logo_safe_state",
+                "emit_reset_email_logo_safe_state",
+            }
+        ]
+        namespace = {
+            "HTMLParser": HTMLParser, "Callable": Callable, "hashlib": hashlib,
+            "json": json, "sys": sys, "urljoin": urljoin, "quote": quote, "unquote": unquote,
+            "BASE": "http://isolated.invalid", "PUBLISHED_EMAIL_LOGO_PATH": "published.png",
+            "MAILPIT_API": "http://capture.invalid",
+        }
+        exec(compile(ast.Module(body=selected, type_ignores=[]), str(EMAIL_BROWSER), "exec"), namespace)
+        return namespace
+
+    def test_serialized_symfony_cid_matches_inline_part_and_published_png(self):
+        namespace = self.email_assertion_namespace()
+        png = b"\x89PNG\r\n\x1a\nsynthetic-approved-logo"
+        # Symfony Mime rewrites cid:shop_logo to the DataPart generated Content-ID.
+        for source, content_id in (
+            ("cid:generated@body", "<generated@body>"),
+            ("CID:Generated%40body", " Generated@body "),
+            ("cid:shop_logo", "shop_logo"),
+        ):
+            with self.subTest(source=source):
+                message = {
+                    "ID": "synthetic-message", "HTML": f'<img src="{source}">',
+                    "Inline": [{"ContentID": content_id, "ContentType": "image/png", "PartID": "1"}],
+                }
+                fetches = []
+                def fetch(url):
+                    fetches.append(url)
+                    return png
+                namespace["request_bytes"] = fetch
+                stages = []
+                self.assertEqual(namespace["assert_published_inline_logo"](message, stages.append), png)
+                self.assertEqual(fetches, [
+                    "http://isolated.invalid/img/published.png",
+                    "http://capture.invalid/api/v1/message/synthetic-message/part/1",
+                ])
+                self.assertEqual(stages[-1], "mailpit_html_img_element")
+                state = namespace["reset_email_logo_safe_state"](message)
+                self.assertTrue(state["html_has_shop_logo_cid"])
+                self.assertTrue(state["shop_logo_inline_part_present"])
+                self.assertTrue(state["shop_logo_inline_part_is_png"])
+
+    def test_generated_cid_diagnostics_never_expose_message_or_identifiers(self):
+        namespace = self.email_assertion_namespace()
+        message = {
+            "HTML": '<img src="cid:private-id@body">private body',
+            "To": [{"Address": "private-recipient@example.invalid"}],
+            "Inline": [{"ContentID": "private-id@body", "ContentType": "image/png"}] * 25,
+        }
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            namespace["emit_reset_email_logo_safe_state"](message)
+        lines = stderr.getvalue().splitlines()
+        self.assertEqual(len(lines), 2)
+        state = json.loads(lines[0].split("=", 1)[1])
+        self.assertEqual(state["inline_part_count"], 20)
+        self.assertTrue(all(type(value) is bool for key, value in state.items() if key != "inline_part_count"))
+        self.assertEqual(lines[1], "::error title=ORDENOWA reset-email logo state::" + json.dumps(state, sort_keys=True, separators=(",", ":")))
+        for secret in ("private-id", "private body", "private-recipient"):
+            self.assertNotIn(secret, stderr.getvalue())
+
+    def test_inline_logo_requires_html_reference_png_and_published_bytes(self):
+        namespace = self.email_assertion_namespace()
+        png = b"\x89PNG\r\n\x1a\nsynthetic-approved-logo"
+        cases = [
+            ('<img src="cid:other">', "generated@body", "image/png", png),
+            ('<a href="cid:generated@body">link</a>', "generated@body", "image/png", png),
+            ('<img src="cid:generated@body">', "generated@body", "image/jpeg", png),
+            ('<img src="cid:generated@body">', "generated@body", "image/png", b"wrong"),
+        ]
+        for html, content_id, mime, sent_bytes in cases:
+            with self.subTest(html=html, mime=mime, correct_bytes=sent_bytes == png):
+                message = {"ID": "synthetic-message", "HTML": html, "Inline": [
+                    {"ContentID": content_id, "ContentType": mime, "PartID": "1"},
+                ]}
+                namespace["request_bytes"] = lambda url: sent_bytes if "/part/" in url else png
+                with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(AssertionError):
+                    namespace["assert_published_inline_logo"](message, lambda stage: None)
+
     def test_run_scoped_seed_uses_current_published_logo_and_never_live_mail(self) -> None:
         self.assertTrue(CUSTOMER_SEED.is_file())
         seed = CUSTOMER_SEED.read_text(encoding="utf-8")
@@ -90,7 +184,7 @@ class ResetEmailBrandContractTests(unittest.TestCase):
         self.assertTrue(EMAIL_BROWSER.is_file())
         browser = EMAIL_BROWSER.read_text(encoding="utf-8")
         for assertion in (
-            '"cid:shop_logo"',
+            'parser.content_ids',
             'attachment.get("ContentID", "")',
             'inline_logo.get("ContentType") != "image/png"',
             "inline_sha256 = hashlib.sha256(sent_logo).hexdigest()",

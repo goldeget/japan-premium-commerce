@@ -14,7 +14,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Callable
 from urllib.error import URLError
-from urllib.parse import quote, urlencode, urljoin, urlparse
+from urllib.parse import quote, unquote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from selenium import webdriver
@@ -44,13 +44,16 @@ class InlineLogoParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.logo_attributes: list[dict[str, str]] = []
+        self.content_ids: set[str] = set()
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag.lower() != "img":
             return
         attributes = {name.lower(): value or "" for name, value in attrs}
-        if attributes.get("src", "").strip().lower() == "cid:shop_logo":
+        source = attributes.get("src", "").strip()
+        if source[:4].lower() == "cid:" and source[4:]:
             self.logo_attributes.append(attributes)
+            self.content_ids.add(unquote(source[4:]).strip().strip("<>"))
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self.handle_starttag(tag, attrs)
@@ -130,7 +133,10 @@ def assert_published_inline_logo(
 ) -> bytes:
     stage_callback("mailpit_html_cid")
     message_html = message.get("HTML")
-    if not isinstance(message_html, str) or "cid:shop_logo" not in message_html.lower():
+    parser = InlineLogoParser()
+    if isinstance(message_html, str):
+        parser.feed(message_html)
+    if not parser.content_ids:
         raise AssertionError("the reset email HTML does not reference the published ORDENOWA logo")
 
     stage_callback("published_public_png")
@@ -142,9 +148,9 @@ def assert_published_inline_logo(
     inline_logo = next(
         (
             attachment
-            for attachment in message.get("Inline", [])
+            for attachment in (message.get("Inline") or [])
             if isinstance(attachment, dict)
-            and str(attachment.get("ContentID", "")).strip("<>").lower() == "shop_logo"
+            and str(attachment.get("ContentID", "")).strip().strip("<>") in parser.content_ids
         ),
         None,
     )
@@ -183,8 +189,6 @@ def assert_published_inline_logo(
         raise AssertionError("the email attachment differs from the current published ORDENOWA derivative")
 
     stage_callback("mailpit_html_img_element")
-    parser = InlineLogoParser()
-    parser.feed(message_html)
     if not parser.logo_attributes:
         raise AssertionError("the captured password-reset email has no inline shop logo image element")
     return sent_logo
@@ -193,19 +197,22 @@ def assert_published_inline_logo(
 def reset_email_logo_safe_state(message: dict) -> dict[str, bool | int]:
     """Expose only structural Mailpit facts when the email logo assertion fails."""
     message_html = message.get("HTML")
+    parser = InlineLogoParser()
+    if isinstance(message_html, str):
+        parser.feed(message_html)
     inline_items = message.get("Inline")
     inline_parts = inline_items if isinstance(inline_items, list) else []
     shop_logo_parts = [
         item
         for item in inline_parts
         if isinstance(item, dict)
-        and str(item.get("ContentID", "")).strip("<>").lower() == "shop_logo"
+        and str(item.get("ContentID", "")).strip().strip("<>") in parser.content_ids
     ]
     return {
         "html_is_string": isinstance(message_html, str),
         "html_nonempty": isinstance(message_html, str) and bool(message_html.strip()),
-        "html_has_shop_logo_cid": isinstance(message_html, str)
-        and "cid:shop_logo" in message_html.lower(),
+        # Symfony rewrites the logical shop_logo CID; never expose the generated ID.
+        "html_has_shop_logo_cid": bool(parser.content_ids),
         "inline_is_list": isinstance(inline_items, list),
         "inline_part_count": min(len(inline_parts), 20),
         "shop_logo_inline_part_present": bool(shop_logo_parts),
