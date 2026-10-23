@@ -133,6 +133,27 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, diagnostic_step)
 
+    def test_customer_checkout_searches_the_explicit_run_scoped_product_fixture(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        checkout_flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        product_fixture = (
+            ROOT / "tests" / "catalog" / "prepare_ci_free_shipping_product.php"
+        ).read_text(encoding="utf-8")
+        customer_step = workflow.split(
+            "- name: Verify browser customer search, Japan checkout, and unpaid offline order", 1
+        )[1].split("- name:", 1)[0]
+        viewport_flow = checkout_flow.split("def run_customer_checkout", 1)[1].split(
+            "def run_customer_checkouts", 1
+        )[0]
+
+        self.assertNotIn("ORDER BY id_product DESC LIMIT 1", customer_step)
+        self.assertIn('CI_TEST_PRODUCT_SEARCH_TERM: "free"', customer_step)
+        self.assertIn('"$CI_TEST_PRODUCT_ID"', customer_step)
+        self.assertIn("CI_TEST_PRODUCT_SEARCH_TERM", viewport_flow)
+        self.assertIn("search_for_product(driver, label, search_term)", viewport_flow)
+        self.assertIn("free shipping product", product_fixture)
+        self.assertIn("Search::indexation(false, (int) $product->id);", product_fixture)
+
     def test_browser_flow_uses_unpaid_native_payment_and_separate_admin_session(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
         order_verifier = (ROOT / "tests" / "postcode" / "verify_ci_browser_checkout_order.php").read_text(encoding="utf-8")

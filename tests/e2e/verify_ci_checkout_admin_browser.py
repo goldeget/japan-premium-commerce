@@ -1138,7 +1138,8 @@ def run_customer_checkout(width: int, height: int, label: str) -> None:
     stage = "product_search"
     try:
         driver.set_window_size(width, height)
-        search_for_product(driver, label)
+        search_term = os.environ.get("CI_TEST_PRODUCT_SEARCH_TERM", "postcode")
+        search_for_product(driver, label, search_term)
         stage = "cart"
         add_product_and_open_checkout(driver, label)
 
