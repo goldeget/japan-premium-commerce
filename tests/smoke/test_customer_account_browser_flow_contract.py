@@ -871,6 +871,305 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIs(selected_link, account_link)
         self.assertEqual(account_url, "https://shop.example.test/shop/my-account")
 
+    def test_my_account_link_accepts_the_first_menu_link_for_a_localized_account_slug(self) -> None:
+        module = ast.parse(self.source)
+        helper_names = {"my_account_link_from_header", "safe_account_route_classification"}
+        functions = [
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name in helper_names
+        ]
+        namespace = {
+            "BASE": "https://shop.example.test/shop",
+            "By": SimpleNamespace(CSS_SELECTOR="css selector"),
+            "parse_qs": parse_qs,
+            "urljoin": urljoin,
+            "unquote": unquote,
+            "urlparse": urlparse,
+        }
+        exec(
+            compile(ast.Module(body=functions, type_ignores=[]), str(ACCOUNT_FLOW), "exec"),
+            namespace,
+        )
+
+        class Link:
+            def __init__(self, href: str) -> None:
+                self.href = href
+
+            def get_attribute(self, name: str) -> str | None:
+                return self.href if name == "href" else None
+
+            def is_displayed(self) -> bool:
+                return True
+
+            def is_enabled(self) -> bool:
+                return True
+
+        localized_account_link = Link(
+            "https://shop.example.test/shop/ko/%EB%82%B4-%EA%B3%84%EC%A0%95"
+        )
+        identity_link = Link("https://shop.example.test/shop/identity")
+
+        class Driver:
+            current_url = "https://shop.example.test/shop/ko/"
+
+            def find_elements(self, by: str, selector: str) -> list[Link]:
+                return [localized_account_link, identity_link]
+
+            def find_element(self, by: str, selector: str) -> Link:
+                return identity_link
+
+        self.assertEqual(
+            namespace["safe_account_route_classification"](localized_account_link.href),
+            "other",
+        )
+        selected_link, account_url = namespace["my_account_link_from_header"](
+            Driver(), open_menu=False
+        )
+
+        self.assertIs(selected_link, localized_account_link)
+        self.assertEqual(
+            account_url,
+            "https://shop.example.test/shop/ko/%EB%82%B4-%EA%B3%84%EC%A0%95",
+        )
+
+    def test_visible_menu_uses_enabled_localized_first_account_link(self) -> None:
+        module = ast.parse(self.source)
+        helper_names = {"my_account_link_from_header", "safe_account_route_classification"}
+        functions = [
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name in helper_names
+        ]
+        namespace = {
+            "BASE": "https://shop.example.test/shop",
+            "By": SimpleNamespace(CSS_SELECTOR="css selector"),
+            "parse_qs": parse_qs,
+            "unquote": unquote,
+            "urljoin": urljoin,
+            "urlparse": urlparse,
+        }
+
+        state = {"menu_open": False, "clicks": 0}
+
+        class Button:
+            def get_attribute(self, name: str) -> str | None:
+                if name == "aria-expanded":
+                    return "true" if state["menu_open"] else "false"
+                return None
+
+        button = Button()
+
+        class Link:
+            def __init__(self, href: str, *, displayed: bool, enabled: bool) -> None:
+                self.href = href
+                self.displayed = displayed
+                self.enabled = enabled
+
+            def get_attribute(self, name: str) -> str | None:
+                return self.href if name == "href" else None
+
+            def is_displayed(self) -> bool:
+                return self.displayed
+
+            def is_enabled(self) -> bool:
+                return self.enabled
+
+        localized_account_link = Link(
+            "https://shop.example.test/shop/ko/%EB%82%B4-%EA%B3%84%EC%A0%95",
+            displayed=True,
+            enabled=True,
+        )
+        identity_link = Link(
+            "https://shop.example.test/shop/identity", displayed=True, enabled=True
+        )
+
+        class Driver:
+            current_url = "https://shop.example.test/shop/ko/"
+
+            def find_elements(self, by: str, selector: str) -> list[Link]:
+                return [localized_account_link, identity_link]
+
+        class ImmediateWait:
+            def __init__(self, browser: Driver, _timeout: int) -> None:
+                self.browser = browser
+
+            def until(self, predicate, **_kwargs: object):
+                return predicate(self.browser)
+
+        def visible(_driver: Driver, selector: str):
+            if selector != "#userMenuButton":
+                raise AssertionError("the account header button must be opened first")
+            return button
+
+        def click_centered(_driver: Driver, element: Button) -> None:
+            if element is not button:
+                raise AssertionError("the account header button must be the menu click target")
+            state["menu_open"] = True
+            state["clicks"] += 1
+
+        namespace.update(
+            {
+                "WebDriverWait": ImmediateWait,
+                "visible": visible,
+                "click_centered": click_centered,
+            }
+        )
+        exec(
+            compile(ast.Module(body=functions, type_ignores=[]), str(ACCOUNT_FLOW), "exec"),
+            namespace,
+        )
+
+        selected_link, account_url = namespace["my_account_link_from_header"](
+            Driver(), open_menu=True
+        )
+
+        self.assertIs(selected_link, localized_account_link)
+        self.assertEqual(account_url, localized_account_link.href)
+        self.assertEqual(state, {"menu_open": True, "clicks": 1})
+
+    def test_visible_menu_rejects_hidden_or_disabled_localized_fallback(self) -> None:
+        module = ast.parse(self.source)
+        helper_names = {"my_account_link_from_header", "safe_account_route_classification"}
+        functions = [
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name in helper_names
+        ]
+        namespace = {
+            "BASE": "https://shop.example.test/shop",
+            "By": SimpleNamespace(CSS_SELECTOR="css selector"),
+            "parse_qs": parse_qs,
+            "unquote": unquote,
+            "urljoin": urljoin,
+            "urlparse": urlparse,
+        }
+
+        class Button:
+            def get_attribute(self, name: str) -> str | None:
+                return "false" if name == "aria-expanded" else None
+
+        class Link:
+            def __init__(self, href: str, *, displayed: bool, enabled: bool) -> None:
+                self.href = href
+                self.displayed = displayed
+                self.enabled = enabled
+
+            def get_attribute(self, name: str) -> str | None:
+                return self.href if name == "href" else None
+
+            def is_displayed(self) -> bool:
+                return self.displayed
+
+            def is_enabled(self) -> bool:
+                return self.enabled
+
+        class Driver:
+            current_url = "https://shop.example.test/shop/ko/"
+
+            def __init__(self, first_link: Link) -> None:
+                self.links = [
+                    first_link,
+                    Link("https://shop.example.test/shop/identity", displayed=True, enabled=True),
+                ]
+
+            def find_elements(self, by: str, selector: str) -> list[Link]:
+                return self.links
+
+        class ImmediateWait:
+            def __init__(self, browser: Driver, _timeout: int) -> None:
+                self.browser = browser
+
+            def until(self, predicate, **_kwargs: object):
+                if not predicate(self.browser):
+                    raise RuntimeError("visible authenticated account link timed out")
+
+        def visible(_driver: Driver, _selector: str) -> Button:
+            return Button()
+
+        def click_centered(_driver: Driver, _element: Button) -> None:
+            return None
+
+        namespace.update(
+            {
+                "WebDriverWait": ImmediateWait,
+                "visible": visible,
+                "click_centered": click_centered,
+            }
+        )
+        exec(
+            compile(ast.Module(body=functions, type_ignores=[]), str(ACCOUNT_FLOW), "exec"),
+            namespace,
+        )
+
+        localized_href = "https://shop.example.test/shop/ko/%EB%82%B4-%EA%B3%84%EC%A0%95"
+        for displayed, enabled in ((False, True), (True, False)):
+            with self.subTest(displayed=displayed, enabled=enabled):
+                driver = Driver(
+                    Link(localized_href, displayed=displayed, enabled=enabled)
+                )
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "visible authenticated account link timed out",
+                ):
+                    namespace["my_account_link_from_header"](driver, open_menu=True)
+
+    def test_registration_account_menu_diagnostics_expose_only_bounded_route_classes(self) -> None:
+        module = ast.parse(self.source)
+        helper_names = {
+            "collect_registration_account_menu_route_diagnostics",
+            "safe_account_route_classification",
+        }
+        functions = [
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name in helper_names
+        ]
+        namespace = {
+            "BASE": "https://shop.example.test/shop",
+            "By": SimpleNamespace(CSS_SELECTOR="css selector"),
+            "parse_qs": parse_qs,
+            "urljoin": urljoin,
+            "unquote": unquote,
+            "urlparse": urlparse,
+        }
+        exec(
+            compile(ast.Module(body=functions, type_ignores=[]), str(ACCOUNT_FLOW), "exec"),
+            namespace,
+        )
+
+        class Link:
+            def __init__(self, href: str) -> None:
+                self.href = href
+
+            def get_attribute(self, name: str) -> str | None:
+                return self.href if name == "href" else None
+
+        localized_href = "https://shop.example.test/shop/ko/%EB%82%B4-%EA%B3%84%EC%A0%95"
+        links = [
+            Link(localized_href),
+            Link("https://shop.example.test/shop/identity"),
+        ]
+
+        class Driver:
+            current_url = "https://shop.example.test/shop/ko/"
+
+            def find_elements(self, by: str, selector: str) -> list[Link]:
+                return links
+
+        diagnostics = namespace["collect_registration_account_menu_route_diagnostics"](Driver())
+
+        self.assertEqual(
+            diagnostics,
+            {
+                "candidate_count": 2,
+                "candidate_route_classes": ["other", "identity"],
+                "first_candidate_route_class": "other",
+            },
+        )
+        self.assertNotIn(localized_href, json.dumps(diagnostics))
+        emitter = self.source.split("def emit_registration_diagnostics", 1)[1].split(
+            "def emit_korean_login_diagnostics", 1
+        )[0]
+        self.assertIn("collect_registration_account_menu_route_diagnostics(driver)", emitter)
+        self.assertIn('"account_menu_candidate_route_classes"', emitter)
+
     def test_my_account_link_fails_closed_when_no_account_route_is_available(self) -> None:
         module = ast.parse(self.source)
         helper_names = {"my_account_link_from_header", "safe_account_route_classification"}

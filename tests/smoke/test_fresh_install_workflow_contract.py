@@ -188,8 +188,8 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("if open_menu:", route_helper)
         self.assertIn("browser.find_elements(By.CSS_SELECTOR, account_selector)", route_helper)
         self.assertIn('safe_account_route_classification(candidate_url) != "account"', route_helper)
-        self.assertIn("account_link = account_route_link(driver, require_visible=False)", route_helper)
-        self.assertIn("account_link = WebDriverWait(driver, 30).until(", route_helper)
+        self.assertIn("account_resolution = account_route_link(driver, require_visible=False)", route_helper)
+        self.assertIn("account_resolution = WebDriverWait(driver, 30).until(", route_helper)
 
     def test_account_signout_selects_a_visible_duplicate_for_mobile_and_desktop(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
@@ -388,7 +388,10 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("driver.get(account_url)", success_wait)
         self.assertIn('visible(driver, "#identity_main_link")', success_wait)
         self.assertNotIn("click_centered(driver, account_link)", success_wait)
-        self.assertIn('div.dropdown-menu[aria-labelledby="userMenuButton"] a[href]', route_helper)
+        self.assertIn('div.dropdown-menu[aria-labelledby="userMenuButton"] > a[href]', route_helper)
+        my_account_href = sign_in_template.index('href="{$urls.pages.my_account}"')
+        identity_href = sign_in_template.index('href="{$urls.pages.identity}"')
+        self.assertLess(my_account_href, identity_href)
         self.assertIn("account_location.hostname != base_location.hostname", route_helper)
         self.assertIn("account_location.scheme != base_location.scheme", route_helper)
         self.assertIn("account_location.port != base_location.port", route_helper)

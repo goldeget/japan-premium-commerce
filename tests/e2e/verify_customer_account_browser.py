@@ -927,34 +927,52 @@ def wait_for_registration_success(driver: webdriver.Chrome) -> None:
 
 def my_account_link_from_header(driver: webdriver.Chrome, *, open_menu: bool = True):
     """Resolve the canonical My Page link, opening its menu only when needed for interaction."""
-    account_selector = 'div.dropdown-menu[aria-labelledby="userMenuButton"] a[href]'
+    account_selector = 'div.dropdown-menu[aria-labelledby="userMenuButton"] > a[href]'
     if open_menu:
         button = visible(driver, "#userMenuButton")
         if button.get_attribute("aria-expanded") != "true":
             click_centered(driver, button)
 
     def account_route_link(browser: webdriver.Chrome, *, require_visible: bool):
-        for candidate in browser.find_elements(By.CSS_SELECTOR, account_selector):
+        candidates = browser.find_elements(By.CSS_SELECTOR, account_selector)
+        for candidate in candidates:
             href = candidate.get_attribute("href") or ""
             candidate_url = urljoin(browser.current_url, href)
             if safe_account_route_classification(candidate_url) != "account":
                 continue
             if require_visible and (not candidate.is_displayed() or not candidate.is_enabled()):
                 continue
-            return candidate
+            return candidate, False
+
+        # The first direct Hummingbird account-menu link is the canonical
+        # {$urls.pages.my_account} URL. Its Korean localized slug may not be
+        # recognizable as "my-account", so accept only a same-origin unknown
+        # route in that exact semantic position. The caller still verifies the
+        # rendered My Page identity and signed-in customer before continuing.
+        first_candidate = candidates[0] if candidates else None
+        if first_candidate is not None:
+            first_href = first_candidate.get_attribute("href") or ""
+            first_url = urljoin(browser.current_url, first_href)
+            if safe_account_route_classification(first_url) == "other":
+                if require_visible and (
+                    not first_candidate.is_displayed() or not first_candidate.is_enabled()
+                ):
+                    return False
+                return first_candidate, True
         return False
 
     if open_menu:
-        account_link = WebDriverWait(driver, 30).until(
+        account_resolution = WebDriverWait(driver, 30).until(
             lambda browser: account_route_link(browser, require_visible=True),
             message="the visible customer menu did not expose a My Page account route",
         )
     else:
         # The dropdown anchor is rendered while closed. Select it by its account
         # route because responsive headers can expose hidden identity links first.
-        account_link = account_route_link(driver, require_visible=False)
-    if not account_link:
+        account_resolution = account_route_link(driver, require_visible=False)
+    if not account_resolution:
         raise AssertionError("authenticated My Page link did not resolve to the account route")
+    account_link, localized_account_route = account_resolution
 
     href = account_link.get_attribute("href") or ""
     account_url = urljoin(driver.current_url, href)
@@ -966,10 +984,32 @@ def my_account_link_from_header(driver: webdriver.Chrome, *, open_menu: bool = T
         or account_location.port != base_location.port
     ):
         raise AssertionError("the authenticated My Page link changed the base shop origin")
-    if safe_account_route_classification(account_url) != "account":
+    route_classification = safe_account_route_classification(account_url)
+    if route_classification != "account" and not (
+        localized_account_route and route_classification == "other"
+    ):
         raise AssertionError("the authenticated My Page link did not resolve to the account route")
 
     return account_link, account_url
+
+
+def collect_registration_account_menu_route_diagnostics(
+    driver: webdriver.Chrome,
+) -> dict[str, object]:
+    """Return bounded route classes for account-menu links without exposing hrefs."""
+    selector = 'div.dropdown-menu[aria-labelledby="userMenuButton"] > a[href]'
+    candidates = driver.find_elements(By.CSS_SELECTOR, selector)
+    route_classes: list[str] = []
+    safe_classes = {"account", "identity", "root", "other", "outside_shop", "unavailable"}
+    for candidate in candidates[:8]:
+        href = candidate.get_attribute("href") or ""
+        route_class = safe_account_route_classification(urljoin(driver.current_url, href))
+        route_classes.append(route_class if route_class in safe_classes else "unavailable")
+    return {
+        "candidate_count": min(len(candidates), 1000),
+        "candidate_route_classes": route_classes,
+        "first_candidate_route_class": route_classes[0] if route_classes else "unavailable",
+    }
 
 
 def safe_account_route_classification(candidate_url: str) -> str:
@@ -1898,6 +1938,18 @@ def emit_registration_diagnostics(
         except Exception:
             diagnostics["header_user_menu_button_present"] = False
 
+    try:
+        diagnostics["account_menu_route_diagnostics"] = (
+            collect_registration_account_menu_route_diagnostics(driver)
+        )
+    except Exception as error:
+        diagnostics["account_menu_route_diagnostics"] = {
+            "candidate_count": 0,
+            "candidate_route_classes": [],
+            "first_candidate_route_class": "unavailable",
+            "collection_error_type": type(error).__name__,
+        }
+
     diagnostics["pathname"] = safe_registration_path(diagnostics.get("pathname"))
     safe_path = diagnostics.get("pathname")
     safe_path = safe_path if safe_path in {"/", "/index.php"} else "/<other>"
@@ -1938,6 +1990,25 @@ def emit_registration_diagnostics(
             state.get("navigation_events")
         ),
     }
+    account_menu_diagnostics = diagnostics.get("account_menu_route_diagnostics")
+    if isinstance(account_menu_diagnostics, dict):
+        candidate_count = account_menu_diagnostics.get("candidate_count")
+        candidate_classes = account_menu_diagnostics.get("candidate_route_classes")
+        safe_route_classes = {"account", "identity", "root", "other", "outside_shop", "unavailable"}
+        safe_state["account_menu_candidate_count"] = (
+            min(max(candidate_count, 0), 1000)
+            if isinstance(candidate_count, int) and not isinstance(candidate_count, bool)
+            else 0
+        )
+        safe_state["account_menu_candidate_route_classes"] = (
+            [route for route in candidate_classes[:8] if route in safe_route_classes]
+            if isinstance(candidate_classes, list)
+            else []
+        )
+        first_candidate_class = account_menu_diagnostics.get("first_candidate_route_class")
+        safe_state["account_menu_first_candidate_route_class"] = (
+            first_candidate_class if first_candidate_class in safe_route_classes else "unavailable"
+        )
     safe_state_json = json.dumps(safe_state, ensure_ascii=True, sort_keys=True)
     print("ORDENOWA_ACCOUNT_REGISTRATION_SAFE_STATE=" + safe_state_json, file=sys.stderr)
     annotation = safe_state_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
