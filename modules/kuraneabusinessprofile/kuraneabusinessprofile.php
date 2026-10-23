@@ -205,15 +205,37 @@ class Kuraneabusinessprofile extends Module
     {
         $controller = $params['controller'] ?? $this->context->controller;
         $controllerName = (string) ($controller->php_self ?? '');
+        if (
+            $controllerName === ''
+            && is_object($controller)
+            && is_a($controller, 'GetFileControllerCore')
+        ) {
+            $controllerName = 'getfile';
+        }
 
         if (in_array($controllerName, [
-            'my-account',
-            'identity',
+            'address',
+            'addresses',
             'authentication',
             'cart',
+            'discount',
+            'getfile',
+            'guest-tracking',
+            'history',
+            'identity',
+            'my-account',
             'order',
-            'order-opc',
             'order-confirmation',
+            'order-detail',
+            'order-follow',
+            'order-opc',
+            'order-return',
+            'order-slip',
+            'password',
+            'pdf-invoice',
+            'pdf-order-return',
+            'pdf-order-slip',
+            'registration',
         ], true)) {
             // Apply this before controller authorization redirects as well as successful responses.
             header('Cache-Control: private, no-store, max-age=0', true);

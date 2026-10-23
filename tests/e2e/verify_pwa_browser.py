@@ -1057,6 +1057,47 @@ def create_session_customer(
     return account_url
 
 
+def verify_logged_out_private_routes(
+    driver: webdriver.Chrome,
+    shop_url: str,
+    set_substage: Callable[[str], None],
+) -> None:
+    """Check private customer redirects and public order lookup without logging URLs."""
+    route_cases = (
+        ("addresses", "addresses", 302),
+        ("history", "history", 302),
+        ("order_detail", "order-detail", 302),
+        ("guest_tracking", "guest-tracking", None),
+    )
+    base = shop_url.rstrip("/") + "/"
+    for route_stage, controller_name, expected_status in route_cases:
+        set_substage(f"request_{route_stage}")
+        # These controller selectors are fixed literals. The URL is internal to the isolated shop
+        # and is never copied to diagnostics, screenshots, or annotations.
+        requested_url = urljoin(base, f"index.php?controller={controller_name}")
+        observed = navigate_private_document(
+            driver,
+            requested_url,
+            shop_url,
+            f"logged-out {route_stage.replace('_', ' ')}",
+            set_substage=lambda name: set_substage(f"request_{route_stage}_{name}"),
+        )
+        if expected_status is not None and observed.get("status") != expected_status:
+            raise AssertionError(
+                f"logged-out {route_stage.replace('_', ' ')} did not redirect to sign-in"
+            )
+        if route_stage == "guest_tracking":
+            if observed.get("status") != 200:
+                raise AssertionError(
+                    "logged-out guest tracking did not render its public lookup form"
+                )
+            set_substage("require_guest_tracking_form")
+            wait_visible(driver, "#guestOrderTrackingForm")
+        else:
+            set_substage(f"require_{route_stage}_login_form")
+            wait_visible(driver, "#login-form input[name='email']")
+
+
 def verify_logout_protection(
     driver: webdriver.Chrome,
     account_url: str,
@@ -1088,13 +1129,15 @@ def verify_logout_protection(
         )
     )
     mark_stage("request_protected_account")
-    navigate_private_document(
+    account_response = navigate_private_document(
         driver,
         account_url,
         shop_url,
         "logged-out account",
         set_substage=lambda name: mark_stage(f"request_protected_account_{name}"),
     )
+    if account_response.get("status") != 302:
+        raise AssertionError("logged-out account did not redirect to sign-in")
     mark_stage("wait_protected_document")
     WebDriverWait(driver, 30).until(
         lambda browser: browser.execute_script("return document.readyState") == "complete"
@@ -1117,6 +1160,12 @@ def verify_logout_protection(
     driver.save_screenshot(str(screenshot))
     mark_stage("assert_empty_logged_out_cache")
     assert_empty_cache_storage(driver, "logged-out protected account route")
+    mark_stage("verify_logged_out_private_routes")
+    verify_logged_out_private_routes(
+        driver,
+        shop_url,
+        set_substage=mark_stage,
+    )
 
     for history_stage in ("browser_history_first_back", "browser_history_second_back"):
         mark_stage(history_stage)
