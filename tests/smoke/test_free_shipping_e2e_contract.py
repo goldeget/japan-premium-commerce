@@ -569,6 +569,12 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             with self.subTest(marker=marker):
                 self.assertIn(marker, verifier)
         self.assertNotIn("id_tax_rules_group = 0", verifier)
+        self.assertIn(
+            "$carrier->getIdTaxRulesGroup()",
+            verifier,
+            "PrestaShop 9.2 stores carrier tax-rule selections per shop and exposes them through its getter",
+        )
+        self.assertNotIn("$carrier->id_tax_rules_group", verifier)
         self.assertIn("$order->total_products", verifier)
         self.assertIn("$order->total_products_wt", verifier)
         self.assertNotIn("$order->total_products_tax_excl", verifier)

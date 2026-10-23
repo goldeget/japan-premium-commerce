@@ -152,10 +152,15 @@ if (!Validate::isLoadedObject($carrier)
     throw new RuntimeException('The native order did not persist the active free carrier serving Japan.');
 }
 $browserCarrierTaxGroupId = $browserOrder['carrier_tax_rule_group_id'] ?? null;
+$persistedCarrierTaxGroupId = (int) $carrier->getIdTaxRulesGroup();
 if ($browserCarrierTaxGroupId !== null
-    && (int) $browserCarrierTaxGroupId !== (int) $carrier->id_tax_rules_group
+    && (int) $browserCarrierTaxGroupId !== $persistedCarrierTaxGroupId
 ) {
-    throw new RuntimeException('The carrier tax-rule selection in AdminCarriers differs from the persisted carrier.');
+    throw new RuntimeException(sprintf(
+        'AdminCarriers tax-rule group %s differs from the persisted carrier tax-rule group %d.',
+        var_export($browserCarrierTaxGroupId, true),
+        $persistedCarrierTaxGroupId
+    ));
 }
 
 $stage = 'zero carrier shipping and handling';
@@ -483,6 +488,7 @@ echo json_encode([
     'saved_tax_interpretation' => $savedTaxInterpretation,
     'tax_fixture_scope' => (string) $browserOrder['tax_fixture_scope'],
     'carrier_id' => (int) $carrier->id,
+    'carrier_tax_rule_group_id' => $persistedCarrierTaxGroupId,
     'carrier_is_free' => (bool) $carrier->is_free,
     'carrier_zone_id' => $zoneId,
     'carrier_zone_country_codes' => $zoneCountryCodes,
