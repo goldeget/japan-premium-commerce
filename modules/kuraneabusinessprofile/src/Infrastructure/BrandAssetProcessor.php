@@ -218,9 +218,8 @@ final class BrandAssetProcessor
     {
         self::ensureDirectory($privateRoot, 0700);
         $path = rtrim($privateRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . '.htaccess';
-        if (!is_file($path)) {
-            $rules = implode(PHP_EOL, ["Options -Indexes", "Require all denied", "Deny from all"]) . PHP_EOL; self::writeImmutable($path, $rules, hash("sha256", $rules), 0600);
-        }
+        $rules = implode(PHP_EOL, ['Options -Indexes', 'Require all denied', 'Deny from all']) . PHP_EOL;
+        self::writeImmutable($path, $rules, hash('sha256', $rules), 0600);
     }
 
     private static function writeImmutable(string $path, string $bytes, string $expectedHash, int $mode): void

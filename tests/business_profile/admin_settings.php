@@ -212,4 +212,26 @@ assertBusinessProfileSame(
     'An empty brand name must leave core structured data unchanged.'
 );
 
+$coreLogoData = $coreStructuredData;
+$coreLogoData['website']['potentialAction'] = ['@type' => 'SearchAction', 'target' => 'https://shop.example/search?s={search_term_string}'];
+$coreLogoData['organization']['logo'] = [
+    '@type' => 'ImageObject', 'url' => 'https://shop.example/img/legacy-kuranea.png', 'width' => 99, 'height' => 33,
+];
+$publishedLogoUrl = 'https://shop.example/subshop/img/ordenowa/versions/' . str_repeat('c', 64) . '/header-desktop.png';
+$brandedLogoData = \Kuranea\BusinessProfile\Customer\StructuredDataBrandEnricher::apply($coreLogoData, $hostileJsonLdBrandName, $publishedLogoUrl);
+assertBusinessProfileSame(
+    ['@type' => 'ImageObject', 'url' => $publishedLogoUrl],
+    $brandedLogoData['organization']['logo'],
+    'Published desktop logo must replace the core PS_LOGO image without carrying stale dimensions.'
+);
+assertBusinessProfileSame(count($coreLogoData), count($brandedLogoData), 'Logo enrichment must reuse the existing core structured data graph.');
+assertBusinessProfileSame($coreLogoData['website']['potentialAction'], $brandedLogoData['website']['potentialAction'], 'Logo enrichment must preserve core search actions.');
+assertBusinessProfileSame($coreLogoData['product'], $brandedLogoData['product'], 'Logo enrichment must preserve product structured data.');
+assertBusinessProfileSame('https://shop.example/img/legacy-kuranea.png', $coreLogoData['organization']['logo']['url'], 'Logo enrichment must not mutate core input.');
+$withoutPublishedLogo = \Kuranea\BusinessProfile\Customer\StructuredDataBrandEnricher::apply($coreLogoData, 'ORDENOWA', '');
+assertBusinessProfileTrue(!isset($withoutPublishedLogo['organization']['logo']), 'An absent approved logo must suppress the core legacy logo.');
+$encodedLogoData = json_encode($brandedLogoData['organization'], 321 | JSON_THROW_ON_ERROR);
+assertBusinessProfileTrue(!str_contains($encodedLogoData, '</script>'), 'Core theme JSON encoding must keep hostile brand text inert.');
+assertBusinessProfileSame($publishedLogoUrl, json_decode($encodedLogoData, true, 512, JSON_THROW_ON_ERROR)['logo']['url'], 'JSON encoding must preserve the published absolute logo URL.');
+
 echo "PASS: Korean admin settings form sections, allowlisted edits, and bank masking\n";

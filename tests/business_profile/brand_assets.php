@@ -70,6 +70,20 @@ try {
 }
 assertBusinessProfileTrue(is_link($symlinkTarget), 'The processor must reject and preserve a pre-existing symlink target.');
 
+$denySymlinkRoot = $temporaryRoot . '/deny-symlink-private';
+mkdir($denySymlinkRoot, 0700, true);
+$outsideRules = $temporaryRoot . '/outside-rules';
+file_put_contents($outsideRules, "Require all granted\n");
+symlink($outsideRules, $denySymlinkRoot . '/.htaccess');
+try {
+    \Kuranea\BusinessProfile\Infrastructure\BrandAssetProcessor::process('primary_logo', $original, $temporaryRoot . '/deny-symlink-public', $denySymlinkRoot);
+    throw new RuntimeException('A symlink at the private deny-rule path must reject the upload.');
+} catch (RuntimeException $exception) {
+    assertBusinessProfileSame('이미지 경로에는 심볼릭 링크를 사용할 수 없습니다.', $exception->getMessage(), 'A private deny-rule symlink must not bypass access protection.');
+}
+assertBusinessProfileSame("Require all granted\n", file_get_contents($outsideRules), 'The outside symlink target must remain untouched.');
+assertBusinessProfileTrue(!is_file($denySymlinkRoot . '/source/primary_logo/' . hash('sha256', $original) . '.png'), 'Reject the upload before writing its private original.');
+
 $outsidePrivateParent = $temporaryRoot . '/outside-private-parent';
 mkdir($outsidePrivateParent, 0700, true);
 $ancestorSymlinkPrivateRoot = $temporaryRoot . '/ancestor-symlink-private';

@@ -90,6 +90,19 @@ class BrandAssetDisplayContractTests(unittest.TestCase):
             with self.subTest(stage=stage):
                 self.assertIn(stage, browser)
 
+    def test_core_jsonld_logo_uses_the_published_desktop_asset(self) -> None:
+        module = (ROOT / "modules/kuraneabusinessprofile/kuraneabusinessprofile.php").read_text(encoding="utf-8")
+        hook = module.split("public function hookActionFrontControllerSetVariables", 1)[1].split(
+            "public function hookActionFrontControllerInitBefore", 1
+        )[0]
+        head = (ROOT / "themes/kuranea/templates/_partials/head.tpl").read_text(encoding="utf-8")
+        self.assertIn("$profile['brand']['assets']['header_desktop']", hook)
+        self.assertIn("$this->assetUrl(", hook)
+        self.assertIn("$this->context->link->getBaseLink()", hook)
+        self.assertIn("StructuredDataBrandEnricher::apply($structuredData, $brandName, $brandLogoUrl)", hook)
+        self.assertNotIn("application/ld+json", hook)
+        self.assertIn("$element|@json_encode:321 nofilter", head)
+
 
 if __name__ == "__main__":
     unittest.main()

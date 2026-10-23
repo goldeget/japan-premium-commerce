@@ -146,8 +146,35 @@ assertBusinessProfileTrue(
     'Publish validation must explain in Korean that approved seller disclosures are incomplete.'
 );
 
+// Publish tests resolve real packaged derivatives in an isolated web root.
+$brandPublishTestRoot = sys_get_temp_dir() . '/ordenowa-publish-fixture-' . bin2hex(random_bytes(5));
+$brandPublishFixtures = [
+    'header_desktop' => 'logo-desktop.png', 'header_mobile' => 'logo-mobile.png',
+    'admin_login' => 'logo-desktop.png', 'email_logo' => 'logo-email.png', 'og_image' => 'og-1200x630.png',
+    'favicon' => 'favicon.ico', 'favicon_16' => 'favicon-16x16.png', 'favicon_32' => 'favicon-32x32.png',
+    'apple_touch' => 'apple-touch-icon.png', 'pwa_192' => 'pwa-192x192.png',
+    'pwa_512' => 'pwa-512x512.png', 'pwa_maskable_512' => 'pwa-maskable-512x512.png',
+];
+foreach ($brandPublishFixtures as $key => $filename) {
+    $destination = $brandPublishTestRoot . '/' . $initial['brand']['assets'][$key];
+    if (!is_dir(dirname($destination))) {
+        mkdir(dirname($destination), 0700, true);
+    }
+    copy(__DIR__ . '/../../assets/brand/ordenowa/web_assets/' . $filename, $destination);
+}
+register_shutdown_function(static function () use ($brandPublishTestRoot): void {
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($brandPublishTestRoot, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST) as $item) {
+        if ($item->isLink() || !$item->isDir()) {
+            unlink($item->getPathname());
+        } else {
+            rmdir($item->getPathname());
+        }
+    }
+    rmdir($brandPublishTestRoot);
+});
+
 $versions = new InMemoryBusinessProfileRepository();
-$service = new \Kuranea\BusinessProfile\Domain\ProfileVersionService($versions, $validator);
+$service = new \Kuranea\BusinessProfile\Domain\ProfileVersionService($versions, $validator, $brandPublishTestRoot);
 $firstVersionId = $service->saveDraft(1, $initial, 10);
 $versions->seedPublished(1, $firstVersionId);
 $syntheticKoreanCompanyProfile = 'ORDENOWA CI 검증용 회사 소개';

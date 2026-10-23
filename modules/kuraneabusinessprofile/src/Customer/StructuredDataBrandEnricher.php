@@ -9,7 +9,7 @@ final class StructuredDataBrandEnricher
     /** @param array<string|int, mixed> $structuredData
      *  @return array<string|int, mixed>
      */
-    public static function apply(array $structuredData, string $brandName): array
+    public static function apply(array $structuredData, string $brandName, string $brandLogoUrl = ''): array
     {
         if (trim($brandName) === '') {
             return $structuredData;
@@ -26,6 +26,13 @@ final class StructuredDataBrandEnricher
             }
 
             $element['name'] = $brandName;
+            if ($type === 'Organization') {
+                // Replace the complete core PS_LOGO image: its dimensions belong to a different asset.
+                unset($element['logo']);
+                if ($brandLogoUrl !== '') {
+                    $element['logo'] = ['@type' => 'ImageObject', 'url' => $brandLogoUrl];
+                }
+            }
         }
         unset($element);
 

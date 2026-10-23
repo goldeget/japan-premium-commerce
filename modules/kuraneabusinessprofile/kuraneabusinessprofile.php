@@ -192,7 +192,11 @@ class Kuraneabusinessprofile extends Module
 
         $locale = (string) ($profile['_resolved_locale'] ?? 'ja-JP');
         $brandName = (string) ($profile['brand']['name'][$locale] ?? $profile['brand']['name']['ja-JP'] ?? 'ORDENOWA');
-        $params['templateVars']['structured_data'] = StructuredDataBrandEnricher::apply($structuredData, $brandName);
+        $brandLogoUrl = $this->assetUrl(
+            $profile['brand']['assets']['header_desktop'] ?? null,
+            (string) $this->context->link->getBaseLink()
+        );
+        $params['templateVars']['structured_data'] = StructuredDataBrandEnricher::apply($structuredData, $brandName, $brandLogoUrl);
 
         return [];
     }
