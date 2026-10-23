@@ -1,8 +1,30 @@
 # ORDENOWA 테스트 결과
 
-기준일: 2026-10-22
+## 최신 검증 현황 (2026-10-23 02:26 UTC)
 
-## 이번 이어가기 작업 결과 (`work` SHA `5b2a1cb8d2193458a088174eb04228f252cd9e0e`)
+로컬/원격 `work` SHA: `dfa30a1127a50d2eb4926d7c1fb6d75030a64121`. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다.
+
+| 검사 | 결과 | 근거 |
+| --- | --- | --- |
+| 계정 재설정 로그인 회귀 | PASS (로컬 계약·Chromium) | #39888370630은 이전 비밀번호 거부 뒤 남은 오류 알림 때문에 새 비밀번호 로그인도 거부된 것으로 오판했다. `dfa30a1`은 검증된 로그인 URL을 다시 열고 이메일 입력과 오류 알림 부재를 확인한 뒤 제출한다. 집중 계약 RED→GREEN, 계정 계약 22개 통과, #39889443441 Step 30 및 aggregate PASS. |
+| 전체 오프라인 테스트 | PASS (서비스 의존 제외) | `PYTHONDONTWRITEBYTECODE=1 python3 -c ...`로 `tests/smoke/test_storefront.py`만 제외하고 304 tests 통과. HTTP 서버에 의존하는 해당 storefront 테스트는 Cloud에서 실행하지 않았다. |
+| Python 구문·diff | PASS | `python3 -m py_compile tests/e2e/verify_customer_account_browser.py`, `git diff --check` 통과. |
+| 공식 브랜드 ZIP | PASS (무결성/소스 계약) | ZIP 22개 항목 CRC, 원본 3종·파생 17종의 SHA-256/저장 경로, KURANEA 백업 보존 계약을 확인했다. |
+| Browser: 브랜드·메일 로고 | PASS (격리 CI 단계) | #39888149608 Steps 28–29 및 #39889264268/#39889443441 Steps 28–29 성공. #398892와 #398894 Step 28에는 EN storefront SEO/PWA/이미지 검사가 포함된다. 두 run의 Step 41 필수 screenshot artifact gate도 통과했다. |
+| Browser: 회원 계정 | PASS (격리 CI 단계) | #39888149608, #39889264268, #39889443441 Step 30 및 전체 aggregate 성공. #39888370630에서 old-password rejection 알림이 새 로그인 결과로 오인됐고, `dfa30a1` clean-login reload 수정은 #39889443441에서 검증됐다. |
+| Browser: 관리자 상품·상점 주문 | PASS (격리 CI 단계) | #39888149608, #39889264268, #39889443441 Steps 31–39에서 관리자 상품 create/edit, synthetic 상품 검색·장바구니, PC·모바일 일본 주소 무결제 주문, 관리자 조회 및 checkout fail-closed 복구 성공. Steps 42–44도 #39889443441에서 통과했다. |
+| Actions #39889443441 (`dfa30a1`) | PASS | 전체 isolated fresh-install 성공. Steps 28–30 브랜드·메일·계정, 31–39 상품·장바구니·무결제 주문, 40–41 캡처/coverage, 42 재시작, 43–44 Japan Post, 45 aggregate 성공. Step 35는 조건부 skip. |
+| Actions #39889264268 (`021214d`) | PASS | 전체 isolated fresh-install 성공. 영문 브랜드와 필수 캡처 gate 포함. 계정·상품·무결제 주문·관리자 조회·재시작·주소 및 aggregate 성공. Step 35는 조건부 skip. |
+| Actions #39889264241 (`021214d`) | PASS (범위 제한) | Offline parser workflow; full install/browser QA를 대체하지 않는다. |
+| Actions #39888370630 (`49bad87`) | FAIL | Raw aggregate `Failed steps: account=failure`. Annotation은 desktop reset-login submit에서 `AssertionError`, 이후 상태는 `/ko/` authenticated/user menu visible이며 login form/danger alert 없음으로 기록했다. Brand, product, unpaid order, restart 및 Japan Post 단계는 성공했다. Step 41은 진단 fallback만 실행해 전체 screenshot coverage를 인증하지 않았다. |
+| Actions #39888149608 (`60a82f3`) | PASS | 전체 isolated fresh-install workflow 성공. Brand/email, account reset, product create/edit, unpaid order/admin view, full screenshot coverage, restart, Japan Post import/count 모두 통과; Step 35는 조건부 skip. |
+| Actions #39881329928 (`f6dd110`) | FAIL (이력) | 이전 진단 run은 완료 실패했으며 현재 최신 판정이 아니다. |
+| Actions #39881329855 (`f6dd110`) | PASS (범위 제한, 이력) | Offline parser workflow; full install/browser QA를 대체하지 않는다. |
+| Actions #39879191400 (`9525b37`) | FAIL | Raw aggregate `Failed steps: account=failure`; PC·모바일 모두 `/identity`에서 visible invalid checkbox `name=psgdpr`. Browser product/order/postal groups had no failure annotation. |
+| Actions #39879191441 (`9525b37`) | PASS (범위 제한) | Offline catalog parser workflow; full install/browser QA를 대체하지 않는다. |
+| 운영 배포·실결제 | 실행하지 않음 | 한국어 관리자 등록 상품 fixture는 비활성이고 checkout은 별도의 활성 synthetic CI 상품과 `ps_checkpayment` 무결제 경로를 사용했다. Production과 실거래는 활성화하지 않았다. |
+
+## 이전 이어가기 결과 (`work` SHA `5b2a1cb8d2193458a088174eb04228f252cd9e0e`)
 
 | 검사 | 결과 | 근거 |
 | --- | --- | --- |
@@ -22,7 +44,7 @@
 
 아래 표는 선행 Phase 1A 작업의 증거·제약을 보존한 기록이며, 위 현재 결과로 덮어쓰지 않는다.
 
-## 로컬 실행 결과
+## 선행 로컬 실행 기록
 
 | 검사 | 결과 | 근거 |
 | --- | --- | --- |
@@ -52,7 +74,7 @@
 | 로컬 DB 상품/주문 현황 | PASS | 읽기 전용 조회 결과 상품 0건, 주문 0건 |
 | 빈 카탈로그·검색·푸터 다국어 화면 | PASS | 홈/카테고리/검색/푸터를 실제 PrestaShop+Chromium에서 ja/en/ko로 확인했다. 검색/카테고리 HTTP 200, 홈에서 320–1920px 10개 폭 가로 넘침 없음, PC·모바일 캡처를 `artifacts/qa/phase1a/`에 저장했다. 현재 상품이 없어 카드·상세 상태의 실제 상품 렌더링은 검증할 수 없다. |
 
-## 제한 또는 실패
+## 선행 제한 또는 실패 기록
 
 | 검사 | 결과 | 상세 |
 | --- | --- | --- |

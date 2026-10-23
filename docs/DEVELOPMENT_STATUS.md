@@ -1,17 +1,66 @@
 # ORDENOWA 개발 현황
 
-기준일: 2026-10-22
+## 최신 이어가기 기준 (2026-10-23 02:33 UTC)
 
-작업 브랜치: `work`
-검증된 코드 체크포인트 `work` SHA: `000b0661937c9d4f48e4408d7fb88598cd426e45`
+작업 브랜치: **work**
+로컬 HEAD / 원격 `work`: **dfa30a1127a50d2eb4926d7c1fb6d75030a64121**
+`main`: **ee02a3657448d563508687614a246e05ac61eecd** (수정하지 않음)
+
+### 현재 검증 현황
+
+| 영역 | 상태 | 근거와 한계 |
+| --- | --- | --- |
+| ORDENOWA 브랜드 자산 | 브라우저 PASS | ZIP 22개 항목 CRC, 원본 3종·파생 17종 SHA-256 및 KURANEA 백업을 검증했다. #39888149608 Steps 28–29와 #39889443441 Steps 28–29에서 업로드·초안·미리보기·게시·교체복원, PC·모바일·관리자 로그인·favicon·Apple·PWA·OG·SEO 이미지 출력 및 Mailpit 재설정 이메일 로고가 통과했다. #39889264268과 #39889443441의 Step 28에서 영문 공개 페이지 브랜드/SEO/PWA 검사가, Step 41에서 필수 캡처 gate가 통과했다. |
+| 회원 계정 | Chromium PASS | #39888149608, #39889264268, #39889443441 Step 30 및 각 전체 aggregate에서 가입·이메일 로그인·로그아웃·비밀번호 재설정·마이페이지가 통과했다. #39888370630의 `account=failure`는 reset 이후 이전 로그인 오류 상태 오판이었다. `dfa30a1`은 검증된 로그인 URL을 다시 열고 오류 알림 부재를 확인하도록 수정했고 #39889443441에서 통과했다. |
+| 한국어 관리자 상품 | Chromium PASS | #39888149608, #39889264268, #39889443441 Step 31에서 실제 관리자 상품 생성·수정과 옵션별 재고 확인이 성공했다. 등록 fixture는 비활성이고 checkout 검증은 별도의 활성 synthetic CI 상품을 사용했다. |
+| 상품·장바구니·무결제 주문 | Chromium PASS | #39888149608, #39889264268, #39889443441 Steps 32–39에서 검색·상품 상세·장바구니, PC·모바일 일본 주소 주문, 오프라인 `ps_checkpayment` 저장, 별도 관리자 주문 조회와 checkout fail-closed 복구가 통과했다. 실결제는 실행하지 않았다. |
+| 스크린샷·재시작·주소 데이터 | 전체 coverage PASS | #39888149608, #39889264268, #39889443441 screenshot coverage, 빈 설치 재시작, Japan Post import 및 전국 주소 수 검사가 통과했다. #39888370630은 계정 실패 뒤 진단 fallback만 실행해 전체 screenshot coverage를 인증하지 않았다. |
+| 한국어 운영·SEO·PWA 설정 | 브라우저 설정 흐름 PASS, 운영 일부 미검증 | c078 브랜드 관리자 화면은 회사·고객지원·배송/환불 문구·SEO·PWA 필드를 저장·재조회·미리보기·게시하고 공개 출력을 확인했다. 배송 정책 편집과 관리자 배송 화면 연결을 확인했지만 배송 요율 변경, 환불 거래, iOS/Android 홈 화면 설치는 테스트하지 않았다. |
+| Codex Cloud 실행 범위 | Docker 빌드 미실행 | 이미지·DB·Mailpit·Chromium 검증은 GitHub Actions에서 수행한다. Codex Cloud의 `vfs`/32 GB 제한을 넘기는 빌드, 운영 배포, 실결제는 실행하지 않았다. |
+
+### 최신 GitHub Actions
+
+- [dfa30a1 — Isolated fresh install #39889443441](https://github.com/goldeget/japan-premium-commerce/actions/runs/39889443441): 전체 PASS. Steps 28–30 브랜드·메일·계정, 31–39 상품·장바구니·일본 무결제 주문·관리자 조회·checkout 복구, 40–41 캡처/coverage, 42 재시작, 43–44 Japan Post, 45 aggregate가 성공했다. Step 35 진단은 조건부 건너뜀이다.
+- [021214d — Isolated fresh install #39889264268](https://github.com/goldeget/japan-premium-commerce/actions/runs/39889264268): 전체 PASS. 영문 브랜드 검사와 필수 screenshot gate를 포함한 브라우저, 계정, 상품, 주문, 재시작 및 주소 데이터 단계가 성공했다. Step 35 진단은 조건부 건너뜀이다.
+- [021214d — Offline catalog parser #39889264241](https://github.com/goldeget/japan-premium-commerce/actions/runs/39889264241): PASS (범위 제한). PHP lint/parser와 fresh-install 계약 검사; 통합 설치/브라우저 QA 판정은 아니다.
+- [49bad87 — Isolated fresh install #39888370630](https://github.com/goldeget/japan-premium-commerce/actions/runs/39888370630): FAIL; aggregate는 `account=failure`. 계정 진단은 `/ko/`에서 `authenticated`와 사용자 메뉴 표시를 확인했고 이전 로그인 오류 알림과 인증 후 결과의 오판 경계가 드러났다. 브랜드·상품·무결제 주문·스크린샷·재시작·주소 단계는 통과했다.
+- [60a82f3 — Isolated fresh install #39888149608](https://github.com/goldeget/japan-premium-commerce/actions/runs/39888149608): 전체 PASS. 브랜드·메일·계정·상품·무결제 주문·관리자 조회·전체 screenshot gate·재시작·Japan Post 단계가 통과했다. Step 35 진단은 조건부 건너뜀이다.
+- [8423011 — Isolated fresh install #39879610940](https://github.com/goldeget/japan-premium-commerce/actions/runs/39879610940): completed FAIL, raw aggregate `account=failure`만 남았다. 브랜드·상품·장바구니·무결제 주문/관리자 조회·전체 screenshot coverage·재시작·Japan Post 검사는 통과했다. 회원은 동의 선택 뒤 `email_login`의 구체 하위 대기에서 timeout됐으며 비밀번호 재설정은 수행되지 않았다.
+- [9525b37 — Isolated fresh install #39879191400](https://github.com/goldeget/japan-premium-commerce/actions/runs/39879191400): completed FAIL, raw aggregate `account=failure`만 남았다. PC·모바일 `/identity`에서 실제 필수 입력 `psgdpr`가 비어 있었고, 초록 Step 30은 이 실패를 덮지 않았다. 이 커밋은 잘못된 selector를 사용했다.
+- [9525b37 — Offline catalog parser #39879191441](https://github.com/goldeget/japan-premium-commerce/actions/runs/39879191441): PASS (범위 제한). 통합 설치/브라우저 QA 판정은 아니다.
+- [c078b38 — Isolated fresh install #39878462667](https://github.com/goldeget/japan-premium-commerce/actions/runs/39878462667): raw aggregate FAIL, `account=failure`만 남았다. 실제 invalid control은 `name=psgdpr`; 초록색 browser step은 이 annotation을 덮지 않는다. Brand/email, product, cart/order/admin, fail-closed, screenshot, restart 및 KEN_ALL 단계에는 실패 annotation이 없다.
+- [c078b38 — Offline catalog parser #39878462635](https://github.com/goldeget/japan-premium-commerce/actions/runs/39878462635): PASS (범위 제한).
+
+### 최근 기능 커밋
+
+| 커밋 | 변경 | 검증 |
+| --- | --- | --- |
+| `dfa30a1` | 이전 비밀번호 거부 화면을 닫고 검증된 한국어 로그인 URL에서 새 비밀번호를 제출하도록 계정 QA 수정 | 회귀 계약 RED→GREEN, 계정 계약 22개, 오프라인 전체 304개, Python 구문 통과. #39889443441 full Chromium QA PASS. |
+| `021214d` | 영문 고객 페이지 SEO·OG·JSON-LD·manifest·브랜드 이미지 검사와 필수 캡처 추가 | 브랜드/SEO 계약 및 오프라인 전체 303개 통과. #39889264268 full Chromium QA PASS; Offline parser PASS. |
+| `49bad87` | 재설정 뒤 로그인 실패 지점을 안전한 하위 상태로 진단 | #39888370630에서 이전 로그인 오류 알림과 인증 결과 충돌 확인; diagnostic-only CI 실패. |
+| `60a82f3` | 한국어 가입 경로 언어 보존 검사 | #39888149608 full fresh-install Chromium QA PASS. |
+| `cf3c413` | 로그인·로그아웃의 브라우저 결과를 검증 | #39887294434에서 계정 실패가 재현되어 후속 진단 수행. |
+| `f6dd110` | email login/logout/authentication 대기 결과를 분리하고 개인정보 없는 CI 상태 진단 추가 | 계약·오프라인 검사 및 범위 제한 parser workflow 통과. |
+| `8423011` | 계정 QA가 실제 필수 `/identity` 입력 `psgdpr`를 선택하도록 수정 | 회귀 계약을 먼저 RED로 확인한 뒤 수정. 동의 선택 오류는 사라졌으나 #39879610940에서 계정 login 단계 timeout으로 aggregate 실패. |
+| `9525b37` | 프로필 동의 체크박스 직접 클릭 및 상태 확인 | Fresh-install #39879191400 raw aggregate `account=failure`; PC·모바일에서 `psgdpr`가 계속 선택되지 않았다. 잘못된 selector였다. |
+| `c078b38` | PrestaShop 현지화된 재설정 경로를 메일·브라우저 검증과 일치 | 브랜드와 주문 흐름 단계 성공; aggregate의 유일 실패는 계정 `psgdpr` 입력 선택. |
+| `143d984` | 인증 전 관리자 로그인 로고 URL 캡처 | 후속 c078 run의 brand/login 검증에는 실패 annotation이 없었다. |
+
+## 이전 완료 기준 결과
+
+- `b58a2eb`의 #656은 `account=failure` raw aggregate였고 brand upload/publish와 product/cart/order 경로 단계가 성공했다.
+- `fc00804`의 #662은 `account=failure`; 한국어 login form/email-label assertions 뒤 reset-link polling 중 controller 404 → 일본어 경로 302가 관측됐다. 원인은 미확정이며 Mailpit logo assertion은 실행되지 않았다.
+- `f8719ee`의 #670은 `shipping_admin=failure account=failure`; 배송 요율을 바꾸지 않았다.
+- `761cc62`의 #835는 `brand=failure shipping_admin=failure account=failure`; brand replacement timeout이 보고됐다.
+- Scope-limited SEO, business-profile, parser workflows는 각각의 계약 범위에서 PASS이며 전체 fresh-install/browser QA를 대체하지 않는다.
 
 ## 실행 기반
 
 - PrestaShop 9.2.0, Hummingbird 2.1.2, MariaDB 10.11, Docker Compose를 사용한다. 개발 포트는 `127.0.0.1:8080`에 바인딩된다.
-- Codex Cloud는 코드 분석·수정·Python 계약 테스트에 사용한다. 이 런타임은 Docker `vfs` storage driver와 32 GB 파일시스템을 사용하며 PrestaShop 이미지 빌드가 공간 부족으로 실패했다. 로컬 PHP CLI도 없다. 여기서 Docker 빌드·Compose 구동을 반복하지 않고, 이미지·DB·브라우저 검증은 격리된 GitHub Actions에서 수행한다.
-- 현재 작업트리는 `/workspace/japan-premium-commerce`의 `work`이며 깨끗하다. `main` SHA `ee02a3657448d563508687614a246e05ac61eecd`는 보존한다. 이 설정 작업에서 컨테이너나 named volume을 만들거나 초기화하지 않았다.
+- Codex Cloud는 코드 분석·수정·Python 계약 테스트에 사용한다. 이 런타임은 Docker `vfs` storage driver와 32 GB 파일시스템을 사용하며 PrestaShop 이미지 빌드가 공간 부족으로 실패했다. 호스트 기본 PHP CLI는 없지만, 서명된 배포판 패키지를 격리 경로 `/tmp/brand-php-runtime`에서 검증한 PHP 8.4/GD 런타임으로 사업자 프로필 PHP 계약을 실행했다. 시스템 패키지는 설치하지 않았다. 여기서 Docker 빌드·Compose 구동을 반복하지 않고, 이미지·DB·Chromium 검증은 격리된 GitHub Actions에서 수행한다.
+- 현재 작업트리는 `/workspace/japan-premium-commerce`의 `work`다. 미추적 `tests/admin_locale/__pycache__/`, `tests/business_profile/__pycache__/`, `tests/e2e/__pycache__/`, `tests/postcode/__pycache__/`, `tests/smoke/__pycache__/`는 삭제하지 않았다. `main` SHA `ee02a3657448d563508687614a246e05ac61eecd`는 보존한다. 이 설정 작업에서 컨테이너나 named volume을 만들거나 초기화하지 않았다.
 
-## 구현 상태
+## 구현 상태 기록 (이전 관찰)
 
 | 영역 | 상태 | 확인 내용 |
 | --- | --- | --- |
@@ -28,7 +77,7 @@
 | 실제 상품·주문 | 0건 / E2E 미실행 | 로컬 DB에서 상품·주문 0건으로 이전 확인됐다. 신규 설치 503 때문에 주소가 들어간 무결제 주문 저장·한국어 관리자 조회·재시작 보존은 이번 작업에서 확인되지 않았다. |
 | 신규 설치 CI | FAIL / Japan Post HTTP 503 | run `39760154414`도 기존 `--retry 3`을 거친 뒤 공식 KEN_ALL 다운로드에서 `curl_exit=22 http_status=503 effective_host=www.post.japanpost.jp`로 실패했다. 앞선 이미지 build/cache/startup/catalog queue 검사가 통과했고, 주소 조회·주소/주문 저장·관리자 조회·최종 재시작 검사는 건너뛰었다. 반복 실행을 성공으로 취급하지 않으며 외부 주소 데이터 단계의 제한을 별도로 기록한다. |
 
-## 최근 작업
+## 이전 작업 기록
 
 - `6f6ff5e`에서 synthetic Amazon Japan/Rakuten 파서를 파일 기반 검수 큐, 원자적 승인 서비스 및 숨김 상태 PrestaShop Product 등록 어댑터에 연결했다. 전용 Actions run `39756075106`은 PHP lint와 fixture 테스트에서 성공했지만 실제 PrestaShop DB 등록·관리자 화면은 검증되지 않았다.
 - `ba508b4`에서 관리자 특정상거래법 라벨을 한국어로 바꿨다. 후속 run `39756576373`에서 다국어 필드에 붙는 `· 일본어`를 테스트 기대값이 빠뜨린 것이 확인되어 `3ec583c`에서 assertion을 수정했다. 그 뒤 CI는 법률 페이지에서 `<h1>` 제목이 렌더링되지 않는 실제 결함을 드러냈다.
@@ -56,6 +105,6 @@
 - 2026-10-22: 최신 Actions 진단에서 이전 `errno 28` 가정과 다른 직접 원인을 확인했다. PrestaShop `Install::finalize()`는 `/admin/`이 없으면 기본 target `admin-dev`를 사용하지만 Docker entrypoint가 설치 전에 관리자 폴더를 옮겼다. 첫 수정안 `175d75d`는 CI run `39727310686`에서 이미지 빌드와 사전 검사를 통과했으나 빈 설치 단계는 실패했다. 현재 환경에서 상세 로그가 제공되지 않아 이 시도의 실패 세부를 확정하지 않는다.
 - 2026-10-22: 후속 수정안 `fcf78ad`는 `PS_FOLDER_ADMIN=admin-dev`를 사용해 Docker entrypoint가 실제 관리자 파일을 기본 설치 경로에 유지하고, 공식 post-install 이후 PHP 부트스트랩이 `admin-kuranea`로 이동해 assets를 설치한다. 정적 경로 계약 4/4 통과, 원격 CI run `39728912492`는 Compose의 빈 상점 시작에서 실패했다. 실패 artifact는 존재하지만 현재 환경에서 읽을 수 없어 새 직접 원인은 미확정이다.
 
-## 다음 우선순위
+## 이전 우선순위 기록
 
 1. 코드 리뷰 후 수정 후보를 `work`에 원격 보존하고 신규 설치 Actions를 한 번 실행한다. 실제 결과로 빈 DB 설치 및 주문 E2E를 판정한다.
