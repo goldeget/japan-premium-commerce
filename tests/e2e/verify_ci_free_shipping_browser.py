@@ -1515,8 +1515,10 @@ def _expected_admin_order_totals(
 
 
 def _assert_unknown_admin_tax_display(tax_values: list[int]) -> None:
-    if any(value != 0 for value in tax_values):
-        raise AssertionError("unassigned tax display must not claim a nonzero tax amount")
+    if tax_values:
+        raise AssertionError(
+            "unassigned tax must remain unknown in the Back Office, with no zero or nonzero tax line"
+        )
 
 
 def _reconcile_admin_shipping_total(
