@@ -127,6 +127,68 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             with self.subTest(marker=marker):
                 self.assertIn(marker, admin_view)
 
+    def test_order_confirmation_totals_are_checked_before_history_navigation(self) -> None:
+        browser = BROWSER.read_text(encoding="utf-8")
+        self.assertIn("def _order_confirmation_totals", browser)
+        self.assertIn("def _place_unpaid_order_and_verify_confirmation", browser)
+        for marker in (
+            ".order-confirmation__product-total",
+            ".order-confirmation__subtotals .order-confirmation__line",
+            ".order-confirmation__totals .order-confirmation__line",
+            "products_tax_incl",
+            "shipping_tax_incl",
+            "total_tax_incl",
+            "browser_totals[\"tax\"]",
+            "if observed != expected:",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, browser)
+
+        confirmation_reader = browser.split("def _order_confirmation_totals", 1)[1].split(
+            "def _place_unpaid_order_and_verify_confirmation", 1
+        )[0]
+        for expression in (
+            "sum(product_totals)",
+            "_parse_yen(shipping_lines[0])",
+            "sum(tax_amounts)",
+            "total_amounts[-1]",
+        ):
+            with self.subTest(expression=expression):
+                self.assertIn(expression, confirmation_reader)
+
+        source = ast.parse(browser)
+        shipping_classifier = next(
+            node for node in source.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_is_shipping_summary_label"
+        )
+        namespace: dict[str, object] = {}
+        exec(compile(ast.Module(body=[shipping_classifier], type_ignores=[]), str(BROWSER), "exec"), namespace)
+        is_shipping_summary_label = namespace["_is_shipping_summary_label"]
+        for label in ("Shipping", "Delivery", "送料", "配送", "発送", "배송"):
+            with self.subTest(shipping_label=label):
+                self.assertTrue(is_shipping_summary_label(label))
+        for label in ("Products", "商品", "Tax"):
+            with self.subTest(non_shipping_label=label):
+                self.assertFalse(is_shipping_summary_label(label))
+
+        placer = browser.split("def _place_unpaid_order_and_verify_confirmation", 1)[1].split(
+            "def _order_history_total", 1
+        )[0]
+        self.assertLess(
+            placer.index("_order_confirmation_totals(driver)"),
+            placer.index('BASE + "/index.php?controller=history"'),
+            "the real confirmation totals must be captured before the browser leaves that page",
+        )
+        for flow in (
+            "def run_japan_customer_checkout",
+            "def run_japan_mobile_osaka_checkout",
+            "def run_japan_taxable_customer_checkout",
+        ):
+            body = browser.split(flow, 1)[1].split("\ndef ", 1)[0]
+            with self.subTest(flow=flow):
+                self.assertIn("_place_unpaid_order_and_verify_confirmation(", body)
+                self.assertIn("browser_totals", body)
+
     def test_order_verifier_reconciles_browser_and_native_amounts_without_changing_tax(self) -> None:
         self.assertTrue(ORDER_VERIFY.is_file(), "free-shipping order verifier must be implemented")
         verifier = ORDER_VERIFY.read_text(encoding="utf-8")

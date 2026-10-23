@@ -9,7 +9,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.common.by import By
@@ -390,6 +390,14 @@ def _is_total_summary_label(label: str) -> bool:
     return any(marker in normalized for marker in ("total", "合計", "総計", "総額"))
 
 
+def _is_shipping_summary_label(label: str) -> bool:
+    normalized = label.casefold()
+    return any(
+        marker in normalized
+        for marker in ("shipping", "delivery", "送料", "配送", "発送", "배송")
+    )
+
+
 def _visible_text(driver, selector: str, timeout: int = 20) -> str:
     element = WebDriverWait(driver, timeout).until(
         lambda _browser: next(
@@ -638,6 +646,129 @@ def _order_history_total(driver, reference: str) -> int:
     return _parse_yen(row.find_element(By.CSS_SELECTOR, ".order-history__cell--total").text)
 
 
+def _order_confirmation_totals(driver) -> dict[str, int]:
+    """Read the rendered Hummingbird confirmation amounts without leaving the page."""
+    _wait_present(driver, ".order-confirmation__table")
+    product_totals = [
+        _parse_yen(item.text)
+        for item in driver.find_elements(By.CSS_SELECTOR, ".order-confirmation__product-total")
+        if item.is_displayed()
+    ]
+    if not product_totals:
+        raise AssertionError("order confirmation did not display a product total")
+
+    def read_lines(selector: str) -> list[tuple[str, str]]:
+        lines: list[tuple[str, str]] = []
+        for line in driver.find_elements(By.CSS_SELECTOR, selector):
+            if not line.is_displayed():
+                continue
+            labels = line.find_elements(By.CSS_SELECTOR, ".order-confirmation__line-label")
+            values = line.find_elements(By.CSS_SELECTOR, ".order-confirmation__line-value")
+            if labels and values:
+                lines.append((labels[0].text.strip(), values[0].text.strip()))
+        return lines
+
+    subtotal_lines = read_lines(".order-confirmation__subtotals .order-confirmation__line")
+    shipping_lines = [
+        value
+        for label, value in subtotal_lines
+        if _is_shipping_summary_label(label)
+    ]
+    if len(shipping_lines) != 1:
+        raise AssertionError(
+            "order confirmation must show exactly one localized shipping subtotal; "
+            f"visible labels were {[label for label, _value in subtotal_lines]}"
+        )
+
+    total_lines = read_lines(".order-confirmation__totals .order-confirmation__line")
+    tax_amounts = [
+        _parse_yen(value)
+        for label, value in total_lines
+        if _is_tax_summary_label(label)
+    ]
+    total_amounts = [
+        _parse_yen(value)
+        for label, value in total_lines
+        if _is_total_summary_label(label)
+    ]
+    if not total_amounts:
+        raise AssertionError(
+            "order confirmation did not display a recognizable final total; "
+            f"visible labels were {[label for label, _value in total_lines]}"
+        )
+
+    return {
+        "products_tax_incl": sum(product_totals),
+        "shipping_tax_incl": _parse_yen(shipping_lines[0]),
+        "tax": sum(tax_amounts),
+        "total_tax_incl": total_amounts[-1],
+    }
+
+
+def _place_unpaid_order_and_verify_confirmation(
+    driver,
+    label: str,
+    email: str,
+    expected_totals: dict[str, int],
+    screenshot_name: str,
+) -> tuple[dict[str, object], dict[str, int]]:
+    """Verify the customer-facing confirmation before navigating to order history."""
+    place_order = checkout.visible(driver, "#payment-confirmation button", timeout=35)
+    checkout.click_at_center(driver, place_order)
+    WebDriverWait(driver, 60).until(
+        lambda browser: (
+            "order-confirmation" in browser.current_url.lower()
+            or bool(browser.find_elements(By.CSS_SELECTOR, ".order-confirmation__details-list"))
+        )
+    )
+    confirmation = driver.find_element(By.TAG_NAME, "body").text
+    if "[CI ONLY]" not in confirmation:
+        raise AssertionError("order confirmation does not contain the clearly marked CI-only product")
+
+    observed = _order_confirmation_totals(driver)
+    expected = {
+        "products_tax_incl": int(expected_totals["products_tax_incl"]),
+        "shipping_tax_incl": 0,
+        "tax": int(expected_totals["tax"]),
+        "total_tax_incl": int(expected_totals["total_tax_incl"]),
+    }
+    if observed != expected:
+        raise AssertionError(
+            f"{label} order confirmation totals {observed} differ from verified checkout {expected}"
+        )
+    driver.save_screenshot(str(QA_DIR / screenshot_name))
+
+    checkout.visit(driver, BASE + "/index.php?controller=history")
+    checkout.assert_canonical_ascii_friendly_route(driver, "history")
+    rows = WebDriverWait(driver, 35).until(
+        lambda browser: browser.find_elements(By.CSS_SELECTOR, ".order-history__row")
+    )
+    row = next((item for item in rows if item.is_displayed()), None)
+    if row is None:
+        raise AssertionError("the test customer's my page has no saved browser order")
+    reference = row.find_element(By.CSS_SELECTOR, ".order-history__cell--reference").text.strip()
+    detail_link = row.find_element(By.CSS_SELECTOR, 'a[data-link-action="view-order-details"]')
+    detail_url = detail_link.get_attribute("href") or ""
+    query = parse_qs(urlparse(detail_url).query)
+    order_ids = query.get("id_order", [])
+    if not order_ids:
+        match = re.search(r"/([0-9]+)(?:/|$)", urlparse(detail_url).path)
+        order_ids = [match.group(1)] if match else []
+    if not reference or not order_ids or int(order_ids[0]) < 1:
+        raise AssertionError("the saved order-history row did not expose its reference and native order ID")
+
+    order = {
+        "viewport": label,
+        "order_id": int(order_ids[0]),
+        "reference": reference,
+        "email": email,
+        "product_id": checkout.PRODUCT_ID,
+        "payment_module": "ps_checkpayment",
+        "order_confirmation_totals": observed,
+    }
+    return order, observed
+
+
 def _select_osaka_address(driver) -> None:
     form = _wait_visible(driver, "#delivery-address form")
     country_fields = form.find_elements(By.CSS_SELECTOR, 'select[name="id_country"]')
@@ -762,7 +893,13 @@ def run_japan_customer_checkout() -> None:
         stage = "offline_payment"
         _click_offline_payment(driver)
         stage = "place_unpaid_order"
-        order = checkout.place_unpaid_order(driver, "shipping-free", email)
+        order, confirmation_totals = _place_unpaid_order_and_verify_confirmation(
+            driver,
+            "shipping-free",
+            email,
+            browser_totals,
+            "shipping-free-order-confirmation-desktop.png",
+        )
         history_total = _order_history_total(driver, order["reference"])
         if history_total != browser_totals["total_tax_incl"]:
             raise AssertionError(
@@ -775,6 +912,7 @@ def run_japan_customer_checkout() -> None:
             "quantity": 2,
             "browser_totals": browser_totals,
             "order_history_total": history_total,
+            "order_confirmation_totals": confirmation_totals,
             "coupon": coupon,
             "carrier_tax_rule_group_id": carrier["carrier_tax_rule_group_id"],
             "product_tax_rule_group_id": PRODUCT_TAX_RULE_GROUP_ID,
@@ -794,7 +932,6 @@ def run_japan_customer_checkout() -> None:
             json.dumps(order, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
-        driver.save_screenshot(str(QA_DIR / "shipping-free-order-confirmation-desktop.png"))
         print(
             "PASS: Japan checkout selected the saved free carrier and retained ¥0 shipping for "
             f"quantity=2; order history total ¥{history_total}; "
@@ -842,7 +979,13 @@ def run_japan_mobile_osaka_checkout() -> None:
         stage = "mobile_offline_payment"
         _click_offline_payment(driver)
         stage = "place_mobile_unpaid_order"
-        order = checkout.place_unpaid_order(driver, "shipping-free-mobile", email)
+        order, confirmation_totals = _place_unpaid_order_and_verify_confirmation(
+            driver,
+            "shipping-free-mobile",
+            email,
+            browser_totals,
+            "shipping-free-osaka-order-confirmation-mobile.png",
+        )
         history_total = _order_history_total(driver, order["reference"])
         if history_total != browser_totals["total_tax_incl"]:
             raise AssertionError(
@@ -857,6 +1000,7 @@ def run_japan_mobile_osaka_checkout() -> None:
             "quantity": 1,
             "browser_totals": browser_totals,
             "order_history_total": history_total,
+            "order_confirmation_totals": confirmation_totals,
             "coupon": {"code": None, "applied": False, "coupon_condition": "not applicable to this second region/quantity check"},
             "product_tax_rule_group_id": PRODUCT_TAX_RULE_GROUP_ID,
             "tax_fixture_scope": "CI fixture product with no assigned tax rule (id_tax_rules_group=0)",
@@ -873,7 +1017,6 @@ def run_japan_mobile_osaka_checkout() -> None:
             json.dumps(order, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
-        driver.save_screenshot(str(QA_DIR / "shipping-free-osaka-order-confirmation-mobile.png"))
         print(
             "PASS: mobile Osaka checkout saved quantity 1 with the same free Japan carrier, ¥0 shipping, "
             f"and customer history total ¥{history_total}."
@@ -942,7 +1085,13 @@ def run_japan_taxable_customer_checkout() -> None:
         stage = "taxable_offline_payment"
         _click_offline_payment(driver)
         stage = "taxable_unpaid_order"
-        order = checkout.place_unpaid_order(driver, "shipping-free-taxable", email)
+        order, confirmation_totals = _place_unpaid_order_and_verify_confirmation(
+            driver,
+            "shipping-free-taxable",
+            email,
+            browser_totals,
+            "shipping-free-taxable-order-confirmation-desktop.png",
+        )
         history_total = _order_history_total(driver, order["reference"])
         if history_total != 1100 or history_total != browser_totals["total_tax_incl"]:
             raise AssertionError(
@@ -956,6 +1105,7 @@ def run_japan_taxable_customer_checkout() -> None:
             "quantity": 1,
             "browser_totals": browser_totals,
             "order_history_total": history_total,
+            "order_confirmation_totals": confirmation_totals,
             "coupon": {"code": None, "applied": False},
             "product_tax_rule_group_id": PRODUCT_TAX_RULE_GROUP_ID,
             "tax_fixture_scope": (
@@ -975,7 +1125,6 @@ def run_japan_taxable_customer_checkout() -> None:
             json.dumps(order, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
-        driver.save_screenshot(str(QA_DIR / "shipping-free-taxable-order-confirmation-desktop.png"))
         print(
             "PASS: Chromium showed ¥1,100 including the CI-only synthetic ¥100 tax, stored an unpaid JPY order, "
             "and kept Japan shipping at ¥0."

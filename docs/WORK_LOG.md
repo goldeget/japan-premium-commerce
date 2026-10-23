@@ -1,5 +1,16 @@
 # KURANEA 작업 기록
 
+## 2026-10-23 — ORDENOWA 출시 가격 정책 격리 QA (통합 Actions 실패 진단 중)
+
+- 시작 기준 local `HEAD`, live remote `work`는 `8808791057349c46dd37f4bab055c84a9fd04319`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다. Codex Cloud에서 Docker 이미지 빌드나 production DB 접근을 하지 않았다.
+- 세금 포함 상품 가격 구현은 고객 표시 가격을 기준으로 PrestaShop 저장가격을 환산하고, 선택 세금 규칙·주문 세액을 검증한다. 일본 규칙을 알 수 없을 때 실제 세금을 0으로 기록하지 않고 저장을 거부한다. 합성 10%는 CI 전용이며 법정 세율 근거가 아니다.
+- 배송 QA는 격리된 run별 일본 전용 존·무료 운송사를 생성하고 Back Office 저장 후 PrestaShop을 재시작해 다시 읽는다. 일반 주문 QA보다 이 설정을 먼저 수행한다. 도쿄 PC 수량 2+쿠폰, 오사카 모바일 수량 1+쿠폰 없음, 과세 상품 주문, native 저장 데이터와 관리자 금액을 대조한다. 도쿄 검증 실패가 오사카 모바일 검증을 건너뛰지 않도록 했다.
+- 리뷰에서 발견한 CI 결함 두 가지를 회귀 테스트로 먼저 재현했다. 일본 국가/상품의 MariaDB 조회는 SQL에 역슬래시가 포함된 따옴표를 넘겼고, Osaka QA는 Tokyo 단계 성공을 선행 조건으로 요구했다. 쿼리 인자 검증과 지역 단계 의존 조건을 수정했다. PWA 고객 생성 경로도 exact run/project/port 검사를 Chromium 시작 전에 요구한다.
+- 로컬 정적 검증: 통합 QA 계약 182개, checkout·상품·브랜드 계약 75개, Japan Post updater 7개 통과. Python 구문, workflow YAML, 63개 step, 셸 60개, 고유 workflow step ID 40개, `git diff --check` 통과. PHP·DB·Chromium은 GitHub Actions에만 둔다.
+- 독립 push 체크포인트: `561cba7487610c00b05e87dd71ce033f268c1394` (`feat(catalog): preserve tax-inclusive JPY sale prices`), `081e0b87b98773a6b2409e92c280babf3dc7580b` (`test(storefront): cover account and brand workflows`), `29766718481a2c594ab7aa7896bb563de784c856` (`test(checkout): verify taxable prices and free Japan shipping`). 각 push 후 `git ls-remote` SHA와 `origin/work` tracking ref를 대조하고 원격 파일을 다시 읽었다. `main`은 변경하지 않았다.
+- Actions `39940265549`는 통합 workflow보다 먼저 실행되어 preflight 계약에서 실패했다. 통합 SHA `2976671`의 최신 run `39940305885`는 사전 계약과 이미지 빌드를 통과했지만 synthetic postcode fixture와 tax fixture가 각각 실패했다. 이후 상품·장바구니·계정·배송 브라우저 단계는 건너뛰었다. 로그 접근은 403 Forbidden이므로 다음 run에는 합성 주문 금액의 기대/관측 필드만 출력하도록 진단을 보강했다. Osaka `State.name`을 PrestaShop 9.2 scalar 모델에 맞게 수정했고, postcode 오류가 독립 browser QA를 중단하지 않게 aggregate 조건을 추가했다. 주문 확인 화면에서 상품 합계·배송·세금·최종 합계를 주문내역 이동 전에 대조한다. 새 격리 runtime QA와 artifact가 통과하기 전까지 브라우저·주문 결과를 PASS로 기록하지 않는다.
+- Production DB/volume, 운영 배송 설정, 실제 결제는 변경하지 않았다. Actions QA의 두 일본 주소는 격리 테스트이며 일본 전 지역에 대한 운영 carrier 설정의 증거로 확장하지 않는다.
+
 ## 2026-10-22 — Actions 분리 기준 및 SEO escape 보안 체크포인트
 
 - 시작 전 `work`와 `origin/work`는 `f8de2015d14cfefb5f25982bd56d781007d91ff3`, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다. 미커밋 변경은 없었다. Codex Cloud에서 Docker `vfs`/32 GB 이미지 빌드를 재시도하지 않고 Docker·MariaDB·브라우저 실행을 GitHub Actions에 둔다.

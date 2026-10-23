@@ -1,5 +1,24 @@
 # ORDENOWA 테스트 결과
 
+## 출시 가격 정책 격리 QA (2026-10-23 10:57 UTC)
+
+코드 SHA `29766718481a2c594ab7aa7896bb563de784c856` (`work`); `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지한다.
+
+| 검사 | 결과 | 근거 |
+| --- | --- | --- |
+| 통합 가격·세금·배송·workflow 계약 | PASS (로컬 계약) | `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -q`로 182개 통과. 지역 SQL 인자 따옴표, Osaka 독립 실행, 주문확인 금액 대조, postcode 실패 격리, 세금 그룹·저장 주문 및 브라우저 대상 guard를 포함한다. |
+| 계정·브랜드 및 business-profile 계약 | PASS (로컬 계약) | 회원/브랜드/재설정 이메일 65개와 business-profile 35개 통과. |
+| checkout·상품·브랜드·CI 계약 | PASS (로컬 계약) | 75개 통과. 오프라인 주문, native 상품, 공식 브랜드 자산 및 관련 관리자 계약을 포함한다. |
+| Japan Post updater 계약 | PASS (로컬 계약) | 7개 통과. 실제 주소 ZIP download/import 검증과 구분한다. |
+| workflow YAML·셸 구문 | PASS (정적) | YAML parsing, 63개 workflow step, 40개 고유 ID 및 60개 `run` 셸 블록 `bash -n` 통과. |
+| Actions #39940305981 (business-profile module) | PASS | 최신 `2976671`의 사업자 프로필 PHP·설정·브랜드 계약 run 성공. |
+| Actions #39940305885 (Isolated fresh install) | FAIL | `2976671`; 사전 계약·이미지 빌드 통과. synthetic postcode fixture와 tax fixture의 unpaid order 합계 확인이 실패했다. 이후 브라우저·무료배송 단계는 건너뛰었다. 로그 접근이 Forbidden이라 세금 불일치 필드는 아직 미확정이다. |
+| Actions #39940187556 (Isolated fresh install) | FAIL (이전 SHA) | 가격 코드 SHA `561cba7`; aggregate 실패로 종료했고 최신 통합 정책 실행을 대체하지 않는다. |
+| Actions #39940265549 (중간 계정·브랜드 commit) | FAIL (최신 판정 아님) | 통합 workflow보다 먼저 push되어 `Verify fresh-install workflow contracts`에서 image build 전에 실패했다. 다음 최신 통합 run #39940305885에서는 이 계약 단계가 통과했다. 상세 로그 endpoint는 이 실행에서 Forbidden이었다. |
+| 운영 DB·실결제 | 실행하지 않음 | 테스트는 run별 격리 Compose DB를 사용하도록 구성했다. 운영 DB, named volume, carrier 설정과 결제는 수정하지 않았다. |
+
+CI 전용 합성 10% tax fixture는 산술/저장 검증용이며 일본의 적법한 세율 판단이 아니다. Tokyo/Osaka 두 테스트 주소는 모든 일본 prefecture의 운영 배송 설정을 입증하지 않는다. 최신 full fresh-install은 실패했고 가격·세금·무료배송 브라우저 결과는 아직 확인되지 않았다. 수정된 postcode fixture와 금액 진단을 포함하는 별도 `work` SHA에서 다시 검증한다.
+
 ## 최신 검증 현황 (2026-10-23 02:26 UTC)
 
 최신 기능 및 full Chromium 검증 `work` SHA: `dfa30a1127a50d2eb4926d7c1fb6d75030a64121`. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다.

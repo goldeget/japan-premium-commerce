@@ -1,5 +1,21 @@
 # ORDENOWA 개발 현황
 
+## 출시 가격 정책 QA 체크포인트 (2026-10-23 10:57 UTC)
+
+현재 기능 코드 기준 `work` SHA: **29766718481a2c594ab7aa7896bb563de784c856**
+`main`: **ee02a3657448d563508687614a246e05ac61eecd** (변경하지 않음)
+
+- JPY 방문자·비회원·회원 그룹 가격 표시는 PrestaShop의 세금 포함 모드로 설정하고, 한국어 상품 관리자는 명시한 native 세금 규칙 그룹에 따라 고객 표시 총액과 세전 저장 가격을 변환한다. 일본 주소별로 서로 다른 규칙이 선택된 경우 허위 0세율로 저장하지 않고 거부한다.
+- 출시 QA는 run-scoped 일본 전용 구역과 무료 운송사를 격리 Compose에 만들고, 관리자 저장·재시작 후 재조회 및 배송비 ¥0을 검증한다. 도쿄 PC(수량 2·쿠폰), 오사카 모바일(수량 1·쿠폰 없음), 합성 과세 상품 주문을 실행하도록 구성했다. 이는 운영 운송사 설정이나 일본 전 지역을 대신 검증하지 않는다.
+- 세금 포함 ¥1,100 → 세전 ¥1,000, 합성 CI 세액 ¥100은 테스트 fixture에만 적용한다. 이는 일본의 적법한 세율 판단이 아니며, 운영 DB를 변경하거나 실제 결제하지 않는다.
+- 로컬 검증: 통합 workflow/가격/세금/배송 계약 182개, business-profile 계약 35개, 별도 checkout/상품/브랜드 계약 75개, Japan Post updater 계약 7개 통과. PHP·PrestaShop·Chromium 실행은 로컬에서 하지 않았다. workflow YAML, 63개 step, 고유 step ID 40개 및 60개 셸 블록 구문을 검증했다.
+- 독립 코드 체크포인트: `561cba7`(상품 가격/세금), `081e0b8`(회원·브랜드 QA), `2976671`(세금·무료배송 CI 통합). 세 SHA 모두 원격 `work`에서 확인했고, 원격 `main`은 위 SHA로 유지된다.
+- 최신 full fresh-install Actions [#39940305885](https://github.com/goldeget/japan-premium-commerce/actions/runs/39940305885)는 `2976671`에서 실패했다. 사전 계약과 이미지 빌드는 통과했지만 synthetic Tokyo/Osaka postcode fixture와 독립 tax fixture가 각각 실패했다. 나머지 브라우저·배송 단계는 건너뛰어 출시 가격 런타임 QA는 미완료다. 로그 artifact 접근이 Forbidden이라 세금 불일치 필드는 아직 확인되지 않았다.
+- Osaka `State.name` 형식 오류를 scalar string으로 수정하고 회귀 계약을 추가했다. tax fixture는 다음 격리 실행에서 실제 기대/관측된 합성 주문 금액 필드만 출력하도록 진단을 보강했다. 주문 확인 화면에서 상품 합계·배송·세금·최종 합계를 읽고 주문내역으로 이동 전에 대조한다. postcode fixture 오류가 나도 독립 브라우저 QA는 계속 실행하며 실패/건너뜀은 aggregate에 남긴다. 현재 통합 계약 182개가 통과했고 새로운 Actions runtime 검증은 대기 중이다.
+- 이전 가격 코드 Actions [#39940187556](https://github.com/goldeget/japan-premium-commerce/actions/runs/39940187556)도 aggregate 실패로 완료되어 최종 정책 검증 근거로 쓰지 않는다. 계정·브랜드 중간 커밋 run [#39940265549](https://github.com/goldeget/japan-premium-commerce/actions/runs/39940265549)은 통합 workflow보다 먼저 실행되어 preflight 계약에서 실패했다. business-profile module run [#39940305981](https://github.com/goldeget/japan-premium-commerce/actions/runs/39940305981)은 성공했다.
+
+이번 가격 정책 검증은 아직 운영 운송사 설정 반영이나 출시 허가가 아니다. 배포·실거래 활성화 전 운영 설정과 세무 판단은 별도 승인·검증이 필요하다.
+
 ## 최신 이어가기 기준 (2026-10-23 02:33 UTC)
 
 작업 브랜치: **work**

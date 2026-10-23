@@ -13,6 +13,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/fresh-install.yml"
 NEW_STEP_IDS = (
+    "postcode_fixture",
     "tax_fixture", "variant_fixture", "cart_controls_browser_qa",
     "security_fixture", "admin_security_browser_qa", "reset_token_browser_qa",
     "pwa_browser_qa", "shipping_free_fixture", "shipping_free_admin_configure",
@@ -32,6 +33,51 @@ def shell_body(block: str) -> str:
 
 
 class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
+    def test_postcode_fixture_failure_is_isolated_from_independent_browser_qa(self) -> None:
+        fixture = step("Import synthetic Tokyo postcode fixture for isolated checkout QA")
+        self.assertIn("id: postcode_fixture", fixture)
+        self.assertIn("continue-on-error: true", fixture)
+
+        postcode_consumers = (
+            "Verify isolated CI Tokyo postcode lookup",
+            "Verify saved native CI Tokyo address",
+            "Verify synthetic Tokyo address in an unpaid native order and Back Office view",
+        )
+        for name in postcode_consumers:
+            with self.subTest(step=name):
+                self.assertIn("steps.postcode_fixture.outcome == 'success'", step(name))
+
+        lookup_dependent_checkout = (
+            "Enable run-scoped checkout only for the isolated order browser QA",
+            "Verify browser customer search, Japan checkout, and unpaid offline order",
+            "Verify zero shipping in Tokyo coupon and quantity checkout with Chromium",
+            "Verify zero shipping in Osaka mobile checkout with Chromium",
+            "Verify tax-included taxable Japan checkout with the free carrier",
+        )
+        for name in lookup_dependent_checkout:
+            with self.subTest(step=name):
+                self.assertIn("steps.postcode_lookup.outcome == 'success'", step(name))
+
+        independent_browser_qa = (
+            "Verify Korean admin shipping links resolve in Chromium",
+            "Verify official ORDENOWA brand upload and publish in Chromium",
+            "Verify customer registration, email login, logout, password reset, and my page in Chromium",
+            "Verify Korean admin native product create and edit in Chromium",
+            "Verify real product detail and cart in Chromium (no payment)",
+            "Verify native variant selection and cart controls in Chromium",
+            "Verify Back Office token and view-only authorization in Chromium",
+            "Verify Chromium PWA lifecycle and private-route cache protection",
+        )
+        for name in independent_browser_qa:
+            with self.subTest(step=name):
+                block = step(name)
+                self.assertNotIn("steps.postcode_fixture.outcome", block)
+                self.assertIn("continue-on-error: true", block)
+
+        aggregate = step("Aggregate browser QA and postal verification failures")
+        self.assertIn("POSTCODE_FIXTURE_OUTCOME: ${{ steps.postcode_fixture.outcome }}", aggregate)
+        self.assertIn('"postcode_fixture=$POSTCODE_FIXTURE_OUTCOME"', aggregate)
+
     def test_new_contracts_run_before_build_and_trigger_both_events(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         contracts = (
@@ -140,6 +186,11 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
         self.assertIn("steps.shipping_free_admin_readback.outcome == 'success'", osaka)
         self.assertIn("steps.checkout_override.outcome == 'success'", osaka)
         self.assertNotIn("steps.shipping_free_customer_browser_qa.outcome", osaka)
+
+    def test_osaka_state_fixture_uses_prestashop_scalar_state_name(self) -> None:
+        fixture = step("Import synthetic Tokyo postcode fixture for isolated checkout QA")
+        self.assertIn("$state->name = '大阪府';", fixture)
+        self.assertNotIn("$state->name = [];", fixture)
 
     def test_free_shipping_mariadb_queries_receive_plain_sql_quotes(self) -> None:
         fixture = step("Prepare isolated free-shipping order and coupon fixtures")

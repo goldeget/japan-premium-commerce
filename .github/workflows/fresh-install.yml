@@ -249,6 +249,8 @@ jobs:
             php /tmp/verify_native_registration.php
 
       - name: Import synthetic Tokyo postcode fixture for isolated checkout QA
+        id: postcode_fixture
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -274,11 +276,7 @@ jobs:
           $state->id_zone = (int) (new Country($countryId))->id_zone;
           $state->iso_code = 'JP-27';
           $state->active = 1;
-          $state->name = [];
-          foreach (Language::getLanguages(false) as $language) {
-              $iso = (string) $language['iso_code'];
-              $state->name[(int) $language['id_lang']] = $iso === 'ja' ? '大阪府' : ($iso === 'ko' ? '오사카부' : 'Osaka');
-          }
+          $state->name = '大阪府';
           $saved = $stateId > 0 ? $state->update() : $state->add();
           if (!$saved) {
               fwrite(STDERR, "Could not prepare the isolated JP-27 Osaka region fixture.\n");
@@ -298,6 +296,9 @@ jobs:
           printf '%s\n' 'ISOLATED CI FIXTURES: Tokyo 100-0004 and Osaka 530-0001 use synthetic KEN_ALL-layout data; official Japan Post archive import runs separately afterwards.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify isolated CI Tokyo postcode lookup
+        id: postcode_lookup
+        if: always() && !cancelled() && steps.postcode_fixture.outcome == 'success'
+        continue-on-error: true
         env:
           SHOP_BASE_URL: http://127.0.0.1:18080
         run: |
@@ -340,6 +341,9 @@ jobs:
           PY
 
       - name: Verify saved native CI Tokyo address
+        id: native_address_persistence
+        if: always() && !cancelled() && steps.postcode_fixture.outcome == 'success'
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -352,6 +356,9 @@ jobs:
             runuser -g www-data -u www-data -- php /tmp/verify_native_address_persistence.php
 
       - name: Verify synthetic Tokyo address in an unpaid native order and Back Office view
+        id: native_order_persistence
+        if: always() && !cancelled() && steps.postcode_fixture.outcome == 'success'
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -969,7 +976,7 @@ jobs:
 
       - name: Enable run-scoped checkout only for the isolated order browser QA
         id: checkout_override
-        if: always() && !cancelled() && steps.shipping_free_admin_readback.outcome == 'success'
+        if: always() && !cancelled() && steps.shipping_free_admin_readback.outcome == 'success' && steps.postcode_lookup.outcome == 'success'
         continue-on-error: true
         shell: bash
         run: |
@@ -982,7 +989,7 @@ jobs:
 
       - name: Verify browser customer search, Japan checkout, and unpaid offline order
         id: checkout_customer_browser_qa
-        if: steps.checkout_override.outcome == 'success'
+        if: steps.postcode_lookup.outcome == 'success' && steps.checkout_override.outcome == 'success'
         continue-on-error: true
         shell: bash
         env:
@@ -1094,7 +1101,7 @@ jobs:
 
       - name: Verify zero shipping in Tokyo coupon and quantity checkout with Chromium
         id: shipping_free_customer_browser_qa
-        if: steps.shipping_free_admin_readback.outcome == 'success' && steps.checkout_override.outcome == 'success'
+        if: steps.shipping_free_admin_readback.outcome == 'success' && steps.postcode_lookup.outcome == 'success' && steps.checkout_override.outcome == 'success'
         continue-on-error: true
         shell: bash
         env:
@@ -1113,7 +1120,7 @@ jobs:
 
       - name: Verify zero shipping in Osaka mobile checkout with Chromium
         id: shipping_free_osaka_mobile_browser_qa
-        if: steps.shipping_free_admin_readback.outcome == 'success' && steps.checkout_override.outcome == 'success'
+        if: steps.shipping_free_admin_readback.outcome == 'success' && steps.postcode_lookup.outcome == 'success' && steps.checkout_override.outcome == 'success'
         continue-on-error: true
         shell: bash
         env:
@@ -1132,7 +1139,7 @@ jobs:
 
       - name: Verify tax-included taxable Japan checkout with the free carrier
         id: shipping_free_taxable_browser_qa
-        if: always() && !cancelled() && steps.shipping_free_admin_readback.outcome == 'success' && steps.checkout_override.outcome == 'success' && steps.tax_fixture.outcome == 'success'
+        if: always() && !cancelled() && steps.shipping_free_admin_readback.outcome == 'success' && steps.postcode_lookup.outcome == 'success' && steps.checkout_override.outcome == 'success' && steps.tax_fixture.outcome == 'success'
         continue-on-error: true
         shell: bash
         env:
@@ -1568,6 +1575,10 @@ jobs:
           SHIPPING_FREE_TAXABLE_BROWSER_QA_OUTCOME: ${{ steps.shipping_free_taxable_browser_qa.outcome }}
           SHIPPING_FREE_ORDER_PERSISTENCE_OUTCOME: ${{ steps.shipping_free_order_persistence.outcome }}
           SHIPPING_FREE_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.shipping_free_admin_browser_qa.outcome }}
+          POSTCODE_FIXTURE_OUTCOME: ${{ steps.postcode_fixture.outcome }}
+          POSTCODE_LOOKUP_OUTCOME: ${{ steps.postcode_lookup.outcome }}
+          NATIVE_ADDRESS_PERSISTENCE_OUTCOME: ${{ steps.native_address_persistence.outcome }}
+          NATIVE_ORDER_PERSISTENCE_OUTCOME: ${{ steps.native_order_persistence.outcome }}
           BRAND_BROWSER_QA_OUTCOME: ${{ steps.brand_browser_qa.outcome }}
           SHIPPING_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.shipping_admin_browser_qa.outcome }}
           RESET_EMAIL_BRAND_BROWSER_QA_OUTCOME: ${{ steps.reset_email_brand_browser_qa.outcome }}
@@ -1604,6 +1615,10 @@ jobs:
             "shipping_free_taxable_browser_qa=$SHIPPING_FREE_TAXABLE_BROWSER_QA_OUTCOME" \
             "shipping_free_order_persistence=$SHIPPING_FREE_ORDER_PERSISTENCE_OUTCOME" \
             "shipping_free_admin_browser_qa=$SHIPPING_FREE_ADMIN_BROWSER_QA_OUTCOME" \
+            "postcode_fixture=$POSTCODE_FIXTURE_OUTCOME" \
+            "postcode_lookup=$POSTCODE_LOOKUP_OUTCOME" \
+            "native_address_persistence=$NATIVE_ADDRESS_PERSISTENCE_OUTCOME" \
+            "native_order_persistence=$NATIVE_ORDER_PERSISTENCE_OUTCOME" \
             "brand=$BRAND_BROWSER_QA_OUTCOME" \
             "shipping_admin=$SHIPPING_ADMIN_BROWSER_QA_OUTCOME" \
             "reset_email_brand=$RESET_EMAIL_BRAND_BROWSER_QA_OUTCOME" \

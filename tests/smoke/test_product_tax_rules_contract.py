@@ -96,6 +96,29 @@ class ProductTaxRulesContractTests(unittest.TestCase):
         self.assertNotIn("Japan legal", source)
         self.assertNotIn("Japan statutory", source)
 
+    def test_tax_order_reconciliation_failure_reports_only_synthetic_money_fields(self) -> None:
+        integration = ROOT / "tests" / "catalog" / "verify_product_tax_price.php"
+        source = integration.read_text(encoding="utf-8")
+        for field in (
+            "order_total_paid_real",
+            "order_total_paid_tax_excl",
+            "order_total_paid_tax_incl",
+            "order_total_shipping_tax_excl",
+            "order_total_shipping_tax_incl",
+            "order_total_products_tax_excl",
+            "order_total_products_tax_incl",
+            "order_detail_tax_group_id",
+            "order_detail_tax_rate",
+            "order_detail_unit_tax_excl",
+            "order_detail_unit_tax_incl",
+            "order_detail_total_tax_excl",
+            "order_detail_total_tax_incl",
+        ):
+            with self.subTest(field=field):
+                self.assertIn(field, source)
+        self.assertRegex(source, r"json_encode\(\s*\$taxOrderMismatch")
+        self.assertIn("JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES", source)
+
 
 if __name__ == "__main__":
     unittest.main()

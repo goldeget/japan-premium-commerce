@@ -393,26 +393,64 @@ try {
         WHERE od.`id_order` = ' . (int) $orderId . ' AND od.`product_id` = ' . (int) $productId . ' LIMIT 1'
     ) : false;
     $orderDetail = is_array($detailRow) ? new OrderDetail((int) $detailRow['id_order_detail']) : false;
-    if (!($order instanceof Order)
-        || !Validate::isLoadedObject($order)
-        || (float) $order->total_paid_real !== 0.0
-        || abs((float) $order->total_paid_tax_excl - 1000.0) > 0.00001
-        || abs((float) $order->total_paid_tax_incl - 1100.0) > 0.00001
-        || abs((float) $order->total_shipping_tax_excl) > 0.00001
-        || abs((float) $order->total_shipping_tax_incl) > 0.00001
-        || abs((float) $order->total_products - 1000.0) > 0.00001
-        || abs((float) $order->total_products_wt - 1100.0) > 0.00001
-        || !($orderDetail instanceof OrderDetail)
-        || !Validate::isLoadedObject($orderDetail)
-        || (int) $orderDetail->product_quantity !== 1
-        || (int) $orderDetail->id_tax_rules_group !== $taxGroupId
-        || abs((float) $orderDetail->product_price - 1000.0) > 0.00001
-        || abs((float) $orderDetail->unit_price_tax_excl - 1000.0) > 0.00001
-        || abs((float) $orderDetail->unit_price_tax_incl - 1100.0) > 0.00001
-        || abs((float) $orderDetail->tax_rate - 10.0) > 0.00001
-        || abs((float) $orderDetail->total_price_tax_excl - 1000.0) > 0.00001
-        || abs((float) $orderDetail->total_price_tax_incl - 1100.0) > 0.00001) {
-        throw new RuntimeException('The unpaid CI-only order totals or OrderDetail do not reconcile to the JPY 1000/1100 synthetic tax line.');
+    $orderIsLoaded = $order instanceof Order && Validate::isLoadedObject($order);
+    $orderDetailIsLoaded = $orderDetail instanceof OrderDetail && Validate::isLoadedObject($orderDetail);
+    $observedTaxOrder = [
+        'order_loaded' => $orderIsLoaded,
+        'order_total_paid_real' => $orderIsLoaded ? (float) $order->total_paid_real : null,
+        'order_total_paid_tax_excl' => $orderIsLoaded ? (float) $order->total_paid_tax_excl : null,
+        'order_total_paid_tax_incl' => $orderIsLoaded ? (float) $order->total_paid_tax_incl : null,
+        'order_total_shipping_tax_excl' => $orderIsLoaded ? (float) $order->total_shipping_tax_excl : null,
+        'order_total_shipping_tax_incl' => $orderIsLoaded ? (float) $order->total_shipping_tax_incl : null,
+        'order_total_products_tax_excl' => $orderIsLoaded ? (float) $order->total_products : null,
+        'order_total_products_tax_incl' => $orderIsLoaded ? (float) $order->total_products_wt : null,
+        'order_detail_loaded' => $orderDetailIsLoaded,
+        'order_detail_quantity' => $orderDetailIsLoaded ? (int) $orderDetail->product_quantity : null,
+        'order_detail_tax_group_id' => $orderDetailIsLoaded ? (int) $orderDetail->id_tax_rules_group : null,
+        'order_detail_product_price' => $orderDetailIsLoaded ? (float) $orderDetail->product_price : null,
+        'order_detail_unit_tax_excl' => $orderDetailIsLoaded ? (float) $orderDetail->unit_price_tax_excl : null,
+        'order_detail_unit_tax_incl' => $orderDetailIsLoaded ? (float) $orderDetail->unit_price_tax_incl : null,
+        'order_detail_tax_rate' => $orderDetailIsLoaded ? (float) $orderDetail->tax_rate : null,
+        'order_detail_total_tax_excl' => $orderDetailIsLoaded ? (float) $orderDetail->total_price_tax_excl : null,
+        'order_detail_total_tax_incl' => $orderDetailIsLoaded ? (float) $orderDetail->total_price_tax_incl : null,
+    ];
+    $expectedTaxOrder = [
+        'order_loaded' => true,
+        'order_total_paid_real' => 0.0,
+        'order_total_paid_tax_excl' => 1000.0,
+        'order_total_paid_tax_incl' => 1100.0,
+        'order_total_shipping_tax_excl' => 0.0,
+        'order_total_shipping_tax_incl' => 0.0,
+        'order_total_products_tax_excl' => 1000.0,
+        'order_total_products_tax_incl' => 1100.0,
+        'order_detail_loaded' => true,
+        'order_detail_quantity' => 1,
+        'order_detail_tax_group_id' => $taxGroupId,
+        'order_detail_product_price' => 1000.0,
+        'order_detail_unit_tax_excl' => 1000.0,
+        'order_detail_unit_tax_incl' => 1100.0,
+        'order_detail_tax_rate' => 10.0,
+        'order_detail_total_tax_excl' => 1000.0,
+        'order_detail_total_tax_incl' => 1100.0,
+    ];
+    $taxOrderMismatch = [];
+    foreach ($expectedTaxOrder as $field => $expected) {
+        $actual = $observedTaxOrder[$field] ?? null;
+        $matches = is_bool($expected)
+            ? $actual === $expected
+            : (is_numeric($actual) && abs((float) $actual - (float) $expected) <= 0.00001);
+        if (!$matches) {
+            $taxOrderMismatch[$field] = ['expected' => $expected, 'actual' => $actual];
+        }
+    }
+    if ($taxOrderMismatch !== []) {
+        throw new RuntimeException(
+            'The unpaid CI-only order does not reconcile to the JPY 1000/1100 synthetic tax line; '
+            . 'observed mismatches=' . json_encode(
+                $taxOrderMismatch,
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+            )
+        );
     }
     $deliveryAddress = new Address((int) $order->id_address_delivery);
     $orderCarrierZoneCount = (int) Db::getInstance()->getValue(
