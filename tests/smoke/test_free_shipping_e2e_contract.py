@@ -470,9 +470,84 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             "#orderTaxesTotal",
             "#orderTotal",
             "#shipping-grid-table .carrier-price",
+            "_expected_admin_order_totals(order, verified)",
+            "_assert_unknown_admin_tax_display(",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, admin_view)
+
+    def test_admin_order_totals_keep_unassigned_tax_unknown_and_require_taxable_tax(self) -> None:
+        source = ast.parse(BROWSER.read_text(encoding="utf-8"))
+        expectation = next(
+            node for node in source.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_expected_admin_order_totals"
+        )
+        unknown_tax_check = next(
+            node for node in source.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_assert_unknown_admin_tax_display"
+        )
+        namespace: dict[str, object] = {}
+        exec(
+            compile(ast.Module(body=[expectation, unknown_tax_check], type_ignores=[]), str(BROWSER), "exec"),
+            namespace,
+        )
+        expected_admin_totals = namespace["_expected_admin_order_totals"]
+
+        unassigned = expected_admin_totals(
+            {
+                "product_tax_rule_group_id": 0,
+                "browser_totals": {
+                    "tax": None,
+                    "products_tax_incl": 1100,
+                    "total_tax_incl": 1100,
+                },
+            },
+            {"total_paid_tax_incl": 1100, "total_paid_tax_excl": 1100},
+        )
+        self.assertEqual(unassigned, {"products": 1100, "shipping": 0, "total": 1100})
+        self.assertNotIn("tax", unassigned)
+        namespace["_assert_unknown_admin_tax_display"]([""])
+        with self.assertRaisesRegex(AssertionError, "must remain blank"):
+            namespace["_assert_unknown_admin_tax_display"](["¥0"])
+
+        taxable = expected_admin_totals(
+            {
+                "product_tax_rule_group_id": 7,
+                "browser_totals": {
+                    "tax": 50,
+                    "products_tax_incl": 550,
+                    "total_tax_incl": 550,
+                },
+            },
+            {"total_paid_tax_incl": 550, "total_paid_tax_excl": 500},
+        )
+        self.assertEqual(taxable, {"products": 550, "shipping": 0, "total": 550, "tax": 50})
+
+        with self.assertRaisesRegex(AssertionError, "unassigned tax"):
+            expected_admin_totals(
+                {
+                    "product_tax_rule_group_id": 0,
+                    "browser_totals": {
+                        "tax": 0,
+                        "products_tax_incl": 1100,
+                        "total_tax_incl": 1100,
+                    },
+                },
+                {"total_paid_tax_incl": 1100, "total_paid_tax_excl": 1100},
+            )
+
+        with self.assertRaisesRegex(AssertionError, "must not be classified as exempt"):
+            expected_admin_totals(
+                {
+                    "product_tax_rule_group_id": 0,
+                    "browser_totals": {
+                        "tax": None,
+                        "products_tax_incl": 1100,
+                        "total_tax_incl": 1100,
+                    },
+                },
+                {"total_paid_tax_incl": 1100, "total_paid_tax_excl": 1000},
+            )
 
     def test_order_confirmation_totals_are_checked_before_history_navigation(self) -> None:
         browser = BROWSER.read_text(encoding="utf-8")

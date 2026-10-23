@@ -1476,6 +1476,49 @@ def _parse_order_amount(driver, selector: str) -> int:
     return _parse_yen(_wait_present(driver, selector).text)
 
 
+def _expected_admin_order_totals(
+    order: dict[str, object],
+    verified: dict[str, object],
+) -> dict[str, int]:
+    browser_totals = order["browser_totals"]
+    native_tax = round(
+        float(verified["total_paid_tax_incl"]) - float(verified["total_paid_tax_excl"])
+    )
+    if native_tax < 0:
+        raise AssertionError("the native saved order has a negative tax amount")
+
+    product_tax_group_id = int(order.get("product_tax_rule_group_id", 0))
+    browser_tax = browser_totals.get("tax")
+    expected = {
+        "products": int(browser_totals["products_tax_incl"]),
+        "shipping": 0,
+        "total": int(browser_totals["total_tax_incl"]),
+    }
+    if product_tax_group_id > 0:
+        if native_tax <= 0:
+            raise AssertionError("the configured taxable order has no persisted tax amount")
+        if browser_tax is not None and int(browser_tax) != native_tax:
+            raise AssertionError(
+                f"displayed tax amount ¥{browser_tax} differs from native saved tax ¥{native_tax}"
+            )
+        expected["tax"] = native_tax
+    else:
+        if native_tax != 0:
+            raise AssertionError(
+                "the unassigned product tax rule has persisted tax; it must not be classified as exempt"
+            )
+        if browser_tax is not None:
+            raise AssertionError(
+                "unassigned tax must remain unknown in customer checkout totals, not be recorded as an amount"
+            )
+    return expected
+
+
+def _assert_unknown_admin_tax_display(tax_values: list[str]) -> None:
+    if any(value.strip() for value in tax_values):
+        raise AssertionError("unassigned tax display must remain blank, not claim a tax amount")
+
+
 def run_free_carrier_admin_order_view() -> None:
     validate_isolated_ci_compose_project()
     validate_loopback_admin_targets()
@@ -1508,31 +1551,22 @@ def run_free_carrier_admin_order_view() -> None:
             if not verified_path.is_file():
                 raise AssertionError(f"{order_kind} native order verification artifact is missing")
             verified = json.loads(verified_path.read_text(encoding="utf-8"))
-            native_tax = round(
-                float(verified["total_paid_tax_incl"]) - float(verified["total_paid_tax_excl"])
-            )
-            if native_tax < 0:
-                raise AssertionError(f"{order_kind} native saved order has a negative tax amount")
-            if int(order.get("product_tax_rule_group_id", 0)) > 0 and native_tax <= 0:
-                raise AssertionError(f"{order_kind} configured taxable order has no persisted tax amount")
-            browser_tax = browser_totals.get("tax")
-            if browser_tax is not None and int(browser_tax) != native_tax:
-                raise AssertionError(
-                    f"{order_kind} displayed tax amount ¥{browser_tax} differs from native saved tax ¥{native_tax}"
-                )
-            expected = {
-                "products": int(browser_totals["products_tax_incl"]),
-                "shipping": 0,
-                "tax": native_tax,
-                "total": int(browser_totals["total_tax_incl"]),
-            }
+            expected = _expected_admin_order_totals(order, verified)
             selectors = {
                 "products": "#orderProductsTotal",
                 "shipping": "#orderShippingTotal",
                 "tax": "#orderTaxesTotal",
                 "total": "#orderTotal",
             }
-            actual = {key: _parse_order_amount(driver, selector) for key, selector in selectors.items()}
+            actual = {}
+            for key, selector in selectors.items():
+                if key not in expected:
+                    tax_elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                    _assert_unknown_admin_tax_display(
+                        [element.text for element in tax_elements if element.is_displayed()]
+                    )
+                    continue
+                actual[key] = _parse_order_amount(driver, selector)
             if actual != expected:
                 raise AssertionError(
                     f"{order_kind} Back Office totals {actual} differ from customer checkout {expected}"
