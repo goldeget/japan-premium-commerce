@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import html
 import json
 import math
@@ -30,14 +29,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 BASE = os.environ["SHOP_BASE_URL"].rstrip("/")
 MAILPIT_API = os.environ["MAILPIT_API_URL"].rstrip("/")
 DEST = Path(os.environ["QA_ARTIFACT_DIR"])
-OFFICIAL_LOGO = (
-    Path(__file__).resolve().parents[2]
-    / "assets"
-    / "brand"
-    / "ordenowa"
-    / "official_originals"
-    / "ORDENOWA-logo.png"
-)
 RUN_ID = re.sub(r"[^0-9]", "", os.environ["GITHUB_RUN_ID"])
 RUN_ATTEMPT = re.sub(r"[^0-9]", "", os.environ["GITHUB_RUN_ATTEMPT"])
 DEST.mkdir(parents=True, exist_ok=True)
@@ -71,12 +62,6 @@ def request_json(url: str) -> dict:
     if not isinstance(value, dict):
         raise ValueError("unexpected mail capture response")
     return value
-
-
-def request_bytes(url: str) -> bytes:
-    request = Request(url, headers={"Accept": "*/*"})
-    with urlopen(request, timeout=10) as response:
-        return response.read()
 
 
 def message_recipients(message: dict) -> set[str]:
@@ -1989,7 +1974,6 @@ def assert_native_form_valid(driver: webdriver.Chrome, form, form_label: str) ->
 
 
 def submit_login(driver: webdriver.Chrome, email_address: str, password: str) -> None:
-    driver.get(f"{BASE}/index.php?controller=authentication")
     fill(driver, '#login-form input[name="email"]', email_address)
     fill(driver, '#login-form input[name="password"]', password)
     visible(driver, "#submit-login").click()
@@ -1997,7 +1981,6 @@ def submit_login(driver: webdriver.Chrome, email_address: str, password: str) ->
 
 
 def assert_login_rejected(driver: webdriver.Chrome, email_address: str, password: str) -> None:
-    driver.get(f"{BASE}/index.php?controller=authentication")
     fill(driver, '#login-form input[name="email"]', email_address)
     fill(driver, '#login-form input[name="password"]', password)
     visible(driver, "#submit-login").click()
@@ -2138,7 +2121,6 @@ def run_viewport(width: int, height: int, label: str) -> bool:
 
         stage = "email_login"
         logout(driver)
-        driver.get(f"{BASE}/index.php?controller=authentication")
         email_field = visible(driver, '#login-form input[name="email"]')
         if email_field.get_attribute("type") != "email":
             raise AssertionError("customer login is not email-based")
@@ -2151,38 +2133,23 @@ def run_viewport(width: int, height: int, label: str) -> bool:
 
         stage = "password_reset_request"
         logout(driver)
-        driver.get(f"{BASE}/index.php?controller=password")
+        recovery_link = visible(driver, "#login-form a[href]")
+        recovery_url = urljoin(driver.current_url, recovery_link.get_attribute("href") or "")
+        recovery_location = urlparse(recovery_url)
+        base_location = urlparse(BASE)
+        if (
+            recovery_location.scheme != base_location.scheme
+            or recovery_location.hostname != base_location.hostname
+            or recovery_location.port != base_location.port
+        ):
+            raise AssertionError("the password recovery link changed the isolated shop origin")
+        click_centered(driver, recovery_link)
         assert_canonical_static_route(driver, "password-reset")
         fill(driver, '#email', account_email)
         visible(driver, "#send-reset-link").click()
         driver.save_screenshot(str(DEST / f"{label}-password-reset-requested.png"))
-        reset_url, reset_message = reset_link_for(account_email)
-        if "cid:shop_logo" not in str(reset_message.get("HTML") or ""):
-            raise AssertionError("password reset email does not render the approved inline ORDENOWA logo")
-        logo_hash = hashlib.sha256(OFFICIAL_LOGO.read_bytes()).hexdigest()
-        expected_logo = request_bytes(f"{BASE}/img/ordenowa/versions/{logo_hash}/email-logo.png")
-        inline_logo = next(
-            (
-                attachment
-                for attachment in reset_message.get("Inline", [])
-                if isinstance(attachment, dict)
-                and str(attachment.get("ContentID", "")).strip("<>").lower() == "shop_logo"
-            ),
-            None,
-        )
-        if not isinstance(inline_logo, dict) or inline_logo.get("ContentType") != "image/png":
-            raise AssertionError("password reset email is missing the inline ORDENOWA PNG attachment")
-        message_id = reset_message.get("ID") or reset_message.get("Id")
-        part_id = inline_logo.get("PartID")
-        if not isinstance(message_id, str) or not isinstance(part_id, str):
-            raise AssertionError("Mailpit did not identify the inline ORDENOWA logo part")
-        attachment_url = (
-            f"{MAILPIT_API}/api/v1/message/{quote(message_id, safe='')}"
-            f"/part/{quote(part_id, safe='')}"
-        )
-        sent_logo = request_bytes(attachment_url)
-        if hashlib.sha256(sent_logo).digest() != hashlib.sha256(expected_logo).digest():
-            raise AssertionError("password reset email logo bytes do not match the published ORDENOWA derivative")
+        # The independent reset-email brand browser step verifies the inline logo.
+        reset_url, _ = reset_link_for(account_email)
 
         stage = "password_reset"
         parsed_reset = urlparse(reset_url)
@@ -2200,6 +2167,8 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         visible(driver, 'button[type="submit"][name="submit"]').click()
 
         stage = "password_reset_old_password_rejected"
+        assert_my_page(driver, f"CI-{label.title()}")
+        logout(driver)
         assert_login_rejected(driver, account_email, initial_password)
 
         stage = "password_reset_login"

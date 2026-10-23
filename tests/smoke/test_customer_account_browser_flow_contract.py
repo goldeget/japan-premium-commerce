@@ -101,14 +101,33 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn("registration_location.hostname != base_location.hostname", validation)
         self.assertIn("click_centered(driver, registration_link)", self.blocks["registration_link_click"])
 
-    def test_mailpit_reset_checks_captured_link_logo_bytes_and_password_change(self) -> None:
+    def test_login_reuses_the_current_generated_route_without_direct_authentication_gets(self) -> None:
+        self.assertNotIn('driver.get(f"{BASE}/index.php?controller=authentication")', self.source)
+        self.assertNotIn('driver.get(f"{BASE}/index.php?controller=password")', self.source)
+        for helper_name in ("submit_login", "assert_login_rejected"):
+            helper = self.source.split(f"def {helper_name}", 1)[1].split("\n\ndef ", 1)[0]
+            self.assertNotIn("driver.get(", helper)
+            self.assertIn("fill(driver, '#login-form input[name=\"email\"]'", helper)
+        old_password = self.blocks["password_reset_old_password_rejected"]
+        self.assertLess(old_password.index("assert_my_page(driver,"), old_password.index("logout(driver)"))
+        self.assertLess(old_password.index("logout(driver)"), old_password.index("assert_login_rejected(driver,"))
+
+    def test_mailpit_reset_checks_captured_link_and_password_change_with_separate_logo_qa(self) -> None:
         reset_request = self.blocks["password_reset_request"]
         self.assertIn("reset_link_for(account_email)", reset_request)
-        self.assertIn('"cid:shop_logo"', reset_request)
-        self.assertIn('attachment.get("ContentID", "")', reset_request)
-        self.assertIn('inline_logo.get("ContentType") != "image/png"', reset_request)
-        self.assertIn("hashlib.sha256(sent_logo).digest()", reset_request)
-        self.assertIn("hashlib.sha256(expected_logo).digest()", reset_request)
+        self.assertIn('visible(driver, "#login-form a[href]")', reset_request)
+        self.assertIn('recovery_link.get_attribute("href")', reset_request)
+        self.assertIn("recovery_location.hostname != base_location.hostname", reset_request)
+        self.assertIn("click_centered(driver, recovery_link)", reset_request)
+        self.assertIn('assert_canonical_static_route(driver, "password-reset")', reset_request)
+        self.assertNotIn('"cid:shop_logo"', reset_request)
+        self.assertNotIn("ContentID", reset_request)
+        self.assertNotIn("hashlib.sha256", reset_request)
+        workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
+        self.assertLess(
+            workflow.index("tests/e2e/verify_reset_email_brand_browser.py"),
+            workflow.index("tests/e2e/verify_customer_account_browser.py"),
+        )
 
         mailpit_helper = self.source.split("def reset_link_for", 1)[1].split("def visible", 1)[0]
         self.assertIn("/api/v1/messages?", mailpit_helper)

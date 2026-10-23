@@ -99,9 +99,11 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("registration form is missing the required", account_flow)
         self.assertIn("registration form has invalid controls:", account_flow)
         self.assertIn("parsed_reset.scheme != base.scheme", account_flow, "password reset must remain on the isolated shop protocol")
-        self.assertIn('"cid:shop_logo"', account_flow, "captured reset email must render the approved brand logo")
-        self.assertIn('attachment.get("ContentID", "")', account_flow)
-        self.assertIn("published ORDENOWA derivative", account_flow)
+        reset_email_brand = (ROOT / "tests" / "e2e" / "verify_reset_email_brand_browser.py").read_text(encoding="utf-8")
+        self.assertNotIn('"cid:shop_logo"', account_flow, "account flow must not assume Symfony preserves the logical Content-ID")
+        self.assertIn("assert_published_inline_logo(message, set_logo_assertion_stage)", reset_email_brand)
+        self.assertIn("hashlib.sha256(sent_logo)", reset_email_brand)
+        self.assertIn("published ORDENOWA derivative", reset_email_brand)
         self.assertIn('assert_canonical_static_route(driver, "identity")', account_flow)
         self.assertGreaterEqual(account_flow.count('assert_canonical_static_route(driver, "password-reset")'), 2)
         self.assertIn("actual_path != expected_path", account_flow)
@@ -112,7 +114,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("def assert_my_page", account_flow)
         my_page = account_flow.split("def assert_my_page", 1)[1].split("def prepare_required_registration_fields", 1)[0]
         logout = account_flow.split("def logout", 1)[1].split("def run_viewport", 1)[0]
-        self.assertEqual(account_flow.count("        assert_my_page(driver,"), 3)
+        self.assertEqual(account_flow.count("        assert_my_page(driver,"), 4)
         for selector in ("identity_main_link", "signout_link"):
             self.assertIn(selector, my_page)
         self.assertIn("expected_first_name", my_page)
