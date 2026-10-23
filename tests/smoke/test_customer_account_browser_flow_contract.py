@@ -240,6 +240,49 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             )
         )
 
+    def test_generated_route_match_distinguishes_language_but_ignores_back(self) -> None:
+        helper_node = next(
+            node
+            for node in ast.parse(self.source).body
+            if isinstance(node, ast.FunctionDef) and node.name == "safe_generated_route_match"
+        )
+        namespace = {
+            "BASE": "https://shop.example.test/shop",
+            "parse_qs": parse_qs,
+            "unquote": unquote,
+            "urlparse": urlparse,
+        }
+        exec(compile(ast.Module(body=[helper_node], type_ignores=[]), str(ACCOUNT_FLOW), "exec"), namespace)
+        matches = namespace["safe_generated_route_match"]
+
+        for language_key, expected_language, other_language in (
+            ("id_lang", "2", "1"),
+            ("isolang", "ko", "ja"),
+            ("lang", "ko", "ja"),
+        ):
+            with self.subTest(language_key=language_key):
+                self.assertTrue(
+                    matches(
+                        f"https://shop.example.test/shop/ko/register?{language_key}={expected_language}&back=%2Fja",
+                        f"https://shop.example.test/shop/ko/register?{language_key}={expected_language}&back=%2Fko",
+                    )
+                )
+                self.assertFalse(
+                    matches(
+                        f"https://shop.example.test/shop/ko/register?{language_key}={other_language}&back=%2Fko",
+                        f"https://shop.example.test/shop/ko/register?{language_key}={expected_language}&back=%2Fko",
+                    )
+                )
+
+    def test_registration_form_requires_korean_document_language_after_navigation(self) -> None:
+        registration_form = self.blocks["registration_form_load"]
+        self.assertIn('get_attribute("lang")', registration_form)
+        self.assertIn('startswith("ko")', registration_form)
+        emitter = self.source.split("def emit_registration_diagnostics", 1)[1].split(
+            "\n\ndef collect_profile_update_diagnostics", 1
+        )[0]
+        self.assertIn('"registration_document_language"', emitter)
+
     def test_logout_diagnostics_report_only_safe_stages_and_route_markers(self) -> None:
         logout = self.source.split("def logout", 1)[1].split("def run_viewport", 1)[0]
         collector = self.source.split("def collect_email_login_diagnostics", 1)[1].split(

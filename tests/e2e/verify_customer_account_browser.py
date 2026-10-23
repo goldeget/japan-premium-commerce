@@ -1347,9 +1347,19 @@ def safe_generated_route_match(actual_url: object, expected_url: object) -> bool
         expected_path = unquote(expected.path or "/", errors="strict").rstrip("/") or "/"
         if actual_path != expected_path:
             return False
-        actual_controller = parse_qs(actual.query, keep_blank_values=True).get("controller", [])
-        expected_controller = parse_qs(expected.query, keep_blank_values=True).get("controller", [])
-        return actual_controller == expected_controller
+        actual_query = parse_qs(actual.query, keep_blank_values=True)
+        expected_query = parse_qs(expected.query, keep_blank_values=True)
+        if actual_query.get("controller", []) != expected_query.get("controller", []):
+            return False
+        for key in ("id_lang", "isolang", "lang"):
+            actual_language_values = actual_query.get(key, [])
+            expected_language_values = expected_query.get(key, [])
+            if key in {"isolang", "lang"}:
+                actual_language_values = [value.casefold() for value in actual_language_values]
+                expected_language_values = [value.casefold() for value in expected_language_values]
+            if actual_language_values != expected_language_values:
+                return False
+        return True
     except (TypeError, UnicodeDecodeError, ValueError):
         return False
 
@@ -1815,6 +1825,9 @@ def emit_registration_diagnostics(
         "registration_after_click_route_metadata": state.get("after_click_route_metadata", {}),
         "registration_target_route_matched": safe_diagnostic_boolean(
             state.get("target_route_matched")
+        ),
+        "registration_document_language": safe_diagnostic_name(
+            state.get("document_language", "")
         ),
         "registration_url_changed": safe_diagnostic_boolean(state.get("url_changed")),
         "registration_center_unobstructed": safe_diagnostic_boolean(
@@ -2490,6 +2503,14 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             registration_state["navigation_events"] = document_navigation_events(driver)
         stage = "registration_form_load"
         set_registration_control(failure_control, "customer-form", "form")
+        registration_document_language = (
+            driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or ""
+        ).lower()
+        registration_state["document_language"] = safe_diagnostic_name(
+            registration_document_language
+        )
+        if not registration_document_language.startswith("ko"):
+            raise AssertionError("the generated registration route did not preserve Korean")
         form = visible(driver, "#customer-form")
         stage = "registration_required_controls"
         failure_control = {"name": "", "type": ""}
