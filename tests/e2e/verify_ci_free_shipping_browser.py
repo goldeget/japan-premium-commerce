@@ -202,12 +202,23 @@ def _open_shipping_settings_tab(driver) -> None:
     checkout.click_at_center(driver, shipping_tab)
 
 
+def _open_general_settings_tab(driver) -> None:
+    general_tab = _wait_visible(
+        driver,
+        'a[href="#carrier_general_settings-tab"]',
+    )
+    checkout.click_at_center(driver, general_tab)
+
+
 def _fill_free_carrier_form(
     driver,
     name: str,
     stage_callback: Callable[[str], None] | None = None,
 ) -> None:
     mark_stage = stage_callback or (lambda _stage: None)
+    mark_stage("open_general_settings_tab")
+    _open_general_settings_tab(driver)
+
     mark_stage("set_carrier_name")
     _set_text(driver, 'input[name="carrier[general_settings][name]"]', name)
 

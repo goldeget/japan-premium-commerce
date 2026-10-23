@@ -296,9 +296,18 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         )[0]
         self.assertIn('a[href="#carrier_shipping_settings-tab"]', open_tab)
         self.assertIn("checkout.click_at_center(driver, shipping_tab)", open_tab)
+        general_tab = browser.split("def _open_general_settings_tab(", 1)[1].split(
+            "def _fill_free_carrier_form(", 1
+        )[0]
+        self.assertIn('a[href="#carrier_general_settings-tab"]', general_tab)
+        self.assertIn("checkout.click_at_center(driver, general_tab)", general_tab)
         form_fill = browser.split("def _fill_free_carrier_form(", 1)[1].split(
             "def _assert_free_carrier_form(", 1
         )[0]
+        self.assertLess(
+            form_fill.index("_open_general_settings_tab(driver)"),
+            form_fill.index('input[name="carrier[general_settings][name]"]'),
+        )
         tab_activation = form_fill.index("_open_shipping_settings_tab(driver)")
         zone_selection = form_fill.index("_select_japan_zone(driver, JAPAN_ZONE_ID)")
         free_shipping = form_fill.index('_set_switch(driver, "carrier[shipping_settings][is_free]", True)')
