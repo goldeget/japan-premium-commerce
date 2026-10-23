@@ -95,7 +95,7 @@ def visit(driver: webdriver.Chrome, path: str) -> None:
 
 
 def product_url() -> str:
-    return BASE + "/index.php?" + urlencode(
+    return "/index.php?" + urlencode(
         {"controller": "product", "id_product": PRODUCT_ID}
     )
 

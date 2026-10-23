@@ -1,8 +1,11 @@
 """Lock in the standalone Chromium cart controls QA without Docker."""
 from __future__ import annotations
 
+import ast
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import urlencode, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -68,6 +71,49 @@ class CartControlsBrowserContractTests(unittest.TestCase):
     def test_cart_controls_flow_does_not_open_checkout_or_payment(self) -> None:
         self.assertNotIn('controller=order', self.source)
         self.assertNotIn("ps_checkpayment", self.source)
+
+    def test_product_url_is_relative_and_visit_prefixes_shop_base_once(self) -> None:
+        tree = ast.parse(self.source, filename=str(CART_CONTROLS_E2E))
+        function_nodes = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in {"product_url", "visit"}
+        ]
+        self.assertEqual({node.name for node in function_nodes}, {"product_url", "visit"})
+
+        class FakeDriver:
+            url = ""
+
+            def get(self, url: str) -> None:
+                self.url = url
+
+            def execute_script(self, _script: str) -> str:
+                return "complete"
+
+        class ImmediateWait:
+            def __init__(self, driver: FakeDriver, _timeout: int) -> None:
+                self.driver = driver
+
+            def until(self, predicate):
+                return predicate(self.driver)
+
+        namespace = {
+            "BASE": "http://localhost:18080",
+            "PRODUCT_ID": 123,
+            "urlencode": urlencode,
+            "webdriver": SimpleNamespace(Chrome=FakeDriver),
+            "WebDriverWait": ImmediateWait,
+        }
+        module = ast.Module(body=function_nodes, type_ignores=[])
+        exec(compile(ast.fix_missing_locations(module), str(CART_CONTROLS_E2E), "exec"), namespace)
+
+        path = namespace["product_url"]()
+        self.assertTrue(path.startswith("/index.php?"))
+        self.assertEqual(urlparse(path).scheme, "")
+
+        driver = FakeDriver()
+        namespace["visit"](driver, path)
+        self.assertEqual(driver.url, "http://localhost:18080" + path)
+        self.assertEqual(driver.url.count("http://"), 1)
 
 
 if __name__ == "__main__":
