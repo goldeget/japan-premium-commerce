@@ -17,6 +17,7 @@ try:
     from selenium.common.exceptions import TimeoutException
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.common.by import By
+    from selenium.webdriver.remote.websocket_connection import WebSocketConnection
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.ui import WebDriverWait
 except ImportError:  # Pure manifest contract helpers remain importable without Selenium.
@@ -24,6 +25,7 @@ except ImportError:  # Pure manifest contract helpers remain importable without 
     TimeoutException = Exception
     Options = None
     By = None
+    WebSocketConnection = None
     EC = None
     WebDriverWait = None
 
@@ -423,6 +425,47 @@ def safe_cdp_operation(method: str) -> str:
     return operation if re.fullmatch(r"[a-z0-9_]+", operation) else "unknown"
 
 
+def local_browser_devtools_url(driver: webdriver.Chrome) -> str:
+    """Return Selenium's loopback browser endpoint without importing versioned CDP bindings."""
+    capabilities = getattr(driver, "capabilities", None)
+    websocket_url = capabilities.get("se:cdp") if isinstance(capabilities, dict) else None
+    if not isinstance(websocket_url, str) or not websocket_url:
+        raise ChromeBrowserCdpError(
+            "Chrome did not expose a local DevTools websocket",
+            diagnostic_code="devtools_endpoint_missing",
+        )
+    try:
+        parsed = urlparse(websocket_url)
+        hostname = (parsed.hostname or "").casefold().rstrip(".")
+        port = parsed.port
+    except (TypeError, ValueError):
+        raise ChromeBrowserCdpError(
+            "Chrome DevTools endpoint is malformed",
+            diagnostic_code="devtools_endpoint_invalid",
+        ) from None
+    try:
+        is_loopback = ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        is_loopback = hostname == "localhost"
+
+    if (
+        parsed.scheme != "ws"
+        or not is_loopback
+        or port is None
+        or not 1 <= port <= 65535
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or re.fullmatch(r"/devtools/browser/[^/]+", parsed.path) is None
+    ):
+        raise ChromeBrowserCdpError(
+            "Chrome DevTools endpoint is not a local browser websocket",
+            diagnostic_code="devtools_endpoint_invalid",
+        )
+    return websocket_url
+
+
 def execute_browser_cdp_command(
     connection,
     method: str,
@@ -466,8 +509,14 @@ class ChromeBrowserCdp:
 
     @classmethod
     def connect(cls, driver: webdriver.Chrome) -> "ChromeBrowserCdp":
+        if WebSocketConnection is None:
+            raise ChromeBrowserCdpError(
+                "Selenium websocket support is unavailable",
+                diagnostic_code="devtools_websocket_unavailable",
+            )
+        websocket_url = local_browser_devtools_url(driver)
         try:
-            _devtools, connection = driver.start_devtools()
+            connection = WebSocketConnection(websocket_url)
         except Exception as error:
             raise ChromeBrowserCdpError(
                 "Chrome DevTools websocket could not be opened",
@@ -682,6 +731,73 @@ def click_native_when_unobstructed(driver: webdriver.Chrome, element) -> None:
     element.click()
 
 
+def add_isolated_product_to_customer_cart(
+    driver: webdriver.Chrome,
+    base_url: str,
+    product_id: int,
+    set_stage: Callable[[str], None],
+) -> None:
+    """Add the CI fixture product so the authenticated checkout route renders real content."""
+    if product_id < 1:
+        raise AssertionError("PWA private-order QA requires the isolated synthetic product id")
+    product_url = urljoin(
+        base_url + "/",
+        f"index.php?controller=product&id_product={product_id}",
+    )
+    if not same_origin(base_url, product_url):
+        raise AssertionError("synthetic PWA product escaped the isolated shop")
+
+    set_stage("customer_order_product_navigation")
+    driver.get(product_url)
+    WebDriverWait(driver, 30).until(
+        lambda browser: browser.execute_script("return document.readyState") == "complete"
+    )
+    product_ids = [
+        field.get_attribute("value")
+        for field in driver.find_elements(By.CSS_SELECTOR, 'input[name="id_product"]')
+    ]
+    if str(product_id) not in product_ids:
+        raise AssertionError("PWA customer product page did not match the isolated product id")
+
+    set_stage("customer_order_product_add")
+    add_button = wait_visible(driver, 'button[data-ps-ref="add-to-cart"]')
+    click_native_when_unobstructed(driver, add_button)
+    modal = WebDriverWait(driver, 25, poll_frequency=0.2).until(
+        lambda browser: next(
+            (
+                candidate
+                for candidate in browser.find_elements(By.CSS_SELECTOR, '[data-ps-ref="blockcart-modal"]')
+                if candidate.is_displayed()
+                and candidate.find_elements(By.CSS_SELECTOR, ".blockcart-modal__name")
+                and "[CI ONLY]" in candidate.find_element(By.CSS_SELECTOR, ".blockcart-modal__name").text
+            ),
+            False,
+        ),
+        message="isolated PWA product was not added to the customer cart",
+    )
+    proceed = next(
+        (
+            link
+            for link in modal.find_elements(By.CSS_SELECTOR, ".modal-footer > a.btn-primary")
+            if link.is_displayed() and link.is_enabled()
+        ),
+        None,
+    )
+    if proceed is None:
+        raise AssertionError("PWA cart confirmation has no visible cart link")
+    click_native_when_unobstructed(driver, proceed)
+    WebDriverWait(driver, 30, poll_frequency=0.2).until(
+        lambda browser: [
+            item.get_attribute("data-id-product")
+            for item in browser.find_elements(
+                By.CSS_SELECTOR,
+                '.cart__item [data-link-action="delete-from-cart"][data-id-product]',
+            )
+        ] == [str(product_id)],
+        message="PWA customer cart contents could not be confirmed",
+    )
+
+
 def create_session_customer(
     driver: webdriver.Chrome,
     base_url: str,
@@ -837,7 +953,14 @@ def verify_logout_protection(
     assert_empty_cache_storage(driver, "account route after browser back")
 
 
-def run_viewport(base_url: str, artifact_dir: Path, width: int, height: int, label: str) -> None:
+def run_viewport(
+    base_url: str,
+    artifact_dir: Path,
+    width: int,
+    height: int,
+    label: str,
+    isolated_product_id: int,
+) -> None:
     options = Options()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
@@ -915,6 +1038,13 @@ def run_viewport(base_url: str, artifact_dir: Path, width: int, height: int, lab
             password = f"Pwa-CI-{uuid.uuid4().hex[:20]}!"
             account_url = create_session_customer(
                 driver, base_url, email, password, set_stage=update_offline_stage
+            )
+            stage = "customer_order_cart_setup"
+            add_isolated_product_to_customer_cart(
+                driver,
+                base_url,
+                isolated_product_id,
+                set_stage=update_offline_stage,
             )
             stage = "customer_private_routes"
             for route_stage, route_label, route_url in (
@@ -1046,10 +1176,15 @@ def main() -> int:
     if parsed.scheme not in {"http", "https"}:
         print("FAIL: PWA QA requires HTTP or HTTPS on the isolated loopback origin.", file=sys.stderr)
         return 2
+    product_id_text = os.environ.get("CI_TEST_PRODUCT_ID", "")
+    if re.fullmatch(r"[1-9][0-9]*", product_id_text) is None:
+        print("FAIL: PWA QA requires the isolated synthetic product fixture.", file=sys.stderr)
+        return 2
+    isolated_product_id = int(product_id_text)
     failed = []
     for width, height, label in ((1440, 960, "desktop"), (390, 844, "mobile")):
         try:
-            run_viewport(base_url, artifact_dir, width, height, label)
+            run_viewport(base_url, artifact_dir, width, height, label, isolated_product_id)
         except Exception as error:
             print(f"FAIL: {label} PWA browser QA ({type(error).__name__}).", file=sys.stderr)
             failed.append(label)

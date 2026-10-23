@@ -147,12 +147,72 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
 
 
 class PwaOfflineWorkerNetworkTests(unittest.TestCase):
+    def test_devtools_connection_uses_only_a_loopback_browser_websocket(self) -> None:
+        created_urls: list[str] = []
+        connection = object()
+
+        class Driver:
+            capabilities = {
+                "se:cdp": "ws://localhost:9222/devtools/browser/test-only-token",
+            }
+
+            def start_devtools(self):
+                raise AssertionError("version-specific Selenium DevTools import must not be used")
+
+        def open_websocket(url: str):
+            created_urls.append(url)
+            return connection
+
+        with patch.object(pwa_browser, "WebSocketConnection", side_effect=open_websocket, create=True):
+            browser_cdp = pwa_browser.connect_browser_cdp(Driver())
+
+        self.assertIs(browser_cdp.connection, connection)
+        self.assertEqual(
+            ["ws://localhost:9222/devtools/browser/test-only-token"],
+            created_urls,
+        )
+
+    def test_devtools_connection_rejects_nonlocal_or_non_browser_targets(self) -> None:
+        class Driver:
+            def __init__(self, url: str) -> None:
+                self.capabilities = {"se:cdp": url}
+
+            def start_devtools(self):
+                raise AssertionError("must validate the endpoint without invoking Selenium DevTools")
+
+        invalid_urls = (
+            "ws://remote.example:9222/devtools/browser/token",
+            "wss://localhost:9222/devtools/browser/token",
+            "ws://localhost:9222/devtools/page/token",
+            "ws://user@localhost:9222/devtools/browser/token",
+            "ws://localhost:9222/devtools/browser/token?target=elsewhere",
+        )
+        opened_urls: list[str] = []
+
+        def open_websocket(url: str):
+            opened_urls.append(url)
+            raise AssertionError("invalid DevTools endpoint must not be opened")
+
+        for url in invalid_urls:
+            with self.subTest(url=url), patch.object(
+                pwa_browser,
+                "WebSocketConnection",
+                side_effect=open_websocket,
+                create=True,
+            ), self.assertRaises(ChromeBrowserCdpError):
+                pwa_browser.connect_browser_cdp(Driver(url))
+        self.assertEqual([], opened_urls)
+
     def test_devtools_open_failure_has_safe_operation_diagnostic(self) -> None:
         class Driver:
-            def start_devtools(self):
-                raise RuntimeError("ws://127.0.0.1/devtools/browser/private-token")
+            capabilities = {"se:cdp": "ws://127.0.0.1:9222/devtools/browser/private-token"}
 
-        with self.assertRaises(ChromeBrowserCdpError) as raised:
+        with patch.object(
+            pwa_browser,
+            "WebSocketConnection",
+            side_effect=RuntimeError("ws://127.0.0.1:9222/devtools/browser/private-token"),
+            create=True,
+        ), self.assertRaises(ChromeBrowserCdpError) as raised:
             pwa_browser.connect_browser_cdp(Driver())
 
         self.assertEqual(
@@ -161,6 +221,17 @@ class PwaOfflineWorkerNetworkTests(unittest.TestCase):
         )
         self.assertEqual("RuntimeError", getattr(raised.exception, "cause_type", None))
         self.assertNotIn("private-token", str(raised.exception))
+
+    def test_customer_order_private_route_requires_a_nonempty_isolated_cart(self) -> None:
+        source = PWA_BROWSER.read_text(encoding="utf-8")
+        viewport = function_source(source, "run_viewport")
+        self.assertIn("CI_TEST_PRODUCT_ID", source)
+        self.assertIn("add_isolated_product_to_customer_cart", source)
+        self.assertLess(
+            viewport.index("add_isolated_product_to_customer_cart("),
+            viewport.index('"customer_order_route"'),
+        )
+        self.assertIn("cart contents could not be confirmed", source)
 
     def test_customer_registration_native_click_waits_for_unobstructed_center(self) -> None:
         click = getattr(pwa_browser, "click_native_when_unobstructed", None)
