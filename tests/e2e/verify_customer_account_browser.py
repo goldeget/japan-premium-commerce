@@ -10,6 +10,7 @@ import os
 import re
 import sys
 import time
+from collections.abc import Callable
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.error import URLError
@@ -872,6 +873,45 @@ def my_account_link_from_header(driver: webdriver.Chrome, *, open_menu: bool = T
         raise AssertionError("the authenticated My Page link changed the base shop origin")
 
     return account_link, account_url
+
+
+def safe_account_route_classification(candidate_url: str) -> str:
+    try:
+        candidate = urlparse(candidate_url)
+        base = urlparse(BASE)
+    except ValueError:
+        return "unavailable"
+    if (candidate.scheme.lower(), candidate.hostname, candidate.port) != (
+        base.scheme.lower(),
+        base.hostname,
+        base.port,
+    ):
+        return "outside_shop"
+
+    try:
+        path = unquote(candidate.path, errors="strict").rstrip("/") or "/"
+        base_path = unquote(base.path, errors="strict").rstrip("/")
+    except (UnicodeDecodeError, ValueError):
+        return "unavailable"
+    if base_path and path.startswith(base_path + "/"):
+        path = path[len(base_path) :]
+    elif base_path and path == base_path:
+        path = "/"
+
+    controllers = {value.lower() for value in parse_qs(candidate.query).get("controller", [])}
+    if "identity" in controllers:
+        return "identity"
+    if controllers & {"my-account", "authentication"}:
+        return "account"
+
+    route_parts = [part.lower() for part in path.split("/") if part]
+    if not route_parts:
+        return "root"
+    if route_parts[-1] in {"identity", "identite"}:
+        return "identity"
+    if route_parts[-1] in {"account", "authentication", "login", "my-account", "myaccount"}:
+        return "account"
+    return "other"
 
 
 def assert_canonical_static_route(driver: webdriver.Chrome, route_slug: str) -> None:
@@ -2070,7 +2110,11 @@ def collect_email_login_result(driver: webdriver.Chrome) -> str | bool:
     )
 
 
-def collect_email_login_diagnostics(driver: webdriver.Chrome, substage: str) -> dict[str, object]:
+def collect_email_login_diagnostics(
+    driver: webdriver.Chrome,
+    substage: str,
+    account_route_classification: str = "unavailable",
+) -> dict[str, object]:
     try:
         current_url = driver.current_url
     except Exception:
@@ -2095,6 +2139,7 @@ def collect_email_login_diagnostics(driver: webdriver.Chrome, substage: str) -> 
             const submit = document.getElementById('submit-login');
             const identityLink = document.getElementById('identity_main_link');
             const signOutLink = document.querySelector('a.account-menu__link--signout');
+            const userMenuButton = document.getElementById('userMenuButton');
             const dangerAlertVisible = alerts.some(alert => {
               const classes = typeof alert.className === 'string' ? alert.className.toLowerCase().split(/\s+/) : [];
               return classes.includes('alert-danger') || classes.includes('is-danger');
@@ -2109,6 +2154,8 @@ def collect_email_login_diagnostics(driver: webdriver.Chrome, substage: str) -> 
               login_submit_enabled: Boolean(submit && !submit.disabled),
               identity_link_visible: isVisible(identityLink),
               signout_link_visible: isVisible(signOutLink),
+              user_menu_button_present: Boolean(userMenuButton),
+              user_menu_button_visible: isVisible(userMenuButton),
               danger_alert_visible: dangerAlertVisible,
               visible_alert_count: Math.min(alerts.length, 20),
               alert_classification: alertClassification
@@ -2138,9 +2185,19 @@ def collect_email_login_diagnostics(driver: webdriver.Chrome, substage: str) -> 
         login_result = "pending"
     elif login_result not in {"authenticated", "rejected", "unavailable"}:
         login_result = "unknown"
+    if account_route_classification not in {
+        "account",
+        "identity",
+        "other",
+        "outside_shop",
+        "root",
+        "unavailable",
+    }:
+        account_route_classification = "unavailable"
     safe_state: dict[str, object] = {
         "substage": safe_diagnostic_name(substage),
         "path": safe_same_origin_path(current_url),
+        "account_route_classification": account_route_classification,
         "login_result": login_result,
         "login_result_error_type": login_result_error_type,
         "document_language": re.sub(r"[^A-Za-z0-9-]", "", str(page_state.get("document_language") or ""))[:12],
@@ -2152,6 +2209,8 @@ def collect_email_login_diagnostics(driver: webdriver.Chrome, substage: str) -> 
         "login_submit_enabled": safe_diagnostic_boolean(page_state.get("login_submit_enabled")),
         "identity_link_visible": safe_diagnostic_boolean(page_state.get("identity_link_visible")),
         "signout_link_visible": safe_diagnostic_boolean(page_state.get("signout_link_visible")),
+        "user_menu_button_present": safe_diagnostic_boolean(page_state.get("user_menu_button_present")),
+        "user_menu_button_visible": safe_diagnostic_boolean(page_state.get("user_menu_button_visible")),
         "danger_alert_visible": safe_diagnostic_boolean(page_state.get("danger_alert_visible")),
         "visible_alert_count": visible_alert_count,
         "alert_classification": alert_classification,
@@ -2162,9 +2221,15 @@ def collect_email_login_diagnostics(driver: webdriver.Chrome, substage: str) -> 
     return safe_state
 
 
-def emit_email_login_diagnostics(driver: webdriver.Chrome, substage: str) -> None:
+def emit_email_login_diagnostics(
+    driver: webdriver.Chrome,
+    substage: str,
+    account_route_classification: str = "unavailable",
+) -> None:
     safe_state_json = json.dumps(
-        collect_email_login_diagnostics(driver, substage), ensure_ascii=True, sort_keys=True
+        collect_email_login_diagnostics(driver, substage, account_route_classification),
+        ensure_ascii=True,
+        sort_keys=True,
     )
     print("ORDENOWA_ACCOUNT_EMAIL_LOGIN_SAFE_STATE=" + safe_state_json, file=sys.stderr)
     annotation = safe_state_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
@@ -2186,14 +2251,36 @@ def wait_for_signed_out_state(driver: webdriver.Chrome) -> None:
     )
 
 
-def logout(driver: webdriver.Chrome) -> None:
+def logout(
+    driver: webdriver.Chrome,
+    *,
+    substage_callback: Callable[[str], None] | None = None,
+    account_route_callback: Callable[[str], None] | None = None,
+) -> None:
+    def mark_substage(value: str) -> None:
+        if substage_callback is not None:
+            substage_callback(value)
+
+    mark_substage("resolve_account_link")
     _, account_url = my_account_link_from_header(driver, open_menu=False)
+    if account_route_callback is not None:
+        account_route_callback(safe_account_route_classification(account_url))
+
+    mark_substage("open_account")
     driver.get(account_url)
+    mark_substage("wait_authenticated")
     visible(driver, "#identity_main_link")
+
+    mark_substage("resolve_signout_link")
     link = visible_signout_link(driver)
+    mark_substage("click_signout")
     link.click()
+    mark_substage("wait_signed_out")
     wait_for_signed_out_state(driver)
+
+    mark_substage("reopen_account")
     driver.get(account_url)
+    mark_substage("wait_login_form")
     WebDriverWait(driver, 30).until(
         lambda browser: bool(browser.find_elements(By.CSS_SELECTOR, '#login-form input[name="email"]'))
         or bool(browser.find_elements(By.ID, "identity_main_link"))
@@ -2215,9 +2302,19 @@ def run_viewport(width: int, height: int, label: str) -> bool:
     profile_pre_submit: dict[str, object] | None = None
     korean_login_state: dict[str, object] = {}
     email_login_substage = ""
+    email_login_account_route_classification = "unavailable"
     expected_first_name = f"CI-{label.title()}"
     driver = None
     success = False
+
+    def mark_email_login_substage(value: str) -> None:
+        nonlocal email_login_substage
+        email_login_substage = value
+
+    def mark_email_login_account_route_classification(value: str) -> None:
+        nonlocal email_login_account_route_classification
+        email_login_account_route_classification = value
+
     try:
         options = Options()
         options.add_argument("--headless=new")
@@ -2311,7 +2408,11 @@ def run_viewport(width: int, height: int, label: str) -> bool:
 
         stage = "email_login"
         email_login_substage = "logout"
-        logout(driver)
+        logout(
+            driver,
+            substage_callback=mark_email_login_substage,
+            account_route_callback=mark_email_login_account_route_classification,
+        )
         email_login_substage = "login_form"
         email_field = visible(driver, '#login-form input[name="email"]')
         if email_field.get_attribute("type") != "email":
@@ -2401,7 +2502,11 @@ def run_viewport(width: int, height: int, label: str) -> bool:
                     pass
             elif stage == "email_login":
                 try:
-                    emit_email_login_diagnostics(driver, email_login_substage)
+                    emit_email_login_diagnostics(
+                        driver,
+                        email_login_substage,
+                        email_login_account_route_classification,
+                    )
                 except Exception:
                     pass
         inner_stage = (

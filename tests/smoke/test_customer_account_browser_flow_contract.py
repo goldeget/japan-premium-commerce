@@ -78,7 +78,8 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
 
     def test_email_login_and_logout_check_authenticated_and_signed_out_states(self) -> None:
         email_login = self.blocks["email_login"]
-        self.assertIn("logout(driver)", email_login)
+        self.assertIn("logout(", email_login)
+        self.assertNotIn("login_url", email_login)
         self.assertIn('#login-form input[name="email"]', email_login)
         self.assertIn('get_attribute("type") != "email"', email_login)
         self.assertIn("assert_my_page(driver, f\"CI-{label.title()}\")", email_login)
@@ -86,7 +87,8 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         for substage in ("logout", "login_form", "submit", "auth_result"):
             self.assertIn(f'email_login_substage = "{substage}"', email_login)
         self.assertIn("WebDriverWait(driver, 30).until(collect_email_login_result)", email_login)
-        self.assertIn("emit_email_login_diagnostics(driver, email_login_substage)", self.source)
+        self.assertIn("emit_email_login_diagnostics(", self.source)
+        self.assertIn("email_login_account_route_classification", self.source)
 
         reset_request = self.blocks["password_reset_request"]
         self.assertIn("logout(driver)", reset_request)
@@ -110,19 +112,156 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         signout_lookup = logout.index("visible_signout_link(driver)")
         click_signout = logout.index("link.click()")
         wait_signed_out = logout.index("wait_for_signed_out_state(driver)")
-        signed_out_account_route = logout.index("driver.get(account_url)", account_route + 1)
+        reopen_account = logout.index("driver.get(account_url)", account_route + 1)
 
         self.assertLess(account_route, authenticated_page)
         self.assertLess(authenticated_page, signout_lookup)
         self.assertLess(signout_lookup, click_signout)
         self.assertLess(click_signout, wait_signed_out)
-        self.assertLess(wait_signed_out, signed_out_account_route)
+        self.assertLess(wait_signed_out, reopen_account)
         self.assertIn("WebDriverWait(driver, 30).until", helper)
         self.assertIn("document.getElementById('userMenuButton')", helper)
         self.assertIn("document.querySelectorAll('a.account-menu__link--signout')", helper)
         self.assertIn(
             "return !document.getElementById('userMenuButton') && !hasVisibleSignoutLink;",
             helper,
+        )
+
+    def test_logout_uses_the_generated_protected_account_route_for_signed_out_login(self) -> None:
+        login_form = self.source.split("def assert_korean_email_login_form", 1)[1].split(
+            "\n\ndef emit_korean_login_diagnostics", 1
+        )[0]
+        logout = self.source.split("def logout", 1)[1].split("def run_viewport", 1)[0]
+        run_viewport = self.source.split("def run_viewport", 1)[1].split("\n\nif __name__", 1)[0]
+
+        wait_signed_out = logout.index("wait_for_signed_out_state(driver)")
+        signed_out_section = logout[wait_signed_out:]
+        self.assertIn(
+            "driver.get(account_url)",
+            signed_out_section,
+            "logout must revisit the generated protected account route after signout",
+        )
+        self.assertTrue("return login_url" not in login_form, "login form check retains a stale login URL")
+        self.assertTrue(
+            "login_url = assert_korean_email_login_form" not in run_viewport,
+            "run_viewport retains the stale homepage login URL",
+        )
+        logout_header = self.source.split("def logout(", 1)[1].split(") -> None:", 1)[0]
+        self.assertTrue("login_url" not in logout_header, "logout still accepts the stale login URL")
+        self.assertIn("my_account_link_from_header(driver, open_menu=False)", logout)
+        run_viewport_node = next(
+            node
+            for node in ast.parse(self.source).body
+            if isinstance(node, ast.FunctionDef) and node.name == "run_viewport"
+        )
+        logout_calls = [
+            node
+            for node in ast.walk(run_viewport_node)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "logout"
+        ]
+        self.assertEqual(len(logout_calls), 4)
+        self.assertTrue(
+            all(
+                len(call.args) == 1
+                and isinstance(call.args[0], ast.Name)
+                and call.args[0].id == "driver"
+                and all(keyword.arg != "login_url" for keyword in call.keywords)
+                for call in logout_calls
+            ),
+            "logout calls must use the generated protected account URL without a stale login URL",
+        )
+
+        click_signout = logout.index("link.click()")
+        wait_signed_out = logout.index("wait_for_signed_out_state(driver)")
+        reopen_account = logout.index("driver.get(account_url)", wait_signed_out)
+        wait_login_form = logout.index("#login-form input[name=\"email\"]")
+        self.assertLess(click_signout, wait_signed_out)
+        self.assertLess(wait_signed_out, reopen_account)
+        self.assertLess(reopen_account, wait_login_form)
+        self.assertIn('visible(driver, "#identity_main_link")', logout)
+
+    def test_logout_diagnostics_report_only_safe_stages_and_route_markers(self) -> None:
+        logout = self.source.split("def logout", 1)[1].split("def run_viewport", 1)[0]
+        collector = self.source.split("def collect_email_login_diagnostics", 1)[1].split(
+            "\n\ndef emit_email_login_diagnostics", 1
+        )[0]
+
+        stages = (
+            "resolve_account_link",
+            "open_account",
+            "wait_authenticated",
+            "resolve_signout_link",
+            "click_signout",
+            "wait_signed_out",
+            "reopen_account",
+            "wait_login_form",
+        )
+        for stage in stages:
+            self.assertTrue(f'"{stage}"' in logout, f"missing logout diagnostic stage {stage}")
+
+        checkpoint_operations = (
+            ('mark_substage("resolve_account_link")', "my_account_link_from_header(driver, open_menu=False)"),
+            ('mark_substage("open_account")', "driver.get(account_url)"),
+            ('mark_substage("wait_authenticated")', 'visible(driver, "#identity_main_link")'),
+            ('mark_substage("resolve_signout_link")', "visible_signout_link(driver)"),
+            ('mark_substage("click_signout")', "link.click()"),
+            ('mark_substage("wait_signed_out")', "wait_for_signed_out_state(driver)"),
+            ('mark_substage("reopen_account")', "driver.get(account_url)"),
+            ('mark_substage("wait_login_form")', "WebDriverWait(driver, 30).until"),
+        )
+        previous_position = -1
+        for checkpoint, operation in checkpoint_operations:
+            checkpoint_position = logout.index(checkpoint)
+            operation_position = logout.index(operation, checkpoint_position)
+            self.assertGreater(checkpoint_position, previous_position)
+            self.assertGreater(operation_position, checkpoint_position)
+            previous_position = operation_position
+
+        self.assertTrue(
+            '"user_menu_button_present"' in collector,
+            "email login diagnostics omit the safe userMenuButton presence flag",
+        )
+        self.assertTrue(
+            '"account_route_classification"' in collector,
+            "email login diagnostics omit sanitized account route classification",
+        )
+        self.assertTrue(
+            "def safe_account_route_classification" in self.source,
+            "account route classification helper is missing",
+        )
+
+        classifier = next(
+            node
+            for node in ast.parse(self.source).body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "safe_account_route_classification"
+        )
+        namespace = {
+            "BASE": "https://shop.example.test/shop",
+            "parse_qs": parse_qs,
+            "unquote": unquote,
+            "urlparse": urlparse,
+        }
+        exec(
+            compile(ast.Module(body=[classifier], type_ignores=[]), str(ACCOUNT_FLOW), "exec"),
+            namespace,
+        )
+        classify = namespace["safe_account_route_classification"]
+        self.assertEqual(classify("https://shop.example.test/shop/"), "root")
+        self.assertEqual(
+            classify("https://shop.example.test/shop/?controller=my-account"),
+            "account",
+        )
+        self.assertEqual(classify("https://shop.example.test/shop/identity"), "identity")
+        self.assertEqual(
+            classify("https://shop.example.test/shop/customers/secret-name"),
+            "other",
+        )
+        self.assertEqual(
+            classify("https://evil.example.test/shop/customers/secret-name"),
+            "outside_shop",
         )
 
     def test_email_login_failure_diagnostics_expose_state_without_page_text_or_values(self) -> None:
@@ -168,7 +307,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
                 return "safe%state\r\ncontinued"
 
         namespace = {
-            "collect_email_login_diagnostics": lambda _driver, _substage: {},
+            "collect_email_login_diagnostics": lambda _driver, _substage, _route_classification: {},
             "json": FakeJson,
             "sys": sys,
             "webdriver": SimpleNamespace(Chrome=object),
@@ -206,8 +345,14 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             self.assertNotIn("driver.get(", helper)
             self.assertIn("fill(driver, '#login-form input[name=\"email\"]'", helper)
         old_password = self.blocks["password_reset_old_password_rejected"]
-        self.assertLess(old_password.index("assert_my_page(driver,"), old_password.index("logout(driver)"))
-        self.assertLess(old_password.index("logout(driver)"), old_password.index("assert_login_rejected(driver,"))
+        self.assertLess(
+            old_password.index("assert_my_page(driver,"),
+            old_password.index("logout(driver)"),
+        )
+        self.assertLess(
+            old_password.index("logout(driver)"),
+            old_password.index("assert_login_rejected(driver,"),
+        )
 
     def test_reset_email_matching_uses_the_rendered_localized_password_route(self) -> None:
         helper_nodes = [
