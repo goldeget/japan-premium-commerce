@@ -1426,6 +1426,7 @@ jobs:
           RESET_TOKEN_BROWSER_QA_OUTCOME: ${{ steps.reset_token_browser_qa.outcome }}
           PWA_BROWSER_QA_OUTCOME: ${{ steps.pwa_browser_qa.outcome }}
           SHIPPING_FREE_FIXTURE_OUTCOME: ${{ steps.shipping_free_fixture.outcome }}
+          SHIPPING_FREE_ADMIN_ACCESS_OUTCOME: ${{ steps.shipping_free_admin_access.outcome }}
           SHIPPING_FREE_ADMIN_CONFIGURE_OUTCOME: ${{ steps.shipping_free_admin_configure.outcome }}
           SHIPPING_FREE_RESTART_OUTCOME: ${{ steps.shipping_free_restart.outcome }}
           SHIPPING_FREE_ADMIN_READBACK_OUTCOME: ${{ steps.shipping_free_admin_readback.outcome }}
