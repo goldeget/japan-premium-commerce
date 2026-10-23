@@ -106,15 +106,6 @@ foreach (\Kuranea\Postcode\Domain\PrefectureCatalog::all() as $prefectureCode =>
     }
 }
 
-$stage = 'assign all Japanese states to the run-scoped zone';
-if (!Db::getInstance()->execute(
-    'UPDATE `' . _DB_PREFIX_ . 'state`'
-    . ' SET `id_zone` = ' . (int) $zone->id
-    . ' WHERE `id_country` = ' . (int) $japan->id
-)) {
-    throw new RuntimeException('Could not assign every Japanese state to the run-scoped carrier zone.');
-}
-
 $stage = 'verify Japan-only zone membership';
 $countryCodes = Db::getInstance()->executeS(
     'SELECT `iso_code` FROM `' . _DB_PREFIX_ . 'country`'
@@ -162,8 +153,13 @@ $duplicateStateCodes = array_keys(array_filter(
 ));
 $missingStateCodes = array_values(array_diff($expectedStateCodes, array_keys($stateCodeCounts)));
 $statesOutsideZone = count(array_filter(
-    $allStateRows,
+    $supportedStateRows,
     static fn (array $row): bool => (int) $row['id_zone'] !== (int) $zone->id
+));
+$unsupportedStatesInZone = count(array_filter(
+    $allStateRows,
+    static fn (array $row): bool => !isset($expectedStateCodeSet[(string) $row['iso_code']])
+        && (int) $row['id_zone'] === (int) $zone->id
 ));
 $activeStateCount = count(array_filter(
     $supportedStateRows,
@@ -178,6 +174,9 @@ if ($missingStateCodes !== [] || $duplicateStateCodes !== []) {
 }
 if ($statesOutsideZone !== 0) {
     throw new RuntimeException('One or more Japanese prefectures are outside the run-scoped carrier zone.');
+}
+if ($unsupportedStatesInZone !== 0) {
+    throw new RuntimeException('A non-catalog Japanese state is assigned to the run-scoped free-shipping zone.');
 }
 if ($stateCount !== 47) {
     throw new RuntimeException('The isolated shop must have all 47 Japanese prefectures configured before free-shipping QA.');

@@ -148,22 +148,19 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertIn('[f"JP-{code:02d}" for code in range(1, 48)]', zone_validation)
         self.assertIn('fixture["state_iso_codes"] == expected_state_codes', zone_validation)
 
-    def test_japan_zone_fixture_assigns_every_existing_state_after_prefecture_upserts(self) -> None:
+    def test_japan_zone_fixture_assigns_only_supported_prefecture_states_to_free_zone(self) -> None:
         source = JAPAN_ZONE_FIXTURE.read_text(encoding="utf-8")
-        assignment_stage = "$stage = 'assign all Japanese states to the run-scoped zone'"
-        self.assertIn(assignment_stage, source)
         upsert_position = source.index("foreach (\\Kuranea\\Postcode\\Domain\\PrefectureCatalog::all()")
-        assignment_position = source.index(assignment_stage)
         verification_position = source.index("$stage = 'verify Japan-only zone membership'")
 
-        self.assertLess(upsert_position, assignment_position)
-        self.assertLess(assignment_position, verification_position)
-        assignment = source[assignment_position:verification_position]
-        self.assertIn("UPDATE `' . _DB_PREFIX_ . 'state`", assignment)
-        self.assertIn("SET `id_zone` = ' . (int) $zone->id", assignment)
-        self.assertIn("WHERE `id_country` = ' . (int) $japan->id", assignment)
+        self.assertLess(upsert_position, verification_position)
+        self.assertNotIn("assign all Japanese states to the run-scoped zone", source)
+        self.assertNotIn("UPDATE `' . _DB_PREFIX_ . 'state`", source)
+        self.assertIn("$supportedStateRows = array_values(array_filter(", source)
+        self.assertIn("$unsupportedStatesInZone = count(array_filter(", source)
+        self.assertIn("A non-catalog Japanese state is assigned to the run-scoped free-shipping zone.", source)
 
-        # The correction must keep the exact set and activation checks for the 47 supported regions.
+        # Unsupported legacy state rows cannot inherit the run-scoped free carrier.
         self.assertIn("$stateCodes !== $expectedStateCodes", source)
         self.assertIn("$activeStateCount !== 47", source)
 
