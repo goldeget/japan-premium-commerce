@@ -30,7 +30,7 @@ set_exception_handler(static function (Throwable $exception) use (&$stage): void
     fwrite(STDERR, $diagnostic . PHP_EOL);
     if (getenv('GITHUB_ACTIONS') === 'true') {
         $annotation = str_replace(['%', "\r", "\n"], ['%25', '%0D', '%0A'], $diagnostic);
-        fwrite(STDOUT, '::error title=ORDENOWA CI coupon fixture::' . $annotation . PHP_EOL);
+        fwrite(STDERR, '::error title=ORDENOWA CI coupon fixture::' . $annotation . PHP_EOL);
     }
     exit(1);
 });
@@ -44,6 +44,12 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/index.php';
 $_SERVER['SERVER_PORT'] = (string) (parse_url('http://' . $_SERVER['HTTP_HOST'], PHP_URL_PORT) ?: 80);
 require_once $shopRoot . '/config/config.inc.php';
+
+if (!defined('_DB_SERVER_') || (string) _DB_SERVER_ !== 'mariadb'
+    || !defined('_DB_NAME_') || (string) _DB_NAME_ !== 'prestashop'
+    || (string) Db::getInstance()->getValue('SELECT DATABASE()') !== 'prestashop') {
+    throw new RuntimeException('The connected shop database is not the isolated MariaDB prestashop database.');
+}
 
 $stage = 'isolated Japanese JPY shop context';
 $shopId = 1;

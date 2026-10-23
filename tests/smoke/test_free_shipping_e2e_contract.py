@@ -12,9 +12,111 @@ BROWSER = ROOT / "tests/e2e/verify_ci_free_shipping_browser.py"
 ORDER_VERIFY = ROOT / "tests/postcode/verify_ci_free_shipping_order.php"
 COUPON_FIXTURE = ROOT / "tests/postcode/seed_ci_shipping_coupon.php"
 JAPAN_ZONE_FIXTURE = ROOT / "tests/postcode/prepare_ci_japan_shipping_zone.php"
+SHIPPING_PRODUCT_FIXTURE = ROOT / "tests/catalog/prepare_ci_free_shipping_product.php"
 
 
 class FreeShippingE2eContractTest(unittest.TestCase):
+    def test_active_no_rule_product_fixture_is_independent_of_postcode_order_qa(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertTrue(SHIPPING_PRODUCT_FIXTURE.is_file(), "free-shipping QA needs its own active CI product fixture")
+        product_step = workflow.split(
+            "- name: Prepare isolated active product for storefront and free-shipping QA", 1
+        )[1].split("- name:", 1)[0]
+        postcode_step = workflow.split(
+            "- name: Import synthetic Tokyo postcode fixture for isolated checkout QA", 1
+        )[1].split("- name:", 1)[0]
+        self.assertIn("id: shipping_product_fixture", product_step)
+        self.assertIn("prepare_ci_free_shipping_product.php", product_step)
+        self.assertNotIn("postcode_fixture.outcome", product_step)
+        self.assertLess(workflow.index("id: shipping_product_fixture"), workflow.index("id: postcode_fixture"))
+        self.assertIn("'tax_rules_group_id' => '0'", SHIPPING_PRODUCT_FIXTURE.read_text(encoding="utf-8"))
+        self.assertIn("not a legal tax determination", SHIPPING_PRODUCT_FIXTURE.read_text(encoding="utf-8"))
+        self.assertIn("CI_TEST_PRODUCT_ID=", product_step)
+        self.assertNotIn("KURANEA-CI-%", product_step)
+        free_shipping_step = workflow.split(
+            "- name: Prepare isolated free-shipping order and coupon fixtures", 1
+        )[1].split("- name:", 1)[0]
+        self.assertIn("CI_TEST_PRODUCT_ID", free_shipping_step)
+        self.assertNotIn("steps.postcode_fixture.outcome", free_shipping_step)
+
+    def test_free_shipping_price_checks_do_not_depend_on_postcode_lookup(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        for step_name in (
+            "Enable run-scoped checkout only for the isolated order browser QA",
+            "Verify zero shipping in Tokyo coupon and quantity checkout with Chromium",
+            "Verify zero shipping in Osaka mobile checkout with Chromium",
+            "Verify tax-included taxable Japan checkout with the free carrier",
+            "Verify free-shipping orders and totals in the isolated database",
+            "Verify free-shipping orders in a separate admin browser session",
+        ):
+            with self.subTest(step=step_name):
+                step = workflow.split(f"- name: {step_name}", 1)[1].split("- name:", 1)[0]
+                self.assertNotIn("steps.postcode_lookup.outcome", step)
+        self.assertIn("steps.postcode_lookup.outcome == 'success'", workflow.split(
+            "- name: Verify browser customer search, Japan checkout, and unpaid offline order", 1
+        )[1].split("- name:", 1)[0], "the independent postal-address checkout test must retain its lookup prerequisite")
+
+    def test_free_shipping_fixture_failure_exposes_safe_stage_diagnostics(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        fixture_step = workflow.split(
+            "- name: Prepare isolated free-shipping order and coupon fixtures", 1
+        )[1].split("- name:", 1)[0]
+        for phase in ("japan_zone", "stock", "coupon"):
+            with self.subTest(phase=phase):
+                self.assertIn(phase, fixture_step)
+        self.assertIn("::error title=ORDENOWA free-shipping fixture::", fixture_step)
+        self.assertIn("shipping-free-fixture", fixture_step)
+        self.assertIn("CI_TEST_PRODUCT_ID", fixture_step)
+
+        zone_source = JAPAN_ZONE_FIXTURE.read_text(encoding="utf-8")
+        self.assertIn("ORDENOWA_CI_JAPAN_ZONE_STAGE=", zone_source)
+        self.assertIn("set_exception_handler", zone_source)
+        coupon_source = COUPON_FIXTURE.read_text(encoding="utf-8")
+        self.assertIn("fwrite(STDERR, '::error title=ORDENOWA CI coupon fixture::'", coupon_source)
+        self.assertNotIn("fwrite(STDOUT, '::error title=ORDENOWA CI coupon fixture::'", coupon_source)
+
+    def test_database_writing_fixtures_guard_the_connected_disposable_database(self) -> None:
+        for path in (
+            SHIPPING_PRODUCT_FIXTURE,
+            JAPAN_ZONE_FIXTURE,
+            COUPON_FIXTURE,
+        ):
+            with self.subTest(path=path.name):
+                source = path.read_text(encoding="utf-8")
+                self.assertIn("KURANEA_CI_PROJECT_NAME", source)
+                self.assertIn("_DB_SERVER_", source)
+                self.assertIn("_DB_NAME_", source)
+                self.assertIn("SELECT DATABASE()", source)
+                self.assertIn("'mariadb'", source)
+                self.assertIn("'prestashop'", source)
+
+    def test_japan_zone_fixture_requires_and_reports_configured_prefectures(self) -> None:
+        source = JAPAN_ZONE_FIXTURE.read_text(encoding="utf-8")
+        self.assertIn("$stateCount", source)
+        self.assertIn("$stateCount !== 47", source)
+        self.assertIn("'state_count' => $stateCount", source)
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        zone_validation = workflow.split(
+            "shipping_fixture_stage=\"japan_zone_validate\"", 1
+        )[1].split("shipping_fixture_stage=", 1)[0]
+        self.assertIn("state_count", zone_validation)
+        self.assertIn("== 47", zone_validation)
+
+    def test_japan_zone_fixture_compares_the_exact_supported_prefecture_code_set(self) -> None:
+        source = JAPAN_ZONE_FIXTURE.read_text(encoding="utf-8")
+        self.assertIn("/var/www/html/modules/kuraneapostcode/autoload.php", source)
+        self.assertIn("PrefectureCatalog::all()", source)
+        self.assertIn("PrefectureCatalog::isoCode($prefectureCode)", source)
+        self.assertIn("$stateCodes !== $expectedStateCodes", source)
+        self.assertIn("'state_iso_codes' => $stateCodes", source)
+
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        zone_validation = workflow.split(
+            'python3 - "$zone_fixture" <<\'PY\' 2>&1 | tee "$shipping_fixture_log"', 1
+        )[1].split("          PY", 1)[0]
+        self.assertIn('[f"JP-{code:02d}" for code in range(1, 48)]', zone_validation)
+        self.assertIn('fixture["state_iso_codes"] == expected_state_codes', zone_validation)
+
     def test_workflow_saves_and_reloads_free_carrier_before_checkout_and_order_checks(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         steps = (

@@ -18,18 +18,40 @@ if (getenv('CI') !== 'true'
     exit(77);
 }
 
+$stage = 'PrestaShop bootstrap';
+set_exception_handler(static function (Throwable $exception) use (&$stage): void {
+    $message = preg_replace('/[\r\n]+/', ' ', $exception->getMessage()) ?? 'Unknown error';
+    fwrite(STDERR, sprintf(
+        'ORDENOWA_CI_JAPAN_ZONE_STAGE=%s; exception=%s; message=%s%s',
+        $stage,
+        get_class($exception),
+        substr($message, 0, 800),
+        PHP_EOL
+    ));
+    exit(1);
+});
+
 $_SERVER['HTTP_HOST'] = trim((string) getenv('PS_DOMAIN')) ?: 'localhost:8080';
 $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/index.php';
 $_SERVER['SERVER_PORT'] = (string) (parse_url('http://' . $_SERVER['HTTP_HOST'], PHP_URL_PORT) ?: 80);
 require_once '/var/www/html/config/config.inc.php';
+require_once '/var/www/html/modules/kuraneapostcode/autoload.php';
 
+if (!defined('_DB_SERVER_') || (string) _DB_SERVER_ !== 'mariadb'
+    || !defined('_DB_NAME_') || (string) _DB_NAME_ !== 'prestashop'
+    || (string) Db::getInstance()->getValue('SELECT DATABASE()') !== 'prestashop') {
+    throw new RuntimeException('The connected shop database is not the isolated MariaDB prestashop database.');
+}
+
+$stage = 'load active Japan country';
 $japanId = (int) Country::getByIso('JP');
 $japan = $japanId > 0 ? new Country($japanId) : false;
 if (!$japan instanceof Country || !Validate::isLoadedObject($japan) || !(bool) $japan->active) {
     throw new RuntimeException('The active Japan country is missing from the isolated CI shop.');
 }
 
+$stage = 'create run-scoped Japan shipping zone';
 $zoneName = sprintf('ORDENOWA CI Japan %s-%s', $runId, $runAttempt);
 $zoneId = (int) Db::getInstance()->getValue(
     'SELECT `id_zone` FROM `' . _DB_PREFIX_ . 'zone` WHERE `name` = "' . pSQL($zoneName) . '" LIMIT 1'
@@ -42,6 +64,7 @@ if (!$saved || (int) $zone->id < 1) {
     throw new RuntimeException('Could not create the run-scoped Japan-only carrier zone.');
 }
 
+$stage = 'assign Japan to the run-scoped zone';
 if ((int) $japan->id_zone !== (int) $zone->id) {
     $japan->id_zone = (int) $zone->id;
     if (!$japan->update()) {
@@ -49,6 +72,7 @@ if ((int) $japan->id_zone !== (int) $zone->id) {
     }
 }
 
+$stage = 'assign Japanese prefectures to the run-scoped zone';
 if (!Db::getInstance()->execute(
     'UPDATE `' . _DB_PREFIX_ . 'state`'
     . ' SET `id_zone` = ' . (int) $zone->id
@@ -57,6 +81,7 @@ if (!Db::getInstance()->execute(
     throw new RuntimeException('Could not assign Japanese prefectures to the run-scoped carrier zone.');
 }
 
+$stage = 'verify Japan-only zone membership';
 $countryCodes = Db::getInstance()->executeS(
     'SELECT `iso_code` FROM `' . _DB_PREFIX_ . 'country`'
     . ' WHERE `id_zone` = ' . (int) $zone->id
@@ -71,19 +96,50 @@ if ($countryCodes !== ['JP']) {
         'The free-carrier zone must serve Japan alone; found: ' . implode(',', $countryCodes)
     );
 }
+$stage = 'verify all Japanese prefectures use the run-scoped zone';
+$expectedStateCodes = [];
+foreach (array_keys(\Kuranea\Postcode\Domain\PrefectureCatalog::all()) as $prefectureCode) {
+    $stateIsoCode = \Kuranea\Postcode\Domain\PrefectureCatalog::isoCode($prefectureCode);
+    if ($stateIsoCode === null) {
+        throw new RuntimeException('The postcode module returned an invalid prefecture ISO code.');
+    }
+    $expectedStateCodes[] = $stateIsoCode;
+}
+sort($expectedStateCodes, SORT_STRING);
+$stateRows = Db::getInstance()->executeS(
+    'SELECT `iso_code` FROM `' . _DB_PREFIX_ . 'state`'
+    . ' WHERE `id_country` = ' . (int) $japan->id
+    . ' ORDER BY `iso_code`'
+);
+$stateCodes = array_values(array_map(
+    static fn (array $row): string => (string) $row['iso_code'],
+    is_array($stateRows) ? $stateRows : []
+));
 $statesOutsideZone = (int) Db::getInstance()->getValue(
     'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'state`'
     . ' WHERE `id_country` = ' . (int) $japan->id
     . ' AND `id_zone` <> ' . (int) $zone->id
 );
+$stateCount = count($stateCodes);
 if ($statesOutsideZone !== 0) {
     throw new RuntimeException('One or more Japanese prefectures are outside the run-scoped carrier zone.');
+}
+if ($stateCount !== 47) {
+    throw new RuntimeException('The isolated shop must have all 47 Japanese prefectures configured before free-shipping QA.');
+}
+if ($stateCodes !== $expectedStateCodes) {
+    throw new RuntimeException(
+        'Configured Japanese state ISO codes do not match the supported postcode catalog: expected '
+        . implode(',', $expectedStateCodes) . '; found ' . implode(',', $stateCodes)
+    );
 }
 
 echo json_encode([
     'zone_id' => (int) $zone->id,
     'zone_name' => $zoneName,
     'country_codes' => $countryCodes,
+    'state_count' => $stateCount,
+    'state_iso_codes' => $stateCodes,
     'fixture_scope' => 'run-scoped isolated GitHub Actions disposable checkout database',
 ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL;
 fwrite(STDERR, sprintf(

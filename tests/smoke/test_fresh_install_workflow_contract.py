@@ -16,6 +16,17 @@ FRESH_INSTALL_SMOKE = ROOT / "tests" / "smoke" / "fresh_install.sh"
 
 
 class FreshInstallWorkflowContractTests(unittest.TestCase):
+    def test_synthetic_postcode_fixture_reports_the_failing_phase(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        fixture_step = workflow.split(
+            "- name: Import synthetic Tokyo postcode fixture for isolated checkout QA", 1
+        )[1].split("- name:", 1)[0]
+        for phase in ("osaka_state", "synthetic_csv", "ken_all_import"):
+            with self.subTest(phase=phase):
+                self.assertIn(phase, fixture_step)
+        self.assertIn("::error title=ORDENOWA postcode fixture::", fixture_step)
+        self.assertIn("postcode-fixture", fixture_step)
+
     def test_customer_account_flow_contract_is_run_and_triggers_ci(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("  push:\n", workflow)

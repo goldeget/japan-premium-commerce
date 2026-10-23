@@ -138,6 +138,19 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
             workflow.index("- name: Capture bounded diagnostics on failure"),
         )
 
+    def test_free_shipping_product_fixture_log_and_json_are_required_when_successful(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        coverage = workflow.split(
+            "- name: Verify browser QA screenshot coverage", 1
+        )[1].split("- name:", 1)[0]
+        self.assertIn(
+            'SHIPPING_PRODUCT_FIXTURE_OUTCOME: ${{ steps.shipping_product_fixture.outcome }}',
+            coverage,
+        )
+        self.assertIn('if [[ "$SHIPPING_PRODUCT_FIXTURE_OUTCOME" == success ]]; then', coverage)
+        self.assertIn("free-shipping-product-fixture.log", coverage)
+        self.assertIn("free-shipping-product-fixture.json", coverage)
+
     def test_browser_order_checks_run_only_after_their_producer_succeeds(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         persistence = workflow.split(

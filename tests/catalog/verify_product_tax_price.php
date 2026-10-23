@@ -388,13 +388,26 @@ try {
     );
     $orderId = (int) $paymentModule->currentOrder;
     $order = $orderId > 0 ? new Order($orderId) : false;
-    $detailRow = $orderId > 0 ? Db::getInstance()->getRow(
-        'SELECT od.* FROM `' . _DB_PREFIX_ . 'order_detail` od
-        WHERE od.`id_order` = ' . (int) $orderId . ' AND od.`product_id` = ' . (int) $productId . ' LIMIT 1'
+    $orderDetailRows = $orderId > 0 ? Db::getInstance()->executeS(
+        'SELECT `id_order_detail`, `product_id`, `product_attribute_id`, `product_quantity`, `id_tax_rules_group`, '
+        . '`product_price`, `unit_price_tax_excl`, `unit_price_tax_incl`, `tax_rate`, '
+        . '`total_price_tax_excl`, `total_price_tax_incl` FROM `' . _DB_PREFIX_ . 'order_detail` '
+        . 'WHERE `id_order` = ' . (int) $orderId . ' ORDER BY `id_order_detail` ASC'
     ) : false;
-    $orderDetail = is_array($detailRow) ? new OrderDetail((int) $detailRow['id_order_detail']) : false;
+    $orderDetailRows = is_array($orderDetailRows) ? $orderDetailRows : [];
+    $matchingTaxOrderDetails = array_values(array_filter(
+        $orderDetailRows,
+        static fn (array $row): bool => (int) ($row['product_id'] ?? 0) === $productId
+            && (int) ($row['product_attribute_id'] ?? 0) === 0
+    ));
+    $detailRow = count($matchingTaxOrderDetails) === 1 ? $matchingTaxOrderDetails[0] : false;
+    $orderDetailObject = is_array($detailRow)
+        ? new OrderDetail((int) $detailRow['id_order_detail'])
+        : false;
     $orderIsLoaded = $order instanceof Order && Validate::isLoadedObject($order);
-    $orderDetailIsLoaded = $orderDetail instanceof OrderDetail && Validate::isLoadedObject($orderDetail);
+    $orderDetailIsLoaded = is_array($detailRow);
+    $orderDetailObjectIsLoaded = $orderDetailObject instanceof OrderDetail
+        && Validate::isLoadedObject($orderDetailObject);
     $observedTaxOrder = [
         'order_loaded' => $orderIsLoaded,
         'order_total_paid_real' => $orderIsLoaded ? (float) $order->total_paid_real : null,
@@ -404,15 +417,17 @@ try {
         'order_total_shipping_tax_incl' => $orderIsLoaded ? (float) $order->total_shipping_tax_incl : null,
         'order_total_products_tax_excl' => $orderIsLoaded ? (float) $order->total_products : null,
         'order_total_products_tax_incl' => $orderIsLoaded ? (float) $order->total_products_wt : null,
+        'order_detail_row_count' => count($orderDetailRows),
         'order_detail_loaded' => $orderDetailIsLoaded,
-        'order_detail_quantity' => $orderDetailIsLoaded ? (int) $orderDetail->product_quantity : null,
-        'order_detail_tax_group_id' => $orderDetailIsLoaded ? (int) $orderDetail->id_tax_rules_group : null,
-        'order_detail_product_price' => $orderDetailIsLoaded ? (float) $orderDetail->product_price : null,
-        'order_detail_unit_tax_excl' => $orderDetailIsLoaded ? (float) $orderDetail->unit_price_tax_excl : null,
-        'order_detail_unit_tax_incl' => $orderDetailIsLoaded ? (float) $orderDetail->unit_price_tax_incl : null,
-        'order_detail_tax_rate' => $orderDetailIsLoaded ? (float) $orderDetail->tax_rate : null,
-        'order_detail_total_tax_excl' => $orderDetailIsLoaded ? (float) $orderDetail->total_price_tax_excl : null,
-        'order_detail_total_tax_incl' => $orderDetailIsLoaded ? (float) $orderDetail->total_price_tax_incl : null,
+        'order_detail_object_loaded' => $orderDetailObjectIsLoaded,
+        'order_detail_quantity' => $orderDetailIsLoaded ? (int) $detailRow['product_quantity'] : null,
+        'order_detail_tax_group_id' => $orderDetailIsLoaded ? (int) $detailRow['id_tax_rules_group'] : null,
+        'order_detail_product_price' => $orderDetailIsLoaded ? (float) $detailRow['product_price'] : null,
+        'order_detail_unit_tax_excl' => $orderDetailIsLoaded ? (float) $detailRow['unit_price_tax_excl'] : null,
+        'order_detail_unit_tax_incl' => $orderDetailIsLoaded ? (float) $detailRow['unit_price_tax_incl'] : null,
+        'order_detail_tax_rate' => $orderDetailIsLoaded ? (float) $detailRow['tax_rate'] : null,
+        'order_detail_total_tax_excl' => $orderDetailIsLoaded ? (float) $detailRow['total_price_tax_excl'] : null,
+        'order_detail_total_tax_incl' => $orderDetailIsLoaded ? (float) $detailRow['total_price_tax_incl'] : null,
     ];
     $expectedTaxOrder = [
         'order_loaded' => true,
@@ -423,6 +438,7 @@ try {
         'order_total_shipping_tax_incl' => 0.0,
         'order_total_products_tax_excl' => 1000.0,
         'order_total_products_tax_incl' => 1100.0,
+        'order_detail_row_count' => 1,
         'order_detail_loaded' => true,
         'order_detail_quantity' => 1,
         'order_detail_tax_group_id' => $taxGroupId,
@@ -444,10 +460,31 @@ try {
         }
     }
     if ($taxOrderMismatch !== []) {
+        $detailRowDiagnostics = array_map(
+            static fn (array $row): array => [
+                'id_order_detail' => (int) ($row['id_order_detail'] ?? 0),
+                'product_id' => (int) ($row['product_id'] ?? 0),
+                'product_attribute_id' => (int) ($row['product_attribute_id'] ?? 0),
+                'product_quantity' => (int) ($row['product_quantity'] ?? 0),
+                'id_tax_rules_group' => (int) ($row['id_tax_rules_group'] ?? 0),
+                'unit_price_tax_excl' => (float) ($row['unit_price_tax_excl'] ?? 0),
+                'unit_price_tax_incl' => (float) ($row['unit_price_tax_incl'] ?? 0),
+                'tax_rate' => (float) ($row['tax_rate'] ?? 0),
+                'total_price_tax_excl' => (float) ($row['total_price_tax_excl'] ?? 0),
+                'total_price_tax_incl' => (float) ($row['total_price_tax_incl'] ?? 0),
+            ],
+            $orderDetailRows
+        );
         throw new RuntimeException(
             'The unpaid CI-only order does not reconcile to the JPY 1000/1100 synthetic tax line; '
             . 'observed mismatches=' . json_encode(
-                $taxOrderMismatch,
+                [
+                    'mismatches' => $taxOrderMismatch,
+                    'order_id' => $orderId,
+                    'product_id' => $productId,
+                    'order_detail_object_loaded' => $orderDetailObjectIsLoaded,
+                    'order_detail_rows' => $detailRowDiagnostics,
+                ],
                 JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
             )
         );
@@ -461,8 +498,9 @@ try {
         || (int) $deliveryAddress->id_country !== $japanCountryId
         || (int) $order->id_carrier !== (int) $carrier->id
         || $orderCarrierZoneCount < 1
-        || abs((float) $order->total_products_wt - (float) $orderDetail->total_price_tax_incl) > 0.00001
-        || abs((float) $order->total_products - (float) $orderDetail->total_price_tax_excl) > 0.00001) {
+        || !is_array($detailRow)
+        || abs((float) $order->total_products_wt - (float) $detailRow['total_price_tax_incl']) > 0.00001
+        || abs((float) $order->total_products - (float) $detailRow['total_price_tax_excl']) > 0.00001) {
         throw new RuntimeException('The order delivery country/carrier zone or order totals do not match the free Japan carrier and saved product line.');
     }
     $savedState = new OrderState((int) $order->current_state, $languageId);

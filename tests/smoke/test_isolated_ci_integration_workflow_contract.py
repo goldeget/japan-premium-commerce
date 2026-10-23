@@ -13,7 +13,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/fresh-install.yml"
 NEW_STEP_IDS = (
-    "postcode_fixture",
+    "shipping_product_fixture", "postcode_fixture",
     "tax_fixture", "variant_fixture", "cart_controls_browser_qa",
     "security_fixture", "admin_security_browser_qa", "reset_token_browser_qa",
     "pwa_browser_qa", "shipping_free_fixture", "shipping_free_admin_configure",
@@ -48,15 +48,23 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
                 self.assertIn("steps.postcode_fixture.outcome == 'success'", step(name))
 
         lookup_dependent_checkout = (
-            "Enable run-scoped checkout only for the isolated order browser QA",
             "Verify browser customer search, Japan checkout, and unpaid offline order",
-            "Verify zero shipping in Tokyo coupon and quantity checkout with Chromium",
-            "Verify zero shipping in Osaka mobile checkout with Chromium",
-            "Verify tax-included taxable Japan checkout with the free carrier",
         )
         for name in lookup_dependent_checkout:
             with self.subTest(step=name):
                 self.assertIn("steps.postcode_lookup.outcome == 'success'", step(name))
+
+        independent_shipping_checkout = (
+            "Enable run-scoped checkout only for the isolated order browser QA",
+            "Verify zero shipping in Tokyo coupon and quantity checkout with Chromium",
+            "Verify zero shipping in Osaka mobile checkout with Chromium",
+            "Verify tax-included taxable Japan checkout with the free carrier",
+        )
+        for name in independent_shipping_checkout:
+            with self.subTest(step=name):
+                block = step(name)
+                self.assertNotIn("steps.postcode_lookup.outcome", block)
+                self.assertIn("steps.shipping_free_admin_readback.outcome == 'success'", block)
 
         independent_browser_qa = (
             "Verify Korean admin shipping links resolve in Chromium",
@@ -93,6 +101,20 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             with self.subTest(contract=contract):
                 self.assertEqual(before_build.count(f"- 'tests/smoke/{contract}.py'"), 2)
                 self.assertIn(f"tests.smoke.{contract}", before_build)
+
+    def test_free_shipping_product_fixture_is_aggregated_and_retains_evidence(self) -> None:
+        product_fixture = step("Prepare isolated active product for storefront and free-shipping QA")
+        self.assertIn("id: shipping_product_fixture", product_fixture)
+
+        aggregate = step("Aggregate browser QA and postal verification failures")
+        self.assertIn("SHIPPING_PRODUCT_FIXTURE_OUTCOME: ${{ steps.shipping_product_fixture.outcome }}", aggregate)
+        self.assertIn('"shipping_product_fixture=$SHIPPING_PRODUCT_FIXTURE_OUTCOME"', aggregate)
+
+        coverage = step("Verify browser QA screenshot coverage")
+        self.assertIn("SHIPPING_PRODUCT_FIXTURE_OUTCOME: ${{ steps.shipping_product_fixture.outcome }}", coverage)
+        self.assertIn('if [[ "$SHIPPING_PRODUCT_FIXTURE_OUTCOME" == success ]]; then', coverage)
+        self.assertIn("free-shipping-product-fixture.log", coverage)
+        self.assertIn("free-shipping-product-fixture.json", coverage)
 
     def test_tax_and_variant_ids_are_validated_and_forwarded_to_consumers(self) -> None:
         tax = step("Create isolated synthetic tax product and reconcile native unpaid order")
@@ -206,10 +228,12 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             for variable, expected_sql in queries:
                 with self.subTest(variable=variable):
                     start = body.index(f"{variable}=$(") + len(f"{variable}=$(")
-                    close = body.index("')", start)
-                    docker_command = body[start : close + 1]
+                    pipe = body.index("2>&1 | tee", start)
+                    docker_command = body[start:pipe].rstrip()
+                    if docker_command.endswith("\\"):
+                        docker_command = docker_command[:-1].rstrip()
                     script = (
-                        'docker() { shift 6; "$@"; }\n'
+                        'docker() { while [ "$1" != "mariadb" ]; do shift; done; shift; "$@"; }\n'
                         'query=$(' + docker_command + ')\n'
                         'printf "%s" "$query"\n'
                     )
@@ -221,6 +245,7 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
                             "CI_COMPOSE_PROJECT_NAME": "kuranea-ci-123-1",
                             "MARIADB_ROOT_PASSWORD": "ci-only-password",
                             "MARIADB_DATABASE": "prestashop",
+                            "CI_TEST_PRODUCT_ID": "123",
                         },
                         check=True,
                         capture_output=True,

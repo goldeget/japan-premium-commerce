@@ -116,8 +116,20 @@ class ProductTaxRulesContractTests(unittest.TestCase):
         ):
             with self.subTest(field=field):
                 self.assertIn(field, source)
-        self.assertRegex(source, r"json_encode\(\s*\$taxOrderMismatch")
+        self.assertIn("'mismatches' => $taxOrderMismatch", source)
+        self.assertIn("json_encode(", source)
         self.assertIn("JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES", source)
+
+    def test_tax_order_reconciliation_reports_persisted_detail_rows_by_order(self) -> None:
+        integration = ROOT / "tests" / "catalog" / "verify_product_tax_price.php"
+        source = integration.read_text(encoding="utf-8")
+        self.assertIn("$orderDetailRows", source)
+        self.assertIn("order_detail_row_count", source)
+        self.assertIn("product_id", source)
+        self.assertIn("product_attribute_id", source)
+        self.assertIn("id_order_detail", source)
+        self.assertIn("WHERE `id_order` = ' . (int) $orderId", source)
+        self.assertIn("order_detail_rows", source)
 
 
 if __name__ == "__main__":

@@ -248,15 +248,68 @@ jobs:
             prestashop runuser -g www-data -u www-data -- \
             php /tmp/verify_native_registration.php
 
+      - name: Prepare isolated active product for storefront and free-shipping QA
+        id: shipping_product_fixture
+        if: always() && !cancelled() && steps.compose_up.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ordenowa-browser-qa"
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/prepare_ci_free_shipping_product.php' \
+            < tests/catalog/prepare_ci_free_shipping_product.php
+          fixture_log="$RUNNER_TEMP/ordenowa-browser-qa/free-shipping-product-fixture.log"
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e CI=true -e GITHUB_ACTIONS=true \
+            -e GITHUB_RUN_ID="$GITHUB_RUN_ID" -e GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            -e KURANEA_ISOLATED_CI=1 -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            prestashop runuser -g www-data -u www-data -- \
+            php /tmp/prepare_ci_free_shipping_product.php 2>&1 | tee "$fixture_log"
+          fixture_json="$RUNNER_TEMP/ordenowa-browser-qa/free-shipping-product-fixture.json"
+          python3 - "$fixture_log" "$fixture_json" <<'PY'
+          import json, pathlib, sys
+          lines = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+          payloads = [line for line in lines if line.startswith("{\"product_id\"")]
+          assert len(payloads) == 1, "active free-shipping product JSON is missing or ambiguous"
+          fixture = json.loads(payloads[0])
+          assert int(fixture["product_id"]) > 0
+          assert fixture["price_jpy"] == 1000
+          assert fixture["tax_rules_group_id"] == 0
+          assert fixture["tax_scope"] == "unassigned rule group for an isolated free-shipping fixture; not a legal tax determination"
+          assert fixture["fixture_scope"] == "run-scoped isolated GitHub Actions disposable checkout database"
+          pathlib.Path(sys.argv[2]).write_text(json.dumps(fixture, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          print(f"CI_TEST_PRODUCT_ID={fixture['product_id']}")
+          print("CI_TEST_PRODUCT_TAX_GROUP=0")
+          PY
+          product_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["product_id"])' "$fixture_json")
+          printf 'CI_TEST_PRODUCT_ID=%s\nCI_TEST_PRODUCT_TAX_GROUP=0\n' "$product_id" >> "$GITHUB_ENV"
+
       - name: Import synthetic Tokyo postcode fixture for isolated checkout QA
         id: postcode_fixture
         continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/ordenowa-browser-qa"
+          postcode_stage="osaka_state"
+          postcode_stage_log="$RUNNER_TEMP/ordenowa-browser-qa/postcode-fixture-osaka-state.log"
+          report_postcode_fixture_failure() {
+            local status=$?
+            trap - ERR
+            set +e
+            local detail
+            detail=$(tail -n 4 "$postcode_stage_log" 2>/dev/null | tr '\r\n' ' ' | cut -c1-500)
+            detail=${detail//%/%25}
+            printf '::error title=ORDENOWA postcode fixture::phase=%s; exit=%s; %s\n' \
+              "$postcode_stage" "$status" "$detail"
+            exit "$status"
+          }
+          trap report_postcode_fixture_failure ERR
           # These two records follow the public KEN_ALL column layout, but are
           # synthetic CI inputs, NOT official Japan Post data.
-          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop php - <<'PHP'
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop php - \
+            <<'PHP' 2>&1 | tee "$postcode_stage_log"
           <?php
           $_SERVER['HTTP_HOST'] = 'localhost:8080';
           $_SERVER['REQUEST_URI'] = '/';
@@ -284,15 +337,33 @@ jobs:
           }
           fwrite(STDOUT, "PASS: isolated CI Osaka region JP-27 is active for the supported-region checkout.\n");
           PHP
-          printf '%s\n' \
-            '"13101","","1000004","","","","東京都","千代田区","大手町","","","","","",""' \
-            '"27127","","5300001","","","","大阪府","大阪市北区","梅田","","","","","",""' \
+          postcode_stage="synthetic_csv"
+          postcode_stage_log="$RUNNER_TEMP/ordenowa-browser-qa/postcode-fixture-synthetic-csv.log"
+          {
+            printf '%s\n' \
+              '"13101","","1000004","","","","東京都","千代田区","大手町","","","","","",""' \
+              '"27127","","5300001","","","","大阪府","大阪市北区","梅田","","","","","",""'
+          } \
             | docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
-                sh -c 'cat > /tmp/ordenowa-ci-only-ken-all.csv'
+                sh -c 'cat > /tmp/ordenowa-ci-only-ken-all.csv' 2>&1 \
+            | tee "$postcode_stage_log"
+          postcode_stage="ken_all_import"
+          postcode_stage_log="$RUNNER_TEMP/ordenowa-browser-qa/postcode-fixture-import.log"
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             runuser -g www-data -u www-data -- \
             php /var/www/html/modules/kuraneapostcode/bin/import-ken-all.php \
-              --file=/tmp/ordenowa-ci-only-ken-all.csv
+              --file=/tmp/ordenowa-ci-only-ken-all.csv 2>&1 \
+            | tee "$postcode_stage_log"
+          postcode_stage="verify_imported_rows"
+          postcode_stage_log="$RUNNER_TEMP/ordenowa-browser-qa/postcode-fixture-import-counts.log"
+          counts=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
+            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT COUNT(*), COALESCE(SUM(postcode=\"1000004\" AND jis_code=\"13101\"),0), COALESCE(SUM(postcode=\"5300001\" AND jis_code=\"27127\"),0) FROM ps_kuraneapostcode_address WHERE postcode IN (\"1000004\",\"5300001\")"' \
+            2>&1 | tee "$postcode_stage_log")
+          IFS=$'\t' read -r total_rows tokyo_rows osaka_rows <<< "$counts"
+          if [[ "$total_rows" != "2" || "$tokyo_rows" != "1" || "$osaka_rows" != "1" ]]; then
+            echo "::error title=ORDENOWA postcode fixture::phase=verify_imported_rows; expected_total=2; observed_total=$total_rows; tokyo=$tokyo_rows; osaka=$osaka_rows"
+            exit 1
+          fi
           printf '%s\n' 'ISOLATED CI FIXTURES: Tokyo 100-0004 and Osaka 530-0001 use synthetic KEN_ALL-layout data; official Japan Post archive import runs separately afterwards.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify isolated CI Tokyo postcode lookup
@@ -724,6 +795,7 @@ jobs:
 
       - name: Verify real product detail and cart in Chromium (no payment)
         id: storefront_browser_qa
+        if: always() && !cancelled() && steps.shipping_product_fixture.outcome == 'success' && steps.chromium_setup.outcome == 'success'
         continue-on-error: true
         shell: bash
         env:
@@ -731,10 +803,9 @@ jobs:
           QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
         run: |
           set -euo pipefail
-          product_id=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
-            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT id_product FROM ps_product WHERE reference LIKE \"KURANEA-CI-%\" AND active=1 ORDER BY id_product DESC LIMIT 1"')
+          product_id="$CI_TEST_PRODUCT_ID"
           if ! [[ "$product_id" =~ ^[0-9]+$ ]] || [ "$product_id" -lt 1 ]; then
-            echo "::error title=ORDENOWA browser QA::No isolated active test product found."
+            echo "::error title=ORDENOWA browser QA::No independent isolated free-shipping product ID was prepared."
             exit 1
           fi
           CI_TEST_PRODUCT_ID="$product_id" \
@@ -842,16 +913,32 @@ jobs:
 
       - name: Prepare isolated free-shipping order and coupon fixtures
         id: shipping_free_fixture
-        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && steps.chromium_setup.outcome == 'success'
+        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && steps.chromium_setup.outcome == 'success' && steps.shipping_product_fixture.outcome == 'success'
         continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
           mkdir -p "$RUNNER_TEMP/ordenowa-browser-qa"
+          shipping_fixture_stage="japan_zone_prepare"
+          shipping_fixture_log="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-fixture.log"
+          report_shipping_fixture_failure() {
+            local status=$?
+            trap - ERR
+            set +e
+            local detail
+            detail=$(tail -n 5 "$shipping_fixture_log" 2>/dev/null | tr '\r\n' ' ' | cut -c1-600)
+            detail=${detail//%/%25}
+            printf '::error title=ORDENOWA free-shipping fixture::phase=%s; exit=%s; %s\n' \
+              "$shipping_fixture_stage" "$status" "$detail"
+            exit "$status"
+          }
+          trap report_shipping_fixture_failure ERR
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             sh -c 'cat > /tmp/prepare_ci_japan_shipping_zone.php' \
             < tests/postcode/prepare_ci_japan_shipping_zone.php
           zone_fixture="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-japan-zone-fixture.json"
+          shipping_fixture_stage="japan_zone_prepare"
+          shipping_fixture_log="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-japan-zone-fixture.log"
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
             -e CI=true \
             -e GITHUB_ACTIONS=true \
@@ -861,31 +948,43 @@ jobs:
             -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
             prestashop runuser -g www-data -u www-data -- \
             php /tmp/prepare_ci_japan_shipping_zone.php \
-            > "$zone_fixture" 2> "$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-japan-zone-fixture.log"
-          cat "$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-japan-zone-fixture.log"
-          python3 - "$zone_fixture" <<'PY'
+            > "$zone_fixture" 2> "$shipping_fixture_log"
+          cat "$shipping_fixture_log"
+          shipping_fixture_stage="japan_zone_validate"
+          shipping_fixture_log="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-zone-validation.log"
+          python3 - "$zone_fixture" <<'PY' 2>&1 | tee "$shipping_fixture_log"
           import json, sys
           fixture = json.load(open(sys.argv[1], encoding="utf-8"))
+          expected_state_codes = [f"JP-{code:02d}" for code in range(1, 48)]
           assert int(fixture["zone_id"]) > 0
           assert fixture["country_codes"] == ["JP"]
+          assert int(fixture["state_count"]) == 47
+          assert fixture["state_iso_codes"] == expected_state_codes
           assert fixture["fixture_scope"] == "run-scoped isolated GitHub Actions disposable checkout database"
           PY
+          shipping_fixture_stage="active_product_readback"
+          shipping_fixture_log="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-product-readback.log"
           product_record=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
-            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT ps.id_product, ps.id_tax_rules_group FROM ps_product p JOIN ps_product_shop ps ON ps.id_product=p.id_product AND ps.id_shop=1 WHERE p.reference LIKE \"KURANEA-CI-%\" AND p.active=1 AND ps.id_tax_rules_group=0 ORDER BY p.id_product DESC LIMIT 1"')
+            sh -ec "MYSQL_PWD=\"\$MARIADB_ROOT_PASSWORD\" mariadb --protocol=tcp -h127.0.0.1 -uroot -N \"\$MARIADB_DATABASE\" -e \"SELECT ps.id_product, ps.id_tax_rules_group FROM ps_product p JOIN ps_product_shop ps ON ps.id_product=p.id_product AND ps.id_shop=1 WHERE p.id_product=$CI_TEST_PRODUCT_ID AND p.reference LIKE \\\"KURANEA-CI-%\\\" AND p.active=1\"" \
+            2>&1 | tee "$shipping_fixture_log")
           IFS=$'\t' read -r product_id product_tax_group_id <<< "$product_record"
           if ! [[ "$product_id" =~ ^[0-9]+$ ]] || [ "$product_id" -lt 1 ] \
             || [ "$product_tax_group_id" != "0" ]; then
-            echo 'The isolated free-shipping fixture has no active no-rule CI product.' >&2
+            echo "::error title=ORDENOWA free-shipping fixture::phase=active_product_readback; product_id=$product_id; tax_group_id=$product_tax_group_id"
             exit 1
           fi
+          shipping_fixture_stage="japan_zone_and_stock"
+          shipping_fixture_log="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-zone-stock-readback.log"
           japan_zone_id=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
-            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT id_zone FROM ps_country WHERE iso_code=\"JP\" AND active=1 ORDER BY id_country LIMIT 1"')
+            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT id_zone FROM ps_country WHERE iso_code=\"JP\" AND active=1 ORDER BY id_country LIMIT 1"' \
+            2>&1 | tee "$shipping_fixture_log")
           stock_quantity=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
-            sh -ec "MYSQL_PWD=\"\$MARIADB_ROOT_PASSWORD\" mariadb --protocol=tcp -h127.0.0.1 -uroot -N \"\$MARIADB_DATABASE\" -e \"SELECT COALESCE(SUM(quantity),0) FROM ps_stock_available WHERE id_product=$product_id AND id_product_attribute=0\"")
+            sh -ec "MYSQL_PWD=\"\$MARIADB_ROOT_PASSWORD\" mariadb --protocol=tcp -h127.0.0.1 -uroot -N \"\$MARIADB_DATABASE\" -e \"SELECT COALESCE(SUM(quantity),0) FROM ps_stock_available WHERE id_product=$product_id AND id_product_attribute=0\"" \
+            2>&1 | tee -a "$shipping_fixture_log")
           if ! [[ "$product_id" =~ ^[0-9]+$ ]] || [ "$product_id" -lt 1 ] \
             || ! [[ "$japan_zone_id" =~ ^[0-9]+$ ]] || [ "$japan_zone_id" -lt 1 ] \
             || ! [[ "$stock_quantity" =~ ^[0-9]+$ ]] || [ "$stock_quantity" -lt 2 ]; then
-            echo 'The isolated free-shipping fixture has no stocked no-rule CI product or Japan zone.' >&2
+            echo "::error title=ORDENOWA free-shipping fixture::phase=japan_zone_and_stock; product_id=$product_id; japan_zone_id=$japan_zone_id; stock=$stock_quantity"
             exit 1
           fi
           {
@@ -893,10 +992,14 @@ jobs:
             printf 'CI_TEST_PRODUCT_TAX_GROUP=%s\n' "$product_tax_group_id"
             printf 'CI_JAPAN_ZONE_ID=%s\n' "$japan_zone_id"
           } >> "$GITHUB_ENV"
+          shipping_fixture_stage="coupon_prepare"
+          shipping_fixture_log="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-coupon-prepare.log"
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             sh -c 'cat > /tmp/seed_ci_shipping_coupon.php' \
             < tests/postcode/seed_ci_shipping_coupon.php
           coupon_fixture="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-coupon-fixture.json"
+          shipping_fixture_stage="coupon_seed"
+          shipping_fixture_log="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-coupon-fixture.log"
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
             -e CI=true \
             -e GITHUB_ACTIONS=true \
@@ -906,8 +1009,11 @@ jobs:
             -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
             prestashop runuser -g www-data -u www-data -- \
             php /tmp/seed_ci_shipping_coupon.php \
-            > "$coupon_fixture"
-          coupon_code=$(python3 - "$coupon_fixture" <<'PY'
+            > "$coupon_fixture" 2> "$shipping_fixture_log"
+          cat "$shipping_fixture_log"
+          shipping_fixture_stage="coupon_validate"
+          shipping_fixture_log="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-coupon-validation.log"
+          coupon_code=$(python3 - "$coupon_fixture" <<'PY' 2>&1 | tee "$shipping_fixture_log"
           import json, sys
           fixture = json.load(open(sys.argv[1], encoding="utf-8"))
           assert fixture["currency"] == "JPY"
@@ -976,7 +1082,7 @@ jobs:
 
       - name: Enable run-scoped checkout only for the isolated order browser QA
         id: checkout_override
-        if: always() && !cancelled() && steps.shipping_free_admin_readback.outcome == 'success' && steps.postcode_lookup.outcome == 'success'
+        if: always() && !cancelled() && steps.shipping_free_admin_readback.outcome == 'success'
         continue-on-error: true
         shell: bash
         run: |
@@ -1101,7 +1207,7 @@ jobs:
 
       - name: Verify zero shipping in Tokyo coupon and quantity checkout with Chromium
         id: shipping_free_customer_browser_qa
-        if: steps.shipping_free_admin_readback.outcome == 'success' && steps.postcode_lookup.outcome == 'success' && steps.checkout_override.outcome == 'success'
+        if: steps.shipping_free_admin_readback.outcome == 'success' && steps.checkout_override.outcome == 'success' && steps.shipping_product_fixture.outcome == 'success'
         continue-on-error: true
         shell: bash
         env:
@@ -1120,7 +1226,7 @@ jobs:
 
       - name: Verify zero shipping in Osaka mobile checkout with Chromium
         id: shipping_free_osaka_mobile_browser_qa
-        if: steps.shipping_free_admin_readback.outcome == 'success' && steps.postcode_lookup.outcome == 'success' && steps.checkout_override.outcome == 'success'
+        if: steps.shipping_free_admin_readback.outcome == 'success' && steps.checkout_override.outcome == 'success' && steps.shipping_product_fixture.outcome == 'success'
         continue-on-error: true
         shell: bash
         env:
@@ -1139,7 +1245,7 @@ jobs:
 
       - name: Verify tax-included taxable Japan checkout with the free carrier
         id: shipping_free_taxable_browser_qa
-        if: always() && !cancelled() && steps.shipping_free_admin_readback.outcome == 'success' && steps.postcode_lookup.outcome == 'success' && steps.checkout_override.outcome == 'success' && steps.tax_fixture.outcome == 'success'
+        if: always() && !cancelled() && steps.shipping_free_admin_readback.outcome == 'success' && steps.checkout_override.outcome == 'success' && steps.tax_fixture.outcome == 'success'
         continue-on-error: true
         shell: bash
         env:
@@ -1271,6 +1377,7 @@ jobs:
         if: always()
         shell: bash
         env:
+          SHIPPING_PRODUCT_FIXTURE_OUTCOME: ${{ steps.shipping_product_fixture.outcome }}
           TAX_FIXTURE_OUTCOME: ${{ steps.tax_fixture.outcome }}
           VARIANT_FIXTURE_OUTCOME: ${{ steps.variant_fixture.outcome }}
           CART_CONTROLS_BROWSER_QA_OUTCOME: ${{ steps.cart_controls_browser_qa.outcome }}
@@ -1303,6 +1410,12 @@ jobs:
           set -euo pipefail
           artifact_dir="$RUNNER_TEMP/ordenowa-browser-qa"
           required_artifacts=()
+          if [[ "$SHIPPING_PRODUCT_FIXTURE_OUTCOME" == success ]]; then
+            required_artifacts+=(
+              free-shipping-product-fixture.log
+              free-shipping-product-fixture.json
+            )
+          fi
           if [[ "$BRAND_BROWSER_QA_OUTCOME" == success ]]; then
             required_artifacts+=(
               ordenowa-brand-e2e.log
@@ -1559,6 +1672,7 @@ jobs:
       - name: Aggregate browser QA and postal verification failures
         if: always()
         env:
+          SHIPPING_PRODUCT_FIXTURE_OUTCOME: ${{ steps.shipping_product_fixture.outcome }}
           TAX_FIXTURE_OUTCOME: ${{ steps.tax_fixture.outcome }}
           VARIANT_FIXTURE_OUTCOME: ${{ steps.variant_fixture.outcome }}
           CART_CONTROLS_BROWSER_QA_OUTCOME: ${{ steps.cart_controls_browser_qa.outcome }}
@@ -1599,6 +1713,7 @@ jobs:
           set -euo pipefail
           failed_steps=()
           for entry in \
+            "shipping_product_fixture=$SHIPPING_PRODUCT_FIXTURE_OUTCOME" \
             "tax_fixture=$TAX_FIXTURE_OUTCOME" \
             "variant_fixture=$VARIANT_FIXTURE_OUTCOME" \
             "cart_controls_browser_qa=$CART_CONTROLS_BROWSER_QA_OUTCOME" \
