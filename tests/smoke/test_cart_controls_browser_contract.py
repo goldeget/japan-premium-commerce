@@ -179,6 +179,76 @@ class CartControlsBrowserContractTests(unittest.TestCase):
         self.assertTrue('variant_result["product_attribute_id"] = cart_attribute_id' in self.source)
         self.assertTrue('data-id-product-attribute' in self.source)
 
+    def test_continue_shopping_waits_until_modal_show_transition_finishes(self) -> None:
+        """Bootstrap ignores dismiss clicks between visible and shown.bs.modal."""
+        tree = ast.parse(self.source)
+        add = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                   and node.name == "add_product_from_detail")
+        start = next(i for i, node in enumerate(add.body)
+                     if ast.unparse(node) == "mark_substage('add_button_click')")
+        end = next(i for i, node in enumerate(add.body)
+                   if ast.unparse(node) == "mark_substage('cart_navigation')")
+        stages = []
+
+        class Modal:
+            text = "[CI ONLY]"
+            displayed = True
+            shown = False
+            observed_shown = False
+
+            def is_displayed(self):
+                return self.displayed
+
+            def get_attribute(self, name):
+                return "true" if name == "data-cart-controls-shown" and self.observed_shown else None
+
+            def find_element(self, *_args):
+                return self
+
+            def click(self):
+                if self.shown:
+                    self.displayed = False
+
+        modal = Modal()
+
+        class Driver:
+            observing_shown = False
+
+            def execute_script(self, script):
+                self.observing_shown = "shown.bs.modal" in script
+
+            def find_elements(self, *_args):
+                return [modal]
+
+        driver = Driver()
+
+        class TransitionWait:
+            def __init__(self, _driver, _timeout):
+                pass
+
+            def until(self, predicate, message=""):
+                for poll in range(3):
+                    # First poll sees the fade before Bootstrap accepts dismiss.
+                    if poll:
+                        modal.shown = True
+                        modal.observed_shown = driver.observing_shown
+                    result = predicate(driver)
+                    if result:
+                        return result
+                raise AssertionError(message)
+
+        namespace = {
+            "driver": driver,
+            "button": SimpleNamespace(click=lambda: None),
+            "WebDriverWait": TransitionWait,
+            "By": SimpleNamespace(CSS_SELECTOR="css selector"),
+            "mark_substage": stages.append,
+        }
+        module = ast.Module(body=add.body[start:end], type_ignores=[])
+        exec(compile(ast.fix_missing_locations(module), str(CART_CONTROLS_E2E), "exec"), namespace)
+        self.assertFalse(modal.displayed, "continue shopping must close the confirmed modal")
+        self.assertIn("blockcart_close_wait", stages)
+
 
 if __name__ == "__main__":
     unittest.main()

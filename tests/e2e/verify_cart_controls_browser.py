@@ -375,6 +375,17 @@ def add_product_from_detail(
         message="the isolated CI test product has no active add-to-cart button",
     )
     mark_substage("add_button_click")
+    # Visibility precedes Bootstrap's shown event; dismiss clicks during the
+    # opening fade are ignored. Observe before clicking so fast shows cannot race.
+    driver.execute_script(
+        """
+        document.addEventListener('shown.bs.modal', function cartControlsShown(event) {
+            if (!event.target.matches('[data-ps-ref="blockcart-modal"]')) return;
+            event.target.setAttribute('data-cart-controls-shown', 'true');
+            document.removeEventListener('shown.bs.modal', cartControlsShown);
+        });
+        """
+    )
     button.click()
     mark_substage("blockcart_confirmation_wait")
     modal = WebDriverWait(driver, 25).until(
@@ -382,7 +393,9 @@ def add_product_from_detail(
             (
                 item
                 for item in browser.find_elements(By.CSS_SELECTOR, '[data-ps-ref="blockcart-modal"]')
-                if item.is_displayed() and "[CI ONLY]" in item.text
+                if item.is_displayed()
+                and item.get_attribute("data-cart-controls-shown") == "true"
+                and "[CI ONLY]" in item.text
             ),
             False,
         ),
