@@ -94,9 +94,12 @@ foreach (array_keys(\Kuranea\Postcode\Domain\PrefectureCatalog::all()) as $prefe
 sort($expectedStateCodes, SORT_STRING);
 $expectedStateCodeSet = array_fill_keys($expectedStateCodes, true);
 $existingStateRows = State::getStatesByIdCountry((int) $japan->id, false, 'iso_code', 'asc');
+if (!is_array($existingStateRows)) {
+    throw new RuntimeException('Could not read existing Japanese prefecture rows from the isolated shop.');
+}
 $existingStateIdsByIso = [];
 $existingDuplicateStateCodes = [];
-foreach (is_array($existingStateRows) ? $existingStateRows : [] as $existingStateRow) {
+foreach ($existingStateRows as $existingStateRow) {
     $existingIsoCode = (string) ($existingStateRow['iso_code'] ?? '');
     if (!isset($expectedStateCodeSet[$existingIsoCode])) {
         continue;
@@ -178,10 +181,11 @@ $statesOutsideZone = count(array_filter(
     $supportedStateRows,
     static fn (array $row): bool => (int) $row['id_zone'] !== (int) $zone->id
 ));
-$unsupportedStatesInZone = count(array_filter(
+$unsupportedStatesUsingFreeShippingZone = count(array_filter(
     $allStateRows,
     static fn (array $row): bool => !isset($expectedStateCodeSet[(string) $row['iso_code']])
-        && (int) $row['id_zone'] === (int) $zone->id
+        && ((int) $row['id_zone'] === (int) $zone->id
+            || ((int) $row['active'] === 1 && (int) $row['id_zone'] === 0))
 ));
 $activeStateCount = count(array_filter(
     $supportedStateRows,
@@ -197,8 +201,10 @@ if ($missingStateCodes !== [] || $duplicateStateCodes !== []) {
 if ($statesOutsideZone !== 0) {
     throw new RuntimeException('One or more Japanese prefectures are outside the run-scoped carrier zone.');
 }
-if ($unsupportedStatesInZone !== 0) {
-    throw new RuntimeException('A non-catalog Japanese state is assigned to the run-scoped free-shipping zone.');
+if ($unsupportedStatesUsingFreeShippingZone !== 0) {
+    throw new RuntimeException(
+        'A non-catalog Japanese state can use the run-scoped free-shipping zone directly or through the country fallback.'
+    );
 }
 if ($stateCount !== 47) {
     throw new RuntimeException('The isolated shop must have all 47 Japanese prefectures configured before free-shipping QA.');

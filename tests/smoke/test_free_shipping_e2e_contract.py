@@ -136,6 +136,8 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertIn("$stateCodes !== $expectedStateCodes", source)
         self.assertIn("$expectedStateCodeSet = array_fill_keys($expectedStateCodes, true)", source)
         self.assertIn("State::getStatesByIdCountry((int) $japan->id, false, 'iso_code', 'asc')", source)
+        self.assertIn("if (!is_array($existingStateRows))", source)
+        self.assertIn("Could not read existing Japanese prefecture rows from the isolated shop.", source)
         self.assertIn("$existingStateIdsByIso[$stateIsoCode] ?? 0", source)
         self.assertIn("The isolated shop already has duplicate supported prefecture rows:", source)
         self.assertNotIn("SELECT `id_state` FROM `' . _DB_PREFIX_ . 'state`", source)
@@ -161,8 +163,9 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertNotIn("assign all Japanese states to the run-scoped zone", source)
         self.assertNotIn("UPDATE `' . _DB_PREFIX_ . 'state`", source)
         self.assertIn("$supportedStateRows = array_values(array_filter(", source)
-        self.assertIn("$unsupportedStatesInZone = count(array_filter(", source)
-        self.assertIn("A non-catalog Japanese state is assigned to the run-scoped free-shipping zone.", source)
+        self.assertIn("$unsupportedStatesUsingFreeShippingZone = count(array_filter(", source)
+        self.assertIn("(int) $row['active'] === 1 && (int) $row['id_zone'] === 0", source)
+        self.assertIn("through the country fallback", source)
 
         # Unsupported legacy state rows cannot inherit the run-scoped free carrier.
         self.assertIn("$stateCodes !== $expectedStateCodes", source)
