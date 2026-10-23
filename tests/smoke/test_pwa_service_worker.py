@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from tests.e2e.verify_pwa_browser import (
@@ -19,6 +20,7 @@ from tests.e2e.verify_pwa_browser import (
     restore_offline_network_state,
     same_origin,
     validate_isolated_ci_target,
+    verify_offline_fallback,
 )
 
 
@@ -138,6 +140,79 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
                 self.assertIs(result["intercepted"], False)
                 self.assertEqual(0, result["fetchCalls"])
                 self.assertEqual(0, result["cacheOpenCalls"])
+
+
+class PwaOfflineWorkerNetworkTests(unittest.TestCase):
+    def test_offline_fallback_applies_and_restores_worker_target_network(self) -> None:
+        # Page-target emulation leaves service-worker fetches online in Chromium.
+        # Model that boundary so removing worker emulation breaks this regression.
+        class Driver:
+            page_source = "ORDENOWA"
+
+            def __init__(self) -> None:
+                self.worker_offline = False
+                self.worker_states: list[bool] = []
+                self.commands: list[str] = []
+                self.body = ""
+
+            def execute_cdp_cmd(self, command, parameters):
+                self.commands.append(command)
+                if command == "Target.getTargets":
+                    return {"targetInfos": [
+                        {"type": "service_worker", "url": "http://other.invalid/sw.js", "targetId": "other"},
+                        {"type": "service_worker", "url": "http://localhost:18080/sw.js", "targetId": "shop"},
+                    ]}
+                if command == "Target.attachToTarget":
+                    self.attached_target = parameters["targetId"]
+                    return {"sessionId": "shop-worker"}
+                if command == "Target.sendMessageToTarget":
+                    if parameters["sessionId"] != "shop-worker":
+                        raise AssertionError("wrong worker session")
+                    message = json.loads(parameters["message"])
+                    if message["method"] == "Network.emulateNetworkConditions":
+                        self.worker_offline = message["params"]["offline"]
+                        self.worker_states.append(self.worker_offline)
+                return {}
+
+            def get(self, _url):
+                self.body = "You are offline" if self.worker_offline else "ORDENOWA"
+
+            def find_element(self, *_args):
+                return SimpleNamespace(text=self.body)
+
+            def save_screenshot(self, _path):
+                return True
+
+        driver = Driver()
+        with patch("tests.e2e.verify_pwa_browser.By", SimpleNamespace(TAG_NAME="tag name")), patch(
+            "tests.e2e.verify_pwa_browser.assert_empty_cache_storage"
+        ):
+            verify_offline_fallback(driver, "http://localhost:18080", Path("unused.png"), lambda _stage: None)
+
+        self.assertEqual("shop", driver.attached_target)
+        self.assertEqual([True, False], driver.worker_states)
+        self.assertFalse(driver.worker_offline)
+        self.assertIn("Target.detachFromTarget", driver.commands)
+
+    def test_worker_reset_failure_still_restores_page_and_detaches(self) -> None:
+        class Driver:
+            def __init__(self) -> None:
+                self.commands: list[str] = []
+
+            def execute_cdp_cmd(self, command, _parameters):
+                self.commands.append(command)
+                if command == "Target.sendMessageToTarget":
+                    raise RuntimeError("worker reset failed")
+
+        driver = Driver()
+        with redirect_stderr(io.StringIO()):
+            restore_offline_network_state(driver, AssertionError("original failure"), "shop-worker")
+        self.assertEqual([
+            "Target.sendMessageToTarget",
+            "Network.emulateNetworkConditions",
+            "Network.setCacheDisabled",
+            "Target.detachFromTarget",
+        ], driver.commands)
 
 
 class PwaInstallabilityContractTests(unittest.TestCase):
@@ -319,7 +394,7 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
 
         self.assertLess(disable_cache, offline_mode)
         self.assertLess(offline_mode, offline_navigation)
-        self.assertIn("restore_offline_network_state(driver, primary_error)", finally_block)
+        self.assertIn("restore_offline_network_state(driver, primary_error, worker_session)", finally_block)
         self.assertIn('"offline": False', cleanup)
         restore_cache = cleanup.index('"Network.setCacheDisabled", {"cacheDisabled": False}')
         restore_network = cleanup.index('"offline": False')
@@ -334,7 +409,7 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         self.assertIn("primary_error: BaseException | None = None", offline)
         self.assertIn("except BaseException as error:", offline)
         self.assertIn("primary_error = error", offline)
-        self.assertIn("restore_offline_network_state(driver, primary_error)", offline)
+        self.assertIn("restore_offline_network_state(driver, primary_error, worker_session)", offline)
 
     def test_offline_failure_annotation_distinguishes_fallback_cache_and_recovery(self) -> None:
         offline = function_source(self.source, "verify_offline_fallback")

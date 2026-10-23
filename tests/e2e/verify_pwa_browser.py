@@ -388,10 +388,27 @@ def navigate_private_document(
     return assert_private_document_cache_headers(driver, requested_url, shop_url, route_label)
 
 
+def worker_network_conditions(session_id: str, offline: bool) -> dict[str, object]:
+    """Address the worker target: page CDP emulation does not affect its fetches."""
+    return {
+        "sessionId": session_id,
+        "message": json.dumps({
+            "id": 1 if offline else 2,
+            "method": "Network.emulateNetworkConditions",
+            "params": {
+                "offline": offline,
+                "latency": 0,
+                "downloadThroughput": 0 if offline else -1,
+                "uploadThroughput": 0 if offline else -1,
+            },
+        }),
+    }
+
+
 def restore_offline_network_state(
-    driver: webdriver.Chrome, primary_error: BaseException | None
+    driver: webdriver.Chrome, primary_error: BaseException | None, worker_session: str | None = None
 ) -> None:
-    """Attempt both browser resets without replacing an earlier QA failure."""
+    """Reset page and worker networking without replacing an earlier QA failure."""
     resets = (
         (
             "Network.emulateNetworkConditions",
@@ -399,6 +416,12 @@ def restore_offline_network_state(
         ),
         ("Network.setCacheDisabled", {"cacheDisabled": False}),
     )
+    if worker_session is not None:
+        resets = (
+            ("Target.sendMessageToTarget", worker_network_conditions(worker_session, False)),
+            *resets,
+            ("Target.detachFromTarget", {"sessionId": worker_session}),
+        )
     cleanup_errors: list[Exception] = []
     for command, parameters in resets:
         try:
@@ -432,6 +455,7 @@ def verify_offline_fallback(
     set_stage: Callable[[str], None],
 ) -> None:
     primary_error: BaseException | None = None
+    worker_session: str | None = None
     try:
         set_stage("offline_devtools_enable")
         driver.execute_cdp_cmd("Network.enable", {})
@@ -441,6 +465,21 @@ def verify_offline_fallback(
         driver.execute_cdp_cmd(
             "Network.emulateNetworkConditions",
             {"offline": True, "latency": 0, "downloadThroughput": 0, "uploadThroughput": 0},
+        )
+        targets = driver.execute_cdp_cmd("Target.getTargets", {})["targetInfos"]
+        worker_url = base_url.rstrip("/") + "/sw.js"
+        worker = next(
+            (target for target in targets
+             if target["type"] == "service_worker" and target["url"] == worker_url),
+            None,
+        )
+        if worker is None:
+            raise AssertionError("the storefront service-worker target is unavailable")
+        worker_session = driver.execute_cdp_cmd(
+            "Target.attachToTarget", {"targetId": worker["targetId"], "flatten": False}
+        )["sessionId"]
+        driver.execute_cdp_cmd(
+            "Target.sendMessageToTarget", worker_network_conditions(worker_session, True)
         )
         set_stage("offline_fallback_navigation")
         driver.get(base_url + "/")
@@ -462,7 +501,7 @@ def verify_offline_fallback(
     finally:
         if primary_error is None:
             set_stage("offline_state_restore")
-        restore_offline_network_state(driver, primary_error)
+        restore_offline_network_state(driver, primary_error, worker_session)
     set_stage("online_recovery_navigation")
     driver.get(base_url + "/")
     set_stage("online_recovery_content")
