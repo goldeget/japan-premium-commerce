@@ -97,7 +97,7 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
     def test_new_contracts_run_before_build_and_trigger_both_events(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         contracts = (
-            "test_product_tax_rules_contract", "test_variant_fixture_contract",
+            "test_account_address_routes", "test_product_tax_rules_contract", "test_variant_fixture_contract",
             "test_cart_controls_browser_contract", "test_security_runtime_e2e_contract",
             "test_pwa_service_worker", "test_taxable_checkout_browser_contract",
             "test_isolated_browser_target_guards", "test_isolated_ci_integration_workflow_contract",

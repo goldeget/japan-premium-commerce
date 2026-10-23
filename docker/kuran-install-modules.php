@@ -53,6 +53,46 @@ foreach (['kuraneapostcode', 'kuraneabackoffice', 'kuraneabusinessprofile', 'kur
     }
 }
 
+// Repair the Korean address/address-list default route collision.
+// The upstream Korean Shop.Navigation translations use "주소" for both route
+// keys. Dispatcher selects the first matching route, so a saved customer's
+// Addresses link opens the new-address form. Keep custom SEO routes intact.
+try {
+    $koreanLanguageId = (int) Language::getIdByIso('ko', true);
+    if ($koreanLanguageId > 0) {
+        $accountAddressRoutes = $db->executeS(
+            'SELECT m.page, ml.id_meta, ml.url_rewrite'
+            . ' FROM `' . _DB_PREFIX_ . 'meta_lang` ml'
+            . ' INNER JOIN `' . _DB_PREFIX_ . 'meta` m ON m.id_meta = ml.id_meta'
+            . " WHERE m.page IN ('address', 'addresses') AND ml.id_shop = 1 AND ml.id_lang = " . $koreanLanguageId,
+            true,
+            false
+        );
+        if (!is_array($accountAddressRoutes)) {
+            throw new RuntimeException('Could not read the Korean account address routes.');
+        }
+        $accountAddressRouteByPage = [];
+        foreach ($accountAddressRoutes as $accountAddressRoute) {
+            $accountAddressRouteByPage[$accountAddressRoute['page']] = $accountAddressRoute;
+        }
+        $singleAddressSlug = rawurldecode((string) ($accountAddressRouteByPage['address']['url_rewrite'] ?? ''));
+        $addressListSlug = rawurldecode((string) ($accountAddressRouteByPage['addresses']['url_rewrite'] ?? ''));
+        if ($singleAddressSlug === '주소' && $addressListSlug === '주소') {
+            $addressListMetaId = (int) $accountAddressRouteByPage['addresses']['id_meta'];
+            $addressListWhere = sprintf('id_meta = %d AND id_shop = 1 AND id_lang = %d', $addressListMetaId, $koreanLanguageId);
+            if ($addressListMetaId < 1
+                || !$db->update('meta_lang', ['url_rewrite' => 'addresses'], $addressListWhere, 1, false, false)
+                || $db->getValue('SELECT url_rewrite FROM `' . _DB_PREFIX_ . 'meta_lang` WHERE ' . $addressListWhere, false) !== 'addresses') {
+                throw new RuntimeException('Could not persist the Korean account address list route.');
+            }
+            error_log('ORDENOWA_ACCOUNT_ADDRESS_ROUTES status=repaired');
+        }
+    }
+} catch (Throwable $accountAddressRouteError) {
+    // No completion marker: a failed read/write is retried on the next startup.
+    error_log('ORDENOWA_ACCOUNT_ADDRESS_ROUTES status=deferred reason=retry_next_start');
+}
+
 // Run after bundled modules have installed so the final localized Meta rows
 // are present. V1 installations get a targeted repair for the confirmed late
 // Japanese identity default, while fresh installs migrate non-ASCII defaults
