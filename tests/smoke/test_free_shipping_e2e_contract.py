@@ -249,6 +249,20 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             with self.subTest(marker=marker):
                 self.assertIn(marker, browser)
 
+    def test_carrier_form_opens_shipping_tab_before_selecting_zone_and_free_shipping(self) -> None:
+        browser = BROWSER.read_text(encoding="utf-8")
+        form_fill = browser.split("def _fill_free_carrier_form(", 1)[1].split(
+            "def _assert_free_carrier_form(", 1
+        )[0]
+        shipping_tab = form_fill.index('a[href="#carrier_shipping_settings-tab"]')
+        tab_activation = form_fill.index("checkout.click_at_center(driver, shipping_tab)")
+        zone_selection = form_fill.index("_select_japan_zone(driver, JAPAN_ZONE_ID)")
+        free_shipping = form_fill.index('_set_checkbox(driver, "carrier[shipping_settings][is_free]", True)')
+        self.assertLess(shipping_tab, tab_activation)
+        self.assertLess(tab_activation, zone_selection)
+        self.assertLess(zone_selection, free_shipping)
+        self.assertIn('mark_stage("open_shipping_settings_tab")', form_fill)
+
         self.assertNotIn("ShippingMethod.BY_PRICE", browser)
         self.assertNotIn("ShippingMethod.BY_WEIGHT", browser)
         self.assertNotIn("js-add-carrier-ranges-btn", browser)

@@ -8,6 +8,7 @@ import ipaddress
 import os
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -169,13 +170,22 @@ def _select_japan_zone(driver, zone_id: int) -> str:
     return zone_name
 
 
-def _fill_free_carrier_form(driver, name: str) -> None:
+def _fill_free_carrier_form(
+    driver,
+    name: str,
+    stage_callback: Callable[[str], None] | None = None,
+) -> None:
+    mark_stage = stage_callback or (lambda _stage: None)
+    mark_stage("set_carrier_name")
     _set_text(driver, 'input[name="carrier[general_settings][name]"]', name)
+
+    mark_stage("set_carrier_grade")
     grade_fields = driver.find_elements(By.CSS_SELECTOR, 'input[name="carrier[general_settings][grade]"]')
     if grade_fields and grade_fields[0].is_displayed() and grade_fields[0].is_enabled():
         grade_fields[0].clear()
         grade_fields[0].send_keys("5")
 
+    mark_stage("set_carrier_delay")
     delay_fields = driver.find_elements(
         By.CSS_SELECTOR,
         'input[name^="carrier[general_settings][localized_delay]"]',
@@ -185,10 +195,25 @@ def _fill_free_carrier_form(driver, name: str) -> None:
             delay.clear()
             delay.send_keys("CI test only; no physical dispatch")
 
+    mark_stage("activate_carrier")
     _set_checkbox(driver, "carrier[general_settings][active]", True)
+
+    # CarrierType is rendered as a three-tab NavigationTabType form. The
+    # shipping controls exist in the DOM while hidden until this tab is active.
+    mark_stage("open_shipping_settings_tab")
+    shipping_tab = _wait_visible(
+        driver,
+        'a[href="#carrier_shipping_settings-tab"]',
+    )
+    checkout.click_at_center(driver, shipping_tab)
+
+    mark_stage("select_japan_zone")
     _select_japan_zone(driver, JAPAN_ZONE_ID)
+
+    mark_stage("enable_free_shipping")
     _set_checkbox(driver, "carrier[shipping_settings][is_free]", True)
 
+    mark_stage("set_carrier_limits")
     for field_name, value in (
         ("carrier[size_weight_settings][max_width]", "0"),
         ("carrier[size_weight_settings][max_height]", "0"),
@@ -283,12 +308,27 @@ def configure_free_carrier() -> None:
     final_name = f"ORDENOWA CI Free JP {suffix}"
     driver = checkout.webdriver.Chrome(options=checkout.browser_options(1440, 960))
     stage = "administrator_login"
+
+    def stage_callback(prefix: str) -> Callable[[str], None]:
+        def update_stage(detail: str) -> None:
+            nonlocal stage
+            stage = f"{prefix}.{detail}"
+
+        return update_stage
+
     try:
         checkout.admin_login(driver)
         stage = "create_free_japan_carrier"
         checkout.visit(driver, ADMIN_LOGIN + "/improve/shipping/carriers/create")
+        stage = "wait_for_carrier_create_form"
         _wait_visible(driver, 'input[name="carrier[general_settings][name]"]')
-        _fill_free_carrier_form(driver, draft_name)
+        stage = "fill_draft_free_japan_carrier"
+        _fill_free_carrier_form(
+            driver,
+            draft_name,
+            stage_callback("create_free_japan_carrier"),
+        )
+        stage = "save_draft_free_japan_carrier"
         carrier_id = _save_carrier_form(driver, "create")
 
         stage = "edit_and_save_free_japan_carrier"
@@ -297,7 +337,12 @@ def configure_free_carrier() -> None:
             driver,
             {"name": draft_name},
         )
-        _fill_free_carrier_form(driver, final_name)
+        _fill_free_carrier_form(
+            driver,
+            final_name,
+            stage_callback("edit_free_japan_carrier"),
+        )
+        stage = "save_final_free_japan_carrier"
         _save_carrier_form(driver, "edit")
 
         # A fresh page load verifies that the browser form rereads the saved row.
@@ -319,7 +364,7 @@ def configure_free_carrier() -> None:
             driver.save_screenshot(str(QA_DIR / "shipping-free-carrier-configure-failure.png"))
         except Exception:
             pass
-        _emit_failure(stage, error)
+        _emit_failure(stage, error, driver)
         raise SystemExit(f"isolated free carrier setup failed at {stage}") from None
     finally:
         driver.quit()
@@ -362,7 +407,7 @@ def readback_free_carrier() -> None:
             driver.save_screenshot(str(QA_DIR / "shipping-free-carrier-readback-failure.png"))
         except Exception:
             pass
-        _emit_failure(stage, error)
+        _emit_failure(stage, error, driver)
         raise SystemExit(f"free carrier restart readback failed at {stage}") from None
     finally:
         driver.quit()
@@ -945,7 +990,7 @@ def run_japan_customer_checkout() -> None:
             driver.save_screenshot(str(QA_DIR / "shipping-free-checkout-failure.png"))
         except Exception:
             pass
-        _emit_failure(stage, error)
+        _emit_failure(stage, error, driver)
         raise SystemExit(f"isolated Japan free-shipping checkout failed at {stage}") from None
     finally:
         driver.quit()
@@ -1029,7 +1074,7 @@ def run_japan_mobile_osaka_checkout() -> None:
             driver.save_screenshot(str(QA_DIR / "shipping-free-osaka-mobile-failure.png"))
         except Exception:
             pass
-        _emit_failure(stage, error)
+        _emit_failure(stage, error, driver)
         raise SystemExit(f"isolated Osaka mobile free-shipping checkout failed at {stage}") from None
     finally:
         driver.quit()
@@ -1167,7 +1212,7 @@ def run_japan_taxable_customer_checkout() -> None:
             driver.save_screenshot(str(QA_DIR / "shipping-free-taxable-checkout-failure.png"))
         except Exception:
             pass
-        _emit_failure(stage, error)
+        _emit_failure(stage, error, driver)
         raise SystemExit(f"isolated taxable free-shipping checkout failed at {stage}") from None
     finally:
         driver.quit()
@@ -1244,19 +1289,33 @@ def run_free_carrier_admin_order_view() -> None:
             driver.save_screenshot(str(QA_DIR / "shipping-free-order-admin-failure.png"))
         except Exception:
             pass
-        _emit_failure(stage, error)
+        _emit_failure(stage, error, driver)
         raise SystemExit(f"free-carrier admin order browser failed at {stage}") from None
     finally:
         driver.quit()
 
 
-def _emit_failure(stage: str, error: Exception) -> None:
+def _emit_failure(stage: str, error: Exception, driver=None) -> None:
     exception_type = type(error).__name__
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", exception_type):
         exception_type = "Exception"
     safe_stage = stage if re.fullmatch(r"[a-z][a-z0-9_.]*", stage) else "unknown"
-    print(f"FAIL: free shipping browser QA at {safe_stage} ({exception_type})", file=sys.stderr)
-    print(f"::error title=ORDENOWA free shipping QA::{safe_stage} ({exception_type})", file=sys.stderr)
+    safe_path = "unknown"
+    if driver is not None:
+        try:
+            page_path = urlparse(driver.current_url).path
+            if re.fullmatch(r"/[A-Za-z0-9._/-]*", page_path):
+                safe_path = page_path[:240]
+        except Exception:
+            pass
+    print(
+        f"FAIL: free shipping browser QA at {safe_stage} ({exception_type}); path={safe_path}",
+        file=sys.stderr,
+    )
+    print(
+        f"::error title=ORDENOWA free shipping QA::{safe_stage} ({exception_type}); path={safe_path}",
+        file=sys.stderr,
+    )
 
 
 if __name__ == "__main__":
