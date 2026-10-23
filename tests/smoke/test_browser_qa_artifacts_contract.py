@@ -40,6 +40,7 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
         for screenshot in (
             "brand-desktop-published.png",
             "brand-mobile-published.png",
+            "brand-english-published.png",
             "password-reset-email-requested.png",
             "password-reset-email-logo.png",
             "desktop-customer-account-created.png",

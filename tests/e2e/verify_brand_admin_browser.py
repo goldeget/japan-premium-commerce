@@ -38,6 +38,8 @@ OFFICIAL_UPLOADS = {
 }
 SEO_TITLE = 'ORDENOWA CI QA " </title><meta id="ordenowa-seo-title-inert-sentinel">'
 SEO_DESCRIPTION = 'ORDENOWA CI SEO description "><meta id="ordenowa-seo-description-inert-sentinel">'
+SEO_TITLE_EN = "ORDENOWA CI SEO TITLE EN"
+SEO_DESCRIPTION_EN = "ORDENOWA CI SEO DESCRIPTION EN"
 SEO_TITLE_KO = "ORDENOWA CI SEO TITLE KO"
 SEO_DESCRIPTION_KO = "ORDENOWA CI SEO DESCRIPTION KO"
 SEO_JSONLD_BRAND_NAME = 'ORDENOWA CI BRAND JP </script><meta id="ordenowa-jsonld-inert-sentinel">'
@@ -119,6 +121,41 @@ def find_asset_url(items: list[dict], rel: str, source: Path, filename: str) -> 
         ),
         "",
     )
+
+
+def same_storefront_origin(url: str) -> bool:
+    def origin_parts(value: str) -> tuple[str, str, int] | None:
+        parsed = urlparse(value)
+        scheme = parsed.scheme.lower()
+        hostname = (parsed.hostname or "").lower()
+        if scheme not in ("http", "https") or not hostname:
+            return None
+        port = parsed.port
+        if port is None:
+            port = 443 if scheme == "https" else 80
+        return scheme, hostname, port
+
+    try:
+        url_origin = origin_parts(url)
+        base_origin = origin_parts(BASE)
+        return url_origin is not None and url_origin == base_origin
+    except ValueError:
+        return False
+
+
+def generated_storefront_language_url(driver: webdriver.Chrome, iso_code: str) -> str:
+    driver.get(BASE + "/")
+    selector = f'select.js-language-selector option[data-iso-code="{iso_code}"]'
+    option = WebDriverWait(driver, 30).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+    )
+    href = option.get_attribute("value")
+    if not href:
+        raise AssertionError("the storefront language selector has no generated destination")
+    language_url = urljoin(driver.current_url, href)
+    if not same_storefront_origin(language_url):
+        raise AssertionError("the storefront language selector left the isolated storefront")
+    return language_url
 
 
 def visible(driver: webdriver.Chrome, selector: str):
@@ -885,6 +922,7 @@ def assert_public_brand_assets(
     expected_logo: str,
     *,
     locale_path: str = "/",
+    locale_url: str | None = None,
     expected_html_lang: str = "ja-JP",
     seo_title: str = SEO_TITLE,
     seo_description: str = SEO_DESCRIPTION,
@@ -904,7 +942,9 @@ def assert_public_brand_assets(
 
     set_assertion_stage("customer_route")
     customer_url = urljoin(BASE + "/", locale_path.lstrip("/"))
-    if urlparse(customer_url).netloc != urlparse(BASE).netloc:
+    if locale_url is not None:
+        customer_url = locale_url
+    if not same_storefront_origin(customer_url):
         raise AssertionError("the customer locale route left the isolated storefront")
     driver.get(customer_url)
 
@@ -1371,10 +1411,10 @@ def run() -> None:
             'textarea[name="profile[refund][en-US]"]': "ORDENOWA CI REFUND POLICY EN",
             'textarea[name="profile[refund][ko-KR]"]': "ORDENOWA CI REFUND POLICY KO",
             'input[name="profile[seo][title][ja-JP]"]': SEO_TITLE,
-            'input[name="profile[seo][title][en-US]"]': "ORDENOWA CI SEO TITLE EN",
+            'input[name="profile[seo][title][en-US]"]': SEO_TITLE_EN,
             'input[name="profile[seo][title][ko-KR]"]': SEO_TITLE_KO,
             'textarea[name="profile[seo][description][ja-JP]"]': SEO_DESCRIPTION,
-            'textarea[name="profile[seo][description][en-US]"]': "ORDENOWA CI SEO DESCRIPTION EN",
+            'textarea[name="profile[seo][description][en-US]"]': SEO_DESCRIPTION_EN,
             'textarea[name="profile[seo][description][ko-KR]"]': SEO_DESCRIPTION_KO,
             'input[name="profile[pwa][name][ja-JP]"]': "ORDENOWA CI QA",
             'input[name="profile[pwa][name][en-US]"]': "ORDENOWA CI APP EN",
@@ -1539,6 +1579,24 @@ def run() -> None:
             stage_callback=set_brand_assertion_stage,
         )
         driver.save_screenshot(str(DEST / "brand-korean-published.png"))
+
+        stage = "published_english_customer_brand"
+        english_url = generated_storefront_language_url(driver, "en")
+        assert_public_brand_assets(
+            driver,
+            "English",
+            "header-desktop.png",
+            locale_url=english_url,
+            expected_html_lang="en-US",
+            seo_title=SEO_TITLE_EN,
+            seo_description=SEO_DESCRIPTION_EN,
+            jsonld_brand_name="ORDENOWA CI BRAND EN",
+            pwa_name="ORDENOWA CI APP EN",
+            pwa_short_name="ORDENOWA EN",
+            stage_prefix="published_english_customer_brand",
+            stage_callback=set_brand_assertion_stage,
+        )
+        driver.save_screenshot(str(DEST / "brand-english-published.png"))
 
         stage = "published_company_profile_and_seller_disclosures_remain_gated"
         private_disclosure_groups = (

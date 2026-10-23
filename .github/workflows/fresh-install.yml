@@ -805,6 +805,7 @@ jobs:
               storefront-checkout-gate-after-ci-order.log
               brand-desktop-published.png
               brand-mobile-published.png
+              brand-english-published.png
               shipping-admin-settings-desktop.png
               shipping-admin-settings-mobile.png
               password-reset-email-requested.png

@@ -788,6 +788,39 @@ class BrandE2EContractTests(unittest.TestCase):
         )
         self.assertIn('driver.save_screenshot(str(DEST / "brand-korean-published.png"))', browser_flow)
 
+    def test_browser_checks_published_brand_metadata_and_images_on_generated_english_customer_route(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+
+        self.assertIn('SEO_TITLE_EN = "ORDENOWA CI SEO TITLE EN"', browser_flow)
+        self.assertIn('SEO_DESCRIPTION_EN = "ORDENOWA CI SEO DESCRIPTION EN"', browser_flow)
+        self.assertIn('def generated_storefront_language_url(driver: webdriver.Chrome, iso_code: str) -> str:', browser_flow)
+        self.assertIn('option[data-iso-code=', browser_flow)
+        self.assertIn('href = option.get_attribute("value")', browser_flow)
+        self.assertIn('urljoin(driver.current_url, href)', browser_flow)
+        self.assertIn('def same_storefront_origin(', browser_flow)
+        self.assertIn('port = parsed.port', browser_flow)
+        self.assertIn('return scheme, hostname, port', browser_flow)
+        self.assertIn('url_origin = origin_parts(url)', browser_flow)
+        self.assertIn('base_origin = origin_parts(BASE)', browser_flow)
+        self.assertIn('return url_origin is not None and url_origin == base_origin', browser_flow)
+        self.assertIn('if not same_storefront_origin(language_url):', browser_flow)
+        self.assertIn('locale_url: str | None = None', browser_flow)
+        self.assertIn('same_storefront_origin(customer_url)', browser_flow)
+
+        run_flow = browser_flow.split('stage = "published_korean_customer_brand"', 1)[1].split(
+            'stage = "published_company_profile_and_seller_disclosures_remain_gated"', 1
+        )[0]
+        self.assertIn('english_url = generated_storefront_language_url(driver, "en")', run_flow)
+        self.assertIn('locale_url=english_url', run_flow)
+        self.assertIn('expected_html_lang="en-US"', run_flow)
+        self.assertIn('seo_title=SEO_TITLE_EN', run_flow)
+        self.assertIn('seo_description=SEO_DESCRIPTION_EN', run_flow)
+        self.assertIn('jsonld_brand_name="ORDENOWA CI BRAND EN"', run_flow)
+        self.assertIn('pwa_name="ORDENOWA CI APP EN"', run_flow)
+        self.assertIn('pwa_short_name="ORDENOWA EN"', run_flow)
+        self.assertIn('stage_prefix="published_english_customer_brand"', run_flow)
+        self.assertIn('driver.save_screenshot(str(DEST / "brand-english-published.png"))', run_flow)
+
 
 if __name__ == "__main__":
     unittest.main()
