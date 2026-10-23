@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlparse
 
@@ -424,16 +425,26 @@ def restore_offline_network_state(
     raise cleanup_errors[0]
 
 
-def verify_offline_fallback(driver: webdriver.Chrome, base_url: str, screenshot: Path) -> None:
-    driver.execute_cdp_cmd("Network.enable", {})
+def verify_offline_fallback(
+    driver: webdriver.Chrome,
+    base_url: str,
+    screenshot: Path,
+    set_stage: Callable[[str], None],
+) -> None:
     primary_error: BaseException | None = None
     try:
+        set_stage("offline_devtools_enable")
+        driver.execute_cdp_cmd("Network.enable", {})
+        set_stage("offline_cache_bypass")
         driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": True})
+        set_stage("offline_network_emulation")
         driver.execute_cdp_cmd(
             "Network.emulateNetworkConditions",
             {"offline": True, "latency": 0, "downloadThroughput": 0, "uploadThroughput": 0},
         )
+        set_stage("offline_fallback_navigation")
         driver.get(base_url + "/")
+        set_stage("offline_fallback_content")
         body = driver.find_element(By.TAG_NAME, "body").text
         if not any(text in body for text in (
             "インターネットに接続できません",
@@ -441,14 +452,20 @@ def verify_offline_fallback(driver: webdriver.Chrome, base_url: str, screenshot:
             "연결을 확인해 주세요",
         )):
             raise AssertionError("offline navigation did not show the localized fallback")
+        set_stage("offline_fallback_screenshot")
         driver.save_screenshot(str(screenshot))
+        set_stage("offline_cache_storage")
         assert_empty_cache_storage(driver, "offline navigation")
     except BaseException as error:
         primary_error = error
         raise
     finally:
+        if primary_error is None:
+            set_stage("offline_state_restore")
         restore_offline_network_state(driver, primary_error)
+    set_stage("online_recovery_navigation")
     driver.get(base_url + "/")
+    set_stage("online_recovery_content")
     if "ORDENOWA" not in driver.page_source.upper():
         raise AssertionError("the online storefront did not recover after offline navigation")
 
@@ -603,6 +620,11 @@ def run_viewport(base_url: str, artifact_dir: Path, width: int, height: int, lab
     driver = None
     stage = "chrome_start"
     primary_failure = False
+
+    def update_offline_stage(next_stage: str) -> None:
+        nonlocal stage
+        stage = next_stage
+
     try:
         driver = webdriver.Chrome(options=options)
         driver.set_window_size(width, height)
@@ -649,7 +671,10 @@ def run_viewport(base_url: str, artifact_dir: Path, width: int, height: int, lab
 
         stage = "offline_fallback"
         verify_offline_fallback(
-            driver, base_url, artifact_dir / f"pwa-{label}-offline-fallback.png"
+            driver,
+            base_url,
+            artifact_dir / f"pwa-{label}-offline-fallback.png",
+            update_offline_stage,
         )
 
         if label == "desktop":

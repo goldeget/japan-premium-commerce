@@ -336,6 +336,44 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         self.assertIn("primary_error = error", offline)
         self.assertIn("restore_offline_network_state(driver, primary_error)", offline)
 
+    def test_offline_failure_annotation_distinguishes_fallback_cache_and_recovery(self) -> None:
+        offline = function_source(self.source, "verify_offline_fallback")
+        viewport = function_source(self.source, "run_viewport")
+        for stage in (
+            "offline_devtools_enable",
+            "offline_cache_bypass",
+            "offline_network_emulation",
+            "offline_fallback_navigation",
+            "offline_fallback_content",
+            "offline_cache_storage",
+            "offline_state_restore",
+            "online_recovery_navigation",
+            "online_recovery_content",
+        ):
+            with self.subTest(stage=stage):
+                self.assertIn(f'set_stage("{stage}")', offline)
+        ordered_stages = (
+            "offline_devtools_enable",
+            "offline_cache_bypass",
+            "offline_network_emulation",
+            "offline_fallback_navigation",
+            "offline_fallback_content",
+            "offline_cache_storage",
+        )
+        for earlier, later in zip(ordered_stages, ordered_stages[1:]):
+            self.assertLess(offline.index(f'set_stage("{earlier}")'), offline.index(f'set_stage("{later}")'))
+        self.assertLess(
+            offline.index('set_stage("offline_fallback_content")'),
+            offline.index("if not any(text in body"),
+        )
+        self.assertLess(
+            offline.index('set_stage("offline_cache_storage")'),
+            offline.index('assert_empty_cache_storage(driver, "offline navigation")'),
+        )
+        self.assertIn("nonlocal stage", viewport)
+        offline_call = viewport.split("verify_offline_fallback(", 1)[1].split("\n        )", 1)[0]
+        self.assertIn("update_offline_stage", offline_call)
+
     def test_offline_cleanup_attempts_both_resets_and_preserves_primary_failure(self) -> None:
         class FakeDriver:
             def __init__(self) -> None:
