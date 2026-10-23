@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -34,6 +35,23 @@ MAX_CHECKOUT_REGISTRATION_NETWORK_EVENTS = 500
 MAX_CHECKOUT_REGISTRATION_NETWORK_EVENT_CHARS = 65536
 MAX_CHECKOUT_REGISTRATION_NETWORK_REQUESTS = 20
 MAX_CHECKOUT_REGISTRATION_REDIRECTS_PER_REQUEST = 4
+
+
+def checkout_registration_email(label: str, run_id: str, run_attempt: str) -> str:
+    """Build a run-scoped test address with an RFC 5321-sized local part."""
+    safe_run_id = re.sub(r"[^0-9]", "", str(run_id))[-20:] or "0"
+    safe_run_attempt = re.sub(r"[^0-9]", "", str(run_attempt))[-4:] or "1"
+    safe_label = re.sub(r"[^a-z0-9]+", "-", str(label).casefold()).strip("-") or "checkout"
+    prefix = f"qa-ordenowa-checkout-{safe_run_id}-{safe_run_attempt}-"
+
+    if len(prefix) + len(safe_label) > 64:
+        suffix = hashlib.sha256(str(label).encode("utf-8")).hexdigest()[:8]
+        label_budget = 64 - len(prefix) - len(suffix) - 1
+        if label_budget < 1:
+            raise ValueError("CI run metadata leaves no room for a checkout test-email label")
+        safe_label = f"{safe_label[:label_budget].rstrip('-') or 'x'}-{suffix}"
+
+    return f"{prefix}{safe_label}@example.invalid"
 
 
 def visible(driver: webdriver.Chrome, selector: str, timeout: int = 30):
@@ -1182,7 +1200,7 @@ def add_product_and_open_checkout(driver: webdriver.Chrome, label: str) -> None:
 
 
 def register_checkout_account(driver: webdriver.Chrome, label: str, stage_callback=None) -> str:
-    email = f"qa-ordenowa-checkout-{RUN_ID}-{RUN_ATTEMPT}-{label}@example.invalid"
+    email = checkout_registration_email(label, RUN_ID, RUN_ATTEMPT)
     password = f"ORDENOWA-CI-{RUN_ID}-{RUN_ATTEMPT}-Aa1!"
     _mark_checkout_stage(stage_callback, "customer_form.locate")
     stage_form = visible(driver, "#checkout-guest-form #customer-form")

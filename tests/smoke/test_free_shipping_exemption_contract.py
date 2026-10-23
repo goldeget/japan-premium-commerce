@@ -11,6 +11,7 @@ from tests.e2e import checkout_total_math
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "fresh-install.yml"
 BROWSER = ROOT / "tests" / "e2e" / "verify_ci_free_shipping_browser.py"
+CHECKOUT_HELPER = ROOT / "tests" / "e2e" / "verify_ci_checkout_admin_browser.py"
 ORDER_VERIFY = ROOT / "tests" / "postcode" / "verify_ci_free_shipping_exemption_order.php"
 FIXTURE = ROOT / "tests" / "catalog" / "prepare_ci_free_shipping_exemption_product.php"
 
@@ -126,6 +127,29 @@ class FreeShippingExplicitExemptionContractTests(unittest.TestCase):
         ):
             with self.subTest(marker=marker):
                 self.assertTrue(marker in verifier, f"missing {marker}")
+
+    def test_native_exemption_verifier_reconstructs_the_bounded_browser_test_email(self) -> None:
+        checkout_helper = CHECKOUT_HELPER.read_text(encoding="utf-8")
+        verifier = ORDER_VERIFY.read_text(encoding="utf-8")
+
+        self.assertIn("def checkout_registration_email", checkout_helper)
+        self.assertIn("email = checkout_registration_email(label, RUN_ID, RUN_ATTEMPT)", checkout_helper)
+        for marker in (
+            "$emailRunId = substr($runId, -20)",
+            "$emailRunAttempt = substr($runAttempt, -4)",
+            "$emailLabel = 'shipping-free-explicit-exemption'",
+            "preg_replace('/[^a-z0-9]+/', '-', strtolower($emailLabel))",
+            "strlen($emailLocalPart) > 64",
+            "substr(hash('sha256', $emailLabel), 0, 8)",
+            "$expectedEmail = strtolower($emailLocalPart . '@example.invalid')",
+            "$email !== $expectedEmail",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, verifier)
+        self.assertNotIn(
+            "sprintf('qa-ordenowa-checkout-%s-%s-shipping-free-explicit-exemption'",
+            verifier,
+        )
 
     def test_browser_and_admin_reconcile_the_explicit_exemption_order(self) -> None:
         browser = BROWSER.read_text(encoding="utf-8")

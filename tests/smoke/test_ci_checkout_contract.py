@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import os
 import re
@@ -1736,6 +1737,58 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         )
         self.assertEqual(capped_redirects["truncated"], True)
         self.assertEqual(len(capped_redirects["requests"][0]["redirects"]), 4)
+
+    def test_checkout_registration_email_local_part_respects_rfc_limit_and_keeps_labels_distinct(self) -> None:
+        source = ast.parse(CHECKOUT_FLOW.read_text(encoding="utf-8"))
+        builder_nodes = [
+            node for node in source.body
+            if isinstance(node, ast.FunctionDef) and node.name == "checkout_registration_email"
+        ]
+        self.assertEqual(len(builder_nodes), 1, "checkout needs a single bounded test-email builder")
+        namespace: dict[str, object] = {"hashlib": hashlib, "re": re}
+        exec(
+            compile(ast.Module(body=builder_nodes, type_ignores=[]), str(CHECKOUT_FLOW), "exec"),
+            namespace,
+        )
+        build_email = namespace["checkout_registration_email"]
+
+        run_id = "12345678901"
+        attempt = "1"
+        ordinary = build_email("shipping-free-customer", run_id, attempt)
+        self.assertTrue(ordinary.endswith("-shipping-free-customer@example.invalid"))
+        self.assertLessEqual(len(ordinary.split("@", 1)[0]), 64)
+
+        long_label = "shipping-free-explicit-exemption"
+        long_email = build_email(long_label, run_id, attempt)
+        local_part, domain = long_email.split("@", 1)
+        self.assertEqual(domain, "example.invalid")
+        self.assertEqual(len(local_part), 64)
+        self.assertEqual(
+            local_part.rsplit("-", 1)[-1],
+            hashlib.sha256(long_label.encode("utf-8")).hexdigest()[:8],
+        )
+        self.assertEqual(long_email, build_email(long_label, run_id, attempt))
+        self.assertNotEqual(long_email, build_email(long_label, "12345678902", attempt))
+
+        longest_identifiers = build_email(long_label, "9" * 20, "9" * 4)
+        self.assertLessEqual(len(longest_identifiers.split("@", 1)[0]), 64)
+
+        same_prefix_a = build_email("shipping-free-" + "x" * 30, run_id, attempt)
+        same_prefix_b = build_email("shipping-free-" + "y" * 30, run_id, attempt)
+        self.assertNotEqual(same_prefix_a, same_prefix_b)
+        self.assertLessEqual(len(same_prefix_a.split("@", 1)[0]), 64)
+        self.assertLessEqual(len(same_prefix_b.split("@", 1)[0]), 64)
+
+        sanitized = build_email("../special label?", run_id, attempt)
+        self.assertRegex(
+            sanitized,
+            r"^qa-ordenowa-checkout-[0-9]+-[0-9]+-[a-z0-9-]+@example\.invalid$",
+        )
+
+        registration = CHECKOUT_FLOW.read_text(encoding="utf-8").split(
+            "def register_checkout_account", 1
+        )[1].split("def select_japan_address", 1)[0]
+        self.assertIn("email = checkout_registration_email(label, RUN_ID, RUN_ATTEMPT)", registration)
 
 
 if __name__ == "__main__":

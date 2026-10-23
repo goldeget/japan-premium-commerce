@@ -123,12 +123,30 @@ if (!Validate::isLoadedObject($order)) {
 }
 $customer = new Customer((int) $order->id_customer);
 $email = strtolower((string) ($browserOrder['email'] ?? ''));
-$emailPrefix = sprintf('qa-ordenowa-checkout-%s-%s-shipping-free-explicit-exemption', $runId, $runAttempt);
+$emailRunId = substr($runId, -20);
+$emailRunAttempt = substr($runAttempt, -4);
+$emailLabel = 'shipping-free-explicit-exemption';
+$safeEmailLabel = preg_replace('/[^a-z0-9]+/', '-', strtolower($emailLabel)) ?: 'checkout';
+$emailPrefix = sprintf('qa-ordenowa-checkout-%s-%s-', $emailRunId, $emailRunAttempt);
+$emailLocalPart = $emailPrefix . $safeEmailLabel;
+if (strlen($emailLocalPart) > 64) {
+    $emailHash = substr(hash('sha256', $emailLabel), 0, 8);
+    $labelBudget = 64 - strlen($emailPrefix) - strlen($emailHash) - 1;
+    if ($labelBudget < 1) {
+        throw new RuntimeException('Run-scoped email metadata leaves no room for the exemption account label.');
+    }
+    $safeEmailLabel = rtrim(substr($safeEmailLabel, 0, $labelBudget), '-');
+    if ($safeEmailLabel === '') {
+        $safeEmailLabel = 'x';
+    }
+    $emailLocalPart = $emailPrefix . $safeEmailLabel . '-' . $emailHash;
+}
+$expectedEmail = strtolower($emailLocalPart . '@example.invalid');
 $state = new OrderState((int) $order->current_state, (int) $order->id_lang);
 $currency = new Currency((int) $order->id_currency);
 if (!Validate::isLoadedObject($customer)
-    || !str_starts_with($email, $emailPrefix)
-    || !str_ends_with($email, '@example.invalid')
+    || $email !== $expectedEmail
+    || strlen((string) strstr($email, '@', true)) > 64
     || strtolower((string) $customer->email) !== $email
     || (bool) $customer->is_guest
     || (string) $order->module !== 'ps_checkpayment'
