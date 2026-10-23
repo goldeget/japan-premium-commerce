@@ -288,6 +288,97 @@ def replace_primary_logo_in_saved_draft(
     raise AssertionError("could not replace the primary logo in the saved draft")
 
 
+def replace_brand_asset_in_saved_draft(
+    driver: webdriver.Chrome,
+    settings_url: str,
+    slot: str,
+    preview_field_id: str,
+    source: Path,
+    filename: str,
+    role: str,
+    stage_callback: Callable[[str], None],
+    stage_prefix: str,
+) -> None:
+    upload_selector = f'input[name="brand_uploads[{slot}]"]'
+    save_selector = 'form.ordenowa-profile-settings button[name="submitOrdenowaSaveDraft"]'
+
+    for attempt in range(1, BRAND_DRAFT_REPLACEMENT_ATTEMPTS + 1):
+        stage_callback(f"{stage_prefix}_draft_form_attempt_{attempt}")
+        driver.get(settings_url)
+        visible(driver, "form.ordenowa-profile-settings")
+
+        try:
+            stage_callback(f"{stage_prefix}_upload_attempt_{attempt}")
+            visible(driver, upload_selector).send_keys(str(source.resolve()))
+            stage_callback(f"{stage_prefix}_save_attempt_{attempt}")
+            visible(driver, save_selector).click()
+        except StaleElementReferenceException:
+            if attempt == BRAND_DRAFT_REPLACEMENT_ATTEMPTS:
+                raise
+            continue
+
+        try:
+            stage_callback(f"{stage_prefix}_save_confirmation_attempt_{attempt}")
+            wait_for_draft_save_confirmation(driver)
+        except TimeoutException:
+            if attempt == BRAND_DRAFT_REPLACEMENT_ATTEMPTS:
+                raise
+            continue
+
+        stage_callback(f"{stage_prefix}_saved_preview_attempt_{attempt}")
+        driver.get(settings_url)
+        visible(driver, "form.ordenowa-profile-settings")
+        assert_uploaded_derivative_url(
+            asset_preview_url_for_field(driver, preview_field_id),
+            source,
+            filename,
+            role + " saved draft preview",
+        )
+        return
+
+    raise AssertionError("could not replace " + role + " in the saved draft")
+
+
+def current_draft_history_row(driver: webdriver.Chrome):
+    for row in driver.find_elements(By.CSS_SELECTOR, ".ordenowa-profile-history tbody tr"):
+        try:
+            if "현재 초안" in row.text:
+                return row
+        except StaleElementReferenceException:
+            continue
+    return False
+
+
+def preview_current_draft_brand_assets(
+    driver: webdriver.Chrome,
+    expected_assets: tuple[tuple[str, Path], ...],
+    stage_callback: Callable[[str], None],
+    stage_prefix: str,
+) -> None:
+    stage_callback(stage_prefix + "_draft_preview")
+    current_draft_row = WebDriverWait(driver, 30).until(current_draft_history_row)
+    current_draft_row.find_element(By.CSS_SELECTOR, 'button[name="submitOrdenowaPreview"]').click()
+    preview = visible(driver, ".ordenowa-profile-preview")
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", preview)
+    preview_images = preview.find_elements(By.TAG_NAME, "img")
+    preview_urls = [image.get_attribute("src") or "" for image in preview_images]
+
+    for filename, source in expected_assets:
+        preview_url = next(
+            (url for url in preview_urls if urlparse(url).path.endswith("/" + filename)),
+            "",
+        )
+        assert_uploaded_derivative_url(preview_url, source, filename, "admin draft preview " + filename)
+
+    WebDriverWait(driver, 30).until(
+        lambda browser: all(
+            int(image.get_attribute("naturalWidth") or 0) > 0
+            for image in browser.find_elements(By.CSS_SELECTOR, ".ordenowa-profile-preview img")
+        )
+    )
+    driver.save_screenshot(str(DEST / f"brand-admin-{stage_prefix}-draft-preview.png"))
+
+
 def asset_preview_url_for_field(driver: webdriver.Chrome, field_id: str) -> str:
     field = visible(driver, f"#{field_id}")
     return driver.execute_script(
@@ -296,7 +387,7 @@ def asset_preview_url_for_field(driver: webdriver.Chrome, field_id: str) -> str:
     )
 
 
-def public_brand_snapshot(driver: webdriver.Chrome) -> dict:
+def public_brand_snapshot(driver: webdriver.Chrome, *, include_mobile: bool = True) -> dict:
     driver.get(BASE + "/")
     snapshot = driver.execute_async_script(
         """
@@ -331,7 +422,25 @@ def public_brand_snapshot(driver: webdriver.Chrome) -> dict:
         raise AssertionError("current public brand metadata could not be read before and after saving the draft")
     if not snapshot.get("logo") or not snapshot.get("title") or not snapshot.get("manifest", {}).get("name"):
         raise AssertionError("the current public brand logo, SEO title, or PWA metadata is missing")
+    if include_mobile:
+        original_size = driver.get_window_size()
+        try:
+            driver.set_window_size(390, 844)
+            snapshot["mobile"] = public_brand_snapshot(driver, include_mobile=False)
+        finally:
+            driver.set_window_size(original_size["width"], original_size["height"])
+            driver.get(BASE + "/")
     return snapshot
+
+
+def public_brand_slot_urls(snapshot: dict, slot: str) -> tuple[str, ...]:
+    if slot == "favicon_symbol":
+        return tuple(sorted(href for rel, href in snapshot["icons"] if rel == "icon"))
+    if slot == "pwa_icon":
+        apple_icons = [href for rel, href in snapshot["icons"] if rel == "apple-touch-icon"]
+        manifest_icons = [icon[0] for icon in snapshot["manifest"]["icons"]]
+        return tuple(sorted(apple_icons + manifest_icons))
+    raise AssertionError("unsupported replaceable brand icon slot")
 
 
 def click_centered(driver: webdriver.Chrome, element) -> None:
@@ -584,9 +693,14 @@ def assert_public_brand_assets(
     jsonld_brand_name: str = SEO_JSONLD_BRAND_NAME,
     pwa_name: str = "ORDENOWA CI QA",
     pwa_short_name: str = "ORDENOWA CI",
+    favicon_source: Path | None = None,
+    pwa_source: Path | None = None,
     stage_prefix: str,
     stage_callback: Callable[[str], None],
 ) -> None:
+    favicon_source = favicon_source or OFFICIAL_UPLOADS["favicon_symbol"]
+    pwa_source = pwa_source or OFFICIAL_UPLOADS["pwa_icon"]
+
     def set_assertion_stage(phase: str) -> None:
         stage_callback(stage_prefix + "_" + phase)
 
@@ -663,26 +777,26 @@ def assert_public_brand_assets(
         raise AssertionError("favicon or Apple Touch Icon link is missing")
     assert_uploaded_derivative_url(
         find_asset_url(
-            results["assetLinks"], "icon", OFFICIAL_UPLOADS["favicon_symbol"], "favicon.ico"
+            results["assetLinks"], "icon", favicon_source, "favicon.ico"
         ),
-        OFFICIAL_UPLOADS["favicon_symbol"],
+        favicon_source,
         "favicon.ico",
         "favicon",
     )
     for filename in ("favicon-16.png", "favicon-32.png"):
         assert_uploaded_derivative_url(
             find_asset_url(
-                results["assetLinks"], "icon", OFFICIAL_UPLOADS["favicon_symbol"], filename
+                results["assetLinks"], "icon", favicon_source, filename
             ),
-            OFFICIAL_UPLOADS["favicon_symbol"],
+            favicon_source,
             filename,
             "favicon",
         )
     assert_uploaded_derivative_url(
         find_asset_url(
-            results["assetLinks"], "apple-touch-icon", OFFICIAL_UPLOADS["pwa_icon"], "apple-touch-icon.png"
+            results["assetLinks"], "apple-touch-icon", pwa_source, "apple-touch-icon.png"
         ),
-        OFFICIAL_UPLOADS["pwa_icon"],
+        pwa_source,
         "apple-touch-icon.png",
         "Apple Touch Icon",
     )
@@ -712,7 +826,7 @@ def assert_public_brand_assets(
         if icon_url is None:
             raise AssertionError("PWA manifest is missing " + filename)
         assert_uploaded_derivative_url(
-            icon_url["src"], OFFICIAL_UPLOADS["pwa_icon"], filename, "PWA icon"
+            icon_url["src"], pwa_source, filename, "PWA icon"
         )
         if (icon_url["sizes"], icon_url["purpose"], icon_url["width"], icon_url["height"]) != (
             declared_size,
@@ -723,6 +837,7 @@ def assert_public_brand_assets(
             raise AssertionError(
                 "PWA manifest size, purpose, or decoded dimensions are incorrect for " + filename
             )
+
     if results["htmlLang"] != expected_html_lang:
         raise AssertionError("the customer locale route did not render the expected language")
     if seo_title not in results["title"]:
@@ -742,6 +857,184 @@ def assert_public_brand_assets(
         raise AssertionError("Korean admin PWA names or colors did not publish to the app manifest")
     if results["themeColor"] != "#244a7d":
         raise AssertionError("Korean admin PWA theme color did not publish to customer metadata")
+
+
+def restore_approved_brand_icon_after_failure(
+    driver: webdriver.Chrome,
+    settings_url: str,
+    *,
+    slot: str,
+    approved_source: Path,
+    preview_field_id: str,
+    approved_previews: tuple[tuple[str, Path], ...],
+    public_before_draft: dict,
+    stage_callback: Callable[[str], None],
+    stage_prefix: str,
+) -> None:
+    # Recover authentication and a fresh CSRF-protected settings URL even when
+    # the original failure was a login redirect or an expired admin session.
+    driver.delete_all_cookies()
+    driver.get(ADMIN_LOGIN + "/login")
+    restore_admin_session(driver, stage_callback, stage_prefix + "_failure_restore_admin_login")
+    settings_url = business_profile_settings_url(driver)
+    approved_filename = approved_previews[0][0]
+    stage_callback(stage_prefix + "_failure_restore_save_draft")
+    replace_brand_asset_in_saved_draft(
+        driver,
+        settings_url,
+        slot,
+        preview_field_id,
+        approved_source,
+        approved_filename,
+        slot + " failure restore",
+        stage_callback,
+        stage_prefix + "_failure_restore",
+    )
+    # A failed private preview must not prevent publishing the approved source.
+    stage_callback(stage_prefix + "_failure_restore_publish")
+    driver.get(settings_url)
+    visible(driver, "form.ordenowa-profile-settings")
+    publish_saved_brand_draft(driver, stage_callback, stage_prefix + "_failure_restore_publish")
+    assert_public_brand_assets(
+        driver,
+        "desktop",
+        "header-desktop.png",
+        stage_prefix=stage_prefix + "_failure_restored_assets",
+        stage_callback=stage_callback,
+    )
+    restored = public_brand_snapshot(driver)
+    if public_brand_slot_urls(restored, slot) != public_brand_slot_urls(public_before_draft, slot):
+        raise AssertionError("failure cleanup did not restore the approved " + slot + " public image")
+
+
+def replace_publish_restore_brand_icon(
+    driver: webdriver.Chrome,
+    settings_url: str,
+    *,
+    slot: str,
+    replacement_source: Path,
+    approved_source: Path,
+    preview_field_id: str,
+    replacement_previews: tuple[tuple[str, Path], ...],
+    approved_previews: tuple[tuple[str, Path], ...],
+    stage_callback: Callable[[str], None],
+) -> None:
+    stage_prefix = slot + "_replacement"
+    public_before_draft = public_brand_snapshot(driver)
+    if not public_brand_slot_urls(public_before_draft, slot):
+        raise AssertionError("published brand " + slot + " assets are missing before replacement")
+
+    restore_required = False
+    try:
+        replacement_filename = replacement_previews[0][0]
+        restore_required = True
+        stage_callback(stage_prefix + "_save_replacement_draft")
+        replace_brand_asset_in_saved_draft(
+            driver,
+            settings_url,
+            slot,
+            preview_field_id,
+            replacement_source,
+            replacement_filename,
+            slot,
+            stage_callback,
+            stage_prefix + "_replacement",
+        )
+        preview_current_draft_brand_assets(
+            driver,
+            replacement_previews,
+            stage_callback,
+            stage_prefix + "_replacement",
+        )
+        public_after_replacement_draft = public_brand_snapshot(driver)
+        if public_after_replacement_draft != public_before_draft:
+            raise AssertionError("saving a " + slot + " draft changed public brand assets before publish")
+
+        stage_callback(stage_prefix + "_publish_replacement")
+        driver.get(settings_url)
+        visible(driver, "form.ordenowa-profile-settings")
+        publish_saved_brand_draft(driver, stage_callback, stage_prefix + "_replacement_publish")
+        assert_public_brand_assets(
+            driver,
+            "desktop",
+            "header-desktop.png",
+            favicon_source=replacement_source if slot == "favicon_symbol" else None,
+            pwa_source=replacement_source if slot == "pwa_icon" else None,
+            stage_prefix=stage_prefix + "_published_replacement",
+            stage_callback=stage_callback,
+        )
+        public_after_replacement = public_brand_snapshot(driver)
+        if public_brand_slot_urls(public_after_replacement, slot) == public_brand_slot_urls(public_before_draft, slot):
+            raise AssertionError("publishing the " + slot + " replacement did not change its public image URLs")
+
+        approved_filename = approved_previews[0][0]
+        stage_callback(stage_prefix + "_save_approved_restore_draft")
+        replace_brand_asset_in_saved_draft(
+            driver,
+            settings_url,
+            slot,
+            preview_field_id,
+            approved_source,
+            approved_filename,
+            slot + " approved restore",
+            stage_callback,
+            stage_prefix + "_restore",
+        )
+        preview_current_draft_brand_assets(
+            driver,
+            approved_previews,
+            stage_callback,
+            stage_prefix + "_approved_restore",
+        )
+        public_after_restore_draft = public_brand_snapshot(driver)
+        if public_after_restore_draft != public_after_replacement:
+            raise AssertionError("saving the approved " + slot + " restore changed public brand assets before publish")
+
+        stage_callback(stage_prefix + "_publish_approved_restore")
+        driver.get(settings_url)
+        visible(driver, "form.ordenowa-profile-settings")
+        publish_saved_brand_draft(driver, stage_callback, stage_prefix + "_approved_restore_publish")
+        assert_public_brand_assets(
+            driver,
+            "desktop",
+            "header-desktop.png",
+            stage_prefix=stage_prefix + "_published_approved_restore",
+            stage_callback=stage_callback,
+        )
+        public_after_restore = public_brand_snapshot(driver)
+        if public_brand_slot_urls(public_after_restore, slot) != public_brand_slot_urls(public_before_draft, slot):
+            raise AssertionError("republishing the approved " + slot + " source did not restore public image URLs")
+        restore_required = False
+        driver.save_screenshot(str(DEST / f"brand-admin-{slot}-approved-restored.png"))
+    except Exception:
+        if restore_required:
+            cleanup_stage = {"value": stage_prefix + "_failure_restore_start"}
+
+            try:
+                restore_approved_brand_icon_after_failure(
+                    driver,
+                    settings_url,
+                    slot=slot,
+                    approved_source=approved_source,
+                    preview_field_id=preview_field_id,
+                    approved_previews=approved_previews,
+                    public_before_draft=public_before_draft,
+                    stage_callback=lambda cleanup_assertion_stage: cleanup_stage.update(
+                        value=cleanup_assertion_stage
+                    ),
+                    stage_prefix=stage_prefix,
+                )
+                print("ORDENOWA_BRAND_ICON_RESTORE_CLEANUP=passed", file=sys.stderr)
+            except Exception as cleanup_error:
+                print(
+                    "ORDENOWA_BRAND_ICON_RESTORE_CLEANUP=failed at "
+                    + cleanup_stage["value"][:96]
+                    + " ("
+                    + type(cleanup_error).__name__
+                    + ")",
+                    file=sys.stderr,
+                )
+        raise
 
 
 def assert_seller_disclosures_remain_gated(driver: webdriver.Chrome, private_values: list[str]) -> None:
@@ -910,6 +1203,9 @@ def run() -> None:
         company_profile_selector = 'textarea[name="profile[content][company_profile][ko-KR]"]'
         if visible(driver, company_profile_selector).get_attribute("value") != company_profile_ko:
             raise AssertionError("the Korean company profile did not persist after reloading the admin settings")
+        for selector, expected in ci_settings.items():
+            if visible(driver, selector).get_attribute("value") != expected:
+                raise AssertionError("a Korean admin operating setting did not persist after reloading its draft")
         driver.save_screenshot(str(DEST / "brand-company-profile-draft-reloaded.png"))
         driver.save_screenshot(str(DEST / "brand-admin-uploaded-draft.png"))
 
@@ -939,12 +1235,7 @@ def run() -> None:
         driver.save_screenshot(str(DEST / "brand-admin-uploaded-draft-restored.png"))
 
         stage = "private_admin_preview"
-        current_draft_row = WebDriverWait(driver, 30).until(
-            lambda browser: next(
-                row for row in browser.find_elements(By.CSS_SELECTOR, ".ordenowa-profile-history tbody tr")
-                if "현재 초안" in row.text
-            )
-        )
+        current_draft_row = WebDriverWait(driver, 30).until(current_draft_history_row)
         current_draft_row.find_element(By.CSS_SELECTOR, 'button[name="submitOrdenowaPreview"]').click()
         preview = visible(driver, ".ordenowa-profile-preview")
         for expected in (
@@ -1015,7 +1306,6 @@ def run() -> None:
             stage_prefix="published_desktop_customer_brand",
             stage_callback=set_brand_assertion_stage,
         )
-        settings_url = business_profile_settings_url(driver)
         driver.save_screenshot(str(DEST / "brand-desktop-published.png"))
 
         stage = "published_mobile_customer_brand"
@@ -1027,7 +1317,6 @@ def run() -> None:
             stage_prefix="published_mobile_customer_brand",
             stage_callback=set_brand_assertion_stage,
         )
-        settings_url = business_profile_settings_url(driver)
         driver.save_screenshot(str(DEST / "brand-mobile-published.png"))
 
         stage = "published_korean_customer_brand"
@@ -1046,7 +1335,6 @@ def run() -> None:
             stage_prefix="published_korean_customer_brand",
             stage_callback=set_brand_assertion_stage,
         )
-        settings_url = business_profile_settings_url(driver)
         driver.save_screenshot(str(DEST / "brand-korean-published.png"))
 
         stage = "published_company_profile_and_seller_disclosures_remain_gated"
@@ -1087,7 +1375,40 @@ def run() -> None:
         stage = "record_official_published_header_logo"
         official_header_logo = public_brand_snapshot(driver)["logo"]
 
+        stage = "favicon_symbol_replacement_publish_restore"
+        replace_publish_restore_brand_icon(
+            driver,
+            settings_url,
+            slot="favicon_symbol",
+            replacement_source=OFFICIAL_UPLOADS["pwa_icon"],
+            approved_source=OFFICIAL_UPLOADS["favicon_symbol"],
+            preview_field_id="ordenowa-brand-assets-favicon",
+            replacement_previews=(("favicon-32.png", OFFICIAL_UPLOADS["pwa_icon"]),),
+            approved_previews=(("favicon-32.png", OFFICIAL_UPLOADS["favicon_symbol"]),),
+            stage_callback=set_brand_assertion_stage,
+        )
+
+        stage = "pwa_icon_replacement_publish_restore"
+        replace_publish_restore_brand_icon(
+            driver,
+            settings_url,
+            slot="pwa_icon",
+            replacement_source=OFFICIAL_UPLOADS["favicon_symbol"],
+            approved_source=OFFICIAL_UPLOADS["pwa_icon"],
+            preview_field_id="ordenowa-brand-assets-pwa_512",
+            replacement_previews=(
+                ("apple-touch-icon.png", OFFICIAL_UPLOADS["favicon_symbol"]),
+                ("pwa-512.png", OFFICIAL_UPLOADS["favicon_symbol"]),
+            ),
+            approved_previews=(
+                ("apple-touch-icon.png", OFFICIAL_UPLOADS["pwa_icon"]),
+                ("pwa-512.png", OFFICIAL_UPLOADS["pwa_icon"]),
+            ),
+            stage_callback=set_brand_assertion_stage,
+        )
+
         stage = "replace_published_logo_in_saved_draft"
+        public_before_logo_draft = public_brand_snapshot(driver)
         replace_primary_logo_in_saved_draft(
             driver,
             settings_url,
@@ -1097,6 +1418,10 @@ def run() -> None:
             stage_prefix="replace_published_logo_in_saved_draft",
         )
         driver.save_screenshot(str(DEST / "brand-admin-replacement-before-publish.png"))
+        if public_brand_snapshot(driver) != public_before_logo_draft:
+            raise AssertionError("saving a replacement-logo draft changed the public brand before publish")
+        driver.get(settings_url)
+        visible(driver, "form.ordenowa-profile-settings")
 
         stage = "publish_replacement_logo"
         # Set this before clicking because the server may publish successfully

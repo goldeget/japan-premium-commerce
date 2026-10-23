@@ -100,9 +100,9 @@ class BrandE2EContractTests(unittest.TestCase):
                 self.assertIn(f'input[name="{field}"]', browser_flow, msg=f"missing browser coverage for {field}")
 
         self.assertEqual(
-            2,
+            3,
             browser_flow.count("for selector, expected in ci_settings.items():"),
-            "seller profile settings should be verified after draft save and again after publish",
+            "seller profile settings should be verified after draft save, draft reload, and publish",
         )
         self.assertIn('"확인 대기" in company.text', browser_flow)
         self.assertIn("assert_seller_disclosures_remain_gated(driver, private_values)", browser_flow)
@@ -133,6 +133,9 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('driver.get(settings_url)', draft_reload)
         self.assertIn("visible(driver, company_profile_selector).get_attribute(\"value\")", draft_reload)
         self.assertIn("company_profile_ko", draft_reload)
+        self.assertIn("for selector, expected in ci_settings.items():", draft_reload)
+        self.assertIn('visible(driver, selector).get_attribute("value") != expected', draft_reload)
+        self.assertIn("did not persist after reloading its draft", draft_reload)
         self.assertIn("company_profile_ja", private_preview)
         self.assertIn("company_profile_ko", private_preview)
         self.assertIn("if expected not in preview.text:", private_preview)
@@ -173,9 +176,9 @@ class BrandE2EContractTests(unittest.TestCase):
                     self.assertIn(selector, ci_settings, msg=f"missing localized draft and publish coverage for {selector}")
 
         self.assertEqual(
-            2,
+            3,
             browser_flow.count("for selector, expected in ci_settings.items():"),
-            "localized settings should be verified after draft save and again after publish",
+            "localized settings should be verified after draft save, draft reload, and publish",
         )
         emails = re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+", ci_settings)
         self.assertTrue(emails, "the browser fixture should retain synthetic email values")
@@ -219,6 +222,134 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('driver.save_screenshot(str(DEST / "brand-customer-unpublished-replacement.png"))', browser_flow)
         self.assertIn('driver.save_screenshot(str(DEST / "brand-admin-replacement-draft.png"))', browser_flow)
         self.assertIn('driver.save_screenshot(str(DEST / "brand-admin-uploaded-draft-restored.png"))', browser_flow)
+
+    def test_browser_replaces_previews_publishes_and_restores_favicon_and_pwa_assets(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        run_flow = browser_flow.split("def run()", 1)[1].split("if __name__ ==", 1)[0]
+
+        self.assertIn("def replace_publish_restore_brand_icon(", browser_flow)
+        self.assertIn("def replace_brand_asset_in_saved_draft(", browser_flow)
+        self.assertIn("def preview_current_draft_brand_assets(", browser_flow)
+        self.assertIn("def public_brand_slot_urls(", browser_flow)
+        slot_url_helper = browser_flow.split("def public_brand_slot_urls(", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn('if slot == "favicon_symbol":', slot_url_helper)
+        self.assertIn('if slot == "pwa_icon":', slot_url_helper)
+
+        for slot, replacement, approved, field_id, preview_files in (
+            (
+                "favicon_symbol",
+                'OFFICIAL_UPLOADS["pwa_icon"]',
+                'OFFICIAL_UPLOADS["favicon_symbol"]',
+                "ordenowa-brand-assets-favicon",
+                ("favicon-32.png",),
+            ),
+            (
+                "pwa_icon",
+                'OFFICIAL_UPLOADS["favicon_symbol"]',
+                'OFFICIAL_UPLOADS["pwa_icon"]',
+                "ordenowa-brand-assets-pwa_512",
+                ("apple-touch-icon.png", "pwa-512.png"),
+            ),
+        ):
+            with self.subTest(slot=slot):
+                stage = f'stage = "{slot}_replacement_publish_restore"'
+                self.assertIn(stage, run_flow)
+                call_start = run_flow.index("replace_publish_restore_brand_icon(", run_flow.index(stage))
+                call = run_flow[call_start:].split("\n        )", 1)[0]
+                self.assertIn(f'slot="{slot}"', call)
+                self.assertIn(f"replacement_source={replacement}", call)
+                self.assertIn(f"approved_source={approved}", call)
+                self.assertIn(f'preview_field_id="{field_id}"', call)
+                for filename in preview_files:
+                    self.assertIn(f'"{filename}"', call)
+
+        replacement_helper = browser_flow.split("def replace_publish_restore_brand_icon(", 1)[1].split(
+            "def ", 1
+        )[0]
+        self.assertIn("restore_approved_brand_icon_after_failure(", replacement_helper)
+        self.assertIn("approved_source=approved_source", replacement_helper)
+        self.assertIn("stage_callback=lambda cleanup_assertion_stage: cleanup_stage.update(", replacement_helper)
+        self.assertIn("except Exception as cleanup_error:", replacement_helper)
+        self.assertIn(
+            '"ORDENOWA_BRAND_ICON_RESTORE_CLEANUP=failed at "',
+            replacement_helper,
+        )
+        self.assertIn('cleanup_stage["value"][:96]', replacement_helper)
+        self.assertIn("raise\n", replacement_helper)
+        self.assertIn("public_brand_snapshot(driver)", replacement_helper)
+        self.assertIn("replace_brand_asset_in_saved_draft(", replacement_helper)
+        self.assertIn("preview_current_draft_brand_assets(", replacement_helper)
+        self.assertIn("publish_saved_brand_draft(", replacement_helper)
+        self.assertIn("assert_public_brand_assets(", replacement_helper)
+        self.assertIn("public_brand_slot_urls(", replacement_helper)
+        self.assertEqual(2, replacement_helper.count("replace_brand_asset_in_saved_draft("))
+        self.assertEqual(2, replacement_helper.count("preview_current_draft_brand_assets("))
+        self.assertEqual(2, replacement_helper.count("publish_saved_brand_draft("))
+        self.assertEqual(2, replacement_helper.count("assert_public_brand_assets("))
+        self.assertIn("public_before_draft", replacement_helper)
+        self.assertIn('if public_after_replacement_draft != public_before_draft:', replacement_helper)
+        self.assertIn("public_after_replacement", replacement_helper)
+        self.assertIn(
+            'if public_brand_slot_urls(public_after_replacement, slot) == public_brand_slot_urls(public_before_draft, slot):',
+            replacement_helper,
+        )
+        self.assertIn('if public_after_restore_draft != public_after_replacement:', replacement_helper)
+        self.assertIn("public_after_restore", replacement_helper)
+        self.assertIn(
+            'if public_brand_slot_urls(public_after_restore, slot) != public_brand_slot_urls(public_before_draft, slot):',
+            replacement_helper,
+        )
+
+        cleanup_helper = browser_flow.split("def restore_approved_brand_icon_after_failure(", 1)[1].split(
+            "\ndef ", 1
+        )[0]
+        self.assertIn("replace_brand_asset_in_saved_draft(", cleanup_helper)
+        self.assertIn("approved_source,\n        approved_filename,", cleanup_helper)
+        self.assertIn("publish_saved_brand_draft(", cleanup_helper)
+        self.assertIn("assert_public_brand_assets(", cleanup_helper)
+        self.assertIn(
+            "public_brand_slot_urls(restored, slot) != public_brand_slot_urls(public_before_draft, slot)",
+            cleanup_helper,
+        )
+
+    def test_icon_cleanup_recovers_login_and_publishes_before_optional_preview(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        cleanup = browser_flow.split("def restore_approved_brand_icon_after_failure(", 1)[1].split(
+            "\ndef ", 1
+        )[0]
+        self.assertIn("restore_admin_session(", cleanup)
+        self.assertIn("settings_url = business_profile_settings_url(driver)", cleanup)
+        self.assertLess(cleanup.index("restore_admin_session("), cleanup.index("replace_brand_asset_in_saved_draft("))
+        publication = cleanup.index("publish_saved_brand_draft(")
+        preview = cleanup.find("preview_current_draft_brand_assets(")
+        self.assertTrue(preview == -1 or publication < preview,
+                        "private preview must not block safety publication")
+        self.assertLess(publication, cleanup.index("assert_public_brand_assets("))
+
+    def test_draft_history_wait_returns_false_until_row_appears(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        self.assertIn("def current_draft_history_row(", browser_flow)
+        helper = browser_flow.split("def current_draft_history_row(", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("return False", helper)
+        self.assertEqual(2, browser_flow.count("until(current_draft_history_row)"))
+
+    def test_public_draft_snapshot_checks_mobile_independently(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        helper = browser_flow.split("def public_brand_snapshot(", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("driver.set_window_size(390, 844)", helper)
+        self.assertIn('snapshot["mobile"] = public_brand_snapshot(driver, include_mobile=False)', helper)
+        self.assertIn('driver.set_window_size(original_size["width"], original_size["height"])', helper)
+
+    def test_later_logo_replacement_draft_does_not_publish_before_click(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        replacement = browser_flow.split('stage = "replace_published_logo_in_saved_draft"', 1)[1].split(
+            'stage = "publish_replacement_logo"', 1
+        )[0]
+        self.assertIn("public_before_logo_draft = public_brand_snapshot(driver)", replacement)
+        self.assertLess(replacement.index("public_before_logo_draft = public_brand_snapshot(driver)"),
+                        replacement.index("replace_primary_logo_in_saved_draft("))
+        self.assertIn("if public_brand_snapshot(driver) != public_before_logo_draft:", replacement)
+        self.assertIn("driver.get(settings_url)", replacement)
 
     def test_replacement_upload_requeries_stale_elements_and_verifies_saved_derivative(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
@@ -297,6 +428,24 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('wait_for_settings_form("draft_form_wait")', helper)
         self.assertIn('wait_for_settings_form("persisted_form_wait")', helper)
 
+    def test_public_storefront_assertions_reuse_captured_admin_settings_url(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        run_flow = browser_flow.split("def run()", 1)[1].split("if __name__ ==", 1)[0]
+        first_admin_lookup = run_flow.index("settings_url = business_profile_settings_url(driver)")
+
+        for stage_name in (
+            "published_desktop_customer_brand",
+            "published_mobile_customer_brand",
+            "published_korean_customer_brand",
+        ):
+            start = run_flow.index(f'stage = "{stage_name}"')
+            next_stage = run_flow.find('\n        stage = "', start + 1)
+            stage_block = run_flow[start:next_stage if next_stage >= 0 else len(run_flow)]
+            with self.subTest(stage=stage_name):
+                self.assertLess(first_admin_lookup, start)
+                self.assertIn("assert_public_brand_assets(", stage_block)
+                self.assertNotIn("business_profile_settings_url(driver)", stage_block)
+
     def test_browser_publishes_replacement_logo_then_restores_and_publishes_approved_logo(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
         self.assertIn("def assert_published_logo_source(", browser_flow)
@@ -347,9 +496,6 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('parse_qs(urlparse(href).query).get("controller", []) == ["AdminBusinessProfile"]', browser_flow)
         self.assertIn('settings_location.path.startswith("/admin-kuranea/")', browser_flow)
         for reauthentication_stage in (
-            "published_desktop_customer_brand",
-            "published_mobile_customer_brand",
-            "published_korean_customer_brand",
             "published_replacement_logo",
             "published_restored_approved_logo",
         ):
@@ -514,12 +660,12 @@ class BrandE2EContractTests(unittest.TestCase):
                 self.assertIn(derivative, browser_flow)
 
         source_bindings = (
-            ('results["assetLinks"], "icon", OFFICIAL_UPLOADS["favicon_symbol"], "favicon.ico"',),
+            ('results["assetLinks"], "icon", favicon_source, "favicon.ico"',),
             (
-                'results["assetLinks"], "apple-touch-icon", OFFICIAL_UPLOADS["pwa_icon"], "apple-touch-icon.png"',
+                'results["assetLinks"], "apple-touch-icon", pwa_source, "apple-touch-icon.png"',
             ),
             ('results["og"], OFFICIAL_UPLOADS["primary_logo"], "og-brand.png"',),
-            ('icon_url["src"], OFFICIAL_UPLOADS["pwa_icon"], filename',),
+            ('icon_url["src"], pwa_source, filename',),
             ('("email-logo.png", "primary_logo")',),
         )
         for binding in source_bindings:
@@ -528,7 +674,9 @@ class BrandE2EContractTests(unittest.TestCase):
                     self.assertIn(assertion, browser_flow)
 
         self.assertIn('for filename in ("favicon-16.png", "favicon-32.png"):', browser_flow)
-        self.assertIn('results["assetLinks"], "icon", OFFICIAL_UPLOADS["favicon_symbol"], filename', browser_flow)
+        self.assertIn('results["assetLinks"], "icon", favicon_source, filename', browser_flow)
+        self.assertIn('favicon_source = favicon_source or OFFICIAL_UPLOADS["favicon_symbol"]', browser_flow)
+        self.assertIn('pwa_source = pwa_source or OFFICIAL_UPLOADS["pwa_icon"]', browser_flow)
         self.assertIn('("pwa-192.png", "192x192", "any", 192, 192)', browser_flow)
         self.assertIn('("pwa-512.png", "512x512", "any", 512, 512)', browser_flow)
         self.assertIn('("pwa-maskable-512.png", "512x512", "maskable", 512, 512)', browser_flow)

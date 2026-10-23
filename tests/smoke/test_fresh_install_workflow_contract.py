@@ -234,15 +234,15 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn('diagnostics_line', workflow)
         self.assertIn('::error title=ORDENOWA brand page state::%s\\n', workflow)
 
-    def test_reset_email_failure_forwards_only_redacted_logo_state_to_check_annotations(self) -> None:
+    def test_reset_email_failure_annotation_comes_directly_from_browser_and_stays_in_step_log(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         email_step = workflow.split(
             "- name: Verify the published ORDENOWA password-reset email logo in Chromium", 1
         )[1].split("- name:", 1)[0]
 
-        self.assertIn("safe_state_line=$(rg '^ORDENOWA_RESET_EMAIL_SAFE_STATE=' \"$log_file\" | tail -n 1 || true)", email_step)
-        self.assertIn('::error title=ORDENOWA reset-email logo state::%s\\n', email_step)
-        self.assertIn('safe_state_annotation=${safe_state_annotation//$\'\\n\'/\'%0A\'}', email_step)
+        self.assertIn("2>&1 | tee -a \"$log_file\"", email_step)
+        self.assertNotIn("safe_state_line=$(rg", email_step)
+        self.assertNotIn("ORDENOWA_RESET_EMAIL_SAFE_STATE", email_step)
 
     def test_brand_publish_button_is_centered_and_checked_for_obstruction_before_click(self) -> None:
         brand_flow = (ROOT / "tests" / "e2e" / "verify_brand_admin_browser.py").read_text(encoding="utf-8")

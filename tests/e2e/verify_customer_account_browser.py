@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import math
 import os
 import re
 import sys
@@ -231,13 +232,53 @@ def password_reset_link_snapshot(driver: webdriver.Chrome) -> dict[str, object]:
 
 def install_reset_link_navigation_observer(driver: webdriver.Chrome) -> None:
     driver.execute_script(
-        """
+        r"""
         const key = '__ordenowaKoreanLoginNavigation';
         const interactionKey = '__ordenowaKoreanLoginInteractions';
+        const refreshKey = '__ordenowaKoreanLoginMetaRefresh';
         try {
           sessionStorage.removeItem(key);
           sessionStorage.removeItem(interactionKey);
+          sessionStorage.removeItem(refreshKey);
           const allowedKeys = new Set(['back', 'controller', 'id_lang', 'isolang', 'lang']);
+          const refreshFacts = () => [...document.querySelectorAll('meta[http-equiv]')]
+            .filter(meta => (meta.getAttribute('http-equiv') || '').trim().toLowerCase() === 'refresh')
+            .slice(0, 3)
+            .map(meta => {
+              const content = meta.getAttribute('content') || '';
+              const match = content.match(/^\s*(\d+(?:\.\d+)?)\s*;\s*url\s*=\s*(?:"([^"]*)"|'([^']*)'|(.+?))\s*$/i);
+              const rawTarget = match ? (match[2] ?? match[3] ?? match[4] ?? '').trim() : '';
+              const delay = match ? Number(match[1]) : NaN;
+              let target = null;
+              try { if (rawTarget) target = new URL(rawTarget, window.location.href); } catch (_) {}
+              const controllerValues = target ? new URLSearchParams(target.search).getAll('controller') : [];
+              const controller = controllerValues.length === 1 ? controllerValues[0].toLowerCase() : '';
+              const controllerCategory = controller === 'authentication' || controller === 'password'
+                ? controller : (controller ? 'other' : '');
+              return {
+                delay_ms: Number.isFinite(delay) ? Math.min(300000, Math.max(0, Math.round(delay * 1000))) : null,
+                target_present: Boolean(rawTarget),
+                target_same_origin: target ? target.origin === window.location.origin : null,
+                target_index_php: target ? target.pathname.toLowerCase().endsWith('/index.php') : false,
+                target_controller_category: controllerCategory,
+                target_query_key_names: target
+                  ? [...new URLSearchParams(target.search).keys()].filter(name => allowedKeys.has(name)).slice(0, 5)
+                  : []
+              };
+            });
+          const persistRefreshFacts = () => {
+            try { sessionStorage.setItem(refreshKey, JSON.stringify(refreshFacts())); } catch (_) {}
+          };
+          persistRefreshFacts();
+          if (document.documentElement) {
+            const refreshObserver = new MutationObserver(persistRefreshFacts);
+            refreshObserver.observe(document.documentElement, {
+              subtree: true,
+              childList: true,
+              attributes: true,
+              attributeFilter: ['http-equiv', 'content']
+            });
+          }
           const interactionState = {
             click_count: 0,
             trusted_click_count: 0,
@@ -287,6 +328,7 @@ def install_reset_link_navigation_observer(driver: webdriver.Chrome) -> None:
                 interaction_login_recovery_link_click_count: Number.isInteger(interactions.login_recovery_link_click_count) ? interactions.login_recovery_link_click_count : 0,
                 interaction_login_form_submit_count: Number.isInteger(interactions.login_form_submit_count) ? interactions.login_form_submit_count : 0,
                 interaction_other_form_submit_count: Number.isInteger(interactions.other_form_submit_count) ? interactions.other_form_submit_count : 0,
+                meta_refresh_facts: refreshFacts(),
                 persisted: Boolean(persisted)
               };
               const events = JSON.parse(sessionStorage.getItem(key) || '[]');
@@ -362,6 +404,7 @@ def reset_link_navigation_timeline(driver: webdriver.Chrome) -> list[dict[str, o
                 "interaction_other_form_submit_count": min(
                     event.get("interaction_other_form_submit_count", 0), 20
                 ) if isinstance(event.get("interaction_other_form_submit_count"), int) else 0,
+                "meta_refresh_facts": safe_meta_refresh_facts(event.get("meta_refresh_facts")),
                 "persisted": event.get("persisted") is True,
             }
         )
@@ -549,6 +592,12 @@ def assert_korean_email_login_form(driver: webdriver.Chrome, state: dict[str, ob
                     (browser.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower()
                 )
                 state["reset_link_navigation_timeline"] = reset_link_navigation_timeline(browser)
+                timeline = state["reset_link_navigation_timeline"]
+                state["reset_wait_navigation_meta_refresh_facts"] = (
+                    timeline[-1].get("meta_refresh_facts", [])
+                    if isinstance(timeline, list) and timeline and isinstance(timeline[-1], dict)
+                    else []
+                )
                 state["document_navigation_events"] = document_navigation_events(browser)
             for anchor in browser.find_elements(By.CSS_SELECTOR, "#login-form a[href]"):
                 if anchor.is_displayed():
@@ -560,6 +609,7 @@ def assert_korean_email_login_form(driver: webdriver.Chrome, state: dict[str, ob
     state["reset_wait_navigation_elapsed_ms"] = None
     state["reset_wait_navigation_url_metadata"] = {}
     state["reset_wait_navigation_document_language"] = ""
+    state["reset_wait_navigation_meta_refresh_facts"] = []
     password_reset_link = WebDriverWait(driver, 30, poll_frequency=0.25).until(reset_link_ready)
     password_reset_name = " ".join(
         (
@@ -578,6 +628,7 @@ def emit_korean_login_diagnostics(driver: webdriver.Chrome, state: dict[str, obj
     """Report the exact Korean login wait and sanitized page markers on failure."""
     diagnostics: dict[str, object] = {
         "stage": safe_diagnostic_name(state.get("stage", "")),
+        "async_stack_capture_enabled": state.get("async_stack_capture_enabled") is True,
         "path": safe_same_origin_path(getattr(driver, "current_url", "")),
         "final_url_metadata": safe_url_metadata(getattr(driver, "current_url", "")),
         "document_language": "",
@@ -636,6 +687,7 @@ def emit_korean_login_diagnostics(driver: webdriver.Chrome, state: dict[str, obj
         "reset_wait_navigation_url_metadata": state.get("reset_wait_navigation_url_metadata", {}),
         "reset_wait_navigation_document_language": state.get("reset_wait_navigation_document_language", ""),
         "reset_link_navigation_timeline": state.get("reset_link_navigation_timeline", []),
+        "reset_wait_navigation_meta_refresh_facts": state.get("reset_wait_navigation_meta_refresh_facts", []),
         "document_navigation_events": state.get("document_navigation_events", []),
     }
     stage_started_at = state.get("stage_started_at")
@@ -645,6 +697,12 @@ def emit_korean_login_diagnostics(driver: webdriver.Chrome, state: dict[str, obj
         )
     if not diagnostics["reset_link_navigation_timeline"]:
         diagnostics["reset_link_navigation_timeline"] = reset_link_navigation_timeline(driver)
+    if not diagnostics["reset_wait_navigation_meta_refresh_facts"]:
+        timeline = diagnostics["reset_link_navigation_timeline"]
+        if isinstance(timeline, list) and timeline and isinstance(timeline[-1], dict):
+            diagnostics["reset_wait_navigation_meta_refresh_facts"] = timeline[-1].get(
+                "meta_refresh_facts", []
+            )
     if not diagnostics["document_navigation_events"]:
         diagnostics["document_navigation_events"] = document_navigation_events(driver)
     try:
@@ -729,10 +787,18 @@ def emit_korean_login_diagnostics(driver: webdriver.Chrome, state: dict[str, obj
                     "path": route.get("path", ""),
                     "controller_category": route.get("controller_category", ""),
                     "status_code": event.get("status_code", 0),
+                    "redirect_status_code": event.get("redirect_status_code", 0),
                     "frame_scope": event.get("frame_scope", "unknown"),
                     "initiator_type": event.get("initiator_type", "unknown"),
                     "initiator_scope": event.get("initiator_scope", "unknown"),
                     "initiator_stack_depth": event.get("initiator_stack_depth", 0),
+                    "initiator_async_parent_count": event.get("initiator_async_parent_count", 0),
+                    "initiator_line_number": event.get("initiator_line_number"),
+                    "initiator_column_number": event.get("initiator_column_number"),
+                    "initiator_has_url": event.get("initiator_has_url", False),
+                    "request_elapsed_ms": event.get("request_elapsed_ms"),
+                    "response_elapsed_ms": event.get("response_elapsed_ms"),
+                    "response_refresh": event.get("response_refresh", {}),
                     "redirect_from_path": redirect_from.get("path", ""),
                     "redirect_from_controller_category": redirect_from.get("controller_category", ""),
                 }
@@ -918,10 +984,21 @@ def compact_korean_login_failure_summary(diagnostics: dict[str, object]) -> dict
             return "unknown"
         return value
 
+    def safe_refresh(value: object) -> dict[str, object]:
+        refresh = value if isinstance(value, dict) else {}
+        if refresh.get("present") is not True:
+            return {"present": False}
+        return {
+            "present": True,
+            "parseable": refresh.get("parseable") is True,
+            "delay_ms": bounded_int(refresh.get("delay_ms"), 300_000),
+            "target_route": safe_route(refresh.get("target_route")),
+        }
+
     raw_navigation_events = diagnostics.get("document_navigation_events")
     navigation_events: list[dict[str, object]] = []
     if isinstance(raw_navigation_events, list):
-        for event in raw_navigation_events[-4:]:
+        for event in raw_navigation_events[-2:]:
             if not isinstance(event, dict):
                 continue
             route = safe_route(event.get("route_metadata"))
@@ -930,14 +1007,14 @@ def compact_korean_login_failure_summary(diagnostics: dict[str, object]) -> dict
             initiator_scope = event.get("initiator_scope")
             frame_scope = event.get("frame_scope")
             event_name = event.get("event")
-            navigation_events.append(
-                {
+            navigation_event = {
                     "event": event_name
                     if isinstance(event_name, str) and event_name in {"document_request", "document_redirect"}
                     else "unknown",
                     "path": route["path"],
                     "controller_category": route["controller_category"],
                     "status_code": bounded_int(event.get("status_code"), 599) or 0,
+                    "redirect_status_code": bounded_int(event.get("redirect_status_code"), 599) or 0,
                     "frame_scope": frame_scope
                     if isinstance(frame_scope, str) and frame_scope in allowed_frame_scopes
                     else "unknown",
@@ -948,10 +1025,21 @@ def compact_korean_login_failure_summary(diagnostics: dict[str, object]) -> dict
                     if isinstance(initiator_scope, str) and initiator_scope in allowed_initiator_scopes
                     else "unknown",
                     "initiator_stack_depth": bounded_int(event.get("initiator_stack_depth"), 20) or 0,
+                    "initiator_async_parent_count": bounded_int(
+                        event.get("initiator_async_parent_count"), 8
+                    ) or 0,
+                    "initiator_has_url": event.get("initiator_has_url") is True,
+                    "request_elapsed_ms": bounded_int(event.get("request_elapsed_ms"), 300_000),
+                    "response_elapsed_ms": bounded_int(event.get("response_elapsed_ms"), 300_000),
+                    "response_refresh": safe_refresh(event.get("response_refresh")),
                     "redirect_from_path": redirect_from["path"],
                     "redirect_from_controller_category": redirect_from["controller_category"],
                 }
-            )
+            for location_name in ("initiator_line_number", "initiator_column_number"):
+                location_value = bounded_int(event.get(location_name), 1_000_000)
+                if location_value is not None:
+                    navigation_event[location_name] = location_value
+            navigation_events.append(navigation_event)
 
     raw_timeline = diagnostics.get("reset_link_navigation_timeline")
     navigation_timeline: list[dict[str, object]] = []
@@ -991,6 +1079,7 @@ def compact_korean_login_failure_summary(diagnostics: dict[str, object]) -> dict
                     "interaction_other_form_submit_count": bounded_int(
                         event.get("interaction_other_form_submit_count"), 20
                     ) or 0,
+                    "meta_refresh_facts": safe_meta_refresh_facts(event.get("meta_refresh_facts")),
                     "persisted": event.get("persisted") is True,
                 }
             )
@@ -999,6 +1088,7 @@ def compact_korean_login_failure_summary(diagnostics: dict[str, object]) -> dict
     visibility = diagnostics.get("reset_link_before_wait_computed_visibility")
     return {
         "inner_stage": safe_korean_login_stage(diagnostics.get("stage")),
+        "async_stack_capture_enabled": diagnostics.get("async_stack_capture_enabled") is True,
         "failed_stage_elapsed_ms": bounded_int(diagnostics.get("failed_stage_elapsed_ms"), 300_000),
         "document_language": safe_language(diagnostics.get("document_language")),
         "final_route": safe_route(diagnostics.get("final_url_metadata")),
@@ -1174,6 +1264,103 @@ def safe_url_metadata(value: object) -> dict[str, object]:
     return metadata
 
 
+def safe_refresh_header_metadata(value: object, response_url: object) -> dict[str, object]:
+    """Reduce a Refresh response header to a delay and sanitized destination route."""
+    result: dict[str, object] = {
+        "present": isinstance(value, str) and bool(value.strip()),
+        "parseable": False,
+        "delay_ms": None,
+        "target_route": {},
+    }
+    if not result["present"] or not isinstance(value, str) or len(value) > 4096:
+        return result
+    match = re.fullmatch(
+        r"\s*(\d+(?:\.\d+)?)\s*;\s*url\s*=\s*(.*?)\s*",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return result
+    target = match.group(2).strip()
+    if len(target) >= 2 and target[0] == target[-1] and target[0] in {"'", '"'}:
+        target = target[1:-1].strip()
+    if not target:
+        return result
+    try:
+        seconds = float(match.group(1))
+    except (OverflowError, ValueError):
+        return result
+    if not math.isfinite(seconds) or not isinstance(response_url, str):
+        return result
+    target_url = urljoin(response_url, target)
+    result.update(
+        {
+            "parseable": True,
+            "delay_ms": min(300_000, max(0, round(seconds * 1000))),
+            "target_route": safe_url_metadata(target_url),
+        }
+    )
+    return result
+
+
+def safe_response_refresh_metadata(response: object) -> dict[str, object]:
+    """Read only a Refresh header and discard all raw header/URL values."""
+    absent = {
+        "present": False,
+        "parseable": False,
+        "delay_ms": None,
+        "target_route": {},
+    }
+    if not isinstance(response, dict):
+        return absent
+    headers = response.get("headers")
+    response_url = response.get("url")
+    if not isinstance(headers, dict):
+        return absent
+    for name, value in headers.items():
+        if isinstance(name, str) and name.casefold() == "refresh":
+            return safe_refresh_header_metadata(value, response_url)
+    return absent
+
+
+def safe_meta_refresh_facts(value: object) -> list[dict[str, object]]:
+    """Keep only bounded metadata already extracted from rendered meta refresh tags."""
+    allowed_query_keys = {"back", "controller", "id_lang", "isolang", "lang"}
+    allowed_controllers = {"authentication", "password", "other"}
+    if not isinstance(value, list):
+        return []
+    safe_facts: list[dict[str, object]] = []
+    for fact in value[:3]:
+        if not isinstance(fact, dict):
+            continue
+        delay_ms = fact.get("delay_ms")
+        category = fact.get("target_controller_category")
+        safe_facts.append(
+            {
+                "delay_ms": delay_ms
+                if isinstance(delay_ms, int) and not isinstance(delay_ms, bool) and 0 <= delay_ms <= 300_000
+                else None,
+                "target_present": fact.get("target_present") is True,
+                "target_same_origin": fact.get("target_same_origin")
+                if isinstance(fact.get("target_same_origin"), bool)
+                else None,
+                "target_index_php": fact.get("target_index_php") is True,
+                "target_controller_category": category
+                if isinstance(category, str) and category in allowed_controllers
+                else "other"
+                if category
+                else "",
+                "target_query_key_names": sorted(
+                    {key for key in fact.get("target_query_key_names", []) if isinstance(key, str)}
+                    & allowed_query_keys
+                )
+                if isinstance(fact.get("target_query_key_names"), list)
+                else [],
+            }
+        )
+    return safe_facts
+
+
 def clear_document_navigation_events(driver: webdriver.Chrome) -> None:
     try:
         driver.get_log("performance")
@@ -1188,8 +1375,13 @@ def document_navigation_events(driver: webdriver.Chrome) -> list[dict[str, objec
     except Exception as error:
         return [{"diagnostic_error_type": type(error).__name__}]
 
-    responses: dict[str, int] = {}
+    # CDP reuses requestId across redirects. Associate responses with each
+    # request event so a final 404 cannot overwrite an earlier redirect's 302.
+    pending_requests: dict[str, int] = {}
+    responses: dict[int, dict[str, object]] = {}
+    response_timestamps: dict[int, float] = {}
     decoded_entries: list[dict[str, object]] = []
+    request_timestamps: list[float] = []
     for entry in entries:
         try:
             envelope = json.loads(entry.get("message", "{}"))
@@ -1203,13 +1395,39 @@ def document_navigation_events(driver: webdriver.Chrome) -> list[dict[str, objec
                 response = params.get("response", {})
                 request_id = params.get("requestId")
                 status = response.get("status") if isinstance(response, dict) else None
-                if isinstance(request_id, str) and isinstance(status, (int, float)):
-                    responses[request_id] = int(status)
+                request_event_id = pending_requests.get(request_id) if isinstance(request_id, str) else None
+                if request_event_id is not None and isinstance(status, (int, float)):
+                    responses[request_event_id] = {"status": int(status), "response": response}
+                    response_timestamp = params.get("timestamp")
+                    if isinstance(response_timestamp, (int, float)) and not isinstance(response_timestamp, bool):
+                        response_timestamps[request_event_id] = float(response_timestamp)
+            if message.get("method") == "Network.requestWillBeSent":
+                request = params.get("request", {})
+                request_timestamp = params.get("timestamp")
+                request_id = params.get("requestId")
+                if isinstance(request_id, str):
+                    previous_request_id = pending_requests.get(request_id)
+                    redirect_response = params.get("redirectResponse")
+                    if previous_request_id is not None and isinstance(redirect_response, dict):
+                        responses[previous_request_id] = {
+                            "status": redirect_response.get("status"),
+                            "response": redirect_response,
+                        }
+                        if isinstance(request_timestamp, (int, float)) and not isinstance(request_timestamp, bool):
+                            response_timestamps[previous_request_id] = float(request_timestamp)
+                    pending_requests[request_id] = id(message)
+                if (
+                    isinstance(request, dict)
+                    and isinstance(request_timestamp, (int, float))
+                    and not isinstance(request_timestamp, bool)
+                ):
+                    request_timestamps.append(float(request_timestamp))
             decoded_entries.append(message)
         except (TypeError, ValueError, json.JSONDecodeError):
             continue
 
     main_frame_id = top_level_frame_id(driver)
+    navigation_start = min(request_timestamps) if request_timestamps else None
     safe_events: list[dict[str, object]] = []
     for message in decoded_entries:
         if message.get("method") != "Network.requestWillBeSent":
@@ -1232,11 +1450,26 @@ def document_navigation_events(driver: webdriver.Chrome) -> list[dict[str, objec
             isinstance(redirect_metadata, dict) and redirect_metadata["same_origin"]
         ):
             continue
-        request_id = params.get("requestId")
-        redirect_status = (
-            redirect_response.get("status")
-            if isinstance(redirect_response, dict)
-            else responses.get(request_id) if isinstance(request_id, str) else None
+        response_info = responses.get(id(message))
+        response_info = response_info if isinstance(response_info, dict) else {}
+        response_obj = response_info.get("response")
+        response_obj = response_obj if isinstance(response_obj, dict) else {}
+        status = response_info.get("status")
+        redirect_status = redirect_response.get("status") if isinstance(redirect_response, dict) else None
+        response_for_refresh = response_obj
+        request_timestamp = params.get("timestamp")
+        response_timestamp = response_timestamps.get(id(message))
+        request_elapsed_ms = (
+            min(300_000, max(0, round((float(request_timestamp) - navigation_start) * 1000)))
+            if isinstance(request_timestamp, (int, float))
+            and not isinstance(request_timestamp, bool)
+            and isinstance(navigation_start, float)
+            else None
+        )
+        response_elapsed_ms = (
+            min(300_000, max(0, round((response_timestamp - navigation_start) * 1000)))
+            if isinstance(response_timestamp, float) and isinstance(navigation_start, float)
+            else None
         )
         initiator = params.get("initiator", {})
         initiator = initiator if isinstance(initiator, dict) else {}
@@ -1248,10 +1481,33 @@ def document_navigation_events(driver: webdriver.Chrome) -> list[dict[str, objec
             initiator_type = "unknown"
         stack = initiator.get("stack", {})
         stack = stack if isinstance(stack, dict) else {}
-        frames = stack.get("callFrames", [])
-        frames = frames if isinstance(frames, list) else []
-        first_frame = frames[0] if frames and isinstance(frames[0], dict) else {}
+        frames: list[dict[str, object]] = []
+        async_parent_count = 0
+        seen_stacks: set[int] = set()
+        while isinstance(stack, dict) and id(stack) not in seen_stacks and len(seen_stacks) < 8:
+            seen_stacks.add(id(stack))
+            stack_frames = stack.get("callFrames", [])
+            if isinstance(stack_frames, list):
+                frames.extend(frame for frame in stack_frames if isinstance(frame, dict))
+            parent_stack = stack.get("parent")
+            if not isinstance(parent_stack, dict):
+                break
+            async_parent_count += 1
+            stack = parent_stack
+        first_frame = frames[0] if frames else {}
         initiator_url = first_frame.get("url") or initiator.get("url")
+        line_number = first_frame.get("lineNumber", initiator.get("lineNumber"))
+        column_number = first_frame.get("columnNumber", initiator.get("columnNumber"))
+        line_number = (
+            min(max(int(line_number), 0), 1_000_000)
+            if isinstance(line_number, (int, float)) and not isinstance(line_number, bool)
+            else None
+        )
+        column_number = (
+            min(max(int(column_number), 0), 1_000_000)
+            if isinstance(column_number, (int, float)) and not isinstance(column_number, bool)
+            else None
+        )
         safe_events.append(
             {
                 "event": "document_redirect" if isinstance(redirect_response, dict) else "document_request",
@@ -1261,7 +1517,17 @@ def document_navigation_events(driver: webdriver.Chrome) -> list[dict[str, objec
                 "initiator_type": initiator_type,
                 "initiator_scope": safe_initiator_scope(initiator_url),
                 "initiator_stack_depth": min(len(frames), 20),
-                "status_code": int(redirect_status)
+                "initiator_async_parent_count": min(async_parent_count, 8),
+                "initiator_line_number": line_number,
+                "initiator_column_number": column_number,
+                "initiator_has_url": isinstance(initiator_url, str) and bool(initiator_url),
+                "request_elapsed_ms": request_elapsed_ms,
+                "response_elapsed_ms": response_elapsed_ms,
+                "response_refresh": safe_response_refresh_metadata(response_for_refresh),
+                "status_code": int(status)
+                if isinstance(status, (int, float)) and 0 <= status <= 599
+                else 0,
+                "redirect_status_code": int(redirect_status)
                 if isinstance(redirect_status, (int, float)) and 0 <= redirect_status <= 599
                 else 0,
             }
@@ -1790,6 +2056,12 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
         driver = webdriver.Chrome(options=options)
         driver.set_window_size(width, height)
+        try:
+            driver.execute_cdp_cmd("Debugger.enable", {})
+            driver.execute_cdp_cmd("Debugger.setAsyncCallStackDepth", {"maxDepth": 16})
+            korean_login_state["async_stack_capture_enabled"] = True
+        except Exception:
+            korean_login_state["async_stack_capture_enabled"] = False
         stage = "korean_email_login_label"
         failure_control = {"name": "", "type": ""}
         assert_korean_email_login_form(driver, korean_login_state)

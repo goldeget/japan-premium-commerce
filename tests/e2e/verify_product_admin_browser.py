@@ -640,20 +640,21 @@ def default_category_box(driver: webdriver.Chrome):
     return next((box for box in categories if box.get_attribute("value") == "2"), categories[0])
 
 
-def select_category_checkbox(driver: webdriver.Chrome, checkbox) -> None:
-    if checkbox.is_selected():
+def set_category_checkbox_state(driver: webdriver.Chrome, checkbox, selected: bool) -> None:
+    if checkbox.is_selected() == selected:
         return
     label = checkbox.find_element(By.XPATH, "./ancestor::label[1]")
     driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", label)
     if not label.is_displayed() or not checkbox.is_enabled():
-        raise AssertionError("the selected product category does not have an enabled visible label")
+        raise AssertionError("the product category does not have an enabled visible label")
     try:
         label.click()
     except ElementClickInterceptedException:
-        if not checkbox.is_displayed() or not checkbox.is_enabled() or checkbox.is_selected():
+        if not checkbox.is_displayed() or not checkbox.is_enabled():
             raise AssertionError("the product category label click was intercepted") from None
-        checkbox.send_keys(Keys.SPACE)
-    WebDriverWait(driver, 5).until(lambda _browser: checkbox.is_selected())
+        if checkbox.is_selected() != selected:
+            checkbox.send_keys(Keys.SPACE)
+    WebDriverWait(driver, 5).until(lambda _browser: checkbox.is_selected() == selected)
 
 
 def fill(driver: webdriver.Chrome, selector: str, value: str) -> None:
@@ -763,8 +764,7 @@ def run() -> None:
         create_operation = "select_default_category"
         initial_category = default_category_box(driver)
         initial_category_id = initial_category.get_attribute("value")
-        if not initial_category.is_selected():
-            select_category_checkbox(driver, initial_category)
+        set_category_checkbox_state(driver, initial_category, True)
 
         create_operation = "prepare_image_file"
         png = base64.b64decode(
@@ -896,8 +896,7 @@ def run() -> None:
         edit_operation = "select_edit_category"
         for box in category_boxes:
             category_id = box.get_attribute("value")
-            if box.is_selected() != (category_id in expected_category_ids):
-                select_category_checkbox(driver, box)
+            set_category_checkbox_state(driver, box, category_id in expected_category_ids)
         edit_category_ids_before_submit = [
             box.get_attribute("value") for box in category_boxes if box.is_selected()
         ]

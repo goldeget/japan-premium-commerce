@@ -25,6 +25,7 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
         namespace = {
             "BASE": "https://shop.example.test",
             "parse_qs": parse_qs,
+            "math": __import__("math"),
             "re": re,
             "unquote": unquote,
             "urlparse": urlparse,
@@ -94,12 +95,123 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
             "external",
         )
 
+    def test_refresh_response_header_is_reduced_to_safe_route_facts(self) -> None:
+        browser_flow_path = ROOT / "tests" / "e2e" / "verify_customer_account_browser.py"
+        syntax_tree = ast.parse(browser_flow_path.read_text(encoding="utf-8"))
+        helper_names = {
+            "safe_same_origin_path",
+            "safe_controller_category",
+            "safe_url_metadata",
+            "safe_refresh_header_metadata",
+            "safe_response_refresh_metadata",
+        }
+        helper_nodes = [
+            node
+            for node in syntax_tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in helper_names
+        ]
+        self.assertEqual({node.name for node in helper_nodes}, helper_names)
+        namespace = {
+            "BASE": "https://shop.example.test",
+            "parse_qs": parse_qs,
+            "math": __import__("math"),
+            "re": re,
+            "unquote": unquote,
+            "urljoin": __import__("urllib.parse", fromlist=["urljoin"]).urljoin,
+            "urlparse": urlparse,
+        }
+        exec(
+            compile(ast.Module(body=helper_nodes, type_ignores=[]), str(browser_flow_path), "exec"),
+            namespace,
+        )
+
+        response = namespace["safe_response_refresh_metadata"](
+            {
+                "url": "https://shop.example.test/ko/login",
+                "headers": {
+                    "content-type": "text/html",
+                    "rEfReSh": '0.25; url="/index.php?controller=authentication&token=private-secret"',
+                },
+            }
+        )
+        self.assertTrue(response["present"])
+        self.assertTrue(response["parseable"])
+        self.assertEqual(response["delay_ms"], 250)
+        self.assertEqual(response["target_route"]["controller_category"], "authentication")
+        self.assertEqual(response["target_route"]["query_key_names"], ["controller"])
+        self.assertNotIn("private-secret", repr(response))
+
+        malformed = namespace["safe_response_refresh_metadata"](
+            {"url": "https://shop.example.test/ko/login", "headers": {"Refresh": "private-secret"}}
+        )
+        self.assertTrue(malformed["present"])
+        self.assertFalse(malformed["parseable"])
+        self.assertNotIn("private-secret", repr(malformed))
+        self.assertFalse(
+            namespace["safe_response_refresh_metadata"](
+                {"url": "https://shop.example.test/ko/login", "headers": {"Content-Type": "text/html"}}
+            )["present"]
+        )
+
+    def test_meta_refresh_facts_accept_only_bounded_safe_fields(self) -> None:
+        browser_flow_path = ROOT / "tests" / "e2e" / "verify_customer_account_browser.py"
+        syntax_tree = ast.parse(browser_flow_path.read_text(encoding="utf-8"))
+        helper = next(
+            node
+            for node in syntax_tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "safe_meta_refresh_facts"
+        )
+        namespace = {"re": re}
+        exec(compile(ast.Module(body=[helper], type_ignores=[]), str(browser_flow_path), "exec"), namespace)
+
+        facts = namespace["safe_meta_refresh_facts"](
+            [
+                {
+                    "delay_ms": 125,
+                    "target_present": True,
+                    "target_same_origin": True,
+                    "target_index_php": True,
+                    "target_controller_category": "authentication",
+                    "target_query_key_names": ["controller", "token", "back"],
+                    "private_value": "private-secret",
+                },
+                {"delay_ms": 9999999, "target_controller_category": "private-secret"},
+            ]
+        )
+        self.assertEqual(len(facts), 2)
+        self.assertEqual(facts[0]["delay_ms"], 125)
+        self.assertEqual(facts[0]["target_controller_category"], "authentication")
+        self.assertEqual(facts[0]["target_query_key_names"], ["back", "controller"])
+        self.assertIsNone(facts[1]["delay_ms"])
+        self.assertEqual(facts[1]["target_controller_category"], "other")
+        self.assertNotIn("private-secret", repr(facts))
+
+    def test_korean_login_navigation_contract_keeps_refresh_timing_and_stack_facts(self) -> None:
+        browser_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(
+            encoding="utf-8"
+        )
+        for telemetry_fact in (
+            '"response_refresh": safe_response_refresh_metadata',
+            '"initiator_async_parent_count"',
+            '"initiator_line_number"',
+            '"initiator_column_number"',
+            '"request_elapsed_ms"',
+            '"response_elapsed_ms"',
+            '"meta_refresh_facts"',
+            '"reset_wait_navigation_meta_refresh_facts"',
+            '"meta_refresh_facts": safe_meta_refresh_facts',
+            'MutationObserver',
+            "Debugger.setAsyncCallStackDepth",
+        ):
+            self.assertIn(telemetry_fact, browser_flow)
+
     def test_korean_login_failure_summary_exposes_inner_wait_and_frame_scope_safely(self) -> None:
         browser_flow_path = ROOT / "tests" / "e2e" / "verify_customer_account_browser.py"
         syntax_tree = ast.parse(browser_flow_path.read_text(encoding="utf-8"))
         helper_names = {
             "safe_korean_login_stage",
             "safe_document_frame_scope",
+            "safe_meta_refresh_facts",
             "compact_korean_login_failure_summary",
         }
         helper_nodes = [
@@ -128,6 +240,7 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
         )
         diagnostics = {
             "stage": "korean_password_reset_link",
+            "async_stack_capture_enabled": True,
             "failed_stage_elapsed_ms": 30_715,
             "document_language": "ja-JP",
             "final_url_metadata": {"path": "/<redacted>", "same_origin": True},
@@ -161,6 +274,16 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
                     "interaction_login_recovery_link_click_count": 0,
                     "interaction_login_form_submit_count": 0,
                     "interaction_other_form_submit_count": 0,
+                    "meta_refresh_facts": [
+                        {
+                            "delay_ms": 250,
+                            "target_present": True,
+                            "target_same_origin": True,
+                            "target_index_php": True,
+                            "target_controller_category": "authentication",
+                            "target_query_key_names": ["controller"],
+                        }
+                    ],
                     "persisted": False,
                 }
             ],
@@ -178,6 +301,23 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
                     "initiator_type": "other",
                     "initiator_scope": "unknown",
                     "initiator_stack_depth": 0,
+                    "initiator_async_parent_count": 1,
+                    "initiator_line_number": 34,
+                    "initiator_column_number": 12,
+                    "initiator_has_url": True,
+                    "request_elapsed_ms": 250,
+                    "response_elapsed_ms": 310,
+                    "response_refresh": {
+                        "present": True,
+                        "parseable": True,
+                        "delay_ms": 0,
+                        "target_route": {
+                            "path": "/index.php",
+                            "controller_category": "authentication",
+                            "query_key_names": ["controller"],
+                            "same_origin": True,
+                        },
+                    },
                     "frame_scope": "top_frame",
                 },
                 {
@@ -205,10 +345,18 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
         self.assertEqual(summary["reset_link_before_wait"]["anchor_count"], 1)
         self.assertTrue(summary["reset_link_before_wait"]["visible"])
         self.assertEqual(summary["navigation_events"][0]["frame_scope"], "top_frame")
+        self.assertEqual(summary["navigation_events"][0]["request_elapsed_ms"], 250)
+        self.assertEqual(summary["navigation_events"][0]["response_refresh"]["delay_ms"], 0)
+        self.assertEqual(summary["navigation_events"][0]["initiator_async_parent_count"], 1)
         self.assertEqual(summary["reset_wait_navigation"]["timeline"][0]["interaction_click_count"], 0)
+        self.assertEqual(
+            summary["reset_wait_navigation"]["timeline"][0]["meta_refresh_facts"][0]["delay_ms"],
+            250,
+        )
         self.assertEqual(
             summary["reset_wait_navigation"]["timeline"][0]["interaction_login_form_submit_count"], 0
         )
+        self.assertTrue(summary["async_stack_capture_enabled"])
         self.assertLess(len(encoded), 3_500)
         self.assertNotIn("never-expose-this", encoded)
 
@@ -273,6 +421,8 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
             "safe_initiator_scope",
             "safe_document_frame_scope",
             "top_level_frame_id",
+            "safe_refresh_header_metadata",
+            "safe_response_refresh_metadata",
             "document_navigation_events",
         }
         helper_nodes = [
@@ -296,6 +446,7 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
                             "type": "Document",
                             "requestId": "main-request",
                             "frameId": "opaque-main-frame-id",
+                            "timestamp": 10.0,
                             "request": {"url": "https://shop.example.test/ko/login"},
                             "initiator": {"type": "other"},
                         },
@@ -305,6 +456,7 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
                         "params": {
                             "type": "Document",
                             "requestId": "main-request",
+                            "timestamp": 10.1,
                             "response": {"status": 200},
                         },
                     },
@@ -315,6 +467,23 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
                             "requestId": "sub-request",
                             "frameId": "opaque-sub-frame-id",
                             "request": {"url": "https://shop.example.test/index.php?controller=authentication"},
+                            "timestamp": 11.0,
+                            "initiator": {"type": "other"},
+                        },
+                    },
+                    {
+                        "method": "Network.requestWillBeSent",
+                        "params": {
+                            "type": "Document",
+                            "requestId": "sub-request",
+                            "frameId": "opaque-sub-frame-id",
+                            "request": {"url": "https://shop.example.test/login"},
+                            "timestamp": 12.0,
+                            "redirectResponse": {
+                                "url": "https://shop.example.test/index.php?controller=authentication",
+                                "status": 302,
+                                "headers": {"Refresh": "0.25; url=/index.php?controller=authentication&token=private-token"},
+                            },
                             "initiator": {"type": "other"},
                         },
                     },
@@ -323,6 +492,7 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
                         "params": {
                             "type": "Document",
                             "requestId": "sub-request",
+                            "timestamp": 13.0,
                             "response": {"status": 404},
                         },
                     },
@@ -336,9 +506,11 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
         namespace = {
             "BASE": "https://shop.example.test",
             "json": json,
+            "math": __import__("math"),
             "parse_qs": parse_qs,
             "re": re,
             "unquote": unquote,
+            "urljoin": __import__("urllib.parse", fromlist=["urljoin"]).urljoin,
             "urlparse": urlparse,
             "webdriver": webdriver_namespace,
         }
@@ -348,8 +520,15 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
         )
 
         events = namespace["document_navigation_events"](FakeDriver())
-        self.assertEqual([event["frame_scope"] for event in events], ["top_frame", "subframe"])
-        self.assertEqual([event["status_code"] for event in events], [200, 404])
+        self.assertEqual([event["frame_scope"] for event in events], ["top_frame", "subframe", "subframe"])
+        self.assertEqual([event["status_code"] for event in events], [200, 302, 404])
+        self.assertEqual([event["redirect_status_code"] for event in events], [0, 0, 302])
+        self.assertEqual([event["request_elapsed_ms"] for event in events], [0, 1000, 2000])
+        self.assertEqual([event["response_elapsed_ms"] for event in events], [100, 2000, 3000])
+        self.assertTrue(events[1]["response_refresh"]["present"])
+        self.assertEqual(events[1]["response_refresh"]["delay_ms"], 250)
+        self.assertFalse(events[2]["response_refresh"]["present"])
+        self.assertNotIn("private-token", repr(events))
         self.assertNotIn("opaque-main-frame-id", repr(events))
         self.assertNotIn("opaque-sub-frame-id", repr(events))
 

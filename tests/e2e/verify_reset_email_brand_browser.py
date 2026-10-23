@@ -215,6 +215,20 @@ def reset_email_logo_safe_state(message: dict) -> dict[str, bool | int]:
     }
 
 
+def emit_reset_email_logo_safe_state(message: dict) -> None:
+    """Write only the allowlisted structural state to the log and GitHub annotation."""
+    safe_state = json.dumps(
+        reset_email_logo_safe_state(message), sort_keys=True, separators=(",", ":")
+    )
+    print("ORDENOWA_RESET_EMAIL_SAFE_STATE=" + safe_state, file=sys.stderr, flush=True)
+    annotation = safe_state.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(
+        f"::error title=ORDENOWA reset-email logo state::{annotation}",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
 def render_captured_logo(driver: webdriver.Chrome, logo_bytes: bytes) -> None:
     encoded_logo = base64.b64encode(logo_bytes).decode("ascii")
     preview_path = DEST / "password-reset-email-logo-preview.html"
@@ -310,10 +324,7 @@ def run() -> bool:
             except Exception:
                 pass
         if isinstance(message, dict):
-            safe_state = json.dumps(
-                reset_email_logo_safe_state(message), sort_keys=True, separators=(",", ":")
-            )
-            print("ORDENOWA_RESET_EMAIL_SAFE_STATE=" + safe_state, file=sys.stderr)
+            emit_reset_email_logo_safe_state(message)
         print(
             f"FAIL: password-reset email brand QA at {stage} ({type(error).__name__})",
             file=sys.stderr,

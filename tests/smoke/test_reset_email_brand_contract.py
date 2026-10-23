@@ -1,6 +1,7 @@
 """Keep password-reset email branding independently verifiable in isolated CI."""
 from __future__ import annotations
 
+import ast
 import json
 import re
 import unittest
@@ -75,10 +76,15 @@ class ResetEmailBrandContractTests(unittest.TestCase):
         email_step = workflow.split(
             "- name: Verify the published ORDENOWA password-reset email logo in Chromium", 1
         )[1].split("- name:", 1)[0]
+        browser = EMAIL_BROWSER.read_text(encoding="utf-8")
+        failure_handler = browser.split("except Exception as error:", 1)[1].split(
+            "finally:", 1
+        )[0]
 
-        self.assertIn("safe_state_line=$(rg '^ORDENOWA_RESET_EMAIL_SAFE_STATE='", email_step)
-        self.assertIn('::error title=ORDENOWA reset-email logo state::%s\\n', email_step)
-        self.assertIn('safe_state_annotation=${safe_state_annotation//$\'\\n\'/\'%0A\'}', email_step)
+        self.assertNotIn("safe_state_line=$(rg", email_step)
+        self.assertIn("emit_reset_email_logo_safe_state(message)", failure_handler)
+        self.assertIn('::error title=ORDENOWA reset-email logo state::', browser)
+        self.assertIn('annotation = safe_state.replace("%", "%25").replace("\\r", "%0D").replace("\\n", "%0A")', browser)
 
     def test_mailpit_logo_is_byte_checked_against_published_derivative_and_rendered_in_chromium(self) -> None:
         self.assertTrue(EMAIL_BROWSER.is_file())
@@ -124,23 +130,44 @@ class ResetEmailBrandContractTests(unittest.TestCase):
 
     def test_failure_state_reports_only_mailpit_logo_structure_booleans(self) -> None:
         browser = EMAIL_BROWSER.read_text(encoding="utf-8")
-        safe_state = browser.split("def reset_email_logo_safe_state(", 1)[1].split(
-            "def render_captured_logo", 1
-        )[0]
-        for field in (
-            '"html_is_string"',
-            '"html_nonempty"',
-            '"html_has_shop_logo_cid"',
-            '"inline_is_list"',
-            '"inline_part_count"',
-            '"shop_logo_inline_part_present"',
-            '"shop_logo_inline_part_is_png"',
-        ):
-            with self.subTest(field=field):
-                self.assertIn(field, safe_state)
+        tree = ast.parse(browser)
+        safe_state_function = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "reset_email_logo_safe_state"
+        )
+        returned_dictionary = next(
+            node.value for node in ast.walk(safe_state_function)
+            if isinstance(node, ast.Return) and isinstance(node.value, ast.Dict)
+        )
+        safe_state_keys = [key.value for key in returned_dictionary.keys if isinstance(key, ast.Constant)]
+        self.assertEqual(
+            safe_state_keys,
+            [
+                "html_is_string",
+                "html_nonempty",
+                "html_has_shop_logo_cid",
+                "inline_is_list",
+                "inline_part_count",
+                "shop_logo_inline_part_present",
+                "shop_logo_inline_part_is_png",
+            ],
+            "failure annotations may report only the approved structural booleans and bounded count",
+        )
+        safe_state = ast.get_source_segment(browser, safe_state_function) or ""
         self.assertIn('ORDENOWA_RESET_EMAIL_SAFE_STATE=', browser)
         self.assertNotIn('"HTML":', safe_state)
         self.assertNotIn('"To":', safe_state)
+        self.assertNotIn('"email"', safe_state.lower())
+        emitter = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "emit_reset_email_logo_safe_state"
+        )
+        emitter_source = ast.get_source_segment(browser, emitter) or ""
+        self.assertIn("reset_email_logo_safe_state(message)", emitter_source)
+        self.assertIn("json.dumps(", emitter_source)
+        self.assertIn("file=sys.stderr", emitter_source)
+        self.assertIn('f"::error title=ORDENOWA reset-email logo state::{annotation}"', emitter_source)
+        self.assertIn("flush=True", emitter_source)
 
     def test_password_reset_request_is_independent_of_the_full_account_browser(self) -> None:
         browser = EMAIL_BROWSER.read_text(encoding="utf-8")
