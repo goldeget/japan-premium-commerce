@@ -866,11 +866,18 @@ def run() -> bool:
         stage = "view_only_employee_login"
         restricted_driver = new_driver()
         login(restricted_driver, VIEW_ONLY_EMAIL)
-        stage = "view_only_employee_settings_load"
+        # Resolve the Back Office link from this employee's own rendered session.
+        # Keep URL discovery, navigation, rendering, and readback separate so an
+        # aggregate failure identifies which read-only step did not complete.
+        stage = "view_only_employee_menu_link_lookup"
         restricted_settings_url = settings_url(restricted_driver)
+        stage = "view_only_employee_direct_route"
         restricted_driver.get(restricted_settings_url)
+        stage = "view_only_employee_settings_render"
         visible(restricted_driver, "form.ordenowa-profile-settings")
+        stage = "view_only_employee_settings_value"
         restricted_original_value = current_setting(restricted_driver)
+        stage = "view_only_employee_draft_pointer"
         restricted_draft_pointer = current_draft_pointer(restricted_driver)
         stage = "view_only_employee_valid_token_post"
         verify_security_attempt_without_mutation(

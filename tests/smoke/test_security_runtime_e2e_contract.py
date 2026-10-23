@@ -55,6 +55,19 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertIn("assert_security_attempt_rejected(response, mode)", guarded_attempt)
         run = source.split("def run()", 1)[1].split("\n\nif __name__", 1)[0]
         self.assertIn("verify_security_attempt_without_mutation(", run)
+        view_only = run.split('stage = "view_only_employee_menu_link_lookup"', 1)[1]
+        route_stages = (
+            'stage = "view_only_employee_direct_route"',
+            'stage = "view_only_employee_settings_render"',
+            'stage = "view_only_employee_settings_value"',
+            'stage = "view_only_employee_draft_pointer"',
+            'stage = "view_only_employee_valid_token_post"',
+        )
+        positions = [view_only.index(stage) for stage in route_stages]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("restricted_settings_url = settings_url(restricted_driver)", view_only)
+        self.assertIn("restricted_driver.get(restricted_settings_url)", view_only)
+        self.assertIn('visible(restricted_driver, "form.ordenowa-profile-settings")', view_only)
 
     def test_admin_security_flow_guards_exact_loopback_ci_target_before_browser_creation(self):
         source = ADMIN_FLOW.read_text(encoding="utf-8")
