@@ -388,25 +388,101 @@ def navigate_private_document(
     return assert_private_document_cache_headers(driver, requested_url, shop_url, route_label)
 
 
-def worker_network_conditions(session_id: str, offline: bool) -> dict[str, object]:
-    """Address the worker target: page CDP emulation does not affect its fetches."""
+def worker_network_conditions(offline: bool) -> dict[str, object]:
+    """Build worker-target network conditions for a direct flattened CDP session."""
     return {
-        "sessionId": session_id,
-        "message": json.dumps({
-            "id": 1 if offline else 2,
-            "method": "Network.emulateNetworkConditions",
-            "params": {
-                "offline": offline,
-                "latency": 0,
-                "downloadThroughput": 0 if offline else -1,
-                "uploadThroughput": 0 if offline else -1,
-            },
-        }),
+        "offline": offline,
+        "latency": 0,
+        "downloadThroughput": 0 if offline else -1,
+        "uploadThroughput": 0 if offline else -1,
     }
 
 
+class ChromeBrowserCdpError(RuntimeError):
+    """A bounded error for a Chrome DevTools command or connection failure."""
+
+
+def execute_browser_cdp_command(
+    connection,
+    method: str,
+    parameters: dict[str, object] | None = None,
+    session_id: str | None = None,
+) -> dict[str, object]:
+    """Send a flattened CDP command and wait for its matching protocol response."""
+    previous_session = connection.session_id
+    connection.session_id = session_id
+
+    def command():
+        result = yield {"method": method, "params": parameters or {}}
+        return result
+
+    try:
+        result = connection.execute(command())
+    except Exception:
+        raise ChromeBrowserCdpError(f"Chrome rejected or did not answer {method}") from None
+    finally:
+        connection.session_id = previous_session
+
+    if not isinstance(result, dict):
+        raise ChromeBrowserCdpError(f"Chrome returned an invalid response for {method}")
+    return result
+
+
+class ChromeBrowserCdp:
+    """Use Selenium's pinned websocket connection for response-checked CDP calls."""
+
+    def __init__(self, connection) -> None:
+        self.connection = connection
+        self.closed = False
+
+    @classmethod
+    def connect(cls, driver: webdriver.Chrome) -> "ChromeBrowserCdp":
+        try:
+            _devtools, connection = driver.start_devtools()
+        except Exception:
+            raise ChromeBrowserCdpError("Chrome DevTools websocket could not be opened") from None
+        return cls(connection)
+
+    def execute(
+        self,
+        method: str,
+        parameters: dict[str, object] | None = None,
+        session_id: str | None = None,
+    ) -> dict[str, object]:
+        if self.closed:
+            raise ChromeBrowserCdpError("Chrome DevTools websocket is closed")
+        return execute_browser_cdp_command(self.connection, method, parameters, session_id)
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        self.closed = True
+        close_errors: list[Exception] = []
+        # Selenium 4.27.1 joins its websocket receiver before closing the socket.
+        # Wake the pinned receiver first so close does not wait for its 30s timeout.
+        try:
+            socket = getattr(self.connection, "_ws", None)
+            if socket is not None:
+                socket.close()
+        except Exception as error:
+            close_errors.append(error)
+        try:
+            self.connection.close()
+        except Exception as error:
+            close_errors.append(error)
+        if close_errors:
+            raise ChromeBrowserCdpError("Chrome DevTools websocket could not be closed") from None
+
+
+def connect_browser_cdp(driver: webdriver.Chrome) -> ChromeBrowserCdp:
+    return ChromeBrowserCdp.connect(driver)
+
+
 def restore_offline_network_state(
-    driver: webdriver.Chrome, primary_error: BaseException | None, worker_session: str | None = None
+    driver: webdriver.Chrome,
+    primary_error: BaseException | None,
+    worker_session: str | None = None,
+    worker_cdp: ChromeBrowserCdp | None = None,
 ) -> None:
     """Reset page and worker networking without replacing an earlier QA failure."""
     resets = (
@@ -416,16 +492,31 @@ def restore_offline_network_state(
         ),
         ("Network.setCacheDisabled", {"cacheDisabled": False}),
     )
-    if worker_session is not None:
-        resets = (
-            ("Target.sendMessageToTarget", worker_network_conditions(worker_session, False)),
-            *resets,
-            ("Target.detachFromTarget", {"sessionId": worker_session}),
-        )
     cleanup_errors: list[Exception] = []
+    if worker_session is not None and worker_cdp is not None:
+        try:
+            worker_cdp.execute(
+                "Network.emulateNetworkConditions",
+                worker_network_conditions(False),
+                session_id=worker_session,
+            )
+        except Exception as error:
+            cleanup_errors.append(error)
+
     for command, parameters in resets:
         try:
             driver.execute_cdp_cmd(command, parameters)
+        except Exception as error:
+            cleanup_errors.append(error)
+
+    if worker_session is not None and worker_cdp is not None:
+        try:
+            worker_cdp.execute("Target.detachFromTarget", {"sessionId": worker_session})
+        except Exception as error:
+            cleanup_errors.append(error)
+    if worker_cdp is not None:
+        try:
+            worker_cdp.close()
         except Exception as error:
             cleanup_errors.append(error)
 
@@ -456,6 +547,7 @@ def verify_offline_fallback(
 ) -> None:
     primary_error: BaseException | None = None
     worker_session: str | None = None
+    worker_cdp: ChromeBrowserCdp | None = None
     try:
         set_stage("offline_devtools_enable")
         driver.execute_cdp_cmd("Network.enable", {})
@@ -466,7 +558,8 @@ def verify_offline_fallback(
             "Network.emulateNetworkConditions",
             {"offline": True, "latency": 0, "downloadThroughput": 0, "uploadThroughput": 0},
         )
-        targets = driver.execute_cdp_cmd("Target.getTargets", {})["targetInfos"]
+        worker_cdp = connect_browser_cdp(driver)
+        targets = worker_cdp.execute("Target.getTargets")["targetInfos"]
         worker_url = base_url.rstrip("/") + "/sw.js"
         worker = next(
             (target for target in targets
@@ -475,11 +568,17 @@ def verify_offline_fallback(
         )
         if worker is None:
             raise AssertionError("the storefront service-worker target is unavailable")
-        worker_session = driver.execute_cdp_cmd(
-            "Target.attachToTarget", {"targetId": worker["targetId"], "flatten": False}
-        )["sessionId"]
-        driver.execute_cdp_cmd(
-            "Target.sendMessageToTarget", worker_network_conditions(worker_session, True)
+        worker_session = worker_cdp.execute(
+            "Target.attachToTarget", {"targetId": worker["targetId"], "flatten": True}
+        ).get("sessionId")
+        if not isinstance(worker_session, str) or not worker_session:
+            raise ChromeBrowserCdpError("Chrome did not attach to the storefront worker")
+        set_stage("offline_worker_network_emulation")
+        worker_cdp.execute("Network.enable", {}, session_id=worker_session)
+        worker_cdp.execute(
+            "Network.emulateNetworkConditions",
+            worker_network_conditions(True),
+            session_id=worker_session,
         )
         set_stage("offline_fallback_navigation")
         driver.get(base_url + "/")
@@ -501,7 +600,7 @@ def verify_offline_fallback(
     finally:
         if primary_error is None:
             set_stage("offline_state_restore")
-        restore_offline_network_state(driver, primary_error, worker_session)
+        restore_offline_network_state(driver, primary_error, worker_session, worker_cdp)
     set_stage("online_recovery_navigation")
     driver.get(base_url + "/")
     set_stage("online_recovery_content")
