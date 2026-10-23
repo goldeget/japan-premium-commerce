@@ -971,6 +971,29 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
 
     def test_browser_order_asserts_autocomplete_values_before_manual_address_edits(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        module = ast.parse(flow)
+        tokyo_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == "select_japan_address"
+        )
+        autocomplete_call_node = next(
+            node
+            for node in ast.walk(tokyo_function)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "wait_for_autocomplete_fields"
+        )
+        self.assertEqual(len(autocomplete_call_node.args), 3)
+        expected_fields = ast.literal_eval(autocomplete_call_node.args[2])
+        self.assertEqual(
+            expected_fields,
+            {
+                "postcode": "100-0004",
+                "city": "千代田区",
+                "address1": "大手町",
+            },
+        )
         address_flow = flow.split("def select_japan_address", 1)[1].split(
             "def choose_delivery_and_offline_payment", 1
         )[0]
@@ -983,14 +1006,6 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertGreaterEqual(autocomplete_call, 0, "the browser must assert autocomplete fields")
         self.assertLess(candidate_click, autocomplete_call)
         self.assertLess(autocomplete_call, manual_edits)
-        for field, expected in (
-            ('"postcode"', '"100-0004"'),
-            ('"city"', '"千代田区"'),
-            ('"address1"', '"大手町"'),
-        ):
-            with self.subTest(field=field):
-                self.assertIn(field, address_flow)
-                self.assertIn(expected, address_flow)
         self.assertIn("expected_fields: dict[str, str]", autocomplete_helper)
         self.assertIn("for name, expected in expected_fields.items()", autocomplete_helper)
         self.assertIn('select[name="id_state"]', autocomplete_helper)
