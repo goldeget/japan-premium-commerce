@@ -25,10 +25,65 @@ VIEW_ONLY_EMAIL = os.environ["VIEW_ONLY_EMPLOYEE_EMAIL"]
 COMPOSE_PROJECT = os.environ.get("CI_COMPOSE_PROJECT_NAME", "")
 DEST = Path(os.environ["QA_ARTIFACT_DIR"])
 DEST.mkdir(parents=True, exist_ok=True)
+ROOT = Path(__file__).resolve().parents[2]
 
 EXPECTED_SHOP_PORT = 18080
 SETTING_FIELD = "profile[brand][name][ko-KR]"
 MUTATION_SENTINEL = "ORDENOWA CI security rejection sentinel"
+SAFE_ADMIN_SECURITY_RESPONSE_PATTERN = (
+    r"classification=[a-z_]+; status=(?:[0-9]{1,3}|invalid); final_path=[A-Za-z0-9/._?-]{1,160}; "
+    r"settings_form=(?:true|false); danger_alert=(?:true|false); admin_login_form=(?:true|false); "
+    r"response_controller=(?:AdminBusinessProfile|AdminDashboard|AdminLogin|none|other); "
+    r"invalid_token_warning=(?:true|false); invalid_token_continue=(?:true|false); "
+    r"invalid_token_cancel=(?:true|false); recovery_same_origin=(?:true|false); "
+    r"recovery_same_path=(?:true|false); "
+    r"recovery_controller=(?:AdminBusinessProfile|AdminDashboard|AdminLogin|none|other|unavailable); "
+    r"recovery_token_present=(?:true|false); invalid_token_page=(?:true|false)"
+)
+
+TOKEN_DOM_DETECTOR_JS = r"""
+function inspectInvalidTokenPage(body, responseUrl, targetUrl) {
+  const responseDocument = new DOMParser().parseFromString(body, 'text/html');
+  const warning = responseDocument.querySelector('.container > .error-msg img[alt="warning"]');
+  const tokenContinue = responseDocument.querySelector('.action-container a.btn-continue[href]');
+  const tokenCancel = responseDocument.querySelector('.action-container a.btn-cancel[href="index.php"]');
+  let recoverySameOrigin = false;
+  let recoverySamePath = false;
+  let recoveryController = 'unavailable';
+  let recoveryTokenPresent = false;
+  if (tokenContinue) {
+    try {
+      const recovery = new URL(tokenContinue.getAttribute('href'), responseUrl);
+      const target = new URL(targetUrl);
+      recoverySameOrigin = recovery.origin === target.origin;
+      recoverySamePath = recovery.pathname === target.pathname;
+      const controller = recovery.searchParams.get('controller');
+      recoveryController = controller === 'AdminBusinessProfile' || controller === 'AdminDashboard'
+        ? controller
+        : controller ? 'other' : 'none';
+      recoveryTokenPresent = Boolean(recovery.searchParams.get('token'));
+    } catch (_) {
+      // The safe diagnostic flags below remain false for malformed recovery links.
+    }
+  }
+  const hasWarning = Boolean(warning);
+  const hasContinue = Boolean(tokenContinue);
+  const hasCancel = Boolean(tokenCancel);
+  const bodyHasInvalidTokenPage = hasWarning && hasContinue && hasCancel
+    && recoverySameOrigin && recoverySamePath
+    && recoveryController === 'AdminBusinessProfile' && recoveryTokenPresent;
+  return {
+    bodyHasInvalidTokenPage,
+    bodyHasInvalidTokenWarning: hasWarning,
+    bodyHasInvalidTokenContinue: hasContinue,
+    bodyHasInvalidTokenCancel: hasCancel,
+    invalidTokenRecoverySameOrigin: recoverySameOrigin,
+    invalidTokenRecoverySamePath: recoverySamePath,
+    invalidTokenRecoveryController: recoveryController,
+    invalidTokenRecoveryTokenPresent: recoveryTokenPresent
+  };
+}
+"""
 
 
 def visible(driver: webdriver.Chrome, selector: str):
@@ -145,8 +200,7 @@ def validate_loopback_admin_targets() -> None:
 
 
 def submit_settings_attempt(driver: webdriver.Chrome, mode: str) -> dict[str, object]:
-    result = driver.execute_async_script(
-        """
+    script = """
         const mode = arguments[0];
         const sentinel = arguments[1];
         const done = arguments[arguments.length - 1];
@@ -174,27 +228,16 @@ def submit_settings_attempt(driver: webdriver.Chrome, mode: str) -> dict[str, ob
           cache: 'no-store'
         }).then(async response => {
           const responseBody = await response.text();
+          const tokenPage = inspectInvalidTokenPage(responseBody, response.url, action.href);
           const responseDocument = new DOMParser().parseFromString(responseBody, 'text/html');
           const loginForm = responseDocument.querySelector('#login_form');
-          // PrestaShop 9.2 renders invalid_token.tpl with HTTP 200 before initContent.
-          // Match its language-independent warning and paired recovery controls.
-          const tokenContinue = responseDocument.querySelector('.action-container a.btn-continue[href]');
-          const tokenCancel = responseDocument.querySelector('.action-container a.btn-cancel[href="index.php"]');
-          let invalidTokenPage = false;
-          if (responseDocument.querySelector('.container > .error-msg img[alt="warning"]') && tokenContinue && tokenCancel) {
-            const recovery = new URL(tokenContinue.getAttribute('href'), response.url);
-            const target = new URL(action.href);
-            invalidTokenPage = recovery.origin === target.origin && recovery.pathname === target.pathname
-              && recovery.searchParams.get('controller') === 'AdminBusinessProfile'
-              && Boolean(recovery.searchParams.get('token'));
-          }
           done({
             formPresent: true,
             status: response.status,
             responseUrl: response.url,
             bodyHasSettingsForm: responseBody.includes('ordenowa-profile-settings'),
             bodyHasDangerAlert: responseBody.includes('alert-danger'),
-            bodyHasInvalidTokenPage: invalidTokenPage,
+            ...tokenPage,
             bodyHasAdminLoginForm: Boolean(
               loginForm && loginForm.querySelector('input[name="email"]') && loginForm.querySelector('input[name="passwd"]')
             ),
@@ -202,11 +245,53 @@ def submit_settings_attempt(driver: webdriver.Chrome, mode: str) -> dict[str, ob
           });
         })
           .catch(() => done({formPresent: true, status: 0}));
-        """,
+        """ + TOKEN_DOM_DETECTOR_JS
+    result = driver.execute_async_script(
+        script,
         mode,
         MUTATION_SENTINEL,
     )
     return result if isinstance(result, dict) else {"formPresent": False}
+
+
+def verify_native_invalid_token_dom_fixture(driver: webdriver.Chrome) -> None:
+    fixture = ROOT / "tests" / "fixtures" / "prestashop-9.2-invalid-token.html"
+    markup = fixture.read_text(encoding="utf-8")
+    action_url = ADMIN_LOGIN + "/index.php?controller=AdminBusinessProfile"
+    variants = (
+        ("native", markup, True),
+        ("missing_warning", markup.replace('class="error-msg"', 'class="other"'), False),
+        ("missing_continue", markup.replace("btn-continue", "other"), False),
+        ("missing_cancel", markup.replace("btn-cancel", "other"), False),
+        ("missing_recovery_token", markup.replace("&amp;token=fixture-token", ""), False),
+        (
+            "wrong_controller",
+            markup.replace("controller=AdminBusinessProfile&amp;token", "controller=AdminDashboard&amp;token"),
+            False,
+        ),
+        (
+            "wrong_recovery_path",
+            markup.replace("/admin-kuranea/index.php?controller=", "/admin-kuranea/other.php?controller="),
+            False,
+        ),
+        (
+            "external_recovery",
+            markup.replace(
+                "http://localhost:18080/admin-kuranea/",
+                "http://outside.example/admin-kuranea/",
+            ),
+            False,
+        ),
+    )
+    for name, body, expected in variants:
+        result = driver.execute_script(
+            TOKEN_DOM_DETECTOR_JS + "return inspectInvalidTokenPage(arguments[0], arguments[1], arguments[2]);",
+            body,
+            action_url,
+            action_url,
+        )
+        if not isinstance(result, dict) or result.get("bodyHasInvalidTokenPage") is not expected:
+            raise AssertionError(f"native invalid-token DOM detector fixture failed at {name}")
 
 
 def is_prestashop_admin_login_rejection(result: dict[str, object]) -> bool:
@@ -286,11 +371,40 @@ def response_summary(result: object) -> str:
         if isinstance(status_value, int) and not isinstance(status_value, bool)
         else "invalid"
     )
+    try:
+        response_controllers = parse_qs(urlparse(response_url).query).get("controller", []) if isinstance(response_url, str) else []
+    except ValueError:
+        response_controllers = []
+    allowed_controllers = {"AdminBusinessProfile", "AdminDashboard", "AdminLogin"}
+    if len(response_controllers) == 1 and response_controllers[0] in allowed_controllers:
+        response_controller = response_controllers[0]
+    else:
+        response_controller = "other" if response_controllers else "none"
+
+    def flag(name: str) -> str:
+        return "true" if result.get(name) is True else "false"
+
+    recovery_controller = result.get("invalidTokenRecoveryController")
+    if not isinstance(recovery_controller, str) or recovery_controller not in allowed_controllers | {
+        "none",
+        "other",
+        "unavailable",
+    }:
+        recovery_controller = "other"
     return (
         f"classification={response_classification(result)}; status={status_summary}; final_path={final_path}; "
-        f"settings_form={result.get('bodyHasSettingsForm') is True}; "
-        f"danger_alert={result.get('bodyHasDangerAlert') is True}; "
-        f"admin_login_form={result.get('bodyHasAdminLoginForm') is True}"
+        f"settings_form={flag('bodyHasSettingsForm')}; "
+        f"danger_alert={flag('bodyHasDangerAlert')}; "
+        f"admin_login_form={flag('bodyHasAdminLoginForm')}; "
+        f"response_controller={response_controller}; "
+        f"invalid_token_warning={flag('bodyHasInvalidTokenWarning')}; "
+        f"invalid_token_continue={flag('bodyHasInvalidTokenContinue')}; "
+        f"invalid_token_cancel={flag('bodyHasInvalidTokenCancel')}; "
+        f"recovery_same_origin={flag('invalidTokenRecoverySameOrigin')}; "
+        f"recovery_same_path={flag('invalidTokenRecoverySamePath')}; "
+        f"recovery_controller={recovery_controller}; "
+        f"recovery_token_present={flag('invalidTokenRecoveryTokenPresent')}; "
+        f"invalid_token_page={flag('bodyHasInvalidTokenPage')}"
     )
 
 
@@ -459,8 +573,11 @@ def run() -> bool:
     try:
         validate_isolated_ci_project()
         validate_loopback_admin_targets()
-        stage = "admin_login"
+        stage = "admin_browser_start"
         admin_driver = new_driver()
+        stage = "admin_token_dom_fixture"
+        verify_native_invalid_token_dom_fixture(admin_driver)
+        stage = "admin_login"
         login(admin_driver, ADMIN_EMAIL)
         stage = "admin_settings_load"
         admin_settings_url = settings_url(admin_driver)
@@ -524,11 +641,7 @@ def run() -> bool:
         if isinstance(diagnostic_response, str) and (
             diagnostic_response == "not_evaluated"
             or re.fullmatch(r"classification_error:[A-Za-z][A-Za-z0-9]*", diagnostic_response)
-            or re.fullmatch(
-                r"classification=[a-z_]+; status=(?:[0-9]{1,3}|invalid); final_path=[A-Za-z0-9/._?-]{1,160}; "
-                r"settings_form=(?:true|false); danger_alert=(?:true|false); admin_login_form=(?:true|false)",
-                diagnostic_response,
-            )
+            or re.fullmatch(SAFE_ADMIN_SECURITY_RESPONSE_PATTERN, diagnostic_response)
         ):
             safe_fields.append(f"response={diagnostic_response}")
             safe_response = True

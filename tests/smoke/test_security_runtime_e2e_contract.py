@@ -395,6 +395,73 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(AssertionError):
                 namespace["assert_security_attempt_rejected"]({**warning, **changes}, "missing")
 
+    def test_admin_security_failure_summary_exposes_only_safe_invalid_token_dom_facts(self):
+        namespace = {"re": re, "urlparse": urlparse, "parse_qs": parse_qs}
+        load_function(ADMIN_FLOW, "is_prestashop_admin_login_rejection", namespace)
+        load_function(ADMIN_FLOW, "response_classification", namespace)
+        summary = load_function(ADMIN_FLOW, "response_summary", namespace)
+        result = {
+            "status": 200,
+            "responseUrl": "http://localhost:18080/admin-kuranea/index.php?controller=AdminBusinessProfile&token=secret",
+            "bodyHasSettingsForm": False,
+            "bodyHasDangerAlert": False,
+            "bodyHasAdminLoginForm": False,
+            "bodyHasInvalidTokenPage": False,
+            "bodyHasInvalidTokenWarning": True,
+            "bodyHasInvalidTokenContinue": True,
+            "bodyHasInvalidTokenCancel": True,
+            "invalidTokenRecoverySameOrigin": True,
+            "invalidTokenRecoverySamePath": True,
+            "invalidTokenRecoveryController": "AdminBusinessProfile",
+            "invalidTokenRecoveryTokenPresent": True,
+        }
+        diagnostic = summary(result)
+        for safe_fact in (
+            "response_controller=AdminBusinessProfile",
+            "invalid_token_warning=true",
+            "invalid_token_continue=true",
+            "invalid_token_cancel=true",
+            "recovery_same_origin=true",
+            "recovery_same_path=true",
+            "recovery_controller=AdminBusinessProfile",
+            "recovery_token_present=true",
+            "invalid_token_page=false",
+        ):
+            with self.subTest(safe_fact=safe_fact):
+                self.assertIn(safe_fact, diagnostic)
+        self.assertIn("settings_form=false; danger_alert=false; admin_login_form=false", diagnostic)
+        self.assertNotIn("secret", diagnostic)
+
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+        module = ast.parse(source, filename=str(ADMIN_FLOW))
+        pattern_assignment = next(
+            (
+                node
+                for node in module.body
+                if isinstance(node, ast.Assign)
+                and any(
+                    isinstance(target, ast.Name) and target.id == "SAFE_ADMIN_SECURITY_RESPONSE_PATTERN"
+                    for target in node.targets
+                )
+            ),
+            None,
+        )
+        self.assertIsNotNone(pattern_assignment)
+        assert pattern_assignment is not None
+        self.assertRegex(diagnostic, ast.literal_eval(pattern_assignment.value))
+
+    def test_admin_security_browser_runs_native_token_dom_fixture_in_chromium(self):
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+        fixture = ROOT / "tests" / "fixtures" / "prestashop-9.2-invalid-token.html"
+        self.assertTrue(fixture.is_file(), "the native PrestaShop invalid-token fixture is missing")
+        markup = fixture.read_text(encoding="utf-8")
+        self.assertIn('<img width="32px" alt="warning"', markup)
+        self.assertIn('class="btn btn-continue"', markup)
+        self.assertIn('class="btn btn-cancel" href="index.php"', markup)
+        self.assertIn("TOKEN_DOM_DETECTOR_JS", source)
+        self.assertIn("verify_native_invalid_token_dom_fixture", source)
+        self.assertIn("verify_native_invalid_token_dom_fixture(admin_driver)", source)
+
     def test_admin_security_attempt_rechecks_state_before_classifying_a_rejection(self):
         events: list[str] = []
 
