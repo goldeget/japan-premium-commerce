@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import ast
+import sys
 import unittest
+from contextlib import redirect_stderr
+from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 
@@ -94,6 +98,33 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn('#login-form input[name="email"]', logout)
         self.assertIn('By.ID, "identity_main_link"', logout)
 
+    def test_logout_navigates_to_authenticated_account_before_resolving_signout(self) -> None:
+        logout = self.source.split("def logout", 1)[1].split("def run_viewport", 1)[0]
+        self.assertIn("def wait_for_signed_out_state", self.source)
+        helper = self.source.split("def wait_for_signed_out_state", 1)[1].split(
+            "\n\ndef logout", 1
+        )[0]
+
+        account_route = logout.index("driver.get(account_url)")
+        authenticated_page = logout.index('visible(driver, "#identity_main_link")')
+        signout_lookup = logout.index("visible_signout_link(driver)")
+        click_signout = logout.index("link.click()")
+        wait_signed_out = logout.index("wait_for_signed_out_state(driver)")
+        signed_out_account_route = logout.index("driver.get(account_url)", account_route + 1)
+
+        self.assertLess(account_route, authenticated_page)
+        self.assertLess(authenticated_page, signout_lookup)
+        self.assertLess(signout_lookup, click_signout)
+        self.assertLess(click_signout, wait_signed_out)
+        self.assertLess(wait_signed_out, signed_out_account_route)
+        self.assertIn("WebDriverWait(driver, 30).until", helper)
+        self.assertIn("document.getElementById('userMenuButton')", helper)
+        self.assertIn("document.querySelectorAll('a.account-menu__link--signout')", helper)
+        self.assertIn(
+            "return !document.getElementById('userMenuButton') && !hasVisibleSignoutLink;",
+            helper,
+        )
+
     def test_email_login_failure_diagnostics_expose_state_without_page_text_or_values(self) -> None:
         result_helper = self.source.split("def collect_email_login_result", 1)[1].split(
             "\n\ndef collect_email_login_diagnostics", 1
@@ -123,6 +154,36 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertNotIn("textContent", collector)
         self.assertNotIn(".value", collector)
         self.assertIn("ORDENOWA_ACCOUNT_EMAIL_LOGIN_SAFE_STATE=", emitter)
+
+    def test_email_login_safe_state_emits_escaped_github_annotation(self) -> None:
+        emitter = next(
+            node
+            for node in ast.parse(self.source).body
+            if isinstance(node, ast.FunctionDef) and node.name == "emit_email_login_diagnostics"
+        )
+
+        class FakeJson:
+            @staticmethod
+            def dumps(_value: object, **_kwargs: object) -> str:
+                return "safe%state\r\ncontinued"
+
+        namespace = {
+            "collect_email_login_diagnostics": lambda _driver, _substage: {},
+            "json": FakeJson,
+            "sys": sys,
+            "webdriver": SimpleNamespace(Chrome=object),
+        }
+        exec(compile(ast.Module(body=[emitter], type_ignores=[]), str(ACCOUNT_FLOW), "exec"), namespace)
+
+        output = StringIO()
+        with redirect_stderr(output):
+            namespace["emit_email_login_diagnostics"](object(), "logout")
+
+        self.assertEqual(
+            output.getvalue(),
+            "ORDENOWA_ACCOUNT_EMAIL_LOGIN_SAFE_STATE=safe%state\r\ncontinued\n"
+            "::error title=Customer account email login safe state::safe%25state%0D%0Acontinued\n",
+        )
 
     def test_registration_link_wait_has_its_own_failure_stage_after_korean_check(self) -> None:
         korean_check = self.blocks["korean_email_login_label"]

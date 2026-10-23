@@ -2167,12 +2167,32 @@ def emit_email_login_diagnostics(driver: webdriver.Chrome, substage: str) -> Non
         collect_email_login_diagnostics(driver, substage), ensure_ascii=True, sort_keys=True
     )
     print("ORDENOWA_ACCOUNT_EMAIL_LOGIN_SAFE_STATE=" + safe_state_json, file=sys.stderr)
+    annotation = safe_state_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(
+        f"::error title=Customer account email login safe state::{annotation}",
+        file=sys.stderr,
+    )
+
+
+def wait_for_signed_out_state(driver: webdriver.Chrome) -> None:
+    WebDriverWait(driver, 30).until(
+        lambda browser: browser.execute_script(
+            """
+            const hasVisibleSignoutLink = [...document.querySelectorAll('a.account-menu__link--signout')]
+              .some(link => link.getClientRects().length > 0);
+            return !document.getElementById('userMenuButton') && !hasVisibleSignoutLink;
+            """
+        )
+    )
 
 
 def logout(driver: webdriver.Chrome) -> None:
     _, account_url = my_account_link_from_header(driver, open_menu=False)
+    driver.get(account_url)
+    visible(driver, "#identity_main_link")
     link = visible_signout_link(driver)
     link.click()
+    wait_for_signed_out_state(driver)
     driver.get(account_url)
     WebDriverWait(driver, 30).until(
         lambda browser: bool(browser.find_elements(By.CSS_SELECTOR, '#login-form input[name="email"]'))

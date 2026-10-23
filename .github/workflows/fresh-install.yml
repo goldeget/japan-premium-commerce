@@ -551,10 +551,6 @@ jobs:
             if [ -n "$email_login_diagnostics" ]; then
               while IFS= read -r email_login_diagnostics_line; do
                 printf '%s\n' "$email_login_diagnostics_line" >> "$GITHUB_STEP_SUMMARY"
-                email_login_annotation=${email_login_diagnostics_line//'%'/'%25'}
-                email_login_annotation=${email_login_annotation//$'\r'/'%0D'}
-                email_login_annotation=${email_login_annotation//$'\n'/'%0A'}
-                printf '::error title=Customer account email login safe state::%s\n' "$email_login_annotation"
               done <<< "$email_login_diagnostics"
             fi
             exit "$browser_status"

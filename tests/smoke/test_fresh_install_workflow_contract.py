@@ -114,6 +114,36 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("actual_path != expected_path", account_flow)
         self.assertIn("same_origin", account_flow)
 
+    def test_customer_email_login_state_is_annotated_once_and_retained_in_step_summary(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(
+            encoding="utf-8"
+        )
+        account_step = workflow.split(
+            "- name: Verify customer registration, email login, logout, password reset, and my page in Chromium",
+            1,
+        )[1].split("- name:", 1)[0]
+        email_login_emitter = account_flow.split("def emit_email_login_diagnostics", 1)[1].split(
+            "\n\ndef wait_for_signed_out_state", 1
+        )[0]
+        email_login_summary = account_step.split(
+            'if [ -n "$email_login_diagnostics" ]; then', 1
+        )[1].split("\n            fi", 1)[0]
+
+        self.assertIn(
+            "::error title=Customer account email login safe state::",
+            email_login_emitter,
+        )
+        self.assertIn(
+            'printf \'%s\\n\' "$email_login_diagnostics_line" >> "$GITHUB_STEP_SUMMARY"',
+            email_login_summary,
+        )
+        self.assertNotIn(
+            "::error title=Customer account email login safe state::",
+            account_step,
+            "the shell extractor must not duplicate the Python-emitted annotation",
+        )
+
     def test_customer_account_browser_proves_my_page_and_logout_transitions(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
         self.assertIn("def assert_my_page", account_flow)
