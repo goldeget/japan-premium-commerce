@@ -50,8 +50,9 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
                 $this->formValues = $this->emptyFormValues();
             }
             $categories = $manager->categories();
+            $taxRulesGroups = $manager->taxRulesGroups();
             $this->content .= $this->renderFeedback();
-            $this->content .= $this->renderManager($manager, $categories);
+            $this->content .= $this->renderManager($manager, $categories, $taxRulesGroups);
         } catch (Throwable) {
             http_response_code(503);
             $this->content .= '<div class="alert alert-danger">상품 관리 화면을 불러오지 못했습니다. 쇼핑몰 설정과 권한을 확인해 주세요.</div>';
@@ -111,6 +112,7 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
             'name_ja' => Tools::getValue('name_ja', ''),
             'name_ko' => Tools::getValue('name_ko', ''),
             'price_jpy' => Tools::getValue('price_jpy', ''),
+            'tax_rules_group_id' => Tools::getValue('tax_rules_group_id', null),
             'quantity' => Tools::getValue('quantity', '0'),
             'category_ids' => Tools::getValue('category_ids', []),
             'description_ja' => Tools::getValue('description_ja', ''),
@@ -141,13 +143,16 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
         return $uploads;
     }
 
-    /** @param list<array{id_category:int,name:string}> $categories */
-    private function renderManager(PrestaShopNativeProductManager $manager, array $categories): string
+    /** @param list<array{id_category:int,name:string}> $categories
+     *  @param list<array{id_tax_rules_group:int,name:string}> $taxRulesGroups
+     */
+    private function renderManager(PrestaShopNativeProductManager $manager, array $categories, array $taxRulesGroups): string
     {
         $action = (string) $this->context->link->getAdminLink('AdminOrdenowaProductManager');
         $token = (string) Tools::getAdminTokenLite('AdminOrdenowaProductManager');
         $editing = $this->editorProductId > 0;
         $values = $this->formValues;
+        $selectedTaxRulesGroupId = $values['tax_rules_group_id'] ?? '';
         $selectedCategories = array_map('intval', (array) ($values['category_ids'] ?? []));
         $imageIds = array_map('intval', (array) ($values['image_ids'] ?? []));
         $html = '<div class="row"><div class="col-lg-8"><section class="panel">'
@@ -158,7 +163,8 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
             . '<input type="hidden" name="id_product" value="' . $this->editorProductId . '">'
             . $this->renderTextField('name_ja', '상품명 (일본어)', (string) ($values['name_ja'] ?? ''), true, '예: ORDENOWA CI 合成商品')
             . $this->renderTextField('name_ko', '상품명 (한국어)', (string) ($values['name_ko'] ?? ''), false, '고객 언어별 상품명을 입력합니다.')
-            . $this->renderTextField('price_jpy', '가격 (JPY)', (string) ($values['price_jpy'] ?? ''), true, '예: 1280')
+            . $this->renderTaxRulesGroupField($taxRulesGroups, $selectedTaxRulesGroupId)
+            . $this->renderTextField('price_jpy', '세금 포함 판매 가격 (JPY)', (string) ($values['price_jpy'] ?? ''), true, '고객에게 표시할 세금 포함 가격입니다. 선택한 일본 세금 규칙 그룹으로 세전 금액을 환산합니다. 주소별 세율이 달라 하나의 가격으로 환산할 수 없으면 저장이 차단됩니다.')
             . $this->renderTextField('quantity', '기본 재고 수량', (string) ($values['quantity'] ?? '0'), true, '옵션이 없는 상품의 상품 재고로 적용됩니다. 옵션 조합을 새로 만들 때는 기본값으로 사용하며, 기존 조합은 아래 개별 재고가 우선합니다.')
             . $this->renderCategories($categories, $selectedCategories)
             . $this->renderTextArea('options', '상품 옵션', (string) ($values['options'] ?? ''), '그룹명:값1|값2 형식으로 한 줄씩 입력합니다. 예: 色:青|赤')
@@ -236,6 +242,26 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
             . $this->escape($value) . '</textarea><p class="help-block">' . $this->escape($hint) . '</p></div>';
     }
 
+    /** @param list<array{id_tax_rules_group:int,name:string}> $taxRulesGroups */
+    private function renderTaxRulesGroupField(array $taxRulesGroups, int|string $selectedId): string
+    {
+        $html = '<div class="form-group"><label for="tax_rules_group_id">세금 규칙 그룹</label>'
+            . '<select class="form-control" id="tax_rules_group_id" name="tax_rules_group_id" required>';
+        if ($selectedId === '') {
+            $html .= '<option value="" disabled selected>세금 규칙 그룹을 선택해 주세요</option>';
+        }
+        foreach ($taxRulesGroups as $taxRulesGroup) {
+            $id = (int) $taxRulesGroup['id_tax_rules_group'];
+            $selected = (string) $id === (string) $selectedId ? ' selected' : '';
+            $label = $id === 0
+                ? (string) $taxRulesGroup['name']
+                : (string) $taxRulesGroup['name'] . ' · ID ' . $id;
+            $html .= '<option value="' . $id . '"' . $selected . '>' . $this->escape($label) . '</option>';
+        }
+
+        return $html . '</select><p class="help-block">현재 쇼핑몰에 등록된 PrestaShop 세금 규칙만 선택할 수 있습니다. 세금 규칙 미할당은 계산 규칙이 연결되지 않았다는 뜻이며 과세 여부를 법적으로 결정하지 않습니다. 실제 과세 처리는 판매자·상품의 세금 설정에 따라 별도로 확인해야 합니다.</p></div>';
+    }
+
     /**
      * @param list<array{id_product_attribute:int,label:string,quantity:int}> $rows
      * @param array<int|string, mixed> $quantities
@@ -300,6 +326,7 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
             'name_ja' => '',
             'name_ko' => '',
             'price_jpy' => '',
+            'tax_rules_group_id' => '',
             'quantity' => '0',
             'category_ids' => [],
             'description_ja' => '',

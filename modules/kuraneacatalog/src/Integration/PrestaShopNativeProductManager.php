@@ -45,12 +45,35 @@ final class PrestaShopNativeProductManager
         ], $rows);
     }
 
+    /** @return list<array{id_tax_rules_group:int,name:string}> */
+    public function taxRulesGroups(): array
+    {
+        $rows = \TaxRulesGroup::getTaxRulesGroupsForOptions();
+        if (!is_array($rows)) {
+            throw new RuntimeException('PrestaShop 세금 규칙 그룹을 불러오지 못했습니다.');
+        }
+
+        $groups = [['id_tax_rules_group' => 0, 'name' => '규칙 미할당 (세금 계산 없음)']];
+        foreach ($rows as $row) {
+            $id = (int) ($row['id_tax_rules_group'] ?? -1);
+            if ($id < 1 || !isset($row['name']) || trim((string) $row['name']) === '') {
+                continue;
+            }
+            $groups[] = [
+                'id_tax_rules_group' => $id,
+                'name' => (string) $row['name'],
+            ];
+        }
+
+        return $groups;
+    }
+
     /** @return list<array{id_product:int,name:string,price:int,reference:string}> */
     public function managedProducts(): array
     {
         [$languageId, $shopId] = $this->contextIds();
         $rows = \Db::getInstance()->executeS('
-            SELECT p.`id_product`, p.`reference`, pl.`name`, ps.`price`
+            SELECT p.`id_product`, p.`reference`, pl.`name`, ps.`price`, ps.`id_tax_rules_group`
             FROM `' . _DB_PREFIX_ . 'product` p
             INNER JOIN `' . _DB_PREFIX_ . 'product_shop` ps
                 ON ps.`id_product` = p.`id_product` AND ps.`id_shop` = ' . (int) $shopId . '
@@ -66,12 +89,19 @@ final class PrestaShopNativeProductManager
             throw new RuntimeException('관리 상품 목록을 불러오지 못했습니다.');
         }
 
-        return array_map(static fn (array $row): array => [
-            'id_product' => (int) $row['id_product'],
-            'name' => (string) $row['name'],
-            'price' => (int) round((float) $row['price']),
-            'reference' => (string) $row['reference'],
-        ], $rows);
+        $products = [];
+        foreach ($rows as $row) {
+            $taxRulesGroupId = (int) $row['id_tax_rules_group'];
+            $taxCalculator = $this->taxCalculatorForGroup($taxRulesGroupId, $languageId, $shopId);
+            $products[] = [
+                'id_product' => (int) $row['id_product'],
+                'name' => (string) $row['name'],
+                'price' => (int) \Tools::ps_round($taxCalculator->addTaxes((float) $row['price']), 0),
+                'reference' => (string) $row['reference'],
+            ];
+        }
+
+        return $products;
     }
 
     /** @return array<string, mixed> */
@@ -103,6 +133,8 @@ final class PrestaShopNativeProductManager
         // The default is the product-level stock row; variant stocks remain
         // independent and must never seed this value from the first variant.
         $quantity = (int) \StockAvailable::getQuantityAvailableByProduct($productId, 0, $shopId);
+        $taxRulesGroupId = (int) $product->id_tax_rules_group;
+        $taxCalculator = $this->taxCalculatorForGroup($taxRulesGroupId, $languageId, $shopId);
         $combinationQuantities = [];
         foreach ($combinationStockRows as $row) {
             $combinationQuantities[$row['id_product_attribute']] = $row['quantity'];
@@ -112,7 +144,8 @@ final class PrestaShopNativeProductManager
             'id_product' => $productId,
             'name_ja' => $nameJa,
             'name_ko' => $nameKo,
-            'price_jpy' => (int) round((float) $product->price),
+            'price_jpy' => (int) \Tools::ps_round($taxCalculator->addTaxes((float) $product->price), 0),
+            'tax_rules_group_id' => $taxRulesGroupId,
             'quantity' => $quantity,
             'description_ja' => $descriptionJa,
             'description_ko' => $descriptionKo,
@@ -185,6 +218,11 @@ final class PrestaShopNativeProductManager
         [$languageId, $shopId] = $this->contextIds();
         $this->requireJpyDefaultCurrency();
         $this->validateCategories($draft->categoryIds, $languageId, $shopId);
+        $taxCalculator = $this->taxCalculatorForGroup($draft->taxRulesGroupId, $languageId, $shopId);
+        $priceTaxExcluded = (float) \Tools::ps_round(
+            $taxCalculator->removeTaxes((float) $draft->priceJpy),
+            6
+        );
         $this->validateUploads($uploads);
 
         $isNew = $productId === null || $productId < 1;
@@ -229,9 +267,9 @@ final class PrestaShopNativeProductManager
             $this->plainTextToHtml($draft->descriptionJa),
             $this->plainTextToHtml($draft->descriptionKo)
         );
-        $product->price = (float) $draft->priceJpy;
+        $product->price = $priceTaxExcluded;
         $product->id_category_default = $draft->categoryIds[0];
-        $product->id_tax_rules_group = 0;
+        $product->id_tax_rules_group = $draft->taxRulesGroupId;
         $product->minimal_quantity = 1;
         $product->active = 0;
         $product->visibility = 'none';
@@ -331,6 +369,103 @@ final class PrestaShopNativeProductManager
         ');
         if ($count !== count($categoryIds)) {
             throw new InvalidArgumentException('선택한 카테고리 중 현재 쇼핑몰에서 사용할 수 없는 항목이 있습니다.');
+        }
+    }
+
+    private function taxCalculatorForGroup(int $taxRulesGroupId, int $languageId, int $shopId): \TaxCalculator
+    {
+        $this->assertCustomerGroupsDisplayPricesWithTax($languageId, $shopId);
+
+        if ($taxRulesGroupId === 0) {
+            return new \TaxCalculator([]);
+        }
+
+        $availableIds = array_map(
+            static fn (array $row): int => (int) $row['id_tax_rules_group'],
+            $this->taxRulesGroups()
+        );
+        if (!in_array($taxRulesGroupId, $availableIds, true)) {
+            throw new InvalidArgumentException('선택한 세금 규칙 그룹이 현재 쇼핑몰에서 활성 상태가 아닙니다.');
+        }
+
+        $countryId = (int) \Configuration::get('PS_COUNTRY_DEFAULT');
+        $country = $countryId > 0 ? new \Country($countryId, $languageId, $shopId) : null;
+        if (!$country instanceof \Country
+            || !\Validate::isLoadedObject($country)
+            || (string) $country->iso_code !== 'JP') {
+            throw new InvalidArgumentException('세금 포함 JPY 가격 환산을 위해 쇼핑몰 기본 국가가 일본(JP)인지 확인해 주세요.');
+        }
+        if (!(bool) \Configuration::get('PS_TAX')) {
+            throw new InvalidArgumentException('PrestaShop 세금 계산이 꺼져 있어 과세 가격을 환산할 수 없습니다. 세금 계산을 켜거나 세금 없음을 명시 선택해 주세요.');
+        }
+
+        $rules = \TaxRule::getTaxRulesByGroupId($languageId, $taxRulesGroupId);
+        if (!is_array($rules)) {
+            throw new RuntimeException('선택한 PrestaShop 세금 규칙을 읽지 못했습니다.');
+        }
+        $countryRules = array_values(array_filter(
+            $rules,
+            static fn (array $rule): bool => (int) ($rule['id_country'] ?? 0) === $countryId
+        ));
+        if ($countryRules === []) {
+            throw new InvalidArgumentException('선택한 세금 규칙 그룹에는 일본 기본 배송 국가의 세율이 없습니다. 일본 규칙이 있는 그룹을 선택하거나 세금 없음을 명시 선택해 주세요.');
+        }
+        foreach ($countryRules as $rule) {
+            $zipFrom = trim((string) ($rule['zipcode_from'] ?? ''));
+            $zipTo = trim((string) ($rule['zipcode_to'] ?? ''));
+            if ((int) ($rule['id_state'] ?? 0) !== 0
+                || !in_array($zipFrom, ['', '0'], true)
+                || !in_array($zipTo, ['', '0'], true)) {
+                throw new InvalidArgumentException('선택한 세금 규칙 그룹은 일본의 도도부현 또는 우편번호에 따라 세율이 달라 상품의 세금 포함 가격을 하나로 환산할 수 없습니다. 주소별 세율을 확인한 뒤 일본 전체에 동일한 규칙이 있는 그룹을 선택해 주세요.');
+            }
+        }
+
+        $address = new \Address();
+        $address->id_country = $countryId;
+        $address->id_state = 0;
+        $address->postcode = '0';
+        $calculator = \TaxManagerFactory::getManager($address, $taxRulesGroupId)->getTaxCalculator();
+        if (!$calculator instanceof \TaxCalculator || !is_finite((float) $calculator->getTotalRate())
+            || (float) $calculator->getTotalRate() < 0) {
+            throw new RuntimeException('선택한 일본 세금 규칙으로 유효한 상품 세율을 계산하지 못했습니다.');
+        }
+
+        return $calculator;
+    }
+
+    private function assertCustomerGroupsDisplayPricesWithTax(int $languageId, int $shopId): void
+    {
+        $groups = \Group::getGroups($languageId, $shopId);
+        if (!is_array($groups) || $groups === []) {
+            throw new InvalidArgumentException('현재 쇼핑몰에 연결된 고객 그룹의 가격 표시 설정을 확인할 수 없습니다.');
+        }
+
+        $groupIds = [];
+        foreach ($groups as $group) {
+            $groupId = (int) ($group['id_group'] ?? 0);
+            if ($groupId < 1) {
+                throw new InvalidArgumentException('현재 쇼핑몰의 고객 그룹 설정을 확인할 수 없습니다.');
+            }
+            $groupIds[$groupId] = (int) ($group['price_display_method'] ?? -1);
+        }
+
+        $requiredGroupIds = array_map(
+            static fn (string $configurationKey): int => (int) \Configuration::get($configurationKey),
+            ['PS_UNIDENTIFIED_GROUP', 'PS_GUEST_GROUP', 'PS_CUSTOMER_GROUP']
+        );
+        foreach ($requiredGroupIds as $requiredGroupId) {
+            if ($requiredGroupId < 1 || !array_key_exists($requiredGroupId, $groupIds)) {
+                throw new InvalidArgumentException('쇼핑몰 방문자·비회원·회원 그룹의 가격 표시 설정이 누락되었습니다.');
+            }
+        }
+
+        foreach ($groupIds as $groupId => $priceDisplayMethod) {
+            if ($priceDisplayMethod !== \Group::PRICE_DISPLAY_METHOD_TAX_INCL) {
+                throw new InvalidArgumentException(sprintf(
+                    '고객 그룹 %d의 상품 가격 표시가 세금 포함 방식이 아닙니다. 상품 가격을 저장하기 전에 모든 고객 그룹을 세금 포함으로 설정해 주세요.',
+                    $groupId
+                ));
+            }
         }
     }
 

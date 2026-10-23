@@ -3,7 +3,67 @@
 declare(strict_types=1);
 
 /**
- * Ensure the Japanese shop starts with JPY as its base currency exactly once.
+ * Apply PrestaShop's tax-included gross-price mode to all customer groups
+ * associated with the storefront shop.
+ */
+function kuraneaConfigureTaxIncludedGroupPriceDisplay(int $languageId, int $shopId): void
+{
+    $groups = Group::getGroups($languageId, $shopId);
+    if (!is_array($groups) || $groups === []) {
+        throw new RuntimeException('Customer groups associated with the Japanese shop are required for price display configuration.');
+    }
+
+    $groupIds = [];
+    foreach ($groups as $row) {
+        $groupId = (int) ($row['id_group'] ?? 0);
+        if ($groupId < 1) {
+            throw new RuntimeException('A customer group associated with the Japanese shop has an invalid ID.');
+        }
+        $groupIds[$groupId] = true;
+    }
+
+    $requiredGroupIds = array_map(
+        static fn (string $configurationKey): int => (int) Configuration::get($configurationKey),
+        ['PS_UNIDENTIFIED_GROUP', 'PS_GUEST_GROUP', 'PS_CUSTOMER_GROUP']
+    );
+    foreach ($requiredGroupIds as $requiredGroupId) {
+        if ($requiredGroupId < 1 || !isset($groupIds[$requiredGroupId])) {
+            throw new RuntimeException('The Japanese shop must include its configured visitor, guest, and customer groups.');
+        }
+    }
+
+    foreach (array_keys($groupIds) as $groupId) {
+        $group = new Group((int) $groupId, null, $shopId);
+        if (!Validate::isLoadedObject($group)) {
+            throw new RuntimeException(sprintf('Could not load customer group %d for price display configuration.', $groupId));
+        }
+        if ((int) $group->price_display_method === Group::PRICE_DISPLAY_METHOD_TAX_INCL) {
+            continue;
+        }
+
+        $group->price_display_method = Group::PRICE_DISPLAY_METHOD_TAX_INCL;
+        if (!$group->update()) {
+            throw new RuntimeException(sprintf('Could not set customer group %d to tax-included price display.', $groupId));
+        }
+    }
+
+    $verifiedGroups = Group::getGroups($languageId, $shopId);
+    if (!is_array($verifiedGroups) || count($verifiedGroups) !== count($groupIds)) {
+        throw new RuntimeException('Could not re-read all storefront customer groups after price display configuration.');
+    }
+    foreach ($verifiedGroups as $row) {
+        if ((int) ($row['price_display_method'] ?? -1) !== Group::PRICE_DISPLAY_METHOD_TAX_INCL) {
+            throw new RuntimeException(sprintf(
+                'Customer group %d does not display storefront prices with tax included.',
+                (int) ($row['id_group'] ?? 0)
+            ));
+        }
+    }
+}
+
+/**
+ * Ensure the Japanese shop uses JPY and tax-included storefront display.
+ * These settings are repaired on every bootstrap for fresh and legacy shops.
  * Other currencies are disabled until their exchange rates are configured.
  */
 function kuraneaConfigureJapaneseCurrency(Context $context): Currency
@@ -15,6 +75,11 @@ function kuraneaConfigureJapaneseCurrency(Context $context): Currency
     $shopId = (int) $context->shop->id;
     Shop::setContext(Shop::CONTEXT_SHOP, $shopId);
     $configuredKey = 'KURANEA_JPY_DEFAULT_CURRENCY_CONFIGURED';
+    $japaneseLanguageId = (int) Language::getIdByIso('ja', true);
+    if ($japaneseLanguageId < 1) {
+        throw new RuntimeException('Japanese language data is required to configure customer group price display.');
+    }
+    kuraneaConfigureTaxIncludedGroupPriceDisplay($japaneseLanguageId, $shopId);
 
     if ((string) Configuration::get($configuredKey) === '2') {
         $defaultCurrency = new Currency((int) Configuration::get('PS_CURRENCY_DEFAULT'), null, $shopId);
@@ -26,7 +91,6 @@ function kuraneaConfigureJapaneseCurrency(Context $context): Currency
     }
 
     $languages = Language::getLanguages(false);
-    $japaneseLanguageId = (int) Language::getIdByIso('ja', true);
     if (!$japaneseLanguageId || !$languages) {
         throw new RuntimeException('Japanese language data is required to configure JPY.');
     }

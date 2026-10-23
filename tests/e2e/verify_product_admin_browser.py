@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
 import os
 import re
@@ -21,16 +22,75 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import Select, WebDriverWait
 
 
 BASE = os.environ["SHOP_BASE_URL"].rstrip("/")
 ADMIN_LOGIN = os.environ["ADMIN_LOGIN_URL"].rstrip("/")
 ADMIN_EMAIL = os.environ["ADMIN_MAIL"]
 ADMIN_PASSWORD = os.environ["ADMIN_PASSWD"]
+TAX_RULES_GROUP_ID = int(os.environ["CI_TEST_TAX_RULES_GROUP_ID"])
+if TAX_RULES_GROUP_ID < 1:
+    raise RuntimeError("CI_TEST_TAX_RULES_GROUP_ID must name the isolated synthetic nonzero-rate tax group")
 ADMIN_PATH = urlparse(ADMIN_LOGIN).path.rstrip("/")
 DEST = Path(os.environ["QA_ARTIFACT_DIR"])
 DEST.mkdir(parents=True, exist_ok=True)
+EXPECTED_SHOP_PORT = 18080
+
+
+def validate_isolated_ci_compose_project() -> None:
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")
+    expected_project = f"kuranea-ci-{run_id}-{attempt}"
+    if (
+        os.environ.get("CI") != "true"
+        or os.environ.get("GITHUB_ACTIONS") != "true"
+        or os.environ.get("KURANEA_ISOLATED_CI") != "1"
+        or not run_id.isascii()
+        or not run_id.isdecimal()
+        or not attempt.isascii()
+        or not attempt.isdecimal()
+        or os.environ.get("CI_COMPOSE_PROJECT_NAME", "") != expected_project
+    ):
+        raise ValueError("product admin QA requires its exact isolated GitHub Actions Compose project")
+
+
+def _loopback_http_origin(value: str, label: str) -> tuple[str, str, int]:
+    try:
+        parsed = urlparse(value)
+        host = parsed.hostname or ""
+        port = parsed.port
+    except ValueError:
+        raise ValueError(f"{label} must be a valid isolated loopback URL") from None
+    if host.lower() == "localhost":
+        is_loopback = True
+    else:
+        try:
+            is_loopback = ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            is_loopback = False
+    if (
+        parsed.scheme != "http"
+        or not is_loopback
+        or port != EXPECTED_SHOP_PORT
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(f"{label} must use the isolated loopback shop origin on port {EXPECTED_SHOP_PORT}")
+    return parsed.scheme, host.lower(), port
+
+
+def validate_loopback_admin_targets() -> None:
+    shop = urlparse(BASE)
+    admin = urlparse(ADMIN_LOGIN)
+    if shop.path not in ("", "/"):
+        raise ValueError("SHOP_BASE_URL must be the isolated shop root")
+    shop_origin = _loopback_http_origin(BASE, "SHOP_BASE_URL")
+    admin_origin = _loopback_http_origin(ADMIN_LOGIN, "ADMIN_LOGIN_URL")
+    if admin_origin != shop_origin or admin.path.rstrip("/") != "/admin-kuranea":
+        raise ValueError("ADMIN_LOGIN_URL must share the isolated shop origin and name its Back Office path")
 
 
 def visible(driver: webdriver.Chrome, selector: str):
@@ -301,7 +361,7 @@ def product_form_diagnostics(driver: webdriver.Chrome) -> dict[str, object]:
         const hiddenToken = form.querySelector('input[name="token"]')?.value || '';
         const actionToken = action.searchParams.get('token') || '';
         const safeFields = [
-            'name_ja', 'name_ko', 'price_jpy', 'quantity', 'category_ids',
+            'name_ja', 'name_ko', 'price_jpy', 'tax_rules_group_id', 'quantity', 'category_ids',
             'options', 'description_ja', 'description_ko', 'product_images',
         ];
         const combinationStockFields = Array.from(
@@ -384,6 +444,11 @@ def product_save_result(driver: webdriver.Chrome):
             ['product_name_ja_invalid', '일본어 상품명'],
             ['product_name_ko_invalid', '한국어 상품명'],
             ['price_jpy_invalid', 'JPY 가격'],
+            ['tax_rules_group_missing', '세금 규칙 그룹을 명시적으로'],
+            ['tax_rules_group_inactive', '선택한 세금 규칙 그룹이 현재 쇼핑몰에서 활성 상태가 아닙니다.'],
+            ['tax_rules_group_japan_missing', '선택한 세금 규칙 그룹에는 일본 기본 배송 국가의 세율이 없습니다.'],
+            ['tax_rules_group_address_dependent', '도도부현 또는 우편번호에 따라 세율이 달라'],
+            ['tax_calculation_disabled', 'PrestaShop 세금 계산이 꺼져'],
             ['quantity_invalid', '재고는'],
             ['category_ids_missing', '카테고리를 하나 이상'],
             ['category_ids_invalid', '카테고리 선택값'],
@@ -408,6 +473,11 @@ def product_save_result(driver: webdriver.Chrome):
             product_name_ja_invalid: 'name_ja',
             product_name_ko_invalid: 'name_ko',
             price_jpy_invalid: 'price_jpy',
+            tax_rules_group_missing: 'tax_rules_group_id',
+            tax_rules_group_inactive: 'tax_rules_group_id',
+            tax_rules_group_japan_missing: 'tax_rules_group_id',
+            tax_rules_group_address_dependent: 'tax_rules_group_id',
+            tax_calculation_disabled: 'tax_rules_group_id',
             quantity_invalid: 'quantity',
             category_ids_missing: 'category_ids',
             category_ids_invalid: 'category_ids',
@@ -603,6 +673,11 @@ def product_edit_failure_diagnostics(
         "product_name_ja_invalid",
         "product_name_ko_invalid",
         "price_jpy_invalid",
+        "tax_rules_group_missing",
+        "tax_rules_group_inactive",
+        "tax_rules_group_japan_missing",
+        "tax_rules_group_address_dependent",
+        "tax_calculation_disabled",
         "quantity_invalid",
         "category_ids_missing",
         "category_ids_invalid",
@@ -716,6 +791,8 @@ def write_temporary_png(contents: bytes, prefix: str) -> Path:
 
 
 def run() -> None:
+    validate_isolated_ci_compose_project()
+    validate_loopback_admin_targets()
     options = Options()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
@@ -762,10 +839,16 @@ def run() -> None:
         if "판매 활성화 기능이 없습니다" not in driver.find_element(By.TAG_NAME, "body").text:
             raise AssertionError("the product page must state that its entries remain inactive")
         for selector in (
-            "#name_ja", "#name_ko", "#price_jpy", "#quantity", "#options",
+            "#name_ja", "#name_ko", "#price_jpy", "#tax_rules_group_id", "#quantity", "#options",
             "#description_ja", "#description_ko", "#product_images", 'input[name="category_ids[]"]',
         ):
             visible(driver, selector)
+        if visible(driver, "#tax_rules_group_id").get_attribute("value") != "":
+            raise AssertionError("a new product must require an explicit native tax group selection")
+        if not driver.find_elements(
+            By.CSS_SELECTOR, '#tax_rules_group_id option[value=""][disabled][selected]'
+        ):
+            raise AssertionError("a new product tax group field must render its required blank prompt")
         if driver.find_elements(By.CSS_SELECTOR, 'input[name^="combination_quantities["]'):
             raise AssertionError("new product options should not expose stock rows before native combinations exist")
         driver.save_screenshot(str(DEST / "product-admin-empty-desktop.png"))
@@ -778,8 +861,10 @@ def run() -> None:
         fill(driver, "#name_ja", japanese_name)
         create_operation = "fill_name_ko"
         fill(driver, "#name_ko", korean_name)
+        create_operation = "select_synthetic_tax_rules_group"
+        Select(visible(driver, "#tax_rules_group_id")).select_by_value(str(TAX_RULES_GROUP_ID))
         create_operation = "fill_price_jpy"
-        fill(driver, "#price_jpy", "1280")
+        fill(driver, "#price_jpy", "1100")
         create_operation = "fill_quantity"
         fill(driver, "#quantity", "3")
         create_operation = "fill_options"
@@ -824,7 +909,8 @@ def run() -> None:
         for selector, expected in (
             ("#name_ja", japanese_name),
             ("#name_ko", korean_name),
-            ("#price_jpy", "1280"),
+            ("#price_jpy", "1100"),
+            ("#tax_rules_group_id", str(TAX_RULES_GROUP_ID)),
             ("#quantity", "0"),
             ("#options", "色:青|赤\nサイズ:S|M"),
             ("#description_ja", "CI用の商品説明"),
@@ -860,6 +946,8 @@ def run() -> None:
         edit_operation = "verify_initial_edit_data"
         if visible(driver, "#name_ja").get_attribute("value") != japanese_name:
             raise AssertionError("the existing product was not loaded into the edit form")
+        if visible(driver, "#tax_rules_group_id").get_attribute("value") != str(TAX_RULES_GROUP_ID):
+            raise AssertionError("the selected native tax rules group was not reloaded from the saved product")
         edit_operation = "remove_old_image"
         old_image_checkbox = visible(driver, 'input[name="remove_image_ids[]"]')
         old_image_id = old_image_checkbox.get_attribute("value")
@@ -868,6 +956,8 @@ def run() -> None:
         fill(driver, "#name_ja", japanese_name + " 수정")
         edit_operation = "fill_name_ko"
         fill(driver, "#name_ko", korean_name + " 수정")
+        if visible(driver, "#tax_rules_group_id").get_attribute("value") != str(TAX_RULES_GROUP_ID):
+            raise AssertionError("editing the product silently changed its selected native tax rules group")
         edit_operation = "fill_price_jpy"
         fill(driver, "#price_jpy", "1490")
         edit_operation = "fill_quantity"
@@ -883,6 +973,7 @@ def run() -> None:
             "#name_ja": japanese_name + " 수정",
             "#name_ko": korean_name + " 수정",
             "#price_jpy": "1490",
+            "#tax_rules_group_id": str(TAX_RULES_GROUP_ID),
             "#quantity": "5",
             "#options": edited_options,
             "#description_ja": "更新した説明",
@@ -950,6 +1041,8 @@ def run() -> None:
             raise AssertionError("Korean product name edit did not persist")
         if visible(driver, "#price_jpy").get_attribute("value") != "1490":
             raise AssertionError("product price edit did not persist")
+        if visible(driver, "#tax_rules_group_id").get_attribute("value") != str(TAX_RULES_GROUP_ID):
+            raise AssertionError("product tax rules group edit did not persist")
         if visible(driver, "#quantity").get_attribute("value") != "0":
             raise AssertionError("the product-level default stock must remain separate from option stocks")
         if visible(driver, "#options").get_attribute("value") != edited_options:
@@ -1066,6 +1159,8 @@ def run() -> None:
 
 
 def run_mobile_layout() -> None:
+    validate_isolated_ci_compose_project()
+    validate_loopback_admin_targets()
     options = Options()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")

@@ -18,6 +18,7 @@ final class ProductAdminDraft
         public readonly string $nameJa,
         public readonly string $nameKo,
         public readonly int $priceJpy,
+        public readonly int $taxRulesGroupId,
         public readonly int $quantity,
         public readonly array $categoryIds,
         public readonly string $descriptionJa,
@@ -43,6 +44,15 @@ final class ProductAdminDraft
         $priceValue = trim((string) $rawPrice);
         if (preg_match('/\A[0-9]{1,9}\z/', $priceValue) !== 1 || (int) $priceValue < 1) {
             throw new InvalidArgumentException('JPY 가격은 1 이상 정수로 입력해 주세요.');
+        }
+
+        $rawTaxRulesGroupId = $values['tax_rules_group_id'] ?? null;
+        if (!is_string($rawTaxRulesGroupId) && !is_int($rawTaxRulesGroupId)) {
+            throw new InvalidArgumentException('세금 규칙 그룹을 명시적으로 선택해 주세요.');
+        }
+        $taxRulesGroupValue = trim((string) $rawTaxRulesGroupId);
+        if (preg_match('/\A(?:0|[1-9][0-9]{0,8})\z/D', $taxRulesGroupValue) !== 1) {
+            throw new InvalidArgumentException('세금 규칙 그룹을 명시적으로 선택해 주세요.');
         }
 
         $rawQuantity = $values['quantity'] ?? null;
@@ -84,6 +94,7 @@ final class ProductAdminDraft
             $nameJa,
             $nameKo,
             (int) $priceValue,
+            (int) $taxRulesGroupValue,
             (int) $quantityValue,
             $categoryIds,
             $descriptionJa,

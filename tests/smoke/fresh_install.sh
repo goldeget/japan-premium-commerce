@@ -132,6 +132,12 @@ test "$route_migration_marker" = 2
 verification_phase="initial_database_default_currency"
 default_currency=$(db_query "SELECT cur.iso_code FROM ps_configuration cfg JOIN ps_currency cur ON cur.id_currency=CAST(cfg.value AS UNSIGNED) WHERE cfg.name='PS_CURRENCY_DEFAULT'")
 test "$default_currency" = JPY
+verification_phase="initial_group_price_display_methods"
+# PrestaShop 9.2 Group::PRICE_DISPLAY_METHOD_TAX_INCL is 0.
+tax_exclusive_group_count=$(db_query 'SELECT COUNT(*) FROM ps_group g INNER JOIN ps_group_shop gs ON gs.id_group=g.id_group WHERE gs.id_shop=1 AND g.price_display_method<>0')
+test "$tax_exclusive_group_count" = 0
+shop_group_count=$(db_query 'SELECT COUNT(*) FROM ps_group_shop WHERE id_shop=1')
+test "$shop_group_count" -gt 0
 verification_phase="initial_database_jpy_currency"
 jpy_currency=$(db_query "SELECT COUNT(*) FROM ps_currency WHERE iso_code='JPY' AND active=1 AND deleted=0")
 test "$jpy_currency" = 1
@@ -267,6 +273,11 @@ default_currency_after_restart=$(db_query "SELECT cur.iso_code FROM ps_configura
 test "$default_currency_after_restart" = JPY
 jpy_translations_after_restart=$(db_query "SELECT COUNT(DISTINCT cl.id_lang) FROM ps_currency c JOIN ps_currency_lang cl ON cl.id_currency=c.id_currency JOIN ps_lang l ON l.id_lang=cl.id_lang WHERE c.iso_code='JPY' AND l.iso_code IN ('ja','en','ko')")
 test "$jpy_translations_after_restart" = 3
+verification_phase="restart_group_price_display_methods"
+tax_exclusive_group_count_after_restart=$(db_query 'SELECT COUNT(*) FROM ps_group g INNER JOIN ps_group_shop gs ON gs.id_group=g.id_group WHERE gs.id_shop=1 AND g.price_display_method<>0')
+test "$tax_exclusive_group_count_after_restart" = 0
+shop_group_count_after_restart=$(db_query 'SELECT COUNT(*) FROM ps_group_shop WHERE id_shop=1')
+test "$shop_group_count_after_restart" -gt 0
 checkout_route_after_restart=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='order' AND ml.id_shop=1 AND l.iso_code='ja'")
 test "$checkout_route_after_restart" = "$admin_custom_checkout_route"
 identity_route_after_restart=$(db_query "SELECT ml.url_rewrite FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta=ml.id_meta JOIN ps_lang l ON l.id_lang=ml.id_lang WHERE m.page='identity' AND ml.id_shop=1 AND l.iso_code='ja'")

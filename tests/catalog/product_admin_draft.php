@@ -15,6 +15,7 @@ $draft = ProductAdminDraft::fromArray([
     'name_ja' => 'CI 合成商品',
     'name_ko' => 'CI 합성 상품',
     'price_jpy' => '1280',
+    'tax_rules_group_id' => '0',
     'quantity' => '6',
     'category_ids' => ['2', '4'],
     'description_ja' => "日本語の商品説明\n2行目",
@@ -25,6 +26,7 @@ $draft = ProductAdminDraft::fromArray([
 assertProductDraftSame('CI 合成商品', $draft->nameJa, 'Product drafts should retain the Japanese product name.');
 assertProductDraftSame('CI 합성 상품', $draft->nameKo, 'Product drafts should retain the Korean product name.');
 assertProductDraftSame(1280, $draft->priceJpy, 'Product drafts should use integer JPY prices.');
+assertProductDraftSame(0, $draft->taxRulesGroupId, 'Product drafts should retain an explicit no-tax group selection.');
 assertProductDraftSame(6, $draft->quantity, 'Product drafts should retain stock quantity.');
 assertProductDraftSame([2, 4], $draft->categoryIds, 'Product drafts should normalize category identifiers.');
 assertProductDraftSame([
@@ -37,6 +39,7 @@ $variantDraft = ProductAdminDraft::fromArray([
     'name_ja' => 'CI 合成商品',
     'name_ko' => 'CI 합성 상품',
     'price_jpy' => '1280',
+    'tax_rules_group_id' => 0,
     'quantity' => '6',
     'category_ids' => ['2'],
     'description_ja' => '',
@@ -58,6 +61,7 @@ $boundaryDraft = ProductAdminDraft::fromArray([
     'name_ja' => str_repeat('日', 128),
     'name_ko' => str_repeat('한', 128),
     'price_jpy' => '1280',
+    'tax_rules_group_id' => '0',
     'quantity' => '0',
     'category_ids' => ['2'],
     'description_ja' => '',
@@ -74,6 +78,10 @@ foreach ([
     ['price_jpy' => '-1'],
     ['price_jpy' => '1.5'],
     ['quantity' => '-1'],
+    ['tax_rules_group_id' => ''],
+    ['tax_rules_group_id' => null],
+    ['tax_rules_group_id' => '-1'],
+    ['tax_rules_group_id' => '1.5'],
     ['category_ids' => []],
     ['options' => "色:青|青"],
     ['options' => "壊れた書式"],
@@ -92,6 +100,7 @@ foreach ([
         'name_ja' => '合成商品',
         'name_ko' => '합성 상품',
         'price_jpy' => '1280',
+        'tax_rules_group_id' => '0',
         'quantity' => '6',
         'category_ids' => ['2'],
         'description_ja' => '',
