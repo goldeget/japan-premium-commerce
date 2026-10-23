@@ -358,6 +358,43 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertIn("final_path=/admin-kuranea/index.php", failure.exception.admin_security_response)
         self.assertNotIn("private-token", failure.exception.admin_security_response)
 
+    def test_admin_security_recognizes_native_invalid_token_warning_without_accepting_generic_pages(self):
+        namespace = {
+            "re": re, "urlparse": urlparse, "parse_qs": parse_qs,
+            "BASE": "http://localhost:18080",
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
+        }
+        for function in (
+            "is_prestashop_admin_login_rejection", "response_classification",
+            "response_summary", "raise_admin_security_response_failure",
+            "assert_security_attempt_rejected",
+        ):
+            load_function(ADMIN_FLOW, function, namespace)
+        warning = {
+            "formPresent": True, "status": 200,
+            "responseUrl": "http://localhost:18080/admin-kuranea/index.php?controller=AdminBusinessProfile",
+            "bodyHasSettingsForm": False, "bodyHasDangerAlert": False,
+            "bodyHasAdminLoginForm": False, "bodyHasViewOnlyDenial": False,
+            "bodyHasInvalidTokenPage": True,
+        }
+        self.assertEqual(namespace["response_classification"](warning), "prestashop_invalid_token")
+        for mode in ("missing", "invalid"):
+            with self.subTest(mode=mode):
+                namespace["assert_security_attempt_rejected"](warning, mode)
+        with self.assertRaises(AssertionError):
+            namespace["assert_security_attempt_rejected"](warning, "view_only")
+        for changes in (
+            {"bodyHasInvalidTokenPage": False},
+            {"bodyHasSettingsForm": True},
+            {"bodyHasAdminLoginForm": True},
+            {"responseUrl": "http://localhost:18080/admin-kuranea/index.php?controller=AdminDashboard"},
+            {"responseUrl": "http://localhost:18080/admin-kuranea/other"},
+            {"responseUrl": "http://outside.example/admin-kuranea/index.php?controller=AdminBusinessProfile"},
+            {"status": 302},
+        ):
+            with self.subTest(changes=changes), self.assertRaises(AssertionError):
+                namespace["assert_security_attempt_rejected"]({**warning, **changes}, "missing")
+
     def test_admin_security_attempt_rechecks_state_before_classifying_a_rejection(self):
         events: list[str] = []
 

@@ -176,12 +176,25 @@ def submit_settings_attempt(driver: webdriver.Chrome, mode: str) -> dict[str, ob
           const responseBody = await response.text();
           const responseDocument = new DOMParser().parseFromString(responseBody, 'text/html');
           const loginForm = responseDocument.querySelector('#login_form');
+          // PrestaShop 9.2 renders invalid_token.tpl with HTTP 200 before initContent.
+          // Match its language-independent warning and paired recovery controls.
+          const tokenContinue = responseDocument.querySelector('.action-container a.btn-continue[href]');
+          const tokenCancel = responseDocument.querySelector('.action-container a.btn-cancel[href="index.php"]');
+          let invalidTokenPage = false;
+          if (responseDocument.querySelector('.container > .error-msg img[alt="warning"]') && tokenContinue && tokenCancel) {
+            const recovery = new URL(tokenContinue.getAttribute('href'), response.url);
+            const target = new URL(action.href);
+            invalidTokenPage = recovery.origin === target.origin && recovery.pathname === target.pathname
+              && recovery.searchParams.get('controller') === 'AdminBusinessProfile'
+              && Boolean(recovery.searchParams.get('token'));
+          }
           done({
             formPresent: true,
             status: response.status,
             responseUrl: response.url,
             bodyHasSettingsForm: responseBody.includes('ordenowa-profile-settings'),
             bodyHasDangerAlert: responseBody.includes('alert-danger'),
+            bodyHasInvalidTokenPage: invalidTokenPage,
             bodyHasAdminLoginForm: Boolean(
               loginForm && loginForm.querySelector('input[name="email"]') && loginForm.querySelector('input[name="passwd"]')
             ),
@@ -236,6 +249,24 @@ def response_classification(result: object) -> str:
         return "business_profile_error"
     if is_prestashop_admin_login_rejection(result):
         return "prestashop_admin_login"
+    if (
+        result.get("status") == 200
+        and result.get("bodyHasInvalidTokenPage") is True
+        and result.get("bodyHasSettingsForm") is not True
+        and result.get("bodyHasAdminLoginForm") is not True
+    ):
+        try:
+            location = urlparse(result.get("responseUrl", ""))
+            base = urlparse(BASE)
+            admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
+            if (
+                (location.scheme, location.hostname, location.port) == (base.scheme, base.hostname, base.port)
+                and location.path == admin_path + "/index.php"
+                and parse_qs(location.query).get("controller") == ["AdminBusinessProfile"]
+            ):
+                return "prestashop_invalid_token"
+        except (TypeError, ValueError):
+            pass
     return "unrecognized"
 
 
@@ -305,6 +336,7 @@ def assert_security_attempt_rejected(result: object, mode: str) -> None:
         raise_admin_security_response_failure("view_only_denial_missing", result)
     if mode in {"missing", "invalid"} and not (
         framework_rejection or admin_page_rejection or login_gate_rejection
+        or response_classification(result) == "prestashop_invalid_token"
     ):
         raise_admin_security_response_failure(f"{mode}_token_rejection_unrecognized", result)
 
