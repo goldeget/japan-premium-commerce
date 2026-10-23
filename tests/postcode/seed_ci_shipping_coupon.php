@@ -45,7 +45,10 @@ $_SERVER['SCRIPT_NAME'] = '/index.php';
 $_SERVER['SERVER_PORT'] = (string) (parse_url('http://' . $_SERVER['HTTP_HOST'], PHP_URL_PORT) ?: 80);
 require_once $shopRoot . '/config/config.inc.php';
 
-$dbServerMatches = defined('_DB_SERVER_') && (string) _DB_SERVER_ === 'mariadb';
+$dbServer = defined('_DB_SERVER_') ? (string) _DB_SERVER_ : '';
+$dbServerMatches = in_array($dbServer, ['mariadb', 'mariadb:3306'], true)
+    && getenv('DB_SERVER') === 'mariadb'
+    && getenv('DB_PORT') === '3306';
 $dbNameMatches = defined('_DB_NAME_') && (string) _DB_NAME_ === 'prestashop';
 $activeDatabaseMatches = $dbNameMatches
     && (string) Db::getInstance()->getValue('SELECT DATABASE()') === (string) _DB_NAME_;

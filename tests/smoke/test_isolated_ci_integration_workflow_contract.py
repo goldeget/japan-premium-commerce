@@ -86,6 +86,14 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
         self.assertIn("POSTCODE_FIXTURE_OUTCOME: ${{ steps.postcode_fixture.outcome }}", aggregate)
         self.assertIn('"postcode_fixture=$POSTCODE_FIXTURE_OUTCOME"', aggregate)
 
+    def test_synthetic_postcode_count_uses_the_importers_canonical_values(self) -> None:
+        fixture = step("Import synthetic Tokyo postcode fixture for isolated checkout QA")
+        self.assertIn('postcode=\\"100-0004\\"', fixture)
+        self.assertIn('postcode=\\"530-0001\\"', fixture)
+        self.assertIn('postcode IN (\\"100-0004\\",\\"530-0001\\")', fixture)
+        self.assertNotIn('postcode=\\"1000004\\"', fixture)
+        self.assertNotIn('postcode=\\"5300001\\"', fixture)
+
     def test_new_contracts_run_before_build_and_trigger_both_events(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         contracts = (

@@ -357,7 +357,7 @@ jobs:
           postcode_stage="verify_imported_rows"
           postcode_stage_log="$RUNNER_TEMP/ordenowa-browser-qa/postcode-fixture-import-counts.log"
           counts=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
-            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT COUNT(*), COALESCE(SUM(postcode=\"1000004\" AND jis_code=\"13101\"),0), COALESCE(SUM(postcode=\"5300001\" AND jis_code=\"27127\"),0) FROM ps_kuraneapostcode_address WHERE postcode IN (\"1000004\",\"5300001\")"' \
+            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT COUNT(*), COALESCE(SUM(postcode=\"100-0004\" AND jis_code=\"13101\"),0), COALESCE(SUM(postcode=\"530-0001\" AND jis_code=\"27127\"),0) FROM ps_kuraneapostcode_address WHERE postcode IN (\"100-0004\",\"530-0001\")"' \
             2>&1 | tee "$postcode_stage_log")
           IFS=$'\t' read -r total_rows tokyo_rows osaka_rows <<< "$counts"
           if [[ "$total_rows" != "2" || "$tokyo_rows" != "1" || "$osaka_rows" != "1" ]]; then

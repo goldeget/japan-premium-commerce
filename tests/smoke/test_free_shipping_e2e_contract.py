@@ -87,11 +87,30 @@ class FreeShippingE2eContractTest(unittest.TestCase):
                 self.assertIn("_DB_SERVER_", source)
                 self.assertIn("_DB_NAME_", source)
                 self.assertIn("SELECT DATABASE()", source)
-                self.assertIn("'mariadb'", source)
+                self.assertIn("in_array($dbServer, ['mariadb', 'mariadb:3306'], true)", source)
+                self.assertIn("getenv('DB_SERVER') === 'mariadb'", source)
+                self.assertIn("getenv('DB_PORT') === '3306'", source)
                 self.assertIn("'prestashop'", source)
                 self.assertIn("server_match=%s", source)
                 self.assertIn("configured_name_match=%s", source)
                 self.assertIn("active_connection_match=%s", source)
+
+    def test_compose_pins_the_isolated_database_endpoint_to_the_allowed_port(self) -> None:
+        compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
+        prestashop_service = compose.split("  prestashop:\n", 1)[1].split("\nvolumes:", 1)[0]
+        self.assertIn("DB_SERVER: mariadb", prestashop_service)
+        self.assertIn('DB_PORT: "3306"', prestashop_service)
+
+    def test_free_shipping_database_guard_rejects_non_compose_endpoints(self) -> None:
+        for path in (SHIPPING_PRODUCT_FIXTURE, JAPAN_ZONE_FIXTURE, COUPON_FIXTURE):
+            with self.subTest(path=path.name):
+                source = path.read_text(encoding="utf-8")
+                guard = source.split("$dbServerMatches =", 1)[1].split(";", 1)[0]
+                self.assertIn("['mariadb', 'mariadb:3306']", guard)
+                self.assertIn("true)", guard)
+                self.assertNotIn("localhost", guard)
+                self.assertNotIn("strpos", guard)
+                self.assertNotIn("str_contains", guard)
 
     def test_japan_zone_fixture_requires_and_reports_configured_prefectures(self) -> None:
         source = JAPAN_ZONE_FIXTURE.read_text(encoding="utf-8")
