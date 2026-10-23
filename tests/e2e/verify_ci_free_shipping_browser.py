@@ -18,6 +18,7 @@ from selenium.webdriver.support.select import Select
 from selenium.webdriver.support.ui import WebDriverWait
 
 import verify_ci_checkout_admin_browser as checkout
+from checkout_total_math import reconcile_cart_totals
 
 
 BASE = os.environ["SHOP_BASE_URL"].rstrip("/")
@@ -503,7 +504,11 @@ def _apply_coupon_if_configured(driver) -> dict[str, object]:
     return {"code": code, "applied": True, "coupon_condition": "configured CI coupon applied"}
 
 
-def _cart_snapshot(driver, tax_rule_group_id: int | None = None) -> dict[str, int]:
+def _cart_snapshot(
+    driver,
+    tax_rule_group_id: int | None = None,
+    pre_discount_tax_total: int | None = None,
+) -> dict[str, int]:
     tax_rule_group_id = PRODUCT_TAX_RULE_GROUP_ID if tax_rule_group_id is None else tax_rule_group_id
     product_text = _visible_text(driver, "#cart-subtotal-products .cart-summary__value")
     shipping_text = _visible_text(driver, "#cart-subtotal-shipping .cart-summary__value")
@@ -558,24 +563,17 @@ def _cart_snapshot(driver, tax_rule_group_id: int | None = None) -> dict[str, in
             )
     else:
         raise AssertionError("the product tax-rule group must be read from the isolated product fixture")
-    if total_incl != product_total + shipping_total - discount_total:
-        raise AssertionError(
-            "checkout total has an unexplained amount (possible platform fee): "
-            f"products={product_total}, shipping={shipping_total}, discount={discount_total}, total={total_incl}"
-        )
     if shipping_total != 0:
         raise AssertionError(f"the free Japan carrier added {shipping_total} JPY to checkout")
-    return {
-        "products_tax_incl": product_total,
-        "products_tax_excl": product_total - tax_total,
-        "shipping_tax_incl": shipping_total,
-        "shipping_tax_excl": shipping_total,
-        "discounts_tax_incl": discount_total,
-        "discounts_tax_excl": discount_total,
-        "tax": tax_total,
-        "total_tax_incl": total_incl,
-        "total_tax_excl": total_excl,
-    }
+    return reconcile_cart_totals(
+        products_tax_incl=product_total,
+        shipping_tax_incl=shipping_total,
+        discounts_tax_incl=discount_total,
+        tax=tax_total,
+        total_tax_incl=total_incl,
+        total_tax_excl=total_excl,
+        pre_discount_tax=tax_total if pre_discount_tax_total is None else pre_discount_tax_total,
+    )
 
 
 def _find_free_carrier_option(driver, carrier: dict[str, object]):
@@ -592,6 +590,7 @@ def _select_free_carrier_and_assert_zero(
     driver,
     carrier: dict[str, object],
     tax_rule_group_id: int | None = None,
+    pre_discount_tax_total: int | None = None,
 ) -> dict[str, int]:
     available_options = [
         item for item in driver.find_elements(By.CSS_SELECTOR, ".delivery-option__item")
@@ -620,7 +619,11 @@ def _select_free_carrier_and_assert_zero(
     totals = WebDriverWait(driver, 20, poll_frequency=0.2).until(
         lambda _browser: (
             snapshot
-            if (snapshot := _cart_snapshot(driver, tax_rule_group_id))["shipping_tax_incl"] == 0
+            if (snapshot := _cart_snapshot(
+                driver,
+                tax_rule_group_id,
+                pre_discount_tax_total,
+            ))["shipping_tax_incl"] == 0
             else False
         ),
         message="checkout did not keep shipping at ¥0 after selecting the free Japan carrier",
@@ -1053,13 +1056,13 @@ def run_japan_taxable_customer_checkout() -> None:
         email = checkout.register_checkout_account(driver, "shipping-free-taxable")
         stage = "taxable_japan_address"
         checkout.select_japan_address(driver, "shipping-free-taxable")
-        stage = "taxable_free_carrier_checkout"
-        browser_totals = _select_free_carrier_and_assert_zero(
+        stage = "taxable_pre_coupon_free_carrier_checkout"
+        pre_coupon_totals = _select_free_carrier_and_assert_zero(
             driver,
             carrier,
             tax_rule_group_id=PRODUCT_TAX_RULE_GROUP_ID,
         )
-        expected_totals = {
+        expected_pre_coupon_totals = {
             "products_tax_incl": 1100,
             "products_tax_excl": 1000,
             "shipping_tax_incl": 0,
@@ -1070,15 +1073,44 @@ def run_japan_taxable_customer_checkout() -> None:
             "total_tax_incl": 1100,
             "total_tax_excl": 1000,
         }
+        if pre_coupon_totals != expected_pre_coupon_totals:
+            raise AssertionError(
+                "taxable checkout before the coupon did not reconcile to the CI-only included-tax fixture: "
+                f"observed={pre_coupon_totals}, expected={expected_pre_coupon_totals}"
+            )
+
+        stage = "taxable_coupon_condition"
+        coupon = _apply_coupon_if_configured(driver)
+        if not coupon["applied"]:
+            raise AssertionError(str(coupon["coupon_condition"]))
+
+        stage = "taxable_discounted_free_carrier_checkout"
+        browser_totals = _select_free_carrier_and_assert_zero(
+            driver,
+            carrier,
+            tax_rule_group_id=PRODUCT_TAX_RULE_GROUP_ID,
+            pre_discount_tax_total=pre_coupon_totals["tax"],
+        )
+        expected_totals = {
+            "products_tax_incl": 1100,
+            "products_tax_excl": 1000,
+            "shipping_tax_incl": 0,
+            "shipping_tax_excl": 0,
+            "discounts_tax_incl": 550,
+            "discounts_tax_excl": 500,
+            "tax": 50,
+            "total_tax_incl": 550,
+            "total_tax_excl": 500,
+        }
         if browser_totals != expected_totals:
             raise AssertionError(
-                "taxable checkout did not reconcile to the CI-only included-tax fixture: "
+                "taxable coupon checkout did not reconcile to the CI-only included-tax fixture: "
                 f"observed={browser_totals}, expected={expected_totals}"
             )
         browser_totals.update({
             "displayed_unit_price": unit_price,
             "quantity": 1,
-            "coupon_condition": "not applied to taxable price reconciliation fixture",
+            "coupon_condition": coupon["coupon_condition"],
         })
         driver.save_screenshot(str(QA_DIR / "shipping-free-taxable-checkout-desktop.png"))
 
@@ -1093,9 +1125,9 @@ def run_japan_taxable_customer_checkout() -> None:
             "shipping-free-taxable-order-confirmation-desktop.png",
         )
         history_total = _order_history_total(driver, order["reference"])
-        if history_total != 1100 or history_total != browser_totals["total_tax_incl"]:
+        if history_total != 550 or history_total != browser_totals["total_tax_incl"]:
             raise AssertionError(
-                f"taxable customer history shows ¥{history_total}; checkout final price was ¥1,100"
+                f"taxable customer history shows ¥{history_total}; discounted checkout final price was ¥550"
             )
         order.update({
             "carrier_id": int(carrier["id"]),
@@ -1106,10 +1138,11 @@ def run_japan_taxable_customer_checkout() -> None:
             "browser_totals": browser_totals,
             "order_history_total": history_total,
             "order_confirmation_totals": confirmation_totals,
-            "coupon": {"code": None, "applied": False},
+            "coupon": coupon,
             "product_tax_rule_group_id": PRODUCT_TAX_RULE_GROUP_ID,
             "tax_fixture_scope": (
                 "CI-only synthetic 10% test rule; ¥1,100 tax-included is ¥1,000 before tax plus ¥100 test tax; "
+                "the run-scoped 50% tax-inclusive coupon leaves ¥550 including ¥50 synthetic test tax; "
                 "not a legal tax rate or tax determination"
             ),
             "destination_scope": "synthetic Tokyo 100-0004, served through the run-scoped Japan-only free carrier",
@@ -1126,8 +1159,8 @@ def run_japan_taxable_customer_checkout() -> None:
             encoding="utf-8",
         )
         print(
-            "PASS: Chromium showed ¥1,100 including the CI-only synthetic ¥100 tax, stored an unpaid JPY order, "
-            "and kept Japan shipping at ¥0."
+            "PASS: Chromium reconciled the ¥1,100 tax-included product, ¥550 tax-inclusive run-scoped coupon, "
+            "¥50 synthetic CI tax, ¥550 unpaid JPY order, and ¥0 Japan shipping."
         )
     except Exception as error:
         try:

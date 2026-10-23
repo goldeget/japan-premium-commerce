@@ -237,6 +237,15 @@ if (!is_array($storedTaxRows)) {
 $savedTaxInterpretation = 'No assigned calculation rule; not a legal tax determination';
 if ($savedDetailTaxGroupId > 0) {
     // This branch is scoped to the nationwide synthetic 10% CI fixture, not a legal rate.
+    $coupon = is_array($browserOrder['coupon'] ?? null) ? $browserOrder['coupon'] : [];
+    $expectedCouponCode = 'ORDENOWACI' . $runId . $runAttempt;
+    if (($coupon['applied'] ?? false) !== true
+        || (string) ($coupon['code'] ?? '') !== $expectedCouponCode
+        || $discountsTaxExcl <= 0
+        || $discountsTaxIncl <= 0
+    ) {
+        throw new RuntimeException('The synthetic taxable order must use its run-scoped tax-inclusive coupon.');
+    }
     if (count($storedTaxRows) !== 1) {
         throw new RuntimeException('The synthetic taxable order must retain its single native tax row.');
     }
@@ -244,16 +253,16 @@ if ($savedDetailTaxGroupId > 0) {
     $storedTaxRate = (float) $storedTaxRow['rate'];
     $storedTaxUnit = (float) $storedTaxRow['unit_amount'];
     $storedTaxTotal = (float) $storedTaxRow['total_amount'];
-    $detailProductTax = $detailProductsTaxIncl - $detailProductsTaxExcl;
+    $discountedProductTaxBase = $detailProductsTaxExcl - $discountsTaxExcl;
     if ((int) $storedTaxRow['id_tax'] < 1
         || (int) $storedTaxRow['belongs_to_saved_group'] !== 1
         || abs($storedTaxRate - 10.0) > 0.0001
         || $storedTaxUnit <= 0
+        || $discountedProductTaxBase <= 0
         || abs($storedTaxUnit * $expectedQuantity - $storedTaxTotal) > 0.0001
-        || abs($storedTaxTotal - $detailProductTax) > 0.0001
         || abs($storedTaxTotal - $nativeTaxes) > 0.0001
-        || abs($storedTaxTotal - $detailProductsTaxExcl * $storedTaxRate / 100) > 0.0001) {
-        throw new RuntimeException('The persisted synthetic tax identity, rate, or amount does not reconcile to the saved order.');
+        || abs($storedTaxTotal - $discountedProductTaxBase * $storedTaxRate / 100) > 0.0001) {
+        throw new RuntimeException('The persisted synthetic tax identity, rate, or discounted amount does not reconcile to the saved order.');
     }
     $savedTaxInterpretation = 'CI-only synthetic 10% calculation fixture; not a legal tax rate or determination';
 } elseif ($storedTaxRows !== []) {

@@ -19,7 +19,8 @@ class SavedOrderTaxContractTests(unittest.TestCase):
         for marker in (
             "order_detail_tax", "odt.`id_tax`", "odt.`unit_amount`", "odt.`total_amount`",
             "t.`rate`", "tr.`id_tax_rules_group`", "$savedDetailTaxGroupId > 0",
-            "$storedTaxTotal - $nativeTaxes", "$storedTaxTotal - $detailProductTax",
+            "$storedTaxTotal - $nativeTaxes", "$discountedProductTaxBase",
+            "$discountedProductTaxBase * $storedTaxRate / 100",
             "$storedTaxUnit * $expectedQuantity", "$storedTaxRate - 10.0",
         ):
             with self.subTest(marker=marker):
