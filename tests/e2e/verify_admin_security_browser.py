@@ -108,7 +108,6 @@ function inspectNativeCompromisedPage(body, responseUrl, targetUrl) {
       && continueUrl.pathname === adminPath + '/index.php'
       && dashboardUrl.pathname === adminPath + '/index.php'
       && continueUrl.searchParams.get('controller') === 'AdminBusinessProfile'
-      && Boolean(continueUrl.searchParams.get('token'))
       && dashboardUrl.searchParams.get('controller') === 'AdminDashboard'
       && Boolean(dashboardUrl.searchParams.get('token'));
   } catch (_) {
@@ -339,8 +338,23 @@ def verify_native_compromised_page_fixture(driver: webdriver.Chrome) -> None:
         ("missing_warning", markup.replace('class="alert alert-danger"', 'class="alert"'), False),
         ("missing_continue", markup.replace("btn-outline-danger", "other-button"), False),
         ("missing_dashboard", markup.replace("btn-primary", "other-button"), False),
+        (
+            "missing_request_token",
+            markup.replace(
+                "/index.php?controller=AdminBusinessProfile&amp;token=fixture-token",
+                "/index.php?controller=AdminBusinessProfile",
+            ),
+            True,
+        ),
         ("external_continue", markup.replace("http://localhost:18080/admin-kuranea/index.php?controller=AdminBusinessProfile", "http://outside.example/admin-kuranea/index.php?controller=AdminBusinessProfile"), False),
-        ("missing_continue_token", markup.replace("&amp;token=fixture-token", ""), False),
+        (
+            "missing_dashboard_token",
+            markup.replace(
+                "/index.php?controller=AdminDashboard&amp;token=fixture-token",
+                "/index.php?controller=AdminDashboard",
+            ),
+            False,
+        ),
     )
     for name, body, expected in variants:
         result = driver.execute_script(

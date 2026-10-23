@@ -475,6 +475,13 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
                 self.assertIn(marker, markup)
         self.assertIn("#security-compromised-page", source)
         self.assertIn("verify_native_compromised_page_fixture", source)
+        self.assertNotIn(
+            "Boolean(continueUrl.searchParams.get('token'))",
+            source,
+            "the native compromised page links back to requestUri, which is tokenless for missing-token QA",
+        )
+        self.assertIn('"missing_request_token"', source)
+        self.assertIn('"missing_dashboard_token"', source)
         run = source.split("def run()", 1)[1].split("\n\nif __name__", 1)[0]
         self.assertIn("verify_native_compromised_page_fixture(admin_driver)", run)
 
