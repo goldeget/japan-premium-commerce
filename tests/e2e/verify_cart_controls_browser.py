@@ -9,6 +9,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Callable
 from urllib.parse import urlencode
 from urllib.parse import urlparse
 
@@ -123,8 +124,16 @@ def current_product_attribute_id(driver: webdriver.Chrome) -> int | None:
     return int(value) if value.isascii() and value.isdigit() and int(value) > 0 else None
 
 
-def select_variant_when_available(driver: webdriver.Chrome) -> dict[str, object]:
+def select_variant_when_available(
+    driver: webdriver.Chrome,
+    report_substage: Callable[[str], None] | None = None,
+) -> dict[str, object]:
     """Select the fixture's non-default Color value and verify native combination selection."""
+    def mark_substage(name: str) -> None:
+        if report_substage is not None:
+            report_substage(name)
+
+    mark_substage("variant_group_discovery")
     fieldsets = driver.find_elements(By.CSS_SELECTOR, "fieldset.product-variant")
     if len(fieldsets) != 1:
         raise AssertionError("the CI variant fixture must expose exactly one native option group")
@@ -135,6 +144,7 @@ def select_variant_when_available(driver: webdriver.Chrome) -> dict[str, object]
 
     requested_label = ""
     before_attribute_id = current_product_attribute_id(driver)
+    mark_substage("variant_selection")
     for fieldset in fieldsets:
         selects = fieldset.find_elements(By.CSS_SELECTOR, 'select[name^="group["]')
         if selects:
@@ -210,7 +220,9 @@ def select_variant_when_available(driver: webdriver.Chrome) -> dict[str, object]
     if not requested_label:
         raise AssertionError("the CI Color fixture must have a selectable non-default value")
 
-    def selected_state(browser: webdriver.Chrome) -> tuple[list[tuple[str, str]], int] | bool:
+    def selected_state(
+        browser: webdriver.Chrome,
+    ) -> tuple[list[tuple[str, str]], int | None] | bool:
         selected: list[tuple[str, str]] = []
         for group in browser.find_elements(By.CSS_SELECTOR, "fieldset.product-variant"):
             group_name = " ".join(
@@ -242,10 +254,15 @@ def select_variant_when_available(driver: webdriver.Chrome) -> dict[str, object]
                     selected.append((group_name, value))
                 break
         attribute_id = current_product_attribute_id(browser)
-        if not selected or attribute_id is None or (before_attribute_id is not None and attribute_id == before_attribute_id):
+        if not selected or not any(value == requested_label for _, value in selected):
+            return False
+        if before_attribute_id is not None and (
+            attribute_id is None or attribute_id == before_attribute_id
+        ):
             return False
         return selected, attribute_id
 
+    mark_substage("variant_selection_update_wait")
     selected, attribute_id = WebDriverWait(driver, 20, poll_frequency=0.2).until(selected_state)
     if requested_label != "Red" or not any(value == requested_label for _, value in selected):
         raise AssertionError("the selected product option did not remain selected in the browser")
@@ -319,12 +336,20 @@ def add_product_from_detail(
     driver: webdriver.Chrome,
     label: str,
     attempt: str,
+    report_substage: Callable[[str], None] | None = None,
 ) -> dict[str, object]:
+    def mark_substage(name: str) -> None:
+        if report_substage is not None:
+            report_substage(name)
+
+    mark_substage("detail_navigation")
     visit(driver, product_url())
+    mark_substage("fixture_marker_wait")
     WebDriverWait(driver, 25).until(
         lambda browser: "[CI ONLY]" in browser.find_element(By.TAG_NAME, "body").text
     )
-    variant_result = select_variant_when_available(driver)
+    variant_result = select_variant_when_available(driver, mark_substage)
+    mark_substage("detail_price_wait")
     detail_price = parse_yen(visible(driver, ".product__price").text)
     if detail_price != EXPECTED_GROSS_PRICE_JPY:
         raise AssertionError(
@@ -335,6 +360,7 @@ def add_product_from_detail(
         driver.save_screenshot(
             str(DEST / f"cart-controls-{label}-{attempt}-variant-selected.png")
         )
+    mark_substage("add_button_wait")
     button = WebDriverWait(driver, 20).until(
         lambda browser: next(
             (
@@ -348,7 +374,9 @@ def add_product_from_detail(
         ),
         message="the isolated CI test product has no active add-to-cart button",
     )
+    mark_substage("add_button_click")
     button.click()
+    mark_substage("blockcart_confirmation_wait")
     modal = WebDriverWait(driver, 25).until(
         lambda browser: next(
             (
@@ -363,7 +391,9 @@ def add_product_from_detail(
     continue_shopping = modal.find_element(
         By.CSS_SELECTOR, 'button[data-bs-dismiss="modal"]'
     )
+    mark_substage("continue_shopping_click")
     continue_shopping.click()
+    mark_substage("blockcart_close_wait")
     WebDriverWait(driver, 15).until(
         lambda browser: not any(
             item.is_displayed()
@@ -371,10 +401,32 @@ def add_product_from_detail(
         ),
         message="the cart confirmation did not close after continuing shopping",
     )
+    mark_substage("cart_navigation")
     visit(driver, "/index.php?controller=cart&action=show")
-    WebDriverWait(driver, 30).until(
-        lambda browser: bool(visible_product_line(browser, variant_result["product_attribute_id"]))
+    mark_substage("cart_line_wait")
+    cart_line = WebDriverWait(driver, 30).until(
+        lambda browser: visible_product_line(browser, None)
     )
+    cart_attribute_links = cart_line.find_elements(
+        By.CSS_SELECTOR,
+        '[data-link-action="delete-from-cart"][data-id-product-attribute]',
+    )
+    raw_cart_attribute_id = (
+        cart_attribute_links[0].get_attribute("data-id-product-attribute")
+        if cart_attribute_links
+        else ""
+    ) or ""
+    cart_attribute_id = (
+        int(raw_cart_attribute_id)
+        if raw_cart_attribute_id.isascii() and raw_cart_attribute_id.isdigit()
+        else 0
+    )
+    if cart_attribute_id < 1:
+        raise AssertionError("the isolated CI product cart line has no native combination ID")
+    page_attribute_id = variant_result["product_attribute_id"]
+    if page_attribute_id is not None and page_attribute_id != cart_attribute_id:
+        raise AssertionError("the cart line does not match the selected native product combination")
+    variant_result["product_attribute_id"] = cart_attribute_id
     return variant_result
 
 
@@ -403,6 +455,12 @@ def run_viewport(width: int, height: int, label: str) -> dict[str, object]:
     options.add_argument("--lang=ja-JP")
     driver: webdriver.Chrome | None = None
     stage = "chromium_startup"
+    current_add_substage = [""]
+
+    def report_add_substage(name: str) -> None:
+        if re.fullmatch(r"[a-z][a-z0-9_]*", name):
+            current_add_substage[0] = name
+
     try:
         driver = webdriver.Chrome(options=options)
         driver.set_window_size(width, height)
@@ -412,7 +470,9 @@ def run_viewport(width: int, height: int, label: str) -> dict[str, object]:
             raise AssertionError("new isolated Chromium session unexpectedly has cart items")
 
         stage = "product_add"
-        variant = add_product_from_detail(driver, label, "initial")
+        current_add_substage[0] = ""
+        variant = add_product_from_detail(driver, label, "initial", report_add_substage)
+        current_add_substage[0] = ""
         if variant["variant_status"] != "selected" or not variant["product_attribute_id"]:
             raise AssertionError("the isolated variant fixture did not select a native product combination")
         selected_labels = list(variant["selected_labels"])
@@ -456,7 +516,9 @@ def run_viewport(width: int, height: int, label: str) -> dict[str, object]:
         driver.save_screenshot(str(DEST / f"cart-controls-{label}-empty.png"))
 
         stage = "cart_readd"
-        readded_variant = add_product_from_detail(driver, label, "readded")
+        current_add_substage[0] = ""
+        readded_variant = add_product_from_detail(driver, label, "readded", report_add_substage)
+        current_add_substage[0] = ""
         if readded_variant["variant_status"] != "selected" or not readded_variant["product_attribute_id"]:
             raise AssertionError("re-adding the isolated variant fixture did not select a native combination")
         readded_labels = list(readded_variant["selected_labels"])
@@ -499,7 +561,11 @@ def run_viewport(width: int, height: int, label: str) -> dict[str, object]:
                 driver.save_screenshot(str(DEST / f"cart-controls-{label}-failure.png"))
             except Exception:
                 pass
-        safe_stage = stage if re.fullmatch(r"[a-z][a-z0-9_]*", stage) else "unknown"
+        safe_stage = stage
+        if stage in {"product_add", "cart_readd"} and current_add_substage[0]:
+            safe_stage = f"{stage}_{current_add_substage[0]}"
+        if re.fullmatch(r"[a-z][a-z0-9_]*", safe_stage) is None:
+            safe_stage = "unknown"
         exception_type = type(error).__name__
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", exception_type):
             exception_type = "Exception"

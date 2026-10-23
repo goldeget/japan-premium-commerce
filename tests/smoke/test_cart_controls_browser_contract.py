@@ -115,6 +115,70 @@ class CartControlsBrowserContractTests(unittest.TestCase):
         self.assertEqual(driver.url, "http://localhost:18080" + path)
         self.assertEqual(driver.url.count("http://"), 1)
 
+    def test_product_add_reports_privacy_safe_wait_substages(self) -> None:
+        expected_substages = (
+            "detail_navigation",
+            "fixture_marker_wait",
+            "variant_group_discovery",
+            "variant_selection",
+            "variant_selection_update_wait",
+            "detail_price_wait",
+            "add_button_wait",
+            "add_button_click",
+            "blockcart_confirmation_wait",
+            "continue_shopping_click",
+            "blockcart_close_wait",
+            "cart_navigation",
+            "cart_line_wait",
+        )
+        for substage in expected_substages:
+            with self.subTest(substage=substage):
+                self.assertTrue(
+                    f'mark_substage("{substage}")' in self.source,
+                    f"missing fixed product-add diagnostic substage: {substage}",
+                )
+        variant_start = self.source.index("def select_variant_when_available(")
+        variant_end = self.source.index("\ndef visible_product_line(", variant_start)
+        variant_source = self.source[variant_start:variant_end]
+        variant_substages = expected_substages[2:5]
+        variant_positions = [
+            variant_source.index(f'mark_substage("{substage}")')
+            for substage in variant_substages
+        ]
+        self.assertEqual(variant_positions, sorted(variant_positions))
+
+        add_start = self.source.index("def add_product_from_detail(")
+        add_end = self.source.index("\ndef wait_for_empty_cart(", add_start)
+        add_source = self.source[add_start:add_end]
+        runtime_order = (
+            'mark_substage("detail_navigation")',
+            'mark_substage("fixture_marker_wait")',
+            "select_variant_when_available(driver, mark_substage)",
+            'mark_substage("detail_price_wait")',
+            'mark_substage("add_button_wait")',
+            'mark_substage("add_button_click")',
+            'mark_substage("blockcart_confirmation_wait")',
+            'mark_substage("continue_shopping_click")',
+            'mark_substage("blockcart_close_wait")',
+            'mark_substage("cart_navigation")',
+            'mark_substage("cart_line_wait")',
+        )
+        add_positions = [add_source.index(statement) for statement in runtime_order]
+        self.assertEqual(add_positions, sorted(add_positions))
+
+        self.assertTrue("current_add_substage" in self.source)
+        self.assertTrue('f"{stage}_{current_add_substage[0]}"' in self.source)
+        self.assertFalse("driver.current_url" in self.source)
+        self.assertTrue("failed at {safe_stage} ({exception_type})" in self.source)
+
+    def test_variant_selection_supports_hummingbird_form_without_hidden_combination_id(self) -> None:
+        self.assertTrue("tuple[list[tuple[str, str]], int | None] | bool" in self.source)
+        self.assertTrue("any(value == requested_label for _, value in selected)" in self.source)
+        self.assertTrue("before_attribute_id is not None" in self.source)
+        self.assertTrue("visible_product_line(browser, None)" in self.source)
+        self.assertTrue('variant_result["product_attribute_id"] = cart_attribute_id' in self.source)
+        self.assertTrue('data-id-product-attribute' in self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
