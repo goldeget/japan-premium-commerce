@@ -83,17 +83,46 @@ if ((int) $japan->id_zone !== (int) $zone->id) {
 }
 
 $stage = 'prepare all Japanese prefectures in the isolated shop';
+$expectedStateCodes = [];
+foreach (array_keys(\Kuranea\Postcode\Domain\PrefectureCatalog::all()) as $prefectureCode) {
+    $stateIsoCode = \Kuranea\Postcode\Domain\PrefectureCatalog::isoCode($prefectureCode);
+    if ($stateIsoCode === null) {
+        throw new RuntimeException('The postcode module returned an invalid prefecture ISO code.');
+    }
+    $expectedStateCodes[] = $stateIsoCode;
+}
+sort($expectedStateCodes, SORT_STRING);
+$expectedStateCodeSet = array_fill_keys($expectedStateCodes, true);
+$existingStateRows = State::getStatesByIdCountry((int) $japan->id, false, 'iso_code', 'asc');
+$existingStateIdsByIso = [];
+$existingDuplicateStateCodes = [];
+foreach (is_array($existingStateRows) ? $existingStateRows : [] as $existingStateRow) {
+    $existingIsoCode = (string) ($existingStateRow['iso_code'] ?? '');
+    if (!isset($expectedStateCodeSet[$existingIsoCode])) {
+        continue;
+    }
+    if (isset($existingStateIdsByIso[$existingIsoCode])) {
+        $existingDuplicateStateCodes[] = $existingIsoCode;
+        continue;
+    }
+    $existingStateIdsByIso[$existingIsoCode] = (int) $existingStateRow['id_state'];
+}
+if ($existingDuplicateStateCodes !== []) {
+    $existingDuplicateStateCodes = array_values(array_unique($existingDuplicateStateCodes));
+    sort($existingDuplicateStateCodes, SORT_STRING);
+    throw new RuntimeException(
+        'The isolated shop already has duplicate supported prefecture rows: '
+        . implode(',', $existingDuplicateStateCodes)
+    );
+}
+
 foreach (\Kuranea\Postcode\Domain\PrefectureCatalog::all() as $prefectureCode => $prefectureName) {
     $stateIsoCode = \Kuranea\Postcode\Domain\PrefectureCatalog::isoCode($prefectureCode);
     if ($stateIsoCode === null) {
         throw new RuntimeException('The postcode module returned an invalid prefecture ISO code.');
     }
 
-    $stateId = (int) Db::getInstance()->getValue(
-        'SELECT `id_state` FROM `' . _DB_PREFIX_ . 'state`'
-        . ' WHERE `id_country` = ' . (int) $japan->id
-        . ' AND `iso_code` = "' . pSQL($stateIsoCode) . '" LIMIT 1'
-    );
+    $stateId = (int) ($existingStateIdsByIso[$stateIsoCode] ?? 0);
     $state = $stateId > 0 ? new State($stateId) : new State();
     $state->id_country = (int) $japan->id;
     $state->id_zone = (int) $zone->id;
@@ -103,6 +132,9 @@ foreach (\Kuranea\Postcode\Domain\PrefectureCatalog::all() as $prefectureCode =>
     $saved = $stateId > 0 ? $state->update() : $state->add();
     if (!$saved) {
         throw new RuntimeException('Could not prepare every Japanese prefecture in the isolated carrier zone.');
+    }
+    if ($stateId < 1) {
+        $existingStateIdsByIso[$stateIsoCode] = (int) $state->id;
     }
 }
 
@@ -122,22 +154,12 @@ if ($countryCodes !== ['JP']) {
     );
 }
 $stage = 'verify all Japanese prefectures use the run-scoped zone';
-$expectedStateCodes = [];
-foreach (array_keys(\Kuranea\Postcode\Domain\PrefectureCatalog::all()) as $prefectureCode) {
-    $stateIsoCode = \Kuranea\Postcode\Domain\PrefectureCatalog::isoCode($prefectureCode);
-    if ($stateIsoCode === null) {
-        throw new RuntimeException('The postcode module returned an invalid prefecture ISO code.');
-    }
-    $expectedStateCodes[] = $stateIsoCode;
-}
-sort($expectedStateCodes, SORT_STRING);
 $stateRows = Db::getInstance()->executeS(
     'SELECT `iso_code`, `id_zone`, `active` FROM `' . _DB_PREFIX_ . 'state`'
     . ' WHERE `id_country` = ' . (int) $japan->id
     . ' ORDER BY `iso_code`'
 );
 $allStateRows = is_array($stateRows) ? $stateRows : [];
-$expectedStateCodeSet = array_fill_keys($expectedStateCodes, true);
 $supportedStateRows = array_values(array_filter(
     $allStateRows,
     static fn (array $row): bool => isset($expectedStateCodeSet[(string) $row['iso_code']])
