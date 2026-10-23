@@ -264,7 +264,7 @@ def _assert_free_carrier_form(driver, carrier: dict[str, object]) -> dict[str, o
 
 
 def _carrier_edit_url(carrier_id: int) -> str:
-    return ADMIN_LOGIN + f"/improve/shipping/carriers/{carrier_id}/edit"
+    return ADMIN_LOGIN + f"/index.php/improve/shipping/carriers/{carrier_id}/edit"
 
 
 def _save_carrier_form(driver, operation: str) -> int:
@@ -285,11 +285,14 @@ def _save_carrier_form(driver, operation: str) -> int:
 
     WebDriverWait(driver, 35).until(
         lambda browser: re.search(
-            r"/improve/shipping/carriers/([0-9]+)/edit(?:[/?#]|$)", browser.current_url
+            r"/index\.php/improve/shipping/carriers/([0-9]+)/edit(?:[/?#]|$)", browser.current_url
         ) is not None
         or bool(browser.find_elements(By.CSS_SELECTOR, ".alert-danger, .alert-error, [role='alert']"))
     )
-    match = re.search(r"/improve/shipping/carriers/([0-9]+)/edit(?:[/?#]|$)", driver.current_url)
+    match = re.search(
+        r"/index\.php/improve/shipping/carriers/([0-9]+)/edit(?:[/?#]|$)",
+        driver.current_url,
+    )
     if match is None:
         errors = [
             element.text.strip()[:300]
@@ -319,7 +322,7 @@ def configure_free_carrier() -> None:
     try:
         checkout.admin_login(driver)
         stage = "create_free_japan_carrier"
-        checkout.visit(driver, ADMIN_LOGIN + "/improve/shipping/carriers/create")
+        checkout.visit(driver, ADMIN_LOGIN + "/index.php/improve/shipping/carriers/create")
         stage = "wait_for_carrier_create_form"
         _wait_visible(driver, 'input[name="carrier[general_settings][name]"]')
         stage = "fill_draft_free_japan_carrier"

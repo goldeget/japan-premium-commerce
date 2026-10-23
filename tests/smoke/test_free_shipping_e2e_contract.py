@@ -251,6 +251,9 @@ class FreeShippingE2eContractTest(unittest.TestCase):
 
     def test_carrier_form_opens_shipping_tab_before_selecting_zone_and_free_shipping(self) -> None:
         browser = BROWSER.read_text(encoding="utf-8")
+        self.assertIn('ADMIN_LOGIN + "/index.php/improve/shipping/carriers/create"', browser)
+        self.assertIn('ADMIN_LOGIN + f"/index.php/improve/shipping/carriers/{carrier_id}/edit"', browser)
+        self.assertIn(r"/index\.php/improve/shipping/carriers/([0-9]+)/edit", browser)
         form_fill = browser.split("def _fill_free_carrier_form(", 1)[1].split(
             "def _assert_free_carrier_form(", 1
         )[0]
