@@ -475,13 +475,34 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
                 self.assertIn(marker, markup)
         self.assertIn("#security-compromised-page", source)
         self.assertIn("verify_native_compromised_page_fixture", source)
-        self.assertNotIn(
-            "Boolean(continueUrl.searchParams.get('token'))",
-            source,
-            "the native compromised page links back to requestUri, which is tokenless for missing-token QA",
-        )
-        self.assertIn('"missing_request_token"', source)
+        self.assertIn("searchParams.getAll('token')", source)
+        self.assertIn("searchParams.getAll('_token')", source)
+        self.assertIn('"tokenless_request_link"', source)
+        self.assertIn('"tokenized_request_link"', source)
+        self.assertIn('"dashboard_symfony_token"', source)
         self.assertIn('"missing_dashboard_token"', source)
+        self.assertIn('"duplicate_dashboard_tokens"', source)
+        self.assertIn("&& details.compromisedContinueController", source)
+        self.assertNotIn("&& details.compromisedContinueTokenPresent", source)
+        self.assertIn("&& details.compromisedDashboardTokenPresent", source)
+        for diagnostic in (
+            "compromisedPageMarker",
+            "compromisedWarning",
+            "compromisedContinueLink",
+            "compromisedDashboardLink",
+            "compromisedResponseSameOrigin",
+            "compromisedResponsePath",
+            "compromisedContinueSameOrigin",
+            "compromisedContinuePath",
+            "compromisedContinueController",
+            "compromisedContinueTokenPresent",
+            "compromisedDashboardSameOrigin",
+            "compromisedDashboardPath",
+            "compromisedDashboardController",
+            "compromisedDashboardTokenPresent",
+        ):
+            with self.subTest(diagnostic=diagnostic):
+                self.assertIn(diagnostic, source)
         run = source.split("def run()", 1)[1].split("\n\nif __name__", 1)[0]
         self.assertIn("verify_native_compromised_page_fixture(admin_driver)", run)
 
@@ -505,6 +526,20 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "invalidTokenRecoverySamePath": True,
             "invalidTokenRecoveryController": "AdminBusinessProfile",
             "invalidTokenRecoveryTokenPresent": True,
+            "compromisedPageMarker": True,
+            "compromisedWarning": True,
+            "compromisedContinueLink": True,
+            "compromisedDashboardLink": True,
+            "compromisedResponseSameOrigin": True,
+            "compromisedResponsePath": True,
+            "compromisedContinueSameOrigin": True,
+            "compromisedContinuePath": True,
+            "compromisedContinueController": True,
+            "compromisedContinueTokenPresent": True,
+            "compromisedDashboardSameOrigin": True,
+            "compromisedDashboardPath": True,
+            "compromisedDashboardController": True,
+            "compromisedDashboardTokenPresent": True,
         }
         diagnostic = summary(result)
         for safe_fact in (
@@ -518,6 +553,20 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "recovery_token_present=true",
             "invalid_token_page=false",
             "native_compromised_page=false",
+            "compromised_marker=true",
+            "compromised_warning=true",
+            "compromised_continue=true",
+            "compromised_dashboard=true",
+            "compromised_response_origin=true",
+            "compromised_response_path=true",
+            "compromised_continue_origin=true",
+            "compromised_continue_path=true",
+            "compromised_continue_controller=true",
+            "compromised_continue_token=true",
+            "compromised_dashboard_origin=true",
+            "compromised_dashboard_path=true",
+            "compromised_dashboard_controller=true",
+            "compromised_dashboard_token=true",
         ):
             with self.subTest(safe_fact=safe_fact):
                 self.assertIn(safe_fact, diagnostic)

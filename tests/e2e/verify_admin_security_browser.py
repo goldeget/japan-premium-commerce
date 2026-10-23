@@ -34,6 +34,13 @@ SAFE_ADMIN_SECURITY_RESPONSE_PATTERN = (
     r"classification=[a-z_]+; status=(?:[0-9]{1,3}|invalid); final_path=[A-Za-z0-9/._?-]{1,160}; "
     r"settings_form=(?:true|false); danger_alert=(?:true|false); admin_login_form=(?:true|false); "
     r"native_compromised_page=(?:true|false); "
+    r"compromised_marker=(?:true|false); compromised_warning=(?:true|false); "
+    r"compromised_continue=(?:true|false); compromised_dashboard=(?:true|false); "
+    r"compromised_response_origin=(?:true|false); compromised_response_path=(?:true|false); "
+    r"compromised_continue_origin=(?:true|false); compromised_continue_path=(?:true|false); "
+    r"compromised_continue_controller=(?:true|false); compromised_continue_token=(?:true|false); "
+    r"compromised_dashboard_origin=(?:true|false); compromised_dashboard_path=(?:true|false); "
+    r"compromised_dashboard_controller=(?:true|false); compromised_dashboard_token=(?:true|false); "
     r"response_controller=(?:AdminBusinessProfile|AdminDashboard|AdminLogin|none|other); "
     r"invalid_token_warning=(?:true|false); invalid_token_continue=(?:true|false); "
     r"invalid_token_cancel=(?:true|false); recovery_same_origin=(?:true|false); "
@@ -88,30 +95,72 @@ function inspectInvalidTokenPage(body, responseUrl, targetUrl) {
 function inspectNativeCompromisedPage(body, responseUrl, targetUrl) {
   const responseDocument = new DOMParser().parseFromString(body, 'text/html');
   const page = responseDocument.querySelector('#security-compromised-page');
-  if (!page) return false;
+  const details = {
+    bodyHasNativeCompromisedPage: false,
+    compromisedPageMarker: Boolean(page),
+    compromisedWarning: false,
+    compromisedContinueLink: false,
+    compromisedDashboardLink: false,
+    compromisedResponseSameOrigin: false,
+    compromisedResponsePath: false,
+    compromisedContinueSameOrigin: false,
+    compromisedContinuePath: false,
+    compromisedContinueController: false,
+    compromisedContinueTokenPresent: false,
+    compromisedDashboardSameOrigin: false,
+    compromisedDashboardPath: false,
+    compromisedDashboardController: false,
+    compromisedDashboardTokenPresent: false
+  };
+  if (!page) return details;
 
   const warning = page.querySelector('.alert.alert-danger[role="alert"] .alert-text');
   const continueLink = page.querySelector('a.btn-outline-danger[href]');
   const dashboardLink = page.querySelector('a.btn-primary[href]');
-  if (!warning || !warning.textContent.trim() || !continueLink || !dashboardLink) return false;
+  details.compromisedWarning = Boolean(warning && warning.textContent.trim());
+  details.compromisedContinueLink = Boolean(continueLink);
+  details.compromisedDashboardLink = Boolean(dashboardLink);
+  if (!warning || !warning.textContent.trim() || !continueLink || !dashboardLink) return details;
 
   try {
     const response = new URL(responseUrl);
     const target = new URL(targetUrl);
-    const base = new URL(target.origin);
-    const adminPath = target.pathname.split('/index.php')[0].replace(/\/$/, '');
+    const adminIndexSuffix = '/index.php';
+    if (!target.pathname.endsWith(adminIndexSuffix)) return details;
+    const adminPath = target.pathname.slice(0, -adminIndexSuffix.length);
     const continueUrl = new URL(continueLink.getAttribute('href'), responseUrl);
     const dashboardUrl = new URL(dashboardLink.getAttribute('href'), responseUrl);
-    return response.origin === base.origin
-      && continueUrl.origin === base.origin
-      && dashboardUrl.origin === base.origin
-      && continueUrl.pathname === adminPath + '/index.php'
-      && dashboardUrl.pathname === adminPath + '/index.php'
-      && continueUrl.searchParams.get('controller') === 'AdminBusinessProfile'
-      && dashboardUrl.searchParams.get('controller') === 'AdminDashboard'
-      && Boolean(dashboardUrl.searchParams.get('token'));
+    const tokenPresent = url => {
+      const tokens = [...url.searchParams.getAll('token'), ...url.searchParams.getAll('_token')];
+      return tokens.length === 1 && tokens[0].trim().length > 0;
+    };
+    const hasController = (url, expected) => {
+      const controllers = url.searchParams.getAll('controller');
+      return controllers.length === 1 && controllers[0] === expected;
+    };
+    const expectedAdminIndexPath = adminPath + adminIndexSuffix;
+    details.compromisedResponseSameOrigin = response.origin === target.origin;
+    details.compromisedResponsePath = response.pathname === adminPath + '/security/compromised';
+    details.compromisedContinueSameOrigin = continueUrl.origin === target.origin;
+    details.compromisedContinuePath = continueUrl.pathname === expectedAdminIndexPath;
+    details.compromisedContinueController = hasController(continueUrl, 'AdminBusinessProfile');
+    details.compromisedContinueTokenPresent = tokenPresent(continueUrl);
+    details.compromisedDashboardSameOrigin = dashboardUrl.origin === target.origin;
+    details.compromisedDashboardPath = dashboardUrl.pathname === expectedAdminIndexPath;
+    details.compromisedDashboardController = hasController(dashboardUrl, 'AdminDashboard');
+    details.compromisedDashboardTokenPresent = tokenPresent(dashboardUrl);
+    details.bodyHasNativeCompromisedPage = details.compromisedResponseSameOrigin
+      && details.compromisedResponsePath
+      && details.compromisedContinueSameOrigin
+      && details.compromisedContinuePath
+      && details.compromisedContinueController
+      && details.compromisedDashboardSameOrigin
+      && details.compromisedDashboardPath
+      && details.compromisedDashboardController
+      && details.compromisedDashboardTokenPresent;
+    return details;
   } catch (_) {
-    return false;
+    return details;
   }
 }
 """
@@ -330,23 +379,39 @@ def verify_native_invalid_token_dom_fixture(driver: webdriver.Chrome) -> None:
 def verify_native_compromised_page_fixture(driver: webdriver.Chrome) -> None:
     fixture = ROOT / "tests" / "fixtures" / "prestashop-9.2-security-compromised.html"
     markup = fixture.read_text(encoding="utf-8")
-    action_url = ADMIN_LOGIN + "/index.php?controller=AdminBusinessProfile&token=fixture-token"
+    action_url = ADMIN_LOGIN + "/index.php?controller=AdminBusinessProfile"
     response_url = ADMIN_LOGIN + "/security/compromised"
     variants = (
         ("native", markup, True),
         ("missing_page_marker", markup.replace("security-compromised-page", "other-page"), False),
         ("missing_warning", markup.replace('class="alert alert-danger"', 'class="alert"'), False),
+        ("missing_warning_text", markup.replace('<p class="alert-text">', '<p class="other-text">'), False),
         ("missing_continue", markup.replace("btn-outline-danger", "other-button"), False),
         ("missing_dashboard", markup.replace("btn-primary", "other-button"), False),
+        ("tokenless_request_link", markup, True),
         (
-            "missing_request_token",
+            "tokenized_request_link",
             markup.replace(
-                "/index.php?controller=AdminBusinessProfile&amp;token=fixture-token",
-                "/index.php?controller=AdminBusinessProfile",
+                "controller=AdminBusinessProfile\">",
+                "controller=AdminBusinessProfile&amp;_token=fixture-csrf-token\">",
             ),
             True,
         ),
-        ("external_continue", markup.replace("http://localhost:18080/admin-kuranea/index.php?controller=AdminBusinessProfile", "http://outside.example/admin-kuranea/index.php?controller=AdminBusinessProfile"), False),
+        (
+            "wrong_continue_controller",
+            markup.replace('controller=AdminBusinessProfile">', 'controller=AdminDashboard">'),
+            False,
+        ),
+        (
+            "wrong_continue_path",
+            markup.replace("/admin-kuranea/index.php?controller=AdminBusinessProfile", "/admin-kuranea/other.php?controller=AdminBusinessProfile"),
+            False,
+        ),
+        (
+            "external_continue",
+            markup.replace("http://localhost:18080/admin-kuranea/index.php?controller=AdminBusinessProfile", "http://outside.example/admin-kuranea/index.php?controller=AdminBusinessProfile"),
+            False,
+        ),
         (
             "missing_dashboard_token",
             markup.replace(
@@ -355,15 +420,50 @@ def verify_native_compromised_page_fixture(driver: webdriver.Chrome) -> None:
             ),
             False,
         ),
+        (
+            "dashboard_symfony_token",
+            markup.replace(
+                "controller=AdminDashboard&amp;token=fixture-token",
+                "controller=AdminDashboard&amp;_token=fixture-csrf-token",
+            ),
+            True,
+        ),
+        (
+            "duplicate_dashboard_tokens",
+            markup.replace(
+                "controller=AdminDashboard&amp;token=fixture-token",
+                "controller=AdminDashboard&amp;token=fixture-token&amp;_token=fixture-csrf-token",
+            ),
+            False,
+        ),
+        (
+            "wrong_dashboard_controller",
+            markup.replace("controller=AdminDashboard&amp;token", "controller=AdminBusinessProfile&amp;token"),
+            False,
+        ),
+        (
+            "wrong_dashboard_path",
+            markup.replace("/admin-kuranea/index.php?controller=AdminDashboard", "/admin-kuranea/other.php?controller=AdminDashboard"),
+            False,
+        ),
+        (
+            "external_dashboard",
+            markup.replace("http://localhost:18080/admin-kuranea/index.php?controller=AdminDashboard", "http://outside.example/admin-kuranea/index.php?controller=AdminDashboard"),
+            False,
+        ),
+        ("wrong_response_path", markup, False),
     )
     for name, body, expected in variants:
+        fixture_response_url = (
+            response_url + "/other" if name == "wrong_response_path" else response_url
+        )
         result = driver.execute_script(
             TOKEN_DOM_DETECTOR_JS + "return inspectNativeCompromisedPage(arguments[0], arguments[1], arguments[2]);",
             body,
-            response_url,
+            fixture_response_url,
             action_url,
         )
-        if result is not expected:
+        if not isinstance(result, dict) or result.get("bodyHasNativeCompromisedPage") is not expected:
             raise AssertionError(f"native compromised-page DOM detector fixture failed at {name}")
 
 
@@ -500,6 +600,20 @@ def response_summary(result: object) -> str:
         f"danger_alert={flag('bodyHasDangerAlert')}; "
         f"admin_login_form={flag('bodyHasAdminLoginForm')}; "
         f"native_compromised_page={flag('bodyHasNativeCompromisedPage')}; "
+        f"compromised_marker={flag('compromisedPageMarker')}; "
+        f"compromised_warning={flag('compromisedWarning')}; "
+        f"compromised_continue={flag('compromisedContinueLink')}; "
+        f"compromised_dashboard={flag('compromisedDashboardLink')}; "
+        f"compromised_response_origin={flag('compromisedResponseSameOrigin')}; "
+        f"compromised_response_path={flag('compromisedResponsePath')}; "
+        f"compromised_continue_origin={flag('compromisedContinueSameOrigin')}; "
+        f"compromised_continue_path={flag('compromisedContinuePath')}; "
+        f"compromised_continue_controller={flag('compromisedContinueController')}; "
+        f"compromised_continue_token={flag('compromisedContinueTokenPresent')}; "
+        f"compromised_dashboard_origin={flag('compromisedDashboardSameOrigin')}; "
+        f"compromised_dashboard_path={flag('compromisedDashboardPath')}; "
+        f"compromised_dashboard_controller={flag('compromisedDashboardController')}; "
+        f"compromised_dashboard_token={flag('compromisedDashboardTokenPresent')}; "
         f"response_controller={response_controller}; "
         f"invalid_token_warning={flag('bodyHasInvalidTokenWarning')}; "
         f"invalid_token_continue={flag('bodyHasInvalidTokenContinue')}; "
