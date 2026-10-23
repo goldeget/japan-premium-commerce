@@ -258,6 +258,11 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
         }
         load_function(ADMIN_FLOW, "response_summary", namespace)
+        namespace["is_prestashop_compromised_token_rejection"] = load_function(
+            ADMIN_FLOW,
+            "is_prestashop_compromised_token_rejection",
+            namespace,
+        )
         namespace["is_prestashop_admin_login_rejection"] = load_function(
             ADMIN_FLOW,
             "is_prestashop_admin_login_rejection",
@@ -365,7 +370,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
         }
         for function in (
-            "is_prestashop_admin_login_rejection", "response_classification",
+            "is_prestashop_admin_login_rejection", "is_prestashop_compromised_token_rejection", "response_classification",
             "response_summary", "raise_admin_security_response_failure",
             "assert_security_attempt_rejected",
         ):
@@ -395,8 +400,87 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(AssertionError):
                 namespace["assert_security_attempt_rejected"]({**warning, **changes}, "missing")
 
+    def test_admin_security_recognizes_only_the_native_prestashop_compromised_token_route(self):
+        namespace = {
+            "re": re, "urlparse": urlparse, "parse_qs": parse_qs,
+            "BASE": "http://localhost:18080",
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
+        }
+        for function in (
+            "is_prestashop_admin_login_rejection", "is_prestashop_compromised_token_rejection", "response_classification",
+            "response_summary", "raise_admin_security_response_failure",
+            "assert_security_attempt_rejected",
+        ):
+            load_function(ADMIN_FLOW, function, namespace)
+
+        native = {
+            "formPresent": True,
+            "status": 200,
+            "responseUrl": "http://localhost:18080/admin-kuranea/security/compromised",
+            "bodyHasSettingsForm": False,
+            "bodyHasDangerAlert": True,
+            "bodyHasAdminLoginForm": False,
+            "bodyHasViewOnlyDenial": False,
+            "bodyHasNativeCompromisedPage": True,
+        }
+        self.assertEqual(namespace["response_classification"](native), "prestashop_compromised_token")
+        for mode in ("missing", "invalid"):
+            with self.subTest(mode=mode):
+                namespace["assert_security_attempt_rejected"](native, mode)
+
+        for changes in (
+            {"bodyHasNativeCompromisedPage": False},
+            {"bodyHasDangerAlert": False},
+            {"bodyHasAdminLoginForm": True},
+            {"bodyHasViewOnlyDenial": True},
+            {"responseUrl": "http://localhost:18080/admin-kuranea/login"},
+            {"responseUrl": "http://localhost:18080/admin-kuranea/other/security/compromised"},
+            {"responseUrl": "http://outside.example/admin-kuranea/security/compromised"},
+            {"status": 404},
+            {"status": 302},
+        ):
+            with self.subTest(changes=changes), self.assertRaises(AssertionError):
+                namespace["assert_security_attempt_rejected"]({**native, **changes}, "missing")
+
+        generic_danger_alert = {
+            **native,
+            "bodyHasNativeCompromisedPage": False,
+            "responseUrl": "http://localhost:18080/admin-kuranea/index.php?controller=AdminDashboard",
+        }
+        with self.assertRaises(AssertionError):
+            namespace["assert_security_attempt_rejected"](generic_danger_alert, "missing")
+
+        business_profile_error = {**native, "bodyHasSettingsForm": True}
+        self.assertEqual(
+            namespace["response_classification"](business_profile_error),
+            "business_profile_error",
+        )
+        self.assertNotEqual(
+            namespace["response_classification"](business_profile_error),
+            "prestashop_compromised_token",
+        )
+        namespace["assert_security_attempt_rejected"](business_profile_error, "missing")
+
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+        fixture = ROOT / "tests" / "fixtures" / "prestashop-9.2-security-compromised.html"
+        self.assertTrue(fixture.is_file(), "the native PrestaShop 9.2 compromised security fixture is missing")
+        markup = fixture.read_text(encoding="utf-8")
+        for marker in (
+            'id="security-compromised-page"',
+            'class="alert alert-danger"',
+            "class=\"btn btn-lg btn-outline-danger mr-3\"",
+            "class=\"btn btn-lg btn-primary ml-3\"",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, markup)
+        self.assertIn("#security-compromised-page", source)
+        self.assertIn("verify_native_compromised_page_fixture", source)
+        run = source.split("def run()", 1)[1].split("\n\nif __name__", 1)[0]
+        self.assertIn("verify_native_compromised_page_fixture(admin_driver)", run)
+
     def test_admin_security_failure_summary_exposes_only_safe_invalid_token_dom_facts(self):
         namespace = {"re": re, "urlparse": urlparse, "parse_qs": parse_qs}
+        load_function(ADMIN_FLOW, "is_prestashop_compromised_token_rejection", namespace)
         load_function(ADMIN_FLOW, "is_prestashop_admin_login_rejection", namespace)
         load_function(ADMIN_FLOW, "response_classification", namespace)
         summary = load_function(ADMIN_FLOW, "response_summary", namespace)
@@ -426,6 +510,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "recovery_controller=AdminBusinessProfile",
             "recovery_token_present=true",
             "invalid_token_page=false",
+            "native_compromised_page=false",
         ):
             with self.subTest(safe_fact=safe_fact):
                 self.assertIn(safe_fact, diagnostic)

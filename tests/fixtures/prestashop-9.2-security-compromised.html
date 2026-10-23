@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<!-- Minimal structure from PrestaShop 9.2.0's Admin/Security/compromised.html.twig; hrefs and tokens are synthetic. -->
+<body>
+  <div class="fluid-container" id="security-compromised-page">
+    <div id="csrf-white-container" class="row justify-content-md-center">
+      <div class="col-md-8">
+        <div class="alert alert-danger" role="alert">
+          <p class="alert-text"><b>Invalid token</b>: direct access to this link may lead to a potential security breach.</p>
+        </div>
+        <h1 class="text-md-center">Do you want to display this page?</h1>
+        <div class="text-md-center">
+          <a class="btn btn-lg btn-outline-danger mr-3" href="http://localhost:18080/admin-kuranea/index.php?controller=AdminBusinessProfile&amp;token=fixture-token">Yes, I understand the risks</a>
+          <a class="btn btn-lg btn-primary ml-3" href="http://localhost:18080/admin-kuranea/index.php?controller=AdminDashboard&amp;token=fixture-token">Take me out of there!</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

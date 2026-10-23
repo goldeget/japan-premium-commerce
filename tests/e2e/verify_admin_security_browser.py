@@ -33,6 +33,7 @@ MUTATION_SENTINEL = "ORDENOWA CI security rejection sentinel"
 SAFE_ADMIN_SECURITY_RESPONSE_PATTERN = (
     r"classification=[a-z_]+; status=(?:[0-9]{1,3}|invalid); final_path=[A-Za-z0-9/._?-]{1,160}; "
     r"settings_form=(?:true|false); danger_alert=(?:true|false); admin_login_form=(?:true|false); "
+    r"native_compromised_page=(?:true|false); "
     r"response_controller=(?:AdminBusinessProfile|AdminDashboard|AdminLogin|none|other); "
     r"invalid_token_warning=(?:true|false); invalid_token_continue=(?:true|false); "
     r"invalid_token_cancel=(?:true|false); recovery_same_origin=(?:true|false); "
@@ -82,6 +83,37 @@ function inspectInvalidTokenPage(body, responseUrl, targetUrl) {
     invalidTokenRecoveryController: recoveryController,
     invalidTokenRecoveryTokenPresent: recoveryTokenPresent
   };
+}
+
+function inspectNativeCompromisedPage(body, responseUrl, targetUrl) {
+  const responseDocument = new DOMParser().parseFromString(body, 'text/html');
+  const page = responseDocument.querySelector('#security-compromised-page');
+  if (!page) return false;
+
+  const warning = page.querySelector('.alert.alert-danger[role="alert"] .alert-text');
+  const continueLink = page.querySelector('a.btn-outline-danger[href]');
+  const dashboardLink = page.querySelector('a.btn-primary[href]');
+  if (!warning || !warning.textContent.trim() || !continueLink || !dashboardLink) return false;
+
+  try {
+    const response = new URL(responseUrl);
+    const target = new URL(targetUrl);
+    const base = new URL(target.origin);
+    const adminPath = target.pathname.split('/index.php')[0].replace(/\/$/, '');
+    const continueUrl = new URL(continueLink.getAttribute('href'), responseUrl);
+    const dashboardUrl = new URL(dashboardLink.getAttribute('href'), responseUrl);
+    return response.origin === base.origin
+      && continueUrl.origin === base.origin
+      && dashboardUrl.origin === base.origin
+      && continueUrl.pathname === adminPath + '/index.php'
+      && dashboardUrl.pathname === adminPath + '/index.php'
+      && continueUrl.searchParams.get('controller') === 'AdminBusinessProfile'
+      && Boolean(continueUrl.searchParams.get('token'))
+      && dashboardUrl.searchParams.get('controller') === 'AdminDashboard'
+      && Boolean(dashboardUrl.searchParams.get('token'));
+  } catch (_) {
+    return false;
+  }
 }
 """
 
@@ -229,6 +261,7 @@ def submit_settings_attempt(driver: webdriver.Chrome, mode: str) -> dict[str, ob
         }).then(async response => {
           const responseBody = await response.text();
           const tokenPage = inspectInvalidTokenPage(responseBody, response.url, action.href);
+          const nativeCompromisedPage = inspectNativeCompromisedPage(responseBody, response.url, action.href);
           const responseDocument = new DOMParser().parseFromString(responseBody, 'text/html');
           const loginForm = responseDocument.querySelector('#login_form');
           done({
@@ -237,6 +270,7 @@ def submit_settings_attempt(driver: webdriver.Chrome, mode: str) -> dict[str, ob
             responseUrl: response.url,
             bodyHasSettingsForm: responseBody.includes('ordenowa-profile-settings'),
             bodyHasDangerAlert: responseBody.includes('alert-danger'),
+            bodyHasNativeCompromisedPage: nativeCompromisedPage,
             ...tokenPage,
             bodyHasAdminLoginForm: Boolean(
               loginForm && loginForm.querySelector('input[name="email"]') && loginForm.querySelector('input[name="passwd"]')
@@ -294,6 +328,31 @@ def verify_native_invalid_token_dom_fixture(driver: webdriver.Chrome) -> None:
             raise AssertionError(f"native invalid-token DOM detector fixture failed at {name}")
 
 
+def verify_native_compromised_page_fixture(driver: webdriver.Chrome) -> None:
+    fixture = ROOT / "tests" / "fixtures" / "prestashop-9.2-security-compromised.html"
+    markup = fixture.read_text(encoding="utf-8")
+    action_url = ADMIN_LOGIN + "/index.php?controller=AdminBusinessProfile&token=fixture-token"
+    response_url = ADMIN_LOGIN + "/security/compromised"
+    variants = (
+        ("native", markup, True),
+        ("missing_page_marker", markup.replace("security-compromised-page", "other-page"), False),
+        ("missing_warning", markup.replace('class="alert alert-danger"', 'class="alert"'), False),
+        ("missing_continue", markup.replace("btn-outline-danger", "other-button"), False),
+        ("missing_dashboard", markup.replace("btn-primary", "other-button"), False),
+        ("external_continue", markup.replace("http://localhost:18080/admin-kuranea/index.php?controller=AdminBusinessProfile", "http://outside.example/admin-kuranea/index.php?controller=AdminBusinessProfile"), False),
+        ("missing_continue_token", markup.replace("&amp;token=fixture-token", ""), False),
+    )
+    for name, body, expected in variants:
+        result = driver.execute_script(
+            TOKEN_DOM_DETECTOR_JS + "return inspectNativeCompromisedPage(arguments[0], arguments[1], arguments[2]);",
+            body,
+            response_url,
+            action_url,
+        )
+        if result is not expected:
+            raise AssertionError(f"native compromised-page DOM detector fixture failed at {name}")
+
+
 def is_prestashop_admin_login_rejection(result: dict[str, object]) -> bool:
     if (
         result.get("status") != 200
@@ -325,6 +384,34 @@ def is_prestashop_admin_login_rejection(result: dict[str, object]) -> bool:
     return False
 
 
+def is_prestashop_compromised_token_rejection(result: dict[str, object]) -> bool:
+    if (
+        result.get("status") != 200
+        or result.get("bodyHasNativeCompromisedPage") is not True
+        or result.get("bodyHasDangerAlert") is not True
+        or result.get("bodyHasSettingsForm") is True
+        or result.get("bodyHasAdminLoginForm") is True
+        or result.get("bodyHasViewOnlyDenial") is True
+    ):
+        return False
+
+    response_url = result.get("responseUrl")
+    if not isinstance(response_url, str):
+        return False
+    try:
+        response_location = urlparse(response_url)
+        base_location = urlparse(BASE)
+    except ValueError:
+        return False
+    admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
+    return (
+        (response_location.scheme, response_location.hostname, response_location.port)
+        == (base_location.scheme, base_location.hostname, base_location.port)
+        and response_location.path == admin_path + "/security/compromised"
+        and "controller" not in parse_qs(response_location.query)
+    )
+
+
 def response_classification(result: object) -> str:
     if not isinstance(result, dict):
         return "unavailable"
@@ -334,6 +421,8 @@ def response_classification(result: object) -> str:
         return "business_profile_error"
     if is_prestashop_admin_login_rejection(result):
         return "prestashop_admin_login"
+    if is_prestashop_compromised_token_rejection(result):
+        return "prestashop_compromised_token"
     if (
         result.get("status") == 200
         and result.get("bodyHasInvalidTokenPage") is True
@@ -396,6 +485,7 @@ def response_summary(result: object) -> str:
         f"settings_form={flag('bodyHasSettingsForm')}; "
         f"danger_alert={flag('bodyHasDangerAlert')}; "
         f"admin_login_form={flag('bodyHasAdminLoginForm')}; "
+        f"native_compromised_page={flag('bodyHasNativeCompromisedPage')}; "
         f"response_controller={response_controller}; "
         f"invalid_token_warning={flag('bodyHasInvalidTokenWarning')}; "
         f"invalid_token_continue={flag('bodyHasInvalidTokenContinue')}; "
@@ -450,7 +540,10 @@ def assert_security_attempt_rejected(result: object, mode: str) -> None:
         raise_admin_security_response_failure("view_only_denial_missing", result)
     if mode in {"missing", "invalid"} and not (
         framework_rejection or admin_page_rejection or login_gate_rejection
-        or response_classification(result) == "prestashop_invalid_token"
+        or response_classification(result) in {
+            "prestashop_invalid_token",
+            "prestashop_compromised_token",
+        }
     ):
         raise_admin_security_response_failure(f"{mode}_token_rejection_unrecognized", result)
 
@@ -577,6 +670,7 @@ def run() -> bool:
         admin_driver = new_driver()
         stage = "admin_token_dom_fixture"
         verify_native_invalid_token_dom_fixture(admin_driver)
+        verify_native_compromised_page_fixture(admin_driver)
         stage = "admin_login"
         login(admin_driver, ADMIN_EMAIL)
         stage = "admin_settings_load"
