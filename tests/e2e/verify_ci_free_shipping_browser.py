@@ -20,7 +20,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 import verify_ci_checkout_admin_browser as checkout
 from checkout_total_math import reconcile_cart_totals
-from shipping_admin_routes import carrier_action_url, matches_admin_controller_url
+from shipping_admin_routes import carrier_action_url, carrier_id_from_edit_url, matches_admin_controller_url
 
 
 BASE = os.environ["SHOP_BASE_URL"].rstrip("/")
@@ -339,24 +339,20 @@ def _save_carrier_form(driver, operation: str) -> int:
         raise AssertionError("AdminCarriers carrier form has no visible Save button")
     checkout.click_at_center(driver, save_button)
 
+    admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
     WebDriverWait(driver, 35).until(
-        lambda browser: re.search(
-            r"/index\.php/improve/shipping/carriers/([0-9]+)/edit(?:[/?#]|$)", browser.current_url
-        ) is not None
+        lambda browser: carrier_id_from_edit_url(browser.current_url, admin_path) is not None
         or bool(browser.find_elements(By.CSS_SELECTOR, ".alert-danger, .alert-error, [role='alert']"))
     )
-    match = re.search(
-        r"/index\.php/improve/shipping/carriers/([0-9]+)/edit(?:[/?#]|$)",
-        driver.current_url,
-    )
-    if match is None:
+    carrier_id = carrier_id_from_edit_url(driver.current_url, admin_path)
+    if carrier_id is None:
         errors = [
             element.text.strip()[:300]
             for element in driver.find_elements(By.CSS_SELECTOR, ".alert-danger, .alert-error, [role='alert']")
             if element.is_displayed() and element.text.strip()
         ]
         raise AssertionError(f"AdminCarriers did not save the free carrier during {operation}: {errors[:3]}")
-    return int(match.group(1))
+    return carrier_id
 
 
 def configure_free_carrier() -> None:
@@ -1371,12 +1367,18 @@ def _emit_failure(stage: str, error: Exception, driver=None) -> None:
                 safe_path = page_path[:240]
         except Exception:
             pass
+    safe_detail = ""
+    if isinstance(error, AssertionError):
+        detail = " ".join(str(error).split())
+        detail = re.sub(r"(?i)\btoken\s*[=:]\s*[^\s,;&]+", "token=[REDACTED]", detail)
+        safe_detail = detail[:600]
+    detail_suffix = f"; detail={safe_detail}" if safe_detail else ""
     print(
-        f"FAIL: free shipping browser QA at {safe_stage} ({exception_type}); path={safe_path}",
+        f"FAIL: free shipping browser QA at {safe_stage} ({exception_type}); path={safe_path}{detail_suffix}",
         file=sys.stderr,
     )
     print(
-        f"::error title=ORDENOWA free shipping QA::{safe_stage} ({exception_type}); path={safe_path}",
+        f"::error title=ORDENOWA free shipping QA::{safe_stage} ({exception_type}); path={safe_path}{detail_suffix}",
         file=sys.stderr,
     )
 

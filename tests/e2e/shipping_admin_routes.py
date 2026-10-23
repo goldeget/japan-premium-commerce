@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlunparse
 
 
@@ -58,6 +59,31 @@ def carrier_action_url(carriers_list_url: str, action: str, carrier_id: int | No
     else:
         query.extend((("id_carrier", str(carrier_id)), ("updatecarrier", "1")))
     return urlunparse(parsed._replace(query=urlencode(query)))
+
+
+def carrier_id_from_edit_url(href: str, admin_path: str) -> int | None:
+    """Read the carrier ID from modern Symfony edit paths or the legacy admin route."""
+    parsed = urlparse(href)
+    admin_prefix = admin_path.rstrip("/")
+    if not admin_prefix or not parsed.path.startswith(admin_prefix + "/"):
+        return None
+
+    relative_path = parsed.path[len(admin_prefix) :].rstrip("/")
+    if relative_path.startswith("/index.php/"):
+        relative_path = relative_path[len("/index.php") :]
+    match = re.fullmatch(r"/improve/shipping/carriers/([0-9]+)/edit", relative_path)
+    if match is not None:
+        carrier_id = int(match.group(1))
+        return carrier_id if carrier_id > 0 else None
+
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    if query.get("controller") != ["AdminCarriers"] or query.get("updatecarrier") != ["1"]:
+        return None
+    carrier_ids = query.get("id_carrier", [])
+    if len(carrier_ids) != 1 or re.fullmatch(r"[0-9]+", carrier_ids[0]) is None:
+        return None
+    carrier_id = int(carrier_ids[0])
+    return carrier_id if carrier_id > 0 else None
 
 
 def is_korean_admin_language(language: str) -> bool:

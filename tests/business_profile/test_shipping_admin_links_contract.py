@@ -132,6 +132,35 @@ class ShippingAdminLinksContractTests(unittest.TestCase):
             "http://shop.test/admin-kuranea/index.php?controller=AdminCarriers&token=ci-token&id_carrier=42&updatecarrier=1",
         )
 
+    def test_saved_carrier_id_accepts_modern_routes_with_or_without_index_php_and_legacy_query(self) -> None:
+        spec = spec_from_file_location("shipping_admin_routes_carrier_id", ROUTES)
+        self.assertIsNotNone(spec)
+        assert spec is not None and spec.loader is not None
+        route_helper = module_from_spec(spec)
+        spec.loader.exec_module(route_helper)
+        get_carrier_id = route_helper.carrier_id_from_edit_url
+
+        for href in (
+            "http://shop.test/admin-kuranea/improve/shipping/carriers/42/edit",
+            "http://shop.test/admin-kuranea/index.php/improve/shipping/carriers/42/edit?token=ci-token",
+            "http://shop.test/admin-kuranea/index.php?controller=AdminCarriers&id_carrier=42&updatecarrier=1&token=ci-token",
+        ):
+            with self.subTest(href=href):
+                self.assertEqual(get_carrier_id(href, "/admin-kuranea"), 42)
+
+        for href in (
+            "http://shop.test/elsewhere/improve/shipping/carriers/42/edit",
+            "http://shop.test/admin-kuranea/improve/shipping/carriers/create",
+            "http://shop.test/admin-kuranea/index.php?controller=AdminShipping&id_carrier=42&updatecarrier=1",
+            "http://shop.test/admin-kuranea/index.php?controller=AdminCarriers&id_carrier=0&updatecarrier=1",
+        ):
+            with self.subTest(href=href):
+                self.assertIsNone(get_carrier_id(href, "/admin-kuranea"))
+
+        browser = (ROOT / "tests/e2e/verify_ci_free_shipping_browser.py").read_text(encoding="utf-8")
+        self.assertIn("carrier_id_from_edit_url(browser.current_url, admin_path)", browser)
+        self.assertIn("safe_detail = detail[:600]", browser)
+
     def test_authenticated_shipping_pages_require_a_korean_document_language(self) -> None:
         self.assertTrue(ROUTES.is_file(), "shipping admin locale validation must be dependency-free")
         spec = spec_from_file_location("shipping_admin_routes_locale", ROUTES)
