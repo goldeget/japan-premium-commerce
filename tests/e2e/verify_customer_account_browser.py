@@ -1990,7 +1990,7 @@ def prepare_required_registration_fields(
 
 def accept_profile_update_disclosures(driver: webdriver.Chrome) -> None:
     """Accept only the synthetic CI customer's two required profile disclosures."""
-    for name in ("customer_privacy", "psgdpr_consent_checkbox"):
+    for name in ("customer_privacy", "psgdpr"):
         selector = f'#customer-form input[type="checkbox"][name="{name}"]'
         checkbox = visible(driver, selector)
         if not checkbox.is_displayed() or not checkbox.is_enabled():

@@ -270,7 +270,8 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         disclosure_helper = self.source.split("def accept_profile_update_disclosures", 1)[1].split(
             "def assert_native_form_valid", 1
         )[0]
-        self.assertIn('("customer_privacy", "psgdpr_consent_checkbox")', disclosure_helper)
+        self.assertIn('("customer_privacy", "psgdpr")', disclosure_helper)
+        self.assertNotIn('("customer_privacy", "psgdpr_consent_checkbox")', disclosure_helper)
         self.assertIn("checkbox.is_displayed()", disclosure_helper)
         self.assertIn("checkbox.is_enabled()", disclosure_helper)
         self.assertIn("if not checkbox.is_selected()", disclosure_helper)
