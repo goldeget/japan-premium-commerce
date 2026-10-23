@@ -227,49 +227,73 @@ def is_prestashop_admin_login_rejection(result: dict[str, object]) -> bool:
     return False
 
 
+def response_classification(result: object) -> str:
+    if not isinstance(result, dict):
+        return "unavailable"
+    if result.get("status") in (400, 401, 403):
+        return "http_rejection"
+    if result.get("bodyHasSettingsForm") is True and result.get("bodyHasDangerAlert") is True:
+        return "business_profile_error"
+    if is_prestashop_admin_login_rejection(result):
+        return "prestashop_admin_login"
+    return "unrecognized"
+
+
 def response_summary(result: object) -> str:
     if not isinstance(result, dict):
-        return "response=unavailable"
+        return "classification=unavailable; status=invalid; final_path=unavailable; settings_form=false; danger_alert=false; admin_login_form=false"
     response_url = result.get("responseUrl")
     final_path = "unavailable"
     if isinstance(response_url, str):
         try:
-            final_path = urlparse(response_url).path or "/"
+            final_path = re.sub(r"[^A-Za-z0-9/._-]", "?", urlparse(response_url).path or "/")[:160]
         except ValueError:
             final_path = "invalid"
+    status_value = result.get("status")
+    status_summary = (
+        str(status_value)
+        if isinstance(status_value, int) and not isinstance(status_value, bool)
+        else "invalid"
+    )
     return (
-        f"status={result.get('status')!r}; final_path={final_path!r}; "
+        f"classification={response_classification(result)}; status={status_summary}; final_path={final_path}; "
         f"settings_form={result.get('bodyHasSettingsForm') is True}; "
         f"danger_alert={result.get('bodyHasDangerAlert') is True}; "
         f"admin_login_form={result.get('bodyHasAdminLoginForm') is True}"
     )
 
 
+def raise_admin_security_response_failure(substage: str, result: object) -> None:
+    error = AssertionError("admin security response classification failed")
+    error.admin_security_substage = substage
+    error.admin_security_response = response_summary(result)
+    raise error
+
+
 def assert_security_attempt_rejected(result: object, mode: str) -> None:
-    summary = response_summary(result)
     if not isinstance(result, dict) or result.get("formPresent") is not True:
-        raise AssertionError(f"the isolated settings form was not available for the security attempt ({summary})")
+        raise_admin_security_response_failure("settings_form_missing", result)
     status = result.get("status")
     if not isinstance(status, int) or status < 200 or status >= 500:
-        raise AssertionError(f"the isolated admin security request did not receive a usable response ({summary})")
+        raise_admin_security_response_failure("response_status_unusable", result)
     if status == 404:
-        raise AssertionError(f"the admin security request did not reach a registered Back Office handler ({summary})")
+        raise_admin_security_response_failure("response_route_not_found", result)
 
     response_url = result.get("responseUrl")
     if not isinstance(response_url, str):
-        raise AssertionError(f"the admin security response did not identify its final route ({summary})")
+        raise_admin_security_response_failure("response_url_missing", result)
     try:
         response_location = urlparse(response_url)
         base_location = urlparse(BASE)
     except ValueError:
-        raise AssertionError(f"the admin security response did not identify a valid final route ({summary})") from None
+        raise_admin_security_response_failure("response_url_invalid", result)
     admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
     if (
         (response_location.scheme, response_location.hostname, response_location.port)
         != (base_location.scheme, base_location.hostname, base_location.port)
         or not response_location.path.startswith(admin_path + "/")
     ):
-        raise AssertionError(f"the admin security response left the isolated Back Office route ({summary})")
+        raise_admin_security_response_failure("response_route_out_of_scope", result)
 
     framework_rejection = status in {400, 401, 403}
     admin_page_rejection = (
@@ -278,17 +302,19 @@ def assert_security_attempt_rejected(result: object, mode: str) -> None:
     )
     login_gate_rejection = is_prestashop_admin_login_rejection(result)
     if mode == "view_only" and not framework_rejection and result.get("bodyHasViewOnlyDenial") is not True:
-        raise AssertionError(f"the valid-token employee request did not reach the view-only denial handler ({summary})")
+        raise_admin_security_response_failure("view_only_denial_missing", result)
     if mode in {"missing", "invalid"} and not (
         framework_rejection or admin_page_rejection or login_gate_rejection
     ):
-        raise AssertionError(f"the token rejection response was not recognized ({summary})")
+        raise_admin_security_response_failure(f"{mode}_token_rejection_unrecognized", result)
 
 
 def assert_draft_pointer_unchanged(driver: webdriver.Chrome, expected: str, label: str) -> None:
     actual = current_draft_pointer(driver)
     if actual != expected:
-        raise AssertionError(f"{label} changed the business profile draft version pointer")
+        error = AssertionError(f"{label} changed the business profile draft version pointer")
+        error.admin_security_state_check = "draft_pointer_mismatch"
+        raise error
 
 
 def assert_setting_unchanged(
@@ -302,7 +328,9 @@ def assert_setting_unchanged(
     visible(driver, "form.ordenowa-profile-settings")
     actual = current_setting(driver)
     if actual != expected:
-        raise AssertionError(f"{label} changed a saved Korean brand setting")
+        error = AssertionError(f"{label} changed a saved Korean brand setting")
+        error.admin_security_state_check = "setting_value_mismatch"
+        raise error
     assert_draft_pointer_unchanged(driver, expected_draft_pointer, label)
     driver.save_screenshot(str(DEST / f"admin-security-{label}.png"))
 
@@ -324,13 +352,33 @@ def verify_security_attempt_without_mutation(
     try:
         assert_setting_unchanged(driver, expected_value, expected_draft_pointer, label)
     except Exception as state_error:
-        if request_error is not None:
-            raise state_error from request_error
-        raise
+        failure = AssertionError("admin security no-mutation state recheck failed")
+        state_check = getattr(state_error, "admin_security_state_check", "state_recheck_failed")
+        if state_check not in {"setting_value_mismatch", "draft_pointer_mismatch"}:
+            state_check = "state_recheck_failed"
+        failure.admin_security_substage = state_check
+        failure.admin_security_request = (
+            f"failed:{type(request_error).__name__}" if request_error is not None else "completed"
+        )
+        failure.admin_security_state_recheck = f"failed:{type(state_error).__name__}"
+        failure.admin_security_response = "not_evaluated"
+        raise failure from state_error
 
     if request_error is not None:
-        raise request_error
-    assert_security_attempt_rejected(response, mode)
+        failure = AssertionError("admin security browser request failed")
+        failure.admin_security_substage = "request_execution"
+        failure.admin_security_request = f"failed:{type(request_error).__name__}"
+        failure.admin_security_state_recheck = "passed"
+        failure.admin_security_response = "not_evaluated"
+        raise failure from request_error
+    try:
+        assert_security_attempt_rejected(response, mode)
+    except Exception as error:
+        error.admin_security_request = "completed"
+        error.admin_security_state_recheck = "passed"
+        if not hasattr(error, "admin_security_response"):
+            error.admin_security_response = f"classification_error:{type(error).__name__}"
+        raise
 
 
 def new_driver() -> webdriver.Chrome:
@@ -425,8 +473,42 @@ def run() -> bool:
             error_type = "unexpected exception"
         print(f"FAIL: isolated admin security check at {stage} ({error_type})", file=sys.stderr)
         print(f"ORDENOWA_ADMIN_SECURITY_STAGE={stage}", file=sys.stderr)
+        diagnostic_substage = getattr(error, "admin_security_substage", None)
+        diagnostic_response = getattr(error, "admin_security_response", None)
+        diagnostic_request = getattr(error, "admin_security_request", None)
+        diagnostic_state = getattr(error, "admin_security_state_recheck", None)
+        safe_fields = []
+        safe_response = False
+        if isinstance(diagnostic_substage, str) and re.fullmatch(r"[a-z0-9_]+", diagnostic_substage):
+            safe_fields.append(f"substage={diagnostic_substage}")
+        if isinstance(diagnostic_request, str) and re.fullmatch(
+            r"(?:completed|failed:[A-Za-z][A-Za-z0-9]*)", diagnostic_request
+        ):
+            safe_fields.append(f"request={diagnostic_request}")
+        if isinstance(diagnostic_state, str) and re.fullmatch(
+            r"(?:passed|failed:[A-Za-z][A-Za-z0-9]*)", diagnostic_state
+        ):
+            safe_fields.append(f"state_recheck={diagnostic_state}")
+        if isinstance(diagnostic_response, str) and (
+            diagnostic_response == "not_evaluated"
+            or re.fullmatch(r"classification_error:[A-Za-z][A-Za-z0-9]*", diagnostic_response)
+            or re.fullmatch(
+                r"classification=[a-z_]+; status=(?:[0-9]{1,3}|invalid); final_path=[A-Za-z0-9/._?-]{1,160}; "
+                r"settings_form=(?:true|false); danger_alert=(?:true|false); admin_login_form=(?:true|false)",
+                diagnostic_response,
+            )
+        ):
+            safe_fields.append(f"response={diagnostic_response}")
+            safe_response = True
+        safe_diagnostic = f"; {'; '.join(safe_fields)}" if safe_fields else ""
+        if safe_fields:
+            print(f"ORDENOWA_ADMIN_SECURITY_DIAGNOSTIC={'; '.join(safe_fields)}", file=sys.stderr)
+        if isinstance(diagnostic_substage, str) and re.fullmatch(r"[a-z0-9_]+", diagnostic_substage):
+            print(f"ORDENOWA_ADMIN_SECURITY_SUBSTAGE={diagnostic_substage}", file=sys.stderr)
+        if safe_response:
+            print(f"ORDENOWA_ADMIN_SECURITY_RESPONSE={diagnostic_response}", file=sys.stderr)
         print(
-            f"::error title=ORDENOWA admin security browser QA::stage={stage}; exception={error_type}",
+            f"::error title=ORDENOWA admin security browser QA::stage={stage}; exception={error_type}{safe_diagnostic}",
             file=sys.stderr,
         )
     finally:

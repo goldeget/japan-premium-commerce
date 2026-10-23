@@ -6,6 +6,7 @@ from io import StringIO
 import ipaddress
 import os
 from pathlib import Path
+import re
 import sys
 import unittest
 from unittest.mock import patch
@@ -85,6 +86,15 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertIn("::error title=ORDENOWA admin security browser QA::", handler)
         self.assertIn("{stage}", handler)
         self.assertIn("{error_type}", handler)
+        self.assertIn("admin_security_substage", handler)
+        self.assertIn("admin_security_response", handler)
+        self.assertIn("admin_security_request", handler)
+        self.assertIn("admin_security_state_recheck", handler)
+        self.assertIn("substage={diagnostic_substage}", handler)
+        self.assertIn("setting_value_mismatch", source)
+        self.assertIn("draft_pointer_mismatch", source)
+        self.assertIn("ORDENOWA_ADMIN_SECURITY_SUBSTAGE=", handler)
+        self.assertIn("ORDENOWA_ADMIN_SECURITY_RESPONSE=", handler)
         self.assertNotIn("str(error)", handler)
         self.assertNotIn("{error}", handler)
 
@@ -200,6 +210,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
 
     def test_admin_security_rejects_only_the_specific_prestashop_login_gate_page(self):
         namespace: dict[str, object] = {
+            "re": re,
             "urlparse": urlparse,
             "parse_qs": parse_qs,
             "BASE": "http://localhost:18080",
@@ -240,6 +251,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
 
     def test_admin_security_response_classifier_preserves_explicit_rejections_only(self):
         namespace: dict[str, object] = {
+            "re": re,
             "urlparse": urlparse,
             "parse_qs": parse_qs,
             "BASE": "http://localhost:18080",
@@ -249,6 +261,16 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         namespace["is_prestashop_admin_login_rejection"] = load_function(
             ADMIN_FLOW,
             "is_prestashop_admin_login_rejection",
+            namespace,
+        )
+        namespace["response_classification"] = load_function(
+            ADMIN_FLOW,
+            "response_classification",
+            namespace,
+        )
+        namespace["raise_admin_security_response_failure"] = load_function(
+            ADMIN_FLOW,
+            "raise_admin_security_response_failure",
             namespace,
         )
         assert_rejected = load_function(
@@ -328,37 +350,68 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         }
         with self.assertRaises(AssertionError) as failure:
             assert_rejected(secret_redirect, "missing")
-        self.assertIn("final_path='/admin-kuranea/index.php'", str(failure.exception))
-        self.assertNotIn("private-token", str(failure.exception))
+        self.assertEqual(
+            failure.exception.admin_security_substage,
+            "missing_token_rejection_unrecognized",
+        )
+        self.assertIn("classification=unrecognized", failure.exception.admin_security_response)
+        self.assertIn("final_path=/admin-kuranea/index.php", failure.exception.admin_security_response)
+        self.assertNotIn("private-token", failure.exception.admin_security_response)
 
     def test_admin_security_attempt_rechecks_state_before_classifying_a_rejection(self):
         events: list[str] = []
+
+        def reject_unrecognized_response(response, mode):
+            events.append("classification")
+            error = AssertionError("unrecognized response")
+            error.admin_security_substage = "missing_token_rejection_unrecognized"
+            error.admin_security_response = "classification=unrecognized; status=200; final_path=/admin-kuranea/home; settings_form=false; danger_alert=false; admin_login_form=false"
+            raise error
+
         namespace: dict[str, object] = {
             "webdriver": type("WebDriverTypes", (), {"Chrome": object}),
             "submit_settings_attempt": lambda driver, mode: events.append("request") or {"status": 200},
             "assert_setting_unchanged": lambda driver, value, pointer, label: events.append("state"),
-            "assert_security_attempt_rejected": lambda response, mode: (
-                events.append("classification") or (_ for _ in ()).throw(AssertionError("unrecognized response"))
-            ),
+            "assert_security_attempt_rejected": reject_unrecognized_response,
         }
         verify_attempt = load_function(
             ADMIN_FLOW,
             "verify_security_attempt_without_mutation",
             namespace,
         )
-        with self.assertRaisesRegex(AssertionError, "unrecognized response"):
+        with self.assertRaisesRegex(AssertionError, "unrecognized response") as response_failure:
             verify_attempt(object(), "missing", "original", "17", "missing-token")
         self.assertEqual(events, ["request", "state", "classification"])
+        self.assertEqual(response_failure.exception.admin_security_request, "completed")
+        self.assertEqual(response_failure.exception.admin_security_state_recheck, "passed")
+
+        events.clear()
+        namespace["submit_settings_attempt"] = lambda driver, mode: events.append("request") or {"status": 200}
+        namespace["assert_setting_unchanged"] = lambda driver, value, pointer, label: (
+            events.append("state") or (_ for _ in ()).throw(AssertionError("private setting value"))
+        )
+        with self.assertRaises(AssertionError) as state_failure:
+            verify_attempt(object(), "missing", "original", "17", "missing-token")
+        self.assertEqual(events, ["request", "state"])
+        self.assertEqual(state_failure.exception.admin_security_substage, "state_recheck_failed")
+        self.assertEqual(state_failure.exception.admin_security_request, "completed")
+        self.assertEqual(state_failure.exception.admin_security_state_recheck, "failed:AssertionError")
+        self.assertEqual(state_failure.exception.admin_security_response, "not_evaluated")
+        self.assertNotIn("private setting value", str(state_failure.exception))
 
         events.clear()
         namespace["assert_setting_unchanged"] = lambda driver, value, pointer, label: events.append("state")
         namespace["assert_security_attempt_rejected"] = lambda response, mode: events.append("classification")
-        with self.assertRaisesRegex(RuntimeError, "browser request failed"):
+        with self.assertRaises(AssertionError) as request_failure:
             namespace["submit_settings_attempt"] = lambda driver, mode: (
                 events.append("request") or (_ for _ in ()).throw(RuntimeError("browser request failed"))
             )
             verify_attempt(object(), "missing", "original", "17", "missing-token")
         self.assertEqual(events, ["request", "state"])
+        self.assertEqual(request_failure.exception.admin_security_substage, "request_execution")
+        self.assertEqual(request_failure.exception.admin_security_request, "failed:RuntimeError")
+        self.assertEqual(request_failure.exception.admin_security_state_recheck, "passed")
+        self.assertEqual(request_failure.exception.admin_security_response, "not_evaluated")
 
     def test_security_fixtures_create_read_only_admin_and_two_disposable_customers(self):
         self.assertTrue(FIXTURE.is_file(), "the isolated security fixture seeder is missing")
