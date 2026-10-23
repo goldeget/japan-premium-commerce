@@ -293,6 +293,9 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             "getenv('DB_SERVER') === 'mariadb'",
             "getenv('DB_PORT') === '3306'",
             "'prestashop'",
+            "set_exception_handler",
+            "ORDENOWA isolated carrier access fixture",
+            "$carrierAccessStage = 'load_ci_employee'",
             "Tab::getIdFromClassName('AdminCarriers')",
             "'view' => 'READ'",
             "'add' => 'CREATE'",
@@ -303,7 +306,13 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             with self.subTest(marker=marker):
                 self.assertIn(marker, source)
         self.assertNotIn("'delete' =>", source)
-        self.assertIn('shipping-free-admin-access.json', WORKFLOW.read_text(encoding="utf-8"))
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        access_step = workflow.split(
+            "- name: Grant isolated CI administrator the native AdminCarriers create permissions", 1
+        )[1].split("- name:", 1)[0]
+        self.assertIn('cat "$fixture_log"', access_step)
+        self.assertIn('fixture_status=0', access_step)
+        self.assertIn('shipping-free-admin-access.json', workflow)
 
     def test_checkout_tax_classifier_does_not_count_tax_inclusive_grand_total_as_tax(self) -> None:
         source = ast.parse(BROWSER.read_text(encoding="utf-8"))

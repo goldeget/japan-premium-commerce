@@ -1047,6 +1047,7 @@ jobs:
             < tests/postcode/prepare_ci_carrier_admin_access.php
           fixture_json="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-admin-access.json"
           fixture_log="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-admin-access.log"
+          fixture_status=0
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
             -e CI=true \
             -e GITHUB_ACTIONS=true \
@@ -1057,8 +1058,12 @@ jobs:
             -e ADMIN_MAIL="$ADMIN_MAIL" \
             prestashop runuser -g www-data -u www-data -- \
             php /tmp/prepare_ci_carrier_admin_access.php \
-            > "$fixture_json" 2> "$fixture_log"
+            > "$fixture_json" 2> "$fixture_log" || fixture_status=$?
           cat "$fixture_log"
+          if ((fixture_status != 0)); then
+            echo "::error title=ORDENOWA isolated carrier access fixture::Exited with code $fixture_status; see the stage diagnostic above."
+            exit "$fixture_status"
+          fi
           python3 - "$fixture_json" <<'PY'
           import json, sys
           fixture = json.load(open(sys.argv[1], encoding="utf-8"))

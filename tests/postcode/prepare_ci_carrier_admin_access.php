@@ -5,9 +5,21 @@ declare(strict_types=1);
 function requireCarrierAdminFixture(bool $condition, string $message): void
 {
     if (!$condition) {
+        global $carrierAccessFailureReason;
+        $carrierAccessFailureReason = $message;
         throw new RuntimeException($message);
     }
 }
+
+$carrierAccessStage = 'run_scope';
+$carrierAccessFailureReason = '';
+set_exception_handler(static function (Throwable $exception) use (&$carrierAccessStage, &$carrierAccessFailureReason): void {
+    $stage = preg_replace('/[^a-z0-9_]/i', '', $carrierAccessStage) ?: 'unknown';
+    $reason = $carrierAccessFailureReason !== '' ? $carrierAccessFailureReason : get_class($exception);
+    $safeReason = preg_replace('/[^A-Za-z0-9 .:_-]/', '', $reason) ?: get_class($exception);
+    fwrite(STDERR, '::error title=ORDENOWA isolated carrier access fixture::stage=' . $stage . '; reason=' . $safeReason . PHP_EOL);
+    exit(1);
+});
 
 $runId = trim((string) getenv('GITHUB_RUN_ID'));
 $runAttempt = trim((string) getenv('GITHUB_RUN_ATTEMPT'));
@@ -28,8 +40,10 @@ $_SERVER['HTTP_HOST'] = trim((string) getenv('PS_DOMAIN')) ?: 'localhost:8080';
 $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/index.php';
 $_SERVER['SERVER_PORT'] = (string) (parse_url('http://' . $_SERVER['HTTP_HOST'], PHP_URL_PORT) ?: 80);
+$carrierAccessStage = 'bootstrap_prestashop';
 require_once '/var/www/html/config/config.inc.php';
 
+$carrierAccessStage = 'verify_database_scope';
 $dbServer = defined('_DB_SERVER_') ? (string) _DB_SERVER_ : '';
 $dbServerMatches = in_array($dbServer, ['mariadb', 'mariadb:3306'], true)
     && getenv('DB_SERVER') === 'mariadb'
@@ -42,6 +56,7 @@ requireCarrierAdminFixture(
     'Carrier admin permission setup refused a database outside the isolated CI Compose checkout.'
 );
 
+$carrierAccessStage = 'load_ci_employee';
 $adminEmail = trim((string) getenv('ADMIN_MAIL'));
 $admin = new Employee();
 requireCarrierAdminFixture(
@@ -51,6 +66,7 @@ requireCarrierAdminFixture(
     'The isolated CI administrator profile could not be loaded.'
 );
 
+$carrierAccessStage = 'load_admin_carriers_tab';
 $carrierTabId = (int) Tab::getIdFromClassName('AdminCarriers');
 requireCarrierAdminFixture($carrierTabId > 0, 'The native AdminCarriers tab is missing.');
 $access = new Access();
@@ -60,6 +76,7 @@ $permissions = [
     'edit' => 'UPDATE',
 ];
 foreach ($permissions as $legacyPermission => $authorization) {
+    $carrierAccessStage = 'grant_' . strtolower($authorization);
     $role = \PrestaShop\PrestaShop\Core\Security\Permission::PREFIX_TAB
         . strtoupper('AdminCarriers') . '_' . $authorization;
     if (!Access::isGranted($role, (int) $admin->id_profile)) {
@@ -74,6 +91,7 @@ foreach ($permissions as $legacyPermission => $authorization) {
     );
 }
 
+$carrierAccessStage = 'emit_result';
 echo json_encode([
     'admin_profile_id' => (int) $admin->id_profile,
     'carrier_tab_id' => $carrierTabId,
