@@ -149,7 +149,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("def assert_my_page", account_flow)
         my_page = account_flow.split("def assert_my_page", 1)[1].split("def prepare_required_registration_fields", 1)[0]
         logout = account_flow.split("def logout", 1)[1].split("def run_viewport", 1)[0]
-        self.assertEqual(account_flow.count("        assert_my_page(driver,"), 4)
+        self.assertEqual(account_flow.count("        assert_my_page(driver,"), 5)
         for selector in ("identity_main_link", "signout_link"):
             self.assertIn(selector, my_page)
         self.assertIn("expected_first_name", my_page)
@@ -216,7 +216,8 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         brand_flow = brand_flow_path.read_text(encoding="utf-8")
         self.assertIn("Verify official ORDENOWA brand upload and publish in Chromium", workflow)
         self.assertIn("tests/e2e/verify_brand_admin_browser.py", workflow)
-        self.assertEqual(workflow.count("ADMIN_MAIL: ci-ordenowa@example.invalid"), 5)
+        brand_step = workflow.split("- name: Verify official ORDENOWA brand upload and publish in Chromium", 1)[1].split("- name:", 1)[0]
+        self.assertIn("ADMIN_MAIL: ci-ordenowa@example.invalid", brand_step)
         self.assertIn("ADMIN_MAIL=ci-ordenowa@example.invalid", workflow)
         self.assertNotIn("ci-kuranea@example.invalid", workflow)
         self.assertIn("ADMIN_PASSWD: Ci-Only-Admin-Password-92!", workflow)
@@ -810,7 +811,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertLess(postcode, address)
         self.assertLess(address, order)
         self.assertLess(order, official)
-        self.assertIn("ISOLATED CI FIXTURE:", workflow)
+        self.assertIn("ISOLATED CI FIXTURES:", workflow)
         self.assertIn("Verify official Japan Post import contains national address data", workflow)
         self.assertIn("ps_kuraneapostcode_address", workflow)
 

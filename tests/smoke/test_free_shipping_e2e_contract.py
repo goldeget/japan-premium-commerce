@@ -1,0 +1,233 @@
+"""Keep isolated browser checkout QA aligned with the approved free-shipping policy."""
+from __future__ import annotations
+
+import unittest
+import ast
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+WORKFLOW = ROOT / ".github/workflows/fresh-install.yml"
+BROWSER = ROOT / "tests/e2e/verify_ci_free_shipping_browser.py"
+ORDER_VERIFY = ROOT / "tests/postcode/verify_ci_free_shipping_order.php"
+COUPON_FIXTURE = ROOT / "tests/postcode/seed_ci_shipping_coupon.php"
+JAPAN_ZONE_FIXTURE = ROOT / "tests/postcode/prepare_ci_japan_shipping_zone.php"
+
+
+class FreeShippingE2eContractTest(unittest.TestCase):
+    def test_workflow_saves_and_reloads_free_carrier_before_checkout_and_order_checks(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        steps = (
+            "Prepare isolated free-shipping order and coupon fixtures",
+            "Configure the free Japan carrier through Chromium AdminCarriers",
+            "Restart PrestaShop with the CI database volume intact",
+            "Read back the free Japan carrier after a fresh admin login",
+            "Verify zero shipping in Tokyo coupon and quantity checkout with Chromium",
+            "Verify zero shipping in Osaka mobile checkout with Chromium",
+            "Verify free-shipping orders and totals in the isolated database",
+            "Verify free-shipping orders in a separate admin browser session",
+        )
+        positions = [workflow.index(f"- name: {step}") for step in steps]
+        self.assertEqual(positions, sorted(positions))
+
+        for step_id in (
+            "shipping_free_fixture",
+            "shipping_free_admin_configure",
+            "shipping_free_restart",
+            "shipping_free_admin_readback",
+            "shipping_free_customer_browser_qa",
+            "shipping_free_osaka_mobile_browser_qa",
+            "shipping_free_order_persistence",
+            "shipping_free_admin_browser_qa",
+        ):
+            self.assertIn(f"id: {step_id}", workflow)
+
+        restart_step = workflow.split("- name: Restart PrestaShop with the CI database volume intact", 1)[1].split("- name:", 1)[0]
+        self.assertIn('docker compose -p "$CI_COMPOSE_PROJECT_NAME" restart prestashop', restart_step)
+        self.assertNotIn("tests/fixtures/ci-checkout.compose.yaml", restart_step)
+        for mode in ("configure", "readback", "customer", "osaka-mobile", "admin"):
+            self.assertIn(f"verify_ci_free_shipping_browser.py {mode}", workflow)
+        self.assertIn("verify_ci_free_shipping_order.php", workflow)
+        self.assertIn("seed_ci_shipping_coupon.php", workflow)
+        self.assertIn("CI_JAPAN_ZONE_ID", workflow)
+        self.assertIn("CI_TEST_PRODUCT_TAX_GROUP", workflow)
+        self.assertIn("prepare_ci_japan_shipping_zone.php", workflow)
+        self.assertIn("5300001", workflow)
+        self.assertIn('[ "$product_tax_group_id" != "0" ]', workflow)
+        self.assertIn('[ "$product_id" != "$expected_product_id" ]', workflow)
+        self.assertIn('[ "$product_tax_group_id" != "$expected_tax_group_id" ]', workflow)
+        self.assertNotIn('|| "$product_tax_group_id" !=', workflow)
+        self.assertNotIn('|| "$product_id" !=', workflow)
+
+    def test_browser_only_sets_free_japan_shipping_and_reconciles_customer_views(self) -> None:
+        self.assertTrue(BROWSER.is_file(), "free-shipping browser QA must be implemented")
+        browser = BROWSER.read_text(encoding="utf-8")
+        for marker in (
+            "def configure_free_carrier",
+            "def readback_free_carrier",
+            "def run_japan_customer_checkout",
+            "def run_japan_mobile_osaka_checkout",
+            "def run_free_carrier_admin_order_view",
+            "carrier[shipping_settings][is_free]",
+            "carrier_shipping_settings_zones",
+            "def _assert_free_carrier_form",
+            "#quantity_wanted",
+            "cart-subtotal-shipping",
+            "order-history__cell--total",
+            "CI_COUPON_CODE",
+            "5300001",
+            "total_tax_incl",
+            "coupon_condition",
+            "save_screenshot",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, browser)
+
+        self.assertNotIn("ShippingMethod.BY_PRICE", browser)
+        self.assertNotIn("ShippingMethod.BY_WEIGHT", browser)
+        self.assertNotIn("js-add-carrier-ranges-btn", browser)
+        self.assertNotIn("_set_tax_rule_to_no_tax", browser)
+        self.assertNotIn("EXPECTED_QUANTITY", browser)
+        self.assertIn("BLOCKED: no run-scoped disposable coupon fixture was supplied", browser)
+        self.assertIn("selected zones were", browser)
+
+    def test_checkout_tax_classifier_does_not_count_tax_inclusive_grand_total_as_tax(self) -> None:
+        source = ast.parse(BROWSER.read_text(encoding="utf-8"))
+        classifier = next(
+            node for node in source.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_is_tax_summary_label"
+        )
+        isolated = ast.Module(body=[classifier], type_ignores=[])
+        namespace: dict[str, object] = {}
+        exec(compile(ast.fix_missing_locations(isolated), str(BROWSER), "exec"), namespace)
+        is_tax_summary_label = namespace["_is_tax_summary_label"]
+
+        for label in ("Total (tax incl.)", "Total tax included", "合計 (税込)", "総計 税込"):
+            with self.subTest(label=label):
+                self.assertFalse(is_tax_summary_label(label), label)
+        for label in ("Taxes", "Tax", "税", "消費税"):
+            with self.subTest(label=label):
+                self.assertTrue(is_tax_summary_label(label), label)
+
+    def test_admin_order_view_reconciles_tokyo_osaka_and_taxable_orders(self) -> None:
+        browser = BROWSER.read_text(encoding="utf-8")
+        admin_view = browser.split("def run_free_carrier_admin_order_view", 1)[1].split(
+            "def _emit_failure", 1
+        )[0]
+        for marker in (
+            "shipping-free-mobile-order.json",
+            "shipping-free-taxable-order.json",
+            "for order_kind, order_path in order_paths",
+            "#orderProductsTotal",
+            "#orderShippingTotal",
+            "#orderTaxesTotal",
+            "#orderTotal",
+            "#shipping-grid-table .carrier-price",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, admin_view)
+
+    def test_order_verifier_reconciles_browser_and_native_amounts_without_changing_tax(self) -> None:
+        self.assertTrue(ORDER_VERIFY.is_file(), "free-shipping order verifier must be implemented")
+        verifier = ORDER_VERIFY.read_text(encoding="utf-8")
+        for marker in (
+            "KURANEA_ISOLATED_CI",
+            "KURANEA_CI_ORDER_ID",
+            "KURANEA_CI_CARRIER_ID",
+            "total_products_tax_excl",
+            "total_products_tax_incl",
+            "total_shipping_tax_excl",
+            "total_shipping_tax_incl",
+            "total_paid_tax_excl",
+            "total_paid_tax_incl",
+            "total_paid_real",
+            "product_shop",
+            "id_tax_rules_group",
+            "order_detail",
+            "browser_checkout",
+            "product_quantity",
+            "platform fee",
+            "tax_fixture_scope",
+            "expectedStateIso",
+            "carrier_zone_country_codes",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, verifier)
+        self.assertNotIn("id_tax_rules_group = 0", verifier)
+        self.assertIn("$order->total_products", verifier)
+        self.assertIn("$order->total_products_wt", verifier)
+        self.assertNotIn("$order->total_products_tax_excl", verifier)
+        self.assertNotIn("$order->total_products_tax_incl", verifier)
+        self.assertNotIn("Configuration::updateValue", verifier)
+
+    def test_free_shipping_outcomes_are_aggregated_and_required_artifacts_are_gated(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        artifact_gate = workflow.split("- name: Verify browser QA screenshot coverage", 1)[1].split(
+            "- name:", 1
+        )[0]
+        aggregate = workflow.split("- name: Aggregate browser QA and postal verification failures", 1)[1].split(
+            "- name:", 1
+        )[0]
+
+        shipping_ids = (
+            "shipping_free_fixture",
+            "shipping_free_admin_configure",
+            "shipping_free_restart",
+            "shipping_free_admin_readback",
+            "shipping_free_customer_browser_qa",
+            "shipping_free_osaka_mobile_browser_qa",
+            "shipping_free_order_persistence",
+            "shipping_free_admin_browser_qa",
+        )
+        for step_id in shipping_ids:
+            variable = step_id.upper() + "_OUTCOME"
+            with self.subTest(step_id=step_id):
+                self.assertIn(f"steps.{step_id}.outcome", artifact_gate)
+                self.assertIn(variable, artifact_gate)
+                self.assertIn(f"steps.{step_id}.outcome", aggregate)
+                self.assertIn(f'"{step_id}=${variable}"', aggregate)
+
+        for artifact in (
+            "shipping-free-tokyo-coupon-checkout-e2e.log",
+            "shipping-free-osaka-mobile-checkout-e2e.log",
+            "shipping-free-order-admin-tokyo-desktop.png",
+            "shipping-free-order-admin-osaka-desktop.png",
+            "shipping-free-order-admin-taxable-desktop.png",
+            "shipping-free-order-admin-mobile.png",
+        ):
+            self.assertIn(artifact, artifact_gate)
+
+    def test_japan_zone_fixture_is_disposable_and_contains_japan_only(self) -> None:
+        self.assertTrue(JAPAN_ZONE_FIXTURE.is_file(), "Japan-only shipping zone fixture must be implemented")
+        fixture = JAPAN_ZONE_FIXTURE.read_text(encoding="utf-8")
+        for marker in (
+            "KURANEA_ISOLATED_CI",
+            "kuranea-ci-",
+            "ORDENOWA CI Japan",
+            "WHERE `name` = \"' . pSQL($zoneName)",
+            "countryCodes !== ['JP']",
+            " . _DB_PREFIX_ . 'state`",
+            "`id_country` = ",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, fixture)
+
+    def test_coupon_fixture_is_run_scoped_and_does_not_enable_free_shipping(self) -> None:
+        self.assertTrue(COUPON_FIXTURE.is_file(), "isolated CI coupon fixture must be implemented")
+        coupon = COUPON_FIXTURE.read_text(encoding="utf-8")
+        for marker in (
+            "KURANEA_ISOLATED_CI",
+            "GITHUB_RUN_ID",
+            "GITHUB_RUN_ATTEMPT",
+            "ORDENOWACI",
+            "quantity_per_user",
+            "reduction_percent",
+            "free_shipping = 0",
+            "Disposable isolated CI checkout fixture",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, coupon)
+
+
+if __name__ == "__main__":
+    unittest.main()

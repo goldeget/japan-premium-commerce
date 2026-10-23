@@ -1,0 +1,271 @@
+"""Behavior checks for the public service worker's navigation policy."""
+from __future__ import annotations
+
+import ast
+import json
+import os
+import shutil
+import subprocess
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from tests.e2e.verify_pwa_browser import (
+    exposes_test_identity,
+    manifest_installability_issues,
+    response_has_private_cache_policy,
+    same_origin,
+    validate_isolated_ci_target,
+)
+
+
+ROOT = Path(__file__).resolve().parents[2]
+WORKER = ROOT / "themes" / "kuranea" / "assets" / "sw.js"
+PWA_BROWSER = ROOT / "tests" / "e2e" / "verify_pwa_browser.py"
+
+
+def function_source(source: str, function_name: str) -> str:
+    """Return one top-level function for focused browser-flow contract checks."""
+    lines = source.splitlines(keepends=True)
+    function = next(
+        node
+        for node in ast.parse(source).body
+        if isinstance(node, ast.FunctionDef) and node.name == function_name
+    )
+    return "".join(lines[function.lineno - 1 : function.end_lineno])
+
+
+NODE_HARNESS = r"""
+const fs = require('node:fs');
+const vm = require('node:vm');
+const config = JSON.parse(process.argv[2]);
+const listeners = {};
+let fetchCalls = 0;
+let cacheOpenCalls = 0;
+let responsePromise = null;
+const self = {
+  addEventListener: (name, callback) => { listeners[name] = callback; },
+  clients: {claim: async () => {}},
+  navigator: {language: 'en-US'},
+  skipWaiting: async () => {},
+};
+const fetch = async () => {
+  fetchCalls += 1;
+  if (config.offline) throw new TypeError('offline');
+  return new Response('online response', {status: 200});
+};
+const caches = {open: async () => { cacheOpenCalls += 1; throw new Error('cache must not be opened'); }};
+vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {self, fetch, Response, caches});
+const request = {
+  method: config.method,
+  mode: config.mode,
+  headers: {get: name => name === 'Accept-Language' ? config.language : null},
+};
+listeners.fetch({request, respondWith: promise => { responsePromise = promise; }});
+(async () => {
+  let response = null;
+  let body = '';
+  if (responsePromise) {
+    response = await responsePromise;
+    body = await response.text();
+  }
+  process.stdout.write(JSON.stringify({
+    intercepted: responsePromise !== null,
+    status: response?.status ?? null,
+    cacheControl: response?.headers.get('Cache-Control') ?? null,
+    body,
+    fetchCalls,
+    cacheOpenCalls,
+  }));
+})().catch(error => { console.error(error); process.exitCode = 1; });
+"""
+
+
+class PublicServiceWorkerBehaviorTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.node = shutil.which("node")
+
+    def run_worker(self, **config: object) -> dict[str, object]:
+        if self.node is None:
+            self.skipTest("Node.js is required to execute the service-worker behavior test")
+        result = subprocess.run(
+            [
+                self.node,
+                "-e",
+                NODE_HARNESS,
+                str(WORKER),
+                json.dumps(config),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_offline_navigation_returns_localized_no_store_fallback(self) -> None:
+        result = self.run_worker(
+            method="GET", mode="navigate", offline=True, language="ko-KR,ko;q=0.9"
+        )
+
+        self.assertIs(result["intercepted"], True)
+        self.assertEqual(503, result["status"])
+        self.assertEqual("no-store", result["cacheControl"])
+        self.assertIn('<html lang="ko">', result["body"])
+        self.assertIn("연결을 확인해 주세요", result["body"])
+        self.assertEqual(0, result["cacheOpenCalls"])
+
+    def test_online_navigation_keeps_the_network_response_without_opening_cache(self) -> None:
+        result = self.run_worker(
+            method="GET", mode="navigate", offline=False, language="ja-JP"
+        )
+
+        self.assertIs(result["intercepted"], True)
+        self.assertEqual(200, result["status"])
+        self.assertEqual("online response", result["body"])
+        self.assertEqual(0, result["cacheOpenCalls"])
+
+    def test_non_navigation_and_non_get_requests_are_left_to_the_browser(self) -> None:
+        for method, mode in (("GET", "cors"), ("POST", "navigate")):
+            with self.subTest(method=method, mode=mode):
+                result = self.run_worker(
+                    method=method, mode=mode, offline=True, language="en-US"
+                )
+
+                self.assertIs(result["intercepted"], False)
+                self.assertEqual(0, result["fetchCalls"])
+                self.assertEqual(0, result["cacheOpenCalls"])
+
+
+class PwaInstallabilityContractTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.base_url = "http://localhost:18080/store/"
+        self.manifest = {
+            "id": "/store/",
+            "name": "ORDENOWA",
+            "start_url": "/store/",
+            "scope": "/store/",
+            "display": "standalone",
+            "icons": [
+                {"src": "/store/icon-192.png", "sizes": "192x192", "purpose": "any"},
+                {"src": "/store/icon-512.png", "sizes": "512x512", "purpose": "any"},
+                {"src": "/store/icon-maskable.png", "sizes": "512x512", "purpose": "maskable"},
+            ],
+        }
+
+    def test_secure_scoped_manifest_with_standard_and_maskable_icons_is_installable(self) -> None:
+        issues = manifest_installability_issues(self.manifest, self.base_url, True)
+
+        self.assertEqual([], issues)
+
+    def test_insecure_context_is_not_reported_as_installable(self) -> None:
+        issues = manifest_installability_issues(self.manifest, "http://shop.example/", False)
+
+        self.assertIn("page is not a secure context", issues)
+
+    def test_mismatched_scope_and_missing_maskable_icon_are_reported(self) -> None:
+        broken = {**self.manifest, "scope": "/"}
+        broken["icons"] = self.manifest["icons"][:2]
+
+        issues = manifest_installability_issues(broken, self.base_url, True)
+
+        self.assertTrue(any("scope" in issue for issue in issues))
+        self.assertIn("manifest is missing a 512x512 maskable icon", issues)
+
+    def test_generated_links_must_match_the_full_origin(self) -> None:
+        self.assertTrue(same_origin("https://shop.example/store/", "https://shop.example/login"))
+        self.assertFalse(same_origin("https://shop.example/store/", "http://shop.example/login"))
+        self.assertFalse(same_origin("https://shop.example/store/", "https://other.example/login"))
+
+    def test_private_document_responses_require_private_or_no_store_cache_control(self) -> None:
+        self.assertTrue(response_has_private_cache_policy({"Cache-Control": "private, max-age=60"}))
+        self.assertTrue(response_has_private_cache_policy({"cache-control": "no-store"}))
+        self.assertFalse(response_has_private_cache_policy({"Pragma": "no-cache", "Expires": "0"}))
+        self.assertFalse(response_has_private_cache_policy({}))
+
+    def test_logout_history_check_detects_either_name_or_email(self) -> None:
+        self.assertTrue(exposes_test_identity("Hello Pwa", "Pwa", "Session", "qa@example.invalid"))
+        self.assertTrue(exposes_test_identity("Session", "Pwa", "Session", "qa@example.invalid"))
+        self.assertTrue(exposes_test_identity("qa@example.invalid", "Pwa", "Session", "qa@example.invalid"))
+        self.assertFalse(exposes_test_identity("Sign in", "Pwa", "Session", "qa@example.invalid"))
+
+
+class PwaBrowserLifecycleContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.source = PWA_BROWSER.read_text(encoding="utf-8")
+
+    def test_account_route_comes_from_authenticated_header_and_all_links_check_full_origin(self) -> None:
+        create_customer = function_source(self.source, "create_session_customer")
+        account_link = function_source(self.source, "authenticated_account_url")
+
+        self.assertIn("if not same_origin(base_url, signin_url):", create_customer)
+        self.assertIn("if not same_origin(base_url, registration_url):", create_customer)
+        self.assertIn("account_url = authenticated_account_url(driver, base_url)", create_customer)
+        self.assertIn('div.dropdown-menu[aria-labelledby="userMenuButton"] a[href]', account_link)
+        self.assertIn("if not same_origin(base_url, account_url):", account_link)
+
+    def test_logout_and_history_require_login_form_and_check_both_test_names(self) -> None:
+        logout = function_source(self.source, "verify_logout_protection")
+        identity_check = function_source(self.source, "exposes_test_identity")
+        viewport = function_source(self.source, "run_viewport")
+
+        self.assertIn('wait_visible(driver, "#login-form input[name=\'email\']")', logout)
+        self.assertIn("for _ in range(2):", logout)
+        self.assertGreaterEqual(logout.count("exposes_test_identity(body_text, first_name, last_name, email)"), 2)
+        self.assertIn("for name in (first_name, last_name):", identity_check)
+        self.assertIn('"Pwa",\n                "Session",', viewport)
+
+    def test_private_routes_fail_closed_when_document_cache_headers_are_unavailable(self) -> None:
+        matcher = function_source(self.source, "matching_document_responses")
+        cache_check = function_source(self.source, "assert_private_document_cache_headers")
+        navigate = function_source(self.source, "navigate_private_document")
+        viewport = function_source(self.source, "run_viewport")
+
+        self.assertIn('driver.get_log("performance")', matcher)
+        self.assertIn("UNVERIFIED: document cache headers could not be observed", cache_check)
+        self.assertIn("response_has_private_cache_policy(headers)", cache_check)
+        self.assertIn('("authenticated cart",', viewport)
+        self.assertIn('("authenticated order",', viewport)
+        self.assertIn("assert_private_document_cache_headers(driver, requested_url, shop_url, route_label)", navigate)
+        self.assertNotIn("pwa-{label}-failure.png", self.source)
+        self.assertNotIn("print(body_text", self.source)
+
+    def test_pwa_customer_creation_requires_exact_run_scoped_ci_shop_before_chromium(self) -> None:
+        main = function_source(self.source, "main")
+        self.assertIn("validate_isolated_ci_target(base_url)", main)
+        self.assertLess(main.index("validate_isolated_ci_target(base_url)"), main.index("run_viewport("))
+
+        valid = {
+            "CI": "true",
+            "GITHUB_ACTIONS": "true",
+            "KURANEA_ISOLATED_CI": "1",
+            "GITHUB_RUN_ID": "123456789",
+            "GITHUB_RUN_ATTEMPT": "2",
+            "CI_COMPOSE_PROJECT_NAME": "kuranea-ci-123456789-2",
+        }
+        with patch.dict(os.environ, valid, clear=False):
+            validate_isolated_ci_target("http://localhost:18080")
+            for base_url in (
+                "http://localhost:18081",
+                "http://shop.example:18080",
+                "https://localhost:18080",
+                "http://localhost:18080/store/?target=elsewhere",
+            ):
+                with self.subTest(base_url=base_url), self.assertRaises(ValueError):
+                    validate_isolated_ci_target(base_url)
+
+            for key, value in (
+                ("CI", "false"),
+                ("GITHUB_ACTIONS", "false"),
+                ("KURANEA_ISOLATED_CI", "0"),
+                ("GITHUB_RUN_ID", "123x"),
+                ("GITHUB_RUN_ATTEMPT", "2 "),
+                ("CI_COMPOSE_PROJECT_NAME", "kuranea-ci-123456789-3"),
+            ):
+                with self.subTest(variable=key), patch.dict(os.environ, {key: value}), self.assertRaises(ValueError):
+                    validate_isolated_ci_target("http://localhost:18080")
+
+
+if __name__ == "__main__":
+    unittest.main()
