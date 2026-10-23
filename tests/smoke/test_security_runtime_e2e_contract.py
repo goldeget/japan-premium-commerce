@@ -30,6 +30,110 @@ def load_function(path: Path, function_name: str, namespace: dict[str, object]):
 
 
 class SecurityRuntimeE2EContractTests(unittest.TestCase):
+    def test_view_only_settings_route_uses_the_employee_current_same_origin_tokenized_page(self):
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+        self.assertIn("def current_profile_settings_url(", source)
+        self.assertIn("$employee->default_tab = (int) Tab::getIdFromClassName('AdminBusinessProfile');", FIXTURE.read_text(encoding="utf-8"))
+
+        namespace: dict[str, object] = {
+            "parse_qs": parse_qs,
+            "urlparse": urlparse,
+            "BASE": "http://localhost:18080",
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
+            "webdriver": type("Webdriver", (), {"Chrome": object}),
+        }
+        route_from_current_employee = load_function(
+            ADMIN_FLOW,
+            "current_profile_settings_url",
+            namespace,
+        )
+
+        class Driver:
+            current_url = (
+                "http://localhost:18080/admin-kuranea/index.php?"
+                "controller=AdminBusinessProfile&token=view-only-session-token"
+            )
+
+        self.assertEqual(
+            route_from_current_employee(Driver()),
+            Driver.current_url,
+        )
+        for rejected_url in (
+            "http://outside.example/admin-kuranea/index.php?controller=AdminBusinessProfile&token=secret",
+            "http://localhost:18080/admin-kuranea-evil/index.php?controller=AdminBusinessProfile&token=secret",
+            "http://localhost:18080/admin-kuranea/index.php?controller=AdminDashboard&token=secret",
+            "http://localhost:18080/admin-kuranea/index.php?controller=AdminBusinessProfile",
+        ):
+            with self.subTest(rejected_url=rejected_url):
+                Driver.current_url = rejected_url
+                with self.assertRaises(AssertionError) as failure:
+                    route_from_current_employee(Driver())
+                self.assertNotIn("secret", str(failure.exception))
+        run = source.split("def run()", 1)[1].split("\n\nif __name__", 1)[0]
+        self.assertIn("current_profile_settings_url(restricted_driver)", run)
+        self.assertNotIn("= settings_url(restricted_driver)", run)
+
+    def test_view_only_post_login_state_reports_bounded_markers_without_urls_or_tokens(self):
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+        self.assertIn("def safe_admin_navigation_state(", source)
+        namespace: dict[str, object] = {
+            "parse_qs": parse_qs,
+            "urlparse": urlparse,
+            "BASE": "http://localhost:18080",
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
+            "By": type("By", (), {"CSS_SELECTOR": "css selector"}),
+            "webdriver": type("Webdriver", (), {"Chrome": object}),
+        }
+        load_function(ADMIN_FLOW, "_admin_controller_for_url", namespace)
+        navigation_state = load_function(ADMIN_FLOW, "safe_admin_navigation_state", namespace)
+
+        class Link:
+            def __init__(self, href: str) -> None:
+                self.href = href
+
+            def get_attribute(self, name: str) -> str | None:
+                return self.href if name == "href" else None
+
+        class Driver:
+            current_url = (
+                "http://localhost:18080/admin-kuranea/index.php?"
+                "controller=AdminBusinessProfile&token=private-route-token"
+            )
+
+            def find_elements(self, by: str, selector: str) -> list[Link]:
+                if selector == "#login_form":
+                    return []
+                if selector == 'a[href*="controller=AdminBusinessProfile"]':
+                    return [
+                        Link(
+                            "http://localhost:18080/admin-kuranea/index.php?"
+                            "controller=AdminBusinessProfile&token=private-route-token"
+                        )
+                    ]
+                if selector == 'a[href*="controller=AdminDashboard"]':
+                    return [
+                        Link(
+                            "http://localhost:18080/admin-kuranea/index.php?"
+                            "controller=AdminDashboard&token=private-dashboard-token"
+                        )
+                    ]
+                return []
+
+        state = navigation_state(Driver())
+        self.assertEqual(
+            state,
+            {
+                "login_form_visible": False,
+                "current_controller": "AdminBusinessProfile",
+                "business_profile_link_count": 1,
+                "dashboard_link_count": 1,
+            },
+        )
+        serialized = str(state)
+        self.assertNotIn("private-route-token", serialized)
+        self.assertNotIn("private-dashboard-token", serialized)
+        self.assertNotIn("localhost", serialized)
+
     def test_admin_security_flow_covers_missing_invalid_and_view_only_requests(self):
         self.assertTrue(ADMIN_FLOW.is_file(), "the isolated admin security browser flow is missing")
         source = ADMIN_FLOW.read_text(encoding="utf-8")
@@ -55,8 +159,9 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertIn("assert_security_attempt_rejected(response, mode)", guarded_attempt)
         run = source.split("def run()", 1)[1].split("\n\nif __name__", 1)[0]
         self.assertIn("verify_security_attempt_without_mutation(", run)
-        view_only = run.split('stage = "view_only_employee_menu_link_lookup"', 1)[1]
+        view_only = run.split('stage = "view_only_employee_post_login_state"', 1)[1]
         route_stages = (
+            'stage = "view_only_employee_settings_route"',
             'stage = "view_only_employee_direct_route"',
             'stage = "view_only_employee_settings_render"',
             'stage = "view_only_employee_settings_value"',
@@ -65,7 +170,9 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         )
         positions = [view_only.index(stage) for stage in route_stages]
         self.assertEqual(positions, sorted(positions))
-        self.assertIn("restricted_settings_url = settings_url(restricted_driver)", view_only)
+        self.assertIn("restricted_settings_url = current_profile_settings_url(restricted_driver)", view_only)
+        self.assertNotIn("= settings_url(restricted_driver)", view_only)
+        self.assertIn('emit_admin_post_login_state(restricted_driver, "view_only")', view_only)
         self.assertIn("restricted_driver.get(restricted_settings_url)", view_only)
         self.assertIn('visible(restricted_driver, "form.ordenowa-profile-settings")', view_only)
 
@@ -103,6 +210,8 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertIn("admin_security_response", handler)
         self.assertIn("admin_security_request", handler)
         self.assertIn("admin_security_state_recheck", handler)
+        self.assertIn("admin_security_navigation_state", handler)
+        self.assertIn("SAFE_ADMIN_NAVIGATION_STATE_PATTERN", handler)
         self.assertIn("substage={diagnostic_substage}", handler)
         self.assertIn("setting_value_mismatch", source)
         self.assertIn("draft_pointer_mismatch", source)
@@ -110,6 +219,16 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertIn("ORDENOWA_ADMIN_SECURITY_RESPONSE=", handler)
         self.assertNotIn("str(error)", handler)
         self.assertNotIn("{error}", handler)
+
+    def test_read_only_fixture_opens_its_allowed_settings_tab_without_granting_write_roles(self):
+        fixture = FIXTURE.read_text(encoding="utf-8")
+        self.assertIn("$employee->default_tab = (int) Tab::getIdFromClassName('AdminBusinessProfile');", fixture)
+        access_setup = fixture.split("$access = new Access();", 1)[1].split("$employee = new Employee();", 1)[0]
+        self.assertIn("foreach (['AdminBusinessProfile', 'AdminDashboard', 'ShopParameters'] as $className)", access_setup)
+        self.assertIn("$access->updateLgcAccess((int) $profile->id, $tabId, 'view', true, false)", access_setup)
+        for permission in ("'edit' => 'UPDATE'", "'add' => 'CREATE'", "'delete' => 'DELETE'"):
+            self.assertIn(permission, access_setup)
+        self.assertIn("$action === 'view' ? $granted : !$granted", access_setup)
 
     def test_admin_security_attempt_exposes_compromised_page_evidence_to_classifier(self):
         source = ADMIN_FLOW.read_text(encoding="utf-8")

@@ -49,6 +49,10 @@ SAFE_ADMIN_SECURITY_RESPONSE_PATTERN = (
     r"recovery_controller=(?:AdminBusinessProfile|AdminDashboard|AdminLogin|none|other|unavailable); "
     r"recovery_token_present=(?:true|false); invalid_token_page=(?:true|false)"
 )
+SAFE_ADMIN_NAVIGATION_STATE_PATTERN = (
+    r"login_form_visible=(?:true|false); current_controller=(?:AdminBusinessProfile|AdminDashboard|AdminLogin|none|other); "
+    r"business_profile_link_count=(?:0|[1-9][0-9]{0,3}); dashboard_link_count=(?:0|[1-9][0-9]{0,3})"
+)
 
 TOKEN_DOM_DETECTOR_JS = r"""
 function inspectInvalidTokenPage(body, responseUrl, targetUrl) {
@@ -190,12 +194,99 @@ def visible(driver: webdriver.Chrome, selector: str):
     )
 
 
+def _admin_controller_for_url(url: str) -> str:
+    actual = urlparse(url)
+    expected = urlparse(BASE)
+    admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
+    if (actual.scheme, actual.hostname, actual.port) != (
+        expected.scheme,
+        expected.hostname,
+        expected.port,
+    ) or not actual.path.startswith(admin_path + "/"):
+        return "other"
+    controllers = parse_qs(actual.query).get("controller", [])
+    if controllers == ["AdminBusinessProfile"]:
+        return "AdminBusinessProfile"
+    if controllers == ["AdminDashboard"]:
+        return "AdminDashboard"
+    if controllers == ["AdminLogin"]:
+        return "AdminLogin"
+    return "none" if not controllers else "other"
+
+
+def safe_admin_navigation_state(driver: webdriver.Chrome) -> dict[str, object]:
+    """Expose only login visibility, allowlisted controller, and bounded menu counts."""
+    login_form_visible = any(
+        element.is_displayed()
+        for element in driver.find_elements(By.CSS_SELECTOR, "#login_form")
+    )
+    profile_count = sum(
+        _admin_controller_for_url(link.get_attribute("href") or "") == "AdminBusinessProfile"
+        for link in driver.find_elements(By.CSS_SELECTOR, 'a[href*="controller=AdminBusinessProfile"]')
+    )
+    dashboard_count = sum(
+        _admin_controller_for_url(link.get_attribute("href") or "") == "AdminDashboard"
+        for link in driver.find_elements(By.CSS_SELECTOR, 'a[href*="controller=AdminDashboard"]')
+    )
+    return {
+        "login_form_visible": login_form_visible,
+        "current_controller": _admin_controller_for_url(driver.current_url),
+        "business_profile_link_count": min(profile_count, 1000),
+        "dashboard_link_count": min(dashboard_count, 1000),
+    }
+
+
+def _safe_admin_navigation_state_text(driver: webdriver.Chrome) -> str:
+    state = safe_admin_navigation_state(driver)
+    return (
+        f"login_form_visible={str(state['login_form_visible']).lower()}; "
+        f"current_controller={state['current_controller']}; "
+        f"business_profile_link_count={state['business_profile_link_count']}; "
+        f"dashboard_link_count={state['dashboard_link_count']}"
+    )
+
+
+def _authenticated_admin_route_ready(driver: webdriver.Chrome) -> bool:
+    login_form_visible = any(
+        element.is_displayed()
+        for element in driver.find_elements(By.CSS_SELECTOR, "#login_form")
+    )
+    return not login_form_visible and _admin_controller_for_url(driver.current_url) in {
+        "AdminBusinessProfile",
+        "AdminDashboard",
+    }
+
+
+def current_profile_settings_url(driver: webdriver.Chrome) -> str:
+    """Return the current employee's tokenized settings URL after same-origin checks."""
+    current_url = driver.current_url
+    actual = urlparse(current_url)
+    expected = urlparse(BASE)
+    admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
+    if (actual.scheme, actual.hostname, actual.port) != (
+        expected.scheme,
+        expected.hostname,
+        expected.port,
+    ) or not actual.path.startswith(admin_path + "/"):
+        raise AssertionError("the authenticated settings route left the isolated Back Office origin")
+    query = parse_qs(actual.query, keep_blank_values=True)
+    if query.get("controller") != ["AdminBusinessProfile"]:
+        raise AssertionError("the authenticated route is not the business profile settings controller")
+    if len(query.get("token", [])) != 1 or not query["token"][0].strip():
+        raise AssertionError("the authenticated settings route lacks its employee-scoped admin token")
+    return current_url
+
+
 def login(driver: webdriver.Chrome, email: str) -> None:
     driver.get(ADMIN_LOGIN + "/login")
     visible(driver, '#login_form input[name="email"]').send_keys(email)
     visible(driver, '#login_form input[name="passwd"]').send_keys(ADMIN_PASSWORD)
     visible(driver, "#login_form button[type='submit'], #login_form input[type='submit']").click()
-    WebDriverWait(driver, 30).until(lambda browser: "/login" not in urlparse(browser.current_url).path)
+    try:
+        WebDriverWait(driver, 30).until(_authenticated_admin_route_ready)
+    except Exception as error:
+        error.admin_security_navigation_state = _safe_admin_navigation_state_text(driver)
+        raise
 
 
 def settings_url(driver: webdriver.Chrome) -> str:
@@ -220,6 +311,15 @@ def settings_url(driver: webdriver.Chrome) -> str:
     if not actual.path.startswith(admin_path + "/"):
         raise AssertionError("business profile settings left the isolated Back Office directory")
     return href
+
+
+def emit_admin_post_login_state(driver: webdriver.Chrome, session: str) -> None:
+    if session not in {"admin", "view_only"}:
+        raise ValueError("unknown isolated administrator session label")
+    state = _safe_admin_navigation_state_text(driver)
+    message = f"session={session}; {state}"
+    print(f"ORDENOWA_ADMIN_POST_LOGIN_STATE={message}", file=sys.stderr)
+    print(f"::notice title=ORDENOWA admin post-login state::{message}", file=sys.stderr)
 
 
 def current_setting(driver: webdriver.Chrome) -> str:
@@ -866,11 +966,13 @@ def run() -> bool:
         stage = "view_only_employee_login"
         restricted_driver = new_driver()
         login(restricted_driver, VIEW_ONLY_EMAIL)
-        # Resolve the Back Office link from this employee's own rendered session.
-        # Keep URL discovery, navigation, rendering, and readback separate so an
-        # aggregate failure identifies which read-only step did not complete.
-        stage = "view_only_employee_menu_link_lookup"
-        restricted_settings_url = settings_url(restricted_driver)
+        stage = "view_only_employee_post_login_state"
+        emit_admin_post_login_state(restricted_driver, "view_only")
+        # The fixture's permitted default tab makes PrestaShop generate this
+        # employee's own tokenized settings URL at login. Do not reuse the full
+        # administrator's menu link or token for the restricted session.
+        stage = "view_only_employee_settings_route"
+        restricted_settings_url = current_profile_settings_url(restricted_driver)
         stage = "view_only_employee_direct_route"
         restricted_driver.get(restricted_settings_url)
         stage = "view_only_employee_settings_render"
@@ -900,6 +1002,7 @@ def run() -> bool:
         diagnostic_response = getattr(error, "admin_security_response", None)
         diagnostic_request = getattr(error, "admin_security_request", None)
         diagnostic_state = getattr(error, "admin_security_state_recheck", None)
+        diagnostic_navigation_state = getattr(error, "admin_security_navigation_state", None)
         safe_fields = []
         safe_response = False
         if isinstance(diagnostic_substage, str) and re.fullmatch(r"[a-z0-9_]+", diagnostic_substage):
@@ -912,6 +1015,11 @@ def run() -> bool:
             r"(?:passed|failed:[A-Za-z][A-Za-z0-9]*)", diagnostic_state
         ):
             safe_fields.append(f"state_recheck={diagnostic_state}")
+        if isinstance(diagnostic_navigation_state, str) and re.fullmatch(
+            SAFE_ADMIN_NAVIGATION_STATE_PATTERN,
+            diagnostic_navigation_state,
+        ):
+            safe_fields.append(f"navigation={diagnostic_navigation_state}")
         if isinstance(diagnostic_response, str) and (
             diagnostic_response == "not_evaluated"
             or re.fullmatch(r"classification_error:[A-Za-z][A-Za-z0-9]*", diagnostic_response)

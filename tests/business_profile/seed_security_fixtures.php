@@ -100,7 +100,7 @@ try {
     $employee->passwd = (string) $admin->passwd;
     $employee->active = true;
     $employee->id_profile = (int) $profile->id;
-    $employee->default_tab = (int) Tab::getIdFromClassName('AdminDashboard');
+    $employee->default_tab = (int) Tab::getIdFromClassName('AdminBusinessProfile');
     $employee->bo_color = (string) ($admin->bo_color ?: '#6f42c1');
     $employee->bo_theme = (string) ($admin->bo_theme ?: 'default');
     $employee->bo_css = (string) ($admin->bo_css ?: 'theme.css');
