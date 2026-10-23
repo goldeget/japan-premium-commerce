@@ -225,8 +225,10 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         self.assertIn('driver.get_log("performance")', matcher)
         self.assertIn("UNVERIFIED: document cache headers could not be observed", cache_check)
         self.assertIn("response_has_private_cache_policy(headers)", cache_check)
-        self.assertIn('("authenticated cart",', viewport)
-        self.assertIn('("authenticated order",', viewport)
+        self.assertIn('"customer_cart_route"', viewport)
+        self.assertIn('"authenticated cart"', viewport)
+        self.assertIn('"customer_order_route"', viewport)
+        self.assertIn('"authenticated order"', viewport)
         self.assertIn("assert_private_document_cache_headers(driver, requested_url, shop_url, route_label)", navigate)
         self.assertNotIn("pwa-{label}-failure.png", self.source)
         self.assertNotIn("print(body_text", self.source)
@@ -265,6 +267,42 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
             ):
                 with self.subTest(variable=key), patch.dict(os.environ, {key: value}), self.assertRaises(ValueError):
                     validate_isolated_ci_target("http://localhost:18080")
+
+    def test_pwa_browser_failure_reports_safe_stage_and_path_annotation(self) -> None:
+        viewport = function_source(self.source, "run_viewport")
+        for stage in (
+            "chrome_start",
+            "network_enable",
+            "storefront_navigation",
+            "storefront_ready",
+            "manifest",
+            "service_worker_registration",
+            "service_worker_update",
+            "online_refresh",
+            "offline_fallback",
+            "customer_account_setup",
+            "customer_account_route",
+            "customer_cart_route",
+            "customer_order_route",
+            "customer_account_before_logout",
+            "customer_logout",
+            "guest_authentication_route",
+            "guest_account_route",
+            "guest_cart_route",
+            "guest_order_route",
+            "chrome_shutdown",
+        ):
+            with self.subTest(stage=stage):
+                self.assertIn(stage, viewport)
+        self.assertIn("::error title=ORDENOWA PWA browser QA::", viewport)
+        self.assertIn("type(error).__name__", viewport)
+        self.assertNotIn("str(error)", viewport)
+        self.assertNotIn("{error}", viewport)
+        self.assertIn("urlparse(driver.current_url).path", viewport)
+        failure_handler = viewport.split("except Exception as error:", 1)[1].split("finally:", 1)[0]
+        path_diagnostics = failure_handler.split("try:", 1)[1].split("error_type =", 1)[0]
+        self.assertIn("except Exception:", path_diagnostics)
+        self.assertIn('current_path = ""', path_diagnostics)
 
 
 if __name__ == "__main__":

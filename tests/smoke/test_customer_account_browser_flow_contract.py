@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import re
 import sys
 import unittest
@@ -145,7 +146,8 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertEqual(positions, sorted(positions))
 
         address_add = self.blocks["customer_address_add"]
-        self.assertIn("create_customer_address(driver, label)", address_add)
+        self.assertIn("create_customer_address(", address_add)
+        self.assertIn("substage_callback=mark_customer_address_substage", address_add)
         address_add_persist = self.blocks["customer_address_add_persist_wait"]
         self.assertIn("wait_for_customer_address_card(driver, address_alias)", address_add_persist)
 
@@ -162,6 +164,114 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn('data-id-address', self.source)
         self.assertIn('name="kuraneapostcode_search"', self.source)
         self.assertIn('button[role="option"]', self.source)
+
+    def test_customer_address_failure_reports_redacted_substage_state(self) -> None:
+        address = self.source.split("def populate_japan_customer_address", 1)[1].split(
+            "def assert_customer_address_line", 1
+        )[0]
+        for stage in (
+            "address_route_load",
+            "address_form_load",
+            "address_country_select",
+            "address_form_reload_after_country",
+            "address_postcode_lookup",
+            "address_postcode_candidate",
+            "address_field_population",
+            "address_native_validation",
+            "address_submit",
+        ):
+            with self.subTest(stage=stage):
+                self.assertIn(stage, address)
+        self.assertLess(address.index("address_postcode_lookup"), address.index("address_postcode_candidate"))
+        self.assertLess(address.index("address_postcode_candidate"), address.index("address_field_population"))
+        self.assertIn("collect_customer_address_diagnostics", self.source)
+        self.assertIn("emit_customer_address_diagnostics", self.source)
+        collector = self.source.split("def collect_customer_address_diagnostics", 1)[1].split(
+            "def emit_customer_address_diagnostics", 1
+        )[0]
+        self.assertIn("safe_same_origin_path(current_url)", collector)
+        self.assertIn("invalid_controls", collector)
+        self.assertNotIn(".value", collector)
+        emitter = self.source.split("def emit_customer_address_diagnostics", 1)[1].split(
+            "def fill", 1
+        )[0]
+        self.assertIn("::error title=Customer account address safe state::", emitter)
+        run_viewport = self.source.split("def run_viewport", 1)[1].split(
+            "\n\nif __name__", 1
+        )[0]
+        self.assertIn('stage == "customer_address_add"', run_viewport)
+        self.assertIn("mark_customer_address_substage", run_viewport)
+        self.assertIn('failure_control = {"name": "", "type": ""}', run_viewport)
+
+    def test_customer_address_diagnostic_output_omits_query_and_form_values(self) -> None:
+        tree = ast.parse(self.source)
+        names = {
+            "safe_diagnostic_boolean",
+            "safe_diagnostic_name",
+            "safe_same_origin_path",
+            "collect_customer_address_diagnostics",
+            "emit_customer_address_diagnostics",
+        }
+        functions = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in names
+        ]
+        namespace = {
+            "BASE": "http://shop.example.test",
+            "re": re,
+            "urlparse": urlparse,
+            "unquote": unquote,
+            "json": json,
+            "sys": sys,
+            "webdriver": SimpleNamespace(Chrome=object),
+        }
+        exec(compile(ast.fix_missing_locations(ast.Module(body=functions, type_ignores=[])), str(ACCOUNT_FLOW), "exec"), namespace)
+
+        class FakeDriver:
+            current_url = "http://shop.example.test/index.php?email=private%40example.test&token=secret-reset-token"
+
+            @staticmethod
+            def execute_script(script: str) -> dict[str, object]:
+                if ".value" in script:
+                    raise AssertionError("address diagnostics must not inspect form input values")
+                return {
+                    "form_present": True,
+                    "form_visible": True,
+                    "form_valid": False,
+                    "country_present": True,
+                    "country_selected": True,
+                    "postal_search_present": True,
+                    "postal_search_visible": True,
+                    "postal_search_enabled": True,
+                    "postal_candidate_count": 0,
+                    "submit_present": True,
+                    "submit_visible": True,
+                    "submit_enabled": True,
+                    "invalid_controls": [
+                        {
+                            "name": "postcode",
+                            "type": "text",
+                            "required": True,
+                            "valid": False,
+                            "value": "private-input-value",
+                        }
+                    ],
+                    "validation_alert_count": 1,
+                    "untrusted_customer_value": "private@example.test",
+                }
+
+        output = StringIO()
+        with redirect_stderr(output):
+            namespace["emit_customer_address_diagnostics"](
+                FakeDriver(), "address_postcode_candidate"
+            )
+        rendered = output.getvalue()
+        self.assertIn('"path": "/index.php"', rendered)
+        self.assertIn('"substage": "address_postcode_candidate"', rendered)
+        self.assertIn('"name": "postcode"', rendered)
+        for private_value in ("private@example.test", "secret-reset-token", "private-input-value"):
+            with self.subTest(private_value=private_value):
+                self.assertNotIn(private_value, rendered)
 
     def test_address_edit_fixture_passes_saved_line_check_and_rejects_stale_line(self) -> None:
         tree = ast.parse(self.source)

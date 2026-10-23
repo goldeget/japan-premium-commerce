@@ -252,10 +252,39 @@ def new_driver() -> webdriver.Chrome:
     return webdriver.Chrome(options=options)
 
 
+def close_browser_drivers(drivers, primary_failure: bool) -> bool:
+    cleanup_ok = True
+    for label, driver in drivers:
+        if driver is None:
+            continue
+        try:
+            driver.quit()
+        except Exception as error:
+            cleanup_ok = False
+            error_type = type(error).__name__
+            if not error_type.isidentifier():
+                error_type = "unexpected exception"
+            stage = f"{label}_chrome_shutdown"
+            if primary_failure:
+                print(
+                    f"WARNING: isolated admin browser cleanup failed at {stage} ({error_type}) after the primary failure.",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"FAIL: isolated admin security check at {stage} ({error_type})", file=sys.stderr)
+                print(
+                    f"::error title=ORDENOWA admin security browser QA::stage={stage}; exception={error_type}",
+                    file=sys.stderr,
+                )
+    return cleanup_ok
+
+
 def run() -> bool:
     stage = "isolated_ci_guard"
     admin_driver = None
     restricted_driver = None
+    primary_failure = False
+    completed = False
     try:
         validate_isolated_ci_project()
         validate_loopback_admin_targets()
@@ -299,21 +328,30 @@ def run() -> bool:
             "view-only",
         )
 
-        print(
-            "PASS: Back Office rejects missing and invalid admin tokens and a view-only employee cannot save settings"
-        )
-        return True
+        completed = True
     except Exception as error:
+        primary_failure = True
         error_type = type(error).__name__
         if not error_type.isidentifier():
             error_type = "unexpected exception"
         print(f"FAIL: isolated admin security check at {stage} ({error_type})", file=sys.stderr)
         print(f"ORDENOWA_ADMIN_SECURITY_STAGE={stage}", file=sys.stderr)
-        return False
+        print(
+            f"::error title=ORDENOWA admin security browser QA::stage={stage}; exception={error_type}",
+            file=sys.stderr,
+        )
     finally:
-        for driver in (admin_driver, restricted_driver):
-            if driver is not None:
-                driver.quit()
+        cleanup_ok = close_browser_drivers(
+            (("admin", admin_driver), ("restricted", restricted_driver)),
+            primary_failure,
+        )
+
+    if completed and cleanup_ok and not primary_failure:
+        print(
+            "PASS: Back Office rejects missing and invalid admin tokens and a view-only employee cannot save settings"
+        )
+        return True
+    return False
 
 
 if __name__ == "__main__":

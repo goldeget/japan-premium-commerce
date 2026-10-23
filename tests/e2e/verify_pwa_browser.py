@@ -561,16 +561,24 @@ def run_viewport(base_url: str, artifact_dir: Path, width: int, height: int, lab
     options.add_argument(f"--window-size={width},{height}")
     options.add_argument("--lang=ja-JP")
     options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
-    driver = webdriver.Chrome(options=options)
-    driver.set_window_size(width, height)
+    driver = None
+    stage = "chrome_start"
+    primary_failure = False
     try:
+        driver = webdriver.Chrome(options=options)
+        driver.set_window_size(width, height)
+        stage = "network_enable"
         driver.execute_cdp_cmd("Network.enable", {})
+        stage = "storefront_navigation"
         driver.get(base_url + "/")
+        stage = "storefront_ready"
         WebDriverWait(driver, 40).until(
             lambda browser: browser.execute_script("return document.readyState") == "complete"
         )
+        stage = "manifest"
         manifest = verify_manifest(driver, base_url)
         driver.save_screenshot(str(artifact_dir / f"pwa-{label}-installability.png"))
+        stage = "service_worker_registration"
         registration = wait_for_service_worker(driver)
         expected_scope = (urlparse(base_url).path.rstrip("/") or "") + "/"
         if registration.get("scope") != urljoin(base_url + "/", expected_scope):
@@ -582,6 +590,7 @@ def run_viewport(base_url: str, artifact_dir: Path, width: int, height: int, lab
             raise AssertionError("service worker controller is not the storefront worker")
         assert_empty_cache_storage(driver, "initial storefront")
 
+        stage = "service_worker_update"
         worker_update = driver.execute_async_script(
             """
             const done = arguments[arguments.length - 1];
@@ -594,30 +603,45 @@ def run_viewport(base_url: str, artifact_dir: Path, width: int, height: int, lab
         )
         if not isinstance(worker_update, dict) or worker_update.get("activeState") != "activated":
             raise AssertionError("service worker update check did not retain an activated worker")
+        stage = "online_refresh"
         driver.refresh()
         wait_for_service_worker(driver)
         assert_empty_cache_storage(driver, "after online refresh")
 
+        stage = "offline_fallback"
         verify_offline_fallback(
             driver, base_url, artifact_dir / f"pwa-{label}-offline-fallback.png"
         )
 
         if label == "desktop":
+            stage = "customer_account_setup"
             run_id = re.sub(r"[^0-9]", "", os.environ.get("GITHUB_RUN_ID", ""))
             attempt = re.sub(r"[^0-9]", "", os.environ.get("GITHUB_RUN_ATTEMPT", ""))
             unique = (run_id + attempt)[:20] or uuid.uuid4().hex[:16]
             email = f"qa-ordenowa-pwa-{unique}@example.invalid"
             password = f"Pwa-CI-{uuid.uuid4().hex[:20]}!"
             account_url = create_session_customer(driver, base_url, email, password)
-            for route_label, route_url in (
-                ("authenticated account", account_url),
-                ("authenticated cart", urljoin(base_url + "/", "index.php?controller=cart&action=show")),
-                ("authenticated order", urljoin(base_url + "/", "index.php?controller=order")),
+            stage = "customer_private_routes"
+            for route_stage, route_label, route_url in (
+                ("customer_account_route", "authenticated account", account_url),
+                (
+                    "customer_cart_route",
+                    "authenticated cart",
+                    urljoin(base_url + "/", "index.php?controller=cart&action=show"),
+                ),
+                (
+                    "customer_order_route",
+                    "authenticated order",
+                    urljoin(base_url + "/", "index.php?controller=order"),
+                ),
             ):
+                stage = route_stage
                 navigate_private_document(driver, route_url, base_url, route_label)
                 assert_empty_cache_storage(driver, route_label)
+            stage = "customer_account_before_logout"
             navigate_private_document(driver, account_url, base_url, "authenticated account before logout")
             wait_visible(driver, "#identity_main_link")
+            stage = "customer_logout"
             verify_logout_protection(
                 driver,
                 account_url,
@@ -628,12 +652,13 @@ def run_viewport(base_url: str, artifact_dir: Path, width: int, height: int, lab
                 artifact_dir / "pwa-desktop-logged-out-account.png",
             )
         else:
-            for route in (
-                "index.php?controller=authentication",
-                "index.php?controller=my-account",
-                "index.php?controller=cart&action=show",
-                "index.php?controller=order",
+            for route_stage, route in (
+                ("guest_authentication_route", "index.php?controller=authentication"),
+                ("guest_account_route", "index.php?controller=my-account"),
+                ("guest_cart_route", "index.php?controller=cart&action=show"),
+                ("guest_order_route", "index.php?controller=order"),
             ):
+                stage = route_stage
                 driver.get(urljoin(base_url + "/", route))
                 WebDriverWait(driver, 30).until(
                     lambda browser: browser.execute_script("return document.readyState") == "complete"
@@ -644,12 +669,51 @@ def run_viewport(base_url: str, artifact_dir: Path, width: int, height: int, lab
             f"PASS: {label} Chromium secure-context installability prerequisites, official manifest icons, "
             "service-worker control/update/reload, localized offline navigation, and empty private cache state"
         )
-    except Exception:
-        safe_path = urlparse(driver.current_url).path
-        print(f"FAIL: {label} PWA browser QA at {safe_path}.", file=sys.stderr)
+    except Exception as error:
+        primary_failure = True
+        try:
+            current_path = urlparse(driver.current_url).path if driver is not None else ""
+        except Exception:
+            # The Chrome session may already be gone; keep the original QA failure.
+            current_path = ""
+        safe_path = current_path if current_path in {"/", "/index.php"} else "/<other>"
+        error_type = type(error).__name__
+        if not error_type.isidentifier():
+            error_type = "unexpected exception"
+        print(
+            f"FAIL: {label} PWA browser QA at stage={stage} ({error_type}); path={safe_path}.",
+            file=sys.stderr,
+        )
+        print(
+            f"::error title=ORDENOWA PWA browser QA::{label}; stage={stage}; "
+            f"exception={error_type}; path={safe_path}",
+            file=sys.stderr,
+        )
         raise
     finally:
-        driver.quit()
+        if driver is not None:
+            try:
+                driver.quit()
+            except Exception as cleanup_error:
+                error_type = type(cleanup_error).__name__
+                if not error_type.isidentifier():
+                    error_type = "unexpected exception"
+                if primary_failure:
+                    print(
+                        f"WARNING: {label} PWA browser cleanup failed ({error_type}) after the primary failure.",
+                        file=sys.stderr,
+                    )
+                else:
+                    stage = "chrome_shutdown"
+                    print(
+                        f"FAIL: {label} PWA browser QA at stage={stage} ({error_type}).",
+                        file=sys.stderr,
+                    )
+                    print(
+                        f"::error title=ORDENOWA PWA browser QA::{label}; stage={stage}; exception={error_type}",
+                        file=sys.stderr,
+                    )
+                    raise
 
 
 def main() -> int:

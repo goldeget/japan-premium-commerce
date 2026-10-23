@@ -2088,12 +2088,25 @@ def choose_japan_country(driver: webdriver.Chrome, form) -> None:
     )
 
 
-def populate_japan_customer_address(driver: webdriver.Chrome, form, label: str) -> tuple[str, str]:
+def populate_japan_customer_address(
+    driver: webdriver.Chrome,
+    form,
+    label: str,
+    substage_callback: Callable[[str], None] | None = None,
+) -> tuple[str, str]:
+    def mark_substage(value: str) -> None:
+        if substage_callback is not None:
+            substage_callback(value)
+
+    mark_substage("address_country_select")
     choose_japan_country(driver, form)
+    mark_substage("address_form_reload_after_country")
     form = visible(driver, ".js-address-form form")
+    mark_substage("address_postcode_lookup")
     search = visible(driver, '.js-address-form input[name="kuraneapostcode_search"]')
     search.clear()
     search.send_keys("1000004")
+    mark_substage("address_postcode_candidate")
     candidate = WebDriverWait(driver, 30).until(
         EC.element_to_be_clickable((By.CSS_SELECTOR, '.js-address-form button[role="option"]')),
         message="the customer address postal lookup did not return the synthetic Tokyo result",
@@ -2101,6 +2114,7 @@ def populate_japan_customer_address(driver: webdriver.Chrome, form, label: str) 
     if not all(part in candidate.text for part in ("東京都", "千代田区", "大手町")):
         raise AssertionError("the customer address postal lookup returned an unexpected Tokyo result")
     click_centered(driver, candidate)
+    mark_substage("address_field_population")
     form = visible(driver, ".js-address-form form")
 
     alias = f"ORDENOWA CI {label.upper()} ADDRESS"
@@ -2130,15 +2144,136 @@ def populate_japan_customer_address(driver: webdriver.Chrome, form, label: str) 
     return alias, address_line
 
 
-def create_customer_address(driver: webdriver.Chrome, label: str) -> tuple[str, str]:
+def create_customer_address(
+    driver: webdriver.Chrome,
+    label: str,
+    substage_callback: Callable[[str], None] | None = None,
+) -> tuple[str, str]:
+    def mark_substage(value: str) -> None:
+        if substage_callback is not None:
+            substage_callback(value)
+
+    mark_substage("address_route_load")
     driver.get(f"{BASE}/index.php?controller=address")
+    mark_substage("address_form_load")
     form = visible(driver, ".js-address-form form")
-    alias, address_line = populate_japan_customer_address(driver, form, label)
+    alias, address_line = populate_japan_customer_address(
+        driver, form, label, substage_callback=mark_substage
+    )
     form = visible(driver, ".js-address-form form")
+    mark_substage("address_native_validation")
     assert_native_form_valid(driver, form, "customer address")
     driver.save_screenshot(str(DEST / f"{label}-customer-address-new.png"))
+    mark_substage("address_submit")
     click_centered(driver, visible(driver, ".js-address-form button.form-control-submit"))
     return alias, address_line
+
+
+def collect_customer_address_diagnostics(
+    driver: webdriver.Chrome,
+    substage: str,
+) -> dict[str, object]:
+    try:
+        current_url = driver.current_url
+    except Exception:
+        current_url = ""
+
+    diagnostics: dict[str, object] = {}
+    try:
+        browser_state = driver.execute_script(
+            r"""
+            const form = document.querySelector('.js-address-form form');
+            const visible = element => Boolean(element && element.getClientRects().length);
+            const country = form?.querySelector('select[name="id_country"]');
+            const postalSearch = form?.querySelector('input[name="kuraneapostcode_search"]');
+            const submit = form?.querySelector('button.form-control-submit');
+            const invalid = form ? [...form.querySelectorAll(':invalid')].filter(visible) : [];
+            const candidates = [...document.querySelectorAll('.js-address-form button[role="option"]')]
+              .filter(visible);
+            const alerts = [...document.querySelectorAll('.alert, [role="alert"], .help-block.error')]
+              .filter(visible);
+            return {
+              form_present: Boolean(form),
+              form_visible: visible(form),
+              form_valid: Boolean(form && form.checkValidity()),
+              country_present: Boolean(country),
+              country_selected: Boolean(country && country.selectedIndex > 0),
+              postal_search_present: Boolean(postalSearch),
+              postal_search_visible: visible(postalSearch),
+              postal_search_enabled: Boolean(postalSearch && !postalSearch.disabled),
+              postal_candidate_count: Math.min(candidates.length, 99),
+              submit_present: Boolean(submit),
+              submit_visible: visible(submit),
+              submit_enabled: Boolean(submit && !submit.disabled),
+              invalid_controls: invalid.slice(0, 8).map(control => ({
+                name: control.getAttribute('name') || '',
+                type: control.getAttribute('type') || control.tagName.toLowerCase(),
+                required: Boolean(control.required),
+                valid: Boolean(control.validity?.valid)
+              })),
+              validation_alert_count: Math.min(alerts.length, 99)
+            };
+            """
+        )
+        if isinstance(browser_state, dict):
+            diagnostics = browser_state
+    except Exception as error:
+        diagnostics["collection_error_type"] = type(error).__name__
+
+    invalid_controls: list[dict[str, object]] = []
+    raw_invalid = diagnostics.get("invalid_controls")
+    if isinstance(raw_invalid, list):
+        for control in raw_invalid[:8]:
+            if not isinstance(control, dict):
+                continue
+            invalid_controls.append(
+                {
+                    "name": safe_diagnostic_name(control.get("name")),
+                    "type": safe_diagnostic_name(control.get("type"), field_type=True),
+                    "required": safe_diagnostic_boolean(control.get("required")),
+                    "valid": safe_diagnostic_boolean(control.get("valid")),
+                }
+            )
+
+    def safe_count(value: object) -> int | None:
+        if not isinstance(value, int) or isinstance(value, bool):
+            return None
+        return min(max(value, 0), 99)
+
+    safe_state: dict[str, object] = {
+        "stage": "customer_address_add",
+        "substage": safe_diagnostic_name(substage),
+        "path": safe_same_origin_path(current_url),
+        "form_present": safe_diagnostic_boolean(diagnostics.get("form_present")),
+        "form_visible": safe_diagnostic_boolean(diagnostics.get("form_visible")),
+        "form_valid": safe_diagnostic_boolean(diagnostics.get("form_valid")),
+        "country_present": safe_diagnostic_boolean(diagnostics.get("country_present")),
+        "country_selected": safe_diagnostic_boolean(diagnostics.get("country_selected")),
+        "postal_search_present": safe_diagnostic_boolean(diagnostics.get("postal_search_present")),
+        "postal_search_visible": safe_diagnostic_boolean(diagnostics.get("postal_search_visible")),
+        "postal_search_enabled": safe_diagnostic_boolean(diagnostics.get("postal_search_enabled")),
+        "postal_candidate_count": safe_count(diagnostics.get("postal_candidate_count")),
+        "submit_present": safe_diagnostic_boolean(diagnostics.get("submit_present")),
+        "submit_visible": safe_diagnostic_boolean(diagnostics.get("submit_visible")),
+        "submit_enabled": safe_diagnostic_boolean(diagnostics.get("submit_enabled")),
+        "invalid_controls": invalid_controls,
+        "validation_alert_count": safe_count(diagnostics.get("validation_alert_count")),
+    }
+    collection_error = diagnostics.get("collection_error_type")
+    if isinstance(collection_error, str):
+        safe_state["collection_error_type"] = safe_diagnostic_name(collection_error, field_type=True)
+    return safe_state
+
+
+def emit_customer_address_diagnostics(driver: webdriver.Chrome, substage: str) -> None:
+    safe_state_json = json.dumps(
+        collect_customer_address_diagnostics(driver, substage),
+        ensure_ascii=True,
+        sort_keys=True,
+    )
+    print("ORDENOWA_CUSTOMER_ADDRESS_SAFE_STATE=" + safe_state_json, file=sys.stderr)
+    annotation = safe_state_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::error title=Customer account address safe state::{annotation}", file=sys.stderr)
 
 
 def assert_customer_address_line(
@@ -2663,6 +2798,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
     account_url = ""
     email_login_substage = ""
     email_login_account_route_classification = "unavailable"
+    address_substage = "not_started"
     expected_first_name = f"CI-{label.title()}"
     driver = None
     success = False
@@ -2674,6 +2810,10 @@ def run_viewport(width: int, height: int, label: str) -> bool:
     def mark_email_login_account_route_classification(value: str) -> None:
         nonlocal email_login_account_route_classification
         email_login_account_route_classification = value
+
+    def mark_customer_address_substage(value: str) -> None:
+        nonlocal address_substage
+        address_substage = value
 
     try:
         validate_isolated_ci_compose_project()
@@ -2827,8 +2967,12 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         )
         driver.save_screenshot(str(DEST / f"{label}-customer-account-profile.png"))
 
+        failure_control = {"name": "", "type": ""}
         stage = "customer_address_add"
-        address_alias, initial_address_line = create_customer_address(driver, label)
+        address_substage = "starting"
+        address_alias, initial_address_line = create_customer_address(
+            driver, label, substage_callback=mark_customer_address_substage
+        )
         stage = "customer_address_add_persist_wait"
         added_address_card = wait_for_customer_address_card(driver, address_alias)
         address_id = added_address_card.get_attribute("data-id-address") or ""
@@ -2974,6 +3118,11 @@ def run_viewport(width: int, height: int, label: str) -> bool:
                     emit_profile_update_diagnostics(
                         driver, stage, profile_pre_submit, expected_first_name
                     )
+                except Exception:
+                    pass
+            elif stage == "customer_address_add":
+                try:
+                    emit_customer_address_diagnostics(driver, address_substage)
                 except Exception:
                     pass
             elif stage in {"email_login", "password_reset_login"}:

@@ -1,9 +1,12 @@
 """Contract checks for the isolated admin and native password-reset security flows."""
 
 import ast
+from contextlib import redirect_stderr
+from io import StringIO
 import ipaddress
 import os
 from pathlib import Path
+import sys
 import unittest
 from unittest.mock import patch
 from urllib.parse import urlparse
@@ -70,6 +73,62 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertLess(run.index("validate_isolated_ci_project()"), run.index("new_driver()"))
         self.assertLess(run.index("validate_loopback_admin_targets()"), run.index("new_driver()"))
         self.assertNotIn("save_screenshot", run)
+
+    def test_admin_security_browser_failure_emits_safe_stage_annotation(self):
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+        run = source.split("def run()", 1)[1].split("\n\nif __name__", 1)[0]
+        handler = run.split("except Exception as error:", 1)[1].split("finally:", 1)[0]
+        self.assertIn("::error title=ORDENOWA admin security browser QA::", handler)
+        self.assertIn("{stage}", handler)
+        self.assertIn("{error_type}", handler)
+        self.assertNotIn("str(error)", handler)
+        self.assertNotIn("{error}", handler)
+
+    def test_admin_browser_cleanup_attempts_both_drivers_and_keeps_failure_redacted(self):
+        namespace: dict[str, object] = {"sys": sys}
+        close_drivers = load_function(ADMIN_FLOW, "close_browser_drivers", namespace)
+
+        class FakeDriver:
+            def __init__(self, fail: bool) -> None:
+                self.fail = fail
+                self.quit_calls = 0
+
+            def quit(self) -> None:
+                self.quit_calls += 1
+                if self.fail:
+                    raise RuntimeError("private browser session detail")
+
+        admin = FakeDriver(fail=True)
+        restricted = FakeDriver(fail=False)
+        output = StringIO()
+        with redirect_stderr(output):
+            cleanup_ok = close_drivers(
+                (("admin", admin), ("restricted", restricted)),
+                primary_failure=False,
+            )
+
+        self.assertFalse(cleanup_ok)
+        self.assertEqual(admin.quit_calls, 1)
+        self.assertEqual(restricted.quit_calls, 1)
+        self.assertIn("admin_chrome_shutdown", output.getvalue())
+        self.assertIn("RuntimeError", output.getvalue())
+        self.assertNotIn("private browser session detail", output.getvalue())
+
+        admin = FakeDriver(fail=True)
+        restricted = FakeDriver(fail=True)
+        output = StringIO()
+        with redirect_stderr(output):
+            cleanup_ok = close_drivers(
+                (("admin", admin), ("restricted", restricted)),
+                primary_failure=True,
+            )
+
+        self.assertFalse(cleanup_ok)
+        self.assertEqual(admin.quit_calls, 1)
+        self.assertEqual(restricted.quit_calls, 1)
+        self.assertIn("WARNING:", output.getvalue())
+        self.assertNotIn("::error", output.getvalue())
+        self.assertNotIn("private browser session detail", output.getvalue())
 
     def test_admin_ci_and_origin_guards_accept_only_the_matching_local_project(self):
         namespace: dict[str, object] = {
