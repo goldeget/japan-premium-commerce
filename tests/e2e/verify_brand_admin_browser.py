@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -31,6 +32,7 @@ SOURCES = ROOT / "assets" / "brand" / "ordenowa" / "official_originals"
 ASSET_MANIFEST = ROOT / "assets" / "brand" / "ordenowa" / "asset-manifest.json"
 APPROVED_DERIVED_ASSETS = json.loads(ASSET_MANIFEST.read_text(encoding="utf-8"))["derived"]
 DEST.mkdir(parents=True, exist_ok=True)
+EXPECTED_SHOP_PORT = 18080
 OFFICIAL_UPLOADS = {
     "primary_logo": SOURCES / "ORDENOWA-logo.png",
     "favicon_symbol": SOURCES / "ORDENOWA-favicon-source.png",
@@ -47,6 +49,65 @@ BRAND_DRAFT_REPLACEMENT_ATTEMPTS = 3
 BRAND_DIAGNOSTIC_MAX_MATCHES = 5
 BRAND_DIAGNOSTIC_CONTEXT_CHARS = 64
 BRAND_DIAGNOSTIC_SNIPPET_CHARS = 160
+
+
+def validate_isolated_ci_compose_project() -> None:
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")
+    expected_project = f"kuranea-ci-{run_id}-{attempt}"
+    if (
+        os.environ.get("CI") != "true"
+        or os.environ.get("GITHUB_ACTIONS") != "true"
+        or os.environ.get("KURANEA_ISOLATED_CI") != "1"
+        or not run_id.isascii()
+        or not run_id.isdecimal()
+        or not attempt.isascii()
+        or not attempt.isdecimal()
+        or os.environ.get("CI_COMPOSE_PROJECT_NAME", "") != expected_project
+        or not ADMIN_EMAIL.strip().lower().endswith("@example.invalid")
+    ):
+        raise ValueError("brand admin QA requires its exact isolated GitHub Actions Compose project")
+
+
+def _loopback_http_origin(value: str, label: str) -> tuple[str, str, int]:
+    try:
+        parsed = urlparse(value)
+        host = parsed.hostname or ""
+        port = parsed.port
+    except ValueError:
+        raise ValueError(f"{label} must be a valid isolated loopback URL") from None
+    if host.lower() == "localhost":
+        is_loopback = True
+    else:
+        try:
+            is_loopback = ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            is_loopback = False
+    if (
+        parsed.scheme != "http"
+        or not is_loopback
+        or port != EXPECTED_SHOP_PORT
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(f"{label} must use the isolated loopback shop origin on port {EXPECTED_SHOP_PORT}")
+    return parsed.scheme, host.lower(), port
+
+
+def validate_loopback_admin_targets() -> None:
+    shop = urlparse(BASE)
+    admin = urlparse(ADMIN_LOGIN)
+    if shop.path not in ("", "/"):
+        raise ValueError("SHOP_BASE_URL must be the isolated shop root")
+    shop_origin = _loopback_http_origin(BASE, "SHOP_BASE_URL")
+    admin_origin = _loopback_http_origin(ADMIN_LOGIN, "ADMIN_LOGIN_URL")
+    if (
+        admin_origin != shop_origin
+        or admin.path.rstrip("/") != "/admin-kuranea"
+    ):
+        raise ValueError("ADMIN_LOGIN_URL must share the isolated shop origin and name its Back Office path")
 
 
 def expected_derivative_path(source: Path, filename: str) -> str:
@@ -224,6 +285,20 @@ def wait_for_publish_confirmation(driver: webdriver.Chrome) -> None:
     WebDriverWait(driver, 30).until(publication_is_visible)
 
 
+def wait_for_restore_confirmation(driver: webdriver.Chrome) -> None:
+    def restoration_is_visible(browser: webdriver.Chrome) -> bool:
+        try:
+            return any(
+                alert.is_displayed()
+                and "이전 설정을 새 초안으로 복원했습니다" in alert.text
+                for alert in browser.find_elements(By.CSS_SELECTOR, ".alert.alert-success")
+            )
+        except StaleElementReferenceException:
+            return False
+
+    WebDriverWait(driver, 30).until(restoration_is_visible)
+
+
 def assert_saved_primary_logo(driver: webdriver.Chrome, source: Path, role: str) -> None:
     assert_uploaded_derivative_url(
         asset_preview_url_for_field(driver, "ordenowa-brand-assets-header_desktop"),
@@ -386,6 +461,84 @@ def current_draft_history_row(driver: webdriver.Chrome):
         except StaleElementReferenceException:
             continue
     return False
+
+
+def history_row_with_status(driver: webdriver.Chrome, status: str):
+    for row in driver.find_elements(By.CSS_SELECTOR, ".ordenowa-profile-history tbody tr"):
+        try:
+            cells = row.find_elements(By.CSS_SELECTOR, "td")
+            if len(cells) >= 4 and status in cells[3].text:
+                return row
+        except StaleElementReferenceException:
+            continue
+    return False
+
+
+def restore_published_history_version_as_draft(
+    driver: webdriver.Chrome,
+    settings_url: str,
+    expected_settings: dict[str, str],
+    published_public_snapshot: dict,
+    stage_callback: Callable[[str], None],
+) -> None:
+    """Restore the published history row and prove the customer output remains unchanged."""
+    driver.get(settings_url)
+    visible(driver, "form.ordenowa-profile-settings")
+    stage_callback("history_restore_published_row_wait")
+    published_row = WebDriverWait(driver, 30).until(
+        lambda browser: history_row_with_status(browser, "게시 중")
+    )
+    cells = published_row.find_elements(By.CSS_SELECTOR, "td")
+    source_version_id = cells[0].text.strip().lstrip("#")
+    status = cells[3].text
+    if not source_version_id or "현재 초안" in status:
+        raise AssertionError("the history restore source must be an older published version")
+
+    restore_button = published_row.find_element(By.CSS_SELECTOR, 'button[name="submitOrdenowaRestore"]')
+    if not restore_button.is_enabled():
+        raise AssertionError("the older published history version cannot be restored as a draft")
+    stage_callback("history_restore_published_row_click")
+    restore_button.click()
+
+    stage_callback("history_restore_confirmation")
+    wait_for_restore_confirmation(driver)
+    visible(driver, "form.ordenowa-profile-settings")
+
+    stage_callback("history_restore_new_draft_check")
+    restored_row = WebDriverWait(driver, 30).until(current_draft_history_row)
+    restored_cells = restored_row.find_elements(By.CSS_SELECTOR, "td")
+    restored_version_id = restored_cells[0].text.strip().lstrip("#")
+    if not restored_version_id or source_version_id == restored_version_id:
+        raise AssertionError("restoring a historical setting must create a new draft version")
+    if "현재 초안" not in restored_cells[3].text:
+        raise AssertionError("the restored version is not marked as the current draft")
+
+    source_row_status = ""
+    for row in driver.find_elements(By.CSS_SELECTOR, ".ordenowa-profile-history tbody tr"):
+        try:
+            row_cells = row.find_elements(By.CSS_SELECTOR, "td")
+            if len(row_cells) >= 4 and row_cells[0].text.strip().lstrip("#") == source_version_id:
+                source_row_status = row_cells[3].text
+                break
+        except StaleElementReferenceException:
+            continue
+    if "게시 중" not in source_row_status:
+        raise AssertionError("restoring a version changed the published history pointer")
+
+    stage_callback("history_restore_form_values")
+    for selector, expected in expected_settings.items():
+        if visible(driver, selector).get_attribute("value") != expected:
+            raise AssertionError("history restore did not return the published setting to the new draft")
+
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", restored_row)
+    driver.save_screenshot(str(DEST / "brand-admin-history-restore-confirmation.png"))
+
+    stage_callback("history_restore_customer_output_unchanged")
+    if public_brand_snapshot(driver) != published_public_snapshot:
+        raise AssertionError("restoring a history version changed customer output before publication")
+
+    driver.get(settings_url)
+    visible(driver, "form.ordenowa-profile-settings")
 
 
 def preview_current_draft_brand_assets(
@@ -1296,6 +1449,8 @@ def assert_seller_disclosures_remain_gated(driver: webdriver.Chrome, private_val
 
 
 def run() -> None:
+    validate_isolated_ci_compose_project()
+    validate_loopback_admin_targets()
     options = Options()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
@@ -1427,6 +1582,21 @@ def run() -> None:
             'textarea[name="profile[content][company_profile][ja-JP]"]': company_profile_ja,
             'textarea[name="profile[content][company_profile][ko-KR]"]': company_profile_ko,
         }
+        policy_settings = {
+            'textarea[name="profile[content][terms][ja-JP]"]': "ORDENOWA CI TERMS JA",
+            'textarea[name="profile[content][terms][en-US]"]': "ORDENOWA CI TERMS EN",
+            'textarea[name="profile[content][terms][ko-KR]"]': "ORDENOWA CI TERMS KO",
+            'textarea[name="profile[content][privacy][ja-JP]"]': "ORDENOWA CI PRIVACY JA",
+            'textarea[name="profile[content][privacy][en-US]"]': "ORDENOWA CI PRIVACY EN",
+            'textarea[name="profile[content][privacy][ko-KR]"]': "ORDENOWA CI PRIVACY KO",
+            'textarea[name="profile[content][specified_commercial_act][ja-JP]"]': "ORDENOWA CI SPECIFIED ACT JA",
+            'textarea[name="profile[content][specified_commercial_act][en-US]"]': "ORDENOWA CI SPECIFIED ACT EN",
+            'textarea[name="profile[content][specified_commercial_act][ko-KR]"]': "ORDENOWA CI SPECIFIED ACT KO",
+        }
+        ci_settings.update(policy_settings)
+        specified_act_preview_value = policy_settings[
+            'textarea[name="profile[content][specified_commercial_act][ja-JP]"]'
+        ]
         for selector, value in ci_settings.items():
             field = visible(driver, selector)
             if field.tag_name.lower() == "select":
@@ -1489,9 +1659,13 @@ def run() -> None:
             "ORDENOWA CI SHIPPING POLICY",
             "ORDENOWA CI REFUND POLICY",
             company_profile_ja,
+            specified_act_preview_value,
         ):
             if expected not in preview.text:
                 raise AssertionError("Korean admin operating settings are missing from the private preview")
+        for selector, expected in policy_settings.items():
+            if visible(driver, selector).get_attribute("value") != expected:
+                raise AssertionError("a policy field changed while opening the private preview")
         if company_profile_ko not in visible(driver, company_profile_selector).get_attribute("value"):
             raise AssertionError("the Korean company profile was not retained in the draft before preview")
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", preview)
@@ -1540,6 +1714,14 @@ def run() -> None:
             if visible(driver, selector).get_attribute("value") != expected:
                 raise AssertionError("a Korean admin operating setting did not persist after publication")
         driver.save_screenshot(str(DEST / "brand-admin-published.png"))
+
+        stage = "published_policy_fields_reload"
+        driver.get(settings_url)
+        visible(driver, "form.ordenowa-profile-settings")
+        for selector, expected in policy_settings.items():
+            if visible(driver, selector).get_attribute("value") != expected:
+                raise AssertionError("a legal or policy field did not persist after publication and reload")
+        driver.save_screenshot(str(DEST / "brand-admin-policies-published-reloaded.png"))
 
         stage = "published_desktop_customer_brand"
         assert_public_brand_assets(
@@ -1608,6 +1790,34 @@ def run() -> None:
             if any(f"[{group}]" in selector for group in private_disclosure_groups)
         ]
         assert_seller_disclosures_remain_gated(driver, private_values)
+
+        stage = "prepare_history_restore_distinguishable_draft"
+        published_public_snapshot = public_brand_snapshot(driver)
+        driver.get(settings_url)
+        visible(driver, "form.ordenowa-profile-settings")
+        temporary_terms_selector = 'textarea[name="profile[content][terms][ko-KR]"]'
+        temporary_terms_value = "ORDENOWA CI TEMPORARY TERMS DRAFT"
+        temporary_terms = visible(driver, temporary_terms_selector)
+        temporary_terms.clear()
+        temporary_terms.send_keys(temporary_terms_value)
+        visible(driver, 'form.ordenowa-profile-settings button[name="submitOrdenowaSaveDraft"]').click()
+        wait_for_draft_save_confirmation(driver)
+        driver.get(settings_url)
+        visible(driver, "form.ordenowa-profile-settings")
+        if visible(driver, temporary_terms_selector).get_attribute("value") != temporary_terms_value:
+            raise AssertionError("the temporary policy draft did not persist before history restoration")
+        if public_brand_snapshot(driver) != published_public_snapshot:
+            raise AssertionError("saving a policy draft changed customer output before publication")
+
+        stage = "restore_published_history_as_draft"
+        restore_published_history_version_as_draft(
+            driver,
+            settings_url,
+            ci_settings,
+            published_public_snapshot,
+            set_brand_assertion_stage,
+        )
+        driver.save_screenshot(str(DEST / "brand-admin-history-restored-draft.png"))
 
         stage = "admin_login_after_publish"
         driver.delete_all_cookies()
@@ -1741,7 +1951,7 @@ def run() -> None:
             raise AssertionError("republishing the approved source did not restore the original admin login logo URL")
         replacement_publish_started = False
 
-        print("PASS: official ORDENOWA uploads, replacement publish and restoration, Korean company profile draft/reload/preview/publish, closed storefront gate, PC/mobile logos, admin login, favicon, Apple icon, PWA, OG, and SEO")
+        print("PASS: official ORDENOWA uploads, history restore as draft, replacement publish and restoration, Korean operating and legal settings draft/reload/preview/publish, closed storefront gate, PC/mobile logos, admin login, favicon, Apple icon, PWA, OG, and SEO")
     except Exception as error:
         try:
             driver.save_screenshot(str(DEST / "brand-admin-failure.png"))

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import html
+import ipaddress
 import json
 import math
 import os
@@ -33,6 +34,58 @@ DEST = Path(os.environ["QA_ARTIFACT_DIR"])
 RUN_ID = re.sub(r"[^0-9]", "", os.environ["GITHUB_RUN_ID"])
 RUN_ATTEMPT = re.sub(r"[^0-9]", "", os.environ["GITHUB_RUN_ATTEMPT"])
 DEST.mkdir(parents=True, exist_ok=True)
+EXPECTED_SHOP_PORT = 18080
+EXPECTED_MAILPIT_PORT = 8025
+
+
+def validate_isolated_ci_compose_project() -> None:
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")
+    expected_project = f"kuranea-ci-{run_id}-{attempt}"
+    if (
+        os.environ.get("CI") != "true"
+        or os.environ.get("GITHUB_ACTIONS") != "true"
+        or os.environ.get("KURANEA_ISOLATED_CI") != "1"
+        or not run_id.isascii()
+        or not run_id.isdecimal()
+        or not attempt.isascii()
+        or not attempt.isdecimal()
+        or os.environ.get("CI_COMPOSE_PROJECT_NAME", "") != expected_project
+    ):
+        raise ValueError("customer account QA requires its exact isolated GitHub Actions Compose project")
+
+
+def _validate_loopback_endpoint(value: str, expected_port: int, label: str) -> tuple[str, str, int]:
+    try:
+        parsed = urlparse(value)
+        host = parsed.hostname or ""
+        port = parsed.port
+    except ValueError:
+        raise ValueError(f"{label} must be a valid isolated loopback URL") from None
+    if host.lower() == "localhost":
+        is_loopback = True
+    else:
+        try:
+            is_loopback = ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            is_loopback = False
+    if (
+        parsed.scheme != "http"
+        or not is_loopback
+        or port != expected_port
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(f"{label} must use its isolated loopback service on port {expected_port}")
+    return parsed.scheme, host.lower(), port
+
+
+def validate_loopback_endpoints() -> None:
+    _validate_loopback_endpoint(BASE, EXPECTED_SHOP_PORT, "SHOP_BASE_URL")
+    _validate_loopback_endpoint(MAILPIT_API, EXPECTED_MAILPIT_PORT, "MAILPIT_API_URL")
 
 KOREAN_EMAIL_ACCESSIBLE_NAME = re.compile(
     r"(?:이메일|전자\s*우편|메일\s*주소)", re.IGNORECASE
@@ -41,6 +94,11 @@ USER_ID_LOOKUP_ACCESSIBLE_NAME = re.compile(
     r"(?:아이디|사용자\s*id|user\s*id|username)", re.IGNORECASE
 )
 PASSWORD_RESET_ACCESSIBLE_NAME = re.compile(r"(?:비밀번호|암호|password)", re.IGNORECASE)
+DUPLICATE_EMAIL_REJECTION = re.compile(
+    r"(?:already\s+(?:been\s+)?(?:registered|exists|used)|already\s+in\s+use|duplicate|"
+    r"중복|이미\s*(?:가입|등록|사용)|既に|すでに|登録済み|使用済み)",
+    re.IGNORECASE,
+)
 
 
 class AnchorLinks(HTMLParser):
@@ -1994,6 +2052,149 @@ def assert_my_page(driver: webdriver.Chrome, expected_first_name: str) -> None:
         raise AssertionError("My Page did not show the signed-in customer's saved name")
 
 
+def address_card_for_alias(driver: webdriver.Chrome, alias: str):
+    for card in driver.find_elements(By.CSS_SELECTOR, "article.address-card[data-id-address]"):
+        alias_fields = card.find_elements(By.CSS_SELECTOR, ".address-card__alias")
+        if alias_fields and alias_fields[0].text.strip() == alias:
+            return card
+    return None
+
+
+def wait_for_customer_address_card(driver: webdriver.Chrome, alias: str):
+    return WebDriverWait(driver, 30).until(
+        lambda browser: address_card_for_alias(browser, alias),
+        message="the saved customer address was not visible in the address list",
+    )
+
+
+def choose_japan_country(driver: webdriver.Chrome, form) -> None:
+    country_select = form.find_element(By.CSS_SELECTOR, 'select[name="id_country"]')
+    japan_option = next(
+        (
+            option
+            for option in Select(country_select).options
+            if re.search(r"japan|日本|일본", option.text, re.IGNORECASE)
+        ),
+        None,
+    )
+    if japan_option is None:
+        raise AssertionError("the customer address form has no Japan country option")
+    japan_value = japan_option.get_attribute("value")
+    Select(country_select).select_by_value(japan_value)
+    WebDriverWait(driver, 10).until(
+        lambda browser: browser.find_element(
+            By.CSS_SELECTOR, '.js-address-form select[name="id_country"]'
+        ).get_attribute("value") == japan_value
+    )
+
+
+def populate_japan_customer_address(driver: webdriver.Chrome, form, label: str) -> tuple[str, str]:
+    choose_japan_country(driver, form)
+    form = visible(driver, ".js-address-form form")
+    search = visible(driver, '.js-address-form input[name="kuraneapostcode_search"]')
+    search.clear()
+    search.send_keys("1000004")
+    candidate = WebDriverWait(driver, 30).until(
+        EC.element_to_be_clickable((By.CSS_SELECTOR, '.js-address-form button[role="option"]')),
+        message="the customer address postal lookup did not return the synthetic Tokyo result",
+    )
+    if not all(part in candidate.text for part in ("東京都", "千代田区", "大手町")):
+        raise AssertionError("the customer address postal lookup returned an unexpected Tokyo result")
+    click_centered(driver, candidate)
+    form = visible(driver, ".js-address-form form")
+
+    alias = f"ORDENOWA CI {label.upper()} ADDRESS"
+    address_line = f"大手町1-2-3 {label.upper()} CI"
+    for name, value in (
+        ("alias", alias),
+        ("firstname", "ORDENOWA"),
+        ("lastname", f"CI {label.title()}"),
+        ("address1", address_line),
+        ("address2", f"ORDENOWA CI {label.upper()} TEST BUILDING 101"),
+        ("phone", "0312345678"),
+        ("phone_mobile", "0312345678"),
+    ):
+        fields = form.find_elements(By.CSS_SELECTOR, f'input[name="{name}"]')
+        if fields and fields[0].is_displayed() and fields[0].is_enabled():
+            fields[0].clear()
+            fields[0].send_keys(value)
+
+    for name in ("postcode", "city", "address1"):
+        if not form.find_elements(By.CSS_SELECTOR, f'[name="{name}"]'):
+            raise AssertionError(f"the customer address form is missing {name}")
+    postcode = form.find_element(By.NAME, "postcode").get_attribute("value") or ""
+    city = form.find_element(By.NAME, "city").get_attribute("value") or ""
+    saved_line = form.find_element(By.NAME, "address1").get_attribute("value") or ""
+    if postcode.replace("-", "") != "1000004" or city != "千代田区" or not saved_line.startswith("大手町"):
+        raise AssertionError("the customer address form did not retain the selected Tokyo postal candidate")
+    return alias, address_line
+
+
+def create_customer_address(driver: webdriver.Chrome, label: str) -> tuple[str, str]:
+    driver.get(f"{BASE}/index.php?controller=address")
+    form = visible(driver, ".js-address-form form")
+    alias, address_line = populate_japan_customer_address(driver, form, label)
+    form = visible(driver, ".js-address-form form")
+    assert_native_form_valid(driver, form, "customer address")
+    driver.save_screenshot(str(DEST / f"{label}-customer-address-new.png"))
+    click_centered(driver, visible(driver, ".js-address-form button.form-control-submit"))
+    return alias, address_line
+
+
+def assert_customer_address_line(
+    driver: webdriver.Chrome,
+    alias: str,
+    address_id: str,
+    expected_line: str,
+    previous_line: str = "",
+) -> None:
+    card = wait_for_customer_address_card(driver, alias)
+    if card.get_attribute("data-id-address") != address_id:
+        raise AssertionError("the customer address ID changed while verifying its saved edit")
+    content = card.find_element(By.CSS_SELECTOR, "address.address-card__content").text
+    if expected_line not in content:
+        raise AssertionError("the customer address list did not show the saved address line")
+    if previous_line and previous_line in content:
+        raise AssertionError("the customer address list still showed the previous address line")
+
+
+def open_customer_address_edit(driver: webdriver.Chrome, alias: str, address_id: str) -> None:
+    card = wait_for_customer_address_card(driver, alias)
+    if card.get_attribute("data-id-address") != address_id:
+        raise AssertionError("the customer address list resolved a different address")
+    edit_link = card.find_element(By.CSS_SELECTOR, 'a[data-link-action="edit-address"]')
+    edit_url = urljoin(driver.current_url, edit_link.get_attribute("href") or "")
+    edit_location = urlparse(edit_url)
+    shop_location = urlparse(BASE)
+    if (edit_location.scheme, edit_location.hostname, edit_location.port) != (
+        shop_location.scheme,
+        shop_location.hostname,
+        shop_location.port,
+    ):
+        raise AssertionError("the customer address edit link changed the isolated shop origin")
+    click_centered(driver, edit_link)
+    form = visible(driver, ".js-address-form form")
+    if form.get_attribute("data-id-address") != address_id:
+        raise AssertionError("the customer address edit form did not load the selected address")
+
+
+def save_customer_address_edit(
+    driver: webdriver.Chrome,
+    address_id: str,
+    edited_address_line: str,
+    label: str,
+) -> None:
+    form = visible(driver, ".js-address-form form")
+    if form.get_attribute("data-id-address") != address_id:
+        raise AssertionError("the customer address edit form changed address identity")
+    address_field = form.find_element(By.NAME, "address1")
+    address_field.clear()
+    address_field.send_keys(edited_address_line)
+    assert_native_form_valid(driver, form, "customer address update")
+    driver.save_screenshot(str(DEST / f"{label}-customer-address-edit-form.png"))
+    click_centered(driver, visible(driver, ".js-address-form button.form-control-submit"))
+
+
 def click_required_checkbox_label(form, checkbox) -> None:
     checkbox_id = checkbox.get_attribute("id") or ""
     if not checkbox_id:
@@ -2204,6 +2405,42 @@ def assert_login_rejected(driver: webdriver.Chrome, email_address: str, password
         raise AssertionError("the prior customer password still authenticates after password reset")
     if any(element.is_displayed() for element in driver.find_elements(By.ID, "identity_main_link")):
         raise AssertionError("the prior customer password opened My Page after password reset")
+
+
+def assert_duplicate_email_rejected(driver: webdriver.Chrome) -> None:
+    def visible_rejection(browser: webdriver.Chrome) -> bool:
+        return any(
+            form.is_displayed()
+            and any(
+                alert.is_displayed()
+                for alert in form.find_elements(By.CSS_SELECTOR, '.alert.alert-danger[role="alert"]')
+            )
+            for form in browser.find_elements(By.ID, "customer-form")
+        )
+
+    WebDriverWait(driver, 30).until(
+        visible_rejection,
+        message="duplicate email registration did not leave a visible rejection message",
+    )
+    form = visible(driver, "#customer-form")
+    alert = next(
+        (
+            item
+            for item in form.find_elements(By.CSS_SELECTOR, '.alert.alert-danger[role="alert"]')
+            if item.is_displayed()
+        ),
+        None,
+    )
+    if alert is None or not DUPLICATE_EMAIL_REJECTION.search(alert.text or ""):
+        raise AssertionError("existing email did not receive a duplicate-registration rejection")
+    if any(
+        element.is_displayed()
+        for element in driver.find_elements(By.ID, "identity_main_link")
+    ) or any(
+        element.is_displayed()
+        for element in driver.find_elements(By.CSS_SELECTOR, "a.account-menu__link--signout")
+    ):
+        raise AssertionError("duplicate email registration unexpectedly authenticated a customer")
 
 
 def collect_email_login_result(driver: webdriver.Chrome) -> str | bool:
@@ -2439,6 +2676,8 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         email_login_account_route_classification = value
 
     try:
+        validate_isolated_ci_compose_project()
+        validate_loopback_endpoints()
         options = Options()
         options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
@@ -2531,6 +2770,36 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         assert_my_page(driver, "CI")
         driver.save_screenshot(str(DEST / f"{label}-customer-account-created.png"))
 
+        stage = "registration_duplicate_email"
+        account_url = logout(driver, login_url=login_url)
+        driver.get(registration_url)
+        if not safe_generated_route_match(driver.current_url, registration_url):
+            raise AssertionError("the duplicate registration attempt left its generated Korean route")
+        form = visible(driver, "#customer-form")
+        stage = "registration_duplicate_email_submit"
+        prepare_required_registration_fields(
+            driver,
+            form,
+            account_email,
+            initial_password,
+            failure_control,
+        )
+        assert_native_form_valid(driver, form, "duplicate registration")
+        set_registration_control(failure_control, "save-customer", "submit")
+        submit_button = visible(driver, "#customer-form button.form-control-submit")
+        click_centered(driver, submit_button)
+        stage = "registration_duplicate_email_rejected"
+        assert_duplicate_email_rejected(driver)
+        driver.save_screenshot(str(DEST / f"{label}-duplicate-email-rejected.png"))
+
+        stage = "registration_duplicate_email_relogin"
+        driver.get(login_url)
+        visible(driver, '#login-form input[name="email"]')
+        submit_login(driver, account_email, initial_password)
+        _, account_url = my_account_link_from_header(driver, open_menu=False)
+        driver.get(account_url)
+        assert_my_page(driver, "CI")
+
         stage = "profile_update_route"
         driver.get(f"{BASE}/index.php?controller=identity")
         assert_canonical_static_route(driver, "identity")
@@ -2557,6 +2826,39 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             == expected_first_name
         )
         driver.save_screenshot(str(DEST / f"{label}-customer-account-profile.png"))
+
+        stage = "customer_address_add"
+        address_alias, initial_address_line = create_customer_address(driver, label)
+        stage = "customer_address_add_persist_wait"
+        added_address_card = wait_for_customer_address_card(driver, address_alias)
+        address_id = added_address_card.get_attribute("data-id-address") or ""
+        if not address_id or address_id == "0":
+            raise AssertionError("the new customer address did not receive a native address ID")
+        assert_customer_address_line(driver, address_alias, address_id, initial_address_line)
+        driver.save_screenshot(str(DEST / f"{label}-customer-address-saved.png"))
+
+        edited_address_line = f"大手町4-5-6 {label.upper()} CI EDITED"
+        stage = "customer_address_edit"
+        open_customer_address_edit(driver, address_alias, address_id)
+        stage = "customer_address_edit_submit"
+        save_customer_address_edit(driver, address_id, edited_address_line, label)
+        stage = "customer_address_edit_persist_wait"
+        assert_customer_address_line(
+            driver,
+            address_alias,
+            address_id,
+            edited_address_line,
+            previous_line=initial_address_line,
+        )
+        driver.save_screenshot(str(DEST / f"{label}-customer-address-edited.png"))
+        driver.refresh()
+        assert_customer_address_line(
+            driver,
+            address_alias,
+            address_id,
+            edited_address_line,
+            previous_line=initial_address_line,
+        )
 
         stage = "email_login"
         email_login_substage = "logout"
@@ -2646,7 +2948,10 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             login_url=login_url,
             substage_callback=mark_email_login_substage,
         )
-        print(f"PASS: {label} customer registration, profile update, email login/logout, and Mailpit password reset")
+        print(
+            f"PASS: {label} customer registration and duplicate rejection, profile and Japan address create/edit, "
+            "email login/logout, and Mailpit password reset"
+        )
         success = True
     except Exception as error:
         if driver is not None:

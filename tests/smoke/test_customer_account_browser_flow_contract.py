@@ -77,6 +77,131 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         profile_save = self.blocks["profile_update_persist_wait"]
         self.assertIn("expected_first_name", profile_save)
 
+    def test_duplicate_email_registration_is_rejected_before_profile_update(self) -> None:
+        required_stages = (
+            "registration_post_submit",
+            "registration_duplicate_email",
+            "registration_duplicate_email_submit",
+            "registration_duplicate_email_rejected",
+            "registration_duplicate_email_relogin",
+            "profile_update_route",
+        )
+        positions = [self.stages.index(stage) for stage in required_stages]
+        self.assertEqual(positions, sorted(positions))
+
+        duplicate_open = self.blocks["registration_duplicate_email"]
+        self.assertIn("logout(driver, login_url=login_url)", duplicate_open)
+        self.assertIn("driver.get(registration_url)", duplicate_open)
+        self.assertIn("safe_generated_route_match", duplicate_open)
+
+        duplicate_submit = self.blocks["registration_duplicate_email_submit"]
+        self.assertIn("prepare_required_registration_fields", duplicate_submit)
+        self.assertIn("account_email", duplicate_submit)
+        self.assertIn("click_centered(driver, submit_button)", duplicate_submit)
+
+        duplicate_rejected = self.blocks["registration_duplicate_email_rejected"]
+        self.assertIn("assert_duplicate_email_rejected(driver)", duplicate_rejected)
+        self.assertIn("def assert_duplicate_email_rejected", self.source)
+        duplicate_pattern = next(
+            node
+            for node in ast.parse(self.source).body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name)
+                and target.id == "DUPLICATE_EMAIL_REJECTION"
+                for target in node.targets
+            )
+        )
+        namespace = {"re": re}
+        exec(
+            compile(ast.Module(body=[duplicate_pattern], type_ignores=[]), str(ACCOUNT_FLOW), "exec"),
+            namespace,
+        )
+        duplicate_email_rejection = namespace["DUPLICATE_EMAIL_REJECTION"]
+        for message in (
+            "An account using this email address has already been registered.",
+            "이미 등록된 이메일 주소입니다.",
+            "このメールアドレスは既に登録されています。",
+        ):
+            self.assertRegex(message, duplicate_email_rejection)
+        self.assertNotRegex("The password field is required.", duplicate_email_rejection)
+
+        relogin = self.blocks["registration_duplicate_email_relogin"]
+        self.assertIn("driver.get(login_url)", relogin)
+        self.assertIn("submit_login(driver, account_email, initial_password)", relogin)
+        self.assertIn("assert_my_page(driver, \"CI\")", relogin)
+
+    def test_customer_address_add_edit_and_reload_persistence_are_ordered(self) -> None:
+        required_stages = (
+            "profile_update_persist_wait",
+            "customer_address_add",
+            "customer_address_add_persist_wait",
+            "customer_address_edit",
+            "customer_address_edit_submit",
+            "customer_address_edit_persist_wait",
+            "email_login",
+        )
+        positions = [self.stages.index(stage) for stage in required_stages]
+        self.assertEqual(positions, sorted(positions))
+
+        address_add = self.blocks["customer_address_add"]
+        self.assertIn("create_customer_address(driver, label)", address_add)
+        address_add_persist = self.blocks["customer_address_add_persist_wait"]
+        self.assertIn("wait_for_customer_address_card(driver, address_alias)", address_add_persist)
+
+        address_edit = self.blocks["customer_address_edit"]
+        self.assertIn("open_customer_address_edit(driver, address_alias, address_id)", address_edit)
+        address_submit = self.blocks["customer_address_edit_submit"]
+        self.assertIn("save_customer_address_edit", address_submit)
+        self.assertIn("edited_address_line", address_submit)
+        address_persist = self.blocks["customer_address_edit_persist_wait"]
+        self.assertIn("assert_customer_address_line", address_persist)
+        self.assertIn("driver.refresh()", address_persist)
+
+        self.assertIn('data-link-action="edit-address"', self.source)
+        self.assertIn('data-id-address', self.source)
+        self.assertIn('name="kuraneapostcode_search"', self.source)
+        self.assertIn('button[role="option"]', self.source)
+
+    def test_address_edit_fixture_passes_saved_line_check_and_rejects_stale_line(self) -> None:
+        tree = ast.parse(self.source)
+        helper = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "assert_customer_address_line"
+        )
+        assignments = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and len(node.targets) == 1:
+                target = node.targets[0]
+                if isinstance(target, ast.Name) and target.id in {"address_line", "edited_address_line"}:
+                    assignments[target.id] = node
+
+        content = SimpleNamespace(text="")
+        card = SimpleNamespace(
+            get_attribute=lambda name: "42",
+            find_element=lambda *args: content,
+        )
+        namespace = {
+            "wait_for_customer_address_card": lambda *args: card,
+            "By": SimpleNamespace(CSS_SELECTOR="css selector"),
+            "webdriver": SimpleNamespace(Chrome=object),
+        }
+        exec(compile(ast.Module(body=[helper], type_ignores=[]), str(ACCOUNT_FLOW), "exec"), namespace)
+        for label in ("desktop", "mobile"):
+            with self.subTest(label=label):
+                fixture = {"label": label}
+                exec(compile(ast.Module(body=list(assignments.values()), type_ignores=[]), str(ACCOUNT_FLOW), "exec"), fixture)
+                initial = fixture["address_line"]
+                edited = fixture["edited_address_line"]
+                content.text = f"ORDENOWA CI\n{edited}\n東京都 千代田区"
+                namespace["assert_customer_address_line"](None, "CI", "42", edited, initial)
+                content.text += f"\n{initial}"
+                with self.assertRaisesRegex(AssertionError, "previous address line"):
+                    namespace["assert_customer_address_line"](None, "CI", "42", edited, initial)
+                content.text = initial
+                with self.assertRaisesRegex(AssertionError, "saved address line"):
+                    namespace["assert_customer_address_line"](None, "CI", "42", edited, initial)
+
     def test_email_login_and_logout_check_authenticated_and_signed_out_states(self) -> None:
         email_login = self.blocks["email_login"]
         self.assertIn("logout(", email_login)
@@ -171,7 +296,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             and isinstance(node.func, ast.Name)
             and node.func.id == "logout"
         ]
-        self.assertEqual(len(logout_calls), 4)
+        self.assertEqual(len(logout_calls), 5)
         self.assertTrue(
             all(
                 len(call.args) == 1

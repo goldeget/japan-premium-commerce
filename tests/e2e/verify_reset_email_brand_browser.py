@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -30,6 +31,8 @@ CUSTOMER_EMAIL = os.environ["CUSTOMER_EMAIL"].strip().lower()
 PUBLISHED_EMAIL_LOGO_PATH = os.environ["PUBLISHED_EMAIL_LOGO_PATH"].strip().lstrip("/")
 DEST = Path(os.environ["QA_ARTIFACT_DIR"])
 DEST.mkdir(parents=True, exist_ok=True)
+EXPECTED_SHOP_PORT = 18080
+EXPECTED_MAILPIT_PORT = 8025
 
 if not re.fullmatch(
     r"ordenowa/versions/[a-fA-F0-9]{64}/(?:email-logo|official-email-logo)\.png",
@@ -38,6 +41,58 @@ if not re.fullmatch(
     raise ValueError("the published email logo path is not a versioned ORDENOWA PNG")
 if not re.fullmatch(r"ordenowa-reset-logo-[0-9]+-[0-9]+-[a-f0-9]+@example\.invalid", CUSTOMER_EMAIL):
     raise ValueError("the email brand browser requires a disposable CI-only customer address")
+
+
+def validate_isolated_ci_compose_project() -> None:
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")
+    expected_project = f"kuranea-ci-{run_id}-{attempt}"
+    expected_email = rf"ordenowa-reset-logo-{re.escape(run_id)}-{re.escape(attempt)}-[a-f0-9]+@example\.invalid"
+    if (
+        os.environ.get("CI") != "true"
+        or os.environ.get("GITHUB_ACTIONS") != "true"
+        or os.environ.get("KURANEA_ISOLATED_CI") != "1"
+        or not run_id.isascii()
+        or not run_id.isdecimal()
+        or not attempt.isascii()
+        or not attempt.isdecimal()
+        or os.environ.get("CI_COMPOSE_PROJECT_NAME", "") != expected_project
+        or not re.fullmatch(expected_email, CUSTOMER_EMAIL)
+    ):
+        raise ValueError("reset-email brand QA requires its exact isolated GitHub Actions Compose project")
+
+
+def _validate_loopback_endpoint(value: str, expected_port: int, label: str) -> tuple[str, str, int]:
+    try:
+        parsed = urlparse(value)
+        host = parsed.hostname or ""
+        port = parsed.port
+    except ValueError:
+        raise ValueError(f"{label} must be a valid isolated loopback URL") from None
+    if host.lower() == "localhost":
+        is_loopback = True
+    else:
+        try:
+            is_loopback = ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            is_loopback = False
+    if (
+        parsed.scheme != "http"
+        or not is_loopback
+        or port != expected_port
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(f"{label} must use its isolated loopback service on port {expected_port}")
+    return parsed.scheme, host.lower(), port
+
+
+def validate_loopback_endpoints() -> None:
+    _validate_loopback_endpoint(BASE, EXPECTED_SHOP_PORT, "SHOP_BASE_URL")
+    _validate_loopback_endpoint(MAILPIT_API, EXPECTED_MAILPIT_PORT, "MAILPIT_API_URL")
 
 
 class InlineLogoParser(HTMLParser):
@@ -272,6 +327,8 @@ def render_captured_logo(driver: webdriver.Chrome, logo_bytes: bytes) -> None:
 
 
 def run() -> bool:
+    validate_isolated_ci_compose_project()
+    validate_loopback_endpoints()
     driver = None
     stage = "password_recovery_request"
     message: dict | None = None

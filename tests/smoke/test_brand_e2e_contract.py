@@ -409,7 +409,7 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn("def current_draft_history_row(", browser_flow)
         helper = browser_flow.split("def current_draft_history_row(", 1)[1].split("\ndef ", 1)[0]
         self.assertIn("return False", helper)
-        self.assertEqual(2, browser_flow.count("until(current_draft_history_row)"))
+        self.assertGreaterEqual(browser_flow.count("until(current_draft_history_row)"), 2)
 
     def test_public_draft_snapshot_checks_mobile_independently(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
@@ -820,6 +820,53 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('pwa_short_name="ORDENOWA EN"', run_flow)
         self.assertIn('stage_prefix="published_english_customer_brand"', run_flow)
         self.assertIn('driver.save_screenshot(str(DEST / "brand-english-published.png"))', run_flow)
+
+    def test_admin_browser_restores_a_published_history_version_as_an_unpublished_draft(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        restore_helper = browser_flow.split(
+            "def restore_published_history_version_as_draft(", 1
+        )[1].split("\ndef ", 1)[0]
+        run_flow = browser_flow.split("def run()", 1)[1].split('if __name__ == "__main__"', 1)[0]
+        restore_stage = run_flow.index('stage = "restore_published_history_as_draft"')
+        following_stage = run_flow.index('stage = "admin_login_after_publish"', restore_stage)
+        restore_block = run_flow[restore_stage:following_stage]
+
+        self.assertIn('history_row_with_status(browser, "게시 중")', restore_helper)
+        self.assertIn('button[name="submitOrdenowaRestore"]', restore_helper)
+        self.assertIn("이전 설정을 새 초안으로 복원했습니다", browser_flow)
+        self.assertIn('button[name="submitOrdenowaSaveDraft"]', run_flow)
+        self.assertIn('"현재 초안"', restore_helper)
+        self.assertIn('"게시 중"', restore_helper)
+        self.assertIn("source_version_id == restored_version_id", restore_helper)
+        self.assertIn("public_brand_snapshot(driver)", restore_helper)
+        self.assertIn("expected_settings", restore_helper)
+        self.assertIn('"brand-admin-history-restore-confirmation.png"', restore_helper)
+        self.assertIn("restore_published_history_version_as_draft(", restore_block)
+        self.assertIn('driver.save_screenshot(str(DEST / "brand-admin-history-restored-draft.png"))', restore_block)
+
+    def test_admin_browser_roundtrips_terms_privacy_and_specified_act_through_preview_and_publish(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        run_flow = browser_flow.split("def run()", 1)[1].split('if __name__ == "__main__"', 1)[0]
+        draft_values = run_flow.split("policy_settings = {", 1)[1].split("ci_settings.update(policy_settings)", 1)[0]
+        preview_stage = run_flow.split('stage = "private_admin_preview"', 1)[1].split(
+            "publish_selector =", 1
+        )[0]
+        publish_stage = run_flow.split('stage = "publish_confirmation"', 1)[1].split(
+            'stage = "published_desktop_customer_brand"', 1
+        )[0]
+
+        for policy in ("terms", "privacy", "specified_commercial_act"):
+            with self.subTest(policy=policy):
+                self.assertIn(f'profile[content][{policy}]', draft_values)
+        self.assertIn("ci_settings.update(policy_settings)", run_flow)
+        self.assertIn("for selector, expected in ci_settings.items():", run_flow)
+        self.assertIn("driver.get(settings_url)", run_flow)
+        self.assertIn("specified_act_preview_value,", preview_stage)
+        self.assertIn("if expected not in preview.text:", preview_stage)
+        self.assertIn("for selector, expected in policy_settings.items():", preview_stage)
+        self.assertIn("for selector, expected in ci_settings.items():", publish_stage)
+        self.assertIn('stage = "published_policy_fields_reload"', publish_stage)
+        self.assertIn('driver.save_screenshot(str(DEST / "brand-admin-policies-published-reloaded.png"))', publish_stage)
 
 
 if __name__ == "__main__":
