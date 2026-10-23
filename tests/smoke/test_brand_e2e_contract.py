@@ -75,6 +75,60 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('stage_prefix="published_mobile_customer_brand"', run_flow)
         self.assertIn('stage_prefix="published_korean_customer_brand"', run_flow)
 
+    def test_browser_validates_initial_approved_assets_before_upload(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        self.assertIn("def assert_initial_official_brand_assets(", browser_flow)
+        initial_assertion = browser_flow.split("def assert_initial_official_brand_assets(", 1)[1].split(
+            "\ndef ", 1
+        )[0]
+        run_flow = browser_flow.split("def run()", 1)[1]
+
+        self.assertIn("assert_uploaded_derivative_url(", initial_assertion)
+        self.assertIn("APPROVED_DERIVED_ASSETS", initial_assertion)
+        self.assertIn("verify_browser_asset_bytes(", initial_assertion)
+        for official_derivative in (
+            "official-header-desktop.png",
+            "official-header-mobile.png",
+            "official-admin-login.png",
+            "official-favicon.ico",
+            "official-favicon-16.png",
+            "official-favicon-32.png",
+            "official-apple-touch-icon.png",
+            "official-pwa-192.png",
+            "official-pwa-512.png",
+            "official-pwa-maskable-512.png",
+            "official-og-brand.png",
+        ):
+            with self.subTest(official_derivative=official_derivative):
+                self.assertIn(official_derivative, initial_assertion)
+
+        baseline = run_flow.index('stage = "public_brand_baseline_before_draft"')
+        assertion = run_flow.index("assert_initial_official_brand_assets(", baseline)
+        upload = run_flow.index('stage = "official_asset_upload"', baseline)
+        self.assertLess(assertion, upload)
+
+    def test_browser_asserts_served_manifest_identity_and_launch_scope(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        public_snapshot = browser_flow.split("def public_brand_snapshot(", 1)[1].split(
+            "def public_brand_slot_urls(", 1
+        )[0]
+        published_assets = browser_flow.split("def assert_public_brand_assets(", 1)[1].split(
+            "def restore_approved_brand_icon_after_failure(", 1
+        )[0]
+        self.assertIn("def assert_manifest_base_path(", browser_flow)
+        manifest_assertion = browser_flow.split("def assert_manifest_base_path(", 1)[1].split(
+            "\ndef ", 1
+        )[0]
+
+        for field in ("id", "start_url", "scope"):
+            with self.subTest(field=field):
+                self.assertIn(f"{field}: manifest.{field} || ''", public_snapshot)
+                self.assertIn(field, manifest_assertion)
+        self.assertIn("urlparse(BASE).path", manifest_assertion)
+        self.assertIn('for field in ("id", "start_url", "scope"):', manifest_assertion)
+        self.assertIn("if manifest.get(field) != expected_path:", manifest_assertion)
+        self.assertIn("assert_manifest_base_path(results[\"manifest\"])", published_assets)
+
     def test_browser_persists_seller_profile_fields_without_opening_disclosures(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
 

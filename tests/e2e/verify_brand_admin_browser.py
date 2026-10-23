@@ -28,6 +28,8 @@ ADMIN_PASSWORD = os.environ["ADMIN_PASSWD"]
 DEST = Path(os.environ["QA_ARTIFACT_DIR"])
 ROOT = Path(__file__).resolve().parents[2]
 SOURCES = ROOT / "assets" / "brand" / "ordenowa" / "official_originals"
+ASSET_MANIFEST = ROOT / "assets" / "brand" / "ordenowa" / "asset-manifest.json"
+APPROVED_DERIVED_ASSETS = json.loads(ASSET_MANIFEST.read_text(encoding="utf-8"))["derived"]
 DEST.mkdir(parents=True, exist_ok=True)
 OFFICIAL_UPLOADS = {
     "primary_logo": SOURCES / "ORDENOWA-logo.png",
@@ -408,8 +410,11 @@ def public_brand_snapshot(driver: webdriver.Chrome, *, include_mobile: bool = Tr
               .map(link => [link.rel, link.href]).sort(),
             ogImage: document.querySelector('meta[property="og:image"]')?.content || '',
             manifest: {
+              id: manifest.id || '',
               name: manifest.name || '',
               short_name: manifest.short_name || '',
+              start_url: manifest.start_url || '',
+              scope: manifest.scope || '',
               theme_color: manifest.theme_color || '',
               background_color: manifest.background_color || '',
               icons: (manifest.icons || []).map(icon => [icon.src, icon.sizes || '', icon.purpose || ''])
@@ -433,6 +438,14 @@ def public_brand_snapshot(driver: webdriver.Chrome, *, include_mobile: bool = Tr
     return snapshot
 
 
+def assert_manifest_base_path(manifest: dict) -> None:
+    shop_path = urlparse(BASE).path.rstrip("/")
+    expected_path = (shop_path or "") + "/"
+    for field in ("id", "start_url", "scope"):
+        if manifest.get(field) != expected_path:
+            raise AssertionError("served PWA manifest " + field + " does not match the storefront base path")
+
+
 def public_brand_slot_urls(snapshot: dict, slot: str) -> tuple[str, ...]:
     if slot == "favicon_symbol":
         return tuple(sorted(href for rel, href in snapshot["icons"] if rel == "icon"))
@@ -441,6 +454,192 @@ def public_brand_slot_urls(snapshot: dict, slot: str) -> tuple[str, ...]:
         manifest_icons = [icon[0] for icon in snapshot["manifest"]["icons"]]
         return tuple(sorted(apple_icons + manifest_icons))
     raise AssertionError("unsupported replaceable brand icon slot")
+
+
+def verify_browser_asset_bytes(
+    driver: webdriver.Chrome,
+    expected_assets: list[dict[str, str | int]],
+) -> None:
+    facts = driver.execute_async_script(
+        """
+        const [assets, done] = arguments;
+        (async () => {
+          const facts = [];
+          for (const asset of assets) {
+            const response = await fetch(asset.url, {cache: 'no-store'});
+            if (!response.ok) throw new Error('asset fetch failed');
+            const bytes = await response.arrayBuffer();
+            const hashBuffer = await crypto.subtle.digest('SHA-256', bytes);
+            const sha256 = [...new Uint8Array(hashBuffer)]
+              .map(value => value.toString(16).padStart(2, '0')).join('');
+            const objectUrl = URL.createObjectURL(new Blob([bytes]));
+            const image = new Image();
+            try {
+              image.src = objectUrl;
+              await image.decode();
+              facts.push({
+                role: asset.role,
+                sha256,
+                bytes: bytes.byteLength,
+                width: image.naturalWidth,
+                height: image.naturalHeight
+              });
+            } finally {
+              URL.revokeObjectURL(objectUrl);
+            }
+          }
+          return facts;
+        })().then(done).catch(() => done({error: true}));
+        """,
+        expected_assets,
+    )
+    if not isinstance(facts, list) or len(facts) != len(expected_assets):
+        raise AssertionError("the browser could not decode every installed official brand image")
+
+    facts_by_role = {
+        fact.get("role"): fact
+        for fact in facts
+        if isinstance(fact, dict) and isinstance(fact.get("role"), str)
+    }
+    for expected in expected_assets:
+        fact = facts_by_role.get(expected["role"])
+        if not isinstance(fact, dict):
+            raise AssertionError("the browser did not verify an installed official brand image")
+        if (
+            fact.get("sha256") != expected["sha256"]
+            or fact.get("bytes") != expected["bytes"]
+            or int(fact.get("width") or 0) < 1
+            or int(fact.get("height") or 0) < 1
+        ):
+            raise AssertionError("an installed official brand image differs from its approved derivative")
+
+
+def assert_initial_official_brand_assets(
+    driver: webdriver.Chrome,
+    stage_callback: Callable[[str], None],
+) -> dict:
+    """Verify the fresh-install public brand before the browser uploads any sources."""
+    expected_assets: list[dict[str, str | int]] = []
+
+    def expect_asset(
+        role: str,
+        url: str,
+        source: Path,
+        installed_filename: str,
+        packaged_filename: str,
+    ) -> None:
+        assert_uploaded_derivative_url(url, source, installed_filename, role)
+        packaged = APPROVED_DERIVED_ASSETS.get(packaged_filename)
+        if not isinstance(packaged, dict):
+            raise AssertionError("the approved asset manifest omits " + packaged_filename)
+        expected_assets.append(
+            {
+                "role": role,
+                "url": url,
+                "sha256": packaged["sha256"],
+                "bytes": packaged["bytes"],
+            }
+        )
+
+    stage_callback("initial_public_brand_snapshot")
+    snapshot = public_brand_snapshot(driver)
+    assert_manifest_base_path(snapshot["manifest"])
+
+    stage_callback("initial_desktop_header_logo")
+    expect_asset(
+        "desktop header logo",
+        snapshot["logo"],
+        OFFICIAL_UPLOADS["primary_logo"],
+        "official-header-desktop.png",
+        "logo-desktop.png",
+    )
+    stage_callback("initial_mobile_header_logo")
+    expect_asset(
+        "mobile header logo",
+        snapshot["mobile"]["logo"],
+        OFFICIAL_UPLOADS["primary_logo"],
+        "official-header-mobile.png",
+        "logo-mobile.png",
+    )
+
+    icon_links = [{"rel": rel, "href": href} for rel, href in snapshot["icons"]]
+    for role, filename, packaged_filename in (
+        ("favicon ICO", "official-favicon.ico", "favicon.ico"),
+        ("16 pixel favicon", "official-favicon-16.png", "favicon-16x16.png"),
+        ("32 pixel favicon", "official-favicon-32.png", "favicon-32x32.png"),
+    ):
+        stage_callback("initial_" + role.replace(" ", "_"))
+        expect_asset(
+            role,
+            find_asset_url(icon_links, "icon", OFFICIAL_UPLOADS["favicon_symbol"], filename),
+            OFFICIAL_UPLOADS["favicon_symbol"],
+            filename,
+            packaged_filename,
+        )
+
+    stage_callback("initial_apple_touch_icon")
+    expect_asset(
+        "Apple Touch icon",
+        find_asset_url(
+            icon_links,
+            "apple-touch-icon",
+            OFFICIAL_UPLOADS["pwa_icon"],
+            "official-apple-touch-icon.png",
+        ),
+        OFFICIAL_UPLOADS["pwa_icon"],
+        "official-apple-touch-icon.png",
+        "apple-touch-icon.png",
+    )
+
+    pwa_icon_expectations = (
+        ("official-pwa-192.png", "192x192", "any", "pwa-192x192.png"),
+        ("official-pwa-512.png", "512x512", "any", "pwa-512x512.png"),
+        ("official-pwa-maskable-512.png", "512x512", "maskable", "pwa-maskable-512x512.png"),
+    )
+    for filename, size, purpose, packaged_filename in pwa_icon_expectations:
+        stage_callback("initial_" + filename.removesuffix(".png"))
+        manifest_icon = next(
+            (
+                (url, declared_size, declared_purpose)
+                for url, declared_size, declared_purpose in snapshot["manifest"]["icons"]
+                if urlparse(url).path.endswith("/" + filename)
+            ),
+            None,
+        )
+        if manifest_icon is None or manifest_icon[1:] != (size, purpose):
+            raise AssertionError("the initial PWA manifest does not map the approved " + filename)
+        expect_asset(
+            "PWA " + purpose + " " + size + " icon",
+            manifest_icon[0],
+            OFFICIAL_UPLOADS["pwa_icon"],
+            filename,
+            packaged_filename,
+        )
+
+    stage_callback("initial_open_graph_image")
+    expect_asset(
+        "Open Graph image",
+        snapshot["ogImage"],
+        OFFICIAL_UPLOADS["primary_logo"],
+        "official-og-brand.png",
+        "og-1200x630.png",
+    )
+
+    stage_callback("initial_admin_login_logo")
+    driver.get(ADMIN_LOGIN + "/login")
+    login_logo = image_is_rendered(driver, ".ordenowa-admin-login-brand img")
+    expect_asset(
+        "admin login logo",
+        login_logo["src"],
+        OFFICIAL_UPLOADS["primary_logo"],
+        "official-admin-login.png",
+        "logo-desktop.png",
+    )
+
+    stage_callback("initial_official_asset_hash_and_decode")
+    driver.get(BASE + "/")
+    verify_browser_asset_bytes(driver, expected_assets)
+    return snapshot
 
 
 def click_centered(driver: webdriver.Chrome, element) -> None:
@@ -807,6 +1006,7 @@ def assert_public_brand_assets(
     set_assertion_stage("metadata_contract")
     if results["ogImage"]["width"] != 1200 or results["ogImage"]["height"] != 630:
         raise AssertionError("the approved Open Graph image dimensions are incorrect")
+    assert_manifest_base_path(results["manifest"])
     if len(results["icons"]) != 3 or not any(item["purpose"] == "maskable" for item in results["icons"]):
         raise AssertionError("PWA manifest does not expose the approved any and maskable icons")
     pwa_icon_expectations = (
@@ -1108,7 +1308,10 @@ def run() -> None:
             raise
 
         stage = "public_brand_baseline_before_draft"
-        public_before_draft = public_brand_snapshot(driver)
+        public_before_draft = assert_initial_official_brand_assets(
+            driver,
+            set_brand_assertion_stage,
+        )
         driver.save_screenshot(str(DEST / "brand-customer-before-draft.png"))
         driver.get(settings_url)
         visible(driver, "form.ordenowa-profile-settings")
