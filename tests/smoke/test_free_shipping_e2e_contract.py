@@ -11,6 +11,7 @@ WORKFLOW = ROOT / ".github/workflows/fresh-install.yml"
 BROWSER = ROOT / "tests/e2e/verify_ci_free_shipping_browser.py"
 ORDER_VERIFY = ROOT / "tests/postcode/verify_ci_free_shipping_order.php"
 COUPON_FIXTURE = ROOT / "tests/postcode/seed_ci_shipping_coupon.php"
+CARRIER_ACCESS_FIXTURE = ROOT / "tests/postcode/prepare_ci_carrier_admin_access.php"
 JAPAN_ZONE_FIXTURE = ROOT / "tests/postcode/prepare_ci_japan_shipping_zone.php"
 SHIPPING_PRODUCT_FIXTURE = ROOT / "tests/catalog/prepare_ci_free_shipping_product.php"
 
@@ -78,6 +79,7 @@ class FreeShippingE2eContractTest(unittest.TestCase):
     def test_database_writing_fixtures_guard_the_connected_disposable_database(self) -> None:
         for path in (
             SHIPPING_PRODUCT_FIXTURE,
+            CARRIER_ACCESS_FIXTURE,
             JAPAN_ZONE_FIXTURE,
             COUPON_FIXTURE,
         ):
@@ -91,9 +93,13 @@ class FreeShippingE2eContractTest(unittest.TestCase):
                 self.assertIn("getenv('DB_SERVER') === 'mariadb'", source)
                 self.assertIn("getenv('DB_PORT') === '3306'", source)
                 self.assertIn("'prestashop'", source)
-                self.assertIn("server_match=%s", source)
-                self.assertIn("configured_name_match=%s", source)
-                self.assertIn("active_connection_match=%s", source)
+                if path == CARRIER_ACCESS_FIXTURE:
+                    self.assertIn("$dbServerMatches && $dbNameMatches && $activeDatabaseMatches", source)
+                    self.assertIn("refused a database outside the isolated CI Compose checkout", source)
+                else:
+                    self.assertIn("server_match=%s", source)
+                    self.assertIn("configured_name_match=%s", source)
+                    self.assertIn("active_connection_match=%s", source)
 
     def test_compose_pins_the_isolated_database_endpoint_to_the_allowed_port(self) -> None:
         compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
@@ -102,7 +108,7 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertIn('DB_PORT: "3306"', prestashop_service)
 
     def test_free_shipping_database_guard_rejects_non_compose_endpoints(self) -> None:
-        for path in (SHIPPING_PRODUCT_FIXTURE, JAPAN_ZONE_FIXTURE, COUPON_FIXTURE):
+        for path in (SHIPPING_PRODUCT_FIXTURE, CARRIER_ACCESS_FIXTURE, JAPAN_ZONE_FIXTURE, COUPON_FIXTURE):
             with self.subTest(path=path.name):
                 source = path.read_text(encoding="utf-8")
                 guard = source.split("$dbServerMatches =", 1)[1].split(";", 1)[0]
@@ -185,6 +191,7 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         steps = (
             "Prepare isolated free-shipping order and coupon fixtures",
+            "Grant isolated CI administrator the native AdminCarriers create permissions",
             "Configure the free Japan carrier through Chromium AdminCarriers",
             "Restart PrestaShop with the CI database volume intact",
             "Read back the free Japan carrier after a fresh admin login",
@@ -198,6 +205,7 @@ class FreeShippingE2eContractTest(unittest.TestCase):
 
         for step_id in (
             "shipping_free_fixture",
+            "shipping_free_admin_access",
             "shipping_free_admin_configure",
             "shipping_free_restart",
             "shipping_free_admin_readback",
@@ -218,6 +226,8 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertIn("CI_JAPAN_ZONE_ID", workflow)
         self.assertIn("CI_TEST_PRODUCT_TAX_GROUP", workflow)
         self.assertIn("prepare_ci_japan_shipping_zone.php", workflow)
+        self.assertIn("prepare_ci_carrier_admin_access.php", workflow)
+        self.assertIn("steps.shipping_free_admin_access.outcome == 'success'", workflow)
         self.assertIn("5300001", workflow)
         self.assertIn('[ "$product_tax_group_id" != "0" ]', workflow)
         self.assertIn('[ "$product_id" != "$expected_product_id" ]', workflow)
@@ -248,6 +258,13 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, browser)
+        self.assertNotIn("ShippingMethod.BY_PRICE", browser)
+        self.assertNotIn("ShippingMethod.BY_WEIGHT", browser)
+        self.assertNotIn("js-add-carrier-ranges-btn", browser)
+        self.assertNotIn("_set_tax_rule_to_no_tax", browser)
+        self.assertNotIn("EXPECTED_QUANTITY", browser)
+        self.assertIn("BLOCKED: no run-scoped disposable coupon fixture was supplied", browser)
+        self.assertIn("selected zones were", browser)
 
     def test_carrier_form_opens_shipping_tab_before_selecting_zone_and_free_shipping(self) -> None:
         browser = BROWSER.read_text(encoding="utf-8")
@@ -266,13 +283,27 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertLess(zone_selection, free_shipping)
         self.assertIn('mark_stage("open_shipping_settings_tab")', form_fill)
 
-        self.assertNotIn("ShippingMethod.BY_PRICE", browser)
-        self.assertNotIn("ShippingMethod.BY_WEIGHT", browser)
-        self.assertNotIn("js-add-carrier-ranges-btn", browser)
-        self.assertNotIn("_set_tax_rule_to_no_tax", browser)
-        self.assertNotIn("EXPECTED_QUANTITY", browser)
-        self.assertIn("BLOCKED: no run-scoped disposable coupon fixture was supplied", browser)
-        self.assertIn("selected zones were", browser)
+    def test_ci_carrier_access_fixture_grants_only_read_create_and_update_in_the_isolated_shop(self) -> None:
+        source = CARRIER_ACCESS_FIXTURE.read_text(encoding="utf-8")
+        for marker in (
+            "getenv('GITHUB_ACTIONS') === 'true'",
+            "getenv('KURANEA_ISOLATED_CI') === '1'",
+            "$projectName === $expectedProjectName",
+            "SELECT DATABASE()",
+            "getenv('DB_SERVER') === 'mariadb'",
+            "getenv('DB_PORT') === '3306'",
+            "'prestashop'",
+            "Tab::getIdFromClassName('AdminCarriers')",
+            "'view' => 'READ'",
+            "'add' => 'CREATE'",
+            "'edit' => 'UPDATE'",
+            "Access::isGranted($role, (int) $admin->id_profile)",
+            "'delete_permission_changed' => false",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, source)
+        self.assertNotIn("'delete' =>", source)
+        self.assertIn('shipping-free-admin-access.json', WORKFLOW.read_text(encoding="utf-8"))
 
     def test_checkout_tax_classifier_does_not_count_tax_inclusive_grand_total_as_tax(self) -> None:
         source = ast.parse(BROWSER.read_text(encoding="utf-8"))

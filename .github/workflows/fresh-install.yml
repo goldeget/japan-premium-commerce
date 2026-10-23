@@ -1034,9 +1034,46 @@ jobs:
           printf 'PASS: prepared no-rule product id=%s, Japan zone=%s, and a run-scoped JPY coupon with no free-shipping override.\n' \
             "$product_id" "$japan_zone_id"
 
+      - name: Grant isolated CI administrator the native AdminCarriers create permissions
+        id: shipping_free_admin_access
+        if: steps.shipping_free_fixture.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/ordenowa-browser-qa"
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/prepare_ci_carrier_admin_access.php' \
+            < tests/postcode/prepare_ci_carrier_admin_access.php
+          fixture_json="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-admin-access.json"
+          fixture_log="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-admin-access.log"
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e CI=true \
+            -e GITHUB_ACTIONS=true \
+            -e GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            -e GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            -e KURANEA_ISOLATED_CI=1 \
+            -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            -e ADMIN_MAIL="$ADMIN_MAIL" \
+            prestashop runuser -g www-data -u www-data -- \
+            php /tmp/prepare_ci_carrier_admin_access.php \
+            > "$fixture_json" 2> "$fixture_log"
+          cat "$fixture_log"
+          python3 - "$fixture_json" <<'PY'
+          import json, sys
+          fixture = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert int(fixture["admin_profile_id"]) > 0
+          assert int(fixture["carrier_tab_id"]) > 0
+          assert fixture["read"] is True
+          assert fixture["create"] is True
+          assert fixture["update"] is True
+          assert fixture["delete_permission_changed"] is False
+          assert fixture["fixture_scope"] == "run-scoped isolated GitHub Actions disposable checkout database"
+          PY
+
       - name: Configure the free Japan carrier through Chromium AdminCarriers
         id: shipping_free_admin_configure
-        if: steps.shipping_free_fixture.outcome == 'success'
+        if: steps.shipping_free_fixture.outcome == 'success' && steps.shipping_free_admin_access.outcome == 'success'
         continue-on-error: true
         shell: bash
         env:
@@ -1561,6 +1598,12 @@ jobs:
               shipping-free-coupon-fixture.json
             )
           fi
+          if [[ "$SHIPPING_FREE_ADMIN_ACCESS_OUTCOME" == success ]]; then
+            required_artifacts+=(
+              shipping-free-admin-access.json
+              shipping-free-admin-access.log
+            )
+          fi
           if [[ "$SHIPPING_FREE_ADMIN_CONFIGURE_OUTCOME" == success ]]; then
             required_artifacts+=(
               shipping-free-admin-configure-e2e.log
@@ -1684,6 +1727,7 @@ jobs:
           RESET_TOKEN_BROWSER_QA_OUTCOME: ${{ steps.reset_token_browser_qa.outcome }}
           PWA_BROWSER_QA_OUTCOME: ${{ steps.pwa_browser_qa.outcome }}
           SHIPPING_FREE_FIXTURE_OUTCOME: ${{ steps.shipping_free_fixture.outcome }}
+          SHIPPING_FREE_ADMIN_ACCESS_OUTCOME: ${{ steps.shipping_free_admin_access.outcome }}
           SHIPPING_FREE_ADMIN_CONFIGURE_OUTCOME: ${{ steps.shipping_free_admin_configure.outcome }}
           SHIPPING_FREE_RESTART_OUTCOME: ${{ steps.shipping_free_restart.outcome }}
           SHIPPING_FREE_ADMIN_READBACK_OUTCOME: ${{ steps.shipping_free_admin_readback.outcome }}
@@ -1725,6 +1769,7 @@ jobs:
             "reset_token_browser_qa=$RESET_TOKEN_BROWSER_QA_OUTCOME" \
             "pwa_browser_qa=$PWA_BROWSER_QA_OUTCOME" \
             "shipping_free_fixture=$SHIPPING_FREE_FIXTURE_OUTCOME" \
+            "shipping_free_admin_access=$SHIPPING_FREE_ADMIN_ACCESS_OUTCOME" \
             "shipping_free_admin_configure=$SHIPPING_FREE_ADMIN_CONFIGURE_OUTCOME" \
             "shipping_free_restart=$SHIPPING_FREE_RESTART_OUTCOME" \
             "shipping_free_admin_readback=$SHIPPING_FREE_ADMIN_READBACK_OUTCOME" \
