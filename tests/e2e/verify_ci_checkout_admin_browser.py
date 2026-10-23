@@ -541,15 +541,16 @@ def click_required_checkbox_label(
     )
 
 
-def enter_product_search_query(driver: webdriver.Chrome) -> None:
+def enter_product_search_query(driver: webdriver.Chrome, search_term: str = "postcode") -> None:
+    term = search_term.strip()
+    if len(term) < 3:
+        raise ValueError("storefront product searches require an indexed term of at least three characters")
     for attempt in range(2):
         search = visible(driver, 'input[name="s"]')
         try:
             search.clear()
-            # The fixture title includes this full-length indexed word. "CI" is
-            # too short for a reliable PrestaShop search term, and Hummingbird
-            # renders AJAX autocomplete results instead of submitting on Enter.
-            search.send_keys("postcode")
+            # Hummingbird renders AJAX autocomplete results instead of submitting on Enter.
+            search.send_keys(term)
         except StaleElementReferenceException:
             if attempt == 1:
                 raise
@@ -627,12 +628,16 @@ def prepare_required_customer_fields(
             select.select_by_value(option.get_attribute("value"))
 
 
-def search_for_product(driver: webdriver.Chrome, label: str) -> None:
+def search_for_product(
+    driver: webdriver.Chrome,
+    label: str,
+    search_term: str = "postcode",
+) -> None:
     visit(driver, BASE + "/")
-    if label == "mobile":
+    if label == "mobile" or label.endswith("-mobile"):
         search_toggle = visible(driver, '.ps-searchbar--mobile [data-bs-target="#searchCanvas"]')
         search_toggle.click()
-    enter_product_search_query(driver)
+    enter_product_search_query(driver, search_term)
 
     result_id = f"result_product_option_{PRODUCT_ID}"
 

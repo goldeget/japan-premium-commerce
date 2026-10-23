@@ -91,7 +91,7 @@ if (!in_array($homeCategoryId, $categoryIds, true)) {
 }
 $draft = ProductAdminDraft::fromArray([
     'name_ja' => '[CI ONLY] ORDENOWA free shipping product ' . $runId . '-' . $attempt,
-    'name_ko' => '[CI ONLY] ORDENOWA 무료배송 검증 상품 ' . $runId . '-' . $attempt,
+    'name_ko' => '[CI ONLY] ORDENOWA free shipping 무료배송 검증 상품 ' . $runId . '-' . $attempt,
     'price_jpy' => '1000',
     'tax_rules_group_id' => '0',
     'quantity' => '5',
@@ -106,7 +106,7 @@ if ((int) ($editor['price_jpy'] ?? 0) !== 1000 || (int) ($editor['tax_rules_grou
     throw new RuntimeException('The isolated product manager did not preserve the JPY 1000 price and unassigned rule-group fixture.');
 }
 
-$stage = 'activate run-scoped customer-facing test product';
+$stage = 'activate and index run-scoped customer-facing test product';
 $reference = 'KURANEA-CI-' . $runId . '-' . $attempt;
 $product = new Product($productId, false, null, $shopId);
 $product->reference = $reference;
@@ -117,6 +117,7 @@ $product->show_price = 1;
 if (!$product->update()) {
     throw new RuntimeException('Could not activate the run-scoped free-shipping product in the disposable CI shop.');
 }
+Search::indexation(false, (int) $product->id);
 
 $stage = 're-read product sale fields and stock';
 $product = new Product($productId, false, $languageId, $shopId);

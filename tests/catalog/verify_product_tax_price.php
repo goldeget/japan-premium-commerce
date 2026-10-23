@@ -166,7 +166,7 @@ if (!in_array($homeCategoryId, $categoryIds, true)) {
 }
 $draft = ProductAdminDraft::fromArray([
     'name_ja' => '[CI ONLY] ORDENOWA synthetic tax product ' . $runId . '-' . $attempt,
-    'name_ko' => '[CI ONLY] ORDENOWA 합성 세금 상품 ' . $runId . '-' . $attempt,
+    'name_ko' => '[CI ONLY] ORDENOWA synthetic tax 합성 세금 상품 ' . $runId . '-' . $attempt,
     'price_jpy' => '1100',
     'tax_rules_group_id' => (string) $taxGroupId,
     'quantity' => '5',
@@ -187,7 +187,7 @@ if (!Validate::isLoadedObject($product)
     throw new RuntimeException('The Korean product manager did not store JPY 1100 tax-included as JPY 1000 tax-excluded under the selected native group.');
 }
 
-$stage = 'activate run-scoped CI-only taxable order fixture';
+$stage = 'activate and index run-scoped CI-only taxable order fixture';
 $ciProductReference = 'OWA-CI-TAX-' . $runId . '-' . $attempt;
 $product = new Product($productId, false, null, $shopId);
 $product->reference = $ciProductReference;
@@ -198,6 +198,7 @@ $product->show_price = 1;
 if (!$product->update()) {
     throw new RuntimeException('Could not activate the synthetic taxable product inside the disposable CI shop.');
 }
+Search::indexation(false, (int) $product->id);
 $product = new Product($productId, false, $languageId, $shopId);
 $productQuantity = (int) StockAvailable::getQuantityAvailableByProduct($productId, 0, $shopId);
 if (!Validate::isLoadedObject($product)

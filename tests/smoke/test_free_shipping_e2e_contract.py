@@ -9,11 +9,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/fresh-install.yml"
 BROWSER = ROOT / "tests/e2e/verify_ci_free_shipping_browser.py"
+CHECKOUT_BROWSER = ROOT / "tests/e2e/verify_ci_checkout_admin_browser.py"
 ORDER_VERIFY = ROOT / "tests/postcode/verify_ci_free_shipping_order.php"
 COUPON_FIXTURE = ROOT / "tests/postcode/seed_ci_shipping_coupon.php"
 CARRIER_ACCESS_FIXTURE = ROOT / "tests/postcode/prepare_ci_carrier_admin_access.php"
 JAPAN_ZONE_FIXTURE = ROOT / "tests/postcode/prepare_ci_japan_shipping_zone.php"
 SHIPPING_PRODUCT_FIXTURE = ROOT / "tests/catalog/prepare_ci_free_shipping_product.php"
+TAXABLE_PRODUCT_FIXTURE = ROOT / "tests/catalog/verify_product_tax_price.php"
 
 
 class FreeShippingE2eContractTest(unittest.TestCase):
@@ -577,6 +579,122 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, coupon)
+
+    def test_storefront_search_helpers_accept_and_forward_indexed_query_overrides(self) -> None:
+        checkout_source = CHECKOUT_BROWSER.read_text(encoding="utf-8")
+        checkout_tree = ast.parse(checkout_source)
+        functions = {
+            node.name: node
+            for node in checkout_tree.body
+            if isinstance(node, ast.FunctionDef)
+        }
+
+        for function_name in ("enter_product_search_query", "search_for_product"):
+            with self.subTest(function=function_name):
+                arguments = functions[function_name].args
+                argument_names = [argument.arg for argument in (*arguments.posonlyargs, *arguments.args)]
+                argument_names.extend(argument.arg for argument in arguments.kwonlyargs)
+                self.assertIn("search_term", argument_names)
+
+        enter_query = functions["enter_product_search_query"]
+        sends_override = any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "send_keys"
+            and len(node.args) == 1
+            and isinstance(node.args[0], ast.Name)
+            and node.args[0].id == "term"
+            for node in ast.walk(enter_query)
+        )
+        self.assertTrue(sends_override, "the typed product query must come from the caller's override")
+
+        search_product = functions["search_for_product"]
+        forwards_override = any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "enter_product_search_query"
+            and (
+                any(
+                    keyword.arg == "search_term"
+                    and isinstance(keyword.value, ast.Name)
+                    and keyword.value.id == "search_term"
+                    for keyword in node.keywords
+                )
+                or (
+                    len(node.args) > 1
+                    and isinstance(node.args[1], ast.Name)
+                    and node.args[1].id == "search_term"
+                )
+            )
+            for node in ast.walk(search_product)
+        )
+        self.assertTrue(forwards_override, "search_for_product must pass its override to the query entry helper")
+
+    def test_free_shipping_searches_use_words_present_in_their_japanese_fixture_names(self) -> None:
+        browser_source = BROWSER.read_text(encoding="utf-8")
+        browser_tree = ast.parse(browser_source)
+        functions = {
+            node.name: node
+            for node in browser_tree.body
+            if isinstance(node, ast.FunctionDef)
+        }
+
+        def requested_term(function_name: str) -> str | None:
+            for node in ast.walk(functions[function_name]):
+                if not isinstance(node, ast.Call):
+                    continue
+                if not isinstance(node.func, ast.Name) or node.func.id != "_add_quantity_and_open_checkout":
+                    continue
+                for keyword in node.keywords:
+                    if keyword.arg == "search_term" and isinstance(keyword.value, ast.Constant):
+                        return keyword.value.value
+                if len(node.args) > 3 and isinstance(node.args[3], ast.Constant):
+                    return node.args[3].value
+            return None
+
+        for flow in ("run_japan_customer_checkout", "run_japan_mobile_osaka_checkout"):
+            with self.subTest(flow=flow):
+                self.assertEqual(requested_term(flow), "shipping")
+        self.assertEqual(requested_term("run_japan_taxable_customer_checkout"), "synthetic")
+
+        shipping_fixture = SHIPPING_PRODUCT_FIXTURE.read_text(encoding="utf-8").casefold()
+        taxable_fixture = TAXABLE_PRODUCT_FIXTURE.read_text(encoding="utf-8").casefold()
+        self.assertIn("'name_ja' => '[ci only] ordenowa free shipping product", shipping_fixture)
+        self.assertIn("'name_ja' => '[ci only] ordenowa synthetic tax product", taxable_fixture)
+
+    def test_mobile_shipping_fixture_label_opens_mobile_search_toggle(self) -> None:
+        checkout_source = CHECKOUT_BROWSER.read_text(encoding="utf-8")
+        checkout_tree = ast.parse(checkout_source)
+        search_for_product = next(
+            node
+            for node in checkout_tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "search_for_product"
+        )
+        search_source = ast.get_source_segment(checkout_source, search_for_product) or ""
+        self.assertIn('label.endswith("-mobile")', search_source)
+        self.assertIn('.ps-searchbar--mobile [data-bs-target="#searchCanvas"]', search_source)
+        self.assertIn("search_toggle.click()", search_source)
+        self.assertLess(
+            search_source.index("search_toggle.click()"),
+            search_source.index("enter_product_search_query(driver, search_term)"),
+        )
+
+        browser_source = BROWSER.read_text(encoding="utf-8")
+        mobile_flow = browser_source.split("def run_japan_mobile_osaka_checkout", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn('"shipping-free-mobile"', mobile_flow)
+
+    def test_searchable_shipping_fixtures_reindex_after_activation(self) -> None:
+        expected_call = "Search::indexation(false, (int) $product->id);"
+        for path in (SHIPPING_PRODUCT_FIXTURE, TAXABLE_PRODUCT_FIXTURE):
+            with self.subTest(path=path.name):
+                source = path.read_text(encoding="utf-8")
+                activate = source.index("$product->active = 1;")
+                update = source.index("if (!$product->update())", activate)
+                reindex = source.index(expected_call, update)
+                reread = source.index("$product = new Product($productId, false, $languageId, $shopId);", reindex)
+                self.assertLess(activate, update)
+                self.assertLess(update, reindex, "the active product must be indexed after its save succeeds")
+                self.assertLess(reindex, reread, "indexing must happen before the fixture's saved product readback")
 
 
 if __name__ == "__main__":

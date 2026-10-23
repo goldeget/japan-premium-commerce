@@ -544,8 +544,13 @@ def _visible_text(driver, selector: str, timeout: int = 20) -> str:
     return element.text.strip()
 
 
-def _add_quantity_and_open_checkout(driver, label: str, quantity_requested: int) -> int:
-    checkout.search_for_product(driver, label)
+def _add_quantity_and_open_checkout(
+    driver,
+    label: str,
+    quantity_requested: int,
+    search_term: str,
+) -> int:
+    checkout.search_for_product(driver, label, search_term=search_term)
     displayed_unit_price = _parse_yen(_visible_text(driver, ".product__price"))
     quantity = _wait_visible(driver, "#quantity_wanted")
     quantity.clear()
@@ -993,7 +998,7 @@ def run_japan_customer_checkout() -> None:
     driver = checkout.webdriver.Chrome(options=checkout.browser_options(1440, 960))
     stage = "product_search_and_quantity"
     try:
-        unit_price = _add_quantity_and_open_checkout(driver, "shipping-free", 2)
+        unit_price = _add_quantity_and_open_checkout(driver, "shipping-free", 2, "shipping")
         stage = "coupon_condition"
         coupon = _apply_coupon_if_configured(driver)
         if not coupon["applied"]:
@@ -1094,7 +1099,12 @@ def run_japan_mobile_osaka_checkout() -> None:
     driver = checkout.webdriver.Chrome(options=checkout.browser_options(390, 844))
     stage = "mobile_product_search_and_quantity"
     try:
-        unit_price = _add_quantity_and_open_checkout(driver, "shipping-free-mobile", 1)
+        unit_price = _add_quantity_and_open_checkout(
+            driver,
+            "shipping-free-mobile",
+            1,
+            "shipping",
+        )
         stage = "mobile_customer_registration"
         email = checkout.register_checkout_account(driver, "shipping-free-mobile")
         stage = "supported_osaka_delivery_address"
@@ -1180,7 +1190,12 @@ def run_japan_taxable_customer_checkout() -> None:
     driver = checkout.webdriver.Chrome(options=checkout.browser_options(1440, 960))
     stage = "taxable_product_search_and_price"
     try:
-        unit_price = _add_quantity_and_open_checkout(driver, "shipping-free-taxable", 1)
+        unit_price = _add_quantity_and_open_checkout(
+            driver,
+            "shipping-free-taxable",
+            1,
+            "synthetic",
+        )
         if unit_price != 1100:
             raise AssertionError(
                 "the taxable product page did not display the fixture's ¥1,100 tax-included price; "

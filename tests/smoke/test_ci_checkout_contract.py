@@ -439,6 +439,7 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         )[0]
 
         self.assertIn("search_toggle.click()", search_flow)
+        self.assertIn('label == "mobile" or label.endswith("-mobile")', search_flow)
         self.assertNotIn("click_at_center(driver, search_toggle)", search_flow)
 
     def test_product_search_selects_the_exact_hummingbird_autocomplete_result(self) -> None:
@@ -452,12 +453,13 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         search_flow = flow.split("def search_for_product", 1)[1].split(
             "def add_product_and_open_checkout", 1
         )[0]
-        self.assertIn('search.send_keys("postcode")', search_helper)
+        self.assertIn('search_term: str = "postcode"', search_helper)
+        self.assertIn("search.send_keys(term)", search_helper)
         self.assertNotIn("Keys.ENTER", search_helper)
         self.assertIn("$productName = '[CI ONLY] ORDENOWA postcode order ' . $suffix;", fixture)
         self.assertIn("$product->reference = 'KURANEA-CI-' . $suffix;", fixture)
         self.assertIn("Search::indexation(false, (int) $product->id);", fixture)
-        self.assertIn("enter_product_search_query(driver)", search_flow)
+        self.assertIn("enter_product_search_query(driver, search_term)", search_flow)
         self.assertIn("ignored_exceptions=(StaleElementReferenceException,)", search_flow)
         self.assertIn('f"result_product_option_{PRODUCT_ID}"', search_flow)
         self.assertIn('product_link.get_attribute("aria-label")', search_flow)
