@@ -106,6 +106,15 @@ foreach (\Kuranea\Postcode\Domain\PrefectureCatalog::all() as $prefectureCode =>
     }
 }
 
+$stage = 'assign all Japanese states to the run-scoped zone';
+if (!Db::getInstance()->execute(
+    'UPDATE `' . _DB_PREFIX_ . 'state`'
+    . ' SET `id_zone` = ' . (int) $zone->id
+    . ' WHERE `id_country` = ' . (int) $japan->id
+)) {
+    throw new RuntimeException('Could not assign every Japanese state to the run-scoped carrier zone.');
+}
+
 $stage = 'verify Japan-only zone membership';
 $countryCodes = Db::getInstance()->executeS(
     'SELECT `iso_code` FROM `' . _DB_PREFIX_ . 'country`'
