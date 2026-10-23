@@ -1184,14 +1184,39 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
                             "path_category": "checkout",
                             "method_class": "POST",
                             "status": 422,
+                            "redirects": [],
                             "url": "http://localhost/private-url-sentinel?token=private-token-sentinel",
                             "body": "private-body-sentinel",
+                        },
+                        {
+                            "type": "document",
+                            "path_category": "checkout",
+                            "method_class": "POST",
+                            "status": 200,
+                            "redirects": [
+                                {
+                                    "status": 302,
+                                    "target_category": "account",
+                                    "target_url": "/private-redirect-url-sentinel?token=private-redirect-token",
+                                },
+                                {
+                                    "status": "private-status-sentinel",
+                                    "target_category": "private-category-sentinel",
+                                },
+                            ],
                         },
                         {
                             "type": "private-request-type-sentinel",
                             "path_category": "private-path-category-sentinel",
                             "method_class": "private-method-sentinel",
                             "status": 200,
+                            "redirects": [
+                                {
+                                    "status": 302,
+                                    "target_category": "account",
+                                    "target_url": "/private-redirect-sentinel",
+                                }
+                            ],
                         },
                     ],
                 },
@@ -1215,14 +1240,22 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             {
                 "available": True,
                 "truncated": False,
-                "request_count": 1,
+                "request_count": 2,
                 "requests": [
                     {
                         "type": "xhr",
                         "path_category": "checkout",
                         "method_class": "POST",
                         "status": 422,
-                    }
+                        "redirects": [],
+                    },
+                    {
+                        "type": "document",
+                        "path_category": "checkout",
+                        "method_class": "POST",
+                        "status": 200,
+                        "redirects": [{"status": 302, "target_category": "account"}],
+                    },
                 ],
             },
         )
@@ -1243,6 +1276,11 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             "private-request-type-sentinel",
             "private-path-category-sentinel",
             "private-method-sentinel",
+            "private-redirect-sentinel",
+            "private-redirect-url-sentinel",
+            "private-redirect-token",
+            "private-status-sentinel",
+            "private-category-sentinel",
         ):
             self.assertNotIn(sentinel, serialized)
 
@@ -1263,6 +1301,7 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             "MAX_CHECKOUT_REGISTRATION_NETWORK_EVENTS": 500,
             "MAX_CHECKOUT_REGISTRATION_NETWORK_EVENT_CHARS": 65536,
             "MAX_CHECKOUT_REGISTRATION_NETWORK_REQUESTS": 20,
+            "MAX_CHECKOUT_REGISTRATION_REDIRECTS_PER_REQUEST": 4,
             "json": json,
             "parse_qs": parse_qs,
             "re": re,
@@ -1369,12 +1408,14 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
                     "path_category": "checkout",
                     "method_class": "POST",
                     "status": 422,
+                    "redirects": [],
                 },
                 {
                     "type": "fetch",
                     "path_category": "other_shop",
                     "method_class": "PUT",
                     "status": 200,
+                    "redirects": [],
                 },
             ],
         )
@@ -1421,6 +1462,7 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
                     "path_category": "checkout",
                     "method_class": "POST",
                     "status": None,
+                    "redirects": [],
                 }
                 for request in bounded["requests"]
             )
@@ -1437,8 +1479,30 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertEqual(oversized["truncated"], True)
 
         large_log_entries = [
-            event("Network.responseReceived", {"requestId": f"large-{index}"})
-            for index in range(501)
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": f"large-{index}",
+                    "type": "Document",
+                    "request": {
+                        "url": "https://outside.example/private-path-sentinel",
+                        "method": "GET",
+                    },
+                },
+            )
+            for index in range(500)
+        ] + [
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": "truncated-valid-document-id",
+                    "type": "Document",
+                    "request": {
+                        "url": "http://localhost:18080/index.php?controller=order",
+                        "method": "POST",
+                    },
+                },
+            )
         ]
 
         class LargeLogDriver:
@@ -1448,6 +1512,7 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         large_log = namespace["checkout_registration_network_diagnostics"](LargeLogDriver())
         self.assertEqual(large_log["request_count"], 0)
         self.assertEqual(large_log["truncated"], True)
+        self.assertNotIn("truncated-valid-document-id", json.dumps(large_log))
 
     def test_checkout_registration_diagnostics_clear_network_before_one_fail_closed_submit(self) -> None:
         source = CHECKOUT_FLOW.read_text(encoding="utf-8")
@@ -1483,6 +1548,194 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertIn('safe_state["network"] = checkout_registration_network_diagnostics(driver)', state_reader)
         self.assertIn('"checkout-continue-form"', registration)
         self.assertIn('"delivery_address_step.wait"', registration)
+
+    def test_checkout_registration_network_diagnostics_capture_safe_document_redirects(self) -> None:
+        source = ast.parse(CHECKOUT_FLOW.read_text(encoding="utf-8"))
+        names = {
+            "_safe_checkout_http_status",
+            "checkout_registration_path_category",
+            "checkout_registration_network_diagnostics",
+        }
+        functions = [
+            node for node in source.body
+            if isinstance(node, ast.FunctionDef) and node.name in names
+        ]
+        namespace = {
+            "BASE": "http://localhost:18080",
+            "MAX_CHECKOUT_REGISTRATION_NETWORK_EVENTS": 500,
+            "MAX_CHECKOUT_REGISTRATION_NETWORK_EVENT_CHARS": 65536,
+            "MAX_CHECKOUT_REGISTRATION_NETWORK_REQUESTS": 20,
+            "MAX_CHECKOUT_REGISTRATION_REDIRECTS_PER_REQUEST": 4,
+            "json": json,
+            "parse_qs": parse_qs,
+            "re": re,
+            "unquote": unquote,
+            "urlparse": urlparse,
+        }
+        exec(
+            compile(ast.Module(body=functions, type_ignores=[]), str(CHECKOUT_FLOW), "exec"),
+            namespace,
+        )
+
+        def event(method: str, params: dict[str, object]) -> dict[str, str]:
+            return {"message": json.dumps({"message": {"method": method, "params": params}})}
+
+        order_url = (
+            "http://localhost:18080/index.php?controller=order&"
+            "email=document-private-email&token=document-private-token"
+        )
+        account_url = (
+            "http://localhost:18080/index.php?controller=authentication&"
+            "email=document-private-email&token=redirect-private-token"
+        )
+        external_redirect_url = "https://outside.example/private-document-path?token=external-private-token"
+        entries = [
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": "document-private-request-id",
+                    "type": "Document",
+                    "request": {"url": order_url, "method": "POST", "postData": "document-private-body"},
+                },
+            ),
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": "document-private-request-id",
+                    "type": "Document",
+                    "request": {"url": account_url, "method": "GET"},
+                    "redirectResponse": {
+                        "url": order_url,
+                        "status": 302,
+                        "headers": {"location": account_url},
+                    },
+                },
+            ),
+            event(
+                "Network.responseReceived",
+                {
+                    "requestId": "document-private-request-id",
+                    "type": "Document",
+                    "response": {"url": account_url, "status": 200},
+                },
+            ),
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": "external-redirect-private-id",
+                    "type": "Document",
+                    "request": {
+                        "url": "http://localhost:18080/index.php?controller=order&token=source-private-token",
+                        "method": "GET",
+                    },
+                },
+            ),
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": "external-redirect-private-id",
+                    "type": "Document",
+                    "request": {"url": external_redirect_url, "method": "GET"},
+                    "redirectResponse": {
+                        "url": "http://localhost:18080/index.php?controller=order&token=source-private-token",
+                        "status": 301,
+                        "headers": {"location": external_redirect_url},
+                    },
+                },
+            ),
+            event(
+                "Network.responseReceived",
+                {
+                    "requestId": "external-redirect-private-id",
+                    "type": "Document",
+                    "response": {"url": external_redirect_url, "status": 200},
+                },
+            ),
+        ]
+
+        class DocumentDriver:
+            def get_log(self, _kind: str) -> list[dict[str, str]]:
+                return entries
+
+        summary = namespace["checkout_registration_network_diagnostics"](DocumentDriver())
+        self.assertEqual(summary["request_count"], 2)
+        self.assertEqual(
+            summary["requests"],
+            [
+                {
+                    "type": "document",
+                    "path_category": "checkout",
+                    "method_class": "POST",
+                    "status": 200,
+                    "redirects": [{"status": 302, "target_category": "account"}],
+                },
+                {
+                    "type": "document",
+                    "path_category": "checkout",
+                    "method_class": "GET",
+                    "status": None,
+                    "redirects": [{"status": 301, "target_category": None}],
+                },
+            ],
+        )
+        serialized = json.dumps(summary)
+        for sentinel in (
+            "document-private-request-id",
+            "document-private-email",
+            "document-private-token",
+            "redirect-private-token",
+            "document-private-body",
+            "/index.php",
+            "authentication",
+            "outside.example",
+            "private-document-path",
+            "external-private-token",
+            "source-private-token",
+        ):
+            self.assertNotIn(sentinel, serialized)
+
+        redirect_events = [
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": "redirect-cap-id",
+                    "type": "Document",
+                    "request": {
+                        "url": f"http://localhost:18080/index.php?controller={'order' if index % 2 else 'authentication'}",
+                        "method": "GET",
+                    },
+                    "redirectResponse": {
+                        "url": "http://localhost:18080/index.php?controller=order",
+                        "status": 302,
+                    },
+                },
+            )
+            for index in range(6)
+        ]
+        redirect_events.insert(
+            0,
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": "redirect-cap-id",
+                    "type": "Document",
+                    "request": {
+                        "url": "http://localhost:18080/index.php?controller=order",
+                        "method": "POST",
+                    },
+                },
+            ),
+        )
+
+        class RedirectCapDriver:
+            def get_log(self, _kind: str) -> list[dict[str, str]]:
+                return redirect_events
+
+        capped_redirects = namespace["checkout_registration_network_diagnostics"](
+            RedirectCapDriver()
+        )
+        self.assertEqual(capped_redirects["truncated"], True)
+        self.assertEqual(len(capped_redirects["requests"][0]["redirects"]), 4)
 
 
 if __name__ == "__main__":

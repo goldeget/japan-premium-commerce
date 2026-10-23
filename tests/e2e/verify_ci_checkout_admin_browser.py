@@ -33,6 +33,7 @@ DEST.mkdir(parents=True, exist_ok=True)
 MAX_CHECKOUT_REGISTRATION_NETWORK_EVENTS = 500
 MAX_CHECKOUT_REGISTRATION_NETWORK_EVENT_CHARS = 65536
 MAX_CHECKOUT_REGISTRATION_NETWORK_REQUESTS = 20
+MAX_CHECKOUT_REGISTRATION_REDIRECTS_PER_REQUEST = 4
 
 
 def visible(driver: webdriver.Chrome, selector: str, timeout: int = 30):
@@ -195,7 +196,7 @@ def checkout_registration_path_category(raw_url: object) -> str | None:
 
 
 def checkout_registration_network_diagnostics(driver: webdriver.Chrome) -> dict[str, object]:
-    """Return bounded request categories, safe method classes, and same-origin statuses."""
+    """Return bounded same-origin request and redirect metadata without URLs or response data."""
     try:
         events = driver.get_log("performance")
     except Exception:
@@ -207,6 +208,7 @@ def checkout_registration_network_diagnostics(driver: webdriver.Chrome) -> dict[
     truncated = len(events) > MAX_CHECKOUT_REGISTRATION_NETWORK_EVENTS
     summaries: list[dict[str, object]] = []
     summary_indexes: dict[str, int] = {}
+    current_document_categories: dict[str, str | None] = {}
     for entry in events[:MAX_CHECKOUT_REGISTRATION_NETWORK_EVENTS]:
         if not isinstance(entry, dict):
             continue
@@ -236,7 +238,7 @@ def checkout_registration_network_diagnostics(driver: webdriver.Chrome) -> dict[
         if event_name == "Network.requestWillBeSent":
             request_type = params.get("type")
             type_category = (
-                {"XHR": "xhr", "Fetch": "fetch"}.get(request_type)
+                {"XHR": "xhr", "Fetch": "fetch", "Document": "document"}.get(request_type)
                 if isinstance(request_type, str)
                 else None
             )
@@ -244,9 +246,37 @@ def checkout_registration_network_diagnostics(driver: webdriver.Chrome) -> dict[
             if type_category is None or not isinstance(request, dict):
                 continue
             path_category = checkout_registration_path_category(request.get("url"))
+
+            existing_index = summary_indexes.get(request_id)
+            if (
+                type_category == "document"
+                and existing_index is not None
+                and summaries[existing_index]["type"] == "document"
+            ):
+                redirect_response = params.get("redirectResponse")
+                if isinstance(redirect_response, dict):
+                    response_category = checkout_registration_path_category(
+                        redirect_response.get("url")
+                    )
+                    source_category = response_category or current_document_categories.get(request_id)
+                    redirect_status = _safe_checkout_http_status(redirect_response.get("status"))
+                    if source_category is not None and redirect_status is not None:
+                        redirects = summaries[existing_index]["redirects"]
+                        if len(redirects) < MAX_CHECKOUT_REGISTRATION_REDIRECTS_PER_REQUEST:
+                            redirects.append(
+                                {
+                                    "status": redirect_status,
+                                    "target_category": path_category,
+                                }
+                            )
+                        else:
+                            truncated = True
+                current_document_categories[request_id] = path_category
+                continue
+
             if path_category is None:
                 continue
-            if request_id in summary_indexes:
+            if existing_index is not None:
                 continue
             if len(summaries) >= MAX_CHECKOUT_REGISTRATION_NETWORK_REQUESTS:
                 truncated = True
@@ -266,8 +296,11 @@ def checkout_registration_network_diagnostics(driver: webdriver.Chrome) -> dict[
                     "path_category": path_category,
                     "method_class": method_class,
                     "status": None,
+                    "redirects": [],
                 }
             )
+            if type_category == "document":
+                current_document_categories[request_id] = path_category
         elif event_name == "Network.responseReceived" and request_id in summary_indexes:
             response = params.get("response", {})
             if not isinstance(response, dict):
@@ -685,7 +718,7 @@ def sanitize_checkout_registration_state(raw_state: object) -> dict[str, object]
     network = raw_state.get("network")
     if isinstance(network, dict):
         safe_requests: list[dict[str, object]] = []
-        allowed_request_types = {"xhr", "fetch"}
+        allowed_request_types = {"xhr", "fetch", "document"}
         allowed_path_categories = {"checkout", "account", "other_shop"}
         allowed_methods = {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", "OTHER"}
         requests = network.get("requests")
@@ -713,12 +746,38 @@ def sanitize_checkout_registration_state(raw_state: object) -> dict[str, object]
                     and 100 <= status <= 599
                     else None
                 )
+                safe_redirects: list[dict[str, object]] = []
+                redirects = request.get("redirects")
+                if isinstance(redirects, list):
+                    for redirect in redirects[:4]:
+                        if not isinstance(redirect, dict):
+                            continue
+                        redirect_status = redirect.get("status")
+                        if (
+                            not isinstance(redirect_status, int)
+                            or isinstance(redirect_status, bool)
+                            or not 100 <= redirect_status <= 599
+                        ):
+                            continue
+                        target_category = redirect.get("target_category")
+                        if (
+                            not isinstance(target_category, str)
+                            or target_category not in allowed_path_categories
+                        ):
+                            target_category = None
+                        safe_redirects.append(
+                            {
+                                "status": redirect_status,
+                                "target_category": target_category,
+                            }
+                        )
                 safe_requests.append(
                     {
                         "type": request_type,
                         "path_category": path_category,
                         "method_class": method_class,
                         "status": safe_status,
+                        "redirects": safe_redirects,
                     }
                 )
         result["network"] = {
