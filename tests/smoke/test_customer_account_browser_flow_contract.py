@@ -264,7 +264,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertEqual(positions, sorted(positions))
 
         disclosure_stage = self.blocks["profile_update_required_disclosures"]
-        self.assertIn("accept_profile_update_disclosures(driver, profile_form)", disclosure_stage)
+        self.assertIn("accept_profile_update_disclosures(driver)", disclosure_stage)
         self.assertIn("assert_native_form_valid(driver, profile_form", disclosure_stage)
 
         disclosure_helper = self.source.split("def accept_profile_update_disclosures", 1)[1].split(
@@ -274,7 +274,10 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn("checkbox.is_displayed()", disclosure_helper)
         self.assertIn("checkbox.is_enabled()", disclosure_helper)
         self.assertIn("if not checkbox.is_selected()", disclosure_helper)
-        self.assertIn("click_required_checkbox_label(form, checkbox)", disclosure_helper)
+        self.assertIn("checkbox.click()", disclosure_helper)
+        self.assertIn("WebDriverWait(driver, 5, poll_frequency=0.1)", disclosure_helper)
+        self.assertIn("lambda _browser: checkbox.is_selected()", disclosure_helper)
+        self.assertIn("checkbox.send_keys(Keys.SPACE)", disclosure_helper)
         self.assertIn("if not checkbox.is_selected()", disclosure_helper)
 
         label_interaction = self.source.split("def click_required_checkbox_label", 1)[1].split(

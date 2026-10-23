@@ -1988,14 +1988,29 @@ def prepare_required_registration_fields(
         raise AssertionError("registration form has invalid controls: " + ", ".join(invalid_fields))
 
 
-def accept_profile_update_disclosures(driver: webdriver.Chrome, form) -> None:
+def accept_profile_update_disclosures(driver: webdriver.Chrome) -> None:
     """Accept only the synthetic CI customer's two required profile disclosures."""
     for name in ("customer_privacy", "psgdpr_consent_checkbox"):
-        checkbox = visible(driver, f'#customer-form input[type="checkbox"][name="{name}"]')
+        selector = f'#customer-form input[type="checkbox"][name="{name}"]'
+        checkbox = visible(driver, selector)
         if not checkbox.is_displayed() or not checkbox.is_enabled():
             raise AssertionError(f"profile update disclosure {name} is not available for the CI customer")
         if not checkbox.is_selected():
-            click_required_checkbox_label(form, checkbox)
+            try:
+                checkbox.click()
+            except ElementClickInterceptedException:
+                checkbox.send_keys(Keys.SPACE)
+            try:
+                WebDriverWait(driver, 5, poll_frequency=0.1).until(
+                    lambda _browser: checkbox.is_selected()
+                )
+            except TimeoutException:
+                checkbox = visible(driver, selector)
+                if not checkbox.is_selected():
+                    checkbox.send_keys(Keys.SPACE)
+                WebDriverWait(driver, 5, poll_frequency=0.1).until(
+                    lambda _browser: checkbox.is_selected()
+                )
         if not checkbox.is_selected():
             raise AssertionError(f"profile update disclosure {name} was not accepted by the CI customer")
 
@@ -2143,7 +2158,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         fill(driver, '#customer-form input[name="password"]', initial_password)
         stage = "profile_update_required_disclosures"
         profile_form = visible(driver, "#customer-form")
-        accept_profile_update_disclosures(driver, profile_form)
+        accept_profile_update_disclosures(driver)
         assert_native_form_valid(driver, profile_form, "profile update")
         profile_pre_submit = collect_profile_update_diagnostics(
             driver, "pre_submit", expected_first_name

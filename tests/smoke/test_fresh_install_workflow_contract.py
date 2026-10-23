@@ -349,7 +349,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         profile_end = account_flow.index('stage = "email_login"', profile_start)
         profile_update = account_flow[profile_start:profile_end]
         current_password = "fill(driver, '#customer-form input[name=\"password\"]', initial_password)"
-        disclosure_acceptance = "accept_profile_update_disclosures(driver, profile_form)"
+        disclosure_acceptance = "accept_profile_update_disclosures(driver)"
         form_validation = "assert_native_form_valid(driver, profile_form, \"profile update\")"
         submit_click = "click_centered(driver, submit_button)"
         self.assertIn(current_password, profile_update)
