@@ -32,6 +32,13 @@ class SavedOrderTaxContractTests(unittest.TestCase):
         self.assertIn("'saved_order_detail_tax_group_id' => $savedDetailTaxGroupId", source)
         self.assertIn("'saved_order_detail_taxes' => $storedTaxRows", source)
 
+    def test_saved_order_rejects_shipping_and_wrapping_fees(self) -> None:
+        source = (ROOT / "tests/postcode/verify_ci_free_shipping_order.php").read_text()
+        self.assertIn("abs($wrappingTaxExcl) > 0.0001", source)
+        self.assertIn("abs($wrappingTaxIncl) > 0.0001", source)
+        self.assertIn("'total_wrapping_tax_excl' => $wrappingTaxExcl", source)
+        self.assertIn("'total_wrapping_tax_incl' => $wrappingTaxIncl", source)
+
     def test_native_verifier_stdout_remains_parseable_json(self) -> None:
         source = (ROOT / "tests/postcode/verify_ci_free_shipping_order.php").read_text()
         self.assertNotIn("fwrite(STDOUT, sprintf(", source)

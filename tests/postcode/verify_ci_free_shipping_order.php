@@ -301,10 +301,12 @@ foreach ([
 if (($productTaxGroupId === 0 && abs($nativeTaxes) > 0.0001)
     || (float) $order->total_shipping_tax_excl !== 0.0
     || (float) $order->total_shipping_tax_incl !== 0.0
+    || abs($wrappingTaxExcl) > 0.0001
+    || abs($wrappingTaxIncl) > 0.0001
     || abs((float) $order->total_paid_real) > 0.0001
     || (int) ($browserTotals['quantity'] ?? 0) !== $expectedQuantity
 ) {
-    throw new RuntimeException('The free-shipping order contains tax/fee amounts outside its configured product fixture.');
+    throw new RuntimeException('The free-shipping order contains shipping, wrapping, tax, or payment amounts outside its configured product fixture.');
 }
 
 $stage = 'Japan destination persistence';
@@ -356,6 +358,8 @@ echo json_encode([
     'total_products_tax_incl' => (float) $order->total_products_wt,
     'total_shipping_tax_excl' => (float) $order->total_shipping_tax_excl,
     'total_shipping_tax_incl' => (float) $order->total_shipping_tax_incl,
+    'total_wrapping_tax_excl' => $wrappingTaxExcl,
+    'total_wrapping_tax_incl' => $wrappingTaxIncl,
     'total_discounts_tax_excl' => $discountsTaxExcl,
     'total_discounts_tax_incl' => $discountsTaxIncl,
     'total_paid_tax_excl' => (float) $order->total_paid_tax_excl,
