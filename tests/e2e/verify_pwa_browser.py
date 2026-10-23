@@ -401,6 +401,27 @@ def worker_network_conditions(offline: bool) -> dict[str, object]:
 class ChromeBrowserCdpError(RuntimeError):
     """A bounded error for a Chrome DevTools command or connection failure."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        diagnostic_code: str,
+        cause_type: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.diagnostic_code = diagnostic_code
+        self.cause_type = cause_type
+
+
+def safe_exception_type(error: BaseException) -> str:
+    error_type = type(error).__name__
+    return error_type if error_type.isidentifier() else "unexpected_exception"
+
+
+def safe_cdp_operation(method: str) -> str:
+    operation = re.sub(r"[^A-Za-z0-9]+", "_", method).strip("_").lower()
+    return operation if re.fullmatch(r"[a-z0-9_]+", operation) else "unknown"
+
 
 def execute_browser_cdp_command(
     connection,
@@ -418,13 +439,21 @@ def execute_browser_cdp_command(
 
     try:
         result = connection.execute(command())
-    except Exception:
-        raise ChromeBrowserCdpError(f"Chrome rejected or did not answer {method}") from None
+    except Exception as error:
+        operation = safe_cdp_operation(method)
+        raise ChromeBrowserCdpError(
+            f"Chrome rejected or did not answer {method}",
+            diagnostic_code=f"cdp_command_{operation}",
+            cause_type=safe_exception_type(error),
+        ) from None
     finally:
         connection.session_id = previous_session
 
     if not isinstance(result, dict):
-        raise ChromeBrowserCdpError(f"Chrome returned an invalid response for {method}")
+        raise ChromeBrowserCdpError(
+            f"Chrome returned an invalid response for {method}",
+            diagnostic_code=f"cdp_response_{safe_cdp_operation(method)}",
+        )
     return result
 
 
@@ -439,8 +468,12 @@ class ChromeBrowserCdp:
     def connect(cls, driver: webdriver.Chrome) -> "ChromeBrowserCdp":
         try:
             _devtools, connection = driver.start_devtools()
-        except Exception:
-            raise ChromeBrowserCdpError("Chrome DevTools websocket could not be opened") from None
+        except Exception as error:
+            raise ChromeBrowserCdpError(
+                "Chrome DevTools websocket could not be opened",
+                diagnostic_code="devtools_connection_open",
+                cause_type=safe_exception_type(error),
+            ) from None
         return cls(connection)
 
     def execute(
@@ -450,7 +483,10 @@ class ChromeBrowserCdp:
         session_id: str | None = None,
     ) -> dict[str, object]:
         if self.closed:
-            raise ChromeBrowserCdpError("Chrome DevTools websocket is closed")
+            raise ChromeBrowserCdpError(
+                "Chrome DevTools websocket is closed",
+                diagnostic_code="devtools_connection_closed",
+            )
         return execute_browser_cdp_command(self.connection, method, parameters, session_id)
 
     def close(self) -> None:
@@ -471,7 +507,11 @@ class ChromeBrowserCdp:
         except Exception as error:
             close_errors.append(error)
         if close_errors:
-            raise ChromeBrowserCdpError("Chrome DevTools websocket could not be closed") from None
+            raise ChromeBrowserCdpError(
+                "Chrome DevTools websocket could not be closed",
+                diagnostic_code="devtools_connection_close",
+                cause_type=safe_exception_type(close_errors[0]),
+            ) from None
 
 
 def connect_browser_cdp(driver: webdriver.Chrome) -> ChromeBrowserCdp:
@@ -558,7 +598,9 @@ def verify_offline_fallback(
             "Network.emulateNetworkConditions",
             {"offline": True, "latency": 0, "downloadThroughput": 0, "uploadThroughput": 0},
         )
+        set_stage("offline_devtools_connect")
         worker_cdp = connect_browser_cdp(driver)
+        set_stage("offline_worker_target_list")
         targets = worker_cdp.execute("Target.getTargets")["targetInfos"]
         worker_url = base_url.rstrip("/") + "/sw.js"
         worker = next(
@@ -568,11 +610,15 @@ def verify_offline_fallback(
         )
         if worker is None:
             raise AssertionError("the storefront service-worker target is unavailable")
+        set_stage("offline_worker_target_attach")
         worker_session = worker_cdp.execute(
             "Target.attachToTarget", {"targetId": worker["targetId"], "flatten": True}
         ).get("sessionId")
         if not isinstance(worker_session, str) or not worker_session:
-            raise ChromeBrowserCdpError("Chrome did not attach to the storefront worker")
+            raise ChromeBrowserCdpError(
+                "Chrome did not attach to the storefront worker",
+                diagnostic_code="service_worker_session_missing",
+            )
         set_stage("offline_worker_network_emulation")
         worker_cdp.execute("Network.enable", {}, session_id=worker_session)
         worker_cdp.execute(
@@ -608,7 +654,46 @@ def verify_offline_fallback(
         raise AssertionError("the online storefront did not recover after offline navigation")
 
 
-def create_session_customer(driver: webdriver.Chrome, base_url: str, email: str, password: str) -> str:
+def click_native_when_unobstructed(driver: webdriver.Chrome, element) -> None:
+    """Use a real WebDriver click only after its visible center is clear."""
+    driver.execute_script(
+        "arguments[0].scrollIntoView({behavior: 'instant', block: 'center', inline: 'nearest'});",
+        element,
+    )
+    WebDriverWait(driver, 20, poll_frequency=0.2).until(
+        lambda _browser: element.is_displayed() and element.is_enabled(),
+        message="PWA registration control did not become visible and enabled",
+    )
+    WebDriverWait(driver, 20, poll_frequency=0.2).until(
+        lambda browser: browser.execute_script(
+            """
+            const element = arguments[0];
+            const rect = element.getBoundingClientRect();
+            const target = document.elementFromPoint(
+              rect.left + rect.width / 2,
+              rect.top + rect.height / 2
+            );
+            return Boolean(target && (target === element || element.contains(target)));
+            """,
+            element,
+        ),
+        message="PWA registration control center is obstructed",
+    )
+    element.click()
+
+
+def create_session_customer(
+    driver: webdriver.Chrome,
+    base_url: str,
+    email: str,
+    password: str,
+    set_stage: Callable[[str], None] | None = None,
+) -> str:
+    def mark_stage(name: str) -> None:
+        if set_stage is not None:
+            set_stage(name)
+
+    mark_stage("customer_signin_navigation")
     driver.get(base_url + "/")
     signin_links = driver.find_elements(
         By.CSS_SELECTOR,
@@ -622,11 +707,14 @@ def create_session_customer(driver: webdriver.Chrome, base_url: str, email: str,
         raise AssertionError("storefront customer sign-in link is missing")
     if not same_origin(base_url, signin_url):
         raise AssertionError("customer sign-in link escaped the isolated shop")
+    mark_stage("customer_signin_page")
     driver.get(signin_url)
+    mark_stage("customer_registration_navigation")
     registration = wait_visible(driver, 'a[data-link-action="display-register-form"]')
     registration_url = urljoin(driver.current_url, registration.get_attribute("href") or "")
     if not same_origin(base_url, registration_url):
         raise AssertionError("customer registration link escaped the isolated shop")
+    mark_stage("customer_registration_form")
     driver.get(registration_url)
     form = WebDriverWait(driver, 30).until(
         EC.visibility_of_element_located((By.CSS_SELECTOR, "#customer-form"))
@@ -662,7 +750,8 @@ def create_session_customer(driver: webdriver.Chrome, base_url: str, email: str,
             )
             if label is None:
                 raise AssertionError("required customer consent has no visible label")
-            label.click()
+            mark_stage("customer_registration_required_consent")
+            click_native_when_unobstructed(driver, label)
         elif field_type == "radio":
             if not any(
                 item.is_selected()
@@ -675,8 +764,10 @@ def create_session_customer(driver: webdriver.Chrome, base_url: str, email: str,
             continue
     if not driver.execute_script("return arguments[0].checkValidity()", form):
         raise AssertionError("synthetic PWA customer registration form is invalid")
+    mark_stage("customer_registration_submit")
     submit = wait_visible(driver, "#customer-form button.form-control-submit")
-    submit.click()
+    click_native_when_unobstructed(driver, submit)
+    mark_stage("customer_registration_success_wait")
     WebDriverWait(driver, 30).until(
         lambda browser: browser.find_elements(By.ID, "identity_main_link")
         or browser.find_elements(By.ID, "userMenuButton")
@@ -822,7 +913,9 @@ def run_viewport(base_url: str, artifact_dir: Path, width: int, height: int, lab
             unique = (run_id + attempt)[:20] or uuid.uuid4().hex[:16]
             email = f"qa-ordenowa-pwa-{unique}@example.invalid"
             password = f"Pwa-CI-{uuid.uuid4().hex[:20]}!"
-            account_url = create_session_customer(driver, base_url, email, password)
+            account_url = create_session_customer(
+                driver, base_url, email, password, set_stage=update_offline_stage
+            )
             stage = "customer_private_routes"
             for route_stage, route_label, route_url in (
                 ("customer_account_route", "authenticated account", account_url),
@@ -882,13 +975,21 @@ def run_viewport(base_url: str, artifact_dir: Path, width: int, height: int, lab
         error_type = type(error).__name__
         if not error_type.isidentifier():
             error_type = "unexpected exception"
+        diagnostic = ""
+        if isinstance(error, ChromeBrowserCdpError):
+            code = getattr(error, "diagnostic_code", "")
+            cause = getattr(error, "cause_type", "")
+            if isinstance(code, str) and re.fullmatch(r"[a-z0-9_]+", code):
+                diagnostic = f"; diagnostic={code}"
+            if isinstance(cause, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", cause):
+                diagnostic += f"; cause={cause}"
         print(
-            f"FAIL: {label} PWA browser QA at stage={stage} ({error_type}); path={safe_path}.",
+            f"FAIL: {label} PWA browser QA at stage={stage} ({error_type}); path={safe_path}{diagnostic}.",
             file=sys.stderr,
         )
         print(
             f"::error title=ORDENOWA PWA browser QA::{label}; stage={stage}; "
-            f"exception={error_type}; path={safe_path}",
+            f"exception={error_type}; path={safe_path}{diagnostic}",
             file=sys.stderr,
         )
         raise

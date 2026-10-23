@@ -13,6 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from tests.e2e import verify_pwa_browser as pwa_browser
 from tests.e2e.verify_pwa_browser import (
     ChromeBrowserCdp,
     ChromeBrowserCdpError,
@@ -146,6 +147,67 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
 
 
 class PwaOfflineWorkerNetworkTests(unittest.TestCase):
+    def test_devtools_open_failure_has_safe_operation_diagnostic(self) -> None:
+        class Driver:
+            def start_devtools(self):
+                raise RuntimeError("ws://127.0.0.1/devtools/browser/private-token")
+
+        with self.assertRaises(ChromeBrowserCdpError) as raised:
+            pwa_browser.connect_browser_cdp(Driver())
+
+        self.assertEqual(
+            "devtools_connection_open",
+            getattr(raised.exception, "diagnostic_code", None),
+        )
+        self.assertEqual("RuntimeError", getattr(raised.exception, "cause_type", None))
+        self.assertNotIn("private-token", str(raised.exception))
+
+    def test_customer_registration_native_click_waits_for_unobstructed_center(self) -> None:
+        click = getattr(pwa_browser, "click_native_when_unobstructed", None)
+        self.assertTrue(callable(click), "PWA customer setup needs a guarded native click helper")
+
+        class Element:
+            clicked = False
+
+            def is_displayed(self) -> bool:
+                return True
+
+            def is_enabled(self) -> bool:
+                return True
+
+            def click(self) -> None:
+                self.clicked = True
+
+        class Driver:
+            def __init__(self) -> None:
+                self.center_visibility = iter((False, True))
+                self.scripts: list[str] = []
+
+            def execute_script(self, script: str, _element) -> bool | None:
+                self.scripts.append(script)
+                if "elementFromPoint" in script:
+                    return next(self.center_visibility)
+                return None
+
+        class ImmediateWait:
+            def __init__(self, driver, *_args, **_kwargs) -> None:
+                self.driver = driver
+
+            def until(self, condition, message=None):
+                for _ in range(3):
+                    result = condition(self.driver)
+                    if result:
+                        return result
+                raise TimeoutError(message or "condition was not met")
+
+        driver = Driver()
+        element = Element()
+        with patch.object(pwa_browser, "WebDriverWait", ImmediateWait):
+            click(driver, element)
+
+        self.assertTrue(element.clicked)
+        self.assertEqual(2, sum("elementFromPoint" in script for script in driver.scripts))
+
     def test_browser_cdp_wakes_the_pinned_receiver_before_closing(self) -> None:
         class Socket:
             closed = False
@@ -200,8 +262,12 @@ class PwaOfflineWorkerNetworkTests(unittest.TestCase):
         self.assertEqual("page-session", connection.session_id)
 
         connection.reject = True
-        with self.assertRaisesRegex(ChromeBrowserCdpError, "Chrome rejected or did not answer Network.enable"):
+        with self.assertRaisesRegex(
+            ChromeBrowserCdpError, "Chrome rejected or did not answer Network.enable"
+        ) as rejected:
             execute_browser_cdp_command(connection, "Network.enable", session_id="worker-session")
+        self.assertEqual("cdp_command_network_enable", rejected.exception.diagnostic_code)
+        self.assertEqual("RuntimeError", rejected.exception.cause_type)
         self.assertEqual("page-session", connection.session_id)
 
     def test_worker_protocol_rejection_stops_before_the_offline_navigation(self) -> None:
@@ -256,7 +322,10 @@ class PwaOfflineWorkerNetworkTests(unittest.TestCase):
                     and session_id == "worker-session"
                     and parameters["offline"]
                 ):
-                    raise ChromeBrowserCdpError("Chrome rejected Network.emulateNetworkConditions")
+                    raise ChromeBrowserCdpError(
+                        "Chrome rejected Network.emulateNetworkConditions",
+                        diagnostic_code="cdp_command_network_emulate_network_conditions",
+                    )
                 return {}
 
             def close(self):
@@ -595,6 +664,9 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
             "offline_devtools_enable",
             "offline_cache_bypass",
             "offline_network_emulation",
+            "offline_devtools_connect",
+            "offline_worker_target_list",
+            "offline_worker_target_attach",
             "offline_worker_network_emulation",
             "offline_fallback_navigation",
             "offline_fallback_content",
@@ -609,6 +681,9 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
             "offline_devtools_enable",
             "offline_cache_bypass",
             "offline_network_emulation",
+            "offline_devtools_connect",
+            "offline_worker_target_list",
+            "offline_worker_target_attach",
             "offline_worker_network_emulation",
             "offline_fallback_navigation",
             "offline_fallback_content",
@@ -625,8 +700,25 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
             offline.index('assert_empty_cache_storage(driver, "offline navigation")'),
         )
         self.assertIn("nonlocal stage", viewport)
+        self.assertIn("diagnostic_code", viewport)
+        self.assertIn("diagnostic=", viewport)
         offline_call = viewport.split("verify_offline_fallback(", 1)[1].split("\n        )", 1)[0]
         self.assertIn("update_offline_stage", offline_call)
+
+    def test_pwa_registration_clicks_use_native_center_visibility_guard(self) -> None:
+        customer = function_source(self.source, "create_session_customer")
+        viewport = function_source(self.source, "run_viewport")
+
+        self.assertIn("click_native_when_unobstructed(driver, label)", customer)
+        self.assertIn("click_native_when_unobstructed(driver, submit)", customer)
+        for stage in (
+            "customer_registration_required_consent",
+            "customer_registration_submit",
+            "customer_registration_success_wait",
+        ):
+            with self.subTest(stage=stage):
+                self.assertIn(f'"{stage}"', customer)
+        self.assertIn("set_stage=update_offline_stage", viewport)
 
     def test_offline_cleanup_attempts_both_resets_and_preserves_primary_failure(self) -> None:
         class FakeDriver:
