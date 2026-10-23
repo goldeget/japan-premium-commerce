@@ -3262,8 +3262,13 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         profile_substage = "account_page_navigation"
         driver.get(account_url)
         profile_substage = "account_page_route_check"
-        if safe_account_route_classification(driver.current_url) != "account":
-            raise AssertionError("the customer profile save did not return to the account route")
+        # The canonical account slug may be localized. Compare the saved
+        # navigation result against the exact same-origin My Page URL captured
+        # from the authenticated Hummingbird header rather than English slugs.
+        if not safe_generated_route_match(driver.current_url, account_url):
+            raise AssertionError(
+                "the customer profile save did not return to the authenticated My Page route"
+            )
         assert_my_page(driver, expected_first_name, substage_callback=mark_profile_update_substage)
         profile_substage = "identity_page_navigation"
         driver.get(f"{BASE}/index.php?controller=identity")

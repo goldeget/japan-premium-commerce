@@ -690,6 +690,65 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             )
         )
 
+    def test_profile_return_matches_the_canonical_localized_account_route(self) -> None:
+        helper_node = next(
+            node
+            for node in ast.parse(self.source).body
+            if isinstance(node, ast.FunctionDef) and node.name == "safe_generated_route_match"
+        )
+        namespace = {
+            "BASE": "https://shop.example.test/shop",
+            "parse_qs": parse_qs,
+            "unquote": unquote,
+            "urlparse": urlparse,
+        }
+        exec(
+            compile(ast.Module(body=[helper_node], type_ignores=[]), str(ACCOUNT_FLOW), "exec"),
+            namespace,
+        )
+        matches = namespace["safe_generated_route_match"]
+        canonical_account_url = (
+            "https://shop.example.test/shop/ko/%EB%82%B4-%EA%B3%84%EC%A0%95?back=%2Fko"
+        )
+        self.assertTrue(
+            matches(
+                "https://shop.example.test/shop/ko/%EB%82%B4-%EA%B3%84%EC%A0%95?back=%2Fko%2Fidentity",
+                canonical_account_url,
+            )
+        )
+        self.assertFalse(
+            matches(
+                "https://shop.example.test/shop/ko/%EB%82%B4-%EC%A0%95%EB%B3%B4",
+                canonical_account_url,
+            )
+        )
+        self.assertFalse(
+            matches(
+                "https://outside.example.test/shop/ko/%EB%82%B4-%EA%B3%84%EC%A0%95",
+                canonical_account_url,
+            )
+        )
+
+        profile_save = self.blocks["profile_update_persist_wait"]
+        navigate_to_account = profile_save.index("driver.get(account_url)")
+        self.assertIn(
+            "safe_generated_route_match(driver.current_url, account_url)",
+            profile_save,
+            "profile return must match the route from the authenticated header",
+        )
+        route_check = profile_save.index(
+            "safe_generated_route_match(driver.current_url, account_url)"
+        )
+        my_page_check = profile_save.index(
+            "assert_my_page(driver, expected_first_name, substage_callback=mark_profile_update_substage)"
+        )
+        identity_reload = profile_save.index('driver.get(f"{BASE}/index.php?controller=identity")')
+        self.assertLess(navigate_to_account, route_check)
+        self.assertLess(route_check, my_page_check)
+        self.assertLess(my_page_check, identity_reload)
+        self.assertNotIn("safe_account_route_classification(driver.current_url)", profile_save)
+        self.assertIn('#customer-form input[name="firstname"]', profile_save)
+
     def test_generated_route_match_distinguishes_language_but_ignores_back(self) -> None:
         helper_node = next(
             node
