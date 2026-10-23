@@ -27,6 +27,14 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("::error title=ORDENOWA postcode fixture::", fixture_step)
         self.assertIn("postcode-fixture", fixture_step)
 
+    def test_synthetic_postcode_state_fixture_uses_supported_php_stdin_syntax(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        fixture_step = workflow.split(
+            "- name: Import synthetic Tokyo postcode fixture for isolated checkout QA", 1
+        )[1].split("- name:", 1)[0]
+        self.assertIn('exec -T prestashop php \\\n            <<\'PHP\'', fixture_step)
+        self.assertNotIn("exec -T prestashop php -", fixture_step)
+
     def test_customer_account_flow_contract_is_run_and_triggers_ci(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("  push:\n", workflow)

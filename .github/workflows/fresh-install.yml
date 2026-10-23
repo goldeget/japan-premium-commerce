@@ -308,7 +308,7 @@ jobs:
           trap report_postcode_fixture_failure ERR
           # These two records follow the public KEN_ALL column layout, but are
           # synthetic CI inputs, NOT official Japan Post data.
-          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop php - \
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop php \
             <<'PHP' 2>&1 | tee "$postcode_stage_log"
           <?php
           $_SERVER['HTTP_HOST'] = 'localhost:8080';

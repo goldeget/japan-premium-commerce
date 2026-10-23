@@ -89,6 +89,9 @@ class FreeShippingE2eContractTest(unittest.TestCase):
                 self.assertIn("SELECT DATABASE()", source)
                 self.assertIn("'mariadb'", source)
                 self.assertIn("'prestashop'", source)
+                self.assertIn("server_match=%s", source)
+                self.assertIn("configured_name_match=%s", source)
+                self.assertIn("active_connection_match=%s", source)
 
     def test_japan_zone_fixture_requires_and_reports_configured_prefectures(self) -> None:
         source = JAPAN_ZONE_FIXTURE.read_text(encoding="utf-8")

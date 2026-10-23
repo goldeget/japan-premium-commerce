@@ -45,10 +45,17 @@ $_SERVER['SCRIPT_NAME'] = '/index.php';
 $_SERVER['SERVER_PORT'] = (string) (parse_url('http://' . $_SERVER['HTTP_HOST'], PHP_URL_PORT) ?: 80);
 require_once $shopRoot . '/config/config.inc.php';
 
-if (!defined('_DB_SERVER_') || (string) _DB_SERVER_ !== 'mariadb'
-    || !defined('_DB_NAME_') || (string) _DB_NAME_ !== 'prestashop'
-    || (string) Db::getInstance()->getValue('SELECT DATABASE()') !== 'prestashop') {
-    throw new RuntimeException('The connected shop database is not the isolated MariaDB prestashop database.');
+$dbServerMatches = defined('_DB_SERVER_') && (string) _DB_SERVER_ === 'mariadb';
+$dbNameMatches = defined('_DB_NAME_') && (string) _DB_NAME_ === 'prestashop';
+$activeDatabaseMatches = $dbNameMatches
+    && (string) Db::getInstance()->getValue('SELECT DATABASE()') === (string) _DB_NAME_;
+if (!$dbServerMatches || !$dbNameMatches || !$activeDatabaseMatches) {
+    throw new RuntimeException(sprintf(
+        'The connected shop database failed its isolation guard: server_match=%s; configured_name_match=%s; active_connection_match=%s.',
+        $dbServerMatches ? 'yes' : 'no',
+        $dbNameMatches ? 'yes' : 'no',
+        $activeDatabaseMatches ? 'yes' : 'no'
+    ));
 }
 
 $stage = 'isolated Japanese JPY shop context';
