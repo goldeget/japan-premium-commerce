@@ -20,6 +20,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 import verify_ci_checkout_admin_browser as checkout
 from checkout_total_math import reconcile_cart_totals
+from shipping_admin_routes import carrier_action_url, matches_admin_controller_url
 
 
 BASE = os.environ["SHOP_BASE_URL"].rstrip("/")
@@ -263,8 +264,40 @@ def _assert_free_carrier_form(driver, carrier: dict[str, object]) -> dict[str, o
     }
 
 
-def _carrier_edit_url(carrier_id: int) -> str:
-    return ADMIN_LOGIN + f"/index.php/improve/shipping/carriers/{carrier_id}/edit"
+def _carrier_list_url(driver) -> str:
+    settings_links = WebDriverWait(driver, 30).until(
+        lambda browser: [
+            link
+            for link in browser.find_elements(By.CSS_SELECTOR, 'a[href*="controller=AdminBusinessProfile"]')
+            if parse_qs(urlparse(link.get_attribute("href") or "").query).get("controller")
+            == ["AdminBusinessProfile"]
+        ]
+    )
+    settings_url = settings_links[0].get_attribute("href") or ""
+    settings = urlparse(settings_url)
+    base = urlparse(BASE)
+    admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
+    if (
+        (settings.scheme, settings.hostname, settings.port) != (base.scheme, base.hostname, base.port)
+        or not settings.path.startswith(admin_path + "/")
+    ):
+        raise AssertionError("the Korean business settings link leaves the isolated Back Office")
+    checkout.visit(driver, settings_url)
+    _wait_visible(driver, "form.ordenowa-profile-settings")
+    carriers_link = _wait_visible(driver, "#ordenowa-shipping a.ordenowa-shipping-admin-carriers")
+    carriers_url = carriers_link.get_attribute("href") or ""
+    carriers = urlparse(carriers_url)
+    if (
+        (carriers.scheme, carriers.hostname, carriers.port) != (base.scheme, base.hostname, base.port)
+        or not carriers.path.startswith(admin_path + "/")
+        or not matches_admin_controller_url(carriers_url, "AdminCarriers", admin_path)
+    ):
+        raise AssertionError("the Korean shipping settings link is not an authenticated AdminCarriers route")
+    return carriers_url
+
+
+def _carrier_edit_url(carriers_list_url: str, carrier_id: int) -> str:
+    return carrier_action_url(carriers_list_url, "edit", carrier_id)
 
 
 def _save_carrier_form(driver, operation: str) -> int:
@@ -321,8 +354,10 @@ def configure_free_carrier() -> None:
 
     try:
         checkout.admin_login(driver)
+        stage = "resolve_authenticated_admin_carriers_link"
+        carriers_list_url = _carrier_list_url(driver)
         stage = "create_free_japan_carrier"
-        checkout.visit(driver, ADMIN_LOGIN + "/index.php/improve/shipping/carriers/create")
+        checkout.visit(driver, carrier_action_url(carriers_list_url, "create"))
         stage = "wait_for_carrier_create_form"
         _wait_visible(driver, 'input[name="carrier[general_settings][name]"]')
         stage = "fill_draft_free_japan_carrier"
@@ -335,7 +370,7 @@ def configure_free_carrier() -> None:
         carrier_id = _save_carrier_form(driver, "create")
 
         stage = "edit_and_save_free_japan_carrier"
-        checkout.visit(driver, _carrier_edit_url(carrier_id))
+        checkout.visit(driver, _carrier_edit_url(carriers_list_url, carrier_id))
         _assert_free_carrier_form(
             driver,
             {"name": draft_name},
@@ -350,7 +385,7 @@ def configure_free_carrier() -> None:
 
         # A fresh page load verifies that the browser form rereads the saved row.
         stage = "verify_admin_saved_carrier"
-        checkout.visit(driver, _carrier_edit_url(carrier_id))
+        checkout.visit(driver, _carrier_edit_url(carriers_list_url, carrier_id))
         observed = _assert_free_carrier_form(driver, {"name": final_name})
         observed.update({"id": carrier_id, "draft_name": draft_name})
         CONFIG_PATH.write_text(
@@ -396,8 +431,10 @@ def readback_free_carrier() -> None:
     stage = "fresh_administrator_login"
     try:
         checkout.admin_login(driver)
+        stage = "resolve_authenticated_admin_carriers_link"
+        carriers_list_url = _carrier_list_url(driver)
         stage = "readback_free_carrier_after_restart"
-        checkout.visit(driver, _carrier_edit_url(int(config["id"])))
+        checkout.visit(driver, _carrier_edit_url(carriers_list_url, int(config["id"])))
         observed = _assert_free_carrier_form(driver, config)
         if observed["carrier_tax_rule_group_id"] != config["carrier_tax_rule_group_id"]:
             raise AssertionError("the carrier tax-rule selection changed after the PrestaShop restart")

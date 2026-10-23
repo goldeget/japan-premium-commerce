@@ -105,6 +105,33 @@ class ShippingAdminLinksContractTests(unittest.TestCase):
             )
         )
 
+    def test_carrier_action_urls_preserve_the_authenticated_admin_token(self) -> None:
+        spec = spec_from_file_location("shipping_admin_routes_actions", ROUTES)
+        self.assertIsNotNone(spec)
+        assert spec is not None and spec.loader is not None
+        route_helper = module_from_spec(spec)
+        spec.loader.exec_module(route_helper)
+
+        modern = "http://shop.test/admin-kuranea/index.php/improve/shipping/carriers?token=ci-token"
+        self.assertEqual(
+            route_helper.carrier_action_url(modern, "create"),
+            "http://shop.test/admin-kuranea/index.php/improve/shipping/carriers/create?token=ci-token",
+        )
+        self.assertEqual(
+            route_helper.carrier_action_url(modern, "edit", 42),
+            "http://shop.test/admin-kuranea/index.php/improve/shipping/carriers/42/edit?token=ci-token",
+        )
+
+        legacy = "http://shop.test/admin-kuranea/index.php?controller=AdminCarriers&token=ci-token"
+        self.assertEqual(
+            route_helper.carrier_action_url(legacy, "create"),
+            "http://shop.test/admin-kuranea/index.php?controller=AdminCarriers&token=ci-token&addcarrier=1",
+        )
+        self.assertEqual(
+            route_helper.carrier_action_url(legacy, "edit", 42),
+            "http://shop.test/admin-kuranea/index.php?controller=AdminCarriers&token=ci-token&id_carrier=42&updatecarrier=1",
+        )
+
     def test_authenticated_shipping_pages_require_a_korean_document_language(self) -> None:
         self.assertTrue(ROUTES.is_file(), "shipping admin locale validation must be dependency-free")
         spec = spec_from_file_location("shipping_admin_routes_locale", ROUTES)

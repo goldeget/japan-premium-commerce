@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlunparse
 
 
 _MODERN_ADMIN_ROUTES = {
@@ -31,6 +31,33 @@ def matches_admin_controller_url(href: str, controller: str, admin_path: str) ->
     if relative_path.startswith("/index.php/"):
         relative_path = relative_path[len("/index.php") :]
     return relative_path == route_suffix
+
+
+def carrier_action_url(carriers_list_url: str, action: str, carrier_id: int | None = None) -> str:
+    """Build a carrier form URL while retaining the token from PrestaShop's admin link."""
+    if action not in {"create", "edit"}:
+        raise ValueError("carrier action must be create or edit")
+    if action == "edit" and (carrier_id is None or carrier_id < 1):
+        raise ValueError("editing a carrier requires a positive carrier ID")
+
+    parsed = urlparse(carriers_list_url)
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    relative_path = parsed.path.rstrip("/")
+    modern_route = "/improve/shipping/carriers"
+    if relative_path.endswith(modern_route):
+        suffix = "/create" if action == "create" else f"/{carrier_id}/edit"
+        return urlunparse(parsed._replace(path=relative_path + suffix))
+
+    if dict(query).get("controller") != "AdminCarriers":
+        raise ValueError("carrier list URL is not an authenticated AdminCarriers route")
+
+    action_parameters = {"addcarrier", "id_carrier", "updatecarrier"}
+    query = [(key, value) for key, value in query if key not in action_parameters]
+    if action == "create":
+        query.append(("addcarrier", "1"))
+    else:
+        query.extend((("id_carrier", str(carrier_id)), ("updatecarrier", "1")))
+    return urlunparse(parsed._replace(query=urlencode(query)))
 
 
 def is_korean_admin_language(language: str) -> bool:
