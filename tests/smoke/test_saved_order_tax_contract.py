@@ -18,7 +18,7 @@ class SavedOrderTaxContractTests(unittest.TestCase):
         source = (ROOT / "tests/postcode/verify_ci_free_shipping_order.php").read_text()
         for marker in (
             "order_detail_tax", "odt.`id_tax`", "odt.`unit_amount`", "odt.`total_amount`",
-            "t.`rate`", "tr.`id_tax_rules_group`", "$savedDetailTaxGroupId > 0",
+            "t.`rate`", "tr.`id_tax_rules_group`", "$savedDetailTaxGroupId !== $expectedTaxRulesGroupId",
             "$storedTaxTotal - $nativeTaxes", "$discountedProductTaxBase",
             "$discountedProductTaxBase * $storedTaxRate / 100",
             "$storedTaxUnit * $expectedQuantity", "$storedTaxRate - 10.0",
@@ -26,14 +26,13 @@ class SavedOrderTaxContractTests(unittest.TestCase):
             with self.subTest(marker=marker):
                 self.assertIn(marker, source)
 
-    def test_unassigned_group_does_not_report_a_legal_zero_tax_rate(self) -> None:
-        source = (ROOT / "tests/postcode/verify_ci_free_shipping_order.php").read_text()
-        self.assertIn("No assigned calculation rule; not a legal tax determination", source)
-        self.assertIn('"tax_display_mode": "no_assigned_tax_rule"', (ROOT / "tests/e2e/checkout_total_math.py").read_text())
-        self.assertIn("must not report a legal zero tax or net amount", source)
-        self.assertIn("$browserTotals['tax'] !== null", source)
-        self.assertIn("'saved_order_detail_tax_group_id' => $savedDetailTaxGroupId", source)
-        self.assertIn("'saved_order_detail_taxes' => $storedTaxRows", source)
+    def test_unknown_tax_regression_stays_separate_from_positive_tax_shipping_scenarios(self) -> None:
+        browser = (ROOT / "tests/e2e/verify_ci_free_shipping_browser.py").read_text()
+        source = (ROOT / "tests/e2e/checkout_total_math.py").read_text()
+        self.assertIn('"tax_display_mode": "no_assigned_tax_rule"', source)
+        self.assertIn("def _assert_unknown_admin_tax_display", browser)
+        self.assertIn("with no zero or nonzero tax line", browser)
+        self.assertIn("$savedDetailTaxGroupId !== $expectedTaxRulesGroupId", (ROOT / "tests/postcode/verify_ci_free_shipping_order.php").read_text())
 
     def test_saved_order_rejects_shipping_and_wrapping_fees(self) -> None:
         source = (ROOT / "tests/postcode/verify_ci_free_shipping_order.php").read_text()

@@ -19,7 +19,7 @@ TAXABLE_PRODUCT_FIXTURE = ROOT / "tests/catalog/verify_product_tax_price.php"
 
 
 class FreeShippingE2eContractTest(unittest.TestCase):
-    def test_active_no_rule_product_fixture_is_independent_of_postcode_order_qa(self) -> None:
+    def test_active_taxable_product_fixture_uses_the_run_scoped_tax_group(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertTrue(SHIPPING_PRODUCT_FIXTURE.is_file(), "free-shipping QA needs its own active CI product fixture")
         product_step = workflow.split(
@@ -28,18 +28,29 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         postcode_step = workflow.split(
             "- name: Import synthetic Tokyo postcode fixture for isolated checkout QA", 1
         )[1].split("- name:", 1)[0]
+        tax_step = workflow.split(
+            "- name: Create isolated synthetic tax product and reconcile native unpaid order", 1
+        )[1].split("- name:", 1)[0]
         self.assertIn("id: shipping_product_fixture", product_step)
         self.assertIn("prepare_ci_free_shipping_product.php", product_step)
         self.assertNotIn("postcode_fixture.outcome", product_step)
-        self.assertLess(workflow.index("id: shipping_product_fixture"), workflow.index("id: postcode_fixture"))
-        self.assertIn("'tax_rules_group_id' => '0'", SHIPPING_PRODUCT_FIXTURE.read_text(encoding="utf-8"))
-        self.assertIn("not a legal tax determination", SHIPPING_PRODUCT_FIXTURE.read_text(encoding="utf-8"))
+        self.assertLess(workflow.index("id: postcode_fixture"), workflow.index("id: tax_fixture"))
+        self.assertLess(workflow.index("id: tax_fixture"), workflow.index("id: shipping_product_fixture"))
+        self.assertIn("CI_TEST_TAX_RULES_GROUP_ID", tax_step)
+        self.assertIn("'price_jpy' => '1100'", SHIPPING_PRODUCT_FIXTURE.read_text(encoding="utf-8"))
+        self.assertIn("'tax_rules_group_id' => (string) $taxRulesGroupId", SHIPPING_PRODUCT_FIXTURE.read_text(encoding="utf-8"))
+        self.assertNotIn("'tax_rules_group_id' => '0'", SHIPPING_PRODUCT_FIXTURE.read_text(encoding="utf-8"))
+        self.assertIn("synthetic 10%", SHIPPING_PRODUCT_FIXTURE.read_text(encoding="utf-8"))
+        self.assertIn("not a legal tax rate or determination", SHIPPING_PRODUCT_FIXTURE.read_text(encoding="utf-8"))
+        self.assertIn('-e CI_TEST_TAX_RULES_GROUP_ID="$CI_TEST_TAX_RULES_GROUP_ID"', product_step)
+        self.assertIn('printf \'CI_TEST_PRODUCT_ID=%s\\nCI_TEST_PRODUCT_TAX_GROUP=%s\\n\'', product_step)
         self.assertIn("CI_TEST_PRODUCT_ID=", product_step)
         self.assertNotIn("KURANEA-CI-%", product_step)
         free_shipping_step = workflow.split(
             "- name: Prepare isolated free-shipping order and coupon fixtures", 1
         )[1].split("- name:", 1)[0]
         self.assertIn("CI_TEST_PRODUCT_ID", free_shipping_step)
+        self.assertIn('[ "$product_tax_group_id" != "$CI_TEST_TAX_RULES_GROUP_ID" ]', free_shipping_step)
         self.assertNotIn("steps.postcode_fixture.outcome", free_shipping_step)
 
     def test_free_shipping_price_checks_do_not_depend_on_postcode_lookup(self) -> None:
@@ -231,7 +242,7 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertIn("prepare_ci_carrier_admin_access.php", workflow)
         self.assertIn("steps.shipping_free_admin_access.outcome == 'success'", workflow)
         self.assertIn("5300001", workflow)
-        self.assertIn('[ "$product_tax_group_id" != "0" ]', workflow)
+        self.assertIn('[ "$product_tax_group_id" != "$CI_TEST_TAX_RULES_GROUP_ID" ]', workflow)
         self.assertIn('[ "$product_id" != "$expected_product_id" ]', workflow)
         self.assertIn('[ "$product_tax_group_id" != "$expected_tax_group_id" ]', workflow)
         self.assertNotIn('|| "$product_tax_group_id" !=', workflow)
@@ -601,6 +612,93 @@ class FreeShippingE2eContractTest(unittest.TestCase):
                 },
                 {"total_paid_tax_incl": 1100, "total_paid_tax_excl": 1000},
             )
+
+    def test_free_shipping_scenarios_reconcile_the_synthetic_tax_included_price(self) -> None:
+        source = ast.parse(BROWSER.read_text(encoding="utf-8"))
+        assertion = next(
+            node for node in source.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_assert_synthetic_taxable_totals"
+        )
+        namespace: dict[str, object] = {}
+        exec(
+            compile(ast.Module(body=[assertion], type_ignores=[]), str(BROWSER), "exec"),
+            namespace,
+        )
+        assert_totals = namespace["_assert_synthetic_taxable_totals"]
+
+        def totals(*, quantity: int, coupon: bool) -> dict[str, object]:
+            discount_gross = quantity * 550 if coupon else 0
+            discount_net = quantity * 500 if coupon else 0
+            final_gross = quantity * 1100 - discount_gross
+            final_net = quantity * 1000 - discount_net
+            return {
+                "products_tax_incl": quantity * 1100,
+                "products_tax_excl": quantity * 1000,
+                "shipping_tax_incl": 0,
+                "shipping_tax_excl": 0,
+                "discounts_tax_incl": discount_gross,
+                "discounts_tax_excl": discount_net,
+                "tax": final_gross - final_net,
+                "total_tax_incl": final_gross,
+                "total_tax_excl": final_net,
+                "tax_display_mode": "detailed_breakdown",
+                "tax_breakdown_displayed": True,
+            }
+
+        assert_totals(totals(quantity=2, coupon=True), quantity=2, coupon_applied=True)
+        assert_totals(totals(quantity=1, coupon=False), quantity=1, coupon_applied=False)
+        assert_totals(totals(quantity=1, coupon=True), quantity=1, coupon_applied=True)
+
+        incorrect_zero_tax = totals(quantity=1, coupon=False)
+        incorrect_zero_tax["tax"] = 0
+        with self.assertRaisesRegex(AssertionError, "synthetic taxable order"):
+            assert_totals(incorrect_zero_tax, quantity=1, coupon_applied=False)
+
+    def test_native_shipping_order_verifier_requires_the_run_scoped_positive_tax_group(self) -> None:
+        source = ORDER_VERIFY.read_text(encoding="utf-8")
+        for marker in (
+            "$productTaxGroupId < 1",
+            "$expectedTaxRulesGroupId",
+            "$productTaxGroupId !== $expectedTaxRulesGroupId",
+            "KURANEA_CI_TAX_RULES_GROUP_ID",
+            "'shipping-free' =>",
+            "'shipping-free-mobile' =>",
+            "'shipping-free-taxable' =>",
+            "'products_tax_incl' => 2200.0",
+            "'products_tax_excl' => 2000.0",
+            "'discounts_tax_incl' => 1100.0",
+            "'discounts_tax_excl' => 1000.0",
+            "'total_tax_incl' => 1100.0",
+            "'total_tax_excl' => 1000.0",
+            "'tax' => 100.0",
+            "'total_tax_incl' => 550.0",
+            "'total_tax_excl' => 500.0",
+            "'tax' => 50.0",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, source)
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        persistence = workflow.split("- name: Verify free-shipping orders and totals in the isolated database", 1)[1].split(
+            "- name:", 1
+        )[0]
+        self.assertIn('-e KURANEA_CI_TAX_RULES_GROUP_ID="$CI_TEST_TAX_RULES_GROUP_ID"', persistence)
+
+    def test_primary_checkout_scenarios_use_the_positive_group_and_expected_gross_net_coupon_math(self) -> None:
+        browser = BROWSER.read_text(encoding="utf-8")
+        for marker in (
+            "_assert_synthetic_taxable_totals(browser_totals, quantity=2, coupon_applied=True)",
+            "_assert_synthetic_taxable_totals(browser_totals, quantity=1, coupon_applied=False)",
+            "pre_discount_tax_total=200",
+            "pre_discount_tax_total=100",
+            '"product_tax_rule_group_id": PRODUCT_TAX_RULE_GROUP_ID',
+            "not a legal tax rate or tax determination",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, browser)
+        source = ORDER_VERIFY.read_text(encoding="utf-8")
+        self.assertIn("'shipping-free' => [", source)
+        self.assertIn("'shipping-free-mobile' => [", source)
+        self.assertIn("'shipping-free-taxable' => [", source)
 
     def test_order_confirmation_totals_are_checked_before_history_navigation(self) -> None:
         browser = BROWSER.read_text(encoding="utf-8")

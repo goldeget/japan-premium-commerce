@@ -13,8 +13,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/fresh-install.yml"
 NEW_STEP_IDS = (
-    "shipping_product_fixture", "postcode_fixture",
-    "tax_fixture", "variant_fixture", "cart_controls_browser_qa",
+    "postcode_fixture", "tax_fixture", "shipping_product_fixture",
+    "variant_fixture", "cart_controls_browser_qa",
     "security_fixture", "admin_security_browser_qa", "reset_token_browser_qa",
     "pwa_browser_qa", "shipping_free_fixture", "shipping_free_admin_access", "shipping_free_admin_configure",
     "shipping_free_restart", "shipping_free_admin_readback",

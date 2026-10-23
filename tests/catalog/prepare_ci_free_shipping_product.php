@@ -82,7 +82,32 @@ $context->language = new Language($languageId, null, $shopId);
 $context->currency = new Currency($currencyId, null, $shopId);
 Shop::setContext(Shop::CONTEXT_SHOP, $shopId);
 
-$stage = 'run-scoped no-rule product creation';
+$stage = 'validate run-scoped synthetic tax group and create taxable product';
+$taxRulesGroupId = (int) getenv('CI_TEST_TAX_RULES_GROUP_ID');
+$japanCountryId = (int) Country::getByIso('JP');
+$expectedTaxRulesGroupName = '[CI ONLY] synthetic product tax ' . $runId . '-' . $attempt;
+$taxRulesGroup = $taxRulesGroupId > 0 ? new TaxRulesGroup($taxRulesGroupId) : false;
+$taxRules = $taxRulesGroupId > 0 && $japanCountryId > 0 ? Db::getInstance()->executeS(
+    'SELECT t.`rate`, t.`active`, tr.`id_country`, tr.`id_state`'
+    . ' FROM `' . _DB_PREFIX_ . 'tax_rule` tr'
+    . ' INNER JOIN `' . _DB_PREFIX_ . 'tax` t ON t.`id_tax` = tr.`id_tax`'
+    . ' WHERE tr.`id_tax_rules_group` = ' . $taxRulesGroupId
+) : false;
+if (!Validate::isLoadedObject($taxRulesGroup)
+    || $japanCountryId < 1
+    || !(bool) $taxRulesGroup->active
+    || (int) $taxRulesGroup->deleted !== 0
+    || (string) $taxRulesGroup->name !== $expectedTaxRulesGroupName
+    || !is_array($taxRules)
+    || count($taxRules) !== 1
+    || abs((float) ($taxRules[0]['rate'] ?? 0) - 10.0) > 0.00001
+    || (int) ($taxRules[0]['active'] ?? 0) !== 1
+    || (int) ($taxRules[0]['id_country'] ?? 0) !== $japanCountryId
+    || (int) ($taxRules[0]['id_state'] ?? -1) !== 0
+) {
+    throw new RuntimeException('The free-shipping product must use its own active run-scoped synthetic Japan 10% tax rule group.');
+}
+
 $manager = new PrestaShopNativeProductManager();
 $categories = $manager->categories();
 $categoryIds = array_map(static fn (array $row): int => (int) $row['id_category'], $categories);
@@ -92,18 +117,20 @@ if (!in_array($homeCategoryId, $categoryIds, true)) {
 $draft = ProductAdminDraft::fromArray([
     'name_ja' => '[CI ONLY] ORDENOWA free shipping product ' . $runId . '-' . $attempt,
     'name_ko' => '[CI ONLY] ORDENOWA free shipping 무료배송 검증 상품 ' . $runId . '-' . $attempt,
-    'price_jpy' => '1000',
-    'tax_rules_group_id' => '0',
+    'price_jpy' => '1100',
+    'tax_rules_group_id' => (string) $taxRulesGroupId,
     'quantity' => '5',
     'category_ids' => [(string) $homeCategoryId],
-    'description_ja' => '[CI ONLY] Free-shipping checkout fixture with no tax rule assigned.',
-    'description_ko' => '[CI ONLY] 무료배송 검증용 격리 상품입니다. 세금 규칙 미할당은 면세 판정이 아닙니다.',
+    'description_ja' => '[CI ONLY] Synthetic 10% tax-included test product for free-shipping checkout QA; not a legal tax determination.',
+    'description_ko' => '[CI ONLY] 무료배송 QA용 합성 10% 세금 포함 테스트 상품입니다. 실제 세무 판정이나 법정 세율이 아닙니다.',
     'options' => '',
 ]);
 $productId = $manager->save(null, $draft);
 $editor = $manager->editorData($productId);
-if ((int) ($editor['price_jpy'] ?? 0) !== 1000 || (int) ($editor['tax_rules_group_id'] ?? -1) !== 0) {
-    throw new RuntimeException('The isolated product manager did not preserve the JPY 1000 price and unassigned rule-group fixture.');
+if ((int) ($editor['price_jpy'] ?? 0) !== 1100
+    || (int) ($editor['tax_rules_group_id'] ?? -1) !== $taxRulesGroupId
+) {
+    throw new RuntimeException('The isolated product manager did not preserve the JPY 1100 tax-included price and synthetic rule-group fixture.');
 }
 
 $stage = 'activate and index run-scoped customer-facing test product';
@@ -128,18 +155,19 @@ if (!Validate::isLoadedObject($product)
     || (string) $product->visibility !== 'both'
     || !(bool) $product->available_for_order
     || !(bool) $product->show_price
-    || (int) $product->id_tax_rules_group !== 0
+    || (int) $product->id_tax_rules_group !== $taxRulesGroupId
     || abs((float) $product->price - 1000.0) > 0.00001
     || $stockQuantity < 2) {
-    throw new RuntimeException('The free-shipping product failed its active, orderable, JPY price, no-rule, or stock re-read guard.');
+    throw new RuntimeException('The free-shipping product failed its active, orderable, tax-inclusive JPY price, synthetic tax group, or stock re-read guard.');
 }
 
 echo json_encode([
     'product_id' => (int) $product->id,
     'reference' => (string) $product->reference,
-    'price_jpy' => 1000,
+    'price_jpy' => 1100,
+    'price_tax_excl_jpy' => (float) $product->price,
     'quantity' => $stockQuantity,
-    'tax_rules_group_id' => 0,
-    'tax_scope' => 'unassigned rule group for an isolated free-shipping fixture; not a legal tax determination',
+    'tax_rules_group_id' => $taxRulesGroupId,
+    'tax_scope' => 'run-scoped synthetic 10% tax rule group; not a legal tax rate or determination',
     'fixture_scope' => 'run-scoped isolated GitHub Actions disposable checkout database',
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL;

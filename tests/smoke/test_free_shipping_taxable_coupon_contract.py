@@ -196,12 +196,15 @@ class TaxableCouponCheckoutContractTest(unittest.TestCase):
         for marker in (
             "unit_price_tax_excl",
             "unit_price_tax_incl",
+            "'shipping-free' => [",
+            "'shipping-free-mobile' => [",
+            "'shipping-free-taxable' => [",
             "'native final tax-exclusive amount' =>",
             "'native final tax-inclusive amount' =>",
-            "'native saved synthetic tax' => [$nativeTaxes, 50.0]",
-            "'saved synthetic order-detail tax' => [$storedTaxTotal, 50.0]",
+            "'native saved synthetic tax' => [$nativeTaxes, $scenarioExpected['tax']]",
+            "'saved synthetic order-detail tax' => [$storedTaxTotal, $scenarioExpected['tax']]",
             "inclusive_total_only",
-            "no_assigned_tax_rule",
+            "not a legal tax rate or tax determination",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, verifier)

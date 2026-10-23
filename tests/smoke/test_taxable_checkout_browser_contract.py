@@ -43,6 +43,7 @@ class TaxableCheckoutBrowserContractTests(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         steps = (
             "Create isolated synthetic tax product and reconcile native unpaid order",
+            "Prepare isolated active product for storefront and free-shipping QA",
             "Prepare isolated taxable variant fixture",
             "Verify Korean admin native product create and edit in Chromium",
             "Verify tax-included taxable Japan checkout with the free carrier",
@@ -55,6 +56,7 @@ class TaxableCheckoutBrowserContractTests(unittest.TestCase):
         for marker in (
             "CI_TEST_TAX_RULES_GROUP_ID",
             "CI_TEST_TAX_PRODUCT_ID",
+            "CI_TEST_PRODUCT_TAX_GROUP",
             "CI_TEST_VARIANT_PRODUCT_ID",
             "verify_product_tax_price.php",
             "setup_ci_variant_product.php",

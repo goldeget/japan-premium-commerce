@@ -847,6 +847,81 @@ def _assert_taxable_visible_totals(
         )
 
 
+def _assert_synthetic_taxable_totals(
+    totals: dict[str, int | None | bool | str],
+    *,
+    quantity: int,
+    coupon_applied: bool,
+) -> None:
+    """Reconcile the CI-only gross/net test price through cart and coupon arithmetic.
+
+    A storefront that shows only an explicitly inclusive final price must keep
+    tax decomposition unknown here. The native order verifier then checks the
+    positive saved tax row and exact net/gross values.
+    """
+    if quantity < 1:
+        raise AssertionError("synthetic taxable order quantity must be positive")
+    discount_gross = quantity * 550 if coupon_applied else 0
+    discount_net = quantity * 500 if coupon_applied else 0
+    final_gross = quantity * 1100 - discount_gross
+    final_net = quantity * 1000 - discount_net
+    expected_visible = {
+        "products_tax_incl": quantity * 1100,
+        "shipping_tax_incl": 0,
+        "discounts_tax_incl": discount_gross,
+        "total_tax_incl": final_gross,
+    }
+    observed_visible = {key: totals.get(key) for key in expected_visible}
+    if observed_visible != expected_visible:
+        raise AssertionError(
+            "synthetic taxable order gross totals do not match quantity, coupon, and free shipping: "
+            f"observed={observed_visible}, expected={expected_visible}"
+        )
+
+    if totals.get("tax") is None:
+        expected_unknown = {
+            "tax_display_mode": "inclusive_total_only",
+            "tax_breakdown_displayed": False,
+            "products_tax_excl": None,
+            "discounts_tax_excl": None,
+            "total_tax_excl": None,
+        }
+        observed_unknown = {key: totals.get(key) for key in expected_unknown}
+        if observed_unknown != expected_unknown:
+            raise AssertionError(
+                "synthetic taxable order must preserve hidden tax as unknown, never as zero: "
+                f"observed={observed_unknown}"
+            )
+        return
+
+    expected_tax = final_gross - final_net
+    expected_detail = {
+        "products_tax_excl": quantity * 1000,
+        "shipping_tax_excl": 0,
+        "discounts_tax_excl": discount_net,
+        "tax": expected_tax,
+        "total_tax_excl": final_net,
+    }
+    observed_detail = {key: totals.get(key) for key in expected_detail}
+    if observed_detail != expected_detail or expected_tax <= 0:
+        raise AssertionError(
+            "synthetic taxable order net totals and positive tax do not reconcile: "
+            f"observed={observed_detail}, expected={expected_detail}"
+        )
+    expected_display_modes = {
+        "detailed_breakdown": True,
+        "tax_inclusive_and_exclusive_totals": False,
+    }
+    display_mode = str(totals.get("tax_display_mode"))
+    if (
+        display_mode not in expected_display_modes
+        or totals.get("tax_breakdown_displayed") is not expected_display_modes[display_mode]
+    ):
+        raise AssertionError(
+            "synthetic taxable order must identify whether tax came from a row or labeled gross/net totals"
+        )
+
+
 def _select_free_carrier_and_assert_zero(
     driver,
     carrier: dict[str, object],
@@ -1168,7 +1243,13 @@ def run_japan_customer_checkout() -> None:
         checkout.select_japan_address(driver, "shipping-free")
 
         stage = "japan_free_carrier_checkout"
-        browser_totals = _select_free_carrier_and_assert_zero(driver, carrier)
+        browser_totals = _select_free_carrier_and_assert_zero(
+            driver,
+            carrier,
+            tax_rule_group_id=PRODUCT_TAX_RULE_GROUP_ID,
+            pre_discount_tax_total=200,
+        )
+        _assert_synthetic_taxable_totals(browser_totals, quantity=2, coupon_applied=True)
         if browser_totals["discounts_tax_incl"] <= 0:
             raise AssertionError("the seeded CI coupon did not reduce this customer's product total")
         if browser_totals["products_tax_incl"] != unit_price * 2:
@@ -1183,7 +1264,11 @@ def run_japan_customer_checkout() -> None:
         })
         driver.save_screenshot(str(QA_DIR / "shipping-free-checkout-desktop.png"))
         driver.set_window_size(390, 844)
-        mobile_totals = _cart_snapshot(driver)
+        mobile_totals = _cart_snapshot(
+            driver,
+            tax_rule_group_id=PRODUCT_TAX_RULE_GROUP_ID,
+            pre_discount_tax_total=200,
+        )
         if mobile_totals != {
             key: browser_totals[key]
             for key in mobile_totals
@@ -1219,8 +1304,8 @@ def run_japan_customer_checkout() -> None:
             "carrier_tax_rule_group_id": carrier["carrier_tax_rule_group_id"],
             "product_tax_rule_group_id": PRODUCT_TAX_RULE_GROUP_ID,
             "tax_fixture_scope": (
-                "CI fixture product with no assigned tax rule (id_tax_rules_group=0); "
-                "no trustworthy Japan tax-inclusive fixture is configured in this fresh-install CI database"
+                "run-scoped CI-only synthetic 10% tax-inclusive test price: ¥1,100 gross / ¥1,000 net per item; "
+                "not a legal tax rate or tax determination"
             ),
             "destination_scope": "synthetic Tokyo address 100-0004, served through the run-scoped Japan-only zone",
             "destination": {
@@ -1270,7 +1355,13 @@ def run_japan_mobile_osaka_checkout() -> None:
         _select_osaka_address(driver)
 
         stage = "osaka_free_carrier_checkout"
-        browser_totals = _select_free_carrier_and_assert_zero(driver, carrier)
+        browser_totals = _select_free_carrier_and_assert_zero(
+            driver,
+            carrier,
+            tax_rule_group_id=PRODUCT_TAX_RULE_GROUP_ID,
+            pre_discount_tax_total=100,
+        )
+        _assert_synthetic_taxable_totals(browser_totals, quantity=1, coupon_applied=False)
         if browser_totals["products_tax_incl"] != unit_price:
             raise AssertionError(
                 f"Osaka mobile cart does not show one displayed product price: ¥{unit_price} vs "
@@ -1310,7 +1401,10 @@ def run_japan_mobile_osaka_checkout() -> None:
             "order_confirmation_totals": confirmation_totals,
             "coupon": {"code": None, "applied": False, "coupon_condition": "not applicable to this second region/quantity check"},
             "product_tax_rule_group_id": PRODUCT_TAX_RULE_GROUP_ID,
-            "tax_fixture_scope": "CI fixture product with no assigned tax rule (id_tax_rules_group=0)",
+            "tax_fixture_scope": (
+                "run-scoped CI-only synthetic 10% tax-inclusive test price: ¥1,100 gross / ¥1,000 net per item; "
+                "not a legal tax rate or tax determination"
+            ),
             "destination_scope": "synthetic Osaka address 530-0001, served through the run-scoped Japan-only zone",
             "destination": {
                 "postcode": "530-0001",
@@ -1380,6 +1474,7 @@ def run_japan_taxable_customer_checkout() -> None:
             discount_tax_excl=0,
             final_tax_excl=1000,
         )
+        _assert_synthetic_taxable_totals(pre_coupon_totals, quantity=1, coupon_applied=False)
 
         stage = "taxable_coupon_condition"
         coupon = _apply_coupon_if_configured(driver)
@@ -1404,6 +1499,7 @@ def run_japan_taxable_customer_checkout() -> None:
             discount_tax_excl=500,
             final_tax_excl=500,
         )
+        _assert_synthetic_taxable_totals(browser_totals, quantity=1, coupon_applied=True)
         browser_totals.update({
             "displayed_unit_price": unit_price,
             "quantity": 1,

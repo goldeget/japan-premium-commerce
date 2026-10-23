@@ -8,6 +8,7 @@ $projectName = trim((string) getenv('KURANEA_CI_PROJECT_NAME'));
 $orderId = (int) getenv('KURANEA_CI_ORDER_ID');
 $productId = (int) getenv('KURANEA_CI_PRODUCT_ID');
 $carrierId = (int) getenv('KURANEA_CI_CARRIER_ID');
+$expectedTaxRulesGroupId = (int) getenv('KURANEA_CI_TAX_RULES_GROUP_ID');
 $expectedProjectName = 'kuranea-ci-' . $runId . '-' . $runAttempt;
 $browserOrderPath = trim((string) getenv('KURANEA_CI_BROWSER_ORDER_PATH'));
 
@@ -20,6 +21,7 @@ if (getenv('CI') !== 'true'
     || $orderId < 1
     || $productId < 1
     || $carrierId < 1
+    || $expectedTaxRulesGroupId < 1
     || $browserOrderPath !== '/tmp/ci-shipping-free-order.json'
 ) {
     fwrite(STDERR, "BLOCKED: shipping order verification requires its matching isolated GitHub Actions checkout.\n");
@@ -187,14 +189,76 @@ $productTaxGroupId = (int) Db::getInstance()->getValue(
 );
 $expectedQuantity = (int) $browserOrder['quantity'];
 $browserProductTaxGroupId = (int) ($browserOrder['product_tax_rule_group_id'] ?? -1);
+$scenario = (string) ($browserOrder['viewport'] ?? '');
+$scenarioExpectations = [
+    'shipping-free' => [
+        'quantity' => 2,
+        'coupon_applied' => true,
+        'products_tax_incl' => 2200.0,
+        'products_tax_excl' => 2000.0,
+        'discounts_tax_incl' => 1100.0,
+        'discounts_tax_excl' => 1000.0,
+        'total_tax_incl' => 1100.0,
+        'total_tax_excl' => 1000.0,
+        'tax' => 100.0,
+    ],
+    'shipping-free-mobile' => [
+        'quantity' => 1,
+        'coupon_applied' => false,
+        'products_tax_incl' => 1100.0,
+        'products_tax_excl' => 1000.0,
+        'discounts_tax_incl' => 0.0,
+        'discounts_tax_excl' => 0.0,
+        'total_tax_incl' => 1100.0,
+        'total_tax_excl' => 1000.0,
+        'tax' => 100.0,
+    ],
+    'shipping-free-taxable' => [
+        'quantity' => 1,
+        'coupon_applied' => true,
+        'products_tax_incl' => 1100.0,
+        'products_tax_excl' => 1000.0,
+        'discounts_tax_incl' => 550.0,
+        'discounts_tax_excl' => 500.0,
+        'total_tax_incl' => 550.0,
+        'total_tax_excl' => 500.0,
+        'tax' => 50.0,
+    ],
+];
+$scenarioExpected = $scenarioExpectations[$scenario] ?? null;
 if (!is_array($orderDetails)
     || count($orderDetails) !== 1
     || (int) $orderDetails[0]['product_id'] !== $productId
     || (int) $orderDetails[0]['product_quantity'] !== $expectedQuantity
+    || !is_array($scenarioExpected)
+    || $expectedQuantity !== $scenarioExpected['quantity']
+    || $productTaxGroupId < 1
     || $productTaxGroupId !== $browserProductTaxGroupId
+    || $productTaxGroupId !== $expectedTaxRulesGroupId
     || (int) $orderDetails[0]['id_tax_rules_group'] !== $browserProductTaxGroupId
 ) {
-    throw new RuntimeException('The native order quantity or product tax-rule group differs from the browser fixture.');
+    throw new RuntimeException('The native order scenario, quantity, or run-scoped synthetic tax group differs from the browser fixture.');
+}
+$expectedTaxGroupName = '[CI ONLY] synthetic product tax ' . $runId . '-' . $runAttempt;
+$expectedTaxGroup = new TaxRulesGroup($expectedTaxRulesGroupId);
+$expectedTaxRules = Db::getInstance()->executeS(
+    'SELECT t.`rate`, t.`active`, tr.`id_country`, tr.`id_state`'
+    . ' FROM `' . _DB_PREFIX_ . 'tax_rule` tr'
+    . ' INNER JOIN `' . _DB_PREFIX_ . 'tax` t ON t.`id_tax` = tr.`id_tax`'
+    . ' WHERE tr.`id_tax_rules_group` = ' . (int) $expectedTaxRulesGroupId
+);
+if (!Validate::isLoadedObject($expectedTaxGroup)
+    || !(bool) $expectedTaxGroup->active
+    || (int) $expectedTaxGroup->deleted !== 0
+    || (string) $expectedTaxGroup->name !== $expectedTaxGroupName
+    || !is_array($expectedTaxRules)
+    || count($expectedTaxRules) !== 1
+    || abs((float) ($expectedTaxRules[0]['rate'] ?? 0) - 10.0) > 0.0001
+    || (int) ($expectedTaxRules[0]['active'] ?? 0) !== 1
+    || (int) ($expectedTaxRules[0]['id_country'] ?? 0) !== (int) Country::getByIso('JP')
+    || (int) ($expectedTaxRules[0]['id_state'] ?? -1) !== 0
+) {
+    throw new RuntimeException('The shipping-order scenarios must use the run-scoped synthetic Japan 10% test group; not a legal rate.');
 }
 $detailProductsTaxExcl = (float) $orderDetails[0]['total_price_tax_excl'];
 $detailProductsTaxIncl = (float) $orderDetails[0]['total_price_tax_incl'];
@@ -205,8 +269,15 @@ if (abs($detailProductsTaxExcl - (float) $order->total_products) > 0.0001
 ) {
     throw new RuntimeException('Native order product and tax-exclusive/inclusive totals do not reconcile.');
 }
-if ($productTaxGroupId === 0 && abs($detailProductsTaxExcl - $detailProductsTaxIncl) > 0.0001) {
-    throw new RuntimeException('A product with no assigned tax rule unexpectedly has a nonzero product tax.');
+foreach ([
+    'native unit price tax-exclusive' => [$detailUnitTaxExcl, 1000.0],
+    'native unit price tax-inclusive' => [$detailUnitTaxIncl, 1100.0],
+    'native product subtotal tax-exclusive' => [$detailProductsTaxExcl, $scenarioExpected['products_tax_excl']],
+    'native product subtotal tax-inclusive' => [$detailProductsTaxIncl, $scenarioExpected['products_tax_incl']],
+] as $checkName => [$actual, $expected]) {
+    if (abs($actual - $expected) > 0.0001) {
+        throw new RuntimeException(sprintf('%s mismatch: native %.4f vs %.4f.', $checkName, $actual, $expected));
+    }
 }
 
 $stage = 'browser, history, native total and platform fee reconciliation';
@@ -236,16 +307,8 @@ if ($browserHasInclusiveTotalOnly
 ) {
     throw new RuntimeException('An inclusive-only browser total must leave tax unknown and reconcile to a positive native saved tax.');
 }
-if ($productTaxGroupId === 0
-    && ((string) ($browserTotals['tax_display_mode'] ?? '') !== 'no_assigned_tax_rule'
-        || (array_key_exists('tax', $browserTotals) && $browserTotals['tax'] !== null)
-        || ($browserTotals['products_tax_excl'] ?? null) !== null
-        || ($browserTotals['discounts_tax_excl'] ?? null) !== null
-        || ($browserTotals['total_tax_excl'] ?? null) !== null)
-) {
-    throw new RuntimeException('A product without an assigned tax calculation rule must not report a legal zero tax or net amount.');
-}
-if ($productTaxGroupId > 0 && !$browserHasInclusiveTotalOnly) {
+$taxDisplayMode = (string) ($browserTotals['tax_display_mode'] ?? '');
+if (!$browserHasInclusiveTotalOnly) {
     $browserTax = $browserTotals['tax'] ?? null;
     $taxDisplayMode = (string) ($browserTotals['tax_display_mode'] ?? '');
     $taxBreakdownDisplayed = $browserTotals['tax_breakdown_displayed'] ?? null;
@@ -257,7 +320,7 @@ if ($productTaxGroupId > 0 && !$browserHasInclusiveTotalOnly) {
         || (float) $browserTax <= 0.0
         || (!$hasDetailedTaxRow && !$hasLabeledGrossNetTotals)
     ) {
-        throw new RuntimeException('A taxable browser amount must preserve positive tax and its displayed-total evidence.');
+        throw new RuntimeException('A synthetic taxable browser amount must preserve positive tax and its displayed-total evidence.');
     }
 }
 
@@ -276,20 +339,35 @@ $storedTaxRows = Db::getInstance()->executeS(
 if (!is_array($storedTaxRows)) {
     throw new RuntimeException('Could not read the persisted native order detail tax rows.');
 }
-$savedTaxInterpretation = 'No assigned calculation rule; not a legal tax determination';
-if ($savedDetailTaxGroupId > 0) {
-    // This branch is scoped to the nationwide synthetic 10% CI fixture, not a legal rate.
-    $coupon = is_array($browserOrder['coupon'] ?? null) ? $browserOrder['coupon'] : [];
-    $expectedCouponCode = 'ORDENOWACI' . $runId . $runAttempt;
+$savedTaxInterpretation = 'CI-only synthetic 10% calculation fixture; not a legal tax rate or determination';
+if ($savedDetailTaxGroupId !== $expectedTaxRulesGroupId) {
+    throw new RuntimeException('The saved order detail did not retain the run-scoped synthetic tax group.');
+}
+$coupon = is_array($browserOrder['coupon'] ?? null) ? $browserOrder['coupon'] : [];
+$expectedCouponCode = 'ORDENOWACI' . $runId . $runAttempt;
+if ($scenarioExpected['coupon_applied']) {
     if (($coupon['applied'] ?? false) !== true
         || (string) ($coupon['code'] ?? '') !== $expectedCouponCode
         || $discountsTaxExcl <= 0
         || $discountsTaxIncl <= 0
     ) {
-        throw new RuntimeException('The synthetic taxable order must use its run-scoped tax-inclusive coupon.');
+        throw new RuntimeException('The Tokyo and synthetic-tax coupon scenarios must use their run-scoped 50% tax-inclusive coupon.');
     }
+} elseif (($coupon['applied'] ?? true) !== false
+    || ($coupon['code'] ?? null) !== null
+    || abs($discountsTaxExcl) > 0.0001
+    || abs($discountsTaxIncl) > 0.0001
+) {
+    throw new RuntimeException('The Osaka quantity-one control scenario must remain coupon-free with zero discount.');
+}
+if (count($storedTaxRows) !== 1) {
+    throw new RuntimeException('Each synthetic taxable shipping scenario must retain its single native tax row.');
+}
+
+$preCouponBrowserTotals = null;
+if ($scenario === 'shipping-free-taxable') {
     if (count($storedTaxRows) !== 1) {
-        throw new RuntimeException('The synthetic taxable order must retain its single native tax row.');
+        throw new RuntimeException('The separate synthetic taxable coupon scenario must retain its single native tax row.');
     }
     $preCouponBrowserTotals = is_array($browserOrder['pre_coupon_browser_totals'] ?? null)
         ? $browserOrder['pre_coupon_browser_totals']
@@ -320,6 +398,9 @@ if ($savedDetailTaxGroupId > 0) {
     if ($preCouponBrowserTax === null) {
         if (($preCouponBrowserTotals['tax_display_mode'] ?? null) !== 'inclusive_total_only'
             || ($preCouponBrowserTotals['tax_breakdown_displayed'] ?? true) !== false
+            || ($preCouponBrowserTotals['products_tax_excl'] ?? null) !== null
+            || ($preCouponBrowserTotals['discounts_tax_excl'] ?? null) !== null
+            || ($preCouponBrowserTotals['total_tax_excl'] ?? null) !== null
         ) {
             throw new RuntimeException('The pre-coupon browser tax must be explicitly unknown when no tax row is rendered.');
         }
@@ -335,41 +416,56 @@ if ($savedDetailTaxGroupId > 0) {
     ) {
         throw new RuntimeException('The visible pre-coupon synthetic tax evidence does not match ¥1,100 TTC / ¥1,000 HT.');
     }
+}
 
-    $storedTaxRow = $storedTaxRows[0];
-    $storedTaxRate = (float) $storedTaxRow['rate'];
-    $storedTaxUnit = (float) $storedTaxRow['unit_amount'];
-    $storedTaxTotal = (float) $storedTaxRow['total_amount'];
-    $discountedProductTaxBase = $detailProductsTaxExcl - $discountsTaxExcl;
-    foreach ([
-        'native product unit tax-exclusive price' => [$detailUnitTaxExcl, 1000.0],
-        'native product unit tax-inclusive price' => [$detailUnitTaxIncl, 1100.0],
-        'native product tax-exclusive subtotal' => [$detailProductsTaxExcl, 1000.0],
-        'native product tax-inclusive subtotal' => [$detailProductsTaxIncl, 1100.0],
-        'native discount tax-exclusive amount' => [$discountsTaxExcl, 500.0],
-        'native discount tax-inclusive amount' => [$discountsTaxIncl, 550.0],
-        'native final tax-exclusive amount' => [(float) $order->total_paid_tax_excl, 500.0],
-        'native final tax-inclusive amount' => [(float) $order->total_paid_tax_incl, 550.0],
-        'native saved synthetic tax' => [$nativeTaxes, 50.0],
-        'saved synthetic order-detail tax' => [$storedTaxTotal, 50.0],
-    ] as $checkName => [$actual, $expected]) {
-        if (abs($actual - $expected) > 0.0001) {
-            throw new RuntimeException(sprintf('%s mismatch: native %.4f vs %.4f.', $checkName, $actual, $expected));
-        }
+$storedTaxRow = $storedTaxRows[0];
+$storedTaxRate = (float) $storedTaxRow['rate'];
+$storedTaxUnit = (float) $storedTaxRow['unit_amount'];
+$storedTaxTotal = (float) $storedTaxRow['total_amount'];
+$discountedProductTaxBase = $detailProductsTaxExcl - $discountsTaxExcl;
+foreach ([
+    'native product unit tax-exclusive price' => [$detailUnitTaxExcl, 1000.0],
+    'native product unit tax-inclusive price' => [$detailUnitTaxIncl, 1100.0],
+    'native product tax-exclusive subtotal' => [$detailProductsTaxExcl, $scenarioExpected['products_tax_excl']],
+    'native product tax-inclusive subtotal' => [$detailProductsTaxIncl, $scenarioExpected['products_tax_incl']],
+    'native discount tax-exclusive amount' => [$discountsTaxExcl, $scenarioExpected['discounts_tax_excl']],
+    'native discount tax-inclusive amount' => [$discountsTaxIncl, $scenarioExpected['discounts_tax_incl']],
+    'native final tax-exclusive amount' => [(float) $order->total_paid_tax_excl, $scenarioExpected['total_tax_excl']],
+    'native final tax-inclusive amount' => [(float) $order->total_paid_tax_incl, $scenarioExpected['total_tax_incl']],
+    'native saved synthetic tax' => [$nativeTaxes, $scenarioExpected['tax']],
+    'saved synthetic order-detail tax' => [$storedTaxTotal, $scenarioExpected['tax']],
+] as $checkName => [$actual, $expected]) {
+    if (abs($actual - $expected) > 0.0001) {
+        throw new RuntimeException(sprintf('%s mismatch for %s: native %.4f vs %.4f.', $checkName, $scenario, $actual, $expected));
     }
-    if ((int) $storedTaxRow['id_tax'] < 1
-        || (int) $storedTaxRow['belongs_to_saved_group'] !== 1
-        || abs($storedTaxRate - 10.0) > 0.0001
-        || $storedTaxUnit <= 0
-        || $discountedProductTaxBase <= 0
-        || abs($storedTaxUnit * $expectedQuantity - $storedTaxTotal) > 0.0001
-        || abs($storedTaxTotal - $nativeTaxes) > 0.0001
-        || abs($storedTaxTotal - $discountedProductTaxBase * $storedTaxRate / 100) > 0.0001) {
-        throw new RuntimeException('The persisted synthetic tax identity, rate, or discounted amount does not reconcile to the saved order.');
+}
+if ((int) $storedTaxRow['id_tax'] < 1
+    || (int) $storedTaxRow['belongs_to_saved_group'] !== 1
+    || abs($storedTaxRate - 10.0) > 0.0001
+    || $storedTaxUnit <= 0
+    || $discountedProductTaxBase <= 0
+    || abs($storedTaxUnit * $expectedQuantity - $storedTaxTotal) > 0.0001
+    || abs($storedTaxTotal - $nativeTaxes) > 0.0001
+    || abs($storedTaxTotal - $discountedProductTaxBase * $storedTaxRate / 100) > 0.0001) {
+    throw new RuntimeException('The persisted synthetic tax identity, rate, or discounted amount does not reconcile to the saved order.');
+}
+
+foreach ([
+    'browser product gross subtotal' => [$browserProductsTaxIncl, $scenarioExpected['products_tax_incl']],
+    'browser shipping gross total' => [$browserShippingTaxIncl, 0.0],
+    'browser coupon gross amount' => [$browserDiscountTaxIncl, $scenarioExpected['discounts_tax_incl']],
+    'browser final gross total' => [$browserTotalTaxIncl, $scenarioExpected['total_tax_incl']],
+    'native tax-exclusive total formula' => [$nativeTotalTaxExcl, $scenarioExpected['total_tax_excl']],
+    'native tax-inclusive total formula' => [$nativeTotalTaxIncl, $scenarioExpected['total_tax_incl']],
+] as $checkName => [$actual, $expected]) {
+    if (abs($actual - $expected) > 0.0001) {
+        throw new RuntimeException(sprintf('%s mismatch for %s: %.4f vs %.4f.', $checkName, $scenario, $actual, $expected));
     }
-    $savedTaxInterpretation = 'CI-only synthetic 10% calculation fixture; not a legal tax rate or determination';
-} elseif ($storedTaxRows !== []) {
-    throw new RuntimeException('The fixture with no assigned calculation rule unexpectedly has persisted tax rows.');
+}
+if (str_contains((string) ($browserOrder['tax_fixture_scope'] ?? ''), 'synthetic 10%') === false
+    || str_contains((string) ($browserOrder['tax_fixture_scope'] ?? ''), 'not a legal tax rate or tax determination') === false
+) {
+    throw new RuntimeException('The browser artifact must label its 10% amount as a synthetic CI test, not a legal tax determination.');
 }
 
 $browserComparisons = [
@@ -435,15 +531,14 @@ foreach ($browserComparisons as $checkName => [$actual, $expected]) {
         ));
     }
 }
-if (($productTaxGroupId === 0 && abs($nativeTaxes) > 0.0001)
-    || (float) $order->total_shipping_tax_excl !== 0.0
+if ((float) $order->total_shipping_tax_excl !== 0.0
     || (float) $order->total_shipping_tax_incl !== 0.0
     || abs($wrappingTaxExcl) > 0.0001
     || abs($wrappingTaxIncl) > 0.0001
     || abs((float) $order->total_paid_real) > 0.0001
     || (int) ($browserTotals['quantity'] ?? 0) !== $expectedQuantity
 ) {
-    throw new RuntimeException('The free-shipping order contains shipping, wrapping, tax, or payment amounts outside its configured product fixture.');
+    throw new RuntimeException('The free-shipping order contains shipping, wrapping, or payment amounts outside its synthetic taxable product fixture.');
 }
 
 $stage = 'Japan destination persistence';

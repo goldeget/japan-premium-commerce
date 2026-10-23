@@ -252,43 +252,6 @@ jobs:
             prestashop runuser -g www-data -u www-data -- \
             php /tmp/verify_native_registration.php
 
-      - name: Prepare isolated active product for storefront and free-shipping QA
-        id: shipping_product_fixture
-        if: always() && !cancelled() && steps.compose_up.outcome == 'success'
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/ordenowa-browser-qa"
-          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
-            sh -c 'cat > /tmp/prepare_ci_free_shipping_product.php' \
-            < tests/catalog/prepare_ci_free_shipping_product.php
-          fixture_log="$RUNNER_TEMP/ordenowa-browser-qa/free-shipping-product-fixture.log"
-          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
-            -e CI=true -e GITHUB_ACTIONS=true \
-            -e GITHUB_RUN_ID="$GITHUB_RUN_ID" -e GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
-            -e KURANEA_ISOLATED_CI=1 -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
-            prestashop runuser -g www-data -u www-data -- \
-            php /tmp/prepare_ci_free_shipping_product.php 2>&1 | tee "$fixture_log"
-          fixture_json="$RUNNER_TEMP/ordenowa-browser-qa/free-shipping-product-fixture.json"
-          python3 - "$fixture_log" "$fixture_json" <<'PY'
-          import json, pathlib, sys
-          lines = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
-          payloads = [line for line in lines if line.startswith("{\"product_id\"")]
-          assert len(payloads) == 1, "active free-shipping product JSON is missing or ambiguous"
-          fixture = json.loads(payloads[0])
-          assert int(fixture["product_id"]) > 0
-          assert fixture["price_jpy"] == 1000
-          assert fixture["tax_rules_group_id"] == 0
-          assert fixture["tax_scope"] == "unassigned rule group for an isolated free-shipping fixture; not a legal tax determination"
-          assert fixture["fixture_scope"] == "run-scoped isolated GitHub Actions disposable checkout database"
-          pathlib.Path(sys.argv[2]).write_text(json.dumps(fixture, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-          print(f"CI_TEST_PRODUCT_ID={fixture['product_id']}")
-          print("CI_TEST_PRODUCT_TAX_GROUP=0")
-          PY
-          product_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["product_id"])' "$fixture_json")
-          printf 'CI_TEST_PRODUCT_ID=%s\nCI_TEST_PRODUCT_TAX_GROUP=0\n' "$product_id" >> "$GITHUB_ENV"
-
       - name: Import synthetic Tokyo postcode fixture for isolated checkout QA
         id: postcode_fixture
         continue-on-error: true
@@ -525,6 +488,48 @@ jobs:
             fi
             printf '%s=%s\n' "$variable" "$value" >> "$GITHUB_ENV"
           done
+
+      - name: Prepare isolated active product for storefront and free-shipping QA
+        id: shipping_product_fixture
+        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && steps.tax_fixture.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ordenowa-browser-qa"
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/prepare_ci_free_shipping_product.php' \
+            < tests/catalog/prepare_ci_free_shipping_product.php
+          fixture_log="$RUNNER_TEMP/ordenowa-browser-qa/free-shipping-product-fixture.log"
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e CI=true -e GITHUB_ACTIONS=true \
+            -e GITHUB_RUN_ID="$GITHUB_RUN_ID" -e GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            -e KURANEA_ISOLATED_CI=1 -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            -e CI_TEST_TAX_RULES_GROUP_ID="$CI_TEST_TAX_RULES_GROUP_ID" \
+            prestashop runuser -g www-data -u www-data -- \
+            php /tmp/prepare_ci_free_shipping_product.php 2>&1 | tee "$fixture_log"
+          fixture_json="$RUNNER_TEMP/ordenowa-browser-qa/free-shipping-product-fixture.json"
+          python3 - "$fixture_log" "$fixture_json" <<'PY'
+          import json, os, pathlib, sys
+          lines = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+          payloads = [line for line in lines if line.startswith("{\"product_id\"")]
+          assert len(payloads) == 1, "active free-shipping product JSON is missing or ambiguous"
+          fixture = json.loads(payloads[0])
+          expected_tax_group_id = int(os.environ["CI_TEST_TAX_RULES_GROUP_ID"])
+          assert int(fixture["product_id"]) > 0
+          assert fixture["price_jpy"] == 1100
+          assert fixture["price_tax_excl_jpy"] == 1000
+          assert expected_tax_group_id > 0
+          assert fixture["tax_rules_group_id"] == expected_tax_group_id
+          assert fixture["tax_scope"] == "run-scoped synthetic 10% tax rule group; not a legal tax rate or determination"
+          assert fixture["fixture_scope"] == "run-scoped isolated GitHub Actions disposable checkout database"
+          pathlib.Path(sys.argv[2]).write_text(json.dumps(fixture, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          print(f"CI_TEST_PRODUCT_ID={fixture['product_id']}")
+          print(f"CI_TEST_PRODUCT_TAX_GROUP={fixture['tax_rules_group_id']}")
+          PY
+          product_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["product_id"])' "$fixture_json")
+          product_tax_group_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["tax_rules_group_id"])' "$fixture_json")
+          printf 'CI_TEST_PRODUCT_ID=%s\nCI_TEST_PRODUCT_TAX_GROUP=%s\n' "$product_id" "$product_tax_group_id" >> "$GITHUB_ENV"
 
       - name: Prepare isolated taxable variant fixture
         id: variant_fixture
@@ -974,7 +979,7 @@ jobs:
             2>&1 | tee "$shipping_fixture_log")
           IFS=$'\t' read -r product_id product_tax_group_id <<< "$product_record"
           if ! [[ "$product_id" =~ ^[0-9]+$ ]] || [ "$product_id" -lt 1 ] \
-            || [ "$product_tax_group_id" != "0" ]; then
+            || [ "$product_tax_group_id" != "$CI_TEST_TAX_RULES_GROUP_ID" ]; then
             echo "::error title=ORDENOWA free-shipping fixture::phase=active_product_readback; product_id=$product_id; tax_group_id=$product_tax_group_id"
             exit 1
           fi
@@ -1033,7 +1038,7 @@ jobs:
             exit 1
           fi
           printf 'CI_COUPON_CODE=%s\n' "$coupon_code" >> "$GITHUB_ENV"
-          printf 'PASS: prepared no-rule product id=%s, Japan zone=%s, and a run-scoped JPY coupon with no free-shipping override.\n' \
+          printf 'PASS: prepared run-scoped synthetic-tax product id=%s, Japan zone=%s, and a JPY coupon with no free-shipping override.\n' \
             "$product_id" "$japan_zone_id"
 
       - name: Grant isolated CI administrator the native AdminCarriers create permissions
@@ -1351,7 +1356,7 @@ jobs:
             < tests/postcode/verify_ci_free_shipping_order.php
           for viewport in tokyo osaka taxable; do
             expected_product_id="$CI_TEST_PRODUCT_ID"
-            expected_tax_group_id=0
+            expected_tax_group_id="$CI_TEST_TAX_RULES_GROUP_ID"
             if [ "$viewport" = tokyo ]; then
               browser_order="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-order.json"
             elif [ "$viewport" = osaka ]; then
@@ -1359,7 +1364,6 @@ jobs:
             else
               browser_order="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-taxable-order.json"
               expected_product_id="$CI_TEST_TAX_PRODUCT_ID"
-              expected_tax_group_id="$CI_TEST_TAX_RULES_GROUP_ID"
             fi
             order_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["order_id"])' "$browser_order")
             product_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["product_id"])' "$browser_order")
@@ -1386,6 +1390,7 @@ jobs:
               -e KURANEA_CI_ORDER_ID="$order_id" \
               -e KURANEA_CI_PRODUCT_ID="$product_id" \
               -e KURANEA_CI_CARRIER_ID="$carrier_id" \
+              -e KURANEA_CI_TAX_RULES_GROUP_ID="$CI_TEST_TAX_RULES_GROUP_ID" \
               -e KURANEA_CI_BROWSER_ORDER_PATH=/tmp/ci-shipping-free-order.json \
               prestashop runuser -g www-data -u www-data -- \
               php /tmp/verify_ci_free_shipping_order.php \
