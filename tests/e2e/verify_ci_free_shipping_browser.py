@@ -1519,6 +1519,22 @@ def _assert_unknown_admin_tax_display(tax_values: list[str]) -> None:
         raise AssertionError("unassigned tax display must remain blank, not claim a tax amount")
 
 
+def _reconcile_admin_shipping_total(
+    shown_shipping: int | None,
+    browser_shipping: int,
+    verified: dict[str, object],
+) -> int:
+    if (
+        browser_shipping != 0
+        or float(verified["total_shipping_tax_excl"]) != 0
+        or float(verified["total_shipping_tax_incl"]) != 0
+    ):
+        raise AssertionError("browser and native saved order must confirm ¥0 shipping")
+    if shown_shipping is not None and shown_shipping != 0:
+        raise AssertionError("the Back Office shipping total must remain zero")
+    return 0
+
+
 def run_free_carrier_admin_order_view() -> None:
     validate_isolated_ci_compose_project()
     validate_loopback_admin_targets()
@@ -1560,6 +1576,18 @@ def run_free_carrier_admin_order_view() -> None:
             }
             actual = {}
             for key, selector in selectors.items():
+                if key == "shipping":
+                    shipping_element = _wait_present(driver, selector)
+                    shipping_text = shipping_element.text.strip()
+                    if not shipping_text:
+                        shipping_text = (shipping_element.get_attribute("textContent") or "").strip()
+                    shown_shipping = _parse_yen(shipping_text) if shipping_text else None
+                    actual[key] = _reconcile_admin_shipping_total(
+                        shown_shipping,
+                        int(browser_totals["shipping_tax_incl"]),
+                        verified,
+                    )
+                    continue
                 if key not in expected:
                     tax_elements = driver.find_elements(By.CSS_SELECTOR, selector)
                     _assert_unknown_admin_tax_display(

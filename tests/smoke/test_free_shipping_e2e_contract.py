@@ -472,6 +472,8 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             "#shipping-grid-table .carrier-price",
             "_expected_admin_order_totals(order, verified)",
             "_assert_unknown_admin_tax_display(",
+            "_reconcile_admin_shipping_total(",
+            'get_attribute("textContent")',
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, admin_view)
@@ -486,9 +488,20 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             node for node in source.body
             if isinstance(node, ast.FunctionDef) and node.name == "_assert_unknown_admin_tax_display"
         )
+        shipping_total_check = next(
+            node for node in source.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_reconcile_admin_shipping_total"
+        )
         namespace: dict[str, object] = {}
         exec(
-            compile(ast.Module(body=[expectation, unknown_tax_check], type_ignores=[]), str(BROWSER), "exec"),
+            compile(
+                ast.Module(
+                    body=[expectation, unknown_tax_check, shipping_total_check],
+                    type_ignores=[],
+                ),
+                str(BROWSER),
+                "exec",
+            ),
             namespace,
         )
         expected_admin_totals = namespace["_expected_admin_order_totals"]
@@ -509,6 +522,34 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         namespace["_assert_unknown_admin_tax_display"]([""])
         with self.assertRaisesRegex(AssertionError, "must remain blank"):
             namespace["_assert_unknown_admin_tax_display"](["¥0"])
+
+        reconcile_shipping = namespace["_reconcile_admin_shipping_total"]
+        self.assertEqual(
+            reconcile_shipping(
+                None,
+                0,
+                {"total_shipping_tax_excl": 0, "total_shipping_tax_incl": 0},
+            ),
+            0,
+        )
+        with self.assertRaisesRegex(AssertionError, "must remain zero"):
+            reconcile_shipping(
+                100,
+                0,
+                {"total_shipping_tax_excl": 0, "total_shipping_tax_incl": 0},
+            )
+        with self.assertRaisesRegex(AssertionError, "native saved order"):
+            reconcile_shipping(
+                None,
+                0,
+                {"total_shipping_tax_excl": 1, "total_shipping_tax_incl": 1},
+            )
+        with self.assertRaisesRegex(AssertionError, "browser and native"):
+            reconcile_shipping(
+                None,
+                1,
+                {"total_shipping_tax_excl": 0, "total_shipping_tax_incl": 0},
+            )
 
         taxable = expected_admin_totals(
             {
