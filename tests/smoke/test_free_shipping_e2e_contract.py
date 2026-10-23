@@ -291,6 +291,12 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             free_carrier_assertion.index('"#carrier_shipping_settings_zones"'),
         )
         self.assertNotIn('ADMIN_LOGIN + "/index.php/improve/shipping/carriers/create"', browser)
+        save_form = browser.split("def _save_carrier_form(", 1)[1].split(
+            "def configure_free_carrier(", 1
+        )[0]
+        self.assertIn("except StaleElementReferenceException:", save_form)
+        self.assertIn("instead of resubmitting", save_form)
+        self.assertIn("carrier_id_from_edit_url(browser.current_url, admin_path) is not None", save_form)
         open_tab = browser.split("def _open_shipping_settings_tab(", 1)[1].split(
             "def _fill_free_carrier_form(", 1
         )[0]

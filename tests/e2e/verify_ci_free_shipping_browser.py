@@ -362,7 +362,12 @@ def _save_carrier_form(driver, operation: str) -> int:
     )
     if save_button is None:
         raise AssertionError("AdminCarriers carrier form has no visible Save button")
-    checkout.click_at_center(driver, save_button)
+    try:
+        checkout.click_at_center(driver, save_button)
+    except StaleElementReferenceException:
+        # AdminCarriers can replace the submit button while completing its POST
+        # redirect. Confirm the saved edit route below instead of resubmitting.
+        pass
 
     admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
     WebDriverWait(driver, 35).until(
