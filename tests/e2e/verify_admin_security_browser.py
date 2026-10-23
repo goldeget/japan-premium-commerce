@@ -144,7 +144,7 @@ def validate_loopback_admin_targets() -> None:
         raise ValueError("ADMIN_LOGIN_URL must share the isolated shop origin and name its Back Office path")
 
 
-def submit_settings_attempt(driver: webdriver.Chrome, mode: str) -> None:
+def submit_settings_attempt(driver: webdriver.Chrome, mode: str) -> dict[str, object]:
     result = driver.execute_async_script(
         """
         const mode = arguments[0];
@@ -174,12 +174,17 @@ def submit_settings_attempt(driver: webdriver.Chrome, mode: str) -> None:
           cache: 'no-store'
         }).then(async response => {
           const responseBody = await response.text();
+          const responseDocument = new DOMParser().parseFromString(responseBody, 'text/html');
+          const loginForm = responseDocument.querySelector('#login_form');
           done({
             formPresent: true,
             status: response.status,
             responseUrl: response.url,
             bodyHasSettingsForm: responseBody.includes('ordenowa-profile-settings'),
             bodyHasDangerAlert: responseBody.includes('alert-danger'),
+            bodyHasAdminLoginForm: Boolean(
+              loginForm && loginForm.querySelector('input[name="email"]') && loginForm.querySelector('input[name="passwd"]')
+            ),
             bodyHasViewOnlyDenial: responseBody.includes('설정 초안을 수정할 권한이 없습니다.')
           });
         })
@@ -188,36 +193,96 @@ def submit_settings_attempt(driver: webdriver.Chrome, mode: str) -> None:
         mode,
         MUTATION_SENTINEL,
     )
-    if not isinstance(result, dict) or result.get("formPresent") is not True:
-        raise AssertionError("the isolated settings form was not available for the security attempt")
-    status = result.get("status")
-    if not isinstance(status, int) or status < 200 or status >= 500:
-        raise AssertionError("the isolated admin security request did not receive a usable response")
-    if status == 404:
-        raise AssertionError("the admin security request did not reach a registered Back Office handler")
+    return result if isinstance(result, dict) else {"formPresent": False}
+
+
+def is_prestashop_admin_login_rejection(result: dict[str, object]) -> bool:
+    if (
+        result.get("status") != 200
+        or result.get("bodyHasAdminLoginForm") is not True
+        or result.get("bodyHasSettingsForm") is True
+    ):
+        return False
 
     response_url = result.get("responseUrl")
     if not isinstance(response_url, str):
-        raise AssertionError("the admin security response did not identify its final route")
-    response_location = urlparse(response_url)
-    base_location = urlparse(BASE)
+        return False
+    try:
+        response_location = urlparse(response_url)
+        base_location = urlparse(BASE)
+    except ValueError:
+        return False
+    if (
+        (response_location.scheme, response_location.hostname, response_location.port)
+        != (base_location.scheme, base_location.hostname, base_location.port)
+    ):
+        return False
+
+    admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
+    controllers = parse_qs(response_location.query).get("controller", [])
+    if response_location.path == admin_path + "/login":
+        return not controllers or controllers == ["AdminLogin"]
+    if response_location.path == admin_path + "/index.php":
+        return controllers == ["AdminLogin"]
+    return False
+
+
+def response_summary(result: object) -> str:
+    if not isinstance(result, dict):
+        return "response=unavailable"
+    response_url = result.get("responseUrl")
+    final_path = "unavailable"
+    if isinstance(response_url, str):
+        try:
+            final_path = urlparse(response_url).path or "/"
+        except ValueError:
+            final_path = "invalid"
+    return (
+        f"status={result.get('status')!r}; final_path={final_path!r}; "
+        f"settings_form={result.get('bodyHasSettingsForm') is True}; "
+        f"danger_alert={result.get('bodyHasDangerAlert') is True}; "
+        f"admin_login_form={result.get('bodyHasAdminLoginForm') is True}"
+    )
+
+
+def assert_security_attempt_rejected(result: object, mode: str) -> None:
+    summary = response_summary(result)
+    if not isinstance(result, dict) or result.get("formPresent") is not True:
+        raise AssertionError(f"the isolated settings form was not available for the security attempt ({summary})")
+    status = result.get("status")
+    if not isinstance(status, int) or status < 200 or status >= 500:
+        raise AssertionError(f"the isolated admin security request did not receive a usable response ({summary})")
+    if status == 404:
+        raise AssertionError(f"the admin security request did not reach a registered Back Office handler ({summary})")
+
+    response_url = result.get("responseUrl")
+    if not isinstance(response_url, str):
+        raise AssertionError(f"the admin security response did not identify its final route ({summary})")
+    try:
+        response_location = urlparse(response_url)
+        base_location = urlparse(BASE)
+    except ValueError:
+        raise AssertionError(f"the admin security response did not identify a valid final route ({summary})") from None
     admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
     if (
         (response_location.scheme, response_location.hostname, response_location.port)
         != (base_location.scheme, base_location.hostname, base_location.port)
         or not response_location.path.startswith(admin_path + "/")
     ):
-        raise AssertionError("the admin security response left the isolated Back Office route")
+        raise AssertionError(f"the admin security response left the isolated Back Office route ({summary})")
 
     framework_rejection = status in {400, 401, 403}
     admin_page_rejection = (
         result.get("bodyHasSettingsForm") is True
         and result.get("bodyHasDangerAlert") is True
     )
+    login_gate_rejection = is_prestashop_admin_login_rejection(result)
     if mode == "view_only" and not framework_rejection and result.get("bodyHasViewOnlyDenial") is not True:
-        raise AssertionError("the valid-token employee request did not reach the view-only denial handler")
-    if mode in {"missing", "invalid"} and not framework_rejection and not admin_page_rejection:
-        raise AssertionError("the token rejection response did not show the business-profile handler error")
+        raise AssertionError(f"the valid-token employee request did not reach the view-only denial handler ({summary})")
+    if mode in {"missing", "invalid"} and not (
+        framework_rejection or admin_page_rejection or login_gate_rejection
+    ):
+        raise AssertionError(f"the token rejection response was not recognized ({summary})")
 
 
 def assert_draft_pointer_unchanged(driver: webdriver.Chrome, expected: str, label: str) -> None:
@@ -240,6 +305,32 @@ def assert_setting_unchanged(
         raise AssertionError(f"{label} changed a saved Korean brand setting")
     assert_draft_pointer_unchanged(driver, expected_draft_pointer, label)
     driver.save_screenshot(str(DEST / f"admin-security-{label}.png"))
+
+
+def verify_security_attempt_without_mutation(
+    driver: webdriver.Chrome,
+    mode: str,
+    expected_value: str,
+    expected_draft_pointer: str,
+    label: str,
+) -> None:
+    response = None
+    request_error = None
+    try:
+        response = submit_settings_attempt(driver, mode)
+    except Exception as error:
+        request_error = error
+
+    try:
+        assert_setting_unchanged(driver, expected_value, expected_draft_pointer, label)
+    except Exception as state_error:
+        if request_error is not None:
+            raise state_error from request_error
+        raise
+
+    if request_error is not None:
+        raise request_error
+    assert_security_attempt_rejected(response, mode)
 
 
 def new_driver() -> webdriver.Chrome:
@@ -300,10 +391,9 @@ def run() -> bool:
 
         for mode in ("missing", "invalid"):
             stage = f"admin_{mode}_token_post"
-            submit_settings_attempt(admin_driver, mode)
-            stage = f"admin_{mode}_token_state_recheck"
-            assert_setting_unchanged(
+            verify_security_attempt_without_mutation(
                 admin_driver,
+                mode,
                 original_value,
                 original_draft_pointer,
                 f"{mode}-token",
@@ -319,10 +409,9 @@ def run() -> bool:
         restricted_original_value = current_setting(restricted_driver)
         restricted_draft_pointer = current_draft_pointer(restricted_driver)
         stage = "view_only_employee_valid_token_post"
-        submit_settings_attempt(restricted_driver, "view_only")
-        stage = "view_only_employee_state_recheck"
-        assert_setting_unchanged(
+        verify_security_attempt_without_mutation(
             restricted_driver,
+            "view_only",
             restricted_original_value,
             restricted_draft_pointer,
             "view-only",

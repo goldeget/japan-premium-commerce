@@ -9,7 +9,7 @@ from pathlib import Path
 import sys
 import unittest
 from unittest.mock import patch
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -49,7 +49,11 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "assert_draft_pointer_unchanged(driver, expected_draft_pointer, label)",
             state_assertion,
         )
-        self.assertGreaterEqual(source.count("assert_setting_unchanged("), 3)
+        guarded_attempt = source.split("def verify_security_attempt_without_mutation(", 1)[1].split("\n\ndef ", 1)[0]
+        self.assertIn("assert_setting_unchanged(", guarded_attempt)
+        self.assertIn("assert_security_attempt_rejected(response, mode)", guarded_attempt)
+        run = source.split("def run()", 1)[1].split("\n\nif __name__", 1)[0]
+        self.assertIn("verify_security_attempt_without_mutation(", run)
 
     def test_admin_security_flow_guards_exact_loopback_ci_target_before_browser_creation(self):
         source = ADMIN_FLOW.read_text(encoding="utf-8")
@@ -185,6 +189,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "responseUrl",
             "bodyHasSettingsForm",
             "bodyHasDangerAlert",
+            "bodyHasAdminLoginForm",
             "bodyHasViewOnlyDenial",
             "status == 404",
             "response_url",
@@ -192,6 +197,168 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, source)
+
+    def test_admin_security_rejects_only_the_specific_prestashop_login_gate_page(self):
+        namespace: dict[str, object] = {
+            "urlparse": urlparse,
+            "parse_qs": parse_qs,
+            "BASE": "http://localhost:18080",
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
+        }
+        is_login_rejection = load_function(
+            ADMIN_FLOW,
+            "is_prestashop_admin_login_rejection",
+            namespace,
+        )
+        login_page = {
+            "status": 200,
+            "responseUrl": "http://localhost:18080/admin-kuranea/login",
+            "bodyHasAdminLoginForm": True,
+            "bodyHasSettingsForm": False,
+        }
+        self.assertTrue(is_login_rejection(login_page))
+        self.assertTrue(
+            is_login_rejection(
+                {
+                    **login_page,
+                    "responseUrl": "http://localhost:18080/admin-kuranea/index.php?controller=AdminLogin",
+                }
+            )
+        )
+
+        for response in (
+            {**login_page, "responseUrl": "http://localhost:18080/admin-kuranea/index.php?controller=AdminDashboard"},
+            {**login_page, "responseUrl": "http://localhost:18080/admin-kuranea/another-route"},
+            {**login_page, "responseUrl": "http://localhost:18080/login"},
+            {**login_page, "responseUrl": "http://outside.example/admin-kuranea/login"},
+            {**login_page, "status": 302},
+            {**login_page, "bodyHasAdminLoginForm": False},
+            {**login_page, "bodyHasSettingsForm": True},
+        ):
+            with self.subTest(response=response):
+                self.assertFalse(is_login_rejection(response))
+
+    def test_admin_security_response_classifier_preserves_explicit_rejections_only(self):
+        namespace: dict[str, object] = {
+            "urlparse": urlparse,
+            "parse_qs": parse_qs,
+            "BASE": "http://localhost:18080",
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
+        }
+        load_function(ADMIN_FLOW, "response_summary", namespace)
+        namespace["is_prestashop_admin_login_rejection"] = load_function(
+            ADMIN_FLOW,
+            "is_prestashop_admin_login_rejection",
+            namespace,
+        )
+        assert_rejected = load_function(
+            ADMIN_FLOW,
+            "assert_security_attempt_rejected",
+            namespace,
+        )
+
+        assert_rejected(
+            {
+                "formPresent": True,
+                "status": 200,
+                "responseUrl": "http://localhost:18080/admin-kuranea/login",
+                "bodyHasSettingsForm": False,
+                "bodyHasDangerAlert": False,
+                "bodyHasAdminLoginForm": True,
+                "bodyHasViewOnlyDenial": False,
+            },
+            "missing",
+        )
+        assert_rejected(
+            {
+                "formPresent": True,
+                "status": 403,
+                "responseUrl": "http://localhost:18080/admin-kuranea/index.php?controller=AdminBusinessProfile",
+                "bodyHasSettingsForm": False,
+                "bodyHasDangerAlert": False,
+                "bodyHasAdminLoginForm": False,
+                "bodyHasViewOnlyDenial": False,
+            },
+            "invalid",
+        )
+        assert_rejected(
+            {
+                "formPresent": True,
+                "status": 200,
+                "responseUrl": "http://localhost:18080/admin-kuranea/index.php?controller=AdminBusinessProfile",
+                "bodyHasSettingsForm": True,
+                "bodyHasDangerAlert": True,
+                "bodyHasAdminLoginForm": False,
+                "bodyHasViewOnlyDenial": False,
+            },
+            "invalid",
+        )
+
+        for response in (
+            {
+                "formPresent": True,
+                "status": 200,
+                "responseUrl": "http://localhost:18080/admin-kuranea/index.php?controller=AdminDashboard",
+                "bodyHasSettingsForm": False,
+                "bodyHasDangerAlert": False,
+                "bodyHasAdminLoginForm": True,
+                "bodyHasViewOnlyDenial": False,
+            },
+            {
+                "formPresent": True,
+                "status": 200,
+                "responseUrl": "http://localhost:18080/admin-kuranea/index.php?controller=AdminBusinessProfile",
+                "bodyHasSettingsForm": True,
+                "bodyHasDangerAlert": False,
+                "bodyHasAdminLoginForm": False,
+                "bodyHasViewOnlyDenial": False,
+            },
+        ):
+            with self.subTest(response=response), self.assertRaises(AssertionError):
+                assert_rejected(response, "missing")
+
+        secret_redirect = {
+            "formPresent": True,
+            "status": 200,
+            "responseUrl": "http://localhost:18080/admin-kuranea/index.php?controller=AdminDashboard&token=private-token",
+            "bodyHasSettingsForm": False,
+            "bodyHasDangerAlert": False,
+            "bodyHasAdminLoginForm": True,
+            "bodyHasViewOnlyDenial": False,
+        }
+        with self.assertRaises(AssertionError) as failure:
+            assert_rejected(secret_redirect, "missing")
+        self.assertIn("final_path='/admin-kuranea/index.php'", str(failure.exception))
+        self.assertNotIn("private-token", str(failure.exception))
+
+    def test_admin_security_attempt_rechecks_state_before_classifying_a_rejection(self):
+        events: list[str] = []
+        namespace: dict[str, object] = {
+            "webdriver": type("WebDriverTypes", (), {"Chrome": object}),
+            "submit_settings_attempt": lambda driver, mode: events.append("request") or {"status": 200},
+            "assert_setting_unchanged": lambda driver, value, pointer, label: events.append("state"),
+            "assert_security_attempt_rejected": lambda response, mode: (
+                events.append("classification") or (_ for _ in ()).throw(AssertionError("unrecognized response"))
+            ),
+        }
+        verify_attempt = load_function(
+            ADMIN_FLOW,
+            "verify_security_attempt_without_mutation",
+            namespace,
+        )
+        with self.assertRaisesRegex(AssertionError, "unrecognized response"):
+            verify_attempt(object(), "missing", "original", "17", "missing-token")
+        self.assertEqual(events, ["request", "state", "classification"])
+
+        events.clear()
+        namespace["assert_setting_unchanged"] = lambda driver, value, pointer, label: events.append("state")
+        namespace["assert_security_attempt_rejected"] = lambda response, mode: events.append("classification")
+        with self.assertRaisesRegex(RuntimeError, "browser request failed"):
+            namespace["submit_settings_attempt"] = lambda driver, mode: (
+                events.append("request") or (_ for _ in ()).throw(RuntimeError("browser request failed"))
+            )
+            verify_attempt(object(), "missing", "original", "17", "missing-token")
+        self.assertEqual(events, ["request", "state"])
 
     def test_security_fixtures_create_read_only_admin_and_two_disposable_customers(self):
         self.assertTrue(FIXTURE.is_file(), "the isolated security fixture seeder is missing")
