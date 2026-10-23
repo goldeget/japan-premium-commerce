@@ -276,6 +276,13 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertIn('carrier_action_url(carriers_list_url, "create")', browser)
         self.assertIn('_carrier_edit_url(carriers_list_url, carrier_id)', browser)
         self.assertIn("carrier_id_from_edit_url(browser.current_url, admin_path)", browser)
+        form_visit = browser.split("def _visit_carrier_form(", 1)[1].split(
+            "def _save_carrier_form(", 1
+        )[0]
+        self.assertIn("driver.get(url)", form_visit)
+        self.assertIn("_wait_visible(driver, 'input[name=\"carrier[general_settings][name]\"]')", form_visit)
+        self.assertNotIn("checkout.visit(driver, _carrier_edit_url", browser)
+        self.assertIn('stage = "navigate_to_saved_free_japan_carrier"', browser)
         self.assertNotIn('ADMIN_LOGIN + "/index.php/improve/shipping/carriers/create"', browser)
         form_fill = browser.split("def _fill_free_carrier_form(", 1)[1].split(
             "def _assert_free_carrier_form(", 1

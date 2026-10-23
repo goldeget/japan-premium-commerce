@@ -323,6 +323,12 @@ def _carrier_edit_url(carriers_list_url: str, carrier_id: int) -> str:
     return carrier_action_url(carriers_list_url, "edit", carrier_id)
 
 
+def _visit_carrier_form(driver, url: str) -> None:
+    """Wait for the carrier form itself instead of unrelated page-load readiness."""
+    driver.get(url)
+    _wait_visible(driver, 'input[name="carrier[general_settings][name]"]')
+
+
 def _save_carrier_form(driver, operation: str) -> int:
     save_button = next(
         (
@@ -388,8 +394,9 @@ def configure_free_carrier() -> None:
         stage = "save_draft_free_japan_carrier"
         carrier_id = _save_carrier_form(driver, "create")
 
-        stage = "edit_and_save_free_japan_carrier"
-        checkout.visit(driver, _carrier_edit_url(carriers_list_url, carrier_id))
+        stage = "navigate_to_saved_free_japan_carrier"
+        _visit_carrier_form(driver, _carrier_edit_url(carriers_list_url, carrier_id))
+        stage = "verify_draft_free_japan_carrier"
         _assert_free_carrier_form(
             driver,
             {"name": draft_name},
@@ -404,7 +411,7 @@ def configure_free_carrier() -> None:
 
         # A fresh page load verifies that the browser form rereads the saved row.
         stage = "verify_admin_saved_carrier"
-        checkout.visit(driver, _carrier_edit_url(carriers_list_url, carrier_id))
+        _visit_carrier_form(driver, _carrier_edit_url(carriers_list_url, carrier_id))
         observed = _assert_free_carrier_form(driver, {"name": final_name})
         observed.update({"id": carrier_id, "draft_name": draft_name})
         CONFIG_PATH.write_text(
@@ -453,7 +460,7 @@ def readback_free_carrier() -> None:
         stage = "resolve_authenticated_admin_carriers_link"
         carriers_list_url = _carrier_list_url(driver)
         stage = "readback_free_carrier_after_restart"
-        checkout.visit(driver, _carrier_edit_url(carriers_list_url, int(config["id"])))
+        _visit_carrier_form(driver, _carrier_edit_url(carriers_list_url, int(config["id"])))
         observed = _assert_free_carrier_form(driver, config)
         if observed["carrier_tax_rule_group_id"] != config["carrier_tax_rule_group_id"]:
             raise AssertionError("the carrier tax-rule selection changed after the PrestaShop restart")
