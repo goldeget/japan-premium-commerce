@@ -681,6 +681,21 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             exception_handler,
         )
 
+    def test_password_reset_login_reopens_a_clean_form_after_rejecting_old_password(self) -> None:
+        reset_login = self.blocks["password_reset_login"]
+
+        reopen_login = reset_login.index("driver.get(login_url)")
+        wait_for_email_field = reset_login.index("visible(driver, '#login-form input[name=\"email\"]')")
+        reject_stale_alert = reset_login.index("if any(")
+        mark_submit = reset_login.index('email_login_substage = "password_reset_submit"')
+        submit_new_password = reset_login.index("submit_login(driver, account_email, reset_password)")
+
+        self.assertLess(reopen_login, wait_for_email_field)
+        self.assertLess(wait_for_email_field, reject_stale_alert)
+        self.assertLess(reject_stale_alert, mark_submit)
+        self.assertLess(mark_submit, submit_new_password)
+        self.assertIn("fresh customer login form retained a prior authentication error", reset_login)
+
     def test_browser_flow_runs_on_desktop_and_mobile_viewports(self) -> None:
         self.assertIn('(1440, 960, "desktop")', self.source)
         self.assertIn('(390, 844, "mobile")', self.source)

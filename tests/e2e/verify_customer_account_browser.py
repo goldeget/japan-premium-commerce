@@ -2626,6 +2626,14 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         assert_login_rejected(driver, account_email, initial_password)
 
         stage = "password_reset_login"
+        email_login_substage = "password_reset_open_login"
+        driver.get(login_url)
+        visible(driver, '#login-form input[name="email"]')
+        if any(
+            alert.is_displayed()
+            for alert in driver.find_elements(By.CSS_SELECTOR, '.alert.alert-danger[role="alert"]')
+        ):
+            raise AssertionError("fresh customer login form retained a prior authentication error")
         email_login_substage = "password_reset_submit"
         submit_login(driver, account_email, reset_password)
         email_login_substage = "password_reset_my_page"
