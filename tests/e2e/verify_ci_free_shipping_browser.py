@@ -382,13 +382,13 @@ def _save_carrier_form(driver, operation: str) -> int:
     admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
     WebDriverWait(driver, 35).until(
         lambda browser: carrier_id_from_edit_url(browser.current_url, admin_path) is not None
-        or bool(browser.find_elements(By.CSS_SELECTOR, ".alert-danger, .alert-error, [role='alert']"))
+        or bool(browser.find_elements(By.CSS_SELECTOR, ".alert-danger, .alert-error"))
     )
     carrier_id = carrier_id_from_edit_url(driver.current_url, admin_path)
     if carrier_id is None:
         errors = [
             element.text.strip()[:300]
-            for element in driver.find_elements(By.CSS_SELECTOR, ".alert-danger, .alert-error, [role='alert']")
+            for element in driver.find_elements(By.CSS_SELECTOR, ".alert-danger, .alert-error")
             if element.is_displayed() and element.text.strip()
         ]
         raise AssertionError(f"AdminCarriers did not save the free carrier during {operation}: {errors[:3]}")

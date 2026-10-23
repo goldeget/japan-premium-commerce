@@ -380,6 +380,16 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertLess(zone_selection, free_shipping)
         self.assertIn('mark_stage("open_shipping_settings_tab")', form_fill)
 
+    def test_carrier_save_wait_ignores_success_role_alert_until_edit_route_is_ready(self) -> None:
+        browser = BROWSER.read_text(encoding="utf-8")
+        save_form = browser.split("def _save_carrier_form(", 1)[1].split(
+            "def configure_free_carrier(", 1
+        )[0]
+
+        self.assertIn("carrier_id_from_edit_url(browser.current_url, admin_path)", save_form)
+        self.assertIn('".alert-danger, .alert-error"', save_form)
+        self.assertNotIn("[role='alert']", save_form)
+
     def test_admin_carrier_switches_support_prestashop_92_boolean_radio_options(self) -> None:
         browser = BROWSER.read_text(encoding="utf-8")
         switch_controls = browser.split("def _switch_controls(", 1)[1].split("def _switch_option(", 1)[0]
