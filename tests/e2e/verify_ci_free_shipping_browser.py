@@ -1617,7 +1617,19 @@ def run_japan_explicit_exemption_customer_checkout() -> None:
             )
 
         stage = "explicit_exemption_customer_registration"
-        email = checkout.register_checkout_account(driver, "shipping-free-explicit-exemption")
+
+        def set_registration_stage(registration_stage: str) -> None:
+            nonlocal stage
+            if re.fullmatch(r"[a-z][a-z0-9_.]{0,127}", registration_stage):
+                stage = f"explicit_exemption_customer_registration.{registration_stage}"
+            else:
+                stage = "explicit_exemption_customer_registration.unknown"
+
+        email = checkout.register_checkout_account(
+            driver,
+            "shipping-free-explicit-exemption",
+            stage_callback=set_registration_stage,
+        )
         stage = "explicit_exemption_japan_address"
         checkout.select_japan_address(driver, "shipping-free-explicit-exemption")
         stage = "explicit_exemption_free_carrier_checkout"
@@ -1708,7 +1720,10 @@ def run_japan_explicit_exemption_customer_checkout() -> None:
             driver.save_screenshot(str(QA_DIR / "shipping-free-exemption-checkout-failure.png"))
         except Exception:
             pass
-        _emit_failure(stage, error, driver)
+        checkout_registration_state = None
+        if stage.startswith("explicit_exemption_customer_registration."):
+            checkout_registration_state = checkout.safe_checkout_registration_state(driver)
+        _emit_failure(stage, error, driver, checkout_registration_state)
         raise SystemExit(f"explicit exemption free-shipping checkout failed at {stage}") from None
     finally:
         driver.quit()
@@ -1895,7 +1910,12 @@ def run_free_carrier_admin_order_view() -> None:
         driver.quit()
 
 
-def _emit_failure(stage: str, error: Exception, driver=None) -> None:
+def _emit_failure(
+    stage: str,
+    error: Exception,
+    driver=None,
+    checkout_registration_state: dict[str, object] | None = None,
+) -> None:
     exception_type = type(error).__name__
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", exception_type):
         exception_type = "Exception"
@@ -1914,12 +1934,26 @@ def _emit_failure(stage: str, error: Exception, driver=None) -> None:
         detail = re.sub(r"(?i)\btoken\s*[=:]\s*[^\s,;&]+", "token=[REDACTED]", detail)
         safe_detail = detail[:600]
     detail_suffix = f"; detail={safe_detail}" if safe_detail else ""
+    registration_suffix = ""
+    route_suffix = f"; path={safe_path}"
+    if checkout_registration_state is not None:
+        safe_state = checkout.sanitize_checkout_registration_state(checkout_registration_state)
+        registration_suffix = "; checkout_state=" + json.dumps(
+            safe_state,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        # The registration state already contains the bounded checkout indicators;
+        # omit the route path and free-form assertion detail from this annotation.
+        route_suffix = ""
+        detail_suffix = ""
     print(
-        f"FAIL: free shipping browser QA at {safe_stage} ({exception_type}); path={safe_path}{detail_suffix}",
+        f"FAIL: free shipping browser QA at {safe_stage} ({exception_type}){route_suffix}{detail_suffix}{registration_suffix}",
         file=sys.stderr,
     )
     print(
-        f"::error title=ORDENOWA free shipping QA::{safe_stage} ({exception_type}); path={safe_path}{detail_suffix}",
+        f"::error title=ORDENOWA free shipping QA::{safe_stage} ({exception_type}){route_suffix}{detail_suffix}{registration_suffix}",
         file=sys.stderr,
     )
 

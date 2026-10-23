@@ -3,7 +3,12 @@ from __future__ import annotations
 
 import unittest
 import ast
+import io
+import json
+import re
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import urlparse
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -19,6 +24,99 @@ TAXABLE_PRODUCT_FIXTURE = ROOT / "tests/catalog/verify_product_tax_price.php"
 
 
 class FreeShippingE2eContractTest(unittest.TestCase):
+    def test_explicit_exemption_registration_timeout_annotation_is_staged_and_redacted(self) -> None:
+        checkout_source = ast.parse(CHECKOUT_BROWSER.read_text(encoding="utf-8"))
+        sanitizer_nodes = [
+            node for node in checkout_source.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "sanitize_checkout_registration_state"
+        ]
+        self.assertEqual(len(sanitizer_nodes), 1, "checkout registration needs one safe state sanitizer")
+        sanitizer_namespace: dict[str, object] = {}
+        exec(
+            compile(ast.Module(body=sanitizer_nodes, type_ignores=[]), str(CHECKOUT_BROWSER), "exec"),
+            sanitizer_namespace,
+        )
+
+        browser_source = ast.parse(BROWSER.read_text(encoding="utf-8"))
+        emitter_nodes = [
+            node for node in browser_source.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_emit_failure"
+        ]
+        self.assertEqual(len(emitter_nodes), 1)
+        stderr = io.StringIO()
+        emitter_namespace = {
+            "checkout": SimpleNamespace(
+                sanitize_checkout_registration_state=sanitizer_namespace[
+                    "sanitize_checkout_registration_state"
+                ]
+            ),
+            "json": json,
+            "re": re,
+            "sys": SimpleNamespace(stderr=stderr),
+            "urlparse": urlparse,
+        }
+        exec(
+            compile(ast.Module(body=emitter_nodes, type_ignores=[]), str(BROWSER), "exec"),
+            emitter_namespace,
+        )
+
+        TimeoutException = type("TimeoutException", (Exception,), {})
+        emitter_namespace["_emit_failure"](
+            "explicit_exemption_customer_registration.checkout_registration_step.wait",
+            TimeoutException("email=private-email-sentinel password=private-password-sentinel"),
+            SimpleNamespace(
+                current_url="http://localhost:18080/private-path-sentinel?token=private-token-sentinel"
+            ),
+            {
+                "available": True,
+                "registration_form_visible": True,
+                "continuation_form_visible": False,
+                "delivery_address_form_visible": False,
+                "delivery_addresses_visible": False,
+                "login_form_visible": False,
+                "user_menu_visible": False,
+                "native_form_valid": False,
+                "visible_invalid_control_count": 2,
+                "invalid_required_field_names": ["email", "password"],
+                "current_checkout_step_ids": ["checkout-personal-information-step"],
+                "email": "private-email-sentinel",
+                "password": "private-password-sentinel",
+                "path": "/private-path-sentinel",
+            },
+        )
+        output = stderr.getvalue()
+        self.assertIn(
+            "explicit_exemption_customer_registration.checkout_registration_step.wait",
+            output,
+        )
+        self.assertIn('"visible_invalid_control_count":2', output)
+        self.assertIn('"registration_form_visible":true', output)
+        for sentinel in (
+            "private-email-sentinel",
+            "private-password-sentinel",
+            "private-path-sentinel",
+            "private-token-sentinel",
+        ):
+            self.assertNotIn(sentinel, output)
+        self.assertNotIn("path=", output)
+
+        registration = CHECKOUT_BROWSER.read_text(encoding="utf-8").split(
+            "def register_checkout_account", 1
+        )[1].split("def select_japan_address", 1)[0]
+        exemption_flow = BROWSER.read_text(encoding="utf-8").split(
+            "def run_japan_explicit_exemption_customer_checkout", 1
+        )[1].split("def _parse_order_amount", 1)[0]
+        self.assertIn('"checkout_registration_step.wait"', registration)
+        self.assertIn('"delivery_address_step.wait"', registration)
+        self.assertIn("stage_callback=set_registration_stage", exemption_flow)
+        self.assertIn(
+            'stage = f"explicit_exemption_customer_registration.{registration_stage}"',
+            exemption_flow,
+        )
+        self.assertIn("checkout.safe_checkout_registration_state(driver)", exemption_flow)
+        self.assertIn("_emit_failure(stage, error, driver, checkout_registration_state)", exemption_flow)
+
     def test_active_product_fixture_reserves_stock_for_the_post_order_gate_smoke(self) -> None:
         fixture = SHIPPING_PRODUCT_FIXTURE.read_text(encoding="utf-8")
         self.assertIn("'quantity' => '6'", fixture)

@@ -1106,6 +1106,55 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertNotIn("controller=AdminOrders&vieworder&id_order=", admin_detail)
         self.assertNotIn('root + "/sell/orders/orders"', admin_detail)
 
+    def test_checkout_registration_state_diagnostics_keep_only_bounded_safe_fields(self) -> None:
+        source = ast.parse(CHECKOUT_FLOW.read_text(encoding="utf-8"))
+        sanitizers = [
+            node for node in source.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "sanitize_checkout_registration_state"
+        ]
+        self.assertEqual(len(sanitizers), 1, "checkout registration needs one safe state sanitizer")
+        sanitizer = sanitizers[0]
+        namespace: dict[str, object] = {}
+        exec(
+            compile(ast.Module(body=[sanitizer], type_ignores=[]), str(CHECKOUT_FLOW), "exec"),
+            namespace,
+        )
+        sanitize = namespace["sanitize_checkout_registration_state"]
+        safe = sanitize(
+            {
+                "available": True,
+                "registration_form_visible": True,
+                "continuation_form_visible": False,
+                "delivery_address_form_visible": False,
+                "delivery_addresses_visible": False,
+                "login_form_visible": False,
+                "user_menu_visible": False,
+                "native_form_valid": False,
+                "visible_invalid_control_count": 2,
+                "invalid_required_field_names": ["email", "password", "private-field-sentinel"],
+                "current_checkout_step_ids": ["checkout-personal-information-step", "private-step-sentinel"],
+                "email": "private-email-sentinel@example.invalid",
+                "password": "private-password-sentinel",
+                "path": "/private-path-sentinel",
+            }
+        )
+
+        self.assertEqual(safe["available"], True)
+        self.assertEqual(safe["registration_form_visible"], True)
+        self.assertEqual(safe["visible_invalid_control_count"], 2)
+        self.assertEqual(safe["invalid_required_field_names"], ["email", "password"])
+        self.assertEqual(safe["current_checkout_step_ids"], ["checkout-personal-information-step"])
+        serialized = json.dumps(safe)
+        for sentinel in (
+            "private-email-sentinel",
+            "private-password-sentinel",
+            "private-path-sentinel",
+            "private-field-sentinel",
+            "private-step-sentinel",
+        ):
+            self.assertNotIn(sentinel, serialized)
+
 
 if __name__ == "__main__":
     unittest.main()

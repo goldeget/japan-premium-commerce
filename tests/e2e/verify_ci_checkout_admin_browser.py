@@ -507,6 +507,116 @@ def _mark_checkout_stage(stage_callback, stage: str) -> None:
         stage_callback(stage)
 
 
+def sanitize_checkout_registration_state(raw_state: object) -> dict[str, object]:
+    """Keep registration diagnostics to bounded state flags, counts, and known field names."""
+    if not isinstance(raw_state, dict):
+        return {"available": False}
+
+    result: dict[str, object] = {"available": raw_state.get("available") is True}
+    boolean_fields = (
+        "registration_form_visible",
+        "continuation_form_visible",
+        "delivery_address_form_visible",
+        "delivery_addresses_visible",
+        "login_form_visible",
+        "user_menu_visible",
+    )
+    for field in boolean_fields:
+        value = raw_state.get(field)
+        if isinstance(value, bool):
+            result[field] = value
+
+    native_form_valid = raw_state.get("native_form_valid")
+    if isinstance(native_form_valid, bool):
+        result["native_form_valid"] = native_form_valid
+
+    invalid_count = raw_state.get("visible_invalid_control_count")
+    if isinstance(invalid_count, int) and not isinstance(invalid_count, bool):
+        result["visible_invalid_control_count"] = max(0, min(invalid_count, 1000))
+
+    allowed_fields = {
+        "firstname",
+        "lastname",
+        "email",
+        "password",
+        "customer_privacy",
+        "psgdpr",
+        "id_gender",
+        "birthday",
+    }
+    invalid_fields = raw_state.get("invalid_required_field_names")
+    if isinstance(invalid_fields, list):
+        result["invalid_required_field_names"] = list(dict.fromkeys(
+            field for field in invalid_fields
+            if isinstance(field, str) and field in allowed_fields
+        ))[:8]
+
+    allowed_steps = {
+        "checkout-personal-information-step",
+        "checkout-addresses-step",
+        "checkout-delivery-step",
+        "checkout-payment-step",
+    }
+    current_steps = raw_state.get("current_checkout_step_ids")
+    if isinstance(current_steps, list):
+        result["current_checkout_step_ids"] = list(dict.fromkeys(
+            step for step in current_steps
+            if isinstance(step, str) and step in allowed_steps
+        ))[:4]
+    return result
+
+
+def safe_checkout_registration_state(driver: webdriver.Chrome) -> dict[str, object]:
+    """Return only consent/form visibility and validity metadata, never field values or URLs."""
+    try:
+        raw_state = driver.execute_script(
+            r"""
+            const isVisible = (element) => {
+              if (!element) return false;
+              const box = element.getBoundingClientRect();
+              const style = window.getComputedStyle(element);
+              return box.width > 0 && box.height > 0
+                && style.display !== 'none' && style.visibility !== 'hidden';
+            };
+            const form = document.querySelector('#checkout-guest-form #customer-form');
+            const allowedFields = new Set([
+              'firstname', 'lastname', 'email', 'password', 'customer_privacy',
+              'psgdpr', 'id_gender', 'birthday'
+            ]);
+            const invalidControls = form
+              ? [...form.querySelectorAll('input:invalid, select:invalid, textarea:invalid')]
+                  .filter(isVisible)
+              : [];
+            const allowedSteps = new Set([
+              'checkout-personal-information-step', 'checkout-addresses-step',
+              'checkout-delivery-step', 'checkout-payment-step'
+            ]);
+            return {
+              available: true,
+              registration_form_visible: isVisible(form),
+              continuation_form_visible: isVisible(document.querySelector('#checkout-continue-form')),
+              delivery_address_form_visible: isVisible(document.querySelector('#delivery-address form')),
+              delivery_addresses_visible: isVisible(document.querySelector('#delivery-addresses')),
+              login_form_visible: isVisible(document.querySelector('#checkout-login-form form')),
+              user_menu_visible: isVisible(document.getElementById('userMenuButton')),
+              native_form_valid: form ? form.matches(':valid') : null,
+              visible_invalid_control_count: invalidControls.length,
+              invalid_required_field_names: invalidControls.slice(0, 8).map((element) => {
+                const name = element.getAttribute('name') || '';
+                return allowedFields.has(name) ? name : 'other';
+              }),
+              current_checkout_step_ids: [...document.querySelectorAll('section.step--current')]
+                .map((element) => element.id)
+                .filter((step) => allowedSteps.has(step))
+                .slice(0, 4)
+            };
+            """
+        )
+    except Exception:
+        return {"available": False}
+    return sanitize_checkout_registration_state(raw_state)
+
+
 def click_required_checkbox_label(
     driver: webdriver.Chrome,
     form,
