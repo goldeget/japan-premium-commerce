@@ -662,6 +662,32 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertIn("'name_ja' => '[ci only] ordenowa free shipping product", shipping_fixture)
         self.assertIn("'name_ja' => '[ci only] ordenowa synthetic tax product", taxable_fixture)
 
+    def test_product_detail_quantity_selects_all_and_validates_without_clearing(self) -> None:
+        browser_source = BROWSER.read_text(encoding="utf-8")
+        browser_tree = ast.parse(browser_source)
+        quantity_entry = next(
+            node
+            for node in browser_tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_add_quantity_and_open_checkout"
+        )
+        quantity_source = ast.get_source_segment(browser_source, quantity_entry) or ""
+        select_all = quantity_source.index('quantity.send_keys(Keys.CONTROL, "a")')
+        type_requested = quantity_source.index("quantity.send_keys(str(quantity_requested))")
+        validate_value = quantity_source.index(
+            'WebDriverWait(driver, 5, poll_frequency=0.1).until('
+        )
+
+        self.assertLess(select_all, type_requested, "select all before typing the requested quantity")
+        self.assertLess(type_requested, validate_value, "wait for the exact field value after typing")
+        self.assertIn('item.get_attribute("value") == str(quantity_requested)', quantity_source)
+        self.assertIn('By.ID, "quantity_wanted"', quantity_source)
+        self.assertIn('message="product detail did not accept the requested test quantity"', quantity_source)
+        self.assertNotIn(
+            "quantity.clear()",
+            quantity_source,
+            "clearing briefly lets Hummingbird clamp the field back to its minimum",
+        )
+
     def test_mobile_shipping_fixture_label_opens_mobile_search_toggle(self) -> None:
         checkout_source = CHECKOUT_BROWSER.read_text(encoding="utf-8")
         checkout_tree = ast.parse(checkout_source)

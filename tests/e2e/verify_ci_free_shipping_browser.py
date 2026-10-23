@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlparse
 
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.select import Select
 from selenium.webdriver.support.ui import WebDriverWait
@@ -553,10 +554,17 @@ def _add_quantity_and_open_checkout(
     checkout.search_for_product(driver, label, search_term=search_term)
     displayed_unit_price = _parse_yen(_visible_text(driver, ".product__price"))
     quantity = _wait_visible(driver, "#quantity_wanted")
-    quantity.clear()
+    quantity.click()
+    quantity.send_keys(Keys.CONTROL, "a")
     quantity.send_keys(str(quantity_requested))
-    if quantity.get_attribute("value") != str(quantity_requested):
-        raise AssertionError("product detail did not accept the requested test quantity")
+    WebDriverWait(driver, 5, poll_frequency=0.1).until(
+        lambda browser: any(
+            item.is_displayed()
+            and item.get_attribute("value") == str(quantity_requested)
+            for item in browser.find_elements(By.ID, "quantity_wanted")
+        ),
+        message="product detail did not accept the requested test quantity",
+    )
 
     add_button = _wait_visible(driver, 'button[data-ps-ref="add-to-cart"]')
     checkout.click_at_center(driver, add_button)
