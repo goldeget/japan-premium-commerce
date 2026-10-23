@@ -690,6 +690,25 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         self.assertNotIn("pwa-{label}-failure.png", self.source)
         self.assertNotIn("print(body_text", self.source)
 
+    def test_pwa_order_route_qa_temporarily_opens_only_its_run_scoped_checkout(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
+        pwa_step = workflow.split(
+            "- name: Verify Chromium PWA lifecycle and private-route cache protection", 1
+        )[1].split("- name:", 1)[0]
+
+        self.assertIn("GITHUB_RUN_ID: ${{ github.run_id }}", pwa_step)
+        self.assertIn("GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}", pwa_step)
+        self.assertIn('expected_project="kuranea-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"', pwa_step)
+        self.assertIn('[[ "$CI_COMPOSE_PROJECT_NAME" != "$expected_project" ]]', pwa_step)
+        self.assertIn("tests/fixtures/ci-checkout.compose.yaml", pwa_step)
+        self.assertIn("trap restore_base_checkout EXIT", pwa_step)
+        self.assertLess(pwa_step.index("trap restore_base_checkout EXIT"), pwa_step.index("tests/e2e/verify_pwa_browser.py"))
+        self.assertLess(pwa_step.index("ci-checkout.compose.yaml"), pwa_step.index("tests/e2e/verify_pwa_browser.py"))
+        restore = pwa_step.split("restore_base_checkout() {", 1)[1].split("\n          }", 1)[0]
+        self.assertIn('if [[ "$pwa_checkout_override_attempted" == 1 ]]', restore)
+        self.assertIn("--force-recreate", restore)
+        self.assertIn("fail-closed base checkout environment", restore)
+
     def test_pwa_customer_creation_requires_exact_run_scoped_ci_shop_before_chromium(self) -> None:
         main = function_source(self.source, "main")
         self.assertIn("validate_isolated_ci_target(base_url)", main)
