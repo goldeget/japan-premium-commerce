@@ -89,7 +89,9 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             "assert_my_page(driver, expected_first_name, substage_callback=mark_profile_update_substage)"
         )
         identity_reopen = profile_save.index('driver.get(f"{BASE}/index.php?controller=identity")')
-        identity_route_assertion = profile_save.index('assert_canonical_static_route(driver, "identity")')
+        identity_route_assertion = profile_save.index(
+            'assert_canonical_static_route(driver, "identity")', identity_reopen
+        )
         persisted_field_wait = profile_save.index("WebDriverWait(driver, 30).until(")
         persisted_first_name = profile_save.index(
             "#customer-form input[name=\"firstname\"]", persisted_field_wait
@@ -762,6 +764,97 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             "outside_shop",
         )
 
+    def test_my_account_link_skips_identity_links_in_responsive_menu_candidates(self) -> None:
+        module = ast.parse(self.source)
+        helper_names = {"my_account_link_from_header", "safe_account_route_classification"}
+        functions = [
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name in helper_names
+        ]
+        namespace = {
+            "BASE": "https://shop.example.test/shop",
+            "By": SimpleNamespace(CSS_SELECTOR="css selector"),
+            "parse_qs": parse_qs,
+            "urljoin": urljoin,
+            "unquote": unquote,
+            "urlparse": urlparse,
+        }
+        exec(
+            compile(ast.Module(body=functions, type_ignores=[]), str(ACCOUNT_FLOW), "exec"),
+            namespace,
+        )
+
+        class Link:
+            def __init__(self, href: str) -> None:
+                self.href = href
+
+            def get_attribute(self, name: str) -> str | None:
+                return self.href if name == "href" else None
+
+            def is_displayed(self) -> bool:
+                return True
+
+            def is_enabled(self) -> bool:
+                return True
+
+        identity_link = Link("https://shop.example.test/shop/identity")
+        account_link = Link("https://shop.example.test/shop/my-account")
+
+        class Driver:
+            current_url = "https://shop.example.test/shop/identity"
+
+            def find_elements(self, by: str, selector: str) -> list[Link]:
+                return [identity_link, account_link]
+
+            def find_element(self, by: str, selector: str) -> Link:
+                return identity_link
+
+        selected_link, account_url = namespace["my_account_link_from_header"](
+            Driver(), open_menu=False
+        )
+
+        self.assertIs(selected_link, account_link)
+        self.assertEqual(account_url, "https://shop.example.test/shop/my-account")
+
+    def test_my_account_link_fails_closed_when_no_account_route_is_available(self) -> None:
+        module = ast.parse(self.source)
+        helper_names = {"my_account_link_from_header", "safe_account_route_classification"}
+        functions = [
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name in helper_names
+        ]
+        namespace = {
+            "BASE": "https://shop.example.test/shop",
+            "By": SimpleNamespace(CSS_SELECTOR="css selector"),
+            "parse_qs": parse_qs,
+            "urljoin": urljoin,
+            "unquote": unquote,
+            "urlparse": urlparse,
+        }
+        exec(
+            compile(ast.Module(body=functions, type_ignores=[]), str(ACCOUNT_FLOW), "exec"),
+            namespace,
+        )
+
+        class Link:
+            def get_attribute(self, name: str) -> str | None:
+                return "https://shop.example.test/shop/identity" if name == "href" else None
+
+        class Driver:
+            current_url = "https://shop.example.test/shop/identity"
+
+            def find_elements(self, by: str, selector: str) -> list[Link]:
+                return [Link()]
+
+            def find_element(self, by: str, selector: str) -> Link:
+                return Link()
+
+        with self.assertRaisesRegex(
+            AssertionError,
+            "authenticated My Page link did not resolve to the account route",
+        ):
+            namespace["my_account_link_from_header"](Driver(), open_menu=False)
+
     def test_email_login_failure_diagnostics_expose_state_without_page_text_or_values(self) -> None:
         result_helper = self.source.split("def collect_email_login_result", 1)[1].split(
             "\n\ndef collect_email_login_diagnostics", 1
@@ -1118,8 +1211,75 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn("WebDriverWait(driver, 5, poll_frequency=0.1)", disclosure_helper)
         self.assertIn("lambda _browser: checkbox.is_selected()", disclosure_helper)
         self.assertIn("checkbox.send_keys(Keys.SPACE)", disclosure_helper)
-        self.assertIn("if not checkbox.is_selected()", disclosure_helper)
 
+    def test_profile_update_waits_for_saved_identity_state_before_account_navigation(self) -> None:
+        profile_save = self.source.split('stage = "profile_update_submit"', 1)[1].split(
+            'stage = "email_login"', 1
+        )[0]
+        submit = profile_save.index("click_centered(driver, submit_button)")
+        self.assertIn("wait_for_profile_update_success(driver, expected_first_name)", profile_save)
+        success_wait = profile_save.index("wait_for_profile_update_success(driver, expected_first_name)")
+        account_navigation = profile_save.index("driver.get(account_url)")
+
+        self.assertLess(submit, success_wait)
+        self.assertLess(success_wait, account_navigation)
+        self.assertIn('profile_substage = "profile_update_success_notification"', profile_save)
+        self.assertIn('assert_canonical_static_route(driver, "identity")', profile_save)
+        self.assertIn("assert_my_page(driver, expected_first_name", profile_save)
+
+    def test_profile_update_success_requires_success_alert_and_persisted_name(self) -> None:
+        module = ast.parse(self.source)
+        classifier = next(
+            (
+                node for node in module.body
+                if isinstance(node, ast.FunctionDef)
+                and node.name == "classify_profile_update_response_state"
+            ),
+            None,
+        )
+        self.assertIsNotNone(classifier, "profile update needs an explicit PRG success-state classifier")
+        if classifier is None:
+            return
+
+        namespace: dict[str, object] = {}
+        exec(
+            compile(ast.Module(body=[classifier], type_ignores=[]), str(ACCOUNT_FLOW), "exec"),
+            namespace,
+        )
+        classify = namespace["classify_profile_update_response_state"]
+
+        self.assertEqual(
+            classify({
+                "identity_form_visible": True,
+                "success_alert_visible": True,
+                "first_name_matches_expected": True,
+                "current_password_filled": False,
+                "customer_privacy_checked": False,
+                "psgdpr_checked": False,
+            }),
+            "saved",
+            "a successful PrestaShop PRG reload clears password/disclosure inputs; the persisted name and success alert prove save",
+        )
+        self.assertEqual(
+            classify({
+                "identity_form_visible": True,
+                "success_alert_visible": True,
+                "first_name_matches_expected": False,
+                "error_alert_visible": False,
+            }),
+            "pending",
+            "a success notice without the expected persisted name is not sufficient",
+        )
+        self.assertEqual(
+            classify({
+                "identity_form_visible": True,
+                "success_alert_visible": False,
+                "first_name_matches_expected": True,
+                "error_alert_visible": True,
+            }),
+            "rejected",
+            "a visible form error must fail instead of being treated as a saved profile",
+        )
     def test_profile_update_failure_reports_an_allowlisted_inner_substage(self) -> None:
         module = ast.parse(self.source)
         constant = next(

@@ -186,8 +186,10 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
 
         self.assertIn("my_account_link_from_header(driver, open_menu=False)", logout)
         self.assertIn("if open_menu:", route_helper)
-        self.assertIn("account_link = driver.find_element(By.CSS_SELECTOR, account_selector)", route_helper)
-        self.assertIn("account_link = visible(driver, account_selector)", route_helper)
+        self.assertIn("browser.find_elements(By.CSS_SELECTOR, account_selector)", route_helper)
+        self.assertIn('safe_account_route_classification(candidate_url) != "account"', route_helper)
+        self.assertIn("account_link = account_route_link(driver, require_visible=False)", route_helper)
+        self.assertIn("account_link = WebDriverWait(driver, 30).until(", route_helper)
 
     def test_account_signout_selects_a_visible_duplicate_for_mobile_and_desktop(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")

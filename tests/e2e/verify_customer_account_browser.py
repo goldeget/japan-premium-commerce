@@ -101,7 +101,9 @@ DUPLICATE_EMAIL_REJECTION = re.compile(
 )
 PROFILE_UPDATE_SUBSTAGES = frozenset(
     {
+        "profile_update_success_notification",
         "account_page_navigation",
+        "account_page_route_check",
         "account_page_identity_link",
         "account_page_signout_link",
         "account_page_saved_name",
@@ -926,11 +928,29 @@ def my_account_link_from_header(driver: webdriver.Chrome, *, open_menu: bool = T
         button = visible(driver, "#userMenuButton")
         if button.get_attribute("aria-expanded") != "true":
             click_centered(driver, button)
-        account_link = visible(driver, account_selector)
+
+    def account_route_link(browser: webdriver.Chrome, *, require_visible: bool):
+        for candidate in browser.find_elements(By.CSS_SELECTOR, account_selector):
+            href = candidate.get_attribute("href") or ""
+            candidate_url = urljoin(browser.current_url, href)
+            if safe_account_route_classification(candidate_url) != "account":
+                continue
+            if require_visible and (not candidate.is_displayed() or not candidate.is_enabled()):
+                continue
+            return candidate
+        return False
+
+    if open_menu:
+        account_link = WebDriverWait(driver, 30).until(
+            lambda browser: account_route_link(browser, require_visible=True),
+            message="the visible customer menu did not expose a My Page account route",
+        )
     else:
-        # The hidden dropdown anchor is still rendered, so logout can read its URL
-        # without opening an overlay above the separate My Page signout link.
-        account_link = driver.find_element(By.CSS_SELECTOR, account_selector)
+        # The dropdown anchor is rendered while closed. Select it by its account
+        # route because responsive headers can expose hidden identity links first.
+        account_link = account_route_link(driver, require_visible=False)
+    if not account_link:
+        raise AssertionError("authenticated My Page link did not resolve to the account route")
 
     href = account_link.get_attribute("href") or ""
     account_url = urljoin(driver.current_url, href)
@@ -942,6 +962,8 @@ def my_account_link_from_header(driver: webdriver.Chrome, *, open_menu: bool = T
         or account_location.port != base_location.port
     ):
         raise AssertionError("the authenticated My Page link changed the base shop origin")
+    if safe_account_route_classification(account_url) != "account":
+        raise AssertionError("the authenticated My Page link did not resolve to the account route")
 
     return account_link, account_url
 
@@ -2043,6 +2065,76 @@ def emit_profile_update_diagnostics(
     print(f"::error title=Customer account profile update safe state::{annotation}", file=sys.stderr)
 
 
+def collect_profile_update_response_state(
+    driver: webdriver.Chrome,
+    expected_first_name: str,
+) -> dict[str, bool]:
+    """Read only the safe booleans needed to recognize IdentityController's PRG result."""
+    state = driver.execute_script(
+        r"""
+        const form = document.querySelector('#customer-form');
+        const isVisible = element => Boolean(element && element.getClientRects().length);
+        const alerts = [...document.querySelectorAll('.alert, [role="alert"]')].filter(isVisible);
+        const hasClass = (element, token) =>
+          typeof element.className === 'string' && element.className.split(/\s+/).includes(token);
+        const firstName = form?.querySelector('input[name="firstname"]');
+        return {
+          identity_form_visible: isVisible(form),
+          success_alert_visible: alerts.some(element => hasClass(element, 'alert-success') || hasClass(element, 'is-success')),
+          error_alert_visible: alerts.some(element => hasClass(element, 'alert-danger') || hasClass(element, 'is-danger')),
+          first_name_matches_expected: Boolean(firstName && firstName.value === arguments[0])
+        };
+        """,
+        expected_first_name,
+    )
+    if not isinstance(state, dict):
+        return {}
+    return {
+        key: value
+        for key, value in state.items()
+        if key in {
+            "identity_form_visible",
+            "success_alert_visible",
+            "error_alert_visible",
+            "first_name_matches_expected",
+        }
+        and isinstance(value, bool)
+    }
+
+
+def classify_profile_update_response_state(state: object) -> str:
+    """Classify only an explicit error or a successful redirect with the saved name."""
+    if not isinstance(state, dict):
+        return "pending"
+    if state.get("error_alert_visible") is True:
+        return "rejected"
+    if (
+        state.get("identity_form_visible") is True
+        and state.get("success_alert_visible") is True
+        and state.get("first_name_matches_expected") is True
+    ):
+        return "saved"
+    return "pending"
+
+
+def wait_for_profile_update_success(
+    driver: webdriver.Chrome,
+    expected_first_name: str,
+) -> None:
+    """Wait for the native successful save notification before navigating away."""
+    def completed_state(browser: webdriver.Chrome) -> str | bool:
+        state = collect_profile_update_response_state(browser, expected_first_name)
+        result = classify_profile_update_response_state(state)
+        return result if result in {"saved", "rejected"} else False
+
+    result = WebDriverWait(driver, 30, poll_frequency=0.1).until(
+        completed_state,
+        message="the identity form did not confirm a saved profile",
+    )
+    if result == "rejected":
+        raise AssertionError("PrestaShop rejected the customer profile update")
+
+
 def fill(driver: webdriver.Chrome, selector: str, value: str) -> None:
     element = visible(driver, selector)
     element.clear()
@@ -3089,8 +3181,14 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         submit_button = visible(driver, "#customer-form button.form-control-submit")
         click_centered(driver, submit_button)
         stage = "profile_update_persist_wait"
+        profile_substage = "profile_update_success_notification"
+        wait_for_profile_update_success(driver, expected_first_name)
+        assert_canonical_static_route(driver, "identity")
         profile_substage = "account_page_navigation"
         driver.get(account_url)
+        profile_substage = "account_page_route_check"
+        if safe_account_route_classification(driver.current_url) != "account":
+            raise AssertionError("the customer profile save did not return to the account route")
         assert_my_page(driver, expected_first_name, substage_callback=mark_profile_update_substage)
         profile_substage = "identity_page_navigation"
         driver.get(f"{BASE}/index.php?controller=identity")
