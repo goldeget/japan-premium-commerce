@@ -107,6 +107,10 @@ class FreeShippingExplicitExemptionContractTests(unittest.TestCase):
                 with self.subTest(source=source[:30], marker=marker):
                     self.assertTrue(marker in source, f"missing {marker}")
         self.assertIn("$tax->rate = 0.0", fixture)
+        tax_name = "[CI ONLY] explicit 0% QA"
+        self.assertLessEqual(len(tax_name), 32)
+        self.assertIn("$taxName = '[CI ONLY] explicit 0% QA'", fixture)
+        self.assertIn("strlen($taxName) > 32", fixture)
         self.assertIn("CI_TEST_EXEMPT_TAX_RULES_GROUP_ID", fixture + WORKFLOW.read_text(encoding="utf-8"))
         self.assertIn("abs((float) $ruleRows[0]['rate']) > 0.000001", verifier)
         self.assertIn("KURANEA_CI_TAX_RULES_GROUP_ID", verifier)

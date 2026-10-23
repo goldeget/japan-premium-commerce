@@ -97,7 +97,11 @@ $tax = new Tax();
 $tax->rate = 0.0;
 $tax->active = 1;
 $tax->deleted = 0;
-$tax->name = array_fill_keys($languageIds, '[CI ONLY] explicit zero-rate test fixture');
+$taxName = '[CI ONLY] explicit 0% QA';
+if (strlen($taxName) > 32) {
+    throw new RuntimeException('The CI-only tax label exceeds PrestaShop\'s native 32-character limit.');
+}
+$tax->name = array_fill_keys($languageIds, $taxName);
 if (!$tax->add()) {
     throw new RuntimeException('Could not create the CI-only explicit zero tax rate.');
 }
