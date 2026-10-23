@@ -134,6 +134,49 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertNotIn("private-dashboard-token", serialized)
         self.assertNotIn("localhost", serialized)
 
+    def test_admin_login_wait_retries_when_login_form_detaches_during_navigation(self):
+        class StaleElementReferenceException(Exception):
+            pass
+
+        namespace: dict[str, object] = {
+            "parse_qs": parse_qs,
+            "urlparse": urlparse,
+            "BASE": "http://localhost:18080",
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
+            "By": type("By", (), {"CSS_SELECTOR": "css selector"}),
+            "StaleElementReferenceException": StaleElementReferenceException,
+            "webdriver": type("Webdriver", (), {"Chrome": object}),
+        }
+        load_function(ADMIN_FLOW, "_admin_controller_for_url", namespace)
+        wait_for_authenticated_route = load_function(
+            ADMIN_FLOW,
+            "_authenticated_admin_route_ready",
+            namespace,
+        )
+
+        class StaleLoginForm:
+            def is_displayed(self) -> bool:
+                raise StaleElementReferenceException("detached during successful login navigation")
+
+        class Driver:
+            current_url = (
+                "http://localhost:18080/admin-kuranea/index.php?"
+                "controller=AdminBusinessProfile&token=private-session-token"
+            )
+            login_form_checks = 0
+
+            def find_elements(self, by: str, selector: str) -> list[StaleLoginForm]:
+                self.login_form_checks += 1
+                if self.login_form_checks == 1:
+                    return [StaleLoginForm()]
+                return []
+
+        driver = Driver()
+        # A false result lets WebDriverWait poll again after the stale DOM probe.
+        self.assertFalse(wait_for_authenticated_route(driver))
+        self.assertTrue(wait_for_authenticated_route(driver))
+        self.assertEqual(driver.login_form_checks, 2)
+
     def test_admin_security_flow_covers_missing_invalid_and_view_only_requests(self):
         self.assertTrue(ADMIN_FLOW.is_file(), "the isolated admin security browser flow is missing")
         source = ADMIN_FLOW.read_text(encoding="utf-8")

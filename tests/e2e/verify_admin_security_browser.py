@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from selenium import webdriver
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -247,10 +248,14 @@ def _safe_admin_navigation_state_text(driver: webdriver.Chrome) -> str:
 
 
 def _authenticated_admin_route_ready(driver: webdriver.Chrome) -> bool:
-    login_form_visible = any(
-        element.is_displayed()
-        for element in driver.find_elements(By.CSS_SELECTOR, "#login_form")
-    )
+    try:
+        login_form_visible = any(
+            element.is_displayed()
+            for element in driver.find_elements(By.CSS_SELECTOR, "#login_form")
+        )
+    except StaleElementReferenceException:
+        # A successful login can replace the login form while this wait is polling.
+        return False
     return not login_form_visible and _admin_controller_for_url(driver.current_url) in {
         "AdminBusinessProfile",
         "AdminDashboard",
