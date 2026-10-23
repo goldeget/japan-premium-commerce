@@ -77,6 +77,29 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
 
         profile_save = self.blocks["profile_update_persist_wait"]
         self.assertIn("expected_first_name", profile_save)
+        self.assertIn("driver.get(account_url)", profile_save)
+        self.assertIn("assert_my_page(driver, expected_first_name)", profile_save)
+        self.assertIn('driver.get(f"{BASE}/index.php?controller=identity")', profile_save)
+        self.assertIn('#customer-form input[name="firstname"]', profile_save)
+        account_reopen = profile_save.index("driver.get(account_url)")
+        account_assertion = profile_save.index("assert_my_page(driver, expected_first_name)")
+        identity_reopen = profile_save.index('driver.get(f"{BASE}/index.php?controller=identity")')
+        identity_route_assertion = profile_save.index('assert_canonical_static_route(driver, "identity")')
+        persisted_field_wait = profile_save.index("WebDriverWait(driver, 30).until(")
+        persisted_first_name = profile_save.index(
+            "#customer-form input[name=\"firstname\"]", persisted_field_wait
+        )
+        return_to_account = profile_save.rindex("driver.get(account_url)")
+        authenticated_account_assertion = profile_save.rindex(
+            "assert_my_page(driver, expected_first_name)"
+        )
+        self.assertLess(account_reopen, account_assertion)
+        self.assertLess(account_assertion, identity_reopen)
+        self.assertLess(identity_reopen, identity_route_assertion)
+        self.assertLess(identity_route_assertion, persisted_field_wait)
+        self.assertLess(persisted_field_wait, persisted_first_name)
+        self.assertLess(persisted_first_name, return_to_account)
+        self.assertLess(return_to_account, authenticated_account_assertion)
 
     def test_duplicate_email_registration_is_rejected_before_profile_update(self) -> None:
         required_stages = (
@@ -148,6 +171,23 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         address_add = self.blocks["customer_address_add"]
         self.assertIn("create_customer_address(", address_add)
         self.assertIn("substage_callback=mark_customer_address_substage", address_add)
+        create_address = self.source.split("def create_customer_address", 1)[1].split(
+            "def collect_customer_address_diagnostics", 1
+        )[0]
+        self.assertIn('visible(driver, "#address_main_link")', create_address)
+        self.assertIn("click_centered(driver, address_link)", create_address)
+        self.assertIn("urljoin(driver.current_url, href)", create_address)
+        address_route_load = create_address.index('mark_substage("address_route_load")')
+        native_address_link = create_address.index('visible(driver, "#address_main_link")')
+        native_address_click = create_address.index("click_centered(driver, address_link)")
+        address_form_load = create_address.index('mark_substage("address_form_load")')
+        address_form_wait = create_address.index('visible(driver, ".js-address-form form")')
+        self.assertLess(address_route_load, native_address_link)
+        self.assertLess(native_address_link, native_address_click)
+        self.assertLess(native_address_click, address_form_load)
+        self.assertLess(address_form_load, address_form_wait)
+        self.assertIn("address_location.scheme", create_address)
+        self.assertNotIn("controller=address", create_address)
         address_add_persist = self.blocks["customer_address_add_persist_wait"]
         self.assertIn("wait_for_customer_address_card(driver, address_alias)", address_add_persist)
 

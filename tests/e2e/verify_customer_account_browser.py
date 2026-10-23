@@ -2154,7 +2154,22 @@ def create_customer_address(
             substage_callback(value)
 
     mark_substage("address_route_load")
-    driver.get(f"{BASE}/index.php?controller=address")
+    address_link = visible(driver, "#address_main_link")
+    href = address_link.get_attribute("href") or ""
+    address_url = urljoin(driver.current_url, href)
+    address_location = urlparse(address_url)
+    base_location = urlparse(BASE)
+    if (
+        address_location.scheme.lower(),
+        address_location.hostname,
+        address_location.port,
+    ) != (
+        base_location.scheme.lower(),
+        base_location.hostname,
+        base_location.port,
+    ):
+        raise AssertionError("the native customer address link changed the isolated shop origin")
+    click_centered(driver, address_link)
     mark_substage("address_form_load")
     form = visible(driver, ".js-address-form form")
     alias, address_line = populate_japan_customer_address(
@@ -2961,11 +2976,17 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         submit_button = visible(driver, "#customer-form button.form-control-submit")
         click_centered(driver, submit_button)
         stage = "profile_update_persist_wait"
+        driver.get(account_url)
+        assert_my_page(driver, expected_first_name)
+        driver.get(f"{BASE}/index.php?controller=identity")
+        assert_canonical_static_route(driver, "identity")
         WebDriverWait(driver, 30).until(
             lambda browser: browser.find_element(By.CSS_SELECTOR, '#customer-form input[name="firstname"]').get_attribute("value")
             == expected_first_name
         )
         driver.save_screenshot(str(DEST / f"{label}-customer-account-profile.png"))
+        driver.get(account_url)
+        assert_my_page(driver, expected_first_name)
 
         failure_control = {"name": "", "type": ""}
         stage = "customer_address_add"
