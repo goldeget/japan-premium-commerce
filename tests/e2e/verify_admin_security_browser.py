@@ -147,14 +147,22 @@ function inspectNativeCompromisedPage(body, responseUrl, targetUrl, adminBaseUrl
       || target.pathname.startsWith(adminPath + '/');
     if (!details.compromisedRequestSameOrigin || !details.compromisedRequestInAdminPath) return details;
     const expectedAdminIndexPath = adminPath + adminIndexSuffix;
+    const isAdminControllerRoutePath = pathname => {
+      if (pathname === adminPath || pathname === adminPath + '/') return true;
+      if (pathname === expectedAdminIndexPath) return true;
+      if (!pathname.startsWith(adminPath + '/')) return false;
+      const route = pathname.slice(adminPath.length + 1).replace(/\/+$/, '');
+      return route.length > 0 && route.split('/').every(segment => segment.length > 0 && !segment.includes('.'));
+    };
     details.compromisedResponseSameOrigin = response.origin === adminBase.origin;
     details.compromisedResponsePath = response.pathname === adminPath + '/security/compromised';
     details.compromisedContinueSameOrigin = continueUrl.origin === adminBase.origin;
-    details.compromisedContinuePath = continueUrl.pathname === expectedAdminIndexPath;
+    details.compromisedContinuePath = continueUrl.pathname === target.pathname
+      && isAdminControllerRoutePath(continueUrl.pathname);
     details.compromisedContinueController = hasController(continueUrl, 'AdminBusinessProfile');
     details.compromisedContinueTokenPresent = tokenPresent(continueUrl);
     details.compromisedDashboardSameOrigin = dashboardUrl.origin === adminBase.origin;
-    details.compromisedDashboardPath = dashboardUrl.pathname === expectedAdminIndexPath;
+    details.compromisedDashboardPath = isAdminControllerRoutePath(dashboardUrl.pathname);
     details.compromisedDashboardController = hasController(dashboardUrl, 'AdminDashboard');
     details.compromisedDashboardTokenPresent = tokenPresent(dashboardUrl);
     details.bodyHasNativeCompromisedPage = details.compromisedResponseSameOrigin
@@ -398,6 +406,13 @@ def verify_native_compromised_page_fixture(driver: webdriver.Chrome) -> None:
     markup = fixture.read_text(encoding="utf-8")
     action_url = ADMIN_LOGIN + "/index.php?controller=AdminBusinessProfile"
     response_url = ADMIN_LOGIN + "/security/compromised"
+    pretty_admin_links = markup.replace(
+        "/admin-kuranea/index.php?controller=AdminBusinessProfile",
+        "/admin-kuranea/improve/design/business-profile?controller=AdminBusinessProfile",
+    ).replace(
+        "/admin-kuranea/index.php?controller=AdminDashboard",
+        "/admin-kuranea/sell/dashboard?controller=AdminDashboard",
+    )
     variants = (
         ("native", markup, True),
         ("missing_page_marker", markup.replace("security-compromised-page", "other-page"), False),
@@ -406,7 +421,7 @@ def verify_native_compromised_page_fixture(driver: webdriver.Chrome) -> None:
         ("missing_continue", markup.replace("btn-outline-danger", "other-button"), False),
         ("missing_dashboard", markup.replace("btn-primary", "other-button"), False),
         ("tokenless_request_link", markup, True),
-        ("pretty_admin_request_path", markup, True),
+        ("pretty_admin_request_path", pretty_admin_links, True),
         ("target_outside_admin_prefix", markup, False),
         ("external_request_origin", markup, False),
         (
@@ -479,7 +494,7 @@ def verify_native_compromised_page_fixture(driver: webdriver.Chrome) -> None:
         )
         fixture_target_url = action_url
         if name == "pretty_admin_request_path":
-            fixture_target_url = ADMIN_LOGIN + "/sell/configure/business-profile"
+            fixture_target_url = ADMIN_LOGIN + "/improve/design/business-profile?controller=AdminBusinessProfile"
         elif name == "target_outside_admin_prefix":
             fixture_target_url = BASE + "/admin-kuranea-evil/index.php?controller=AdminBusinessProfile"
         elif name == "external_request_origin":

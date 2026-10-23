@@ -529,6 +529,9 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertIn("const adminBase = new URL(adminBaseUrl)", source)
         self.assertIn("target.pathname.startsWith(adminPath + '/')", source)
         self.assertIn("response.pathname === adminPath + '/security/compromised'", source)
+        self.assertIn('("pretty_admin_request_path", pretty_admin_links, True)', source)
+        self.assertIn("continueUrl.pathname === target.pathname", source)
+        self.assertIn("isAdminControllerRoutePath", source)
         self.assertIn('("target_outside_admin_prefix", markup, False)', source)
 
     def test_admin_security_failure_summary_exposes_only_safe_invalid_token_dom_facts(self):
