@@ -243,6 +243,119 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn("mark_customer_address_substage", run_viewport)
         self.assertIn('failure_control = {"name": "", "type": ""}', run_viewport)
 
+    def test_customer_address_persistence_reopens_native_list_and_reports_safe_state(self) -> None:
+        persist = self.blocks["customer_address_add_persist_wait"]
+        self.assertIn("driver.get(account_url)", persist)
+        self.assertIn("assert_my_page(driver, expected_first_name)", persist)
+        self.assertIn('visible(driver, "#addresses_main_link")', persist)
+        self.assertIn("click_centered(driver, address_list_link)", persist)
+        self.assertIn("wait_for_customer_address_card(driver, address_alias)", persist)
+        self.assertIn("urljoin(driver.current_url, href)", persist)
+        self.assertIn("address_list_location.scheme.lower()", persist)
+        self.assertLess(persist.index("driver.get(account_url)"), persist.index("assert_my_page"))
+        self.assertLess(
+            persist.index("assert_my_page"),
+            persist.index('visible(driver, "#addresses_main_link")'),
+        )
+        self.assertLess(
+            persist.index('visible(driver, "#addresses_main_link")'),
+            persist.index("click_centered(driver, address_list_link)"),
+        )
+        self.assertLess(
+            persist.index("click_centered(driver, address_list_link)"),
+            persist.index("wait_for_customer_address_card"),
+        )
+
+        run_viewport = self.source.split("def run_viewport", 1)[1].split(
+            "\n\nif __name__", 1
+        )[0]
+        failure_handler = run_viewport.split("except Exception as error:", 1)[1].split(
+            "inner_stage = (", 1
+        )[0]
+        self.assertIn('stage == "customer_address_add_persist_wait"', failure_handler)
+        self.assertIn("emit_customer_address_persistence_diagnostics", failure_handler)
+
+        persistence_collector = self.source.split(
+            "def collect_customer_address_persistence_diagnostics", 1
+        )[1].split("def emit_customer_address_persistence_diagnostics", 1)[0]
+        self.assertNotIn(".value", persistence_collector)
+        self.assertNotIn("body.text", persistence_collector)
+
+        tree = ast.parse(self.source)
+        names = {
+            "safe_diagnostic_name",
+            "safe_diagnostic_boolean",
+            "safe_same_origin_path",
+            "address_card_for_alias",
+            "collect_customer_address_persistence_diagnostics",
+            "emit_customer_address_persistence_diagnostics",
+        }
+        functions = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in names
+        ]
+        namespace = {
+            "BASE": "http://shop.example.test",
+            "By": SimpleNamespace(CSS_SELECTOR="css selector", ID="id"),
+            "json": json,
+            "re": re,
+            "sys": sys,
+            "unquote": unquote,
+            "urlparse": urlparse,
+        }
+        exec(
+            compile(
+                ast.fix_missing_locations(ast.Module(body=functions, type_ignores=[])),
+                str(ACCOUNT_FLOW),
+                "exec",
+            ),
+            namespace,
+        )
+
+        class FakeAlias:
+            text = "private@example.test"
+
+        class FakeCard:
+            @staticmethod
+            def find_elements(_by: str, selector: str) -> list[FakeAlias]:
+                return [FakeAlias()] if selector == ".address-card__alias" else []
+
+        class FakeElement:
+            @staticmethod
+            def is_displayed() -> bool:
+                return True
+
+        class FakeDriver:
+            current_url = (
+                "http://shop.example.test/addresses?email=private%40example.test&token=secret-reset-token"
+            )
+
+            @staticmethod
+            def find_elements(_by: str, selector: str) -> list[object]:
+                if selector == "article.address-card[data-id-address]":
+                    return [FakeCard()]
+                if selector == ".addresses__list":
+                    return [FakeElement()]
+                return []
+
+        output = StringIO()
+        with redirect_stderr(output):
+            namespace["emit_customer_address_persistence_diagnostics"](
+                FakeDriver(), "private@example.test", "address_card_wait"
+            )
+        rendered = output.getvalue()
+        self.assertIn('"stage": "customer_address_add_persist_wait"', rendered)
+        self.assertIn('"path": "/addresses"', rendered)
+        self.assertIn('"expected_address_card_present": true', rendered)
+        self.assertIn('"address_card_count": 1', rendered)
+        for private_value in (
+            "private@example.test",
+            "secret-reset-token",
+            "private%40example.test",
+        ):
+            with self.subTest(private_value=private_value):
+                self.assertNotIn(private_value, rendered)
+
     def test_customer_address_diagnostic_output_omits_query_and_form_values(self) -> None:
         tree = ast.parse(self.source)
         names = {

@@ -1269,6 +1269,8 @@ def safe_same_origin_path(value: object) -> str:
         "register",
         "registration",
         "identity",
+        "address",
+        "addresses",
         "order",
         "password",
         "password-reset",
@@ -2291,6 +2293,85 @@ def emit_customer_address_diagnostics(driver: webdriver.Chrome, substage: str) -
     print(f"::error title=Customer account address safe state::{annotation}", file=sys.stderr)
 
 
+def collect_customer_address_persistence_diagnostics(
+    driver: webdriver.Chrome,
+    alias: str,
+    substage: str,
+) -> dict[str, object]:
+    try:
+        current_url = driver.current_url
+    except Exception:
+        current_url = ""
+
+    diagnostics: dict[str, object] = {}
+    try:
+        cards = driver.find_elements(By.CSS_SELECTOR, "article.address-card[data-id-address]")
+        address_lists = driver.find_elements(By.CSS_SELECTOR, ".addresses__list")
+        address_forms = driver.find_elements(By.CSS_SELECTOR, ".js-address-form form")
+        address_links = driver.find_elements(By.ID, "addresses_main_link")
+        first_address_links = driver.find_elements(By.ID, "address_main_link")
+        alerts = driver.find_elements(By.CSS_SELECTOR, ".alert, [role='alert'], .help-block.error")
+        diagnostics = {
+            "address_list_present": bool(address_lists),
+            "address_list_visible": any(element.is_displayed() for element in address_lists),
+            "address_card_count": len(cards),
+            "expected_address_card_present": address_card_for_alias(driver, alias) is not None,
+            "address_form_present": bool(address_forms),
+            "addresses_link_present": bool(address_links),
+            "addresses_link_visible": any(element.is_displayed() for element in address_links),
+            "first_address_link_present": bool(first_address_links),
+            "validation_alert_count": len(alerts),
+        }
+    except Exception as error:
+        diagnostics["collection_error_type"] = type(error).__name__
+
+    def safe_count(value: object) -> int | None:
+        if not isinstance(value, int) or isinstance(value, bool):
+            return None
+        return min(max(value, 0), 99)
+
+    safe_state: dict[str, object] = {
+        "stage": "customer_address_add_persist_wait",
+        "substage": safe_diagnostic_name(substage),
+        "path": safe_same_origin_path(current_url),
+        "address_list_present": safe_diagnostic_boolean(diagnostics.get("address_list_present")),
+        "address_list_visible": safe_diagnostic_boolean(diagnostics.get("address_list_visible")),
+        "address_card_count": safe_count(diagnostics.get("address_card_count")),
+        "expected_address_card_present": safe_diagnostic_boolean(
+            diagnostics.get("expected_address_card_present")
+        ),
+        "address_form_present": safe_diagnostic_boolean(diagnostics.get("address_form_present")),
+        "addresses_link_present": safe_diagnostic_boolean(diagnostics.get("addresses_link_present")),
+        "addresses_link_visible": safe_diagnostic_boolean(diagnostics.get("addresses_link_visible")),
+        "first_address_link_present": safe_diagnostic_boolean(
+            diagnostics.get("first_address_link_present")
+        ),
+        "validation_alert_count": safe_count(diagnostics.get("validation_alert_count")),
+    }
+    collection_error = diagnostics.get("collection_error_type")
+    if isinstance(collection_error, str):
+        safe_state["collection_error_type"] = safe_diagnostic_name(collection_error, field_type=True)
+    return safe_state
+
+
+def emit_customer_address_persistence_diagnostics(
+    driver: webdriver.Chrome,
+    alias: str,
+    substage: str,
+) -> None:
+    safe_state_json = json.dumps(
+        collect_customer_address_persistence_diagnostics(driver, alias, substage),
+        ensure_ascii=True,
+        sort_keys=True,
+    )
+    print("ORDENOWA_CUSTOMER_ADDRESS_PERSISTENCE_SAFE_STATE=" + safe_state_json, file=sys.stderr)
+    annotation = safe_state_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(
+        f"::error title=Customer account address persistence safe state::{annotation}",
+        file=sys.stderr,
+    )
+
+
 def assert_customer_address_line(
     driver: webdriver.Chrome,
     alias: str,
@@ -2995,6 +3076,28 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             driver, label, substage_callback=mark_customer_address_substage
         )
         stage = "customer_address_add_persist_wait"
+        address_substage = "address_persistence_account_reopen"
+        driver.get(account_url)
+        assert_my_page(driver, expected_first_name)
+        address_substage = "address_persistence_list_link"
+        address_list_link = visible(driver, "#addresses_main_link")
+        href = address_list_link.get_attribute("href") or ""
+        address_list_url = urljoin(driver.current_url, href)
+        address_list_location = urlparse(address_list_url)
+        base_location = urlparse(BASE)
+        if (
+            address_list_location.scheme.lower(),
+            address_list_location.hostname,
+            address_list_location.port,
+        ) != (
+            base_location.scheme.lower(),
+            base_location.hostname,
+            base_location.port,
+        ):
+            raise AssertionError("the native customer addresses link changed the isolated shop origin")
+        address_substage = "address_persistence_list_navigation"
+        click_centered(driver, address_list_link)
+        address_substage = "address_persistence_card_wait"
         added_address_card = wait_for_customer_address_card(driver, address_alias)
         address_id = added_address_card.get_attribute("data-id-address") or ""
         if not address_id or address_id == "0":
@@ -3144,6 +3247,13 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             elif stage == "customer_address_add":
                 try:
                     emit_customer_address_diagnostics(driver, address_substage)
+                except Exception:
+                    pass
+            elif stage == "customer_address_add_persist_wait":
+                try:
+                    emit_customer_address_persistence_diagnostics(
+                        driver, address_alias, address_substage
+                    )
                 except Exception:
                     pass
             elif stage in {"email_login", "password_reset_login"}:
