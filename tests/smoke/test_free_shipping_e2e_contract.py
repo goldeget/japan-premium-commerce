@@ -312,6 +312,8 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         )[1].split("- name:", 1)[0]
         self.assertIn('cat "$fixture_log"', access_step)
         self.assertIn('fixture_status=0', access_step)
+        self.assertIn("Invalid JSON fields:", access_step)
+        self.assertIn("Invalid JSON; error_type=", access_step)
         self.assertIn('shipping-free-admin-access.json', workflow)
 
     def test_checkout_tax_classifier_does_not_count_tax_inclusive_grand_total_as_tax(self) -> None:

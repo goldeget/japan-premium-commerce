@@ -1066,14 +1066,33 @@ jobs:
           fi
           python3 - "$fixture_json" <<'PY'
           import json, sys
-          fixture = json.load(open(sys.argv[1], encoding="utf-8"))
-          assert int(fixture["admin_profile_id"]) > 0
-          assert int(fixture["carrier_tab_id"]) > 0
-          assert fixture["read"] is True
-          assert fixture["create"] is True
-          assert fixture["update"] is True
-          assert fixture["delete_permission_changed"] is False
-          assert fixture["fixture_scope"] == "run-scoped isolated GitHub Actions disposable checkout database"
+          try:
+              with open(sys.argv[1], encoding="utf-8") as stream:
+                  fixture = json.load(stream)
+          except (OSError, ValueError) as error:
+              print(f"::error title=ORDENOWA isolated carrier access fixture::Invalid JSON; error_type={type(error).__name__}")
+              sys.exit(1)
+
+          def is_positive_int(field):
+              try:
+                  return int(fixture[field]) > 0
+              except (KeyError, TypeError, ValueError):
+                  return False
+
+          checks = {
+              "admin_profile_id": is_positive_int("admin_profile_id"),
+              "carrier_tab_id": is_positive_int("carrier_tab_id"),
+              "read": fixture.get("read") is True,
+              "create": fixture.get("create") is True,
+              "update": fixture.get("update") is True,
+              "delete_permission_changed": fixture.get("delete_permission_changed") is False,
+              "fixture_scope": fixture.get("fixture_scope") == "run-scoped isolated GitHub Actions disposable checkout database",
+          }
+          failed_fields = [field for field, passed in checks.items() if not passed]
+          if failed_fields:
+              print("::error title=ORDENOWA isolated carrier access fixture::Invalid JSON fields: " + ",".join(failed_fields))
+              sys.exit(1)
+          print("PASS: isolated AdminCarriers permissions are validated with delete access unchanged.")
           PY
 
       - name: Configure the free Japan carrier through Chromium AdminCarriers
