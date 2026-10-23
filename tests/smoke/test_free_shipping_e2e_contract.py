@@ -129,6 +129,10 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertIn("/var/www/html/modules/kuraneapostcode/autoload.php", source)
         self.assertIn("PrefectureCatalog::all()", source)
         self.assertIn("PrefectureCatalog::isoCode($prefectureCode)", source)
+        self.assertIn("prepare all Japanese prefectures in the isolated shop", source)
+        self.assertIn("$stateId > 0 ? $state->update() : $state->add()", source)
+        self.assertIn("SELECT `iso_code`, `id_zone`, `active`", source)
+        self.assertIn("$activeStateCount !== 47", source)
         self.assertIn("$stateCodes !== $expectedStateCodes", source)
         self.assertIn("'state_iso_codes' => $stateCodes", source)
 

@@ -959,6 +959,7 @@ jobs:
           assert int(fixture["zone_id"]) > 0
           assert fixture["country_codes"] == ["JP"]
           assert int(fixture["state_count"]) == 47
+          assert int(fixture["active_state_count"]) == 47
           assert fixture["state_iso_codes"] == expected_state_codes
           assert fixture["fixture_scope"] == "run-scoped isolated GitHub Actions disposable checkout database"
           PY
