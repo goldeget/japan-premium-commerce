@@ -519,9 +519,10 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         )
         self.assertEqual(unassigned, {"products": 1100, "shipping": 0, "total": 1100})
         self.assertNotIn("tax", unassigned)
-        namespace["_assert_unknown_admin_tax_display"]([""])
-        with self.assertRaisesRegex(AssertionError, "must remain blank"):
-            namespace["_assert_unknown_admin_tax_display"](["¥0"])
+        namespace["_assert_unknown_admin_tax_display"]([])
+        namespace["_assert_unknown_admin_tax_display"]([0])
+        with self.assertRaisesRegex(AssertionError, "nonzero"):
+            namespace["_assert_unknown_admin_tax_display"]([100])
 
         reconcile_shipping = namespace["_reconcile_admin_shipping_total"]
         self.assertEqual(

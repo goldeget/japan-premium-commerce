@@ -1514,9 +1514,9 @@ def _expected_admin_order_totals(
     return expected
 
 
-def _assert_unknown_admin_tax_display(tax_values: list[str]) -> None:
-    if any(value.strip() for value in tax_values):
-        raise AssertionError("unassigned tax display must remain blank, not claim a tax amount")
+def _assert_unknown_admin_tax_display(tax_values: list[int]) -> None:
+    if any(value != 0 for value in tax_values):
+        raise AssertionError("unassigned tax display must not claim a nonzero tax amount")
 
 
 def _reconcile_admin_shipping_total(
@@ -1591,7 +1591,11 @@ def run_free_carrier_admin_order_view() -> None:
                 if key not in expected:
                     tax_elements = driver.find_elements(By.CSS_SELECTOR, selector)
                     _assert_unknown_admin_tax_display(
-                        [element.text for element in tax_elements if element.is_displayed()]
+                        [
+                            _parse_yen(text)
+                            for element in tax_elements
+                            if element.is_displayed() and (text := element.text.strip())
+                        ]
                     )
                     continue
                 actual[key] = _parse_order_amount(driver, selector)
