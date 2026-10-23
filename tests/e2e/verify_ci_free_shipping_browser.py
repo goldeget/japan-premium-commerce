@@ -114,34 +114,57 @@ def _set_text(driver, selector: str, value: str, root=None) -> None:
     element.send_keys(value)
 
 
-def _checkbox(driver, name: str):
-    matches = driver.find_elements(
+def _switch_controls(driver, name: str) -> tuple[str, list[object]]:
+    checkboxes = driver.find_elements(
         By.CSS_SELECTOR,
         f'input[type="checkbox"][name="{name}"]',
     )
-    if not matches:
-        raise AssertionError(f"AdminCarriers is missing checkbox {name}")
-    return matches[0]
+    if checkboxes:
+        if len(checkboxes) != 1:
+            raise AssertionError(f"AdminCarriers has an ambiguous checkbox field {name}")
+        return "checkbox", checkboxes
+
+    # PrestaShop 9.2 SwitchType renders two radio choices in definition order:
+    # No (false), then Yes (true). Keep actual checkboxes supported for older forms.
+    radios = driver.find_elements(
+        By.CSS_SELECTOR,
+        f'input[type="radio"][name="{name}"]',
+    )
+    if len(radios) != 2:
+        raise AssertionError(f"AdminCarriers is missing a boolean switch field {name}")
+    return "radio", radios
 
 
-def _set_checkbox(driver, name: str, checked: bool) -> None:
-    checkbox = _checkbox(driver, name)
-    if checkbox.is_selected() == checked:
+def _switch_option(driver, name: str, checked: bool):
+    control_type, controls = _switch_controls(driver, name)
+    return controls[0] if control_type == "checkbox" else controls[1 if checked else 0]
+
+
+def _switch_is_selected(driver, name: str, checked: bool) -> bool:
+    control_type, controls = _switch_controls(driver, name)
+    if control_type == "checkbox":
+        return controls[0].is_selected() == checked
+    return controls[1 if checked else 0].is_selected()
+
+
+def _set_switch(driver, name: str, checked: bool) -> None:
+    if _switch_is_selected(driver, name, checked):
         return
-    checkbox_id = checkbox.get_attribute("id") or ""
+    option = _switch_option(driver, name, checked)
+    option_id = option.get_attribute("id") or ""
     label = next(
         (
             candidate
             for candidate in driver.find_elements(By.CSS_SELECTOR, "label[for]")
-            if checkbox_id
-            and candidate.get_attribute("for") == checkbox_id
+            if option_id
+            and candidate.get_attribute("for") == option_id
             and candidate.is_displayed()
         ),
         None,
     )
-    checkout.click_at_center(driver, label or checkbox)
+    checkout.click_at_center(driver, label or option)
     WebDriverWait(driver, 8).until(
-        lambda _browser: _checkbox(driver, name).is_selected() == checked
+        lambda _browser: _switch_is_selected(driver, name, checked)
     )
 
 
@@ -197,7 +220,7 @@ def _fill_free_carrier_form(
             delay.send_keys("CI test only; no physical dispatch")
 
     mark_stage("activate_carrier")
-    _set_checkbox(driver, "carrier[general_settings][active]", True)
+    _set_switch(driver, "carrier[general_settings][active]", True)
 
     # CarrierType is rendered as a three-tab NavigationTabType form. The
     # shipping controls exist in the DOM while hidden until this tab is active.
@@ -212,7 +235,7 @@ def _fill_free_carrier_form(
     _select_japan_zone(driver, JAPAN_ZONE_ID)
 
     mark_stage("enable_free_shipping")
-    _set_checkbox(driver, "carrier[shipping_settings][is_free]", True)
+    _set_switch(driver, "carrier[shipping_settings][is_free]", True)
 
     mark_stage("set_carrier_limits")
     for field_name, value in (
@@ -232,9 +255,9 @@ def _assert_free_carrier_form(driver, carrier: dict[str, object]) -> dict[str, o
     if name.get_attribute("value") != carrier["name"]:
         raise AssertionError("the saved free carrier name did not persist")
 
-    if not _checkbox(driver, "carrier[general_settings][active]").is_selected():
+    if not _switch_is_selected(driver, "carrier[general_settings][active]", True):
         raise AssertionError("the saved Japan free carrier is not active")
-    if not _checkbox(driver, "carrier[shipping_settings][is_free]").is_selected():
+    if not _switch_is_selected(driver, "carrier[shipping_settings][is_free]", True):
         raise AssertionError("the saved carrier is not marked as free shipping in AdminCarriers")
 
     zone_select = _wait_visible(driver, "#carrier_shipping_settings_zones")

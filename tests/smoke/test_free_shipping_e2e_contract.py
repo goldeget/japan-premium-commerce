@@ -280,11 +280,33 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         shipping_tab = form_fill.index('a[href="#carrier_shipping_settings-tab"]')
         tab_activation = form_fill.index("checkout.click_at_center(driver, shipping_tab)")
         zone_selection = form_fill.index("_select_japan_zone(driver, JAPAN_ZONE_ID)")
-        free_shipping = form_fill.index('_set_checkbox(driver, "carrier[shipping_settings][is_free]", True)')
+        free_shipping = form_fill.index('_set_switch(driver, "carrier[shipping_settings][is_free]", True)')
         self.assertLess(shipping_tab, tab_activation)
         self.assertLess(tab_activation, zone_selection)
         self.assertLess(zone_selection, free_shipping)
         self.assertIn('mark_stage("open_shipping_settings_tab")', form_fill)
+
+    def test_admin_carrier_switches_support_prestashop_92_boolean_radio_options(self) -> None:
+        browser = BROWSER.read_text(encoding="utf-8")
+        switch_controls = browser.split("def _switch_controls(", 1)[1].split("def _switch_option(", 1)[0]
+        switch_option = browser.split("def _switch_option(", 1)[1].split("def _switch_is_selected(", 1)[0]
+        switch_selected = browser.split("def _switch_is_selected(", 1)[1].split("def _set_switch(", 1)[0]
+        self.assertIn('input[type="checkbox"]', switch_controls)
+        self.assertIn('input[type="radio"]', switch_controls)
+        self.assertIn("if len(radios) != 2", switch_controls)
+        self.assertIn('return "radio", radios', switch_controls)
+        self.assertIn("No (false), then Yes (true)", switch_controls)
+        self.assertIn("controls[1 if checked else 0]", switch_option)
+        self.assertIn("controls[0].is_selected() == checked", switch_selected)
+        self.assertIn("controls[1 if checked else 0].is_selected()", switch_selected)
+
+        for field in (
+            "carrier[general_settings][active]",
+            "carrier[shipping_settings][is_free]",
+        ):
+            with self.subTest(field=field):
+                self.assertIn(f'_set_switch(driver, "{field}", True)', browser)
+                self.assertIn(f'_switch_is_selected(driver, "{field}", True)', browser)
 
     def test_ci_carrier_access_fixture_grants_only_read_create_and_update_in_the_isolated_shop(self) -> None:
         source = CARRIER_ACCESS_FIXTURE.read_text(encoding="utf-8")
