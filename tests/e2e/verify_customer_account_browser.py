@@ -2377,6 +2377,8 @@ def create_customer_address(
     driver.save_screenshot(str(DEST / f"{label}-customer-address-new.png"))
     mark_substage("address_submit")
     click_centered(driver, visible(driver, ".js-address-form button.form-control-submit"))
+    mark_substage("address_submit_persistence")
+    wait_for_customer_address_card(driver, alias)
     return alias, address_line
 
 

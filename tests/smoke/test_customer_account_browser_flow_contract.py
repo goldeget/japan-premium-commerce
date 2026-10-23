@@ -267,6 +267,22 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn('name="kuraneapostcode_search"', self.source)
         self.assertIn('button[role="option"]', self.source)
 
+    def test_customer_address_submission_waits_for_the_saved_card_before_navigation(self) -> None:
+        create_address = self.source.split("def create_customer_address", 1)[1].split(
+            "def collect_customer_address_diagnostics", 1
+        )[0]
+        submit = create_address.index(
+            'click_centered(driver, visible(driver, ".js-address-form button.form-control-submit"))'
+        )
+        self.assertIn('mark_substage("address_submit_persistence")', create_address)
+        persist_substage = create_address.index('mark_substage("address_submit_persistence")')
+        saved_card_wait = create_address.index("wait_for_customer_address_card(driver, alias)")
+        return_address = create_address.index("return alias, address_line")
+
+        self.assertLess(submit, persist_substage)
+        self.assertLess(persist_substage, saved_card_wait)
+        self.assertLess(saved_card_wait, return_address)
+
     def test_customer_address_failure_reports_redacted_substage_state(self) -> None:
         address = self.source.split("def populate_japan_customer_address", 1)[1].split(
             "def assert_customer_address_line", 1
