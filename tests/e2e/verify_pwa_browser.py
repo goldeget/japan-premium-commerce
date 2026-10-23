@@ -391,6 +391,28 @@ def navigate_private_document(
     return assert_private_document_cache_headers(driver, requested_url, shop_url, route_label)
 
 
+def customer_checkout_url_from_cart(driver: webdriver.Chrome, shop_url: str) -> str:
+    """Use the native cart CTA's canonical order URL without exposing its query string."""
+    links = [
+        link
+        for link in driver.find_elements(
+            By.CSS_SELECTOR,
+            ".js-cart-detailed-actions > .d-grid > a.btn-primary[href]",
+        )
+        if link.is_displayed() and link.is_enabled()
+    ]
+    if len(links) != 1:
+        raise AssertionError("authenticated cart must expose exactly one enabled checkout link")
+
+    href = links[0].get_attribute("href")
+    if not isinstance(href, str) or not href:
+        raise AssertionError("authenticated cart checkout link is empty")
+    checkout_url = urljoin(shop_url.rstrip("/") + "/", href)
+    if not same_origin(shop_url, checkout_url):
+        raise AssertionError("authenticated cart checkout link left the isolated shop origin")
+    return checkout_url
+
+
 def worker_network_conditions(offline: bool) -> dict[str, object]:
     """Build worker-target network conditions for a direct flattened CDP session."""
     return {
@@ -1140,15 +1162,14 @@ def run_viewport(
                     "authenticated cart",
                     urljoin(base_url + "/", "index.php?controller=cart&action=show"),
                 ),
-                (
-                    "customer_order_route",
-                    "authenticated order",
-                    urljoin(base_url + "/", "index.php?controller=order"),
-                ),
             ):
                 stage = route_stage
                 navigate_private_document(driver, route_url, base_url, route_label)
                 assert_empty_cache_storage(driver, route_label)
+            stage = "customer_order_route"
+            order_url = customer_checkout_url_from_cart(driver, base_url)
+            navigate_private_document(driver, order_url, base_url, "authenticated order")
+            assert_empty_cache_storage(driver, "authenticated order")
             stage = "customer_account_before_logout"
             navigate_private_document(driver, account_url, base_url, "authenticated account before logout")
             wait_visible(driver, "#identity_main_link")

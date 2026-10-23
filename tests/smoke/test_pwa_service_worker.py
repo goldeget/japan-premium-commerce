@@ -690,6 +690,148 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         self.assertNotIn("pwa-{label}-failure.png", self.source)
         self.assertNotIn("print(body_text", self.source)
 
+    def test_authenticated_order_qa_uses_the_canonical_checkout_link_from_the_cart(self) -> None:
+        checkout_url = getattr(pwa_browser, "customer_checkout_url_from_cart", None)
+        self.assertTrue(callable(checkout_url), "PWA QA must use PrestaShop's generated checkout link")
+
+        canonical_url = "http://localhost:18080/checkout?token=private-token-sentinel"
+
+        class Link:
+            def is_displayed(self) -> bool:
+                return True
+
+            def is_enabled(self) -> bool:
+                return True
+
+            def get_attribute(self, name: str) -> str | None:
+                return canonical_url if name == "href" else None
+
+        class Driver:
+            selector = ""
+
+            def find_elements(self, by: str, selector: str) -> list[Link]:
+                self.selector = selector
+                return [Link()]
+
+        driver = Driver()
+        with patch("tests.e2e.verify_pwa_browser.By", SimpleNamespace(CSS_SELECTOR="css selector")):
+            self.assertEqual(
+                canonical_url,
+                checkout_url(driver, "http://localhost:18080"),
+            )
+        self.assertEqual(
+            ".js-cart-detailed-actions > .d-grid > a.btn-primary[href]",
+            driver.selector,
+        )
+
+        viewport = function_source(self.source, "run_viewport")
+        self.assertIn("customer_checkout_url_from_cart(driver, base_url)", viewport)
+        self.assertIn("navigate_private_document(driver, order_url, base_url, \"authenticated order\")", viewport)
+
+    def test_canonical_checkout_link_requires_one_visible_same_origin_target_without_echoing_url(self) -> None:
+        checkout_url = getattr(pwa_browser, "customer_checkout_url_from_cart", None)
+        self.assertTrue(callable(checkout_url), "PWA QA must validate its generated checkout target")
+
+        class Link:
+            def __init__(self, href: str, *, visible: bool = True, enabled: bool = True) -> None:
+                self.href = href
+                self.visible = visible
+                self.enabled = enabled
+
+            def is_displayed(self) -> bool:
+                return self.visible
+
+            def is_enabled(self) -> bool:
+                return self.enabled
+
+            def get_attribute(self, name: str) -> str | None:
+                return self.href if name == "href" else None
+
+        class Driver:
+            def __init__(self, links: list[Link]) -> None:
+                self.links = links
+
+            def find_elements(self, _by: str, _selector: str) -> list[Link]:
+                return self.links
+
+        base_url = "http://localhost:18080"
+        secret_url = "https://outside.invalid/checkout?token=private-token-sentinel"
+        for links in (
+            [],
+            [Link("http://localhost:18080/checkout", visible=False)],
+            [Link("http://localhost:18080/checkout", enabled=False)],
+            [Link("http://localhost:18080/checkout"), Link("http://localhost:18080/checkout")],
+            [Link(secret_url)],
+        ):
+            with self.subTest(links=len(links)):
+                with patch("tests.e2e.verify_pwa_browser.By", SimpleNamespace(CSS_SELECTOR="css selector")):
+                    with self.assertRaises(AssertionError) as raised:
+                        checkout_url(Driver(links), base_url)
+                    self.assertNotIn("private-token-sentinel", str(raised.exception))
+
+    def test_canonical_order_cache_check_uses_final_document_not_legacy_redirect(self) -> None:
+        shop_url = "http://localhost:18080"
+        canonical_url = shop_url + "/checkout"
+        redirect_response = {
+            "url": shop_url + "/index.php?controller=order&token=private-token-sentinel",
+            "status": 301,
+            "headers": {"Cache-Control": "no-store"},
+        }
+
+        def response_log(url: str, headers: dict[str, str], status: int) -> dict[str, str]:
+            return {
+                "message": json.dumps(
+                    {
+                        "message": {
+                            "method": "Network.responseReceived",
+                            "params": {
+                                "type": "Document",
+                                "response": {"url": url, "status": status, "headers": headers},
+                            },
+                        }
+                    }
+                )
+            }
+
+        redirect_log = {
+            "message": json.dumps(
+                {
+                    "message": {
+                        "method": "Network.requestWillBeSent",
+                        "params": {"type": "Document", "redirectResponse": redirect_response},
+                    }
+                }
+            )
+        }
+
+        class Driver:
+            def __init__(self, final_headers: dict[str, str]) -> None:
+                self.entries = [
+                    redirect_log,
+                    response_log(canonical_url, final_headers, 200),
+                ]
+
+            def get_log(self, _log_type: str) -> list[dict[str, str]]:
+                return self.entries
+
+        observed = pwa_browser.assert_private_document_cache_headers(
+            Driver({"Cache-Control": "private, no-store"}),
+            canonical_url,
+            shop_url,
+            "authenticated order",
+        )
+        self.assertEqual(200, observed["status"])
+        self.assertEqual("private, no-store", observed["cache_control"])
+
+        with redirect_stderr(io.StringIO()):
+            with self.assertRaisesRegex(AssertionError, "lacks Cache-Control private/no-store semantics"):
+                pwa_browser.assert_private_document_cache_headers(
+                    Driver({"Cache-Control": "public, max-age=3600"}),
+                    canonical_url,
+                    shop_url,
+                    "authenticated order",
+                )
+
     def test_pwa_order_route_qa_temporarily_opens_only_its_run_scoped_checkout(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
         pwa_step = workflow.split(
