@@ -1039,6 +1039,8 @@ jobs:
         if: steps.shipping_free_fixture.outcome == 'success'
         continue-on-error: true
         shell: bash
+        env:
+          ADMIN_MAIL: ci-ordenowa@example.invalid
         run: |
           set -Eeuo pipefail
           mkdir -p "$RUNNER_TEMP/ordenowa-browser-qa"

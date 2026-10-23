@@ -310,6 +310,7 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         access_step = workflow.split(
             "- name: Grant isolated CI administrator the native AdminCarriers create permissions", 1
         )[1].split("- name:", 1)[0]
+        self.assertIn("ADMIN_MAIL: ci-ordenowa@example.invalid", access_step)
         self.assertIn('cat "$fixture_log"', access_step)
         self.assertIn('fixture_status=0', access_step)
         self.assertIn('copy_status=0', access_step)
