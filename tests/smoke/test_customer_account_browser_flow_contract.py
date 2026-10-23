@@ -657,7 +657,29 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         reset_login = self.blocks["password_reset_login"]
         self.assertIn("submit_login(driver, account_email, reset_password)", reset_login)
         self.assertIn("assert_my_page(driver, f\"CI-{label.title()}\")", reset_login)
-        self.assertIn("logout(driver, login_url=login_url)", reset_login)
+        self.assertIn("login_url=login_url", reset_login)
+        self.assertIn("substage_callback=mark_email_login_substage", reset_login)
+
+    def test_password_reset_login_failure_emits_bounded_substage_diagnostics(self) -> None:
+        reset_login = self.blocks["password_reset_login"]
+        submit_marker = reset_login.index('email_login_substage = "password_reset_submit"')
+        submit_call = reset_login.index("submit_login(driver, account_email, reset_password)")
+        my_page_marker = reset_login.index('email_login_substage = "password_reset_my_page"')
+        my_page_assertion = reset_login.index("assert_my_page(driver, f\"CI-{label.title()}\")")
+        self.assertLess(submit_marker, submit_call)
+        self.assertLess(submit_call, my_page_marker)
+        self.assertLess(my_page_marker, my_page_assertion)
+
+        run_viewport = self.source.split("def run_viewport", 1)[1].split("\n\nif __name__", 1)[0]
+        exception_handler = run_viewport.split("except Exception as error:", 1)[1].split(
+            "finally:", 1
+        )[0]
+        self.assertIn('stage in {"email_login", "password_reset_login"}', exception_handler)
+        self.assertIn("emit_email_login_diagnostics(", exception_handler)
+        self.assertIn(
+            'if stage in {"email_login", "password_reset_login"} and email_login_substage',
+            exception_handler,
+        )
 
     def test_browser_flow_runs_on_desktop_and_mobile_viewports(self) -> None:
         self.assertIn('(1440, 960, "desktop")', self.source)

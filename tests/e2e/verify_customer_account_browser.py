@@ -2626,11 +2626,18 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         assert_login_rejected(driver, account_email, initial_password)
 
         stage = "password_reset_login"
+        email_login_substage = "password_reset_submit"
         submit_login(driver, account_email, reset_password)
+        email_login_substage = "password_reset_my_page"
         driver.get(account_url)
         assert_my_page(driver, f"CI-{label.title()}")
         driver.save_screenshot(str(DEST / f"{label}-customer-password-reset-login.png"))
-        logout(driver, login_url=login_url)
+        email_login_substage = "password_reset_logout"
+        logout(
+            driver,
+            login_url=login_url,
+            substage_callback=mark_email_login_substage,
+        )
         print(f"PASS: {label} customer registration, profile update, email login/logout, and Mailpit password reset")
         success = True
     except Exception as error:
@@ -2656,7 +2663,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
                     )
                 except Exception:
                     pass
-            elif stage == "email_login":
+            elif stage in {"email_login", "password_reset_login"}:
                 try:
                     emit_email_login_diagnostics(
                         driver,
@@ -2673,7 +2680,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         inner_stage_detail = f"; inner_stage={inner_stage}" if inner_stage else ""
         email_login_substage_detail = (
             f"; email_login_substage={safe_diagnostic_name(email_login_substage)}"
-            if stage == "email_login" and email_login_substage
+            if stage in {"email_login", "password_reset_login"} and email_login_substage
             else ""
         )
         print(
