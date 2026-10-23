@@ -19,6 +19,11 @@ TAXABLE_PRODUCT_FIXTURE = ROOT / "tests/catalog/verify_product_tax_price.php"
 
 
 class FreeShippingE2eContractTest(unittest.TestCase):
+    def test_active_product_fixture_reserves_stock_for_the_post_order_gate_smoke(self) -> None:
+        fixture = SHIPPING_PRODUCT_FIXTURE.read_text(encoding="utf-8")
+        self.assertIn("'quantity' => '6'", fixture)
+        self.assertIn("|| $stockQuantity < 6)", fixture)
+
     def test_active_taxable_product_fixture_uses_the_run_scoped_tax_group(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertTrue(SHIPPING_PRODUCT_FIXTURE.is_file(), "free-shipping QA needs its own active CI product fixture")

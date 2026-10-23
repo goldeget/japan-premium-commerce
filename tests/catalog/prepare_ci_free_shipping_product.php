@@ -119,7 +119,8 @@ $draft = ProductAdminDraft::fromArray([
     'name_ko' => '[CI ONLY] ORDENOWA free shipping 무료배송 검증 상품 ' . $runId . '-' . $attempt,
     'price_jpy' => '1100',
     'tax_rules_group_id' => (string) $taxRulesGroupId,
-    'quantity' => '5',
+    // Reserve one unit for the post-order storefront checkout-gate smoke test.
+    'quantity' => '6',
     'category_ids' => [(string) $homeCategoryId],
     'description_ja' => '[CI ONLY] Synthetic 10% tax-included test product for free-shipping checkout QA; not a legal tax determination.',
     'description_ko' => '[CI ONLY] 무료배송 QA용 합성 10% 세금 포함 테스트 상품입니다. 실제 세무 판정이나 법정 세율이 아닙니다.',
@@ -157,7 +158,7 @@ if (!Validate::isLoadedObject($product)
     || !(bool) $product->show_price
     || (int) $product->id_tax_rules_group !== $taxRulesGroupId
     || abs((float) $product->price - 1000.0) > 0.00001
-    || $stockQuantity < 2) {
+    || $stockQuantity < 6) {
     throw new RuntimeException('The free-shipping product failed its active, orderable, tax-inclusive JPY price, synthetic tax group, or stock re-read guard.');
 }
 
