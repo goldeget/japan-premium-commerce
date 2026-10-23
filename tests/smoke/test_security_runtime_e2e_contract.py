@@ -516,6 +516,21 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         run = source.split("def run()", 1)[1].split("\n\nif __name__", 1)[0]
         self.assertIn("verify_native_compromised_page_fixture(admin_driver)", run)
 
+    def test_compromised_page_detection_uses_trusted_admin_base_for_request_and_link_paths(self):
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+
+        self.assertIn("inspectNativeCompromisedPage(", source)
+        self.assertIn("            adminBaseUrl\n          );", source)
+        self.assertIn("        ADMIN_LOGIN,\n    )", source)
+        self.assertIn(
+            "function inspectNativeCompromisedPage(body, responseUrl, targetUrl, adminBaseUrl)",
+            source,
+        )
+        self.assertIn("const adminBase = new URL(adminBaseUrl)", source)
+        self.assertIn("target.pathname.startsWith(adminPath + '/')", source)
+        self.assertIn("response.pathname === adminPath + '/security/compromised'", source)
+        self.assertIn('("target_outside_admin_prefix", markup, False)', source)
+
     def test_admin_security_failure_summary_exposes_only_safe_invalid_token_dom_facts(self):
         namespace = {"re": re, "urlparse": urlparse, "parse_qs": parse_qs}
         load_function(ADMIN_FLOW, "is_prestashop_compromised_token_rejection", namespace)
@@ -537,6 +552,8 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "invalidTokenRecoveryController": "AdminBusinessProfile",
             "invalidTokenRecoveryTokenPresent": True,
             "compromisedPageMarker": True,
+            "compromisedRequestSameOrigin": True,
+            "compromisedRequestInAdminPath": True,
             "compromisedWarning": True,
             "compromisedContinueLink": True,
             "compromisedDashboardLink": True,
@@ -564,6 +581,8 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "invalid_token_page=false",
             "native_compromised_page=false",
             "compromised_marker=true",
+            "compromised_request_origin=true",
+            "compromised_request_path=true",
             "compromised_warning=true",
             "compromised_continue=true",
             "compromised_dashboard=true",

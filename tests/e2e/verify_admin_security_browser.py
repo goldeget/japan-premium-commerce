@@ -34,6 +34,7 @@ SAFE_ADMIN_SECURITY_RESPONSE_PATTERN = (
     r"classification=[a-z_]+; status=(?:[0-9]{1,3}|invalid); final_path=[A-Za-z0-9/._?-]{1,160}; "
     r"settings_form=(?:true|false); danger_alert=(?:true|false); admin_login_form=(?:true|false); "
     r"native_compromised_page=(?:true|false); "
+    r"compromised_request_origin=(?:true|false); compromised_request_path=(?:true|false); "
     r"compromised_marker=(?:true|false); compromised_warning=(?:true|false); "
     r"compromised_continue=(?:true|false); compromised_dashboard=(?:true|false); "
     r"compromised_response_origin=(?:true|false); compromised_response_path=(?:true|false); "
@@ -92,11 +93,13 @@ function inspectInvalidTokenPage(body, responseUrl, targetUrl) {
   };
 }
 
-function inspectNativeCompromisedPage(body, responseUrl, targetUrl) {
+function inspectNativeCompromisedPage(body, responseUrl, targetUrl, adminBaseUrl) {
   const responseDocument = new DOMParser().parseFromString(body, 'text/html');
   const page = responseDocument.querySelector('#security-compromised-page');
   const details = {
     bodyHasNativeCompromisedPage: false,
+    compromisedRequestSameOrigin: false,
+    compromisedRequestInAdminPath: false,
     compromisedPageMarker: Boolean(page),
     compromisedWarning: false,
     compromisedContinueLink: false,
@@ -124,10 +127,11 @@ function inspectNativeCompromisedPage(body, responseUrl, targetUrl) {
 
   try {
     const response = new URL(responseUrl);
-    const target = new URL(targetUrl);
+    const adminBase = new URL(adminBaseUrl);
+    const target = new URL(targetUrl, adminBaseUrl);
+    const adminPath = adminBase.pathname.replace(/\/+$/, '');
+    if (!adminPath || adminPath === '/' || adminBase.search || adminBase.hash) return details;
     const adminIndexSuffix = '/index.php';
-    if (!target.pathname.endsWith(adminIndexSuffix)) return details;
-    const adminPath = target.pathname.slice(0, -adminIndexSuffix.length);
     const continueUrl = new URL(continueLink.getAttribute('href'), responseUrl);
     const dashboardUrl = new URL(dashboardLink.getAttribute('href'), responseUrl);
     const tokenPresent = url => {
@@ -138,18 +142,24 @@ function inspectNativeCompromisedPage(body, responseUrl, targetUrl) {
       const controllers = url.searchParams.getAll('controller');
       return controllers.length === 1 && controllers[0] === expected;
     };
+    details.compromisedRequestSameOrigin = target.origin === adminBase.origin;
+    details.compromisedRequestInAdminPath = target.pathname === adminPath
+      || target.pathname.startsWith(adminPath + '/');
+    if (!details.compromisedRequestSameOrigin || !details.compromisedRequestInAdminPath) return details;
     const expectedAdminIndexPath = adminPath + adminIndexSuffix;
-    details.compromisedResponseSameOrigin = response.origin === target.origin;
+    details.compromisedResponseSameOrigin = response.origin === adminBase.origin;
     details.compromisedResponsePath = response.pathname === adminPath + '/security/compromised';
-    details.compromisedContinueSameOrigin = continueUrl.origin === target.origin;
+    details.compromisedContinueSameOrigin = continueUrl.origin === adminBase.origin;
     details.compromisedContinuePath = continueUrl.pathname === expectedAdminIndexPath;
     details.compromisedContinueController = hasController(continueUrl, 'AdminBusinessProfile');
     details.compromisedContinueTokenPresent = tokenPresent(continueUrl);
-    details.compromisedDashboardSameOrigin = dashboardUrl.origin === target.origin;
+    details.compromisedDashboardSameOrigin = dashboardUrl.origin === adminBase.origin;
     details.compromisedDashboardPath = dashboardUrl.pathname === expectedAdminIndexPath;
     details.compromisedDashboardController = hasController(dashboardUrl, 'AdminDashboard');
     details.compromisedDashboardTokenPresent = tokenPresent(dashboardUrl);
     details.bodyHasNativeCompromisedPage = details.compromisedResponseSameOrigin
+      && details.compromisedRequestSameOrigin
+      && details.compromisedRequestInAdminPath
       && details.compromisedResponsePath
       && details.compromisedContinueSameOrigin
       && details.compromisedContinuePath
@@ -283,6 +293,7 @@ def submit_settings_attempt(driver: webdriver.Chrome, mode: str) -> dict[str, ob
     script = """
         const mode = arguments[0];
         const sentinel = arguments[1];
+        const adminBaseUrl = arguments[2];
         const done = arguments[arguments.length - 1];
         const form = document.querySelector('form.ordenowa-profile-settings');
         if (!form) {
@@ -309,7 +320,12 @@ def submit_settings_attempt(driver: webdriver.Chrome, mode: str) -> dict[str, ob
         }).then(async response => {
           const responseBody = await response.text();
           const tokenPage = inspectInvalidTokenPage(responseBody, response.url, action.href);
-          const nativeCompromisedPage = inspectNativeCompromisedPage(responseBody, response.url, action.href);
+          const nativeCompromisedPage = inspectNativeCompromisedPage(
+            responseBody,
+            response.url,
+            action.href,
+            adminBaseUrl
+          );
           const responseDocument = new DOMParser().parseFromString(responseBody, 'text/html');
           const loginForm = responseDocument.querySelector('#login_form');
           done({
@@ -332,6 +348,7 @@ def submit_settings_attempt(driver: webdriver.Chrome, mode: str) -> dict[str, ob
         script,
         mode,
         MUTATION_SENTINEL,
+        ADMIN_LOGIN,
     )
     return result if isinstance(result, dict) else {"formPresent": False}
 
@@ -389,6 +406,9 @@ def verify_native_compromised_page_fixture(driver: webdriver.Chrome) -> None:
         ("missing_continue", markup.replace("btn-outline-danger", "other-button"), False),
         ("missing_dashboard", markup.replace("btn-primary", "other-button"), False),
         ("tokenless_request_link", markup, True),
+        ("pretty_admin_request_path", markup, True),
+        ("target_outside_admin_prefix", markup, False),
+        ("external_request_origin", markup, False),
         (
             "tokenized_request_link",
             markup.replace(
@@ -457,11 +477,19 @@ def verify_native_compromised_page_fixture(driver: webdriver.Chrome) -> None:
         fixture_response_url = (
             response_url + "/other" if name == "wrong_response_path" else response_url
         )
+        fixture_target_url = action_url
+        if name == "pretty_admin_request_path":
+            fixture_target_url = ADMIN_LOGIN + "/sell/configure/business-profile"
+        elif name == "target_outside_admin_prefix":
+            fixture_target_url = BASE + "/admin-kuranea-evil/index.php?controller=AdminBusinessProfile"
+        elif name == "external_request_origin":
+            fixture_target_url = "http://outside.example/admin-kuranea/index.php?controller=AdminBusinessProfile"
         result = driver.execute_script(
-            TOKEN_DOM_DETECTOR_JS + "return inspectNativeCompromisedPage(arguments[0], arguments[1], arguments[2]);",
+            TOKEN_DOM_DETECTOR_JS + "return inspectNativeCompromisedPage(arguments[0], arguments[1], arguments[2], arguments[3]);",
             body,
             fixture_response_url,
-            action_url,
+            fixture_target_url,
+            ADMIN_LOGIN,
         )
         if not isinstance(result, dict) or result.get("bodyHasNativeCompromisedPage") is not expected:
             raise AssertionError(f"native compromised-page DOM detector fixture failed at {name}")
@@ -600,6 +628,8 @@ def response_summary(result: object) -> str:
         f"danger_alert={flag('bodyHasDangerAlert')}; "
         f"admin_login_form={flag('bodyHasAdminLoginForm')}; "
         f"native_compromised_page={flag('bodyHasNativeCompromisedPage')}; "
+        f"compromised_request_origin={flag('compromisedRequestSameOrigin')}; "
+        f"compromised_request_path={flag('compromisedRequestInAdminPath')}; "
         f"compromised_marker={flag('compromisedPageMarker')}; "
         f"compromised_warning={flag('compromisedWarning')}; "
         f"compromised_continue={flag('compromisedContinueLink')}; "
