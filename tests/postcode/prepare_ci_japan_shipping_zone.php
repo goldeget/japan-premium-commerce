@@ -145,19 +145,37 @@ $stateRows = Db::getInstance()->executeS(
     . ' WHERE `id_country` = ' . (int) $japan->id
     . ' ORDER BY `iso_code`'
 );
+$allStateRows = is_array($stateRows) ? $stateRows : [];
+$expectedStateCodeSet = array_fill_keys($expectedStateCodes, true);
+$supportedStateRows = array_values(array_filter(
+    $allStateRows,
+    static fn (array $row): bool => isset($expectedStateCodeSet[(string) $row['iso_code']])
+));
 $stateCodes = array_values(array_map(
     static fn (array $row): string => (string) $row['iso_code'],
-    is_array($stateRows) ? $stateRows : []
+    $supportedStateRows
 ));
+$stateCodeCounts = array_count_values($stateCodes);
+$duplicateStateCodes = array_keys(array_filter(
+    $stateCodeCounts,
+    static fn (int $count): bool => $count > 1
+));
+$missingStateCodes = array_values(array_diff($expectedStateCodes, array_keys($stateCodeCounts)));
 $statesOutsideZone = count(array_filter(
-    is_array($stateRows) ? $stateRows : [],
+    $allStateRows,
     static fn (array $row): bool => (int) $row['id_zone'] !== (int) $zone->id
 ));
 $activeStateCount = count(array_filter(
-    is_array($stateRows) ? $stateRows : [],
+    $supportedStateRows,
     static fn (array $row): bool => (int) $row['active'] === 1
 ));
-$stateCount = count($stateCodes);
+$stateCount = count($supportedStateRows);
+if ($missingStateCodes !== [] || $duplicateStateCodes !== []) {
+    throw new RuntimeException(
+        'Supported Japan prefecture rows are missing or duplicated: missing '
+        . implode(',', $missingStateCodes) . '; duplicated ' . implode(',', $duplicateStateCodes)
+    );
+}
 if ($statesOutsideZone !== 0) {
     throw new RuntimeException('One or more Japanese prefectures are outside the run-scoped carrier zone.');
 }

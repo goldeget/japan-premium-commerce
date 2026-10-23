@@ -134,6 +134,11 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertIn("SELECT `iso_code`, `id_zone`, `active`", source)
         self.assertIn("$activeStateCount !== 47", source)
         self.assertIn("$stateCodes !== $expectedStateCodes", source)
+        self.assertIn("$expectedStateCodeSet = array_fill_keys($expectedStateCodes, true)", source)
+        self.assertIn("$supportedStateRows = array_values(array_filter(", source)
+        self.assertIn("$missingStateCodes = array_values(array_diff($expectedStateCodes, array_keys($stateCodeCounts)))", source)
+        self.assertIn("$duplicateStateCodes !== []", source)
+        self.assertIn("$allStateRows,", source, "existing unsupported rows must still be checked for zone assignment")
         self.assertIn("'state_iso_codes' => $stateCodes", source)
 
         workflow = WORKFLOW.read_text(encoding="utf-8")
