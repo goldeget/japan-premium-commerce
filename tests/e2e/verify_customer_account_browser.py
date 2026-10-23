@@ -99,6 +99,17 @@ DUPLICATE_EMAIL_REJECTION = re.compile(
     r"중복|이미\s*(?:가입|등록|사용)|既に|すでに|登録済み|使用済み)",
     re.IGNORECASE,
 )
+PROFILE_UPDATE_SUBSTAGES = frozenset(
+    {
+        "account_page_navigation",
+        "account_page_identity_link",
+        "account_page_signout_link",
+        "account_page_saved_name",
+        "identity_page_navigation",
+        "identity_name_persistence",
+        "profile_screenshot",
+    }
+)
 
 
 class AnchorLinks(HTMLParser):
@@ -1021,6 +1032,10 @@ def safe_diagnostic_name(value: object, *, field_type: bool = False) -> str:
         return ""
     pattern = r"[^A-Za-z0-9_-]" if field_type else r"[^A-Za-z0-9_.\[\]-]"
     return re.sub(pattern, "_", value)[:80]
+
+
+def safe_profile_update_substage(value: object) -> str:
+    return value if isinstance(value, str) and value in PROFILE_UPDATE_SUBSTAGES else "unknown"
 
 
 KOREAN_LOGIN_STAGES = {
@@ -2013,10 +2028,12 @@ def collect_profile_update_diagnostics(
 def emit_profile_update_diagnostics(
     driver: webdriver.Chrome,
     stage: str,
+    substage: str,
     pre_submit: dict[str, object] | None,
     expected_first_name: str,
 ) -> None:
     safe_state = {
+        "substage": safe_profile_update_substage(substage),
         "pre_submit": pre_submit,
         "failure_state": collect_profile_update_diagnostics(driver, stage, expected_first_name),
     }
@@ -2045,10 +2062,20 @@ def visible_signout_link(driver: webdriver.Chrome):
     )
 
 
-def assert_my_page(driver: webdriver.Chrome, expected_first_name: str) -> None:
+def assert_my_page(
+    driver: webdriver.Chrome,
+    expected_first_name: str,
+    substage_callback: Callable[[str], None] | None = None,
+) -> None:
+    if substage_callback is not None:
+        substage_callback("account_page_identity_link")
     visible(driver, "#identity_main_link")
+    if substage_callback is not None:
+        substage_callback("account_page_signout_link")
     visible_signout_link(driver)
 
+    if substage_callback is not None:
+        substage_callback("account_page_saved_name")
     page_text = driver.find_element(By.TAG_NAME, "body").text
     if expected_first_name not in page_text or "Customer" not in page_text:
         raise AssertionError("My Page did not show the signed-in customer's saved name")
@@ -2888,6 +2915,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
     stage = "registration_link_load"
     failure_control = {"name": "display-register-form", "type": "anchor"}
     profile_pre_submit: dict[str, object] | None = None
+    profile_substage = ""
     korean_login_state: dict[str, object] = {}
     registration_state: dict[str, object] = {}
     login_url = ""
@@ -2898,6 +2926,10 @@ def run_viewport(width: int, height: int, label: str) -> bool:
     expected_first_name = f"CI-{label.title()}"
     driver = None
     success = False
+
+    def mark_profile_update_substage(value: str) -> None:
+        nonlocal profile_substage
+        profile_substage = safe_profile_update_substage(value)
 
     def mark_email_login_substage(value: str) -> None:
         nonlocal email_login_substage
@@ -3057,17 +3089,22 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         submit_button = visible(driver, "#customer-form button.form-control-submit")
         click_centered(driver, submit_button)
         stage = "profile_update_persist_wait"
+        profile_substage = "account_page_navigation"
         driver.get(account_url)
-        assert_my_page(driver, expected_first_name)
+        assert_my_page(driver, expected_first_name, substage_callback=mark_profile_update_substage)
+        profile_substage = "identity_page_navigation"
         driver.get(f"{BASE}/index.php?controller=identity")
         assert_canonical_static_route(driver, "identity")
+        profile_substage = "identity_name_persistence"
         WebDriverWait(driver, 30).until(
             lambda browser: browser.find_element(By.CSS_SELECTOR, '#customer-form input[name="firstname"]').get_attribute("value")
             == expected_first_name
         )
+        profile_substage = "profile_screenshot"
         driver.save_screenshot(str(DEST / f"{label}-customer-account-profile.png"))
+        profile_substage = "account_page_navigation"
         driver.get(account_url)
-        assert_my_page(driver, expected_first_name)
+        assert_my_page(driver, expected_first_name, substage_callback=mark_profile_update_substage)
 
         failure_control = {"name": "", "type": ""}
         stage = "customer_address_add"
@@ -3240,7 +3277,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             elif stage.startswith("profile_update_"):
                 try:
                     emit_profile_update_diagnostics(
-                        driver, stage, profile_pre_submit, expected_first_name
+                        driver, stage, profile_substage, profile_pre_submit, expected_first_name
                     )
                 except Exception:
                     pass
@@ -3276,14 +3313,21 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             if stage in {"email_login", "password_reset_login"} and email_login_substage
             else ""
         )
+        profile_substage_detail = (
+            f"; profile_substage={safe_profile_update_substage(profile_substage)}"
+            if stage.startswith("profile_update_")
+            else ""
+        )
         print(
-            f"FAIL: {label} customer account flow at {stage}{inner_stage_detail}{email_login_substage_detail} "
+            f"FAIL: {label} customer account flow at {stage}"
+            f"{inner_stage_detail}{email_login_substage_detail}{profile_substage_detail} "
             f"({type(error).__name__})",
             file=sys.stderr,
         )
         print(
             f"::error title=Customer account browser QA::{label} failed at {stage} "
-            f"({type(error).__name__}){inner_stage_detail}{email_login_substage_detail}; "
+            f"({type(error).__name__}){inner_stage_detail}{email_login_substage_detail}"
+            f"{profile_substage_detail}; "
             f"control_name={failure_control.get('name') or 'none'}; "
             f"control_type={failure_control.get('type') or 'none'}",
             file=sys.stderr,

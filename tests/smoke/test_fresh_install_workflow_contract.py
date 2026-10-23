@@ -473,7 +473,10 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("profile_pre_submit = collect_profile_update_diagnostics(", profile_update)
         self.assertIn('driver, "pre_submit", expected_first_name', profile_update)
         self.assertIn("elif stage.startswith(\"profile_update_\")", failure)
-        self.assertIn("driver, stage, profile_pre_submit, expected_first_name", failure)
+        self.assertIn(
+            "driver, stage, profile_substage, profile_pre_submit, expected_first_name",
+            failure,
+        )
         self.assertIn("ORDENOWA_ACCOUNT_PROFILE_UPDATE_SAFE_STATE=", account_step)
         self.assertIn("profile_diagnostics_lines=$(rg '^ORDENOWA_ACCOUNT_PROFILE_UPDATE_SAFE_STATE=' \"$log_file\" || true)", account_step)
 

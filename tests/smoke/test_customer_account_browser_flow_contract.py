@@ -78,11 +78,16 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         profile_save = self.blocks["profile_update_persist_wait"]
         self.assertIn("expected_first_name", profile_save)
         self.assertIn("driver.get(account_url)", profile_save)
-        self.assertIn("assert_my_page(driver, expected_first_name)", profile_save)
+        self.assertIn(
+            "assert_my_page(driver, expected_first_name, substage_callback=mark_profile_update_substage)",
+            profile_save,
+        )
         self.assertIn('driver.get(f"{BASE}/index.php?controller=identity")', profile_save)
         self.assertIn('#customer-form input[name="firstname"]', profile_save)
         account_reopen = profile_save.index("driver.get(account_url)")
-        account_assertion = profile_save.index("assert_my_page(driver, expected_first_name)")
+        account_assertion = profile_save.index(
+            "assert_my_page(driver, expected_first_name, substage_callback=mark_profile_update_substage)"
+        )
         identity_reopen = profile_save.index('driver.get(f"{BASE}/index.php?controller=identity")')
         identity_route_assertion = profile_save.index('assert_canonical_static_route(driver, "identity")')
         persisted_field_wait = profile_save.index("WebDriverWait(driver, 30).until(")
@@ -91,7 +96,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         )
         return_to_account = profile_save.rindex("driver.get(account_url)")
         authenticated_account_assertion = profile_save.rindex(
-            "assert_my_page(driver, expected_first_name)"
+            "assert_my_page(driver, expected_first_name, substage_callback=mark_profile_update_substage)"
         )
         self.assertLess(account_reopen, account_assertion)
         self.assertLess(account_assertion, identity_reopen)
@@ -1114,6 +1119,57 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn("lambda _browser: checkbox.is_selected()", disclosure_helper)
         self.assertIn("checkbox.send_keys(Keys.SPACE)", disclosure_helper)
         self.assertIn("if not checkbox.is_selected()", disclosure_helper)
+
+    def test_profile_update_failure_reports_an_allowlisted_inner_substage(self) -> None:
+        module = ast.parse(self.source)
+        constant = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "PROFILE_UPDATE_SUBSTAGES" for target in node.targets)
+        )
+        helper = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "safe_profile_update_substage"
+        )
+        namespace: dict[str, object] = {}
+        exec(
+            compile(ast.Module(body=[constant, helper], type_ignores=[]), str(ACCOUNT_FLOW), "exec"),
+            namespace,
+        )
+        sanitize = namespace["safe_profile_update_substage"]
+        self.assertEqual(sanitize("account_page_signout_link"), "account_page_signout_link")
+        self.assertEqual(sanitize("identity_name_persistence"), "identity_name_persistence")
+        self.assertEqual(sanitize("password=must-not-appear"), "unknown")
+
+        profile_update = self.source.split('stage = "profile_update_persist_wait"', 1)[1].split(
+            'stage = "email_login"', 1
+        )[0]
+        for substage in (
+            "account_page_navigation",
+            "account_page_identity_link",
+            "account_page_signout_link",
+            "account_page_saved_name",
+            "identity_page_navigation",
+            "identity_name_persistence",
+            "profile_screenshot",
+        ):
+            self.assertIn(f'"{substage}"', self.source)
+        self.assertIn(
+            "assert_my_page(driver, expected_first_name, substage_callback=mark_profile_update_substage)",
+            profile_update,
+        )
+
+        emitter = self.source.split("def emit_profile_update_diagnostics", 1)[1].split(
+            "def fill", 1
+        )[0]
+        self.assertIn('"substage": safe_profile_update_substage(substage)', emitter)
+        run_viewport = self.source.split("def run_viewport", 1)[1].split("\n\nif __name__", 1)[0]
+        failure = run_viewport.split("except Exception as error:", 1)[1].split("print(f\"FAIL:", 1)[0]
+        self.assertIn("profile_substage", failure)
+        self.assertIn("safe_profile_update_substage(profile_substage)", failure)
 
         label_interaction = self.source.split("def click_required_checkbox_label", 1)[1].split(
             "def prepare_required_registration_fields", 1
