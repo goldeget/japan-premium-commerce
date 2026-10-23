@@ -312,6 +312,8 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         )[1].split("- name:", 1)[0]
         self.assertIn('cat "$fixture_log"', access_step)
         self.assertIn('fixture_status=0', access_step)
+        self.assertIn('copy_status=0', access_step)
+        self.assertIn('stage=stage_fixture_copy', access_step)
         self.assertIn("Invalid JSON fields:", access_step)
         self.assertIn("Invalid JSON; error_type=", access_step)
         self.assertIn('shipping-free-admin-access.json', workflow)

@@ -1042,11 +1042,17 @@ jobs:
         run: |
           set -Eeuo pipefail
           mkdir -p "$RUNNER_TEMP/ordenowa-browser-qa"
-          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
-            sh -c 'cat > /tmp/prepare_ci_carrier_admin_access.php' \
-            < tests/postcode/prepare_ci_carrier_admin_access.php
           fixture_json="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-admin-access.json"
           fixture_log="$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-admin-access.log"
+          copy_status=0
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/prepare_ci_carrier_admin_access.php' \
+            < tests/postcode/prepare_ci_carrier_admin_access.php \
+            2> "$fixture_log" || copy_status=$?
+          if ((copy_status != 0)); then
+            echo "::error title=ORDENOWA isolated carrier access fixture::stage=stage_fixture_copy; exit_code=$copy_status"
+            exit "$copy_status"
+          fi
           fixture_status=0
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
             -e CI=true \
@@ -1071,6 +1077,9 @@ jobs:
                   fixture = json.load(stream)
           except (OSError, ValueError) as error:
               print(f"::error title=ORDENOWA isolated carrier access fixture::Invalid JSON; error_type={type(error).__name__}")
+              sys.exit(1)
+          if not isinstance(fixture, dict):
+              print("::error title=ORDENOWA isolated carrier access fixture::Invalid JSON root; expected=object")
               sys.exit(1)
 
           def is_positive_int(field):
