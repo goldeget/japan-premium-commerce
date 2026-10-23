@@ -977,7 +977,7 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         autocomplete_helper = flow.partition("def wait_for_autocomplete_fields")[2].partition(
             "def search_for_product"
         )[0]
-        autocomplete_call = address_flow.find("wait_for_autocomplete_fields(driver, form)")
+        autocomplete_call = address_flow.find("wait_for_autocomplete_fields(")
         candidate_click = address_flow.index("click_at_center(driver, candidate)")
         manual_edits = address_flow.index("for name, value in (")
         self.assertGreaterEqual(autocomplete_call, 0, "the browser must assert autocomplete fields")
@@ -989,8 +989,10 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             ('"address1"', '"大手町"'),
         ):
             with self.subTest(field=field):
-                self.assertIn(field, autocomplete_helper)
-                self.assertIn(expected, autocomplete_helper)
+                self.assertIn(field, address_flow)
+                self.assertIn(expected, address_flow)
+        self.assertIn("expected_fields: dict[str, str]", autocomplete_helper)
+        self.assertIn("for name, expected in expected_fields.items()", autocomplete_helper)
         self.assertIn('select[name="id_state"]', autocomplete_helper)
         self.assertIn("first_selected_option.get_attribute(\"value\")", autocomplete_helper)
 

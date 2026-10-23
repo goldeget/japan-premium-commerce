@@ -1090,7 +1090,15 @@ def _select_osaka_address(driver) -> None:
     if not all(part in candidate.text for part in ("大阪府", "大阪市北区", "梅田")):
         raise AssertionError("the isolated 5300001 fixture did not resolve to Osaka / Kita / Umeda")
     checkout.click_at_center(driver, candidate)
-    checkout.wait_for_autocomplete_fields(driver, form)
+    checkout.wait_for_autocomplete_fields(
+        driver,
+        form,
+        {
+            "postcode": "530-0001",
+            "city": "大阪市北区",
+            "address1": "梅田",
+        },
+    )
 
     for name, value in (
         ("alias", "ORDENOWA CI shipping free Osaka"),

@@ -482,13 +482,11 @@ def browser_options(width: int, height: int) -> Options:
     return options
 
 
-def wait_for_autocomplete_fields(driver: webdriver.Chrome, form) -> None:
-    expected_fields = {
-        "postcode": "100-0004",
-        "city": "千代田区",
-        "address1": "大手町",
-    }
-
+def wait_for_autocomplete_fields(
+    driver: webdriver.Chrome,
+    form,
+    expected_fields: dict[str, str],
+) -> None:
     def autocomplete_fields_applied(_browser: webdriver.Chrome) -> bool:
         for name, expected in expected_fields.items():
             fields = form.find_elements(By.CSS_SELECTOR, f'input[name="{name}"]')
@@ -841,7 +839,15 @@ def select_japan_address(driver: webdriver.Chrome, label: str) -> None:
     if not all(part in candidate.text for part in ("東京都", "千代田区", "大手町")):
         raise AssertionError("the address lookup did not return the synthetic Tokyo / Chiyoda / Otemachi result")
     click_at_center(driver, candidate)
-    wait_for_autocomplete_fields(driver, form)
+    wait_for_autocomplete_fields(
+        driver,
+        form,
+        {
+            "postcode": "100-0004",
+            "city": "千代田区",
+            "address1": "大手町",
+        },
+    )
 
     for name, value in (
         ("alias", f"ORDENOWA CI {label}"),

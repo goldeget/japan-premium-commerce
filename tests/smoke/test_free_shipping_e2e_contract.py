@@ -268,6 +268,43 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertIn("BLOCKED: no run-scoped disposable coupon fixture was supplied", browser)
         self.assertIn("selected zones were", browser)
 
+    def test_osaka_address_wait_uses_the_osaka_autocomplete_values(self) -> None:
+        browser = BROWSER.read_text(encoding="utf-8")
+        module = ast.parse(browser)
+        osaka_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_select_osaka_address"
+        )
+        autocomplete_call = next(
+            node
+            for node in ast.walk(osaka_function)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "wait_for_autocomplete_fields"
+        )
+        self.assertEqual(len(autocomplete_call.args), 3)
+        expected_fields = ast.literal_eval(autocomplete_call.args[2])
+        self.assertEqual(
+            expected_fields,
+            {
+                "postcode": "530-0001",
+                "city": "大阪市北区",
+                "address1": "梅田",
+            },
+        )
+        osaka_source = browser.split("def _select_osaka_address", 1)[1].split(
+            "def ", 1
+        )[0]
+        self.assertLess(
+            osaka_source.index("checkout.click_at_center(driver, candidate)"),
+            osaka_source.index("checkout.wait_for_autocomplete_fields("),
+        )
+        self.assertLess(
+            osaka_source.index("checkout.wait_for_autocomplete_fields("),
+            osaka_source.index('for name, value in ('),
+        )
+
     def test_carrier_form_opens_shipping_tab_before_selecting_zone_and_free_shipping(self) -> None:
         browser = BROWSER.read_text(encoding="utf-8")
         self.assertIn(
