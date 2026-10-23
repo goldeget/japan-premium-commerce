@@ -78,8 +78,27 @@ class FreeShippingE2eContractTest(unittest.TestCase):
                 "user_menu_visible": False,
                 "native_form_valid": False,
                 "visible_invalid_control_count": 2,
+                "submit_button_present": True,
+                "submit_button_visible": True,
+                "submit_button_enabled": False,
+                "form_alert_count": 1,
+                "form_alert_categories": ["error_alert", "private-alert-sentinel"],
                 "invalid_required_field_names": ["email", "password"],
                 "current_checkout_step_ids": ["checkout-personal-information-step"],
+                "network": {
+                    "available": True,
+                    "truncated": False,
+                    "request_count": 1,
+                    "requests": [
+                        {
+                            "type": "xhr",
+                            "path_category": "checkout",
+                            "method_class": "POST",
+                            "status": 422,
+                            "url": "http://localhost:18080/private-url-sentinel?email=private-email-sentinel",
+                        }
+                    ],
+                },
                 "email": "private-email-sentinel",
                 "password": "private-password-sentinel",
                 "path": "/private-path-sentinel",
@@ -92,11 +111,17 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         )
         self.assertIn('"visible_invalid_control_count":2', output)
         self.assertIn('"registration_form_visible":true', output)
+        self.assertIn('"submit_button_enabled":false', output)
+        self.assertIn('"form_alert_categories":["error_alert"]', output)
+        self.assertIn('"path_category":"checkout"', output)
+        self.assertIn('"status":422', output)
         for sentinel in (
             "private-email-sentinel",
             "private-password-sentinel",
             "private-path-sentinel",
             "private-token-sentinel",
+            "private-alert-sentinel",
+            "private-url-sentinel",
         ):
             self.assertNotIn(sentinel, output)
         self.assertNotIn("path=", output)

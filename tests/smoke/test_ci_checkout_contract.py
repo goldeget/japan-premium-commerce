@@ -1165,6 +1165,36 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
                 "delivery_addresses_visible": False,
                 "login_form_visible": False,
                 "user_menu_visible": False,
+                "submit_button_present": True,
+                "submit_button_visible": True,
+                "submit_button_enabled": False,
+                "form_alert_count": 42,
+                "form_alert_categories": [
+                    "error_alert",
+                    "private-alert-sentinel",
+                    "role_alert",
+                ],
+                "network": {
+                    "available": True,
+                    "truncated": False,
+                    "request_count": 1,
+                    "requests": [
+                        {
+                            "type": "xhr",
+                            "path_category": "checkout",
+                            "method_class": "POST",
+                            "status": 422,
+                            "url": "http://localhost/private-url-sentinel?token=private-token-sentinel",
+                            "body": "private-body-sentinel",
+                        },
+                        {
+                            "type": "private-request-type-sentinel",
+                            "path_category": "private-path-category-sentinel",
+                            "method_class": "private-method-sentinel",
+                            "status": 200,
+                        },
+                    ],
+                },
                 "native_form_valid": False,
                 "visible_invalid_control_count": 2,
                 "invalid_required_field_names": ["email", "password", "private-field-sentinel"],
@@ -1177,6 +1207,25 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
 
         self.assertEqual(safe["available"], True)
         self.assertEqual(safe["registration_form_visible"], True)
+        self.assertEqual(safe["submit_button_enabled"], False)
+        self.assertEqual(safe["form_alert_count"], 20)
+        self.assertEqual(safe["form_alert_categories"], ["error_alert", "role_alert"])
+        self.assertEqual(
+            safe["network"],
+            {
+                "available": True,
+                "truncated": False,
+                "request_count": 1,
+                "requests": [
+                    {
+                        "type": "xhr",
+                        "path_category": "checkout",
+                        "method_class": "POST",
+                        "status": 422,
+                    }
+                ],
+            },
+        )
         self.assertEqual(safe["visible_invalid_control_count"], 2)
         self.assertEqual(safe["invalid_required_field_names"], ["email", "password"])
         self.assertEqual(safe["current_checkout_step_ids"], ["checkout-personal-information-step"])
@@ -1187,8 +1236,253 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             "private-path-sentinel",
             "private-field-sentinel",
             "private-step-sentinel",
+            "private-alert-sentinel",
+            "private-url-sentinel",
+            "private-token-sentinel",
+            "private-body-sentinel",
+            "private-request-type-sentinel",
+            "private-path-category-sentinel",
+            "private-method-sentinel",
         ):
             self.assertNotIn(sentinel, serialized)
+
+    def test_checkout_registration_network_diagnostics_keep_only_allowlisted_metadata(self) -> None:
+        source = ast.parse(CHECKOUT_FLOW.read_text(encoding="utf-8"))
+        names = {
+            "_safe_checkout_http_status",
+            "checkout_registration_path_category",
+            "checkout_registration_network_diagnostics",
+        }
+        functions = [
+            node for node in source.body
+            if isinstance(node, ast.FunctionDef) and node.name in names
+        ]
+        self.assertEqual(names, {node.name for node in functions})
+        namespace = {
+            "BASE": "http://localhost:18080",
+            "MAX_CHECKOUT_REGISTRATION_NETWORK_EVENTS": 500,
+            "MAX_CHECKOUT_REGISTRATION_NETWORK_EVENT_CHARS": 65536,
+            "MAX_CHECKOUT_REGISTRATION_NETWORK_REQUESTS": 20,
+            "json": json,
+            "parse_qs": parse_qs,
+            "re": re,
+            "unquote": unquote,
+            "urlparse": urlparse,
+        }
+        exec(
+            compile(ast.Module(body=functions, type_ignores=[]), str(CHECKOUT_FLOW), "exec"),
+            namespace,
+        )
+
+        def event(method: str, params: dict[str, object]) -> dict[str, str]:
+            return {"message": json.dumps({"message": {"method": method, "params": params}})}
+
+        entries = [
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": "private-request-id-sentinel",
+                    "type": "XHR",
+                    "request": {
+                        "url": (
+                            "http://localhost:18080/index.php?controller=order&"
+                            "email=private-email-sentinel&token=private-token-sentinel"
+                        ),
+                        "method": "POST",
+                        "postData": "private-body-sentinel",
+                    },
+                },
+            ),
+            event(
+                "Network.responseReceived",
+                {
+                    "requestId": "private-request-id-sentinel",
+                    "type": "XHR",
+                    "response": {
+                        "url": (
+                            "http://localhost:18080/index.php?controller=order&"
+                            "email=private-email-sentinel&token=private-token-sentinel"
+                        ),
+                        "status": 422,
+                    },
+                },
+            ),
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": "private-outside-request-sentinel",
+                    "type": "Fetch",
+                    "request": {
+                        "url": "https://outside.example/private-path-sentinel?token=private-token-sentinel",
+                        "method": "POST",
+                    },
+                },
+            ),
+            event(
+                "Network.responseReceived",
+                {
+                    "requestId": "private-outside-request-sentinel",
+                    "type": "Fetch",
+                    "response": {
+                        "url": "https://outside.example/private-path-sentinel?token=private-token-sentinel",
+                        "status": 200,
+                    },
+                },
+            ),
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": "private-route-request-sentinel",
+                    "type": "Fetch",
+                    "request": {
+                        "url": "http://localhost:18080/ko/private-customer-route?secret=sentinel",
+                        "method": "PUT",
+                    },
+                },
+            ),
+            event(
+                "Network.responseReceived",
+                {
+                    "requestId": "private-route-request-sentinel",
+                    "type": "Fetch",
+                    "response": {
+                        "url": "http://localhost:18080/ko/private-customer-route?secret=sentinel",
+                        "status": 200,
+                    },
+                },
+            ),
+        ]
+
+        class Driver:
+            def get_log(self, _kind: str) -> list[dict[str, str]]:
+                return entries
+
+        summary = namespace["checkout_registration_network_diagnostics"](Driver())
+
+        self.assertEqual(summary["available"], True)
+        self.assertEqual(summary["request_count"], 2)
+        self.assertEqual(
+            summary["requests"],
+            [
+                {
+                    "type": "xhr",
+                    "path_category": "checkout",
+                    "method_class": "POST",
+                    "status": 422,
+                },
+                {
+                    "type": "fetch",
+                    "path_category": "other_shop",
+                    "method_class": "PUT",
+                    "status": 200,
+                },
+            ],
+        )
+        serialized = json.dumps(summary)
+        for sentinel in (
+            "private-request-id-sentinel",
+            "private-outside-request-sentinel",
+            "private-email-sentinel",
+            "private-token-sentinel",
+            "private-body-sentinel",
+            "outside.example",
+            "private-path-sentinel",
+            "private-customer-route",
+        ):
+            self.assertNotIn(sentinel, serialized)
+
+        bounded_entries = [
+            event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": f"bounded-{index}",
+                    "type": "XHR",
+                    "request": {
+                        "url": "http://localhost:18080/index.php?controller=order",
+                        "method": "POST",
+                    },
+                },
+            )
+            for index in range(22)
+        ]
+
+        class BoundedDriver:
+            def get_log(self, _kind: str) -> list[dict[str, str]]:
+                return bounded_entries
+
+        bounded = namespace["checkout_registration_network_diagnostics"](BoundedDriver())
+        self.assertEqual(bounded["request_count"], 20)
+        self.assertEqual(len(bounded["requests"]), 20)
+        self.assertEqual(bounded["truncated"], True)
+        self.assertTrue(
+            all(
+                request == {
+                    "type": "xhr",
+                    "path_category": "checkout",
+                    "method_class": "POST",
+                    "status": None,
+                }
+                for request in bounded["requests"]
+            )
+        )
+
+        class OversizedEventDriver:
+            def get_log(self, _kind: str) -> list[dict[str, str]]:
+                return [{"message": "x" * 65537}]
+
+        oversized = namespace["checkout_registration_network_diagnostics"](
+            OversizedEventDriver()
+        )
+        self.assertEqual(oversized["request_count"], 0)
+        self.assertEqual(oversized["truncated"], True)
+
+        large_log_entries = [
+            event("Network.responseReceived", {"requestId": f"large-{index}"})
+            for index in range(501)
+        ]
+
+        class LargeLogDriver:
+            def get_log(self, _kind: str) -> list[dict[str, str]]:
+                return large_log_entries
+
+        large_log = namespace["checkout_registration_network_diagnostics"](LargeLogDriver())
+        self.assertEqual(large_log["request_count"], 0)
+        self.assertEqual(large_log["truncated"], True)
+
+    def test_checkout_registration_diagnostics_clear_network_before_one_fail_closed_submit(self) -> None:
+        source = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        registration = source.split("def register_checkout_account", 1)[1].split(
+            "def select_japan_address", 1
+        )[0]
+        clear_position = registration.index("clear_checkout_network_events(driver)")
+        click_position = registration.index("click_at_center(driver, submit)")
+        wait_position = registration.index('"checkout_registration_step.wait"')
+
+        self.assertLess(clear_position, click_position)
+        self.assertLess(click_position, wait_position)
+        self.assertRegex(
+            registration[clear_position:click_position],
+            r"clear_checkout_network_events\(driver\)\s*$",
+        )
+        self.assertEqual(registration.count("click_at_center(driver, submit)"), 1)
+        self.assertEqual(registration.count("WebDriverWait(driver, 35).until("), 2)
+        self.assertLess(
+            registration.index('"checkout_registration_step.wait"'),
+            registration.index('"checkout_continuation.locate"'),
+        )
+        self.assertLess(
+            registration.index('"delivery_address_step.wait"'),
+            registration.index('driver.save_screenshot'),
+        )
+        self.assertIn('checkout_registration_network_diagnostics(driver)', source)
+        self.assertIn('form_alert_categories', source)
+        self.assertIn('submit_button_enabled', source)
+        state_reader = source.split("def safe_checkout_registration_state", 1)[1].split(
+            "def click_required_checkbox_label", 1
+        )[0]
+        self.assertIn('safe_state["network"] = checkout_registration_network_diagnostics(driver)', state_reader)
+        self.assertIn('"checkout-continue-form"', registration)
+        self.assertIn('"delivery_address_step.wait"', registration)
 
 
 if __name__ == "__main__":

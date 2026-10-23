@@ -30,6 +30,9 @@ RUN_ID = re.sub(r"[^0-9]", "", os.environ["GITHUB_RUN_ID"])
 RUN_ATTEMPT = re.sub(r"[^0-9]", "", os.environ["GITHUB_RUN_ATTEMPT"])
 DEST = Path(os.environ["QA_ARTIFACT_DIR"])
 DEST.mkdir(parents=True, exist_ok=True)
+MAX_CHECKOUT_REGISTRATION_NETWORK_EVENTS = 500
+MAX_CHECKOUT_REGISTRATION_NETWORK_EVENT_CHARS = 65536
+MAX_CHECKOUT_REGISTRATION_NETWORK_REQUESTS = 20
 
 
 def visible(driver: webdriver.Chrome, selector: str, timeout: int = 30):
@@ -85,7 +88,7 @@ def assert_canonical_ascii_friendly_route(driver: webdriver.Chrome, controller: 
 
 
 def clear_checkout_network_events(driver: webdriver.Chrome) -> None:
-    """Keep later performance records scoped to the order navigation."""
+    """Keep later performance records scoped to the checkout browser action."""
     try:
         driver.get_log("performance")
     except Exception:
@@ -158,6 +161,129 @@ def _safe_checkout_http_status(value: object) -> int | None:
     except (TypeError, ValueError, OverflowError):
         return None
     return status if 100 <= status <= 599 else None
+
+
+def checkout_registration_path_category(raw_url: object) -> str | None:
+    """Classify a same-origin checkout request without exposing its URL or path."""
+    if not isinstance(raw_url, str) or len(raw_url) > 8192:
+        return None
+    try:
+        parsed = urlparse(raw_url)
+        expected = urlparse(BASE)
+        same_origin = (
+            parsed.scheme.lower(),
+            parsed.hostname,
+            parsed.port,
+        ) == (
+            expected.scheme.lower(),
+            expected.hostname,
+            expected.port,
+        )
+        query = parse_qs(parsed.query, keep_blank_values=True, max_num_fields=20)
+    except (TypeError, ValueError):
+        return None
+    if not same_origin:
+        return None
+
+    controllers = query.get("controller", [])
+    if len(controllers) == 1:
+        if controllers[0] in {"order", "order-opc"}:
+            return "checkout"
+        if controllers[0] in {"authentication", "identity", "my-account"}:
+            return "account"
+    return "other_shop"
+
+
+def checkout_registration_network_diagnostics(driver: webdriver.Chrome) -> dict[str, object]:
+    """Return bounded request categories, safe method classes, and same-origin statuses."""
+    try:
+        events = driver.get_log("performance")
+    except Exception:
+        return {"available": False, "truncated": False, "request_count": 0, "requests": []}
+
+    if not isinstance(events, list):
+        return {"available": False, "truncated": False, "request_count": 0, "requests": []}
+
+    truncated = len(events) > MAX_CHECKOUT_REGISTRATION_NETWORK_EVENTS
+    summaries: list[dict[str, object]] = []
+    summary_indexes: dict[str, int] = {}
+    for entry in events[:MAX_CHECKOUT_REGISTRATION_NETWORK_EVENTS]:
+        if not isinstance(entry, dict):
+            continue
+        raw_message = entry.get("message", "")
+        if not isinstance(raw_message, str) or len(raw_message) > MAX_CHECKOUT_REGISTRATION_NETWORK_EVENT_CHARS:
+            truncated = True
+            continue
+        try:
+            envelope = json.loads(raw_message)
+        except (TypeError, ValueError, RecursionError):
+            continue
+        message = envelope.get("message", {}) if isinstance(envelope, dict) else {}
+        if not isinstance(message, dict):
+            continue
+        event_name = message.get("method")
+        params = message.get("params", {})
+        if not isinstance(params, dict):
+            continue
+        request_id = params.get("requestId")
+        if (
+            not isinstance(request_id, str)
+            or not 1 <= len(request_id) <= 128
+            or not re.fullmatch(r"[A-Za-z0-9._:-]+", request_id)
+        ):
+            continue
+
+        if event_name == "Network.requestWillBeSent":
+            request_type = params.get("type")
+            type_category = (
+                {"XHR": "xhr", "Fetch": "fetch"}.get(request_type)
+                if isinstance(request_type, str)
+                else None
+            )
+            request = params.get("request", {})
+            if type_category is None or not isinstance(request, dict):
+                continue
+            path_category = checkout_registration_path_category(request.get("url"))
+            if path_category is None:
+                continue
+            if request_id in summary_indexes:
+                continue
+            if len(summaries) >= MAX_CHECKOUT_REGISTRATION_NETWORK_REQUESTS:
+                truncated = True
+                continue
+
+            method = request.get("method")
+            if isinstance(method, str) and len(method) <= 16 and method.upper() in {
+                "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"
+            }:
+                method_class = method.upper()
+            else:
+                method_class = "OTHER"
+            summary_indexes[request_id] = len(summaries)
+            summaries.append(
+                {
+                    "type": type_category,
+                    "path_category": path_category,
+                    "method_class": method_class,
+                    "status": None,
+                }
+            )
+        elif event_name == "Network.responseReceived" and request_id in summary_indexes:
+            response = params.get("response", {})
+            if not isinstance(response, dict):
+                continue
+            if checkout_registration_path_category(response.get("url")) is None:
+                continue
+            summaries[summary_indexes[request_id]]["status"] = _safe_checkout_http_status(
+                response.get("status")
+            )
+
+    return {
+        "available": True,
+        "truncated": truncated,
+        "request_count": len(summaries),
+        "requests": summaries,
+    }
 
 
 def checkout_order_navigation_network_diagnostics(driver: webdriver.Chrome) -> dict[str, object]:
@@ -520,6 +646,9 @@ def sanitize_checkout_registration_state(raw_state: object) -> dict[str, object]
         "delivery_addresses_visible",
         "login_form_visible",
         "user_menu_visible",
+        "submit_button_present",
+        "submit_button_visible",
+        "submit_button_enabled",
     )
     for field in boolean_fields:
         value = raw_state.get(field)
@@ -533,6 +662,71 @@ def sanitize_checkout_registration_state(raw_state: object) -> dict[str, object]
     invalid_count = raw_state.get("visible_invalid_control_count")
     if isinstance(invalid_count, int) and not isinstance(invalid_count, bool):
         result["visible_invalid_control_count"] = max(0, min(invalid_count, 1000))
+
+    alert_count = raw_state.get("form_alert_count")
+    if isinstance(alert_count, int) and not isinstance(alert_count, bool):
+        result["form_alert_count"] = max(0, min(alert_count, 20))
+    allowed_alert_categories = {
+        "error_alert",
+        "warning_alert",
+        "success_alert",
+        "form_error",
+        "field_error",
+        "role_alert",
+        "other_alert",
+    }
+    alert_categories = raw_state.get("form_alert_categories")
+    if isinstance(alert_categories, list):
+        result["form_alert_categories"] = list(dict.fromkeys(
+            category for category in alert_categories
+            if isinstance(category, str) and category in allowed_alert_categories
+        ))[:7]
+
+    network = raw_state.get("network")
+    if isinstance(network, dict):
+        safe_requests: list[dict[str, object]] = []
+        allowed_request_types = {"xhr", "fetch"}
+        allowed_path_categories = {"checkout", "account", "other_shop"}
+        allowed_methods = {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", "OTHER"}
+        requests = network.get("requests")
+        if isinstance(requests, list):
+            for request in requests[:20]:
+                if not isinstance(request, dict):
+                    continue
+                request_type = request.get("type")
+                path_category = request.get("path_category")
+                method_class = request.get("method_class")
+                status = request.get("status")
+                if (
+                    not isinstance(request_type, str)
+                    or request_type not in allowed_request_types
+                    or not isinstance(path_category, str)
+                    or path_category not in allowed_path_categories
+                    or not isinstance(method_class, str)
+                    or method_class not in allowed_methods
+                ):
+                    continue
+                safe_status = (
+                    status
+                    if isinstance(status, int)
+                    and not isinstance(status, bool)
+                    and 100 <= status <= 599
+                    else None
+                )
+                safe_requests.append(
+                    {
+                        "type": request_type,
+                        "path_category": path_category,
+                        "method_class": method_class,
+                        "status": safe_status,
+                    }
+                )
+        result["network"] = {
+            "available": network.get("available") is True,
+            "truncated": network.get("truncated") is True,
+            "request_count": len(safe_requests),
+            "requests": safe_requests,
+        }
 
     allowed_fields = {
         "firstname",
@@ -567,7 +761,7 @@ def sanitize_checkout_registration_state(raw_state: object) -> dict[str, object]
 
 
 def safe_checkout_registration_state(driver: webdriver.Chrome) -> dict[str, object]:
-    """Return only consent/form visibility and validity metadata, never field values or URLs."""
+    """Return bounded form and same-origin network categories, never values or URLs."""
     try:
         raw_state = driver.execute_script(
             r"""
@@ -579,6 +773,36 @@ def safe_checkout_registration_state(driver: webdriver.Chrome) -> dict[str, obje
                 && style.display !== 'none' && style.visibility !== 'hidden';
             };
             const form = document.querySelector('#checkout-guest-form #customer-form');
+            const checkoutForm = document.querySelector('#checkout-guest-form');
+            const submitButton = checkoutForm
+              ? checkoutForm.querySelector('button[name="continue"]')
+              : null;
+            const isEnabled = (element) => Boolean(element)
+              && !element.disabled
+              && element.getAttribute('aria-disabled') !== 'true';
+            const alertCategories = new Set();
+            const alertNodes = checkoutForm
+              ? [...checkoutForm.querySelectorAll(
+                  '[role="alert"], .alert, .form-errors, .invalid-feedback'
+                )].filter(isVisible).slice(0, 20)
+              : [];
+            for (const element of alertNodes) {
+              if (element.getAttribute('role') === 'alert') {
+                alertCategories.add('role_alert');
+              } else if (element.classList.contains('alert-danger')) {
+                alertCategories.add('error_alert');
+              } else if (element.classList.contains('alert-warning')) {
+                alertCategories.add('warning_alert');
+              } else if (element.classList.contains('alert-success')) {
+                alertCategories.add('success_alert');
+              } else if (element.classList.contains('form-errors')) {
+                alertCategories.add('form_error');
+              } else if (element.classList.contains('invalid-feedback')) {
+                alertCategories.add('field_error');
+              } else {
+                alertCategories.add('other_alert');
+              }
+            }
             const allowedFields = new Set([
               'firstname', 'lastname', 'email', 'password', 'customer_privacy',
               'psgdpr', 'id_gender', 'birthday'
@@ -599,6 +823,11 @@ def safe_checkout_registration_state(driver: webdriver.Chrome) -> dict[str, obje
               delivery_addresses_visible: isVisible(document.querySelector('#delivery-addresses')),
               login_form_visible: isVisible(document.querySelector('#checkout-login-form form')),
               user_menu_visible: isVisible(document.getElementById('userMenuButton')),
+              submit_button_present: Boolean(submitButton),
+              submit_button_visible: isVisible(submitButton),
+              submit_button_enabled: isEnabled(submitButton),
+              form_alert_count: alertNodes.length,
+              form_alert_categories: [...alertCategories].slice(0, 7),
               native_form_valid: form ? form.matches(':valid') : null,
               visible_invalid_control_count: invalidControls.length,
               invalid_required_field_names: invalidControls.slice(0, 8).map((element) => {
@@ -613,8 +842,13 @@ def safe_checkout_registration_state(driver: webdriver.Chrome) -> dict[str, obje
             """
         )
     except Exception:
-        return {"available": False}
-    return sanitize_checkout_registration_state(raw_state)
+        return {
+            "available": False,
+            "network": checkout_registration_network_diagnostics(driver),
+        }
+    safe_state = sanitize_checkout_registration_state(raw_state)
+    safe_state["network"] = checkout_registration_network_diagnostics(driver)
+    return safe_state
 
 
 def click_required_checkbox_label(
@@ -897,6 +1131,7 @@ def register_checkout_account(driver: webdriver.Chrome, label: str, stage_callba
     _mark_checkout_stage(stage_callback, "checkout_submit.locate")
     submit = visible(driver, '#checkout-guest-form button[name="continue"]')
     _mark_checkout_stage(stage_callback, "checkout_submit.click")
+    clear_checkout_network_events(driver)
     click_at_center(driver, submit)
 
     _mark_checkout_stage(stage_callback, "checkout_registration_step.wait")
