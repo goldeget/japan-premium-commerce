@@ -139,13 +139,23 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertIn("if (!is_array($existingStateRows))", source)
         self.assertIn("Could not read existing Japanese prefecture rows from the isolated shop.", source)
         self.assertIn("$existingStateIdsByIso[$stateIsoCode] ?? 0", source)
-        self.assertIn("The isolated shop already has duplicate supported prefecture rows:", source)
+        self.assertIn("$existingStateRowsByIso[$existingIsoCode][] = $existingStateRow", source)
+        self.assertIn("usort($rowsForIso", source)
+        self.assertIn("prefer an active row", source)
+        self.assertIn("$duplicateState->active = 0", source)
+        self.assertIn("'inactive_duplicate_state_count' => count($inactiveDuplicateStateIds)", source)
+        self.assertNotIn("$duplicateState->delete", source, "saved address references must remain intact")
         self.assertNotIn("SELECT `id_state` FROM `' . _DB_PREFIX_ . 'state`", source)
         self.assertIn("$supportedStateRows = array_values(array_filter(", source)
+        self.assertIn("$activeSupportedStateRows = array_values(array_filter(", source)
         self.assertIn("$missingStateCodes = array_values(array_diff($expectedStateCodes, array_keys($stateCodeCounts)))", source)
         self.assertIn("$duplicateStateCodes !== []", source)
         self.assertIn("$allStateRows,", source, "existing unsupported rows must still be checked for zone assignment")
         self.assertIn("'state_iso_codes' => $stateCodes", source)
+
+        postcode_module = (ROOT / "modules/kuraneapostcode/kuraneapostcode.php").read_text(encoding="utf-8")
+        address_validation = postcode_module.split("$stateIds = [];", 1)[1].split("foreach ($candidates", 1)[0]
+        self.assertIn("State::getStatesByIdCountry((int) $country->id, true, 'iso_code', 'asc')", address_validation)
 
         workflow = WORKFLOW.read_text(encoding="utf-8")
         zone_validation = workflow.split(

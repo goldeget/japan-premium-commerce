@@ -97,26 +97,59 @@ $existingStateRows = State::getStatesByIdCountry((int) $japan->id, false, 'iso_c
 if (!is_array($existingStateRows)) {
     throw new RuntimeException('Could not read existing Japanese prefecture rows from the isolated shop.');
 }
-$existingStateIdsByIso = [];
-$existingDuplicateStateCodes = [];
+$existingStateRowsByIso = [];
 foreach ($existingStateRows as $existingStateRow) {
     $existingIsoCode = (string) ($existingStateRow['iso_code'] ?? '');
     if (!isset($expectedStateCodeSet[$existingIsoCode])) {
         continue;
     }
-    if (isset($existingStateIdsByIso[$existingIsoCode])) {
-        $existingDuplicateStateCodes[] = $existingIsoCode;
-        continue;
-    }
-    $existingStateIdsByIso[$existingIsoCode] = (int) $existingStateRow['id_state'];
+    $existingStateRowsByIso[$existingIsoCode][] = $existingStateRow;
 }
-if ($existingDuplicateStateCodes !== []) {
-    $existingDuplicateStateCodes = array_values(array_unique($existingDuplicateStateCodes));
-    sort($existingDuplicateStateCodes, SORT_STRING);
-    throw new RuntimeException(
-        'The isolated shop already has duplicate supported prefecture rows: '
-        . implode(',', $existingDuplicateStateCodes)
-    );
+
+// The isolated fresh-install shop can contain duplicate supported prefecture
+// rows. Keep every database row so saved address references remain intact,
+// prefer an active row (then the lowest ID) as the canonical selectable
+// state, and deactivate other copies only inside this run-scoped disposable
+// QA database.
+$existingStateIdsByIso = [];
+$inactiveDuplicateStateIds = [];
+$inactiveDuplicateStateCodes = [];
+foreach ($existingStateRowsByIso as $stateIsoCode => $rowsForIso) {
+    usort($rowsForIso, static function (array $left, array $right): int {
+        $activeOrder = (int) ($right['active'] ?? 0) <=> (int) ($left['active'] ?? 0);
+        if ($activeOrder !== 0) {
+            return $activeOrder;
+        }
+
+        return (int) ($left['id_state'] ?? 0) <=> (int) ($right['id_state'] ?? 0);
+    });
+
+    $canonicalStateId = (int) ($rowsForIso[0]['id_state'] ?? 0);
+    if ($canonicalStateId < 1) {
+        throw new RuntimeException('An existing Japanese prefecture row has no valid state ID.');
+    }
+    $existingStateIdsByIso[$stateIsoCode] = $canonicalStateId;
+
+    foreach (array_slice($rowsForIso, 1) as $duplicateRow) {
+        $duplicateStateId = (int) ($duplicateRow['id_state'] ?? 0);
+        if ($duplicateStateId < 1) {
+            throw new RuntimeException('A duplicate Japanese prefecture row has no valid state ID.');
+        }
+
+        $inactiveDuplicateStateIds[$duplicateStateId] = true;
+        $inactiveDuplicateStateCodes[$stateIsoCode] = true;
+        if ((int) ($duplicateRow['active'] ?? 0) === 1) {
+            $duplicateState = new State($duplicateStateId);
+            $duplicateState->active = 0;
+            if (!$duplicateState->update()) {
+                throw new RuntimeException(sprintf(
+                    'Could not deactivate duplicate supported prefecture row %s (state ID %d) in the isolated QA database.',
+                    $stateIsoCode,
+                    $duplicateStateId
+                ));
+            }
+        }
+    }
 }
 
 foreach (\Kuranea\Postcode\Domain\PrefectureCatalog::all() as $prefectureCode => $prefectureName) {
@@ -167,9 +200,13 @@ $supportedStateRows = array_values(array_filter(
     $allStateRows,
     static fn (array $row): bool => isset($expectedStateCodeSet[(string) $row['iso_code']])
 ));
+$activeSupportedStateRows = array_values(array_filter(
+    $supportedStateRows,
+    static fn (array $row): bool => (int) $row['active'] === 1
+));
 $stateCodes = array_values(array_map(
     static fn (array $row): string => (string) $row['iso_code'],
-    $supportedStateRows
+    $activeSupportedStateRows
 ));
 $stateCodeCounts = array_count_values($stateCodes);
 $duplicateStateCodes = array_keys(array_filter(
@@ -178,7 +215,7 @@ $duplicateStateCodes = array_keys(array_filter(
 ));
 $missingStateCodes = array_values(array_diff($expectedStateCodes, array_keys($stateCodeCounts)));
 $statesOutsideZone = count(array_filter(
-    $supportedStateRows,
+    $activeSupportedStateRows,
     static fn (array $row): bool => (int) $row['id_zone'] !== (int) $zone->id
 ));
 $unsupportedStatesUsingFreeShippingZone = count(array_filter(
@@ -191,7 +228,7 @@ $activeStateCount = count(array_filter(
     $supportedStateRows,
     static fn (array $row): bool => (int) $row['active'] === 1
 ));
-$stateCount = count($supportedStateRows);
+$stateCount = count($activeSupportedStateRows);
 if ($missingStateCodes !== [] || $duplicateStateCodes !== []) {
     throw new RuntimeException(
         'Supported Japan prefecture rows are missing or duplicated: missing '
@@ -226,6 +263,8 @@ echo json_encode([
     'state_count' => $stateCount,
     'active_state_count' => $activeStateCount,
     'state_iso_codes' => $stateCodes,
+    'inactive_duplicate_state_count' => count($inactiveDuplicateStateIds),
+    'inactive_duplicate_state_iso_codes' => array_keys($inactiveDuplicateStateCodes),
     'fixture_scope' => 'run-scoped isolated GitHub Actions disposable checkout database',
 ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL;
 fwrite(STDERR, sprintf(

@@ -150,7 +150,9 @@ class Kuraneapostcode extends Module
         $city = trim((string) $cityField->getValue());
         $address = trim((string) $addressField->getValue());
         $stateIds = [];
-        foreach (State::getStatesByIdCountry((int) $country->id, false, 'iso_code', 'asc') as $state) {
+        // Match only states customers can select in the address form. Inactive
+        // duplicate localization rows must not shadow the active prefecture ID.
+        foreach (State::getStatesByIdCountry((int) $country->id, true, 'iso_code', 'asc') as $state) {
             $isoCode = (string) ($state['iso_code'] ?? '');
             if (preg_match('/^JP-([0-9]{2})$/D', $isoCode, $matches) === 1) {
                 $stateIds[$matches[1]] = (int) $state['id_state'];

@@ -456,6 +456,13 @@ foreach (State::$rows as $stateRow) {
     }
 }
 assertTrueValue($tokyoStateId > 0, 'The address validation fixture should resolve Tokyo to a native state ID.');
+$inactiveDuplicateTokyo = new State();
+$inactiveDuplicateTokyo->id_country = 392;
+$inactiveDuplicateTokyo->id_zone = 5;
+$inactiveDuplicateTokyo->iso_code = 'JP-13';
+$inactiveDuplicateTokyo->name = '東京都 duplicate';
+$inactiveDuplicateTokyo->active = 0;
+assertSameValue(true, $inactiveDuplicateTokyo->add(), 'The validation fixture should add an inactive duplicate prefecture row.');
 Db::$resultRows = [
     [
         'postcode' => '100-0004',
@@ -490,7 +497,7 @@ $makeJapanAddressForm = static function (int $stateId, string $city, string $tow
 assertSameValue(
     true,
     $module->hookActionValidateCustomerAddressForm(['form' => $makeJapanAddressForm($tokyoStateId, '千代田区', '大手町1-2', '大手町タワー101号')]),
-    'An official postcode candidate with the Japan Post building qualifier removed from town text and editable building should pass.'
+    'An inactive duplicate prefecture row must not shadow the active state ID selected by the customer.'
 );
 assertSameValue(
     true,
