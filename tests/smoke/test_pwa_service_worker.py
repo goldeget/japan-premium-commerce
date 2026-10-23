@@ -147,6 +147,73 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
 
 
 class PwaOfflineWorkerNetworkTests(unittest.TestCase):
+    def test_chromedriver_debugger_address_discovers_local_browser_websocket(self) -> None:
+        websocket_url = "ws://localhost:9222/devtools/browser/test-only-token"
+        connection = object()
+        http_calls: list[tuple[str, int, int, str, str]] = []
+
+        class Driver:
+            capabilities = {
+                "goog:chromeOptions": {"debuggerAddress": "localhost:9222"},
+            }
+
+        class Response:
+            status = 200
+
+            def read(self, amount: int) -> bytes:
+                self_read_sizes.append(amount)
+                return json.dumps({"webSocketDebuggerUrl": websocket_url}).encode()
+
+        self_read_sizes: list[int] = []
+
+        class HttpConnection:
+            def __init__(self, host: str, port: int, timeout: float) -> None:
+                self.host = host
+                self.port = port
+                self.timeout = timeout
+
+            def request(self, method: str, path: str) -> None:
+                http_calls.append((self.host, self.port, self.timeout, method, path))
+
+            def getresponse(self) -> Response:
+                return Response()
+
+            def close(self) -> None:
+                pass
+
+        opened_urls: list[str] = []
+
+        def open_websocket(url: str):
+            opened_urls.append(url)
+            return connection
+
+        with patch.object(pwa_browser, "HTTPConnection", HttpConnection, create=True), patch.object(
+            pwa_browser, "WebSocketConnection", side_effect=open_websocket, create=True
+        ):
+            browser_cdp = pwa_browser.connect_browser_cdp(Driver())
+
+        self.assertIs(browser_cdp.connection, connection)
+        self.assertEqual([("localhost", 9222, 3, "GET", "/json/version")], http_calls)
+        self.assertEqual([65537], self_read_sizes)
+        self.assertEqual([websocket_url], opened_urls)
+
+    def test_chromedriver_debugger_address_rejects_nonloopback_before_http(self) -> None:
+        class Driver:
+            capabilities = {
+                "goog:chromeOptions": {"debuggerAddress": "remote.example:9222"},
+            }
+
+        with patch.object(pwa_browser, "HTTPConnection", create=True) as open_http, patch.object(
+            pwa_browser, "WebSocketConnection", create=True
+        ), self.assertRaises(ChromeBrowserCdpError) as raised:
+            pwa_browser.connect_browser_cdp(Driver())
+
+        self.assertEqual(
+            "devtools_debugger_address_invalid",
+            getattr(raised.exception, "diagnostic_code", None),
+        )
+        open_http.assert_not_called()
+
     def test_devtools_connection_uses_only_a_loopback_browser_websocket(self) -> None:
         created_urls: list[str] = []
         connection = object()

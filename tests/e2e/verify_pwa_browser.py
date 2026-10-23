@@ -9,6 +9,7 @@ import re
 import sys
 import uuid
 from collections.abc import Callable
+from http.client import HTTPConnection
 from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlparse
 
@@ -425,15 +426,99 @@ def safe_cdp_operation(method: str) -> str:
     return operation if re.fullmatch(r"[a-z0-9_]+", operation) else "unknown"
 
 
+def validate_local_chromedriver_debugger_address(debugger_address: object) -> tuple[str, int]:
+    """Parse ChromeDriver's host:port capability, refusing non-loopback destinations."""
+    if not isinstance(debugger_address, str) or not debugger_address:
+        raise ChromeBrowserCdpError(
+            "ChromeDriver did not expose a debugger address",
+            diagnostic_code="devtools_endpoint_missing",
+        )
+    try:
+        parsed = urlparse("//" + debugger_address)
+        hostname = (parsed.hostname or "").casefold().rstrip(".")
+        port = parsed.port
+    except (TypeError, ValueError):
+        raise ChromeBrowserCdpError(
+            "ChromeDriver debugger address is malformed",
+            diagnostic_code="devtools_debugger_address_invalid",
+        ) from None
+
+    try:
+        is_loopback = ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        is_loopback = hostname == "localhost"
+    if (
+        parsed.netloc != debugger_address
+        or not is_loopback
+        or port is None
+        or not 1 <= port <= 65535
+        or parsed.username
+        or parsed.password
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ChromeBrowserCdpError(
+            "ChromeDriver debugger address is not a local endpoint",
+            diagnostic_code="devtools_debugger_address_invalid",
+        )
+    return hostname, port
+
+
+def discover_chromedriver_browser_websocket(capabilities: object) -> tuple[str, int]:
+    """Read ChromeDriver's local `/json/version` endpoint without following redirects."""
+    chrome_options = capabilities.get("goog:chromeOptions") if isinstance(capabilities, dict) else None
+    debugger_address = chrome_options.get("debuggerAddress") if isinstance(chrome_options, dict) else None
+    hostname, port = validate_local_chromedriver_debugger_address(debugger_address)
+
+    connection = None
+    try:
+        connection = HTTPConnection(hostname, port, timeout=3)
+        connection.request("GET", "/json/version")
+        response = connection.getresponse()
+        if response.status != 200:
+            raise ChromeBrowserCdpError(
+                "Chrome DevTools discovery endpoint returned a non-success response",
+                diagnostic_code="devtools_discovery_failed",
+            )
+        body = response.read(65537)
+        if len(body) > 65536:
+            raise ChromeBrowserCdpError(
+                "Chrome DevTools discovery response exceeded its size limit",
+                diagnostic_code="devtools_response_invalid",
+            )
+        payload = json.loads(body.decode("utf-8"))
+    except ChromeBrowserCdpError:
+        raise
+    except Exception as error:
+        raise ChromeBrowserCdpError(
+            "Chrome DevTools discovery request failed",
+            diagnostic_code="devtools_discovery_failed",
+            cause_type=safe_exception_type(error),
+        ) from None
+    finally:
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                pass
+
+    websocket_url = payload.get("webSocketDebuggerUrl") if isinstance(payload, dict) else None
+    if not isinstance(websocket_url, str) or not websocket_url:
+        raise ChromeBrowserCdpError(
+            "Chrome DevTools discovery response omitted its browser websocket",
+            diagnostic_code="devtools_endpoint_missing",
+        )
+    return websocket_url, port
+
+
 def local_browser_devtools_url(driver: webdriver.Chrome) -> str:
     """Return Selenium's loopback browser endpoint without importing versioned CDP bindings."""
     capabilities = getattr(driver, "capabilities", None)
     websocket_url = capabilities.get("se:cdp") if isinstance(capabilities, dict) else None
+    expected_port = None
     if not isinstance(websocket_url, str) or not websocket_url:
-        raise ChromeBrowserCdpError(
-            "Chrome did not expose a local DevTools websocket",
-            diagnostic_code="devtools_endpoint_missing",
-        )
+        websocket_url, expected_port = discover_chromedriver_browser_websocket(capabilities)
     try:
         parsed = urlparse(websocket_url)
         hostname = (parsed.hostname or "").casefold().rstrip(".")
@@ -453,6 +538,7 @@ def local_browser_devtools_url(driver: webdriver.Chrome) -> str:
         or not is_loopback
         or port is None
         or not 1 <= port <= 65535
+        or (expected_port is not None and port != expected_port)
         or parsed.username
         or parsed.password
         or parsed.query
