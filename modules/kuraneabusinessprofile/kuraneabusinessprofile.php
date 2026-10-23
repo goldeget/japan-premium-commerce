@@ -205,6 +205,22 @@ class Kuraneabusinessprofile extends Module
     {
         $controller = $params['controller'] ?? $this->context->controller;
         $controllerName = (string) ($controller->php_self ?? '');
+
+        if (in_array($controllerName, [
+            'my-account',
+            'identity',
+            'authentication',
+            'cart',
+            'order',
+            'order-opc',
+            'order-confirmation',
+        ], true)) {
+            // Apply this before controller authorization redirects as well as successful responses.
+            header('Cache-Control: private, no-store, max-age=0', true);
+            header('Pragma: no-cache', true);
+            header('Expires: 0', true);
+        }
+
         if (!in_array($controllerName, ['order', 'order-opc'], true)) {
             return;
         }

@@ -42,6 +42,41 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertIn("CommerceGate::isIsolatedCiCheckoutEnabled()", hook)
         self.assertIn("CommerceGate::isEnabled($profile, $this->externalAuthorizationConfirmed())", hook)
 
+    def test_private_customer_navigation_headers_are_set_before_controller_redirects(self) -> None:
+        module = SHOP_MODULE.read_text(encoding="utf-8")
+        hook = module.split("public function hookActionFrontControllerInitBefore", 1)[1].split(
+            "public function ", 1
+        )[0]
+        self.assertIn("if (in_array($controllerName, [", hook)
+        private_routes = hook.split("if (in_array($controllerName, [", 1)[1].split(
+            "if (!in_array($controllerName, ['order', 'order-opc'], true))", 1
+        )[0]
+
+        for controller in (
+            "my-account",
+            "identity",
+            "authentication",
+            "cart",
+            "order",
+            "order-opc",
+            "order-confirmation",
+        ):
+            with self.subTest(controller=controller):
+                self.assertIn(f"'{controller}'", private_routes)
+        self.assertIn("header('Cache-Control: private, no-store, max-age=0', true)", private_routes)
+        self.assertIn("header('Pragma: no-cache', true)", private_routes)
+        self.assertIn("header('Expires: 0', true)", private_routes)
+        self.assertLess(
+            hook.index("header('Cache-Control: private, no-store, max-age=0', true)"),
+            hook.index("\\Tools::redirect("),
+            "private cache policy must be sent before any protected-route redirect",
+        )
+        self.assertLess(
+            hook.index("header('Cache-Control: private, no-store, max-age=0', true)"),
+            hook.index("CommerceGate::isIsolatedCiCheckoutEnabled()"),
+            "private cache policy must be sent before the checkout gate can redirect",
+        )
+
     def test_workflow_passes_only_run_scoped_ci_checkout_environment(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         compose = COMPOSE.read_text(encoding="utf-8")
