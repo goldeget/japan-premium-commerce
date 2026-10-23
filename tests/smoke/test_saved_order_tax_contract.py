@@ -29,6 +29,9 @@ class SavedOrderTaxContractTests(unittest.TestCase):
     def test_unassigned_group_does_not_report_a_legal_zero_tax_rate(self) -> None:
         source = (ROOT / "tests/postcode/verify_ci_free_shipping_order.php").read_text()
         self.assertIn("No assigned calculation rule; not a legal tax determination", source)
+        self.assertIn('"tax_display_mode": "no_assigned_tax_rule"', (ROOT / "tests/e2e/checkout_total_math.py").read_text())
+        self.assertIn("must not report a legal zero tax or net amount", source)
+        self.assertIn("$browserTotals['tax'] !== null", source)
         self.assertIn("'saved_order_detail_tax_group_id' => $savedDetailTaxGroupId", source)
         self.assertIn("'saved_order_detail_taxes' => $storedTaxRows", source)
 

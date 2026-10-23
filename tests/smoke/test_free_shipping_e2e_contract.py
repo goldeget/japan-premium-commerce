@@ -428,8 +428,9 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             "products_tax_incl",
             "shipping_tax_incl",
             "total_tax_incl",
-            "browser_totals[\"tax\"]",
-            "if observed != expected:",
+            'browser_totals.get("tax")',
+            'observed["tax"] is not None',
+            "if comparable != expected:",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, browser)
@@ -440,8 +441,8 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         for expression in (
             "sum(product_totals)",
             "_parse_yen(shipping_lines[0])",
-            "sum(tax_amounts)",
-            "total_amounts[-1]",
+            "reconcile_order_confirmation_total_rows(",
+            "allow_unassigned_tax_rule=allow_unassigned_tax_rule",
         ):
             with self.subTest(expression=expression):
                 self.assertIn(expression, confirmation_reader)
@@ -465,7 +466,7 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             "def _order_history_total", 1
         )[0]
         self.assertLess(
-            placer.index("_order_confirmation_totals(driver)"),
+            placer.index("observed = _order_confirmation_totals("),
             placer.index('BASE + "/index.php?controller=history"'),
             "the real confirmation totals must be captured before the browser leaves that page",
         )
@@ -497,11 +498,16 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             "id_tax_rules_group",
             "order_detail",
             "browser_checkout",
+            "browser_pre_coupon_checkout",
             "product_quantity",
             "platform fee",
             "tax_fixture_scope",
             "expectedStateIso",
             "carrier_zone_country_codes",
+            "unit_price_tax_excl",
+            "unit_price_tax_incl",
+            "native saved synthetic tax",
+            "inclusive_total_only",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, verifier)
@@ -681,6 +687,7 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertLess(type_requested, validate_value, "wait for the exact field value after typing")
         self.assertIn('item.get_attribute("value") == str(quantity_requested)', quantity_source)
         self.assertIn('By.ID, "quantity_wanted"', quantity_source)
+        self.assertNotIn("quantity.click()", quantity_source, "avoid mobile fixed-navigation click interception")
         self.assertIn('message="product detail did not accept the requested test quantity"', quantity_source)
         self.assertNotIn(
             "quantity.clear()",

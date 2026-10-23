@@ -20,7 +20,16 @@ from selenium.webdriver.support.select import Select
 from selenium.webdriver.support.ui import WebDriverWait
 
 import verify_ci_checkout_admin_browser as checkout
-from checkout_total_math import reconcile_cart_totals
+from checkout_total_math import (
+    is_tax_exclusive_total_label as _is_tax_exclusive_total_label,
+    is_tax_inclusive_total_label as _is_tax_inclusive_total_label,
+    labeled_tax_total_amounts,
+    reconcile_cart_totals,
+    reconcile_inclusive_and_exclusive_totals,
+    reconcile_no_assigned_tax_rule_display,
+    reconcile_order_confirmation_total_rows,
+    reconcile_tax_included_display,
+)
 from shipping_admin_routes import carrier_action_url, carrier_id_from_edit_url, matches_admin_controller_url
 
 
@@ -554,7 +563,8 @@ def _add_quantity_and_open_checkout(
     checkout.search_for_product(driver, label, search_term=search_term)
     displayed_unit_price = _parse_yen(_visible_text(driver, ".product__price"))
     quantity = _wait_visible(driver, "#quantity_wanted")
-    quantity.click()
+    # Keyboard input focuses this field without a pointer click. On mobile the
+    # fixed navigation can overlap the input after Selenium scrolls it into view.
     quantity.send_keys(Keys.CONTROL, "a")
     quantity.send_keys(str(quantity_requested))
     WebDriverWait(driver, 5, poll_frequency=0.1).until(
@@ -656,7 +666,7 @@ def _cart_snapshot(
     driver,
     tax_rule_group_id: int | None = None,
     pre_discount_tax_total: int | None = None,
-) -> dict[str, int]:
+) -> dict[str, int | None | bool | str]:
     tax_rule_group_id = PRODUCT_TAX_RULE_GROUP_ID if tax_rule_group_id is None else tax_rule_group_id
     product_text = _visible_text(driver, "#cart-subtotal-products .cart-summary__value")
     shipping_text = _visible_text(driver, "#cart-subtotal-shipping .cart-summary__value")
@@ -679,16 +689,53 @@ def _cart_snapshot(
     if not lines:
         raise AssertionError("checkout did not display the cart total")
 
-    total_amounts: list[int] = []
+    total_rows: list[tuple[str, int]] = []
     tax_amounts: list[int] = []
     for label, value in lines:
         amount = _parse_yen(value)
         if _is_tax_summary_label(label):
             tax_amounts.append(amount)
         if _is_total_summary_label(label):
-            total_amounts.append(amount)
-    if not total_amounts:
-        total_amounts.append(_parse_yen(lines[-1][1]))
+            total_rows.append((label, amount))
+    if not total_rows:
+        total_rows.append((lines[-1][0], _parse_yen(lines[-1][1])))
+
+    total_amounts = [amount for _label, amount in total_rows]
+    if tax_rule_group_id == 0:
+        if any(amount != 0 for amount in tax_amounts):
+            raise AssertionError("the fixture with no assigned tax rule displayed a nonzero tax row")
+        labeled_totals = labeled_tax_total_amounts(total_rows)
+        total_tax_incl = labeled_totals["total_tax_incl"]
+        return reconcile_no_assigned_tax_rule_display(
+            products_tax_incl=product_total,
+            shipping_tax_incl=shipping_total,
+            discounts_tax_incl=discount_total,
+            total_tax_incl=total_amounts[-1] if total_tax_incl is None else total_tax_incl,
+            tax_breakdown_displayed=bool(tax_amounts),
+        )
+
+    if tax_rule_group_id > 0 and not tax_amounts:
+        if len(total_rows) == 1:
+            total_label, total_incl = total_rows[-1]
+            if _is_tax_inclusive_total_label(total_label):
+                return reconcile_tax_included_display(
+                    products_tax_incl=product_total,
+                    shipping_tax_incl=shipping_total,
+                    discounts_tax_incl=discount_total,
+                    total_tax_incl=total_incl,
+                    total_label=total_label,
+                )
+        elif len(total_rows) == 2 and pre_discount_tax_total is not None:
+            labeled_totals = labeled_tax_total_amounts(total_rows)
+            if labeled_totals["total_tax_incl"] is not None and labeled_totals["total_tax_excl"] is not None:
+                return reconcile_inclusive_and_exclusive_totals(
+                    products_tax_incl=product_total,
+                    shipping_tax_incl=shipping_total,
+                    discounts_tax_incl=discount_total,
+                    total_tax_incl=labeled_totals["total_tax_incl"],
+                    total_tax_excl=labeled_totals["total_tax_excl"],
+                    pre_discount_tax=pre_discount_tax_total,
+                )
 
     total = total_amounts[-1]
     if len(total_amounts) > 1:
@@ -713,7 +760,7 @@ def _cart_snapshot(
         raise AssertionError("the product tax-rule group must be read from the isolated product fixture")
     if shipping_total != 0:
         raise AssertionError(f"the free Japan carrier added {shipping_total} JPY to checkout")
-    return reconcile_cart_totals(
+    totals = reconcile_cart_totals(
         products_tax_incl=product_total,
         shipping_tax_incl=shipping_total,
         discounts_tax_incl=discount_total,
@@ -722,6 +769,9 @@ def _cart_snapshot(
         total_tax_excl=total_excl,
         pre_discount_tax=tax_total if pre_discount_tax_total is None else pre_discount_tax_total,
     )
+    totals["tax_breakdown_displayed"] = bool(tax_amounts)
+    totals["tax_display_mode"] = "detailed_breakdown" if tax_amounts else "no_assigned_tax_rule"
+    return totals
 
 
 def _find_free_carrier_option(driver, carrier: dict[str, object]):
@@ -734,12 +784,75 @@ def _find_free_carrier_option(driver, carrier: dict[str, object]):
     return None
 
 
+def _assert_taxable_visible_totals(
+    totals: dict[str, int | None | bool | str],
+    *,
+    discount_tax_incl: int,
+    final_tax_incl: int,
+    tax: int,
+    discount_tax_excl: int,
+    final_tax_excl: int,
+) -> None:
+    expected_visible = {
+        "products_tax_incl": 1100,
+        "shipping_tax_incl": 0,
+        "discounts_tax_incl": discount_tax_incl,
+        "total_tax_incl": final_tax_incl,
+    }
+    observed_visible = {key: totals.get(key) for key in expected_visible}
+    if observed_visible != expected_visible:
+        raise AssertionError(
+            "tax-inclusive customer amounts do not reconcile before saving the native order: "
+            f"observed={observed_visible}, expected={expected_visible}"
+        )
+
+    if totals.get("tax") is None:
+        if (
+            totals.get("tax_display_mode") != "inclusive_total_only"
+            or totals.get("tax_breakdown_displayed") is not False
+            or any(totals.get(key) is not None for key in (
+                "products_tax_excl",
+                "discounts_tax_excl",
+                "total_tax_excl",
+            ))
+        ):
+            raise AssertionError(
+                "an omitted tax row must stay unknown in the browser artifact; it cannot be recorded as ¥0"
+            )
+        return
+
+    expected_detail = {
+        "products_tax_excl": 1000,
+        "discounts_tax_excl": discount_tax_excl,
+        "tax": tax,
+        "total_tax_excl": final_tax_excl,
+    }
+    observed_detail = {key: totals.get(key) for key in expected_detail}
+    if observed_detail != expected_detail:
+        raise AssertionError(
+            "the displayed synthetic tax breakdown differs from the isolated fixture: "
+            f"observed={observed_detail}, expected={expected_detail}"
+        )
+    expected_display_modes = {
+        "detailed_breakdown": True,
+        "tax_inclusive_and_exclusive_totals": False,
+    }
+    display_mode = str(totals.get("tax_display_mode"))
+    if (
+        display_mode not in expected_display_modes
+        or totals.get("tax_breakdown_displayed") is not expected_display_modes[display_mode]
+    ):
+        raise AssertionError(
+            "a known tax amount must identify whether a tax row or labeled net/gross totals were displayed"
+        )
+
+
 def _select_free_carrier_and_assert_zero(
     driver,
     carrier: dict[str, object],
     tax_rule_group_id: int | None = None,
     pre_discount_tax_total: int | None = None,
-) -> dict[str, int]:
+) -> dict[str, int | None | bool | str]:
     available_options = [
         item for item in driver.find_elements(By.CSS_SELECTOR, ".delivery-option__item")
         if item.is_displayed()
@@ -797,7 +910,11 @@ def _order_history_total(driver, reference: str) -> int:
     return _parse_yen(row.find_element(By.CSS_SELECTOR, ".order-history__cell--total").text)
 
 
-def _order_confirmation_totals(driver) -> dict[str, int]:
+def _order_confirmation_totals(
+    driver,
+    *,
+    allow_unassigned_tax_rule: bool = False,
+) -> dict[str, int | None | bool | str]:
     """Read the rendered Hummingbird confirmation amounts without leaving the page."""
     _wait_present(driver, ".order-confirmation__table")
     product_totals = [
@@ -837,22 +954,26 @@ def _order_confirmation_totals(driver) -> dict[str, int]:
         for label, value in total_lines
         if _is_tax_summary_label(label)
     ]
-    total_amounts = [
-        _parse_yen(value)
+    total_rows = [
+        (label, _parse_yen(value))
         for label, value in total_lines
         if _is_total_summary_label(label)
     ]
-    if not total_amounts:
+    if not total_rows:
         raise AssertionError(
             "order confirmation did not display a recognizable final total; "
             f"visible labels were {[label for label, _value in total_lines]}"
         )
+    displayed_totals = reconcile_order_confirmation_total_rows(
+        total_rows=total_rows,
+        tax_amounts=tax_amounts,
+        allow_unassigned_tax_rule=allow_unassigned_tax_rule,
+    )
 
     return {
         "products_tax_incl": sum(product_totals),
         "shipping_tax_incl": _parse_yen(shipping_lines[0]),
-        "tax": sum(tax_amounts),
-        "total_tax_incl": total_amounts[-1],
+        **displayed_totals,
     }
 
 
@@ -860,9 +981,9 @@ def _place_unpaid_order_and_verify_confirmation(
     driver,
     label: str,
     email: str,
-    expected_totals: dict[str, int],
+    expected_totals: dict[str, int | None | bool | str],
     screenshot_name: str,
-) -> tuple[dict[str, object], dict[str, int]]:
+) -> tuple[dict[str, object], dict[str, int | None | bool | str]]:
     """Verify the customer-facing confirmation before navigating to order history."""
     place_order = checkout.visible(driver, "#payment-confirmation button", timeout=35)
     checkout.click_at_center(driver, place_order)
@@ -876,16 +997,38 @@ def _place_unpaid_order_and_verify_confirmation(
     if "[CI ONLY]" not in confirmation:
         raise AssertionError("order confirmation does not contain the clearly marked CI-only product")
 
-    observed = _order_confirmation_totals(driver)
+    observed = _order_confirmation_totals(
+        driver,
+        allow_unassigned_tax_rule=expected_totals.get("tax_display_mode") == "no_assigned_tax_rule",
+    )
     expected = {
         "products_tax_incl": int(expected_totals["products_tax_incl"]),
         "shipping_tax_incl": 0,
-        "tax": int(expected_totals["tax"]),
         "total_tax_incl": int(expected_totals["total_tax_incl"]),
     }
-    if observed != expected:
+    comparable = {
+        key: observed[key]
+        for key in ("products_tax_incl", "shipping_tax_incl", "total_tax_incl")
+    }
+    expected_tax_excl = expected_totals.get("total_tax_excl")
+    if expected_tax_excl is not None and observed.get("total_tax_excl") is not None:
+        expected["total_tax_excl"] = int(expected_tax_excl)
+        comparable["total_tax_excl"] = int(observed["total_tax_excl"])
+    expected_tax = expected_totals.get("tax")
+    if expected_tax is not None and observed["tax"] is not None:
+        expected["tax"] = int(expected_tax)
+        comparable["tax"] = observed["tax"]
+    if observed["tax"] is not None and int(observed["tax"]) < 0:
+        raise AssertionError("order confirmation displayed a negative tax amount")
+    if (
+        expected_totals.get("tax_display_mode") == "inclusive_total_only"
+        and observed["tax"] is None
+        and observed["tax_display_mode"] != "inclusive_total_only"
+    ):
+        raise AssertionError("taxable order confirmation did not label its final amount as tax-inclusive")
+    if comparable != expected:
         raise AssertionError(
-            f"{label} order confirmation totals {observed} differ from verified checkout {expected}"
+            f"{label} order confirmation visible totals {comparable} differ from verified checkout {expected}"
         )
     driver.save_screenshot(str(QA_DIR / screenshot_name))
 
@@ -1219,23 +1362,16 @@ def run_japan_taxable_customer_checkout() -> None:
             driver,
             carrier,
             tax_rule_group_id=PRODUCT_TAX_RULE_GROUP_ID,
+            pre_discount_tax_total=100,
         )
-        expected_pre_coupon_totals = {
-            "products_tax_incl": 1100,
-            "products_tax_excl": 1000,
-            "shipping_tax_incl": 0,
-            "shipping_tax_excl": 0,
-            "discounts_tax_incl": 0,
-            "discounts_tax_excl": 0,
-            "tax": 100,
-            "total_tax_incl": 1100,
-            "total_tax_excl": 1000,
-        }
-        if pre_coupon_totals != expected_pre_coupon_totals:
-            raise AssertionError(
-                "taxable checkout before the coupon did not reconcile to the CI-only included-tax fixture: "
-                f"observed={pre_coupon_totals}, expected={expected_pre_coupon_totals}"
-            )
+        _assert_taxable_visible_totals(
+            pre_coupon_totals,
+            discount_tax_incl=0,
+            final_tax_incl=1100,
+            tax=100,
+            discount_tax_excl=0,
+            final_tax_excl=1000,
+        )
 
         stage = "taxable_coupon_condition"
         coupon = _apply_coupon_if_configured(driver)
@@ -1247,24 +1383,19 @@ def run_japan_taxable_customer_checkout() -> None:
             driver,
             carrier,
             tax_rule_group_id=PRODUCT_TAX_RULE_GROUP_ID,
-            pre_discount_tax_total=pre_coupon_totals["tax"],
+            # This is the explicitly synthetic fixture amount; it is only
+            # used if the storefront displays a full tax breakdown. A missing
+            # UI tax row remains null and is checked against the saved order.
+            pre_discount_tax_total=100,
         )
-        expected_totals = {
-            "products_tax_incl": 1100,
-            "products_tax_excl": 1000,
-            "shipping_tax_incl": 0,
-            "shipping_tax_excl": 0,
-            "discounts_tax_incl": 550,
-            "discounts_tax_excl": 500,
-            "tax": 50,
-            "total_tax_incl": 550,
-            "total_tax_excl": 500,
-        }
-        if browser_totals != expected_totals:
-            raise AssertionError(
-                "taxable coupon checkout did not reconcile to the CI-only included-tax fixture: "
-                f"observed={browser_totals}, expected={expected_totals}"
-            )
+        _assert_taxable_visible_totals(
+            browser_totals,
+            discount_tax_incl=550,
+            final_tax_incl=550,
+            tax=50,
+            discount_tax_excl=500,
+            final_tax_excl=500,
+        )
         browser_totals.update({
             "displayed_unit_price": unit_price,
             "quantity": 1,
@@ -1296,6 +1427,7 @@ def run_japan_taxable_customer_checkout() -> None:
             "browser_totals": browser_totals,
             "order_history_total": history_total,
             "order_confirmation_totals": confirmation_totals,
+            "pre_coupon_browser_totals": pre_coupon_totals,
             "coupon": coupon,
             "product_tax_rule_group_id": PRODUCT_TAX_RULE_GROUP_ID,
             "tax_fixture_scope": (
@@ -1317,8 +1449,9 @@ def run_japan_taxable_customer_checkout() -> None:
             encoding="utf-8",
         )
         print(
-            "PASS: Chromium reconciled the ¥1,100 tax-included product, ¥550 tax-inclusive run-scoped coupon, "
-            "¥50 synthetic CI tax, ¥550 unpaid JPY order, and ¥0 Japan shipping."
+            "PASS: Chromium verified the ¥1,100 tax-inclusive sale amount, ¥550 customer total after the "
+            "tax-inclusive coupon, and ¥0 Japan shipping. The native saved-order check verifies the actual "
+            "tax rule and amount separately."
         )
     except Exception as error:
         try:
@@ -1363,10 +1496,26 @@ def run_free_carrier_admin_order_view() -> None:
             )
 
             stage = f"reconcile_{order_kind}_admin_order_totals"
+            verified_path = QA_DIR / f"shipping-free-{order_kind}-verified.json"
+            if not verified_path.is_file():
+                raise AssertionError(f"{order_kind} native order verification artifact is missing")
+            verified = json.loads(verified_path.read_text(encoding="utf-8"))
+            native_tax = round(
+                float(verified["total_paid_tax_incl"]) - float(verified["total_paid_tax_excl"])
+            )
+            if native_tax < 0:
+                raise AssertionError(f"{order_kind} native saved order has a negative tax amount")
+            if int(order.get("product_tax_rule_group_id", 0)) > 0 and native_tax <= 0:
+                raise AssertionError(f"{order_kind} configured taxable order has no persisted tax amount")
+            browser_tax = browser_totals.get("tax")
+            if browser_tax is not None and int(browser_tax) != native_tax:
+                raise AssertionError(
+                    f"{order_kind} displayed tax amount ¥{browser_tax} differs from native saved tax ¥{native_tax}"
+                )
             expected = {
                 "products": int(browser_totals["products_tax_incl"]),
                 "shipping": 0,
-                "tax": int(browser_totals["tax"]),
+                "tax": native_tax,
                 "total": int(browser_totals["total_tax_incl"]),
             }
             selectors = {
@@ -1395,7 +1544,8 @@ def run_free_carrier_admin_order_view() -> None:
         driver.set_window_size(390, 844)
         driver.save_screenshot(str(QA_DIR / "shipping-free-order-admin-mobile.png"))
         print(
-            "PASS: separate admin login reconciled Tokyo, Osaka, and taxable orders, each with ¥0 shipping."
+            "PASS: separate admin login reconciled Tokyo, Osaka, and taxable order totals and ¥0 shipping; "
+            "tax amounts came from verified native saved orders."
         )
     except Exception as error:
         try:

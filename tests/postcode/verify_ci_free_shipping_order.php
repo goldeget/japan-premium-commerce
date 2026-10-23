@@ -171,7 +171,7 @@ if ($carrierShippingTaxExcl !== 0.0
 
 $stage = 'product quantity and explicit tax fixture';
 $orderDetails = Db::getInstance()->executeS(
-    'SELECT `id_order_detail`, `id_tax_rules_group`, `product_id`, `product_quantity`, `total_price_tax_excl`, `total_price_tax_incl`'
+    'SELECT `id_order_detail`, `id_tax_rules_group`, `product_id`, `product_quantity`, `unit_price_tax_excl`, `unit_price_tax_incl`, `total_price_tax_excl`, `total_price_tax_incl`'
     . ' FROM `' . _DB_PREFIX_ . 'order_detail`'
     . ' WHERE `id_order` = ' . (int) $orderId
 );
@@ -193,6 +193,8 @@ if (!is_array($orderDetails)
 }
 $detailProductsTaxExcl = (float) $orderDetails[0]['total_price_tax_excl'];
 $detailProductsTaxIncl = (float) $orderDetails[0]['total_price_tax_incl'];
+$detailUnitTaxExcl = (float) $orderDetails[0]['unit_price_tax_excl'];
+$detailUnitTaxIncl = (float) $orderDetails[0]['unit_price_tax_incl'];
 if (abs($detailProductsTaxExcl - (float) $order->total_products) > 0.0001
     || abs($detailProductsTaxIncl - (float) $order->total_products_wt) > 0.0001
 ) {
@@ -218,6 +220,41 @@ $browserDiscountTaxIncl = (float) ($browserTotals['discounts_tax_incl'] ?? 0);
 $browserTotalTaxExcl = (float) ($browserTotals['total_tax_excl'] ?? -1);
 $browserTotalTaxIncl = (float) ($browserTotals['total_tax_incl'] ?? -1);
 $nativeTaxes = (float) $order->total_paid_tax_incl - (float) $order->total_paid_tax_excl;
+$browserTaxDisplayMode = (string) ($browserTotals['tax_display_mode'] ?? 'detailed_breakdown');
+$browserHasInclusiveTotalOnly = $browserTaxDisplayMode === 'inclusive_total_only';
+if ($browserHasInclusiveTotalOnly
+    && ($productTaxGroupId < 1
+        || !array_key_exists('tax', $browserTotals)
+        || $browserTotals['tax'] !== null
+        || ($browserTotals['tax_breakdown_displayed'] ?? true) !== false
+        || $nativeTaxes <= 0.0)
+) {
+    throw new RuntimeException('An inclusive-only browser total must leave tax unknown and reconcile to a positive native saved tax.');
+}
+if ($productTaxGroupId === 0
+    && ((string) ($browserTotals['tax_display_mode'] ?? '') !== 'no_assigned_tax_rule'
+        || (array_key_exists('tax', $browserTotals) && $browserTotals['tax'] !== null)
+        || ($browserTotals['products_tax_excl'] ?? null) !== null
+        || ($browserTotals['discounts_tax_excl'] ?? null) !== null
+        || ($browserTotals['total_tax_excl'] ?? null) !== null)
+) {
+    throw new RuntimeException('A product without an assigned tax calculation rule must not report a legal zero tax or net amount.');
+}
+if ($productTaxGroupId > 0 && !$browserHasInclusiveTotalOnly) {
+    $browserTax = $browserTotals['tax'] ?? null;
+    $taxDisplayMode = (string) ($browserTotals['tax_display_mode'] ?? '');
+    $taxBreakdownDisplayed = $browserTotals['tax_breakdown_displayed'] ?? null;
+    $hasDetailedTaxRow = $taxDisplayMode === 'detailed_breakdown'
+        && $taxBreakdownDisplayed === true;
+    $hasLabeledGrossNetTotals = $taxDisplayMode === 'tax_inclusive_and_exclusive_totals'
+        && $taxBreakdownDisplayed === false;
+    if (!is_numeric($browserTax)
+        || (float) $browserTax <= 0.0
+        || (!$hasDetailedTaxRow && !$hasLabeledGrossNetTotals)
+    ) {
+        throw new RuntimeException('A taxable browser amount must preserve positive tax and its displayed-total evidence.');
+    }
+}
 
 $stage = 'saved native order detail tax rows';
 $savedDetailTaxGroupId = (int) $orderDetails[0]['id_tax_rules_group'];
@@ -249,11 +286,72 @@ if ($savedDetailTaxGroupId > 0) {
     if (count($storedTaxRows) !== 1) {
         throw new RuntimeException('The synthetic taxable order must retain its single native tax row.');
     }
+    $preCouponBrowserTotals = is_array($browserOrder['pre_coupon_browser_totals'] ?? null)
+        ? $browserOrder['pre_coupon_browser_totals']
+        : [];
+    foreach ([
+        'pre-coupon product total' => [
+            (float) ($preCouponBrowserTotals['products_tax_incl'] ?? -1),
+            1100.0,
+        ],
+        'pre-coupon shipping total' => [
+            (float) ($preCouponBrowserTotals['shipping_tax_incl'] ?? -1),
+            0.0,
+        ],
+        'pre-coupon discount total' => [
+            (float) ($preCouponBrowserTotals['discounts_tax_incl'] ?? -1),
+            0.0,
+        ],
+        'pre-coupon final total' => [
+            (float) ($preCouponBrowserTotals['total_tax_incl'] ?? -1),
+            1100.0,
+        ],
+    ] as $checkName => [$actual, $expected]) {
+        if (abs($actual - $expected) > 0.0001) {
+            throw new RuntimeException(sprintf('%s mismatch: browser %.4f vs %.4f.', $checkName, $actual, $expected));
+        }
+    }
+    $preCouponBrowserTax = $preCouponBrowserTotals['tax'] ?? null;
+    if ($preCouponBrowserTax === null) {
+        if (($preCouponBrowserTotals['tax_display_mode'] ?? null) !== 'inclusive_total_only'
+            || ($preCouponBrowserTotals['tax_breakdown_displayed'] ?? true) !== false
+        ) {
+            throw new RuntimeException('The pre-coupon browser tax must be explicitly unknown when no tax row is rendered.');
+        }
+    } elseif (abs((float) $preCouponBrowserTax - 100.0) > 0.0001
+        || abs((float) ($preCouponBrowserTotals['products_tax_excl'] ?? -1) - 1000.0) > 0.0001
+        || abs((float) ($preCouponBrowserTotals['total_tax_excl'] ?? -1) - 1000.0) > 0.0001
+        || !(
+            (($preCouponBrowserTotals['tax_display_mode'] ?? null) === 'detailed_breakdown'
+                && ($preCouponBrowserTotals['tax_breakdown_displayed'] ?? null) === true)
+            || (($preCouponBrowserTotals['tax_display_mode'] ?? null) === 'tax_inclusive_and_exclusive_totals'
+                && ($preCouponBrowserTotals['tax_breakdown_displayed'] ?? null) === false)
+        )
+    ) {
+        throw new RuntimeException('The visible pre-coupon synthetic tax evidence does not match ¥1,100 TTC / ¥1,000 HT.');
+    }
+
     $storedTaxRow = $storedTaxRows[0];
     $storedTaxRate = (float) $storedTaxRow['rate'];
     $storedTaxUnit = (float) $storedTaxRow['unit_amount'];
     $storedTaxTotal = (float) $storedTaxRow['total_amount'];
     $discountedProductTaxBase = $detailProductsTaxExcl - $discountsTaxExcl;
+    foreach ([
+        'native product unit tax-exclusive price' => [$detailUnitTaxExcl, 1000.0],
+        'native product unit tax-inclusive price' => [$detailUnitTaxIncl, 1100.0],
+        'native product tax-exclusive subtotal' => [$detailProductsTaxExcl, 1000.0],
+        'native product tax-inclusive subtotal' => [$detailProductsTaxIncl, 1100.0],
+        'native discount tax-exclusive amount' => [$discountsTaxExcl, 500.0],
+        'native discount tax-inclusive amount' => [$discountsTaxIncl, 550.0],
+        'native final tax-exclusive amount' => [(float) $order->total_paid_tax_excl, 500.0],
+        'native final tax-inclusive amount' => [(float) $order->total_paid_tax_incl, 550.0],
+        'native saved synthetic tax' => [$nativeTaxes, 50.0],
+        'saved synthetic order-detail tax' => [$storedTaxTotal, 50.0],
+    ] as $checkName => [$actual, $expected]) {
+        if (abs($actual - $expected) > 0.0001) {
+            throw new RuntimeException(sprintf('%s mismatch: native %.4f vs %.4f.', $checkName, $actual, $expected));
+        }
+    }
     if ((int) $storedTaxRow['id_tax'] < 1
         || (int) $storedTaxRow['belongs_to_saved_group'] !== 1
         || abs($storedTaxRate - 10.0) > 0.0001
@@ -269,14 +367,10 @@ if ($savedDetailTaxGroupId > 0) {
     throw new RuntimeException('The fixture with no assigned calculation rule unexpectedly has persisted tax rows.');
 }
 
-foreach ([
-    'browser product tax excl' => [$browserProductsTaxExcl, (float) $order->total_products],
+$browserComparisons = [
     'browser product tax incl' => [$browserProductsTaxIncl, (float) $order->total_products_wt],
-    'browser shipping tax excl' => [$browserShippingTaxExcl, (float) $order->total_shipping_tax_excl],
     'browser shipping tax incl' => [$browserShippingTaxIncl, (float) $order->total_shipping_tax_incl],
-    'browser discount tax excl' => [$browserDiscountTaxExcl, $discountsTaxExcl],
     'browser discount tax incl' => [$browserDiscountTaxIncl, $discountsTaxIncl],
-    'browser total tax excl' => [$browserTotalTaxExcl, (float) $order->total_paid_tax_excl],
     'browser total tax incl' => [$browserTotalTaxIncl, (float) $order->total_paid_tax_incl],
     'native tax-exclusive formula' => [$nativeTotalTaxExcl, (float) $order->total_paid_tax_excl],
     'native tax-inclusive formula' => [$nativeTotalTaxIncl, (float) $order->total_paid_tax_incl],
@@ -284,11 +378,49 @@ foreach ([
         (float) ($browserOrder['order_history_total'] ?? -1),
         (float) $order->total_paid_tax_incl,
     ],
-    'browser tax amount' => [
-        (float) ($browserTotals['tax'] ?? -1),
-        $nativeTaxes,
+];
+foreach ([
+    'browser product tax excl' => ['products_tax_excl', (float) $order->total_products],
+    'browser shipping tax excl' => ['shipping_tax_excl', (float) $order->total_shipping_tax_excl],
+    'browser discount tax excl' => ['discounts_tax_excl', $discountsTaxExcl],
+    'browser total tax excl' => ['total_tax_excl', (float) $order->total_paid_tax_excl],
+] as $checkName => [$browserKey, $nativeAmount]) {
+    if (is_numeric($browserTotals[$browserKey] ?? null)) {
+        $browserComparisons[$checkName] = [(float) $browserTotals[$browserKey], $nativeAmount];
+    }
+}
+if (array_key_exists('tax', $browserTotals) && $browserTotals['tax'] !== null) {
+    $browserComparisons['browser tax amount'] = [(float) $browserTotals['tax'], $nativeTaxes];
+} elseif ($productTaxGroupId > 0 && !$browserHasInclusiveTotalOnly) {
+    throw new RuntimeException('A taxable browser total must either expose its tax amount or mark it unknown.');
+}
+$confirmationTotals = is_array($browserOrder['order_confirmation_totals'] ?? null)
+    ? $browserOrder['order_confirmation_totals']
+    : [];
+$browserComparisons += [
+    'order confirmation products tax incl' => [
+        (float) ($confirmationTotals['products_tax_incl'] ?? -1),
+        (float) $order->total_products_wt,
     ],
-] as $checkName => [$actual, $expected]) {
+    'order confirmation shipping tax incl' => [
+        (float) ($confirmationTotals['shipping_tax_incl'] ?? -1),
+        (float) $order->total_shipping_tax_incl,
+    ],
+    'order confirmation total tax incl' => [
+        (float) ($confirmationTotals['total_tax_incl'] ?? -1),
+        (float) $order->total_paid_tax_incl,
+    ],
+];
+if (is_numeric($confirmationTotals['total_tax_excl'] ?? null)) {
+    $browserComparisons['order confirmation total tax excl'] = [
+        (float) $confirmationTotals['total_tax_excl'],
+        (float) $order->total_paid_tax_excl,
+    ];
+}
+if (array_key_exists('tax', $confirmationTotals) && $confirmationTotals['tax'] !== null) {
+    $browserComparisons['order confirmation tax amount'] = [(float) $confirmationTotals['tax'], $nativeTaxes];
+}
+foreach ($browserComparisons as $checkName => [$actual, $expected]) {
     if (abs($actual - $expected) > 0.0001) {
         throw new RuntimeException(sprintf(
             '%s mismatch: browser/native %.4f vs %.4f; an unaccounted platform fee is not allowed.',
@@ -344,6 +476,8 @@ echo json_encode([
     'product_id' => $productId,
     'product_quantity' => (int) $orderDetails[0]['product_quantity'],
     'product_tax_rule_group_id' => $productTaxGroupId,
+    'unit_price_tax_excl' => $detailUnitTaxExcl,
+    'unit_price_tax_incl' => $detailUnitTaxIncl,
     'saved_order_detail_tax_group_id' => $savedDetailTaxGroupId,
     'saved_order_detail_taxes' => $storedTaxRows,
     'saved_tax_interpretation' => $savedTaxInterpretation,
@@ -370,6 +504,8 @@ echo json_encode([
     'postcode' => (string) $address->postcode,
     'state_iso_code' => $expectedStateIso,
     'browser_checkout' => $browserTotals,
+    'browser_pre_coupon_checkout' => $preCouponBrowserTotals ?? null,
+    'browser_order_confirmation' => $confirmationTotals,
     'platform_fee' => 0,
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL;
 fwrite(STDERR, sprintf(
