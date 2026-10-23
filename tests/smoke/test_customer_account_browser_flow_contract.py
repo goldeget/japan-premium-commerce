@@ -108,6 +108,61 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertLess(persisted_first_name, return_to_account)
         self.assertLess(return_to_account, authenticated_account_assertion)
 
+    def test_registration_accepts_authenticated_home_redirect_and_opens_my_page(self) -> None:
+        wait_function = next(
+            node
+            for node in ast.parse(self.source).body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "wait_for_registration_success"
+        )
+        account_url = "http://localhost:18080/ko/my-account"
+        account_link = object()
+        state: dict[str, object] = {"visited": [], "open_menu": None}
+
+        class Browser:
+            current_url = "http://localhost:18080/ko/"
+
+            def execute_script(self, _script: str) -> str:
+                return "header"
+
+            def get(self, url: str) -> None:
+                state["visited"].append(url)
+                self.current_url = url
+
+        class ImmediateWait:
+            def __init__(self, browser: Browser, _timeout: int) -> None:
+                self.browser = browser
+
+            def until(self, predicate, **_kwargs: object):
+                return predicate(self.browser)
+
+        def resolve_account(_browser: Browser, *, open_menu: bool = True):
+            state["open_menu"] = open_menu
+            return account_link, account_url
+
+        def require_my_page(browser: Browser, selector: str):
+            if selector != "#identity_main_link":
+                raise AssertionError("registration success must verify the My Page identity link")
+            if browser.current_url != account_url:
+                raise AssertionError("authenticated home redirect must navigate to the account URL first")
+            return object()
+
+        namespace = {
+            "webdriver": SimpleNamespace(Chrome=Browser),
+            "WebDriverWait": ImmediateWait,
+            "my_account_link_from_header": resolve_account,
+            "visible": require_my_page,
+        }
+        exec(
+            compile(ast.Module(body=[wait_function], type_ignores=[]), str(ACCOUNT_FLOW), "exec"),
+            namespace,
+        )
+
+        namespace["wait_for_registration_success"](Browser())
+
+        self.assertEqual(state["visited"], [account_url])
+        self.assertIs(state["open_menu"], False)
+
     def test_duplicate_email_registration_is_rejected_before_profile_update(self) -> None:
         required_stages = (
             "registration_post_submit",

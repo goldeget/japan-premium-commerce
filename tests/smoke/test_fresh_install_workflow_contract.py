@@ -384,8 +384,10 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
 
         self.assertIn("getElementById('userMenuButton')", success_wait)
         self.assertIn("getElementById('identity_main_link')", success_wait)
-        self.assertIn("my_account_link_from_header(driver)", success_wait)
-        self.assertIn("click_centered(driver, account_link)", success_wait)
+        self.assertIn("my_account_link_from_header(driver, open_menu=False)", success_wait)
+        self.assertIn("driver.get(account_url)", success_wait)
+        self.assertIn('visible(driver, "#identity_main_link")', success_wait)
+        self.assertNotIn("click_centered(driver, account_link)", success_wait)
         self.assertIn('div.dropdown-menu[aria-labelledby="userMenuButton"] a[href]', route_helper)
         self.assertIn("account_location.hostname != base_location.hostname", route_helper)
         self.assertIn("account_location.scheme != base_location.scheme", route_helper)
@@ -525,7 +527,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "registration links must keep the same browser cookie host as SHOP_BASE_URL",
         )
         self.assertNotIn('hostname not in {"localhost", "127.0.0.1"}', registration_guard)
-        self.assertIn("my_account_link_from_header(driver)", success_wait)
+        self.assertIn("my_account_link_from_header(driver, open_menu=False)", success_wait)
         self.assertIn("account_location.hostname != base_location.hostname", account_flow)
 
     def test_password_reset_links_must_match_the_exact_base_origin(self) -> None:

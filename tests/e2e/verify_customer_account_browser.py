@@ -911,13 +911,17 @@ def wait_for_registration_success(driver: webdriver.Chrome) -> None:
             """
             const accountLink = document.getElementById('identity_main_link');
             if (accountLink && accountLink.getClientRects().length) return 'account';
-            return document.getElementById('userMenuButton') ? 'header' : false;
+            const accountButton = document.getElementById('userMenuButton');
+            return accountButton && accountButton.getClientRects().length ? 'header' : false;
             """
         )
     )
     if result_page == "header":
-        account_link, _ = my_account_link_from_header(driver)
-        click_centered(driver, account_link)
+        # Registration may redirect to the localized shop home while leaving
+        # the customer authenticated. The rendered menu href is authoritative;
+        # navigate to it directly so the QA does not depend on a dropdown click.
+        _, account_url = my_account_link_from_header(driver, open_menu=False)
+        driver.get(account_url)
         visible(driver, "#identity_main_link")
 
 
