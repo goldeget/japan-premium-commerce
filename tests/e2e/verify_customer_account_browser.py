@@ -78,9 +78,35 @@ def message_recipients(message: dict) -> set[str]:
     return result
 
 
-def reset_link_for(email_address: str, timeout_seconds: int = 90) -> tuple[str, dict]:
-    deadline = time.monotonic() + timeout_seconds
+def reset_link_matches_route(candidate_url: str, expected_route_path: str) -> bool:
     base_location = urlparse(BASE)
+    expected_url = urlparse(urljoin(BASE + "/", expected_route_path))
+    reset_url = urljoin(BASE + "/", candidate_url)
+    parsed_reset = urlparse(reset_url)
+    query = {key.lower(): values for key, values in parse_qs(parsed_reset.query).items()}
+    same_shop_origin = (
+        parsed_reset.scheme == base_location.scheme
+        and parsed_reset.hostname == base_location.hostname
+        and parsed_reset.port == base_location.port
+        and expected_url.scheme == base_location.scheme
+        and expected_url.hostname == base_location.hostname
+        and expected_url.port == base_location.port
+    )
+    try:
+        actual_path = unquote(parsed_reset.path, errors="strict").rstrip("/") or "/"
+        expected_path = unquote(expected_url.path, errors="strict").rstrip("/") or "/"
+    except (UnicodeDecodeError, ValueError):
+        return False
+    has_reset_token = "token" in query or "reset_token" in query
+    return same_shop_origin and actual_path == expected_path and has_reset_token
+
+
+def reset_link_for(
+    email_address: str,
+    expected_route_path: str,
+    timeout_seconds: int = 90,
+) -> tuple[str, dict]:
+    deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         try:
             listing = request_json(f"{MAILPIT_API}/api/v1/messages?{urlencode({'start': 0, 'limit': 100})}")
@@ -99,16 +125,7 @@ def reset_link_for(email_address: str, timeout_seconds: int = 90) -> tuple[str, 
                 for candidate in candidates:
                     candidate = html.unescape(candidate).rstrip(".,);]")
                     reset_url = urljoin(BASE + "/", candidate)
-                    parsed = urlparse(reset_url)
-                    query = {key.lower(): values for key, values in parse_qs(parsed.query).items()}
-                    has_token = "token" in query or "reset_token" in query
-                    is_password_route = "password" in parsed.path.lower() or query.get("controller") == ["password"]
-                    matches_base_origin = (
-                        parsed.scheme == base_location.scheme
-                        and parsed.hostname == base_location.hostname
-                        and parsed.port == base_location.port
-                    )
-                    if matches_base_origin and has_token and is_password_route:
+                    if reset_link_matches_route(reset_url, expected_route_path):
                         return reset_url, detail
         except (OSError, URLError, ValueError, json.JSONDecodeError):
             pass
@@ -870,6 +887,28 @@ def assert_canonical_static_route(driver: webdriver.Chrome, route_slug: str) -> 
     actual_path = unquote(actual.path, errors="strict").rstrip("/")
     if not same_origin or actual_path != expected_path:
         raise AssertionError(f"the {route_slug} page did not resolve to its canonical friendly route")
+
+
+def assert_route_path_matches(driver: webdriver.Chrome, expected_route_path: str, route_label: str) -> None:
+    actual = urlparse(driver.current_url)
+    expected = urlparse(urljoin(BASE + "/", expected_route_path))
+    base = urlparse(BASE)
+    same_shop_origin = (
+        actual.scheme.lower(), actual.hostname, actual.port
+    ) == (
+        base.scheme.lower(), base.hostname, base.port
+    ) and (
+        expected.scheme.lower(), expected.hostname, expected.port
+    ) == (
+        base.scheme.lower(), base.hostname, base.port
+    )
+    try:
+        actual_path = unquote(actual.path, errors="strict").rstrip("/") or "/"
+        expected_path = unquote(expected.path, errors="strict").rstrip("/") or "/"
+    except (UnicodeDecodeError, ValueError):
+        raise AssertionError(f"the {route_label} page did not resolve to the generated route") from None
+    if not same_shop_origin or actual_path != expected_path:
+        raise AssertionError(f"the {route_label} page did not resolve to the generated route")
 
 
 def set_registration_control(control: dict[str, str], name: str, field_type: str) -> None:
@@ -2143,13 +2182,14 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             or recovery_location.port != base_location.port
         ):
             raise AssertionError("the password recovery link changed the isolated shop origin")
+        recovery_route_path = urlparse(recovery_url).path
         click_centered(driver, recovery_link)
-        assert_canonical_static_route(driver, "password-reset")
+        assert_route_path_matches(driver, recovery_route_path, "password recovery")
         fill(driver, '#email', account_email)
         visible(driver, "#send-reset-link").click()
         driver.save_screenshot(str(DEST / f"{label}-password-reset-requested.png"))
         # The independent reset-email brand browser step verifies the inline logo.
-        reset_url, _ = reset_link_for(account_email)
+        reset_url, _ = reset_link_for(account_email, recovery_route_path)
 
         stage = "password_reset"
         parsed_reset = urlparse(reset_url)
@@ -2161,7 +2201,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         ):
             raise AssertionError("password reset email points outside the isolated shop")
         driver.get(reset_url)
-        assert_canonical_static_route(driver, "password-reset")
+        assert_route_path_matches(driver, recovery_route_path, "password reset")
         fill(driver, '#field-password[name="passwd"]', reset_password)
         fill(driver, '#field-confirmation-passwd[name="confirmation"]', reset_password)
         visible(driver, 'button[type="submit"][name="submit"]').click()

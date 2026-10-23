@@ -92,7 +92,10 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertTrue("customer-account-e2e.log" in workflow, "account browser execution log is not preserved")
         self.assertTrue("docker rm -f \"${CI_COMPOSE_PROJECT_NAME}-mailpit\"" in workflow, "CI mail service cleanup is missing")
         self.assertTrue('input[name="email"]' in account_flow and 'get_attribute("type") != "email"' in account_flow, "customer login is not verified as email-based")
-        self.assertTrue("reset_link_for(account_email)" in account_flow, "password reset does not follow the captured test email")
+        self.assertTrue(
+            "reset_link_for(account_email, recovery_route_path)" in account_flow,
+            "password reset must match the rendered locale route to the captured test email",
+        )
         self.assertIn('a[data-link-action="display-register-form"]', account_flow, "registration must follow the theme's actual registration link")
         self.assertIn("click_centered(driver, registration_link)", account_flow)
         self.assertNotIn("controller=authentication&create_account=1", account_flow, "registration must not rely on a legacy authentication query")
@@ -105,7 +108,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("hashlib.sha256(sent_logo)", reset_email_brand)
         self.assertIn("published ORDENOWA derivative", reset_email_brand)
         self.assertIn('assert_canonical_static_route(driver, "identity")', account_flow)
-        self.assertGreaterEqual(account_flow.count('assert_canonical_static_route(driver, "password-reset")'), 2)
+        self.assertGreaterEqual(account_flow.count("assert_route_path_matches(driver, recovery_route_path"), 2)
         self.assertIn("actual_path != expected_path", account_flow)
         self.assertIn("same_origin", account_flow)
 
@@ -470,7 +473,9 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
 
     def test_password_reset_links_must_match_the_exact_base_origin(self) -> None:
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
-        reset_mail_filter = account_flow.split("def reset_link_for", 1)[1].split("def visible", 1)[0]
+        reset_mail_filter = account_flow.split("def reset_link_matches_route", 1)[1].split(
+            "def reset_link_for", 1
+        )[0]
         reset_navigation = account_flow.split('stage = "password_reset"', 1)[1].split(
             "driver.get(reset_url)", 1
         )[0]
@@ -479,7 +484,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         alternate_host_url = "http://127.0.0.1:18080/password?token=synthetic"
         self.assertNotEqual(urlparse(base_url).hostname, urlparse(alternate_host_url).hostname)
         for guard, candidate_prefix, base_prefix, comparator in (
-            (reset_mail_filter, "parsed", "base_location", "=="),
+            (reset_mail_filter, "parsed_reset", "base_location", "=="),
             (reset_navigation, "parsed_reset", "base", "!="),
         ):
             self.assertIn(f"{candidate_prefix}.scheme {comparator} {base_prefix}.scheme", guard)

@@ -4,6 +4,7 @@ from __future__ import annotations
 import ast
 import unittest
 from pathlib import Path
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -80,7 +81,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
 
         reset_request = self.blocks["password_reset_request"]
         self.assertIn("logout(driver)", reset_request)
-        self.assertIn("reset_link_for(account_email)", reset_request)
+        self.assertIn("reset_link_for(account_email, recovery_route_path)", reset_request)
 
         logout = self.source.split("def logout", 1)[1].split("def run_viewport", 1)[0]
         self.assertIn("visible_signout_link(driver)", logout)
@@ -112,14 +113,112 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertLess(old_password.index("assert_my_page(driver,"), old_password.index("logout(driver)"))
         self.assertLess(old_password.index("logout(driver)"), old_password.index("assert_login_rejected(driver,"))
 
+    def test_reset_email_matching_uses_the_rendered_localized_password_route(self) -> None:
+        helper_nodes = [
+            node
+            for node in ast.parse(self.source).body
+            if isinstance(node, ast.FunctionDef) and node.name == "reset_link_matches_route"
+        ]
+        self.assertEqual(len(helper_nodes), 1)
+        namespace = {
+            "BASE": "https://shop.example.test",
+            "parse_qs": parse_qs,
+            "unquote": unquote,
+            "urljoin": urljoin,
+            "urlparse": urlparse,
+        }
+        exec(
+            compile(ast.Module(body=helper_nodes, type_ignores=[]), str(ACCOUNT_FLOW), "exec"),
+            namespace,
+        )
+        matches = namespace["reset_link_matches_route"]
+
+        self.assertTrue(
+            matches(
+                "https://shop.example.test/%EB%B9%84%EB%B0%80%EB%B2%88%ED%98%B8-%EC%B0%BE%EA%B8%B0"
+                "?token=secure-key&reset_token=reset-secret&id_customer=12",
+                "/%EB%B9%84%EB%B0%80%EB%B2%88%ED%98%B8-%EC%B0%BE%EA%B8%B0",
+            )
+        )
+        self.assertFalse(
+            matches(
+                "https://shop.example.test/password-reset?token=secure-key&reset_token=reset-secret",
+                "/%EB%B9%84%EB%B0%80%EB%B2%88%ED%98%B8-%EC%B0%BE%EA%B8%B0",
+            )
+        )
+        self.assertFalse(
+            matches(
+                "https://attacker.example.test/%EB%B9%84%EB%B0%80%EB%B2%88%ED%98%B8-%EC%B0%BE%EA%B8%B0"
+                "?reset_token=reset-secret",
+                "/%EB%B9%84%EB%B0%80%EB%B2%88%ED%98%B8-%EC%B0%BE%EA%B8%B0",
+            )
+        )
+        self.assertFalse(
+            matches(
+                "https://shop.example.test/%EB%B9%84%EB%B0%80%EB%B2%88%ED%98%B8-%EC%B0%BE%EA%B8%B0",
+                "/%EB%B9%84%EB%B0%80%EB%B2%88%ED%98%B8-%EC%B0%BE%EA%B8%B0",
+            )
+        )
+
+    def test_route_path_assertion_accepts_the_generated_encoded_locale_path(self) -> None:
+        helper_nodes = [
+            node
+            for node in ast.parse(self.source).body
+            if isinstance(node, ast.FunctionDef) and node.name == "assert_route_path_matches"
+        ]
+        self.assertEqual(len(helper_nodes), 1)
+        namespace = {
+            "BASE": "https://shop.example.test",
+            "unquote": unquote,
+            "urljoin": urljoin,
+            "urlparse": urlparse,
+        }
+        exec(
+            compile(ast.Module(body=helper_nodes, type_ignores=[]), str(ACCOUNT_FLOW), "exec"),
+            namespace,
+        )
+
+        class FakeDriver:
+            def __init__(self, current_url: str) -> None:
+                self.current_url = current_url
+
+        assert_route = namespace["assert_route_path_matches"]
+        generated_path = "/%EB%B9%84%EB%B0%80%EB%B2%88%ED%98%B8-%EC%B0%BE%EA%B8%B0"
+        assert_route(
+            FakeDriver("https://shop.example.test/비밀번호-찾기/"),
+            generated_path,
+            "password recovery",
+        )
+        with self.assertRaises(AssertionError):
+            assert_route(
+                FakeDriver("https://shop.example.test/password-reset"),
+                generated_path,
+                "password recovery",
+            )
+        with self.assertRaises(AssertionError):
+            assert_route(
+                FakeDriver("https://attacker.example.test/비밀번호-찾기"),
+                generated_path,
+                "password recovery",
+            )
+
+    def test_password_recovery_assertions_compare_against_the_generated_href_path(self) -> None:
+        self.assertIn('recovery_route_path = urlparse(recovery_url).path', self.source)
+        reset_request = self.blocks["password_reset_request"]
+        self.assertIn('assert_route_path_matches(driver, recovery_route_path, "password recovery")', reset_request)
+        self.assertIn("reset_link_for(account_email, recovery_route_path)", reset_request)
+        reset = self.blocks["password_reset"]
+        self.assertIn('assert_route_path_matches(driver, recovery_route_path, "password reset")', reset)
+        self.assertNotIn('assert_canonical_static_route(driver, "password-reset")', self.source)
+
     def test_mailpit_reset_checks_captured_link_and_password_change_with_separate_logo_qa(self) -> None:
         reset_request = self.blocks["password_reset_request"]
-        self.assertIn("reset_link_for(account_email)", reset_request)
+        self.assertIn("reset_link_for(account_email, recovery_route_path)", reset_request)
         self.assertIn('visible(driver, "#login-form a[href]")', reset_request)
         self.assertIn('recovery_link.get_attribute("href")', reset_request)
         self.assertIn("recovery_location.hostname != base_location.hostname", reset_request)
         self.assertIn("click_centered(driver, recovery_link)", reset_request)
-        self.assertIn('assert_canonical_static_route(driver, "password-reset")', reset_request)
+        self.assertIn('assert_route_path_matches(driver, recovery_route_path, "password recovery")', reset_request)
         self.assertNotIn('"cid:shop_logo"', reset_request)
         self.assertNotIn("ContentID", reset_request)
         self.assertNotIn("hashlib.sha256", reset_request)
@@ -132,12 +231,14 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         mailpit_helper = self.source.split("def reset_link_for", 1)[1].split("def visible", 1)[0]
         self.assertIn("/api/v1/messages?", mailpit_helper)
         self.assertIn("/api/v1/message/", mailpit_helper)
-        self.assertIn("matches_base_origin", mailpit_helper)
-        self.assertIn("has_token", mailpit_helper)
+        route_matcher = self.source.split("def reset_link_matches_route", 1)[1].split("def reset_link_for", 1)[0]
+        self.assertIn("same_shop_origin", route_matcher)
+        self.assertIn("actual_path == expected_path", route_matcher)
+        self.assertIn("has_reset_token", route_matcher)
 
         reset = self.blocks["password_reset"]
         self.assertIn("driver.get(reset_url)", reset)
-        self.assertIn('assert_canonical_static_route(driver, "password-reset")', reset)
+        self.assertIn('assert_route_path_matches(driver, recovery_route_path, "password reset")', reset)
         self.assertIn('#field-password[name="passwd"]', reset)
         self.assertIn('#field-confirmation-passwd[name="confirmation"]', reset)
 
