@@ -237,6 +237,26 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertNotIn('|| "$product_tax_group_id" !=', workflow)
         self.assertNotIn('|| "$product_id" !=', workflow)
 
+    def test_native_order_verifier_failure_reemits_its_buffered_diagnostic(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        native_order_step = workflow.split(
+            "- name: Verify free-shipping orders and totals in the isolated database", 1
+        )[1].split("- name:", 1)[0]
+        buffered_diagnostic = native_order_step.find('cat "$verified_json"')
+        failure_exit = native_order_step.find("exit 1", buffered_diagnostic)
+
+        self.assertGreaterEqual(
+            buffered_diagnostic,
+            0,
+            "the PHP annotation is redirected into verified_json and must be replayed to runner stdout on failure",
+        )
+        self.assertGreater(failure_exit, buffered_diagnostic)
+        self.assertIn('if [ -s "$verified_json" ]; then', native_order_step)
+        self.assertIn(
+            "::error title=ORDENOWA native order verifier::No structured PHP diagnostic was produced.",
+            native_order_step,
+        )
+
     def test_browser_only_sets_free_japan_shipping_and_reconciles_customer_views(self) -> None:
         self.assertTrue(BROWSER.is_file(), "free-shipping browser QA must be implemented")
         browser = BROWSER.read_text(encoding="utf-8")

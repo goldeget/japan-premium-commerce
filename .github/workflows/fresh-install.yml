@@ -1389,6 +1389,11 @@ jobs:
               php /tmp/verify_ci_free_shipping_order.php \
               > "$verified_json" 2> "$verification_log"; then
               cat "$verification_log" >&2
+              if [ -s "$verified_json" ]; then
+                cat "$verified_json"
+              else
+                echo "::error title=ORDENOWA native order verifier::No structured PHP diagnostic was produced."
+              fi
               exit 1
             fi
             cat "$verification_log"
