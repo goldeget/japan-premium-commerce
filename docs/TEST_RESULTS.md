@@ -1,6 +1,24 @@
 # ORDENOWA 테스트 결과
 
-## 출시 가격 정책 격리 QA (상태: 2026-10-23 23:06 UTC)
+## 2026-10-24 — PWA trace 원인 수정 및 전체 회귀 재실행
+
+코드 기준 `work`와 `origin/work` SHA **b99b61559978dd8b4c25819623669e0d92deb768**. `main`은 수정하지 않았다.
+
+| 검사 | 결과 | 근거 |
+| --- | --- | --- |
+| PWA trace 회귀 재현 | RED→GREEN | `test_final_cart_cache_check_keeps_order_url_as_navigation_trace_origin`은 수정 전 초기 trace controller `cart`를 반환해 `order` 기대값에서 실패했고, 최초 order URL을 별도 보존한 뒤 통과했다. redirect 2개, 최종 cart 200/private no-store, 캐시 provenance assertions는 유지했다. |
+| PWA 집중/cache route suite | PASS | `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_pwa_service_worker tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract -v`: 101/101. |
+| 오프라인 smoke 회귀 | PASS | `tests/smoke/test_storefront.py` 제외 526 PASS, 7 skipped, 실패/오류 0. Docker/PrestaShop/Chromium 런타임 판정은 Actions가 담당한다. |
+| 구문 및 diff 검사 | PASS | `python3 -m py_compile tests/e2e/verify_pwa_browser.py tests/smoke/test_pwa_logout_diagnostics_contract.py`, `node --check themes/kuranea/assets/sw.js`, `git diff --check`. |
+| 직전 full isolated Actions [#40132927859](https://github.com/goldeget/japan-premium-commerce/actions/runs/40132927859) | FAIL (수정 전 SHA `16f3f3a`) | Step 65 aggregate `pwa_browser_qa=failure`; EN desktop/mobile 모두 `guest_empty_checkout_initial_route; PwaDiagnosticAssertionError`. safe trace에는 `/en/cart` HTTP 200, private/no-store, network source, SW/disk/prefetch cache 미사용이 기록됐다. 원인은 최종 cart cache URL을 trace 최초 URL로 재사용한 E2E harness 결함이었다. Steps 60–64 및 68 cleanup PASS, Step 49 조건부 skip. |
+| PC·모바일 캡처 | artifact 보관 | [run #40134196682 artifact](https://github.com/goldeget/japan-premium-commerce/actions/runs/40134196682/artifacts/12576851933)의 `ordenowa-storefront-browser-40134196682-1` (15,618,931 bytes), Step 61 coverage PASS, metadata상 미만료. ZIP 본문은 실행환경 프록시가 파일 저장소 연결을 403으로 거부해 직접 확인하지 못했다. |
+| 수정 SHA 전체 isolated Actions [#40134196682](https://github.com/goldeget/japan-premium-commerce/actions/runs/40134196682) | PASS | SHA `b99b61559978dd8b4c25819623669e0d92deb768`; run conclusion `success`, Step 65 aggregate PASS, failed/cancelled step 없음. 회원/로그아웃 Step 34, PWA lifecycle/privacy-cache Step 41, Tokyo/Osaka 무료배송·과세/면세·DB/관리자 금액 대조 Steps 52–57, 재시작·일본우편 데이터 Steps 62–64가 통과했다. Step 49 조건부 skip, Step 66 진단은 실패가 없어 skip, Step 68 run 전용 자원 정리 PASS. |
+
+직전 full run에서 고객 계정 가입/로그인/로그아웃 Step 34는 통과했고 재현된 PWA 실패는 로그아웃 404가 아니라 빈 체크아웃 trace 생성 단계에서 발생했다. `b99b615`는 cache policy 확인에 사용할 최종 URL과 navigation trace에 사용할 최초 URL을 분리했다. 후속 full run은 성공했고 Step 34와 Step 41을 통과했으며 원래 HTTP 404는 재현되지 않았다. 다만 #40036387808의 원 요청/리다이렉트 및 service worker 경로는 artifact 본문에 접근하지 못해 확정하지 못했다. 실기기 PWA 설치 및 실제 운영 자료 검증은 별도다.
+
+이전 CI의 배송·세금·주문 성공 범위와 그 합성 데이터 한계는 아래 2026-10-23 표 및 `DEVELOPMENT_STATUS.md`의 최신 출시 준비 표를 함께 참조한다. 실제 상품, seller tax mapping, carrier 운영 설정 및 실결제 결과로 확대 해석하지 않는다.
+
+## 이전 출시 가격 정책 격리 QA 스냅샷 (2026-10-23 23:06 UTC)
 
 기준 `work` 및 `origin/work` SHA `c60a851e114ff00f6e4d8c8c708ad3016bc980bd`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지한다.
 

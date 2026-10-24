@@ -1,6 +1,36 @@
 # ORDENOWA 개발 현황
 
-## 출시 가격 정책 QA 상태 (2026-10-23 23:06 UTC)
+## 최신 QA 및 출시 준비 상태 (2026-10-24)
+
+PWA trace correction commit: **b99b61559978dd8b4c25819623669e0d92deb768** (`work`)
+
+`main`: **ee02a3657448d563508687614a246e05ac61eecd** (변경하지 않음)
+
+- 같은 SHA `44a88a07e0693ecf463764a357262f5d19455529`의 full isolated Actions [#40131335079](https://github.com/goldeget/japan-premium-commerce/actions/runs/40131335079)와 [#40131324863](https://github.com/goldeget/japan-premium-commerce/actions/runs/40131324863)은 모두 **FAIL**이다. 해당 SHA 기준 완료 시각이 더 늦은 #40131324863 (21:02:10 UTC)이 최신 완료 run이다. Step 65 aggregate는 두 run 모두 `pwa_browser_qa=failure`; annotation은 desktop-en과 mobile-en 각각 `stage=guest_empty_checkout_route; exception=AssertionError`만 보여 준다. 내부 assertion은 식별되지 않았고, 이 run에서 HTTP 404가 발생했다고 확인된 것은 아니다. Step 41의 초록 표시는 `continue-on-error` 결과이므로 aggregate를 덮지 않는다. Step 49는 조건부 skip, Step 68 run 전용 리소스 정리는 PASS다.
+- 이전의 로그아웃 후 404 증상 뒤 JA/KO 계정 경로를 CI DB에서 확인해 일본어 `マイアカウント`, 한국어 `내 계정` 경로를 테스트·서비스워커 보호 목록에 반영했다. 후속 run에서 가입·로그아웃 Step 34와 PWA Step 41은 통과했고 404는 재현되지 않았다. 다만 당시 #40036387808의 원 요청 URL·리다이렉트 체인·서비스워커 관여는 Actions 로그/ZIP 본문에 접근하지 못해 독립 확인하지 못했다. 이 실행환경은 GitHub API 메타데이터는 읽지만 로그 및 ZIP 본문을 제공하는 파일 저장소 연결에서 프록시 403을 받는다.
+- 진단 커밋 `16f3f3a`는 빈 체크아웃 validator의 안전한 하위 단계와 민감정보 없는 trace를 추가했다. 그 코드의 full run [#40132927859](https://github.com/goldeget/japan-premium-commerce/actions/runs/40132927859)은 **FAIL**이었다. EN PC·모바일 둘 다 `guest_empty_checkout_initial_route`에서 실패했고, safe trace는 `/en/cart` HTTP 200, `private, no-store`, service-worker/cache 미사용을 표시했다. 원인은 `navigate_private_document()`가 cache policy 확인에 쓴 최종 카트 URL을 trace의 최초 요청 URL로도 넘긴 테스트 harness 오류였다. 따라서 trace가 카트만 기록하면서 order controller 시작을 요구해 실패했다. 애플리케이션의 HTTP 404가 아니며 조건을 완화하지 않았다.
+- `b99b615`는 cache-header 확인용 최종 문서 URL과 redirect trace용 최초 요청 URL을 분리하고, 실제 `navigate_private_document()` 경계를 재현하는 회귀 테스트를 추가했다. 테스트는 수정 전 `expected order / got cart`로 실패하고 수정 후 통과했다. 로컬 PWA/cache suite는 **101/101**, 오프라인 smoke는 **526 PASS, 7 skipped**, Python/JS syntax와 `git diff --check`도 통과했다.
+- 수정 SHA `b99b615`의 격리 full run [#40134196682](https://github.com/goldeget/japan-premium-commerce/actions/runs/40134196682)은 2026-10-24 21:37:51 UTC **SUCCESS**로 완료됐다. Step 65 aggregate와 Step 68 run 전용 리소스 정리가 성공했고 failed/cancelled step은 없다. Step 49 및 실패 진단 Step 66은 조건부 skip이다. 회원 가입·로그아웃 Step 34, PWA·비공개 경로 캐시 Step 41, 무료배송·세금·주문 금액 대조 Steps 52–57, 재시작 및 일본우편 데이터 Steps 62–64가 통과했다.
+- PC·모바일 브라우저 캡처는 완료 run의 [browser QA artifacts](https://github.com/goldeget/japan-premium-commerce/actions/runs/40134196682/artifacts)에 보관되어 있다. artifact `ordenowa-storefront-browser-40134196682-1` (ID `12576851933`, 15,618,931 bytes)은 metadata상 만료되지 않았고 Step 61 screenshot coverage가 통과했다. 화면은 Actions에 기록됐으나 파일 본문은 이 실행환경에서 직접 다운로드해 재확인하지 못했다.
+
+### 출시 준비 항목
+
+| 항목 | 상태 | 근거 및 필요한 입력 |
+| --- | --- | --- |
+| 실제 판매 상품 등록 및 고객 화면 | BLOCKED | CI는 합성 상품으로 검색·장바구니를 확인했고 관리자는 별도 비활성 상품을 생성·수정했다. 출시할 SKU, 이미지 사용권, 상품 설명, 재고와 판매 승인 자료가 없다. |
+| 실제 가격·세금·배송 | BLOCKED | 출시 정책상 지원 지역 배송비 ¥0이다. CI의 합성 10%·명시적 0% 세금과 Tokyo/Osaka 주문은 실제 판매자 세무 판단, 상품별 세율, carrier 계약·계정·전 지역 운영 가능성을 입증하지 않는다. 판매자/세무 담당자의 상품 매핑과 배송 운영 설정이 필요하다. |
+| 주문 상태·취소·환불·반품 | INCOMPLETE | 브라우저 주문은 미결제 `ps_checkpayment`를 쓰고 저장 및 별도 관리자 조회를 확인했다. 실제 결제와 운영 fulfillment, 취소·환불·반품 절차는 검증하지 않았다. |
+| 운영 결제 설정 | BLOCKED | 기본 프로필은 `bank_accounts=[]`, 은행 이체 disabled, 결제 안내문 blank다. seller/provider 승인 및 실거래는 진행하지 않았으며, 출시 전에 승인된 결제 제공자 또는 검증된 계좌·안내문을 구성해야 한다. |
+| 한국어 관리자 전체 번역 | INCOMPLETE | 프로젝트 모듈과 선택된 상품/운영 흐름은 한국어로 확인했다. PrestaShop 전체 core, 모든 메뉴·주문·고객·설정 화면의 100% 한국어 coverage는 확인하지 않았다. |
+| 운영 도메인·HTTPS·메일 발송 | BLOCKED | Compose와 CI는 localhost 및 disposable Mailpit을 사용한다. 운영 DNS/TLS와 발신자 설정, 외부 메일 전달성 증거가 없다. |
+| 백업·복원 절차 | BLOCKED | 운영 DB·파일 백업 runbook과 실제 복구 drill 근거가 없다. 브랜드 설정 이력 복원은 재해복구 검증을 대신하지 않는다. |
+| iOS·Android PWA 설치 | INCOMPLETE | Chromium에서 manifest, service worker, PC·모바일 뷰를 확인했지만 iOS/Android 실기기 홈 화면 설치·업데이트·실행은 확인하지 않았다. |
+| PC·모바일 Chromium PWA 전체 흐름 | CI PASS | #40132927859의 EN desktop/mobile 빈 체크아웃 trace 실패는 최초 주문 URL 대신 최종 카트 URL을 trace 시작점으로 넘긴 테스트 harness 오류였다. `b99b615`가 두 URL을 분리했고, 후속 run #40134196682의 회원 로그아웃 Step 34와 PWA lifecycle/privacy-cache Step 41이 통과했다. 원래 증상인 HTTP 404는 후속 실행에서 재현되지 않았다. |
+| 판매자·고객센터·배송·환불·법률 정보 | BLOCKED | `ProfileDefaults.php`에서 LOGISTEED는 참고정보로 분리되어 있고 seller authorization은 `pending`; 판매자 법적 신원, 주소, 대표/연락처 및 운영 정책 입력이 비어 있다. 승인 정보 없이는 게시·운영을 진행할 수 없다. |
+
+**출시 불가.** 수정 SHA의 격리 full Actions는 PASS지만, 실제 판매자/상품/세금/배송/결제/지원 정보, 운영 인프라, 재해복구 및 실기기 검증이 남아 있다. 운영 배포·실결제·실거래는 하지 않았다.
+
+## 출시 가격 정책 QA 상태 (2026-10-23 23:06 UTC; 당시 실행 스냅샷)
 
 현재 `work` 및 `origin/work` 기준 커밋: **c60a851e114ff00f6e4d8c8c708ad3016bc980bd**
 `main`: **ee02a3657448d563508687614a246e05ac61eecd** (변경하지 않음)
@@ -73,7 +103,7 @@
 - Codex Cloud는 코드 분석·수정·Python 계약 테스트에 사용한다. 이 런타임은 Docker `vfs` storage driver와 32 GB 파일시스템을 사용하며 PrestaShop 이미지 빌드가 공간 부족으로 실패했다. 호스트 기본 PHP CLI는 없지만, 서명된 배포판 패키지를 격리 경로 `/tmp/brand-php-runtime`에서 검증한 PHP 8.4/GD 런타임으로 사업자 프로필 PHP 계약을 실행했다. 시스템 패키지는 설치하지 않았다. 여기서 Docker 빌드·Compose 구동을 반복하지 않고, 이미지·DB·Chromium 검증은 격리된 GitHub Actions에서 수행한다.
 - 현재 작업트리는 `/workspace/japan-premium-commerce`의 `work`다. 미추적 `tests/admin_locale/__pycache__/`, `tests/business_profile/__pycache__/`, `tests/e2e/__pycache__/`, `tests/postcode/__pycache__/`, `tests/smoke/__pycache__/`는 삭제하지 않았다. `main` SHA `ee02a3657448d563508687614a246e05ac61eecd`는 보존한다. 이 설정 작업에서 컨테이너나 named volume을 만들거나 초기화하지 않았다.
 
-## 구현 상태 기록 (이전 관찰)
+## 구현 상태 기록 (2026-10-22 과거 스냅샷; 현재는 위 최신 표가 우선)
 
 | 영역 | 상태 | 확인 내용 |
 | --- | --- | --- |
