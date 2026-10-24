@@ -90,6 +90,9 @@ class ProductAdminContractTests(unittest.TestCase):
             "payload_field_present",
             "payload_language_ids",
             "payload_value_length",
+            "stored_shop_rows",
+            "shop_id",
+            "value_length",
             "stored_value_length",
             "expected_matches",
         ):

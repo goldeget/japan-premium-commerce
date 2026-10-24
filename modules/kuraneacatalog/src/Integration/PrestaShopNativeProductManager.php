@@ -421,6 +421,27 @@ final class PrestaShopNativeProductManager
         $payloadFieldPresent = array_key_exists($field, $languageFields);
         $payloadValue = $payloadFieldPresent ? (string) $languageFields[$field] : '';
         $contextShopIds = \Shop::getContextListShopID();
+        $storedShopRows = [];
+        if ($field === 'link_rewrite' && (int) ($model->id ?? 0) > 0) {
+            $rows = \Db::getInstance()->executeS(
+                'SELECT `id_shop`, `link_rewrite` FROM `' . _DB_PREFIX_ . 'product_lang`'
+                . ' WHERE `id_product` = ' . (int) $model->id
+                . ' AND `id_lang` = ' . $languageId
+                . ' ORDER BY `id_shop` ASC LIMIT 25',
+                true,
+                false
+            );
+            if (is_array($rows)) {
+                foreach ($rows as $row) {
+                    $storedValue = (string) ($row['link_rewrite'] ?? '');
+                    $storedShopRows[] = [
+                        'shop_id' => (int) ($row['id_shop'] ?? 0),
+                        'value_length' => strlen($storedValue),
+                        'expected_matches' => $storedValue === $expected,
+                    ];
+                }
+            }
+        }
 
         return (string) json_encode([
             'field' => $field,
@@ -433,6 +454,7 @@ final class PrestaShopNativeProductManager
             'payload_matches_expected' => $payloadFieldPresent && $payloadValue === $expected,
             'expected_value_length' => strlen($expected),
             'stored_value_length' => strlen($stored),
+            'stored_shop_rows' => $storedShopRows,
             'expected_matches' => $stored === $expected,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
