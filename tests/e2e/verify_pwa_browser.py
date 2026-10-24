@@ -11,7 +11,7 @@ import uuid
 from collections.abc import Callable
 from http.client import HTTPConnection
 from pathlib import Path
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 try:
     from selenium import webdriver
@@ -34,6 +34,55 @@ EXPECTED_SHOP_PORT = 18080
 MAX_PWA_DIAGNOSTIC_RESPONSE_COUNT = 20
 MAX_PWA_DIAGNOSTIC_ELEMENT_COUNT = 20
 PWA_LOGOUT_ROUTE_CLASSES = {"authentication", "account", "home", "other"}
+PWA_DIAGNOSTIC_MAX_REDIRECTS = 8
+PWA_DIAGNOSTIC_MAX_PATH_LENGTH = 160
+PWA_DIAGNOSTIC_MAX_QUERY_KEYS = 8
+PWA_DIAGNOSTIC_ROUTE_SEGMENTS = {
+    "account",
+    "addresses",
+    "address",
+    "authentication",
+    "cart",
+    "discount",
+    "guest-tracking",
+    "history",
+    "identity",
+    "index.php",
+    "login",
+    "my-account",
+    "order",
+    "order-detail",
+    "order-follow",
+    "password",
+    "password-recovery",
+    "password-reset",
+    "search",
+}
+PWA_DIAGNOSTIC_QUERY_KEYS = {
+    "action",
+    "back",
+    "controller",
+    "id_order",
+    "mylogout",
+    "token",
+}
+PWA_DIAGNOSTIC_BACK_VALUES = {
+    "addresses",
+    "authentication",
+    "cart",
+    "history",
+    "identity",
+    "my-account",
+    "order",
+    "order-detail",
+    "order-follow",
+}
+PWA_DIAGNOSTIC_WORKER_SOURCES = {
+    "cache-storage",
+    "fallback-code",
+    "http-cache",
+    "network",
+}
 
 
 class PwaDiagnosticAssertionError(AssertionError):
@@ -180,14 +229,14 @@ def customer_route_class(candidate_url: str, shop_url: str) -> str:
             relative_path = candidate_path[len(base_path) :].strip("/")
         else:
             relative_path = candidate_path.strip("/")
-        segments = [segment.casefold() for segment in relative_path.split("/") if segment]
+        segments = [unquote(segment).casefold() for segment in relative_path.split("/") if segment]
         controllers = parse_qs(candidate.query).get("controller", [])
         controller = controllers[-1].casefold() if controllers else ""
     except (TypeError, ValueError, IndexError):
         return "other"
 
     if controller == "authentication" or any(
-        segment in {"authentication", "login", "password-reset", "password-recovery"}
+        segment in {"authentication", "login", "password-reset", "password-recovery", "ログイン"}
         for segment in segments
     ):
         return "authentication"
@@ -250,8 +299,9 @@ def safe_logout_wait_diagnostics(driver: webdriver.Chrome, shop_url: str) -> dic
         return metadata
 
     metadata["final_route_class"] = customer_route_class(current_url, shop_url)
-    snapshot = driver.execute_script(
-        """
+    try:
+        snapshot = driver.execute_script(
+            """
         const visible = (element) => {
           if (!element) return false;
           const style = window.getComputedStyle(element);
@@ -278,8 +328,10 @@ def safe_logout_wait_diagnostics(driver: webdriver.Chrome, shop_url: str) -> dic
           email_field_visible: emailFields.some(visible),
           ready_state: document.readyState,
         };
-        """
-    )
+            """
+        )
+    except Exception:
+        return metadata
     if not isinstance(snapshot, dict):
         return metadata
 
@@ -304,6 +356,408 @@ def safe_logout_wait_diagnostics(driver: webdriver.Chrome, shop_url: str) -> dic
     return metadata
 
 
+def _safe_path(path: object) -> str:
+    if not isinstance(path, str) or not path.startswith("/") or len(path) > 2048:
+        return "<other>"
+    if path == "<off-origin>":
+        return path
+    safe_segments: list[str] = []
+    for raw_segment in path.split("/"):
+        if not raw_segment:
+            safe_segments.append("")
+            continue
+        segment = unquote(raw_segment)
+        normalized = segment.casefold()
+        if normalized in PWA_DIAGNOSTIC_ROUTE_SEGMENTS:
+            safe_segments.append(normalized)
+        elif normalized in {"ja", "en", "ko"}:
+            safe_segments.append(normalized)
+        elif segment == "ログイン":
+            safe_segments.append(segment)
+        elif segment == "<other>":
+            safe_segments.append(segment)
+        else:
+            safe_segments.append("<other>")
+    safe_path = "/".join(safe_segments)
+    if len(safe_path) > PWA_DIAGNOSTIC_MAX_PATH_LENGTH:
+        return "/<other>"
+    return safe_path
+
+
+def _safe_query_keys(values: object) -> list[str]:
+    if not isinstance(values, (list, tuple, set)):
+        return []
+    keys = {
+        value.casefold()
+        for value in values
+        if isinstance(value, str)
+        and value.casefold() in PWA_DIAGNOSTIC_QUERY_KEYS
+    }
+    return sorted(keys)[:PWA_DIAGNOSTIC_MAX_QUERY_KEYS]
+
+
+def _safe_navigation_target_metadata(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {"path": "<other>", "query_keys": []}
+    path = value.get("path")
+    if path == "<off-origin>":
+        return {"path": "<off-origin>", "query_keys": []}
+    safe: dict[str, object] = {
+        "path": _safe_path(path),
+        "query_keys": _safe_query_keys(value.get("query_keys")),
+    }
+    controller = value.get("controller")
+    if isinstance(controller, str) and controller.casefold() in PWA_DIAGNOSTIC_ROUTE_SEGMENTS:
+        safe["controller"] = controller.casefold()
+    elif isinstance(safe["path"], str):
+        final_segment = safe["path"].rstrip("/").split("/")[-1].casefold()
+        if final_segment in PWA_DIAGNOSTIC_ROUTE_SEGMENTS:
+            safe["controller"] = final_segment
+    back = value.get("back")
+    if isinstance(back, str) and back.casefold() in PWA_DIAGNOSTIC_BACK_VALUES:
+        safe["back"] = back.casefold()
+    return safe
+
+
+def safe_navigation_target(candidate_url: str, shop_url: str) -> dict[str, object]:
+    """Return bounded route metadata without URL origins or query values."""
+    if not isinstance(candidate_url, str) or len(candidate_url) > 8192:
+        return {"path": "<off-origin>", "query_keys": []}
+    try:
+        absolute_url = urljoin(shop_url.rstrip("/") + "/", candidate_url)
+        if not same_origin(shop_url, absolute_url):
+            return {"path": "<off-origin>", "query_keys": []}
+        shop = urlparse(shop_url)
+        candidate = urlparse(absolute_url)
+        base_path = shop.path.rstrip("/")
+        candidate_path = candidate.path or "/"
+        if base_path:
+            if candidate_path == base_path:
+                candidate_path = "/"
+            elif candidate_path.startswith(base_path + "/"):
+                candidate_path = candidate_path[len(base_path):]
+            else:
+                candidate_path = "/<other>"
+        query_values = parse_qs(candidate.query, keep_blank_values=True)
+        safe = _safe_navigation_target_metadata(
+            {
+                "path": candidate_path,
+                "query_keys": list(query_values),
+                "controller": query_values.get("controller", [""])[-1],
+                "back": query_values.get("back", [""])[-1],
+            }
+        )
+        return safe
+    except (TypeError, ValueError, IndexError):
+        return {"path": "<other>", "query_keys": []}
+
+
+def chrome_performance_events(entries: object) -> list[dict[str, object]]:
+    """Unwrap Chrome performance-log envelopes into CDP method/params events."""
+    if not isinstance(entries, list):
+        return []
+    events: list[dict[str, object]] = []
+    for entry in entries:
+        if isinstance(entry, dict) and isinstance(entry.get("method"), str) and isinstance(entry.get("params"), dict):
+            events.append({"method": entry["method"], "params": entry["params"]})
+            continue
+        message = entry.get("message") if isinstance(entry, dict) else None
+        try:
+            decoded = json.loads(message) if isinstance(message, str) else message
+            event = decoded.get("message", decoded) if isinstance(decoded, dict) else None
+            if not isinstance(event, dict):
+                continue
+            method = event.get("method")
+            params = event.get("params")
+            if isinstance(method, str) and isinstance(params, dict):
+                events.append({"method": method, "params": params})
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+    return events
+
+
+def _navigation_url_matches(candidate_url: object, requested_url: str, shop_url: str) -> bool:
+    if not isinstance(candidate_url, str) or not same_origin(shop_url, candidate_url):
+        return False
+    try:
+        requested = urlparse(urljoin(shop_url.rstrip("/") + "/", requested_url))
+        candidate = urlparse(candidate_url)
+        return candidate.path == requested.path and candidate.query == requested.query
+    except (TypeError, ValueError):
+        return False
+
+
+def _safe_response_cache_provenance(response: dict[str, object]) -> dict[str, object]:
+    from_service_worker = response.get("fromServiceWorker")
+    from_disk_cache = response.get("fromDiskCache")
+    source = response.get("serviceWorkerResponseSource")
+    return {
+        "from_service_worker": from_service_worker if type(from_service_worker) is bool else None,
+        "from_disk_cache": from_disk_cache if type(from_disk_cache) is bool else None,
+        "service_worker_source": (
+            source if isinstance(source, str) and source in PWA_DIAGNOSTIC_WORKER_SOURCES else None
+        ),
+    }
+
+
+def _safe_http_status(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not 100 <= value <= 599 or int(value) != value:
+        return None
+    return int(value)
+
+
+def safe_document_navigation_trace(
+    events: object,
+    requested_url: str,
+    shop_url: str,
+    main_frame_id: str,
+    *,
+    sensitive_values: tuple[str, ...] = (),
+) -> dict[str, object]:
+    """Correlate one main-frame document redirect chain and expose only safe metadata."""
+    del sensitive_values  # URLs, query values, headers, and CDP identifiers are never returned.
+    trace: dict[str, object] = {
+        "observed": False,
+        "method": "unknown",
+        "initial_target": safe_navigation_target(requested_url, shop_url),
+        "redirects": [],
+        "final": {
+            "status": None,
+            "target": {"path": "<other>", "query_keys": []},
+            "from_service_worker": None,
+            "from_disk_cache": None,
+            "service_worker_source": None,
+        },
+    }
+    if not isinstance(events, (list, tuple)) or not isinstance(main_frame_id, str):
+        return trace
+
+    normalized_events = chrome_performance_events(list(events))
+    first_index: int | None = None
+    request_id: str | None = None
+    loader_id: str | None = None
+    initial_method = "unknown"
+    for index, event in enumerate(normalized_events):
+        params = event.get("params")
+        request = params.get("request") if isinstance(params, dict) else None
+        if (
+            event.get("method") != "Network.requestWillBeSent"
+            or not isinstance(params, dict)
+            or params.get("type") != "Document"
+            or params.get("frameId") != main_frame_id
+            or not isinstance(request, dict)
+            or not _navigation_url_matches(request.get("url"), requested_url, shop_url)
+        ):
+            continue
+        candidate_request_id = params.get("requestId")
+        if not isinstance(candidate_request_id, str) or not candidate_request_id:
+            continue
+        first_index = index
+        request_id = candidate_request_id
+        candidate_loader_id = params.get("loaderId")
+        loader_id = candidate_loader_id if isinstance(candidate_loader_id, str) and candidate_loader_id else None
+        method = request.get("method")
+        initial_method = method if isinstance(method, str) and method in {"GET", "POST", "HEAD"} else "other"
+        break
+    if first_index is None or request_id is None:
+        return trace
+
+    trace["observed"] = True
+    trace["method"] = initial_method
+    redirects: list[dict[str, object]] = []
+    current_request_url = requested_url
+    current_request_served_from_cache: bool | None = None
+    final: dict[str, object] | None = None
+    for event in normalized_events[first_index:]:
+        params = event.get("params")
+        if not isinstance(params, dict) or params.get("requestId") != request_id:
+            continue
+        frame_id = params.get("frameId")
+        event_loader_id = params.get("loaderId")
+        method = event.get("method")
+        if method == "Network.requestServedFromCache":
+            # This event has no frameId in the CDP protocol; the pinned requestId is
+            # sufficient, and the signal is kept distinct from disk-cache provenance.
+            if frame_id is not None and frame_id != main_frame_id:
+                continue
+            if loader_id is not None and isinstance(event_loader_id, str) and event_loader_id and event_loader_id != loader_id:
+                continue
+            current_request_served_from_cache = True
+            continue
+        if method == "Network.requestWillBeSent" and frame_id != main_frame_id:
+            continue
+        if method != "Network.requestWillBeSent" and frame_id is not None and frame_id != main_frame_id:
+            continue
+        if loader_id is not None and isinstance(event_loader_id, str) and event_loader_id and event_loader_id != loader_id:
+            continue
+
+        if method == "Network.requestWillBeSent":
+            request = params.get("request")
+            redirect_response = params.get("redirectResponse")
+            if isinstance(redirect_response, dict) and isinstance(request, dict):
+                redirects.append(
+                    {
+                        "status": _safe_http_status(redirect_response.get("status")),
+                        "target": safe_navigation_target(
+                            request.get("url", ""), shop_url
+                        ),
+                        "request_served_from_cache": current_request_served_from_cache,
+                        **_safe_response_cache_provenance(redirect_response),
+                    }
+                )
+                if len(redirects) > PWA_DIAGNOSTIC_MAX_REDIRECTS:
+                    redirects = redirects[:PWA_DIAGNOSTIC_MAX_REDIRECTS]
+                current_request_url = request.get("url") if isinstance(request.get("url"), str) else current_request_url
+                current_request_served_from_cache = None
+                # A responseReceived event for a redirect is provisional; its redirectResponse
+                # counterpart above is the authoritative hop and starts a new request.
+                final = None
+            elif isinstance(request, dict) and isinstance(request.get("url"), str):
+                current_request_url = request["url"]
+                current_request_served_from_cache = None
+        elif method == "Network.responseReceived":
+            response = params.get("response")
+            if not isinstance(response, dict):
+                continue
+            final = {
+                "status": _safe_http_status(response.get("status")),
+                "target": safe_navigation_target(
+                    response.get("url", current_request_url), shop_url
+                ),
+                "request_served_from_cache": current_request_served_from_cache,
+                **_safe_response_cache_provenance(response),
+            }
+
+    trace["redirects"] = redirects
+    if final is not None:
+        trace["final"] = final
+    return trace
+
+
+def _format_safe_target(value: object) -> str:
+    target = _safe_navigation_target_metadata(value)
+    path = target["path"]
+    query_keys = target["query_keys"]
+    formatted = path if isinstance(path, str) else "<other>"
+    if isinstance(query_keys, list) and query_keys:
+        formatted += "?keys=" + ",".join(query_keys)
+        formatted += ";query_keys=" + ",".join(query_keys)
+    controller = target.get("controller")
+    back = target.get("back")
+    if isinstance(controller, str):
+        formatted += f";controller={controller}"
+    if isinstance(back, str):
+        formatted += f";back={back}"
+    return formatted
+
+
+def _format_navigation_trace(value: object) -> str:
+    if not isinstance(value, dict) or value.get("observed") is not True:
+        return "unobserved"
+    method = value.get("method")
+    method = method if isinstance(method, str) and method in {"GET", "POST", "HEAD", "other"} else "unknown"
+    formatted = f"{method} {_format_safe_target(value.get('initial_target'))}"
+    redirects = value.get("redirects")
+    if isinstance(redirects, list):
+        for redirect in redirects[:PWA_DIAGNOSTIC_MAX_REDIRECTS]:
+            if not isinstance(redirect, dict):
+                continue
+            status = redirect.get("status")
+            safe_status = status if type(status) is int and 100 <= status <= 599 else "?"
+            formatted += f";{safe_status}->{_format_safe_target(redirect.get('target'))}"
+    final = value.get("final")
+    if isinstance(final, dict):
+        status = final.get("status")
+        safe_status = status if type(status) is int and 100 <= status <= 599 else "unavailable"
+        final_target = _safe_navigation_target_metadata(final.get("target"))
+        formatted += (
+            f";final={safe_status}:{final_target.get('path', '<other>')}"
+            f";service_worker={_diagnostic_boolean(final.get('from_service_worker'))}"
+            f";disk_cache={_diagnostic_boolean(final.get('from_disk_cache'))}"
+        )
+        if isinstance(final_target.get("query_keys"), list) and final_target["query_keys"]:
+            formatted += ";final_query_keys=" + ",".join(final_target["query_keys"])
+        if isinstance(final_target.get("controller"), str):
+            formatted += f";final_controller={final_target['controller']}"
+        if isinstance(final_target.get("back"), str):
+            formatted += f";final_back={final_target['back']}"
+        formatted += f";request_cache={_diagnostic_boolean(final.get('request_served_from_cache'))}"
+        source = final.get("service_worker_source")
+        if isinstance(source, str) and source in PWA_DIAGNOSTIC_WORKER_SOURCES:
+            formatted += f";worker_source={source}"
+    return formatted
+
+
+def _diagnostic_boolean(value: object) -> str:
+    return str(value).lower() if type(value) is bool else "unknown"
+
+
+def navigation_trace_has_cache_hit(trace: object) -> bool:
+    if not isinstance(trace, dict):
+        return False
+    steps = trace.get("redirects")
+    checked_steps = list(steps) if isinstance(steps, list) else []
+    final = trace.get("final")
+    if isinstance(final, dict):
+        checked_steps.append(final)
+    return any(
+        isinstance(step, dict)
+        and (
+            step.get("from_disk_cache") is True
+            or step.get("request_served_from_cache") is True
+            or step.get("service_worker_source") in {"cache-storage", "http-cache"}
+        )
+        for step in checked_steps
+    )
+
+
+def validate_logged_out_navigation_trace(
+    trace: object, *, service_worker_expected: bool
+) -> None:
+    """Require a completed login redirect with the expected worker and cache path."""
+    if not isinstance(trace, dict) or trace.get("observed") is not True:
+        raise AssertionError("logged-out protected account navigation was not observed")
+    redirects = trace.get("redirects")
+    redirects = redirects if isinstance(redirects, list) else []
+    if not redirects or not isinstance(redirects[0], dict) or redirects[0].get("status") != 302:
+        raise AssertionError("logged-out protected account did not follow the sign-in redirect")
+    final = trace.get("final")
+    if not isinstance(final, dict) or final.get("status") != 200:
+        raise AssertionError("logged-out sign-in destination did not return HTTP 200")
+    if navigation_trace_has_cache_hit(trace):
+        raise AssertionError("logged-out protected document was served from a browser or service-worker cache")
+    worker_steps = [*redirects, final]
+    expected_value = service_worker_expected
+    if any(step.get("from_service_worker") is not expected_value for step in worker_steps if isinstance(step, dict)):
+        condition = "service worker" if service_worker_expected else "network without service worker"
+        raise AssertionError(f"logged-out navigation provenance did not match {condition} mode")
+    if service_worker_expected:
+        if any(
+            step.get("service_worker_source") in {"cache-storage", "http-cache"}
+            for step in worker_steps
+            if isinstance(step, dict)
+        ):
+            raise AssertionError("service worker returned a cached private customer document")
+
+
+def _format_selected_signout(value: object) -> str:
+    if not isinstance(value, dict):
+        return "unavailable"
+    containers = {"account_menu", "my_account"}
+    container = value.get("container")
+    container = container if isinstance(container, str) and container in containers else "other"
+    element_id = value.get("element_id")
+    if not isinstance(element_id, str) or element_id not in {"signout_link", "none"}:
+        element_id = "other"
+    formatted = f"{container}#{element_id}"
+    target = value.get("target")
+    if isinstance(target, dict):
+        formatted += f";target={_format_safe_target(target)}"
+    return formatted
+
+
 def format_logout_wait_diagnostic(metadata: dict[str, object]) -> str:
     """Format only bounded, allowlisted logout diagnostics for CI annotations."""
     route_class = metadata.get("final_route_class")
@@ -322,7 +776,7 @@ def format_logout_wait_diagnostic(metadata: dict[str, object]) -> str:
     def boolean_label(value: object) -> str:
         return str(value).lower() if type(value) is bool else "unknown"
 
-    return (
+    diagnostic = (
         f"; final_route_class={route_class}"
         f"; final_document_status={safe_status}"
         f"; login_form_count={count_label(metadata.get('login_form_count'))}"
@@ -331,6 +785,22 @@ def format_logout_wait_diagnostic(metadata: dict[str, object]) -> str:
         f"; email_field_visible={boolean_label(metadata.get('email_field_visible'))}"
         f"; ready_state={ready_state}"
     )
+    selected = metadata.get("selected_signout")
+    if isinstance(selected, dict):
+        diagnostic += f"; selected_signout={_format_selected_signout(selected)}"
+    for key in ("logout_trace", "protected_pwa_trace", "protected_network_trace"):
+        if key in metadata:
+            diagnostic += f"; {key}={_format_navigation_trace(metadata.get(key))}"
+    for key in (
+        "controlled_identity_exposed",
+        "controlled_cache_empty",
+        "network_identity_exposed",
+        "network_cache_empty",
+        "service_worker_restored",
+    ):
+        if key in metadata:
+            diagnostic += f"; {key}={_diagnostic_boolean(metadata.get(key))}"
+    return diagnostic
 
 
 def wait_for_logout_login_form(driver: webdriver.Chrome, shop_url: str):
@@ -482,19 +952,34 @@ def wait_for_service_worker(driver: webdriver.Chrome) -> dict[str, object]:
     return result
 
 
-def matching_document_responses(
-    driver: webdriver.Chrome, requested_url: str, shop_url: str
-) -> list[dict[str, object]] | None:
+def current_main_frame_id(driver: webdriver.Chrome) -> str | None:
     try:
-        entries = driver.get_log("performance")
+        frame_tree = driver.execute_cdp_cmd("Page.getFrameTree", {}).get("frameTree", {})
+        frame = frame_tree.get("frame", {}) if isinstance(frame_tree, dict) else {}
+        frame_id = frame.get("id") if isinstance(frame, dict) else None
+        return frame_id if isinstance(frame_id, str) and frame_id else None
     except Exception:
         return None
+
+
+def matching_document_responses(
+    driver: webdriver.Chrome,
+    requested_url: str,
+    shop_url: str,
+    performance_entries: object | None = None,
+) -> list[dict[str, object]] | None:
+    if performance_entries is None:
+        try:
+            entries = driver.get_log("performance")
+        except Exception:
+            return None
+    else:
+        entries = performance_entries
     requested = urlparse(requested_url)
     requested_query = parse_qs(requested.query, keep_blank_values=True)
     responses: list[dict[str, object]] = []
-    for entry in entries:
+    for event in chrome_performance_events(entries):
         try:
-            event = json.loads(entry.get("message", "" )).get("message", {})
             method = event.get("method")
             params = event.get("params", {})
             if params.get("type") != "Document":
@@ -522,9 +1007,25 @@ def matching_document_responses(
 
 
 def assert_private_document_cache_headers(
-    driver: webdriver.Chrome, requested_url: str, shop_url: str, route_label: str
+    driver: webdriver.Chrome,
+    requested_url: str,
+    shop_url: str,
+    route_label: str,
+    *,
+    performance_entries: object | None = None,
+    trace_main_frame_id: str | None = None,
 ) -> dict[str, object]:
-    responses = matching_document_responses(driver, requested_url, shop_url)
+    if performance_entries is None:
+        try:
+            performance_entries = driver.get_log("performance")
+        except Exception:
+            performance_entries = None
+    responses = matching_document_responses(
+        driver,
+        requested_url,
+        shop_url,
+        performance_entries=performance_entries,
+    )
     if not responses:
         message = f"UNVERIFIED: document cache headers could not be observed for {route_label}."
         print(message, file=sys.stderr)
@@ -554,9 +1055,28 @@ def assert_private_document_cache_headers(
         "cache_control": cache_control if isinstance(cache_control, str) else "",
         "pragma_present": isinstance(pragma, str) and bool(pragma.strip()),
         "expires_present": isinstance(expires, str) and bool(expires.strip()),
-        "from_disk_cache": response.get("fromDiskCache") is True,
-        "from_service_worker": response.get("fromServiceWorker") is True,
+        "from_disk_cache": (
+            response.get("fromDiskCache") if type(response.get("fromDiskCache")) is bool else None
+        ),
+        "from_service_worker": (
+            response.get("fromServiceWorker")
+            if type(response.get("fromServiceWorker")) is bool
+            else None
+        ),
+        "service_worker_source": (
+            response.get("serviceWorkerResponseSource")
+            if isinstance(response.get("serviceWorkerResponseSource"), str)
+            and response.get("serviceWorkerResponseSource") in PWA_DIAGNOSTIC_WORKER_SOURCES
+            else None
+        ),
     }
+    if isinstance(trace_main_frame_id, str):
+        observed["navigation_trace"] = safe_document_navigation_trace(
+            chrome_performance_events(performance_entries),
+            requested_url,
+            shop_url,
+            trace_main_frame_id,
+        )
     if not response_has_private_cache_policy(headers):
         directives = sorted({
             part.split("=", 1)[0].strip().lower()
@@ -597,6 +1117,8 @@ def navigate_private_document(
     shop_url: str,
     route_label: str,
     set_substage: Callable[[str], None] | None = None,
+    *,
+    capture_navigation_trace: bool = False,
 ) -> dict[str, object]:
     def mark_substage(name: str) -> None:
         if set_substage is not None:
@@ -619,6 +1141,21 @@ def navigate_private_document(
         lambda browser: browser.execute_script("return document.readyState") == "complete"
     )
     mark_substage("cache_policy")
+    if capture_navigation_trace:
+        try:
+            performance_entries = driver.get_log("performance")
+        except Exception:
+            message = f"UNVERIFIED: Chrome performance response logging is unavailable for {route_label}."
+            print(message, file=sys.stderr)
+            raise AssertionError(message)
+        return assert_private_document_cache_headers(
+            driver,
+            requested_url,
+            shop_url,
+            route_label,
+            performance_entries=performance_entries,
+            trace_main_frame_id=current_main_frame_id(driver),
+        )
     return assert_private_document_cache_headers(driver, requested_url, shop_url, route_label)
 
 
@@ -1278,6 +1815,45 @@ def verify_logged_out_private_routes(
             wait_visible(driver, "#login-form input[name='email']")
 
 
+def safe_selected_signout_metadata(signout: object, shop_url: str) -> dict[str, object]:
+    try:
+        element_id = signout.get_attribute("id")
+        href = signout.get_attribute("href")
+    except Exception:
+        element_id = None
+        href = None
+    safe_id = element_id if element_id == "signout_link" else "none"
+    container = "account_menu" if safe_id == "signout_link" else "my_account"
+    target = safe_navigation_target(href, shop_url) if isinstance(href, str) else {
+        "path": "<other>", "query_keys": []
+    }
+    return {"container": container, "element_id": safe_id, "target": target}
+
+
+def attach_logout_context(
+    error: BaseException,
+    *,
+    snapshot: dict[str, object],
+    selected_signout: dict[str, object],
+    logout_trace: dict[str, object],
+    protected_pwa_trace: dict[str, object],
+    protected_network_trace: dict[str, object],
+) -> None:
+    diagnostics = dict(snapshot)
+    diagnostics.update(
+        {
+            "selected_signout": selected_signout,
+            "logout_trace": logout_trace,
+            "protected_pwa_trace": protected_pwa_trace,
+            "protected_network_trace": protected_network_trace,
+        }
+    )
+    try:
+        error.pwa_logout_diagnostics = diagnostics
+    except Exception:
+        pass
+
+
 def verify_logout_protection(
     driver: webdriver.Chrome,
     account_url: str,
@@ -1299,6 +1875,30 @@ def verify_logout_protection(
             False,
         )
     )
+    selected_signout = safe_selected_signout_metadata(signout, shop_url)
+    try:
+        raw_signout_href = signout.get_attribute("href")
+    except Exception:
+        raw_signout_href = None
+    signout_url = (
+        urljoin(driver.current_url, raw_signout_href)
+        if isinstance(raw_signout_href, str)
+        else ""
+    )
+    signout_frame_id = current_main_frame_id(driver)
+    try:
+        driver.get_log("performance")
+    except Exception:
+        error = AssertionError("Chrome performance response logging is unavailable for logout")
+        attach_logout_context(
+            error,
+            snapshot=safe_logout_wait_diagnostics(driver, shop_url),
+            selected_signout=selected_signout,
+            logout_trace=safe_document_navigation_trace([], signout_url, shop_url, ""),
+            protected_pwa_trace=safe_document_navigation_trace([], account_url, shop_url, ""),
+            protected_network_trace=safe_document_navigation_trace([], account_url, shop_url, ""),
+        )
+        raise error
     mark_stage("click_signout")
     signout.click()
     mark_stage("wait_signed_out_header")
@@ -1308,16 +1908,67 @@ def verify_logout_protection(
             for link in browser.find_elements(By.CSS_SELECTOR, "a.account-menu__link--signout")
         )
     )
-    mark_stage("request_protected_account")
-    account_response = navigate_private_document(
-        driver,
-        account_url,
+    try:
+        WebDriverWait(driver, 30).until(
+            lambda browser: browser.execute_script("return document.readyState") == "complete"
+        )
+        logout_entries = driver.get_log("performance")
+    except Exception:
+        logout_entries = []
+    logout_trace = safe_document_navigation_trace(
+        chrome_performance_events(logout_entries),
+        signout_url,
         shop_url,
-        "logged-out account",
-        set_substage=lambda name: mark_stage(f"request_protected_account_{name}"),
+        signout_frame_id or "",
     )
+    if logout_trace.get("observed") is not True or not any(
+        isinstance(hop, dict) and hop.get("status") in {301, 302, 303, 307, 308}
+        for hop in logout_trace.get("redirects", [])
+    ):
+        error = AssertionError("customer logout navigation and redirect were not observed")
+        attach_logout_context(
+            error,
+            snapshot=safe_logout_wait_diagnostics(driver, shop_url),
+            selected_signout=selected_signout,
+            logout_trace=logout_trace,
+            protected_pwa_trace=safe_document_navigation_trace([], account_url, shop_url, ""),
+            protected_network_trace=safe_document_navigation_trace([], account_url, shop_url, ""),
+        )
+        raise error
+    mark_stage("request_protected_account")
+    try:
+        account_response = navigate_private_document(
+            driver,
+            account_url,
+            shop_url,
+            "logged-out account",
+            set_substage=lambda name: mark_stage(f"request_protected_account_{name}"),
+            capture_navigation_trace=True,
+        )
+    except Exception as error:
+        attach_logout_context(
+            error,
+            snapshot=safe_logout_wait_diagnostics(driver, shop_url),
+            selected_signout=selected_signout,
+            logout_trace=logout_trace,
+            protected_pwa_trace=safe_document_navigation_trace([], account_url, shop_url, ""),
+            protected_network_trace=safe_document_navigation_trace([], account_url, shop_url, ""),
+        )
+        raise
+    protected_pwa_trace = account_response.get("navigation_trace")
+    if not isinstance(protected_pwa_trace, dict):
+        protected_pwa_trace = safe_document_navigation_trace([], account_url, shop_url, "")
     if account_response.get("status") != 302:
-        raise AssertionError("logged-out account did not redirect to sign-in")
+        error = AssertionError("logged-out account did not redirect to sign-in")
+        attach_logout_context(
+            error,
+            snapshot=safe_logout_wait_diagnostics(driver, shop_url),
+            selected_signout=selected_signout,
+            logout_trace=logout_trace,
+            protected_pwa_trace=protected_pwa_trace,
+            protected_network_trace=safe_document_navigation_trace([], account_url, shop_url, ""),
+        )
+        raise error
     mark_stage("wait_protected_document")
     WebDriverWait(driver, 30).until(
         lambda browser: browser.execute_script("return document.readyState") == "complete"
@@ -1332,12 +1983,155 @@ def verify_logout_protection(
     ):
         raise AssertionError("logged-out browser still shows an authenticated user menu")
     mark_stage("require_login_form")
-    wait_for_logout_login_form(driver, shop_url)
+    normal_form_error: BaseException | None = None
+    normal_failure_substage = "require_login_form"
+    try:
+        wait_for_logout_login_form(driver, shop_url)
+    except Exception as error:
+        normal_form_error = error
+    try:
+        validate_logged_out_navigation_trace(
+            protected_pwa_trace,
+            service_worker_expected=True,
+        )
+    except Exception as error:
+        if normal_form_error is None:
+            normal_form_error = error
+            normal_failure_substage = "validate_pwa_navigation_trace"
+
+    pwa_identity_exposed: bool | None = None
+    pwa_cache_empty: bool | None = None
+    mark_stage("assert_no_identity_in_pwa_document")
+    try:
+        pwa_body_text = driver.find_element(By.TAG_NAME, "body").text
+        pwa_identity_exposed = exposes_test_identity(pwa_body_text, first_name, last_name, email)
+        if pwa_identity_exposed and normal_form_error is None:
+            normal_form_error = AssertionError(
+                "controlled logged-out page exposed the synthetic customer's identity"
+            )
+            normal_failure_substage = "assert_no_identity_in_pwa_document"
+    except Exception as error:
+        if normal_form_error is None:
+            normal_form_error = error
+            normal_failure_substage = "assert_no_identity_in_pwa_document"
+    mark_stage("assert_empty_pwa_cache")
+    try:
+        assert_empty_cache_storage(driver, "service-worker-controlled logged-out account route")
+        pwa_cache_empty = True
+    except Exception as error:
+        pwa_cache_empty = False
+        if normal_form_error is None:
+            normal_form_error = error
+            normal_failure_substage = "assert_empty_pwa_cache"
+    pwa_snapshot = safe_logout_wait_diagnostics(driver, shop_url)
+    pwa_snapshot["controlled_identity_exposed"] = pwa_identity_exposed
+    pwa_snapshot["controlled_cache_empty"] = pwa_cache_empty
+    if pwa_identity_exposed is False:
+        try:
+            driver.save_screenshot(str(screenshot))
+        except Exception as error:
+            if normal_form_error is None:
+                normal_form_error = error
+                normal_failure_substage = "capture_logged_out_pwa_screenshot"
+
+    protected_network_trace = safe_document_navigation_trace([], account_url, shop_url, "")
+    network_form_error: BaseException | None = None
+    network_identity_exposed: bool | None = None
+    network_cache_empty: bool | None = None
+    bypass_reset_ok = False
+    mark_stage("compare_service_worker_bypass")
+    try:
+        driver.execute_cdp_cmd("Network.setBypassServiceWorker", {"bypass": True})
+        network_response = navigate_private_document(
+            driver,
+            account_url,
+            shop_url,
+            "logged-out account without service worker",
+            set_substage=lambda name: mark_stage(f"request_network_account_{name}"),
+            capture_navigation_trace=True,
+        )
+        candidate_trace = network_response.get("navigation_trace")
+        if isinstance(candidate_trace, dict):
+            protected_network_trace = candidate_trace
+        if network_response.get("status") != 302:
+            network_form_error = AssertionError(
+                "logged-out account did not redirect to sign-in with service worker bypassed"
+            )
+        else:
+            try:
+                wait_for_logout_login_form(driver, shop_url)
+            except Exception as error:
+                network_form_error = error
+            try:
+                validate_logged_out_navigation_trace(
+                    protected_network_trace,
+                    service_worker_expected=False,
+                )
+            except Exception as error:
+                if network_form_error is None:
+                    network_form_error = error
+            try:
+                network_body_text = driver.find_element(By.TAG_NAME, "body").text
+                network_identity_exposed = exposes_test_identity(
+                    network_body_text, first_name, last_name, email
+                )
+                if network_identity_exposed and network_form_error is None:
+                    network_form_error = AssertionError(
+                        "network-only logged-out page exposed the synthetic customer's identity"
+                    )
+            except Exception as error:
+                if network_form_error is None:
+                    network_form_error = error
+            try:
+                assert_empty_cache_storage(driver, "network-only logged-out account route")
+                network_cache_empty = True
+            except Exception as error:
+                network_cache_empty = False
+                if network_form_error is None:
+                    network_form_error = error
+    except Exception as error:
+        network_form_error = error
+    finally:
+        try:
+            driver.execute_cdp_cmd("Network.setBypassServiceWorker", {"bypass": False})
+            bypass_reset_ok = True
+        except Exception as error:
+            if network_form_error is None:
+                network_form_error = error
+    try:
+        wait_for_service_worker(driver)
+    except Exception as error:
+        if network_form_error is None:
+            network_form_error = error
+    pwa_snapshot["service_worker_restored"] = bypass_reset_ok
+    pwa_snapshot["network_identity_exposed"] = network_identity_exposed
+    pwa_snapshot["network_cache_empty"] = network_cache_empty
+
+    if normal_form_error is not None:
+        mark_stage(normal_failure_substage)
+        attach_logout_context(
+            normal_form_error,
+            snapshot=pwa_snapshot,
+            selected_signout=selected_signout,
+            logout_trace=logout_trace,
+            protected_pwa_trace=protected_pwa_trace,
+            protected_network_trace=protected_network_trace,
+        )
+        raise normal_form_error
+    if network_form_error is not None:
+        attach_logout_context(
+            network_form_error,
+            snapshot=pwa_snapshot,
+            selected_signout=selected_signout,
+            logout_trace=logout_trace,
+            protected_pwa_trace=protected_pwa_trace,
+            protected_network_trace=protected_network_trace,
+        )
+        raise network_form_error
     mark_stage("assert_no_identity_on_protected_page")
     body_text = driver.find_element(By.TAG_NAME, "body").text
     if exposes_test_identity(body_text, first_name, last_name, email):
         raise AssertionError("protected account page exposed the synthetic customer's name after logout")
-    driver.save_screenshot(str(screenshot))
     mark_stage("assert_empty_logged_out_cache")
     assert_empty_cache_storage(driver, "logged-out protected account route")
     mark_stage("verify_logged_out_private_routes")
