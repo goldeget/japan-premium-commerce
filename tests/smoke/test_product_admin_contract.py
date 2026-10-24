@@ -80,6 +80,24 @@ class ProductAdminContractTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, persistence)
 
+    def test_localized_persistence_failures_report_payload_and_shop_scope_without_values(self) -> None:
+        service = (MODULE / "src" / "Integration" / "PrestaShopNativeProductManager.php").read_text(encoding="utf-8")
+        persistence = service.split("private function persistLocalizedFields(", 1)[1].split("private function optionText(", 1)[0]
+
+        for expected in (
+            "localizedPersistenceDiagnostics(",
+            "context_shop_ids",
+            "payload_field_present",
+            "payload_language_ids",
+            "payload_value_length",
+            "stored_value_length",
+            "expected_matches",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, persistence)
+        self.assertNotIn("'expected_value' =>", persistence)
+        self.assertNotIn("'stored_value' =>", persistence)
+
     def test_english_fallback_php_fixture_preserves_required_legacy_fields(self) -> None:
         fixture = (ROOT / "tests" / "catalog" / "product_admin_draft.php").read_text(encoding="utf-8")
         fallback = fixture.split("$englishFallbackDraft = ProductAdminDraft::fromArray([", 1)[1].split(

@@ -344,7 +344,10 @@ final class PrestaShopNativeProductManager
                 $localizedProduct->link_rewrite = $slugs[$languageId];
                 $localizedProduct->setFieldsToUpdate(['link_rewrite' => [$languageId => true]]);
                 if (!$localizedProduct->update()) {
-                    throw new RuntimeException('상품 URL 슬러그의 언어별 설정을 저장하지 못했습니다.');
+                    throw new RuntimeException(
+                        '상품 URL 슬러그의 언어별 설정을 저장하지 못했습니다. '
+                        . $this->localizedPersistenceDiagnostics($localizedProduct, 'link_rewrite', $languageId, $shopId, $slugs[$languageId], $savedSlug)
+                    );
                 }
                 $savedSlug = (string) \Db::getInstance()->getValue(
                     'SELECT `link_rewrite` FROM `' . _DB_PREFIX_ . 'product_lang`'
@@ -354,7 +357,10 @@ final class PrestaShopNativeProductManager
                     false
                 );
                 if ($savedSlug !== $slugs[$languageId]) {
-                    throw new RuntimeException('상품 URL 슬러그의 언어별 저장값을 다시 확인하지 못했습니다.');
+                    throw new RuntimeException(
+                        '상품 URL 슬러그의 언어별 저장값을 다시 확인하지 못했습니다. '
+                        . $this->localizedPersistenceDiagnostics($localizedProduct, 'link_rewrite', $languageId, $shopId, $slugs[$languageId], $savedSlug)
+                    );
                 }
             }
 
@@ -373,7 +379,10 @@ final class PrestaShopNativeProductManager
                     $image->legend = $legends[$languageId];
                     $image->setFieldsToUpdate(['legend' => [$languageId => true]]);
                     if (!$image->update()) {
-                        throw new RuntimeException('상품 이미지 설명의 언어별 설정을 저장하지 못했습니다.');
+                        throw new RuntimeException(
+                            '상품 이미지 설명의 언어별 설정을 저장하지 못했습니다. '
+                            . $this->localizedPersistenceDiagnostics($image, 'legend', $languageId, $shopId, $legends[$languageId], $savedLegend)
+                        );
                     }
                     $savedLegend = (string) \Db::getInstance()->getValue(
                         'SELECT `legend` FROM `' . _DB_PREFIX_ . 'image_lang`'
@@ -382,11 +391,50 @@ final class PrestaShopNativeProductManager
                         false
                     );
                     if ($savedLegend !== $legends[$languageId]) {
-                        throw new RuntimeException('상품 이미지 설명의 언어별 저장값을 다시 확인하지 못했습니다.');
+                        throw new RuntimeException(
+                            '상품 이미지 설명의 언어별 저장값을 다시 확인하지 못했습니다. '
+                            . $this->localizedPersistenceDiagnostics($image, 'legend', $languageId, $shopId, $legends[$languageId], $savedLegend)
+                        );
                     }
                 }
             }
         }
+    }
+
+    private function localizedPersistenceDiagnostics(
+        object $model,
+        string $field,
+        int $languageId,
+        int $shopId,
+        string $expected,
+        string $stored
+    ): string {
+        try {
+            $payload = $model->getFieldsLang();
+        } catch (\Throwable) {
+            $payload = [];
+        }
+
+        $languageFields = is_array($payload) && isset($payload[$languageId]) && is_array($payload[$languageId])
+            ? $payload[$languageId]
+            : [];
+        $payloadFieldPresent = array_key_exists($field, $languageFields);
+        $payloadValue = $payloadFieldPresent ? (string) $languageFields[$field] : '';
+        $contextShopIds = \Shop::getContextListShopID();
+
+        return (string) json_encode([
+            'field' => $field,
+            'requested_language_id' => $languageId,
+            'requested_shop_id' => $shopId,
+            'context_shop_ids' => is_array($contextShopIds) ? array_map('intval', $contextShopIds) : [],
+            'payload_field_present' => $payloadFieldPresent,
+            'payload_language_ids' => is_array($payload) ? array_map('intval', array_keys($payload)) : [],
+            'payload_value_length' => strlen($payloadValue),
+            'payload_matches_expected' => $payloadFieldPresent && $payloadValue === $expected,
+            'expected_value_length' => strlen($expected),
+            'stored_value_length' => strlen($stored),
+            'expected_matches' => $stored === $expected,
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
     /** @return array{name:string,values:list<string>}[] */
