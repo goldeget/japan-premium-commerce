@@ -346,6 +346,7 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
             "history",
             "identity",
             "my-account",
+            "내-계정",
             "order",
             "order-confirmation",
             "order-detail",
@@ -407,6 +408,7 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
         for target in (
             "http://localhost:18080/ko/identity",
             "http://localhost:18080/ko/order-detail",
+            "http://localhost:18080/ko/%EB%82%B4-%EA%B3%84%EC%A0%95",
             "http://localhost:18080/index.php?controller=identity",
             "http://localhost:18080/index.php?controller=order-detail",
         ):
@@ -1021,6 +1023,93 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         self.assertIn("account_url = authenticated_account_url(driver, base_url)", create_customer)
         self.assertIn('div.dropdown-menu[aria-labelledby="userMenuButton"] a[href]', account_link)
         self.assertIn("if not same_origin(base_url, account_url):", account_link)
+
+    def test_confirmed_korean_account_route_is_private_and_safely_classified(self) -> None:
+        account_url = "http://localhost:18080/ko/%EB%82%B4-%EA%B3%84%EC%A0%95"
+
+        self.assertTrue(
+            pwa_browser.is_private_customer_back_target(
+                account_url, "http://localhost:18080"
+            )
+        )
+        self.assertEqual(
+            "account",
+            pwa_browser.customer_route_class(account_url, "http://localhost:18080"),
+        )
+        metadata = pwa_browser.safe_navigation_target(account_url, "http://localhost:18080")
+        self.assertEqual("/ko/내-계정", metadata["path"])
+        self.assertIs(metadata["private_customer_route"], True)
+
+    def test_locale_controller_url_preserves_path_and_query_locale_selectors(self) -> None:
+        shop_url = "http://shop.example.test/store"
+        self.assertEqual(
+            "http://shop.example.test/store/en/index.php?controller=cart&action=show",
+            pwa_browser.localized_controller_url(
+                shop_url,
+                "http://shop.example.test/store/en/",
+                "index.php?controller=cart&action=show",
+            ),
+        )
+        self.assertEqual(
+            "http://shop.example.test/store/index.php?controller=my-account&id_lang=2",
+            pwa_browser.localized_controller_url(
+                shop_url,
+                "http://shop.example.test/store/?id_lang=2&token=should-not-carry",
+                "index.php?controller=my-account",
+            ),
+        )
+        self.assertEqual(
+            "http://shop.example.test/store/index.php?controller=cart&id_lang=3",
+            pwa_browser.localized_controller_url(
+                shop_url,
+                "http://shop.example.test/store/?id_lang=2&token=should-not-carry",
+                "index.php?controller=cart&id_lang=3",
+            ),
+        )
+        with self.assertRaises(ValueError):
+            pwa_browser.localized_controller_url(
+                shop_url,
+                "https://other.example.test/store/en/",
+                "index.php?controller=cart",
+            )
+        for escaped_path in (
+            "%2e%2e/%2e%2e/admin?controller=cart",
+            "%2e%2e%2f%2e%2e/admin?controller=cart",
+        ):
+            with self.subTest(escaped_path=escaped_path), self.assertRaises(ValueError):
+                pwa_browser.localized_controller_url(
+                    shop_url,
+                    "http://shop.example.test/store/en/",
+                    escaped_path,
+                )
+        for escaped_locale_home in (
+            "http://shop.example.test/store/en/%252e%252e/",
+            "http://shop.example.test/store/en/%252fsecret/",
+        ):
+            with self.subTest(escaped_locale_home=escaped_locale_home), self.assertRaises(ValueError):
+                pwa_browser.localized_controller_url(
+                    shop_url,
+                    escaped_locale_home,
+                    "index.php?controller=cart",
+                )
+
+    def test_guest_route_loop_uses_localized_signin_and_controller_destinations(self) -> None:
+        viewport = function_source(self.source, "run_viewport")
+
+        self.assertIn('("guest_authentication_route", signin_url)', viewport)
+        self.assertIn("localized_controller_url(", viewport)
+        self.assertIn('"index.php?controller=my-account"', viewport)
+        self.assertIn('"index.php?controller=cart&action=show"', viewport)
+        self.assertIn('"index.php?controller=order"', viewport)
+        self.assertNotIn('driver.get(urljoin(base_url + "/", route))', viewport)
+        self.assertIn("if not is_private_customer_back_target(account_url, base_url):", viewport)
+        self.assertIn('if customer_route_class(account_url, base_url) != "account":', viewport)
+        self.assertIn("navigate_private_document(", viewport)
+        self.assertIn('if route_stage in {"guest_account_route", "guest_order_route"}', viewport)
+        self.assertIn('observed.get("status") != 302', viewport)
+        self.assertIn("validate_logged_out_navigation_trace(", viewport)
+        self.assertIn('observed.get("navigation_trace")', viewport)
+        self.assertIn("wait_for_logout_login_form(driver, base_url)", viewport)
 
     def test_logout_and_history_require_login_form_and_check_both_test_names(self) -> None:
         logout = function_source(self.source, "verify_logout_protection")

@@ -991,6 +991,18 @@ jobs:
           }
           trap restore_base_checkout EXIT
 
+          mkdir -p "$QA_ARTIFACT_DIR"
+          localized_account_route_rewrites_hex=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
+            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT l.iso_code, HEX(ml.url_rewrite) FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta = ml.id_meta JOIN ps_lang l ON l.id_lang = ml.id_lang WHERE m.page = '\''my-account'\'' AND ml.id_shop = 1 AND l.iso_code IN ('\''ja'\'','\''ko'\'') ORDER BY l.iso_code"'
+          )
+          if ! printf '%s\n' "$localized_account_route_rewrites_hex" | awk -F '\t' 'NF == 2 && ($1 == "ja" || $1 == "ko") && $2 ~ /^[[:xdigit:]]+$/ { seen[$1] = 1 } END { exit !(seen["ja"] && seen["ko"]) }'; then
+            echo '::error title=ORDENOWA PWA browser QA::Could not read isolated Japanese and Korean account route rewrites.'
+            exit 1
+          fi
+          printf 'locale\turl_rewrite_hex\n%s\n' "$localized_account_route_rewrites_hex" > "$QA_ARTIFACT_DIR/pwa-account-route-rewrites.txt"
+          localized_account_route_rewrites_summary=${localized_account_route_rewrites_hex//$'\n'/;}
+          printf '::notice title=ORDENOWA isolated account route rewrites::%s\n' "$localized_account_route_rewrites_summary"
+
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" \
             -f compose.yaml -f tests/fixtures/ci-checkout.compose.yaml config --quiet
           pwa_checkout_override_attempted=1

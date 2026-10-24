@@ -11,7 +11,15 @@ import uuid
 from collections.abc import Callable
 from http.client import HTTPConnection
 from pathlib import Path
-from urllib.parse import parse_qs, parse_qsl, unquote, urljoin, urlparse
+from urllib.parse import (
+    parse_qs,
+    parse_qsl,
+    unquote,
+    urlencode,
+    urljoin,
+    urlparse,
+    urlunparse,
+)
 
 try:
     from selenium import webdriver
@@ -54,6 +62,7 @@ PWA_DIAGNOSTIC_ROUTE_SEGMENTS = {
     "history",
     "identity",
     "index.php",
+    "내-계정",
     *PWA_DIAGNOSTIC_AUTH_ROUTE_SEGMENTS,
     "my-account",
     "order",
@@ -95,6 +104,7 @@ PWA_PRIVATE_CUSTOMER_ROUTES = {
     "history",
     "identity",
     "my-account",
+    "내-계정",
     "order",
     "order-confirmation",
     "order-detail",
@@ -374,6 +384,85 @@ def resolve_storefront_locale_url(
     return destination
 
 
+def decode_path_for_validation(path: str) -> str:
+    """Decode bounded URL-encoding layers and reject separators created by decoding."""
+    current = path
+    for _ in range(8):
+        decoded = unquote(current, errors="strict")
+        if decoded == current:
+            return current
+        if decoded.count("/") != current.count("/") or "\\" in decoded:
+            raise ValueError("encoded path separator")
+        current = decoded
+    raise ValueError("excessively encoded path")
+
+
+def localized_controller_url(shop_url: str, locale_home_url: str, route: str) -> str:
+    """Build a localized index.php URL without carrying unrelated query values."""
+    if not all(isinstance(value, str) for value in (shop_url, locale_home_url, route)):
+        raise ValueError("localized storefront route is invalid")
+    if not same_origin(shop_url, locale_home_url):
+        raise ValueError("localized storefront home escaped the isolated shop origin")
+
+    shop = urlparse(shop_url)
+    home = urlparse(locale_home_url)
+    target = urlparse(route)
+    try:
+        decoded_shop_path = decode_path_for_validation(shop.path)
+        decoded_home_path = decode_path_for_validation(home.path)
+        decoded_route_path = decode_path_for_validation(target.path)
+    except (UnicodeDecodeError, ValueError):
+        raise ValueError("localized storefront route path is invalid") from None
+    if (
+        home.username is not None
+        or home.password is not None
+        or home.fragment
+        or target.scheme
+        or target.netloc
+        or target.username is not None
+        or target.password is not None
+        or target.path.startswith("/")
+        or target.fragment
+        or target.params
+        or decoded_route_path != "index.php"
+        or any(segment in {".", ".."} for segment in decoded_home_path.split("/"))
+    ):
+        raise ValueError("localized storefront controller route is invalid")
+
+    shop_path = decoded_shop_path.rstrip("/")
+    locale_path = home.path or "/"
+    if shop_path and decoded_home_path.rstrip("/") != shop_path and not decoded_home_path.startswith(
+        shop_path + "/"
+    ):
+        raise ValueError("localized storefront home escaped the shop path")
+
+    locale_query_keys = {"id_lang", "isolang", "lang"}
+    route_query = parse_qsl(target.query, keep_blank_values=True)
+    allowed_route_query_keys = locale_query_keys | {"controller", "action"}
+    if any(key.casefold() not in allowed_route_query_keys for key, _ in route_query):
+        raise ValueError("localized storefront controller query is invalid")
+    route_keys = {key.casefold() for key, _ in route_query}
+    locale_query = [
+        (key, value)
+        for key, value in parse_qsl(home.query, keep_blank_values=True)
+        if key.casefold() in locale_query_keys and key.casefold() not in route_keys
+    ]
+
+    locale_directory = locale_path if locale_path.endswith("/") else locale_path + "/"
+    target_path = locale_directory + "index.php"
+    if shop_path and not (
+        decoded_home_path.rstrip("/") == shop_path
+        or decoded_home_path.startswith(shop_path + "/")
+    ):
+        raise ValueError("localized storefront controller escaped the shop path")
+    localized_url = urlunparse(
+        (home.scheme, home.netloc, target_path, "", urlencode(route_query + locale_query), "")
+    )
+    if not same_origin(shop_url, localized_url):
+        raise ValueError("localized storefront controller escaped the isolated shop origin")
+    return localized_url
+
+
 def assert_document_locale(driver: webdriver.Chrome, locale: str, page_label: str) -> None:
     if locale not in PWA_SUPPORTED_LOCALES:
         raise AssertionError("unsupported storefront locale requested by PWA QA")
@@ -464,6 +553,7 @@ def customer_route_class(candidate_url: str, shop_url: str) -> str:
     } or any(
         segment in {
             "my-account",
+            "내-계정",
             "account",
             "identity",
             "addresses",
@@ -2897,6 +2987,11 @@ def run_viewport(
             locale,
             set_stage=update_offline_stage,
         )
+        stage = "customer_account_route"
+        if not is_private_customer_back_target(account_url, base_url):
+            raise AssertionError("generated account URL was not recognized as a private customer route")
+        if customer_route_class(account_url, base_url) != "account":
+            raise AssertionError("generated account URL was not classified as an account route")
         if device == "desktop" and locale == "ja":
             stage = "customer_order_cart_setup"
             add_isolated_product_to_customer_cart(
@@ -2944,19 +3039,60 @@ def run_viewport(
             expected_locale=locale,
         )
         logout_substage = ""
-        for route_stage, route in (
-            ("guest_authentication_route", "index.php?controller=authentication"),
-            ("guest_account_route", "index.php?controller=my-account"),
-            ("guest_cart_route", "index.php?controller=cart&action=show"),
-            ("guest_order_route", "index.php?controller=order"),
+        for route_stage, route_url in (
+            ("guest_authentication_route", signin_url),
+            (
+                "guest_account_route",
+                localized_controller_url(
+                    base_url, locale_home_url, "index.php?controller=my-account"
+                ),
+            ),
+            (
+                "guest_cart_route",
+                localized_controller_url(
+                    base_url, locale_home_url, "index.php?controller=cart&action=show"
+                ),
+            ),
+            (
+                "guest_order_route",
+                localized_controller_url(base_url, locale_home_url, "index.php?controller=order"),
+            ),
         ):
             stage = route_stage
-            driver.get(urljoin(base_url + "/", route))
-            WebDriverWait(driver, 30).until(
-                lambda browser: browser.execute_script("return document.readyState") == "complete"
+            if not same_origin(base_url, route_url):
+                raise AssertionError("guest route escaped the isolated storefront origin")
+            expected_login_url = (
+                signin_url
+                if route_stage in {"guest_account_route", "guest_order_route"}
+                else None
             )
+            observed = navigate_private_document(
+                driver,
+                route_url,
+                base_url,
+                f"logged-out {route_stage.replace('_', ' ')}",
+                capture_navigation_trace=True,
+                expected_final_url=expected_login_url,
+            )
+            if expected_login_url is not None:
+                if observed.get("status") != 302:
+                    raise AssertionError(
+                        f"logged-out {route_stage.replace('_', ' ')} did not redirect to sign-in"
+                    )
+                validate_logged_out_navigation_trace(
+                    observed.get("navigation_trace"),
+                    service_worker_expected=False,
+                )
+                wait_for_logout_login_form(driver, base_url)
+            elif route_stage == "guest_authentication_route":
+                wait_for_logout_login_form(driver, base_url)
             assert_document_locale(driver, locale, f"logged-out {route_stage.replace('_', ' ')}")
-            assert_empty_cache_storage(driver, f"guest {route.split('?', 1)[-1].split('&', 1)[0]}")
+            body_text = driver.find_element(By.TAG_NAME, "body").text
+            if exposes_test_identity(body_text, "Pwa", "Session", email):
+                raise AssertionError(
+                    f"logged-out {route_stage.replace('_', ' ')} exposed the synthetic customer's identity"
+                )
+            assert_empty_cache_storage(driver, f"guest {route_stage}")
 
         print(
             f"PASS: {label} Chromium secure-context installability prerequisites, official manifest icons, "

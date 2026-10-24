@@ -84,6 +84,17 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
                 self.assertNotIn("steps.postcode_fixture.outcome", block)
                 self.assertIn("continue-on-error: true", block)
 
+    def test_pwa_qa_artifacts_include_only_hex_encoded_localized_account_rewrites(self) -> None:
+        pwa = step("Verify Chromium PWA lifecycle and private-route cache protection")
+
+        self.assertIn("HEX(ml.url_rewrite)", pwa)
+        self.assertIn("pwa-account-route-rewrites.txt", pwa)
+        self.assertIn("l.iso_code IN (", pwa)
+        self.assertIn("my-account", pwa)
+        self.assertIn("ja", pwa)
+        self.assertIn("ko", pwa)
+        self.assertNotIn("SELECT ml.url_rewrite ", pwa)
+
         aggregate = step("Aggregate browser QA and postal verification failures")
         self.assertIn("POSTCODE_FIXTURE_OUTCOME: ${{ steps.postcode_fixture.outcome }}", aggregate)
         self.assertIn('"postcode_fixture=$POSTCODE_FIXTURE_OUTCOME"', aggregate)

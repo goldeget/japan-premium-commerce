@@ -36,6 +36,7 @@ const PRIVATE_RETURN_ROUTES = new Set([
   'history',
   'identity',
   'my-account',
+  '내-계정',
   'order',
   'order-confirmation',
   'order-detail',
