@@ -156,11 +156,11 @@ $imageIds = $manager->imageIds($productId);
 $englishSlug = (string) Db::getInstance()->getValue(
     'SELECT `link_rewrite` FROM `' . _DB_PREFIX_ . 'product_lang`'
     . ' WHERE `id_product` = ' . (int) $productId . ' AND `id_lang` = ' . (int) $englishLanguageId
-    . ' AND `id_shop` = ' . (int) $shopId . ' LIMIT 1'
+    . ' AND `id_shop` = ' . (int) $shopId
 );
 $englishImageLegend = (string) Db::getInstance()->getValue(
     'SELECT `legend` FROM `' . _DB_PREFIX_ . 'image_lang`'
-    . ' WHERE `id_image` = ' . (int) ($imageIds[0] ?? 0) . ' AND `id_lang` = ' . (int) $englishLanguageId . ' LIMIT 1'
+    . ' WHERE `id_image` = ' . (int) ($imageIds[0] ?? 0) . ' AND `id_lang` = ' . (int) $englishLanguageId
 );
 $categories = array_map('intval', Product::getProductCategories($productId));
 $createdEditor = $manager->editorData($productId);
@@ -318,11 +318,11 @@ $newImageIds = $manager->imageIds($savedProductId);
 $editedEnglishSlug = (string) Db::getInstance()->getValue(
     'SELECT `link_rewrite` FROM `' . _DB_PREFIX_ . 'product_lang`'
     . ' WHERE `id_product` = ' . (int) $savedProductId . ' AND `id_lang` = ' . (int) $englishLanguageId
-    . ' AND `id_shop` = ' . (int) $shopId . ' LIMIT 1'
+    . ' AND `id_shop` = ' . (int) $shopId
 );
 $editedEnglishImageLegend = (string) Db::getInstance()->getValue(
     'SELECT `legend` FROM `' . _DB_PREFIX_ . 'image_lang`'
-    . ' WHERE `id_image` = ' . (int) ($newImageIds[0] ?? 0) . ' AND `id_lang` = ' . (int) $englishLanguageId . ' LIMIT 1'
+    . ' WHERE `id_image` = ' . (int) ($newImageIds[0] ?? 0) . ' AND `id_lang` = ' . (int) $englishLanguageId
 );
 $editedEditor = $manager->editorData($savedProductId);
 $editedOptionGroups = $manager->optionGroups($savedProductId, $languageId, $shopId);

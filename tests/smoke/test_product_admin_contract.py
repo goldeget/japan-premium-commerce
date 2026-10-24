@@ -111,6 +111,15 @@ class ProductAdminContractTests(unittest.TestCase):
             with self.subTest(query=query):
                 self.assertNotRegex(query, r"\bLIMIT\s+1\b")
 
+    def test_native_admin_fixture_get_value_readbacks_do_not_add_a_duplicate_limit(self) -> None:
+        integration = (ROOT / "tests" / "catalog" / "verify_native_product_admin.php").read_text(encoding="utf-8")
+        readbacks = re.findall(r"Db::getInstance\(\)->getValue\(\s*(.*?)\n\);", integration, re.DOTALL)
+
+        self.assertEqual(4, len(readbacks))
+        for query in readbacks:
+            with self.subTest(query=query):
+                self.assertNotRegex(query, r"\bLIMIT\b")
+
     def test_english_fallback_php_fixture_preserves_required_legacy_fields(self) -> None:
         fixture = (ROOT / "tests" / "catalog" / "product_admin_draft.php").read_text(encoding="utf-8")
         fallback = fixture.split("$englishFallbackDraft = ProductAdminDraft::fromArray([", 1)[1].split(
