@@ -1097,6 +1097,12 @@ def validate_logout_navigation_trace(trace: object) -> None:
         if isinstance(step, dict)
     ):
         raise AssertionError("customer logout navigation was handled by the service worker")
+    if any(
+        step.get("private_cache_policy") is not True
+        for step in [*redirect_steps, final]
+        if isinstance(step, dict)
+    ):
+        raise AssertionError("customer logout redirect chain lacks a no-store cache policy")
     final_target = _safe_navigation_target_metadata(final.get("target"))
     final_path = final_target.get("path")
     recognized_auth_route = (

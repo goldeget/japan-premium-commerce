@@ -650,6 +650,7 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
                 "status": 302,
                 "location_matches_next_request": True,
                 "location_matches_expected_login": True,
+                "private_cache_policy": True,
                 "from_service_worker": False,
             }],
             "final": {
@@ -704,6 +705,32 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         }
 
         with self.assertRaisesRegex(AssertionError, "service worker"):
+            pwa_browser.validate_logout_navigation_trace(trace)
+
+    def test_logout_trace_rejects_a_cacheable_redirect_response(self) -> None:
+        trace = {
+            "observed": True,
+            "redirects_truncated": False,
+            "redirects": [{
+                "status": 302,
+                "location_matches_next_request": True,
+                "location_matches_expected_login": True,
+                "private_cache_policy": False,
+                "from_service_worker": False,
+            }],
+            "final": {
+                "status": 200,
+                "private_cache_policy": True,
+                "from_disk_cache": False,
+                "from_prefetch_cache": False,
+                "request_served_from_cache": False,
+                "service_worker_source": "network",
+                "from_service_worker": False,
+            },
+            "final_route_matches_login": True,
+        }
+
+        with self.assertRaisesRegex(AssertionError, "no-store cache policy"):
             pwa_browser.validate_logout_navigation_trace(trace)
 
     def test_document_navigation_trace_rejects_loader_mismatch_and_does_not_keep_provisional_redirect_as_final(self) -> None:

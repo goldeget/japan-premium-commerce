@@ -213,6 +213,7 @@ class Kuraneabusinessprofile extends Module
             $controllerName = 'getfile';
         }
 
+        $isLogoutAction = $controllerName === 'index' && array_key_exists('mylogout', $_GET);
         if (in_array($controllerName, [
             'address',
             'addresses',
@@ -236,7 +237,7 @@ class Kuraneabusinessprofile extends Module
             'pdf-order-return',
             'pdf-order-slip',
             'registration',
-        ], true)) {
+        ], true) || $isLogoutAction) {
             // Apply this before controller authorization redirects as well as successful responses.
             header('Cache-Control: private, no-store, max-age=0', true);
             header('Pragma: no-cache', true);

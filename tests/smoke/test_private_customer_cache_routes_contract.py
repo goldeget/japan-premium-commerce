@@ -85,6 +85,26 @@ class PrivateCustomerCacheRouteContractTests(unittest.TestCase):
             ),
         )
 
+    def test_logout_action_gets_private_no_store_headers_without_marking_the_homepage_private(self) -> None:
+        self.assertRegex(
+            self.hook,
+            re.compile(
+                r"\$isLogoutAction\s*=\s*\$controllerName\s*===\s*'index'\s*"
+                r"&&\s*array_key_exists\('mylogout',\s*\$_GET\);",
+                re.DOTALL,
+            ),
+        )
+        self.assertIn("if (in_array($controllerName, [", self.hook)
+        self.assertIn("|| $isLogoutAction)", self.hook)
+        private_route_list = re.search(
+            r"if \(in_array\(\$controllerName, \[(.*?)\], true\)\)",
+            self.hook,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(private_route_list)
+        routes = set(re.findall(r"'([a-z][a-z-]*)'", private_route_list.group(1)))
+        self.assertNotIn("index", routes, "the public homepage must not inherit customer cache headers")
+
     def test_isolated_pwa_checks_logged_out_customer_routes_without_logging_urls(self) -> None:
         self.assertIn("def verify_logged_out_private_routes(", self.pwa)
         start = self.pwa.index("def verify_logged_out_private_routes(")
