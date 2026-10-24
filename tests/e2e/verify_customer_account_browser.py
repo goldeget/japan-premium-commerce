@@ -2457,14 +2457,19 @@ def safe_selected_signout_metadata(signout: object, shop_url: str) -> dict[str, 
     """Capture the native signout target without exposing its URL or query values."""
     try:
         element_id = signout.get_attribute("id")
+        class_name = signout.get_attribute("class")
         href = signout.get_attribute("href")
     except Exception:
         element_id = None
+        class_name = None
         href = None
+    class_tokens = set(class_name.split()) if isinstance(class_name, str) else set()
+    native_signout_control = "account-menu__link--signout" in class_tokens
     target = safe_url_metadata(urljoin(shop_url.rstrip("/") + "/", href)) if isinstance(href, str) else {}
     return {
-        "container": "account_menu",
+        "container": "account_menu" if element_id == "signout_link" else "account_page",
         "element_id": element_id if element_id == "signout_link" else "other",
+        "native_signout_control": native_signout_control,
         "target": target,
     }
 
@@ -3376,8 +3381,10 @@ def logout(
         )
         if not isinstance(initial_logout_event, dict):
             raise AssertionError("native customer signout did not begin with a top-level document request")
-        if selected_signout.get("element_id") != "signout_link":
-            raise AssertionError("native account-menu signout link was not selected")
+        if selected_signout.get("native_signout_control") is not True:
+            raise AssertionError("native account signout link was not selected")
+        if selected_signout.get("target", {}).get("same_origin") is not True:
+            raise AssertionError("selected native signout link changed the isolated shop origin")
         if "mylogout" not in selected_signout.get("target", {}).get("query_key_names", []):
             raise AssertionError("selected native signout link did not target the PrestaShop logout action")
         if initial_logout_event.get("selected_link_matches_request") is not True:

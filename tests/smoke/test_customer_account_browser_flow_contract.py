@@ -730,6 +730,63 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertEqual("/ko/authentication", diagnostics["location_target_metadata"]["path"])
         self.assertNotIn("secret", repr(diagnostics))
 
+    def test_native_signout_selection_accepts_mobile_account_page_link_without_desktop_id(self) -> None:
+        tree = ast.parse(self.source)
+        names = {
+            "safe_same_origin_path",
+            "safe_controller_category",
+            "safe_url_metadata",
+            "safe_selected_signout_metadata",
+        }
+        functions = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in names
+        ]
+        namespace = {
+            "BASE": "https://shop.example.test",
+            "parse_qs": parse_qs,
+            "re": re,
+            "unquote": unquote,
+            "urljoin": urljoin,
+            "urlparse": urlparse,
+        }
+        exec(
+            compile(ast.fix_missing_locations(ast.Module(body=functions, type_ignores=[])), str(ACCOUNT_FLOW), "exec"),
+            namespace,
+        )
+
+        class SignoutLink:
+            def __init__(self, element_id: str | None) -> None:
+                self.attributes = {
+                    "id": element_id,
+                    "class": "account-menu__link account-menu__link--signout",
+                    "href": "https://shop.example.test/ko/?mylogout&token=private-token",
+                }
+
+            def get_attribute(self, name: str) -> str | None:
+                return self.attributes.get(name)
+
+        describe = namespace["safe_selected_signout_metadata"]
+        mobile = describe(SignoutLink(None), "https://shop.example.test/")
+        desktop = describe(SignoutLink("signout_link"), "https://shop.example.test/")
+        external = SignoutLink(None)
+        external.attributes["href"] = "https://other.example.test/ko/?mylogout"
+        external_metadata = describe(external, "https://shop.example.test/")
+
+        self.assertTrue(mobile["native_signout_control"])
+        self.assertEqual(mobile["element_id"], "other")
+        self.assertTrue(desktop["native_signout_control"])
+        self.assertEqual(desktop["element_id"], "signout_link")
+        self.assertTrue(mobile["target"]["same_origin"])
+        self.assertEqual(mobile["target"]["query_key_names"], ["mylogout"])
+        self.assertNotIn("private-token", repr(mobile))
+        self.assertFalse(external_metadata["target"]["same_origin"])
+
+        logout = self.source.split("def logout(", 1)[1].split("\n\ndef run_viewport", 1)[0]
+        self.assertIn('selected_signout.get("native_signout_control") is not True', logout)
+        self.assertIn('selected_signout.get("target", {}).get("same_origin") is not True', logout)
+        self.assertNotIn('selected_signout.get("element_id") != "signout_link"', logout)
+
     def test_logout_uses_generated_account_and_login_routes_for_signed_out_access(self) -> None:
         login_form = self.source.split("def assert_korean_email_login_form", 1)[1].split(
             "\n\ndef emit_korean_login_diagnostics", 1
