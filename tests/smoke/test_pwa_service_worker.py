@@ -1140,6 +1140,9 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         viewport = function_source(self.source, "run_viewport")
 
         self.assertIn("validate_logged_out_empty_order_cart_navigation_trace(", viewport)
+        self.assertIn("set_substage=update_offline_stage", viewport)
+        self.assertIn('"empty_checkout_route"', viewport)
+        self.assertIn("PwaDiagnosticAssertionError(", viewport)
         self.assertIn('cache_policy_final_document=True', viewport)
         self.assertIn("wait_for_empty_cart(driver)", viewport)
         self.assertIn('assert_empty_cache_storage(driver, "guest empty checkout")', viewport)

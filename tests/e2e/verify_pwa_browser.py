@@ -1253,24 +1253,37 @@ def validate_logged_out_navigation_trace(
         raise AssertionError("logged-out navigation provenance did not match network without service worker mode")
 
 
-def validate_logged_out_empty_order_cart_navigation_trace(trace: object) -> None:
+def validate_logged_out_empty_order_cart_navigation_trace(
+    trace: object,
+    set_substage: Callable[[str], None] | None = None,
+) -> None:
     """Require the empty checkout route to end at a private cart without cached customer data."""
+    def check(name: str) -> None:
+        if set_substage is not None:
+            set_substage(f"guest_empty_checkout_{name}")
+
+    check("trace_observed")
     if not isinstance(trace, dict) or trace.get("observed") is not True:
         raise AssertionError("logged-out empty checkout navigation was not observed")
+    check("trace_complete")
     if trace.get("redirects_truncated") is True:
         raise AssertionError("logged-out empty checkout redirect chain is incomplete")
 
+    check("initial_route")
     initial = _safe_navigation_target_metadata(trace.get("initial_target"))
     if initial.get("controller") != "order":
         raise AssertionError("logged-out empty checkout did not start at the order controller")
 
+    check("redirect_count")
     redirects = trace.get("redirects")
     redirects = redirects if isinstance(redirects, list) else []
     if len(redirects) != 2:
         raise AssertionError("logged-out empty checkout did not follow its canonical cart redirects")
     canonical_order, empty_cart = redirects
+    check("canonical_status")
     if not isinstance(canonical_order, dict) or canonical_order.get("status") != 302:
         raise AssertionError("canonical empty-order redirect did not return HTTP 302")
+    check("canonical_target")
     canonical_target = _safe_navigation_target_metadata(canonical_order.get("target"))
     if (
         canonical_target.get("controller") != "order"
@@ -1283,6 +1296,7 @@ def validate_logged_out_empty_order_cart_navigation_trace(trace: object) -> None
     ):
         raise AssertionError("canonical empty-order redirect lacks a no-store or no-cache policy")
 
+    check("cart_redirect_status")
     if not isinstance(empty_cart, dict) or empty_cart.get("status") != 302:
         raise AssertionError("empty checkout did not redirect to the cart")
     cart_target = _safe_navigation_target_metadata(empty_cart.get("target"))
@@ -1293,12 +1307,14 @@ def validate_logged_out_empty_order_cart_navigation_trace(trace: object) -> None
     ):
         raise AssertionError("empty checkout cart redirect is not a verified no-store cart response")
 
+    check("final_status")
     final = trace.get("final")
     if not isinstance(final, dict) or final.get("status") != 200:
         raise AssertionError("logged-out empty cart did not return HTTP 200")
     final_target = _safe_navigation_target_metadata(final.get("target"))
     if final_target.get("controller") != "cart" or final.get("private_cache_policy") is not True:
         raise AssertionError("logged-out empty checkout did not finish on a no-store cart page")
+    check("cache_provenance")
     for step in [*redirects, final]:
         if not isinstance(step, dict):
             raise AssertionError("logged-out empty checkout cache provenance is incomplete")
@@ -1319,6 +1335,7 @@ def validate_logged_out_empty_order_cart_navigation_trace(trace: object) -> None
             and step.get("service_worker_source") != "network"
         ):
             raise AssertionError("service worker served cached content for logged-out empty checkout")
+    check("cache_hits")
     if navigation_trace_has_cache_hit(trace):
         raise AssertionError("logged-out empty checkout used a browser or service-worker cache")
 
@@ -3198,7 +3215,7 @@ def run_viewport(
             assert_empty_cache_storage(driver, f"guest {route_stage}")
 
         if locale == "en":
-            stage = "guest_empty_checkout_route"
+            stage = "guest_empty_checkout_navigation"
             empty_order_url = localized_controller_url(
                 base_url, locale_home_url, "index.php?controller=order"
             )
@@ -3210,19 +3227,34 @@ def run_viewport(
                 capture_navigation_trace=True,
                 cache_policy_final_document=True,
             )
+            stage = "guest_empty_checkout_final_response"
             if empty_checkout.get("status") != 200:
                 raise AssertionError("logged-out empty checkout did not return to the cart")
-            validate_logged_out_empty_order_cart_navigation_trace(
-                empty_checkout.get("navigation_trace")
-            )
+            stage = "guest_empty_checkout_trace"
+            try:
+                validate_logged_out_empty_order_cart_navigation_trace(
+                    empty_checkout.get("navigation_trace"),
+                    set_substage=update_offline_stage,
+                )
+            except AssertionError as error:
+                raise PwaDiagnosticAssertionError(
+                    "logged-out empty checkout redirect trace failed validation",
+                    "empty_checkout_route",
+                    {"navigation_trace": empty_checkout.get("navigation_trace")},
+                ) from error
+            stage = "guest_empty_checkout_route"
             final_target = safe_navigation_target(driver.current_url, base_url)
             if final_target.get("controller") != "cart":
                 raise AssertionError("logged-out empty checkout did not finish on the cart route")
+            stage = "guest_empty_checkout_locale"
             assert_document_locale(driver, locale, "logged-out empty checkout cart")
+            stage = "guest_empty_checkout_empty_cart"
             wait_for_empty_cart(driver)
+            stage = "guest_empty_checkout_identity"
             body_text = driver.find_element(By.TAG_NAME, "body").text
             if exposes_test_identity(body_text, "Pwa", "Session", email):
                 raise AssertionError("logged-out empty checkout exposed the synthetic customer's identity")
+            stage = "guest_empty_checkout_cache"
             assert_empty_cache_storage(driver, "guest empty checkout")
 
         print(
@@ -3267,6 +3299,10 @@ def run_viewport(
                         value = metadata.get(key)
                         if isinstance(value, bool):
                             diagnostic += f"; {key}={str(value).lower()}"
+                    navigation_trace = metadata.get("navigation_trace")
+                    if isinstance(navigation_trace, dict):
+                        diagnostic += f"; navigation_trace={_format_navigation_trace(navigation_trace)}"
+                elif code == "empty_checkout_route":
                     navigation_trace = metadata.get("navigation_trace")
                     if isinstance(navigation_trace, dict):
                         diagnostic += f"; navigation_trace={_format_navigation_trace(navigation_trace)}"

@@ -1677,7 +1677,7 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
 
     def test_empty_order_browser_trace_distinguishes_rewrite_from_private_cart_responses(self) -> None:
         shop_url = "http://localhost:18080"
-        requested_url = shop_url + "/en/index.php?controller=order"
+        requested_url = shop_url + "/en/index.php?controller=order&token=private-token-sentinel"
         canonical_url = shop_url + "/en/order"
         cart_url = shop_url + "/en/cart?action=show"
         events = [
@@ -1764,6 +1764,8 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         self.assertTrue(trace["final"]["private_cache_policy"])
         pwa_browser.validate_logged_out_empty_order_cart_navigation_trace(trace)
         self.assertIn("redirect1_revalidation_cache_policy=true", pwa_browser._format_navigation_trace(trace))
+        self.assertNotIn("private-token-sentinel", repr(trace))
+        self.assertNotIn("private-token-sentinel", pwa_browser._format_navigation_trace(trace))
 
         trace["redirects"][0]["from_disk_cache"] = None
         with self.assertRaisesRegex(AssertionError, "cache provenance is unavailable"):
