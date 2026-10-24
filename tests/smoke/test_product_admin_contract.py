@@ -48,6 +48,9 @@ class ProductAdminContractTests(unittest.TestCase):
         for check in ("Japanese name", "English name", "English product slug", "English image legend", "inactive sale gate"):
             with self.subTest(check=check):
                 self.assertIn(f"'{check}' =>", integration)
+        for readback_key in ("english-field readback", "expected_slug", "saved_slug", "expected_image_legend", "saved_image_legend"):
+            with self.subTest(readback=readback_key):
+                self.assertIn(readback_key, integration)
 
     def test_english_fallback_php_fixture_preserves_required_legacy_fields(self) -> None:
         fixture = (ROOT / "tests" / "catalog" / "product_admin_draft.php").read_text(encoding="utf-8")

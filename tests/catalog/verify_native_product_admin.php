@@ -198,7 +198,20 @@ $createChecks = [
 ];
 $createFailures = array_keys(array_filter($createChecks, static fn (bool $passed): bool => !$passed));
 if ($createFailures !== []) {
-    throw new RuntimeException('Native product create failed checks: ' . implode(', ', $createFailures) . '.');
+    $englishFieldReadback = json_encode([
+        'english_language_id' => $englishLanguageId,
+        'expected_slug' => (string) Tools::str2url('ORDENOWA CI Synthetic Product'),
+        'saved_slug' => substr($englishSlug, 0, 128),
+        'expected_image_legend' => 'ORDENOWA CI Synthetic Product',
+        'saved_image_legend' => substr($englishImageLegend, 0, 128),
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if (!is_string($englishFieldReadback)) {
+        $englishFieldReadback = '{}';
+    }
+    throw new RuntimeException(
+        'Native product create failed checks: ' . implode(', ', $createFailures)
+        . '; english-field readback=' . substr($englishFieldReadback, 0, 800) . '.'
+    );
 }
 
 $createdEditorCombinationIds = array_map('intval', array_keys($createdEditor['combination_quantities'] ?? []));
