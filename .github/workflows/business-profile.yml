@@ -112,6 +112,11 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python3 -m unittest discover -s tests/business_profile -p 'test_admin_access_source_contract.py'
 
+      - name: Check profile history field-level change contract
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -m unittest discover -s tests/business_profile -p 'test_admin_profile_history_contract.py'
+
       - name: Verify public brand and seller disclosure gating
         run: php tests/business_profile/public_footer.php
 

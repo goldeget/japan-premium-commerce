@@ -272,6 +272,11 @@ final class AdminProfileForm
             return $html . '<p>저장된 변경 이력이 없습니다.</p></section>';
         }
 
+        $versionsById = [];
+        foreach ($versions as $candidate) {
+            $versionsById[$candidate->id] = $candidate;
+        }
+
         $html .= '<div class="table-responsive"><table class="table"><thead><tr><th>버전</th><th>변경자 ID</th><th>변경일시</th><th>상태</th><th>작업</th></tr></thead><tbody>';
         foreach ($versions as $version) {
             $state = [];
@@ -295,10 +300,46 @@ final class AdminProfileForm
                     . '<button class="btn btn-default btn-sm" type="submit" name="submitOrdenowaRestore" value="1"'
                     . ($version->id === $draftVersionId ? ' disabled' : '') . '>이 버전을 초안으로 복원</button></form>';
             }
+            if ($version->parentVersionId === null) {
+                $html .= self::renderHistoryChanges($version, null);
+            } elseif (isset($versionsById[$version->parentVersionId])) {
+                $html .= self::renderHistoryChanges($version, $versionsById[$version->parentVersionId]);
+            } else {
+                $html .= '<p class="ordenowa-history-diff-unavailable">이전 버전 (#' . $version->parentVersionId . ')을 불러올 수 없어 변경값을 비교할 수 없습니다.</p>';
+            }
             $html .= '</td></tr>';
         }
 
         return $html . '</tbody></table></div><p>변경 이력에는 계좌번호와 예금주를 표시하지 않습니다.</p></section>';
+    }
+
+    private static function renderHistoryChanges(ProfileVersion $version, ?ProfileVersion $parent): string
+    {
+        $changes = ProfileChangeSet::between($parent, $version);
+        $html = '<details class="ordenowa-history-field-changes"><summary>변경된 설정 항목 ' . count($changes) . '개 보기</summary>';
+        if ($changes === []) {
+            return $html . '<p>변경된 설정 항목이 없습니다.</p></details>';
+        }
+
+        $html .= '<div class="table-responsive"><table class="table"><thead><tr><th>설정 항목</th><th>이전 값</th><th>변경 값</th></tr></thead><tbody>';
+        foreach ($changes as $change) {
+            $html .= '<tr><th scope="row">' . self::escape($change['label']) . '</th>'
+                . '<td>' . self::renderHistoryValue($change['previous']) . '</td>'
+                . '<td>' . self::renderHistoryValue($change['current']) . '</td></tr>';
+        }
+
+        return $html . '</tbody></table></div></details>';
+    }
+
+    private static function renderHistoryValue(string $value): string
+    {
+        if (mb_strlen($value, 'UTF-8') <= 240) {
+            return self::escape($value);
+        }
+
+        return '<details class="ordenowa-history-full-value"><summary>'
+            . self::escape(mb_substr($value, 0, 240, 'UTF-8')) . '… 전체 값 보기</summary><pre>'
+            . self::escape($value) . '</pre></details>';
     }
 
     /** Render a read-only, escaped preview within the authenticated admin page. */

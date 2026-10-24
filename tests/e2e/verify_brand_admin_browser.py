@@ -474,6 +474,21 @@ def history_row_with_status(driver: webdriver.Chrome, status: str):
     return False
 
 
+def verify_profile_change_row(row, label: str, previous_value: str, current_value: str) -> None:
+    details = row.find_element(By.CSS_SELECTOR, "details.ordenowa-history-field-changes")
+    if not details.get_attribute("open"):
+        details.find_element(By.TAG_NAME, "summary").click()
+    for changed_row in details.find_elements(By.CSS_SELECTOR, "tbody tr"):
+        if changed_row.find_element(By.CSS_SELECTOR, "th").text.strip() != label:
+            continue
+        values = changed_row.find_elements(By.CSS_SELECTOR, "td")
+        if len(values) < 2 or previous_value not in values[0].text or current_value not in values[1].text:
+            raise AssertionError("the profile history did not show the expected previous and current field values")
+        return
+
+    raise AssertionError("the profile history omitted a changed field")
+
+
 def restore_published_history_version_as_draft(
     driver: webdriver.Chrome,
     settings_url: str,
@@ -1621,6 +1636,15 @@ def run() -> None:
                 raise AssertionError("a Korean admin operating setting did not persist after reloading its draft")
         driver.save_screenshot(str(DEST / "brand-company-profile-draft-reloaded.png"))
         driver.save_screenshot(str(DEST / "brand-admin-uploaded-draft.png"))
+        stage = "profile_history_field_change_diff"
+        history_row = WebDriverWait(driver, 30).until(current_draft_history_row)
+        verify_profile_change_row(
+            history_row,
+            "브랜드 · 이름 · 한국어",
+            "오데노와",
+            "ORDENOWA CI BRAND KO",
+        )
+        driver.save_screenshot(str(DEST / "brand-admin-history-change-diff.png"))
 
         stage = "replace_logo_in_saved_draft"
         replace_primary_logo_in_saved_draft(

@@ -8,6 +8,7 @@ use PrestaShop\PrestaShop\Core\Context\LanguageContextBuilder;
 use PrestaShop\PrestaShop\Core\Language\LanguageRepositoryInterface;
 use PrestaShopBundle\Translation\TranslatorLanguageLoader;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\Translation\Loader\XliffFileLoader;
@@ -45,29 +46,29 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
 
         $request = $event->getRequest();
         $route = (string) $request->attributes->get('_route', '');
-        $locale = $request->getLocale();
-
-        if ($route === 'admin_login') {
-            $koreanLanguage = $this->languageRepository->getOneByLocaleOrIsoCode(self::KOREAN_LOCALE);
-            if (
-                $koreanLanguage === null
-                || (method_exists($koreanLanguage, 'getActive') && !$koreanLanguage->getActive())
-                || $koreanLanguage->getLocale() !== self::KOREAN_LOCALE
-            ) {
-                return;
-            }
-
-            $locale = $koreanLanguage->getLocale();
-            $request->setDefaultLocale($locale);
-            $request->setLocale($locale);
-            $this->languageContextBuilder->setLanguageId($koreanLanguage->getId());
-        }
-
-        if (!str_starts_with($route, 'admin_') || $locale !== self::KOREAN_LOCALE) {
+        if (!str_starts_with($route, 'admin_') || !$this->applyKoreanAdminLocale($request)) {
             return;
         }
 
-        $this->loadKoreanCatalogue($locale);
+        $this->loadKoreanCatalogue(self::KOREAN_LOCALE);
+    }
+
+    private function applyKoreanAdminLocale(Request $request): bool
+    {
+        $koreanLanguage = $this->languageRepository->getOneByLocaleOrIsoCode(self::KOREAN_LOCALE);
+        if (
+            $koreanLanguage === null
+            || (method_exists($koreanLanguage, 'getActive') && !$koreanLanguage->getActive())
+            || $koreanLanguage->getLocale() !== self::KOREAN_LOCALE
+        ) {
+            return false;
+        }
+
+        $request->setDefaultLocale(self::KOREAN_LOCALE);
+        $request->setLocale(self::KOREAN_LOCALE);
+        $this->languageContextBuilder->setLanguageId($koreanLanguage->getId());
+
+        return true;
     }
 
     private function loadKoreanCatalogue(string $locale): void

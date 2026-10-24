@@ -240,7 +240,13 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         run = source.split("def run()", 1)[1].split("\n\nif __name__", 1)[0]
         self.assertLess(run.index("validate_isolated_ci_project()"), run.index("new_driver()"))
         self.assertLess(run.index("validate_loopback_admin_targets()"), run.index("new_driver()"))
-        self.assertNotIn("save_screenshot", run)
+        for screenshot in (
+            "admin-security-view-only-settings-korean.png",
+            "admin-security-view-only-dashboard-korean.png",
+            "admin-security-view-only-orders-korean.png",
+        ):
+            self.assertIn(screenshot, source)
+        self.assertLess(run.index('assert_korean_admin_locale(restricted_driver, "view-only profile settings")'), run.index('admin-security-view-only-settings-korean.png'))
 
     def test_admin_security_browser_failure_emits_safe_stage_annotation(self):
         source = ADMIN_FLOW.read_text(encoding="utf-8")
@@ -267,7 +273,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         fixture = FIXTURE.read_text(encoding="utf-8")
         self.assertIn("$employee->default_tab = (int) Tab::getIdFromClassName('AdminBusinessProfile');", fixture)
         access_setup = fixture.split("$access = new Access();", 1)[1].split("$employee = new Employee();", 1)[0]
-        self.assertIn("foreach (['AdminBusinessProfile', 'AdminDashboard', 'ShopParameters'] as $className)", access_setup)
+        self.assertIn("foreach (['AdminBusinessProfile', 'AdminDashboard', 'AdminOrders', 'ShopParameters'] as $className)", access_setup)
         self.assertIn("$access->updateLgcAccess((int) $profile->id, $tabId, 'view', true, false)", access_setup)
         for permission in ("'edit' => 'UPDATE'", "'add' => 'CREATE'", "'delete' => 'DELETE'"):
             self.assertIn(permission, access_setup)

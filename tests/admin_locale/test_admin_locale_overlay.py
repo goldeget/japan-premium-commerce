@@ -22,12 +22,42 @@ def translations(path: Path) -> dict[str, str]:
 
 
 class AdminLocaleOverlayContractTests(unittest.TestCase):
+    def test_every_back_office_route_uses_the_korean_admin_locale(self) -> None:
+        path = MODULE / "src" / "AdminLocaleSubscriber.php"
+        source = path.read_text(encoding="utf-8")
+
+        self.assertIn("str_starts_with($route, 'admin_')", source)
+        self.assertIn("applyKoreanAdminLocale($request)", source)
+        locale_handler = source.split("private function applyKoreanAdminLocale(", 1)[1]
+        self.assertIn("setDefaultLocale(self::KOREAN_LOCALE)", locale_handler)
+        self.assertIn("setLocale(self::KOREAN_LOCALE)", locale_handler)
+        self.assertIn("setLanguageId($koreanLanguage->getId())", locale_handler)
+        readme = (MODULE / "README.md").read_text(encoding="utf-8")
+        self.assertIn("every `admin_` Back Office route", readme)
+        self.assertNotIn("Other Back Office pages keep the employee's configured language", readme)
+
+    def test_english_staff_fixture_sees_korean_settings_and_dashboard_in_chromium(self) -> None:
+        fixture = (ROOT / "tests" / "business_profile" / "seed_security_fixtures.php").read_text(encoding="utf-8")
+        browser = (ROOT / "tests" / "e2e" / "verify_admin_security_browser.py").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
+
+        self.assertIn("Language::getIdByIso('en', true)", fixture)
+        self.assertIn("Korean locale", browser)
+        locale_assertion = browser.split("def assert_korean_admin_locale(", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn('driver.find_element(By.TAG_NAME, "html").get_attribute("lang")', locale_assertion)
+        self.assertIn('document_locale != "ko-KR"', locale_assertion)
+        self.assertIn("AdminOrders", browser)
+        self.assertIn("storefront_stays_japanese_after_admin_locale_test", browser)
+        self.assertIn("admin-security-view-only-settings-korean.png", workflow)
+        self.assertIn("admin-security-view-only-dashboard-korean.png", workflow)
+        self.assertIn("admin-security-view-only-orders-korean.png", workflow)
+
     def test_anonymous_login_uses_korean_admin_language_context(self) -> None:
         path = MODULE / "src" / "AdminLocaleSubscriber.php"
         self.assertTrue(path.is_file(), "missing request-scoped locale subscriber")
         source = path.read_text()
 
-        self.assertIn("admin_login", source)
+        self.assertIn("str_starts_with($route, 'admin_')", source)
         self.assertIn("ko-KR", source)
         self.assertIn("setDefaultLocale", source)
         self.assertIn("setLocale", source)

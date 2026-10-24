@@ -43,7 +43,7 @@ SAFE_ADMIN_SECURITY_RESPONSE_PATTERN = (
     r"compromised_continue_controller=(?:true|false); compromised_continue_token=(?:true|false); "
     r"compromised_dashboard_origin=(?:true|false); compromised_dashboard_path=(?:true|false); "
     r"compromised_dashboard_controller=(?:true|false); compromised_dashboard_token=(?:true|false); "
-    r"response_controller=(?:AdminBusinessProfile|AdminDashboard|AdminLogin|none|other); "
+    r"response_controller=(?:AdminBusinessProfile|AdminDashboard|AdminOrders|AdminLogin|none|other); "
     r"invalid_token_warning=(?:true|false); invalid_token_continue=(?:true|false); "
     r"invalid_token_cancel=(?:true|false); recovery_same_origin=(?:true|false); "
     r"recovery_same_path=(?:true|false); "
@@ -51,7 +51,7 @@ SAFE_ADMIN_SECURITY_RESPONSE_PATTERN = (
     r"recovery_token_present=(?:true|false); invalid_token_page=(?:true|false)"
 )
 SAFE_ADMIN_NAVIGATION_STATE_PATTERN = (
-    r"login_form_visible=(?:true|false); current_controller=(?:AdminBusinessProfile|AdminDashboard|AdminLogin|none|other); "
+    r"login_form_visible=(?:true|false); current_controller=(?:AdminBusinessProfile|AdminDashboard|AdminOrders|AdminLogin|none|other); "
     r"business_profile_link_count=(?:0|[1-9][0-9]{0,3}); dashboard_link_count=(?:0|[1-9][0-9]{0,3})"
 )
 
@@ -205,11 +205,15 @@ def _admin_controller_for_url(url: str) -> str:
         expected.port,
     ) or not actual.path.startswith(admin_path + "/"):
         return "other"
+    if actual.path.startswith(admin_path + "/sell/orders"):
+        return "AdminOrders"
     controllers = parse_qs(actual.query).get("controller", [])
     if controllers == ["AdminBusinessProfile"]:
         return "AdminBusinessProfile"
     if controllers == ["AdminDashboard"]:
         return "AdminDashboard"
+    if controllers == ["AdminOrders"]:
+        return "AdminOrders"
     if controllers == ["AdminLogin"]:
         return "AdminLogin"
     return "none" if not controllers else "other"
@@ -280,6 +284,12 @@ def current_profile_settings_url(driver: webdriver.Chrome) -> str:
     if len(query.get("token", [])) != 1 or not query["token"][0].strip():
         raise AssertionError("the authenticated settings route lacks its employee-scoped admin token")
     return current_url
+
+
+def assert_korean_admin_locale(driver: webdriver.Chrome, route_label: str) -> None:
+    document_locale = driver.find_element(By.TAG_NAME, "html").get_attribute("lang")
+    if document_locale != "ko-KR":
+        raise AssertionError(f"{route_label} did not force the Korean Back Office locale")
 
 
 def login(driver: webdriver.Chrome, email: str) -> None:
@@ -982,6 +992,51 @@ def run() -> bool:
         restricted_driver.get(restricted_settings_url)
         stage = "view_only_employee_settings_render"
         visible(restricted_driver, "form.ordenowa-profile-settings")
+        if "브랜드·로고" not in restricted_driver.find_element(By.TAG_NAME, "body").text:
+            raise AssertionError("Korean locale: the view-only profile page is missing Korean settings labels")
+        assert_korean_admin_locale(restricted_driver, "view-only profile settings")
+        restricted_driver.save_screenshot(str(DEST / "admin-security-view-only-settings-korean.png"))
+
+        stage = "view_only_employee_dashboard_korean_locale"
+        dashboard_links = [
+            link
+            for link in restricted_driver.find_elements(By.CSS_SELECTOR, 'a[href*="controller=AdminDashboard"]')
+            if _admin_controller_for_url(link.get_attribute("href") or "") == "AdminDashboard"
+        ]
+        if not dashboard_links:
+            raise AssertionError("the view-only employee cannot reach the permitted admin dashboard")
+        restricted_driver.get(dashboard_links[0].get_attribute("href"))
+        WebDriverWait(restricted_driver, 30).until(
+            lambda browser: _admin_controller_for_url(browser.current_url) == "AdminDashboard"
+        )
+        assert_korean_admin_locale(restricted_driver, "view-only dashboard")
+        WebDriverWait(restricted_driver, 15).until(
+            lambda browser: "시작일" in browser.find_element(By.TAG_NAME, "body").text
+            and "종료일" in browser.find_element(By.TAG_NAME, "body").text
+        )
+        restricted_driver.save_screenshot(str(DEST / "admin-security-view-only-dashboard-korean.png"))
+
+        stage = "view_only_employee_orders_korean_locale"
+        orders_links = [
+            link
+            for link in restricted_driver.find_elements(By.CSS_SELECTOR, 'a[href*="/sell/orders"]')
+            if _admin_controller_for_url(link.get_attribute("href") or "") == "AdminOrders"
+        ]
+        if not orders_links:
+            raise AssertionError("the view-only employee cannot reach the permitted admin orders list")
+        restricted_driver.get(orders_links[0].get_attribute("href"))
+        WebDriverWait(restricted_driver, 30).until(
+            lambda browser: _admin_controller_for_url(browser.current_url) == "AdminOrders"
+        )
+        assert_korean_admin_locale(restricted_driver, "view-only orders")
+        if "주문" not in restricted_driver.find_element(By.TAG_NAME, "body").text:
+            raise AssertionError("Korean locale: the orders list is missing Korean order labels")
+        restricted_driver.save_screenshot(str(DEST / "admin-security-view-only-orders-korean.png"))
+
+        stage = "view_only_employee_settings_restore"
+        restricted_driver.get(restricted_settings_url)
+        visible(restricted_driver, "form.ordenowa-profile-settings")
+        assert_korean_admin_locale(restricted_driver, "view-only profile settings after dashboard navigation")
         stage = "view_only_employee_settings_value"
         restricted_original_value = current_setting(restricted_driver)
         stage = "view_only_employee_draft_pointer"
@@ -994,6 +1049,13 @@ def run() -> bool:
             restricted_draft_pointer,
             "view-only",
         )
+
+        stage = "storefront_stays_japanese_after_admin_locale_test"
+        restricted_driver.delete_all_cookies()
+        restricted_driver.get(BASE + "/")
+        storefront_locale = (restricted_driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower()
+        if not storefront_locale.startswith("ja"):
+            raise AssertionError("the Back Office Korean locale setting changed the Japanese-first storefront locale")
 
         completed = True
     except Exception as error:

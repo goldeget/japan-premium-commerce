@@ -53,6 +53,8 @@ $customers = [];
 try {
     $admin = new Employee();
     securityFixtureRequire($admin->getByEmail($adminEmail) !== false, 'The CI administrator employee could not be loaded.');
+$englishLanguageId = (int) Language::getIdByIso('en', true);
+securityFixtureRequire($englishLanguageId > 0, 'The isolated shop has no active English language for the locale test employee.');
 
     $languageNames = [];
     foreach (Language::getLanguages(false) as $language) {
@@ -68,7 +70,7 @@ try {
     securityFixtureRequire((bool) $profile->add(), 'The isolated view-only profile could not be created.');
 
     $access = new Access();
-    foreach (['AdminBusinessProfile', 'AdminDashboard', 'ShopParameters'] as $className) {
+    foreach (['AdminBusinessProfile', 'AdminDashboard', 'AdminOrders', 'ShopParameters'] as $className) {
         $tabId = (int) Tab::getIdFromClassName($className);
         securityFixtureRequire($tabId > 0, 'A required isolated Back Office tab is missing.');
         securityFixtureRequire(
@@ -96,7 +98,7 @@ try {
     $employee->firstname = 'ORDENOWA';
     $employee->lastname = 'CI View Only';
     $employee->email = $emails['admin'];
-    $employee->id_lang = (int) $admin->id_lang;
+    $employee->id_lang = $englishLanguageId;
     $employee->passwd = (string) $admin->passwd;
     $employee->active = true;
     $employee->id_profile = (int) $profile->id;

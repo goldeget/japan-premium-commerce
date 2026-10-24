@@ -130,6 +130,31 @@ $historyHtml = \Kuranea\BusinessProfile\Admin\AdminProfileForm::renderHistory([$
 assertBusinessProfileTrue(str_contains($historyHtml, '현재 초안'), 'The history should identify the active draft.');
 assertBusinessProfileTrue(str_contains($historyHtml, '이 버전을 초안으로 복원'), 'The history should expose restore as a new draft action.');
 assertBusinessProfileTrue(!str_contains($historyHtml, '9988776655') && !str_contains($historyHtml, 'PRIVATE HOLDER'), 'Profile history must never render full bank details.');
+$previousHistoryVersion = new \Kuranea\BusinessProfile\Domain\ProfileVersion(98, 1, $initial, 9, null, '2026-10-21 10:00:00');
+$changedHistoryProfile = $secretProfile;
+$changedHistoryProfile['brand']['name']['ko-KR'] = '<script>ORDENOWA history sentinel</script>';
+$changedHistoryProfile['localization']['default_locale'] = 'en-US';
+$changedHistoryProfile['company_reference']['verification_status'] = 'unverified';
+$changedHistoryVersion = new \Kuranea\BusinessProfile\Domain\ProfileVersion(100, 1, $changedHistoryProfile, 10, 98, '2026-10-22 11:00:00');
+$changedHistoryHtml = \Kuranea\BusinessProfile\Admin\AdminProfileForm::renderHistory(
+    [$changedHistoryVersion, $previousHistoryVersion],
+    100,
+    0,
+    '/admin-test',
+    'csrf-token'
+);
+assertBusinessProfileTrue(str_contains($changedHistoryHtml, '변경된 설정 항목'), 'Profile history should present field-level changes.');
+assertBusinessProfileTrue(str_contains($changedHistoryHtml, '브랜드 · 이름 · 한국어'), 'The change list should identify the changed Korean brand-name field.');
+assertBusinessProfileTrue(str_contains($changedHistoryHtml, '오데노와'), 'The change list should show the previous field value.');
+assertBusinessProfileTrue(str_contains($changedHistoryHtml, '&lt;script&gt;ORDENOWA history sentinel&lt;/script&gt;'), 'The change list should render the new field value as escaped text.');
+assertBusinessProfileTrue(!str_contains($changedHistoryHtml, '<script>ORDENOWA history sentinel</script>'), 'The history must not execute edited profile values.');
+assertBusinessProfileTrue(str_contains($changedHistoryHtml, '은행 계좌 정보 변경 후'), 'The history may summarize a bank change without exposing its values.');
+assertBusinessProfileTrue(str_contains($changedHistoryHtml, '이전 값</th>'), 'The history should label prior values in Korean.');
+assertBusinessProfileTrue(str_contains($changedHistoryHtml, '회사 참고정보 · 검증 상태'), 'The history should label the company-reference verification field in Korean.');
+assertBusinessProfileTrue(str_contains($changedHistoryHtml, '사용자 제공 참고정보'), 'The history should render the previous verification state in Korean.');
+assertBusinessProfileTrue(str_contains($changedHistoryHtml, '미확인'), 'The history should render the current verification state in Korean.');
+assertBusinessProfileTrue(str_contains($changedHistoryHtml, '일본어') && str_contains($changedHistoryHtml, '영어'), 'The history should render default locale codes as Korean language names.');
+assertBusinessProfileTrue(!str_contains($changedHistoryHtml, '9988776655') && !str_contains($changedHistoryHtml, 'PRIVATE HOLDER'), 'Field-level history must continue to conceal bank secrets.');
 $viewOnlyHistory = \Kuranea\BusinessProfile\Admin\AdminProfileForm::renderHistory([$secretVersion], 99, 0, '/admin-test', 'csrf-token', false);
 assertBusinessProfileTrue(!str_contains($viewOnlyHistory, 'submitOrdenowaRestore'), 'View-only employees must not receive a restore control.');
 
