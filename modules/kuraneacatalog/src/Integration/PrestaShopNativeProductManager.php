@@ -334,7 +334,7 @@ final class PrestaShopNativeProductManager
                 'SELECT `link_rewrite` FROM `' . _DB_PREFIX_ . 'product_lang`'
                 . ' WHERE `id_product` = ' . (int) $productId
                 . ' AND `id_lang` = ' . (int) $languageId
-                . ' AND `id_shop` = ' . (int) $shopId . ' LIMIT 1',
+                . ' AND `id_shop` = ' . (int) $shopId,
                 false
             );
             if ($savedSlug !== $slugs[$languageId]) {
@@ -353,7 +353,7 @@ final class PrestaShopNativeProductManager
                     'SELECT `link_rewrite` FROM `' . _DB_PREFIX_ . 'product_lang`'
                     . ' WHERE `id_product` = ' . (int) $productId
                     . ' AND `id_lang` = ' . (int) $languageId
-                    . ' AND `id_shop` = ' . (int) $shopId . ' LIMIT 1',
+                    . ' AND `id_shop` = ' . (int) $shopId,
                     false
                 );
                 if ($savedSlug !== $slugs[$languageId]) {
@@ -372,7 +372,7 @@ final class PrestaShopNativeProductManager
                 $savedLegend = (string) \Db::getInstance()->getValue(
                     'SELECT `legend` FROM `' . _DB_PREFIX_ . 'image_lang`'
                     . ' WHERE `id_image` = ' . (int) $imageId
-                    . ' AND `id_lang` = ' . (int) $languageId . ' LIMIT 1',
+                    . ' AND `id_lang` = ' . (int) $languageId,
                     false
                 );
                 if ($savedLegend !== $legends[$languageId]) {
@@ -387,7 +387,7 @@ final class PrestaShopNativeProductManager
                     $savedLegend = (string) \Db::getInstance()->getValue(
                         'SELECT `legend` FROM `' . _DB_PREFIX_ . 'image_lang`'
                         . ' WHERE `id_image` = ' . (int) $imageId
-                        . ' AND `id_lang` = ' . (int) $languageId . ' LIMIT 1',
+                        . ' AND `id_lang` = ' . (int) $languageId,
                         false
                     );
                     if ($savedLegend !== $legends[$languageId]) {

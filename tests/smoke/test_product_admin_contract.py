@@ -101,6 +101,16 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertNotIn("'expected_value' =>", persistence)
         self.assertNotIn("'stored_value' =>", persistence)
 
+    def test_localized_readbacks_do_not_add_a_second_get_value_limit(self) -> None:
+        service = (MODULE / "src" / "Integration" / "PrestaShopNativeProductManager.php").read_text(encoding="utf-8")
+        persistence = service.split("private function persistLocalizedFields(", 1)[1].split("private function optionText(", 1)[0]
+        readbacks = re.findall(r"getValue\(\s*(.*?)\s*,\s*false\s*\)", persistence, re.DOTALL)
+
+        self.assertEqual(4, len(readbacks))
+        for query in readbacks:
+            with self.subTest(query=query):
+                self.assertNotRegex(query, r"\bLIMIT\s+1\b")
+
     def test_english_fallback_php_fixture_preserves_required_legacy_fields(self) -> None:
         fixture = (ROOT / "tests" / "catalog" / "product_admin_draft.php").read_text(encoding="utf-8")
         fallback = fixture.split("$englishFallbackDraft = ProductAdminDraft::fromArray([", 1)[1].split(
