@@ -122,7 +122,7 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         admin_login = flow.split("def admin_login(", 1)[1].split("def find_admin_detail_url", 1)[0]
         admin_diagnostics = flow.split("def admin_login_diagnostics(", 1)[1].split("def admin_login(", 1)[0]
 
-        self.assertIn("PS_DOMAIN: localhost:${SHOP_PORT:-8080}", compose)
+        self.assertIn("PS_DOMAIN: ${PS_DOMAIN:-localhost:${SHOP_PORT:-8080}}", compose)
         self.assertIn("SHOP_BASE_URL: http://localhost:18080", admin_step)
         self.assertIn("ADMIN_LOGIN_URL: http://localhost:18080/admin-kuranea", admin_step)
         self.assertNotIn("127.0.0.1:18080", admin_step)
@@ -568,7 +568,7 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             "def register_checkout_account", 1
         )[0]
         self.assertIn("def emit_checkout_cart_diagnostics", flow)
-        self.assertIn("PS_DOMAIN: localhost:${SHOP_PORT:-8080}", compose)
+        self.assertIn("PS_DOMAIN: ${PS_DOMAIN:-localhost:${SHOP_PORT:-8080}}", compose)
         self.assertIn("SHOP_BASE_URL: http://localhost:18080", customer_step)
         self.assertIn('data-ps-ref="add-to-cart"', add_to_cart_template)
         self.assertIn('data-ps-ref="blockcart-modal"', blockcart_template)
