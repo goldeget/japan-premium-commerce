@@ -1708,6 +1708,7 @@ def assert_private_document_cache_headers(
     main_frame_id: str,
     performance_entries: object | None = None,
     trace_main_frame_id: str | None = None,
+    navigation_trace_url: str | None = None,
     expected_final_url: str | None = None,
 ) -> dict[str, object]:
     if performance_entries is None:
@@ -1769,7 +1770,7 @@ def assert_private_document_cache_headers(
     if isinstance(trace_main_frame_id, str):
         observed["navigation_trace"] = safe_document_navigation_trace(
             chrome_performance_events(performance_entries),
-            requested_url,
+            navigation_trace_url if isinstance(navigation_trace_url, str) else requested_url,
             shop_url,
             trace_main_frame_id,
             expected_final_url=expected_final_url,
@@ -1864,6 +1865,7 @@ def navigate_private_document(
             main_frame_id=main_frame_id,
             performance_entries=performance_entries,
             trace_main_frame_id=main_frame_id,
+            navigation_trace_url=requested_url,
             expected_final_url=expected_final_url,
         )
     return assert_private_document_cache_headers(

@@ -1771,6 +1771,124 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "cache provenance is unavailable"):
             pwa_browser.validate_logged_out_empty_order_cart_navigation_trace(trace)
 
+    def test_final_cart_cache_check_keeps_order_url_as_navigation_trace_origin(self) -> None:
+        shop_url = "http://localhost:18080"
+        order_url = shop_url + "/en/index.php?controller=order"
+        canonical_order_url = shop_url + "/en/order"
+        cart_url = shop_url + "/en/cart?action=show"
+        events = [
+            {
+                "method": "Network.requestWillBeSent",
+                "params": {
+                    "requestId": "checkout-request",
+                    "loaderId": "checkout-loader",
+                    "frameId": "main-frame",
+                    "type": "Document",
+                    "request": {"url": order_url, "method": "GET"},
+                },
+            },
+            {
+                "method": "Network.requestWillBeSent",
+                "params": {
+                    "requestId": "checkout-request",
+                    "loaderId": "checkout-loader",
+                    "frameId": "main-frame",
+                    "type": "Document",
+                    "redirectResponse": {
+                        "url": order_url,
+                        "status": 302,
+                        "headers": {
+                            "Location": canonical_order_url,
+                            "Cache-Control": "no-cache",
+                            "Pragma": "no-cache",
+                            "Expires": "0",
+                        },
+                        "fromServiceWorker": False,
+                        "fromDiskCache": False,
+                        "fromPrefetchCache": False,
+                    },
+                    "request": {"url": canonical_order_url, "method": "GET"},
+                },
+            },
+            {
+                "method": "Network.requestWillBeSent",
+                "params": {
+                    "requestId": "checkout-request",
+                    "loaderId": "checkout-loader",
+                    "frameId": "main-frame",
+                    "type": "Document",
+                    "redirectResponse": {
+                        "url": canonical_order_url,
+                        "status": 302,
+                        "headers": {
+                            "Location": cart_url,
+                            "Cache-Control": "private, no-store, max-age=0",
+                        },
+                        "fromServiceWorker": False,
+                        "fromDiskCache": False,
+                        "fromPrefetchCache": False,
+                    },
+                    "request": {"url": cart_url, "method": "GET"},
+                },
+            },
+            {
+                "method": "Network.responseReceived",
+                "params": {
+                    "requestId": "checkout-request",
+                    "loaderId": "checkout-loader",
+                    "frameId": "main-frame",
+                    "type": "Document",
+                    "response": {
+                        "url": cart_url,
+                        "status": 200,
+                        "headers": {"Cache-Control": "private, no-store, max-age=0"},
+                        "fromServiceWorker": False,
+                        "fromDiskCache": False,
+                        "fromPrefetchCache": False,
+                    },
+                },
+            },
+        ]
+
+        class Driver:
+            current_url = cart_url
+
+            def get_log(self, _log_type: str) -> list[dict[str, object]]:
+                return events
+
+            def get(self, _url: str) -> None:
+                return None
+
+            def execute_script(self, _script: str) -> str:
+                return "complete"
+
+        class ImmediateWait:
+            def __init__(self, browser: Driver, _timeout: int) -> None:
+                self.browser = browser
+
+            def until(self, condition) -> object:
+                return condition(self.browser)
+
+        with (
+            patch.object(pwa_browser, "WebDriverWait", ImmediateWait),
+            patch.object(pwa_browser, "current_main_frame_id", return_value="main-frame"),
+        ):
+            observed = pwa_browser.navigate_private_document(
+                Driver(),
+                order_url,
+                shop_url,
+                "logged-out empty checkout",
+                capture_navigation_trace=True,
+                cache_policy_final_document=True,
+            )
+
+        trace = observed.get("navigation_trace")
+        self.assertIsInstance(trace, dict)
+        self.assertEqual("order", trace["initial_target"]["controller"])
+        self.assertEqual(2, len(trace["redirects"]))
+        self.assertEqual("cart", trace["final"]["target"]["controller"])
+        pwa_browser.validate_logged_out_empty_order_cart_navigation_trace(trace)
+
 
 if __name__ == "__main__":
     unittest.main()
