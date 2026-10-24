@@ -138,6 +138,15 @@ class CiNativeOrderLifecycleContractTests(unittest.TestCase):
         self.assertIn("id: order_lifecycle", verify_step)
         self.assertIn("verify_ci_native_order_lifecycle.php", verify_step)
         self.assertIn('expected={"status":"passed"', verify_step)
+        safe_verification_artifact = verify_step.index(
+            '> "$QA_ARTIFACT_DIR/order-lifecycle-verification.json"'
+        )
+        success_assertion = verify_step.index('expected={"status":"passed"')
+        self.assertLess(
+            safe_verification_artifact,
+            success_assertion,
+            "retain the sanitized result before failing on an unexpected outcome",
+        )
         for artifact in (
             "order-lifecycle-preparation.json",
             "order-lifecycle-verification.json",

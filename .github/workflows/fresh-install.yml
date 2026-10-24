@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/fresh-install.yml'
       - 'compose.yaml'
+      - '.env.example'
       - 'Dockerfile'
       - 'docker/**'
       - 'themes/**'
@@ -27,6 +28,9 @@ on:
       - 'tests/smoke/test_ci_checkout_contract.py'
       - 'tests/smoke/test_product_admin_contract.py'
       - 'tests/smoke/test_browser_qa_artifacts_contract.py'
+      - 'tests/smoke/test_backup_restore_drill_contract.py'
+      - 'tests/smoke/backup_restore_drill.sh'
+      - 'tests/smoke/test_deployment_config_contract.py'
       - 'tests/smoke/test_fresh_install_workflow_contract.py'
       - 'tests/smoke/test_customer_account_browser_flow_contract.py'
       - 'tests/smoke/test_korean_customer_login_contract.py'
@@ -57,6 +61,7 @@ on:
     paths:
       - '.github/workflows/fresh-install.yml'
       - 'compose.yaml'
+      - '.env.example'
       - 'Dockerfile'
       - 'docker/**'
       - 'themes/**'
@@ -77,6 +82,9 @@ on:
       - 'tests/smoke/test_ci_checkout_contract.py'
       - 'tests/smoke/test_product_admin_contract.py'
       - 'tests/smoke/test_browser_qa_artifacts_contract.py'
+      - 'tests/smoke/test_backup_restore_drill_contract.py'
+      - 'tests/smoke/backup_restore_drill.sh'
+      - 'tests/smoke/test_deployment_config_contract.py'
       - 'tests/smoke/test_fresh_install_workflow_contract.py'
       - 'tests/smoke/test_customer_account_browser_flow_contract.py'
       - 'tests/smoke/test_korean_customer_login_contract.py'
@@ -145,7 +153,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_docker_run_recovery -v
 
       - name: Verify fresh-install workflow contracts
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard -v
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_backup_restore_drill_contract tests.smoke.test_deployment_config_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard -v
 
       - name: Verify isolated unpaid checkout contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract tests.business_profile.test_shipping_admin_links_contract tests.business_profile.test_admin_profile_history_contract tests.admin_locale.test_admin_locale_overlay -v
@@ -426,12 +434,34 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mailpit_name="${CI_COMPOSE_PROJECT_NAME}-mailpit"
+          if ! existing_mailpit=$(docker ps -a --filter "name=^/${mailpit_name}$" --format '{{.ID}}|{{.Names}}'); then
+            echo '::error title=ORDENOWA Mailpit preflight::Docker could not verify the run-scoped Mailpit name.'
+            exit 1
+          fi
+          if [[ -n "$existing_mailpit" ]]; then
+            echo '::error title=ORDENOWA Mailpit preflight::The run-scoped Mailpit name is already in use; the existing container was preserved.'
+            exit 1
+          fi
+          mailpit_created=0
+          cleanup_mailpit_setup() {
+            local result=$?
+            trap - EXIT
+            if [[ "$mailpit_created" == 1 ]] && ! docker rm -f "$mailpit_name" >/dev/null 2>&1; then
+              echo 'Mailpit setup cleanup failed for the container created by this step.' >&2
+              result=1
+            fi
+            exit "$result"
+          }
+          trap cleanup_mailpit_setup EXIT
           docker run --detach --rm \
-            --name "${CI_COMPOSE_PROJECT_NAME}-mailpit" \
+            --name "$mailpit_name" \
             --network "${CI_COMPOSE_PROJECT_NAME}_default" \
             --network-alias mailpit \
             --publish 127.0.0.1:8025:8025 \
             axllent/mailpit:v1.31.6
+          mailpit_created=1
+          printf 'mailpit_owned=true\n' >> "$GITHUB_OUTPUT"
           for attempt in $(seq 1 30); do
             if curl --fail --silent --show-error http://127.0.0.1:8025/api/v1/messages >/dev/null; then
               break
@@ -459,6 +489,7 @@ jobs:
             }
             fclose($socket);
           '
+          trap - EXIT
 
       - name: Verify ORDENOWA business profile installation and admin access
         shell: bash
@@ -1610,6 +1641,127 @@ jobs:
             tests/e2e/verify_storefront_browser.py \
             2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/storefront-checkout-gate-after-ci-order.log"
 
+      - name: Prepare CI-only paid-like order for return verification
+        id: order_lifecycle_fixture
+        if: steps.checkout_order_persistence.outcome == 'success' && steps.checkout_gate_after_order.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          desktop_order_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["order_id"])' \
+            "$QA_ARTIFACT_DIR/ci-checkout-desktop.json")
+          mobile_order_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["order_id"])' \
+            "$QA_ARTIFACT_DIR/ci-checkout-mobile.json")
+          if ! [[ "$desktop_order_id" =~ ^[0-9]+$ ]] || [ "$desktop_order_id" -lt 1 ] \
+            || ! [[ "$mobile_order_id" =~ ^[0-9]+$ ]] || [ "$mobile_order_id" -lt 1 ] \
+            || [ "$desktop_order_id" -eq "$mobile_order_id" ]; then
+            echo '::error title=ORDENOWA native order lifecycle fixture::Browser order IDs were invalid or not distinct.'
+            exit 1
+          fi
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/prepare_ci_native_order_lifecycle.php' \
+            < tests/postcode/prepare_ci_native_order_lifecycle.php
+          fixture_stdout="$RUNNER_TEMP/order-lifecycle-fixture.stdout"
+          if ! docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e CI=true \
+            -e GITHUB_ACTIONS=true \
+            -e GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            -e GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            -e KURANEA_ISOLATED_CI=1 \
+            -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            -e KURANEA_CI_PAID_LIKE_SOURCE_ORDER_ID="$mobile_order_id" \
+            -e KURANEA_CI_UNPAID_ORDER_ID="$desktop_order_id" \
+            prestashop runuser -g www-data -u www-data -- \
+            php /tmp/prepare_ci_native_order_lifecycle.php \
+            > "$fixture_stdout" 2> "$RUNNER_TEMP/order-lifecycle-fixture.stderr"; then
+            cat "$RUNNER_TEMP/order-lifecycle-fixture.stderr" >&2
+            exit 1
+          fi
+          fixture_payload=$(sed -n '1p' "$fixture_stdout")
+          paid_like_order_id=$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d.get("status")=="prepared" and d.get("synthetic CI-only") is True and d.get("provider_call") is False; print(d["paid_like_order_id"])' "$fixture_payload")
+          if ! [[ "$paid_like_order_id" =~ ^[0-9]+$ ]] || [ "$paid_like_order_id" -lt 1 ]; then
+            echo '::error title=ORDENOWA native order lifecycle fixture::The synthetic paid-like fixture returned an invalid order ID.'
+            exit 1
+          fi
+          python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(json.dumps({"status":d["status"],"paid_like_order_id":int(d["paid_like_order_id"]),"synthetic_ci_only":d["synthetic CI-only"],"provider_call":d["provider_call"],"cash_refund":d["cash_refund"]},sort_keys=True))' \
+            "$fixture_payload" > "$QA_ARTIFACT_DIR/order-lifecycle-preparation.json"
+          printf 'paid_like_order_id=%s\n' "$paid_like_order_id" >> "$GITHUB_OUTPUT"
+          printf 'unpaid_order_id=%s\n' "$desktop_order_id" >> "$GITHUB_OUTPUT"
+          printf 'PASS: the mobile fixture is marked synthetic CI-only; no payment provider or funds were used.\n' \
+            | tee "$QA_ARTIFACT_DIR/order-lifecycle-e2e.log"
+          rm -f -- "$fixture_stdout" "$RUNNER_TEMP/order-lifecycle-fixture.stderr"
+
+      - name: Verify native order cancellation, return, and credit-slip behavior
+        id: order_lifecycle
+        if: steps.order_lifecycle_fixture.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          UNPAID_ORDER_ID: ${{ steps.order_lifecycle_fixture.outputs.unpaid_order_id }}
+          PAID_LIKE_ORDER_ID: ${{ steps.order_lifecycle_fixture.outputs.paid_like_order_id }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$UNPAID_ORDER_ID" =~ ^[0-9]+$ ]] || [ "$UNPAID_ORDER_ID" -lt 1 \
+            || ! [[ "$PAID_LIKE_ORDER_ID" =~ ^[0-9]+$ ]] || [ "$PAID_LIKE_ORDER_ID" -lt 1 ]; then
+            echo '::error title=ORDENOWA native order lifecycle::Fixture outputs were missing or invalid.'
+            exit 1
+          fi
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/verify_ci_native_order_lifecycle.php' \
+            < tests/postcode/verify_ci_native_order_lifecycle.php
+          verification_stdout="$RUNNER_TEMP/order-lifecycle-verification.stdout"
+          if ! docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e CI=true \
+            -e GITHUB_ACTIONS=true \
+            -e GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            -e GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            -e KURANEA_ISOLATED_CI=1 \
+            -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            -e KURANEA_CI_UNPAID_ORDER_ID="$UNPAID_ORDER_ID" \
+            -e KURANEA_CI_PAID_LIKE_ORDER_ID="$PAID_LIKE_ORDER_ID" \
+            prestashop runuser -g www-data -u www-data -- \
+            php /tmp/verify_ci_native_order_lifecycle.php \
+            > "$verification_stdout" 2> "$RUNNER_TEMP/order-lifecycle-verification.stderr"; then
+            cat "$RUNNER_TEMP/order-lifecycle-verification.stderr" >&2
+            exit 1
+          fi
+          verification_payload=$(sed -n '1p' "$verification_stdout")
+          if ! python3 -c 'import json,sys; d=json.loads(sys.argv[1]); keys=("status","unpaid_cancellation","return_request","credit_slip","cash_refund","return_config_restored"); print(json.dumps({k:d[k] for k in keys if k in d},sort_keys=True))' \
+            "$verification_payload" > "$QA_ARTIFACT_DIR/order-lifecycle-verification.json"; then
+            echo '::error title=ORDENOWA native order lifecycle::The verifier result could not be safely summarized.'
+            exit 1
+          fi
+          if ! python3 -c 'import json,sys; d=json.loads(sys.argv[1]); expected={"status":"passed","unpaid_cancellation":"passed","return_request":"passed","credit_slip":"passed","cash_refund":"not_requested","return_config_restored":True}; assert all(d.get(k)==v for k,v in expected.items()), "native order lifecycle did not reach every required success state"' \
+            "$verification_payload"; then
+            echo '::error title=ORDENOWA native order lifecycle::Native lifecycle results were incomplete; sanitized result follows.'
+            cat "$QA_ARTIFACT_DIR/order-lifecycle-verification.json"
+            exit 1
+          fi
+          cat "$verification_stdout" | tail -n +2 >> "$QA_ARTIFACT_DIR/order-lifecycle-e2e.log"
+          cat "$QA_ARTIFACT_DIR/order-lifecycle-e2e.log"
+          rm -f -- "$verification_stdout" "$RUNNER_TEMP/order-lifecycle-verification.stderr"
+
+      - name: Verify run-scoped CI backup and isolated restore
+        id: backup_restore_drill
+        if: always() && !cancelled() && steps.checkout_restore.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          SHOP_PORT: 18080
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+        run: |
+          set -euo pipefail
+          mkdir -p "$QA_ARTIFACT_DIR"
+          bash tests/smoke/backup_restore_drill.sh \
+            2>&1 | tee "$QA_ARTIFACT_DIR/backup-restore-drill.log"
+
       - name: Upload browser QA screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -1655,6 +1807,9 @@ jobs:
           CHECKOUT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.checkout_admin_browser_qa.outcome }}
           CHECKOUT_RESTORE_OUTCOME: ${{ steps.checkout_restore.outcome }}
           CHECKOUT_GATE_AFTER_ORDER_OUTCOME: ${{ steps.checkout_gate_after_order.outcome }}
+          ORDER_LIFECYCLE_FIXTURE_OUTCOME: ${{ steps.order_lifecycle_fixture.outcome }}
+          ORDER_LIFECYCLE_OUTCOME: ${{ steps.order_lifecycle.outcome }}
+          BACKUP_RESTORE_DRILL_OUTCOME: ${{ steps.backup_restore_drill.outcome }}
         run: |
           set -euo pipefail
           artifact_dir="$RUNNER_TEMP/ordenowa-browser-qa"
@@ -1919,6 +2074,16 @@ jobs:
               mobile-blocked-checkout.png
             )
           fi
+          if [[ "$BACKUP_RESTORE_DRILL_OUTCOME" == success ]]; then
+            required_artifacts+=(backup-restore-drill.log)
+          fi
+          if [[ "$ORDER_LIFECYCLE_OUTCOME" == success ]]; then
+            required_artifacts+=(
+              order-lifecycle-preparation.json
+              order-lifecycle-verification.json
+              order-lifecycle-e2e.log
+            )
+          fi
           missing_artifacts=()
           for artifact in "${required_artifacts[@]}"; do
             if [ ! -s "$artifact_dir/$artifact" ]; then
@@ -2004,6 +2169,9 @@ jobs:
           CHECKOUT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.checkout_admin_browser_qa.outcome }}
           CHECKOUT_RESTORE_OUTCOME: ${{ steps.checkout_restore.outcome }}
           CHECKOUT_GATE_AFTER_ORDER_OUTCOME: ${{ steps.checkout_gate_after_order.outcome }}
+          ORDER_LIFECYCLE_FIXTURE_OUTCOME: ${{ steps.order_lifecycle_fixture.outcome }}
+          ORDER_LIFECYCLE_OUTCOME: ${{ steps.order_lifecycle.outcome }}
+          BACKUP_RESTORE_DRILL_OUTCOME: ${{ steps.backup_restore_drill.outcome }}
           FRESH_INSTALL_RESTART_OUTCOME: ${{ steps.fresh_install_restart.outcome }}
           POSTAL_IMPORT_OUTCOME: ${{ steps.postal_import.outcome }}
           POSTAL_VERIFY_OUTCOME: ${{ steps.postal_verify.outcome }}
@@ -2048,6 +2216,9 @@ jobs:
             "checkout_admin=$CHECKOUT_ADMIN_BROWSER_QA_OUTCOME" \
             "checkout_restore=$CHECKOUT_RESTORE_OUTCOME" \
             "checkout_gate_after_order=$CHECKOUT_GATE_AFTER_ORDER_OUTCOME" \
+            "order_lifecycle_fixture=$ORDER_LIFECYCLE_FIXTURE_OUTCOME" \
+            "order_lifecycle=$ORDER_LIFECYCLE_OUTCOME" \
+            "backup_restore_drill=$BACKUP_RESTORE_DRILL_OUTCOME" \
             "fresh_install_restart=$FRESH_INSTALL_RESTART_OUTCOME" \
             "postal_import=$POSTAL_IMPORT_OUTCOME" \
             "postal_verify=$POSTAL_VERIFY_OUTCOME"; do
@@ -2083,6 +2254,44 @@ jobs:
 
       - name: Remove only this run's containers and volumes
         if: always()
+        env:
+          RESTORE_PROJECT_OWNED: ${{ steps.backup_restore_drill.outputs.restore_project_owned }}
+          MAILPIT_OWNED: ${{ steps.mailpit_setup.outputs.mailpit_owned }}
         run: |
-          docker rm -f "${CI_COMPOSE_PROJECT_NAME}-mailpit" >/dev/null 2>&1 || true
-          docker compose -p "$CI_COMPOSE_PROJECT_NAME" down -v --remove-orphans
+          cleanup_failed=0
+          if [[ "$RESTORE_PROJECT_OWNED" == true ]]; then
+            restore_project="${CI_COMPOSE_PROJECT_NAME}-restore"
+            expected_restore_project="kuranea-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-restore"
+            if [[ "$restore_project" != "$expected_restore_project" ]]; then
+              echo '::error title=ORDENOWA restore cleanup::Restore project identity did not match this run.'
+              cleanup_failed=1
+            elif ! docker compose -p "$restore_project" down -v --remove-orphans; then
+              echo '::error title=ORDENOWA restore cleanup::The exact run-scoped restore project could not be removed.'
+              cleanup_failed=1
+            fi
+          fi
+          if [[ "$MAILPIT_OWNED" == true ]]; then
+            expected_mailpit_name="kuranea-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-mailpit"
+            if [[ "${CI_COMPOSE_PROJECT_NAME}-mailpit" != "$expected_mailpit_name" ]]; then
+              echo '::error title=ORDENOW Mailpit cleanup::Mailpit container identity did not match this run.'
+              cleanup_failed=1
+            elif ! mailpit_identity=$(docker ps -a --filter "name=^/${expected_mailpit_name}$" --format '{{.ID}}|{{.Names}}'); then
+              echo '::error title=ORDENOW Mailpit cleanup::Docker could not inspect the owned Mailpit container.'
+              cleanup_failed=1
+            elif [[ -n "$mailpit_identity" ]]; then
+              if [[ "$mailpit_identity" == *$'\n'* ]] \
+                || ! [[ "$mailpit_identity" =~ ^([a-f0-9]{12,64})\|([A-Za-z0-9_.-]+)$ ]] \
+                || [[ "${BASH_REMATCH[2]:-}" != "$expected_mailpit_name" ]]; then
+                echo '::error title=ORDENOW Mailpit cleanup::Docker returned an ambiguous Mailpit container identity.'
+                cleanup_failed=1
+              elif ! docker rm -f "${BASH_REMATCH[1]}" >/dev/null; then
+                echo '::error title=ORDENOW Mailpit cleanup::The owned Mailpit container could not be removed.'
+                cleanup_failed=1
+              fi
+            fi
+          fi
+          if ! docker compose -p "$CI_COMPOSE_PROJECT_NAME" down -v --remove-orphans; then
+            echo '::error title=ORDENOWA CI cleanup::The exact main run-scoped project could not be removed.'
+            cleanup_failed=1
+          fi
+          exit "$cleanup_failed"

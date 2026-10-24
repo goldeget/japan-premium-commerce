@@ -111,7 +111,8 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertTrue("customer-account-e2e.log" in workflow, "account browser execution log is not preserved")
         self.assertIn("ORDENOWA_ACCOUNT_EMAIL_LOGIN_SAFE_STATE", account_flow)
         self.assertIn("email_login_diagnostics=$(rg '^ORDENOWA_ACCOUNT_EMAIL_LOGIN_SAFE_STATE='", workflow)
-        self.assertTrue("docker rm -f \"${CI_COMPOSE_PROJECT_NAME}-mailpit\"" in workflow, "CI mail service cleanup is missing")
+        self.assertIn("MAILPIT_OWNED: ${{ steps.mailpit_setup.outputs.mailpit_owned }}", workflow)
+        self.assertIn('elif ! docker rm -f "${BASH_REMATCH[1]}"', workflow)
         self.assertTrue('input[name="email"]' in account_flow and 'get_attribute("type") != "email"' in account_flow, "customer login is not verified as email-based")
         self.assertTrue(
             "reset_link_for(account_email, recovery_route_path)" in account_flow,
@@ -132,6 +133,23 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertGreaterEqual(account_flow.count("assert_route_path_matches(driver, recovery_route_path"), 2)
         self.assertIn("actual_path != expected_path", account_flow)
         self.assertIn("same_origin", account_flow)
+
+    def test_mailpit_cleanup_is_run_owned_and_docker_lookup_fails_closed(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        setup = workflow.split("id: mailpit_setup", 1)[1].split("- name:", 1)[0]
+        cleanup = workflow.split("- name: Remove only this run's containers and volumes", 1)[1]
+
+        self.assertIn("docker ps -a --filter", setup)
+        self.assertIn("name=^/${mailpit_name}$", setup)
+        self.assertLess(setup.index("docker ps -a --filter"), setup.index("docker run --detach --rm"))
+        self.assertIn("mailpit_created=0", setup)
+        self.assertIn("trap cleanup_mailpit_setup EXIT", setup)
+        self.assertLess(setup.index("mailpit_created=1"), setup.index("printf 'mailpit_owned=true"))
+        self.assertIn("trap - EXIT", setup)
+        self.assertIn("mailpit_owned=true", setup)
+        self.assertIn("MAILPIT_OWNED: ${{ steps.mailpit_setup.outputs.mailpit_owned }}", cleanup)
+        self.assertIn('elif ! docker rm -f "${BASH_REMATCH[1]}"', cleanup)
+        self.assertNotIn('docker rm -f "${CI_COMPOSE_PROJECT_NAME}-mailpit" >/dev/null 2>&1 || true', cleanup)
 
     def test_customer_email_login_state_is_annotated_once_and_retained_in_step_summary(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
