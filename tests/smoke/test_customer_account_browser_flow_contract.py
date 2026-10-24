@@ -10,7 +10,7 @@ from contextlib import redirect_stderr
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
-from urllib.parse import parse_qs, unquote, urljoin, urlparse
+from urllib.parse import parse_qs, parse_qsl, unquote, urljoin, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -602,6 +602,122 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             "return !document.getElementById('userMenuButton') && !hasVisibleSignoutLink;",
             helper,
         )
+
+    def test_logout_compares_the_network_destination_before_protected_route_checks(self) -> None:
+        logout = self.source.split("def logout(", 1)[1].split("\n\ndef run_viewport", 1)[0]
+        self.assertIn(
+            'driver.execute_cdp_cmd("Network.setBypassServiceWorker", {"bypass": True})',
+            logout,
+        )
+        self.assertIn("clear_document_navigation_events(driver)", logout)
+        self.assertIn("document_navigation_events(", logout)
+        self.assertIn("safe_generated_route_match(driver.current_url, login_url)", logout)
+        navigation_events = self.source.split("def document_navigation_events", 1)[1].split(
+            "\n\ndef safe_registration_path", 1
+        )[0]
+        self.assertIn('"from_service_worker"', navigation_events)
+        bypass = logout.index(
+            'driver.execute_cdp_cmd("Network.setBypassServiceWorker", {"bypass": True})'
+        )
+        clear_trace = logout.index("clear_document_navigation_events(driver)")
+        click_signout = logout.index("link.click()")
+        capture_trace = logout.index("document_navigation_events(", click_signout)
+        final_status = logout.index("status_code", capture_trace)
+        login_route = logout.index("safe_generated_route_match(driver.current_url, login_url)")
+        login_form = logout.index('#login-form input[name="email"]', login_route)
+        restore_bypass = logout.index(
+            'driver.execute_cdp_cmd("Network.setBypassServiceWorker", {"bypass": False})',
+            login_form,
+        )
+        reopen_account = logout.index("driver.get(account_url)", restore_bypass)
+
+        self.assertLess(bypass, clear_trace)
+        self.assertLess(clear_trace, click_signout)
+        self.assertLess(click_signout, capture_trace)
+        self.assertLess(capture_trace, final_status)
+        self.assertLess(final_status, login_route)
+        self.assertLess(login_route, login_form)
+        self.assertLess(login_form, restore_bypass)
+        self.assertLess(restore_bypass, reopen_account)
+
+    def test_network_logout_trace_matches_selected_link_and_preserves_safe_redirect_evidence(self) -> None:
+        self.assertIn('"mylogout"', self.source.split("def safe_url_metadata", 1)[1].split("\n\ndef safe_generated_route_match", 1)[0])
+        self.assertIn("def safe_same_shop_request_match(", self.source)
+        self.assertIn("def safe_redirect_location_diagnostics(", self.source)
+        self.assertIn("def safe_selected_signout_metadata(", self.source)
+        events = self.source.split("def document_navigation_events", 1)[1].split("\n\ndef safe_registration_path", 1)[0]
+        self.assertIn('"navigation_referrer_metadata"', events)
+        self.assertIn('"selected_link_matches_request"', events)
+        self.assertIn('"location_target_metadata"', events)
+        self.assertIn('"location_matches_next_request"', events)
+        self.assertIn('"location_matches_expected_login"', events)
+        summary = self.source.split("def safe_registration_navigation_summary", 1)[1].split("\n\ndef safe_refresh_header_metadata", 1)[0]
+        self.assertIn('"selected_link_matches_request"', summary)
+        self.assertIn('"navigation_referrer"', summary)
+        self.assertIn('"location_target"', summary)
+        self.assertIn('"location_matches_next_request"', summary)
+        self.assertIn('"location_matches_expected_login"', summary)
+
+    def test_logout_reports_service_worker_bypass_restore_failure(self) -> None:
+        logout = self.source.split("def logout(", 1)[1].split("\n\ndef run_viewport", 1)[0]
+        restore_block = logout.split("    finally:", 1)[1]
+        self.assertIn("primary_error = sys.exc_info()[1]", restore_block)
+        self.assertIn("if primary_error is None:", restore_block)
+        self.assertIn("ORDENOWA_SERVICE_WORKER_RESTORE_FAILURE=", restore_block)
+        self.assertIn("add_note = getattr(primary_error, \"add_note\", None)", restore_block)
+        self.assertNotIn("if sys.exc_info()[0] is None:", restore_block)
+
+    def test_safe_native_logout_redirect_evidence_matches_without_exposing_query_values(self) -> None:
+        tree = ast.parse(self.source)
+        names = {
+            "safe_same_origin_path",
+            "safe_controller_category",
+            "safe_url_metadata",
+            "safe_generated_route_match",
+            "safe_same_shop_request_match",
+            "_header_value",
+            "safe_redirect_location_diagnostics",
+        }
+        functions = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in names
+        ]
+        namespace = {
+            "BASE": "https://shop.example.test",
+            "re": re,
+            "parse_qs": parse_qs,
+            "parse_qsl": parse_qsl,
+            "unquote": unquote,
+            "urljoin": urljoin,
+            "urlparse": urlparse,
+        }
+        exec(
+            compile(ast.fix_missing_locations(ast.Module(body=functions, type_ignores=[])), str(ACCOUNT_FLOW), "exec"),
+            namespace,
+        )
+        same_request = namespace["safe_same_shop_request_match"]
+        self.assertTrue(
+            same_request(
+                "https://shop.example.test/ko/?mylogout&token=secret",
+                "https://shop.example.test/ko/?token=secret&mylogout=",
+            )
+        )
+        self.assertFalse(
+            same_request(
+                "https://shop.example.test/ko/?mylogout",
+                "https://shop.example.test/ko/?controller=authentication",
+            )
+        )
+        diagnostics = namespace["safe_redirect_location_diagnostics"](
+            "https://shop.example.test/ko/?mylogout",
+            {"Location": "/ko/authentication?back=my-account&token=secret"},
+            "https://shop.example.test/ko/authentication?token=secret&back=my-account",
+            "https://shop.example.test/ko/authentication",
+        )
+        self.assertTrue(diagnostics["location_matches_next_request"])
+        self.assertTrue(diagnostics["location_matches_expected_login"])
+        self.assertEqual("/ko/authentication", diagnostics["location_target_metadata"]["path"])
+        self.assertNotIn("secret", repr(diagnostics))
 
     def test_logout_uses_generated_account_and_login_routes_for_signed_out_access(self) -> None:
         login_form = self.source.split("def assert_korean_email_login_form", 1)[1].split(
@@ -1370,6 +1486,78 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn("registration_navigation_events", emitter)
         self.assertNotIn('"registration_url":', emitter)
         self.assertNotIn('"href":', emitter)
+
+    def test_registration_click_probe_is_armed_before_click_and_reported_safely(self) -> None:
+        probe = self.blocks["registration_link_click"]
+        arm = probe.index("arm_registration_link_click_probe(")
+        click = probe.index("click_centered(driver, registration_link)")
+        capture = probe.index("read_registration_link_click_probe(")
+        self.assertLess(arm, click)
+        self.assertLess(click, capture)
+
+        emitter = self.source.split("def emit_registration_diagnostics", 1)[1].split(
+            "\n\ndef collect_profile_update_diagnostics", 1
+        )[0]
+        probe_helper = self.source.split("def arm_registration_link_click_probe", 1)[1].split(
+            "\n\ndef read_registration_link_click_probe", 1
+        )[0]
+        self.assertIn(
+            "window.addEventListener('click', capture, {capture: true, once: true})",
+            probe_helper,
+        )
+        self.assertIn("window.addEventListener('click', after, {once: true})", probe_helper)
+        self.assertIn("default_prevented: null", probe_helper)
+        self.assertIn(
+            "current.default_prevented = bubbleEvent.defaultPrevented === true",
+            probe_helper,
+        )
+        self.assertIn('"registration_click": safe_registration_click_metadata(', emitter)
+        self.assertIn('"registration_target_route_matched"', emitter)
+        self.assertIn('"registration_url_changed"', emitter)
+        self.assertNotIn('"href":', emitter)
+        self.assertNotIn('"url":', emitter)
+
+    def test_registration_click_metadata_redacts_unallowlisted_target_classes(self) -> None:
+        helper = next(
+            node
+            for node in ast.parse(self.source).body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "safe_registration_click_metadata"
+        )
+        namespace = {"re": re}
+        exec(compile(ast.Module(body=[helper], type_ignores=[]), str(ACCOUNT_FLOW), "exec"), namespace)
+        metadata = namespace["safe_registration_click_metadata"](
+            {
+                "probe_armed": True,
+                "event_fired": True,
+                "trusted": True,
+                "default_prevented": True,
+                "target_tag": "SPAN",
+                "target_classes": [
+                    "btn",
+                    "btn-outline-primary",
+                    "private@example.invalid",
+                    "customer-session-secret",
+                ],
+                "href": "http://localhost:18080/register?token=private-token-sentinel",
+            }
+        )
+
+        self.assertEqual(
+            {
+                "probe_armed": True,
+                "event_fired": True,
+                "trusted": True,
+                "default_prevented": True,
+                "registration_link_hit": None,
+                "target_tag": "span",
+                "target_classes": ["btn", "btn-outline-primary"],
+            },
+            metadata,
+        )
+        self.assertNotIn("private@example.invalid", repr(metadata))
+        self.assertNotIn("customer-session-secret", repr(metadata))
+        self.assertNotIn("private-token-sentinel", repr(metadata))
 
     def test_registration_navigation_summary_discards_raw_urls_and_query_values(self) -> None:
         helper_node = next(

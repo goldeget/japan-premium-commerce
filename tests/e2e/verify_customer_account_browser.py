@@ -15,7 +15,7 @@ from collections.abc import Callable
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.error import URLError
-from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlparse
+from urllib.parse import parse_qs, parse_qsl, quote, unquote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from selenium import webdriver
@@ -1100,6 +1100,129 @@ def safe_diagnostic_name(value: object, *, field_type: bool = False) -> str:
     return re.sub(pattern, "_", value)[:80]
 
 
+def safe_registration_click_metadata(value: object) -> dict[str, object]:
+    """Keep only bounded facts about the registration-link click target."""
+    metadata = value if isinstance(value, dict) else {}
+    event_fired = metadata.get("event_fired") is True
+    raw_tag = metadata.get("target_tag")
+    target_tag = (
+        raw_tag.lower()
+        if event_fired and isinstance(raw_tag, str) and re.fullmatch(r"[a-z][a-z0-9-]{0,31}", raw_tag.lower())
+        else "unknown"
+    )
+    allowed_classes = {"btn", "btn-outline-primary", "material-icons"}
+    raw_classes = metadata.get("target_classes")
+    target_classes = (
+        [name for name in raw_classes[:4] if isinstance(name, str) and name in allowed_classes]
+        if event_fired and isinstance(raw_classes, list)
+        else []
+    )
+    return {
+        "probe_armed": metadata.get("probe_armed") is True,
+        "event_fired": event_fired,
+        "trusted": metadata.get("trusted")
+        if event_fired and type(metadata.get("trusted")) is bool
+        else None,
+        "default_prevented": metadata.get("default_prevented")
+        if event_fired and type(metadata.get("default_prevented")) is bool
+        else None,
+        "registration_link_hit": metadata.get("registration_link_hit")
+        if event_fired and type(metadata.get("registration_link_hit")) is bool
+        else None,
+        "target_tag": target_tag,
+        "target_classes": target_classes,
+    }
+
+
+def arm_registration_link_click_probe(driver: webdriver.Chrome, registration_link) -> bool:
+    """Capture one safe click fact set without retaining link URLs or page text."""
+    try:
+        result = driver.execute_script(
+            r"""
+            const key = '__ordenowaRegistrationLinkClick';
+            const handlersKey = '__ordenowaRegistrationLinkClickHandlers';
+            const registrationLink = arguments[0];
+            const allowedClasses = new Set(['btn', 'btn-outline-primary', 'material-icons']);
+            try {
+              sessionStorage.removeItem(key);
+              const handlers = {capture: null, after: null};
+              const after = bubbleEvent => {
+                try {
+                  const current = JSON.parse(sessionStorage.getItem(key) || '{}');
+                  if (current && current.event_fired === true) {
+                    current.default_prevented = bubbleEvent.defaultPrevented === true;
+                    sessionStorage.setItem(key, JSON.stringify(current));
+                  }
+                } catch (_) {}
+              };
+              const capture = event => {
+                const rawTarget = event.target;
+                const target = rawTarget instanceof Element ? rawTarget : null;
+                const clickedAnchor = target?.closest('a[data-link-action="display-register-form"]') || null;
+                const targetClasses = target
+                  ? [...target.classList].filter(name => allowedClasses.has(name)).slice(0, 4)
+                  : [];
+                const snapshot = {
+                  event_fired: true,
+                  trusted: event.isTrusted === true,
+                  default_prevented: null,
+                  registration_link_hit: clickedAnchor === registrationLink,
+                  target_tag: target?.tagName.toLowerCase() || '',
+                  target_classes: targetClasses
+                };
+                try { sessionStorage.setItem(key, JSON.stringify(snapshot)); } catch (_) {}
+              };
+              handlers.capture = capture;
+              handlers.after = after;
+              window[handlersKey] = handlers;
+              window.addEventListener('click', capture, {capture: true, once: true});
+              window.addEventListener('click', after, {once: true});
+              return true;
+            } catch (_) {
+              return false;
+            }
+            """,
+            registration_link,
+        )
+        return result is True
+    except Exception:
+        return False
+
+
+def read_registration_link_click_probe(
+    driver: webdriver.Chrome,
+    probe_armed: bool,
+) -> dict[str, object]:
+    try:
+        raw_state = driver.execute_script(
+            r"""
+            const key = '__ordenowaRegistrationLinkClick';
+            const handlersKey = '__ordenowaRegistrationLinkClickHandlers';
+            try {
+              const handlers = window[handlersKey];
+              if (handlers?.capture) window.removeEventListener('click', handlers.capture, true);
+              if (handlers?.after) window.removeEventListener('click', handlers.after, false);
+              delete window[handlersKey];
+              const value = sessionStorage.getItem(key);
+              sessionStorage.removeItem(key);
+              return value;
+            } catch (_) {
+              return null;
+            }
+            """
+        )
+    except Exception:
+        raw_state = None
+    try:
+        parsed = json.loads(raw_state) if isinstance(raw_state, str) else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        parsed = {}
+    if not isinstance(parsed, dict):
+        parsed = {}
+    parsed["probe_armed"] = probe_armed is True
+    return safe_registration_click_metadata(parsed)
+
+
 def safe_profile_update_substage(value: object) -> str:
     return value if isinstance(value, str) and value in PROFILE_UPDATE_SUBSTAGES else "unknown"
 
@@ -1449,7 +1572,7 @@ def safe_url_metadata(value: object) -> dict[str, object]:
     except (TypeError, ValueError):
         return metadata
 
-    allowlisted_query_keys = {"back", "controller", "id_lang", "isolang", "lang"}
+    allowlisted_query_keys = {"back", "controller", "id_lang", "isolang", "lang", "mylogout"}
     metadata.update(
         {
             "same_origin": True,
@@ -1513,6 +1636,8 @@ def safe_registration_navigation_summary(events: object) -> list[dict[str, objec
     def safe_route(metadata: object) -> dict[str, object]:
         if not isinstance(metadata, dict):
             metadata = {}
+        query_key_names = metadata.get("query_key_names")
+        query_key_names = query_key_names if isinstance(query_key_names, list) else []
         path = metadata.get("path")
         if not isinstance(path, str) or len(path) > 160 or not path.isascii():
             path = "/<unknown>"
@@ -1520,7 +1645,7 @@ def safe_registration_navigation_summary(events: object) -> list[dict[str, objec
             path = "/<unknown>"
         else:
             allowed_segments = {
-                "index.php", "ja", "ko", "en", "authentication", "login", "register",
+            "index.php", "ja", "ko", "en", "authentication", "login", "register",
                 "registration", "identity", "order", "password", "password-reset", "history",
                 "<redacted>", "<unknown>",
             }
@@ -1534,6 +1659,11 @@ def safe_registration_navigation_summary(events: object) -> list[dict[str, objec
         return {
             "same_origin": metadata.get("same_origin") is True,
             "path": path,
+            "query_keys": sorted(
+                key for key in query_key_names
+                if isinstance(key, str)
+                and key in {"back", "controller", "id_lang", "isolang", "lang", "mylogout"}
+            ),
             "controller_category": category,
             "back_present": metadata.get("back_present") is True,
         }
@@ -1555,8 +1685,22 @@ def safe_registration_navigation_summary(events: object) -> list[dict[str, objec
                 "event": event_name,
                 "route": safe_route(event.get("route_metadata")),
                 "redirect_from": safe_route(event.get("redirect_from_metadata")),
+                "navigation_referrer": safe_route(event.get("navigation_referrer_metadata")),
+                "selected_link_matches_request": event.get("selected_link_matches_request")
+                if type(event.get("selected_link_matches_request")) is bool
+                else None,
+                "location_target": safe_route(event.get("location_target_metadata")),
+                "location_matches_next_request": event.get("location_matches_next_request")
+                if type(event.get("location_matches_next_request")) is bool
+                else None,
+                "location_matches_expected_login": event.get("location_matches_expected_login")
+                if type(event.get("location_matches_expected_login")) is bool
+                else None,
                 "status_code": safe_status(event.get("status_code")),
                 "redirect_status_code": safe_status(event.get("redirect_status_code")),
+                "from_service_worker": event.get("from_service_worker")
+                if type(event.get("from_service_worker")) is bool
+                else None,
             }
         )
     return summary
@@ -1666,7 +1810,73 @@ def clear_document_navigation_events(driver: webdriver.Chrome) -> None:
         pass
 
 
-def document_navigation_events(driver: webdriver.Chrome) -> list[dict[str, object]]:
+def _header_value(headers: object, expected_name: str) -> str | None:
+    if not isinstance(headers, dict):
+        return None
+    for name, value in headers.items():
+        if isinstance(name, str) and name.casefold() == expected_name.casefold():
+            return value if isinstance(value, str) else None
+    return None
+
+
+def safe_same_shop_request_match(actual_url: object, expected_url: object) -> bool:
+    """Compare full same-shop request targets without returning their values."""
+    if not isinstance(actual_url, str) or not isinstance(expected_url, str):
+        return False
+    try:
+        actual = urlparse(urljoin(BASE.rstrip("/") + "/", actual_url))
+        expected = urlparse(urljoin(BASE.rstrip("/") + "/", expected_url))
+        base = urlparse(BASE)
+        actual_origin = (actual.scheme.lower(), actual.hostname, actual.port)
+        expected_origin = (expected.scheme.lower(), expected.hostname, expected.port)
+        base_origin = (base.scheme.lower(), base.hostname, base.port)
+        if actual_origin != base_origin or expected_origin != base_origin:
+            return False
+        actual_path = unquote(actual.path or "/", errors="strict")
+        expected_path = unquote(expected.path or "/", errors="strict")
+        actual_query = sorted(parse_qsl(actual.query, keep_blank_values=True))
+        expected_query = sorted(parse_qsl(expected.query, keep_blank_values=True))
+        return actual_path == expected_path and actual_query == expected_query
+    except (TypeError, UnicodeDecodeError, ValueError):
+        return False
+
+
+def safe_redirect_location_diagnostics(
+    response_url: object,
+    headers: object,
+    next_request_url: object,
+    expected_login_url: object,
+) -> dict[str, object]:
+    """Expose a redirect destination's safe route shape and comparison results only."""
+    location = _header_value(headers, "location")
+    response_url = response_url if isinstance(response_url, str) else ""
+    if not isinstance(location, str) or not location.strip():
+        return {
+            "location_target_metadata": {"same_origin": False, "path": "/<missing>", "query_key_names": []},
+            "location_matches_next_request": None,
+            "location_matches_expected_login": None,
+        }
+    try:
+        destination = urljoin(response_url, location)
+    except (TypeError, ValueError):
+        destination = ""
+    return {
+        "location_target_metadata": safe_url_metadata(destination),
+        "location_matches_next_request": safe_same_shop_request_match(destination, next_request_url),
+        "location_matches_expected_login": (
+            safe_generated_route_match(destination, expected_login_url)
+            if isinstance(expected_login_url, str)
+            else None
+        ),
+    }
+
+
+def document_navigation_events(
+    driver: webdriver.Chrome,
+    *,
+    selected_signout_url: str | None = None,
+    expected_login_url: str | None = None,
+) -> list[dict[str, object]]:
     """Summarize same-tab document requests and redirects without URL values."""
     try:
         entries = driver.get_log("performance")
@@ -1738,11 +1948,27 @@ def document_navigation_events(driver: webdriver.Chrome) -> list[dict[str, objec
         if not isinstance(request_url, str):
             continue
         route_metadata = safe_url_metadata(request_url)
+        request_headers = request.get("headers", {}) if isinstance(request, dict) else {}
+        navigation_referrer = _header_value(request_headers, "referer")
         redirect_response = params.get("redirectResponse")
         redirect_metadata = (
             safe_url_metadata(redirect_response.get("url"))
             if isinstance(redirect_response, dict)
             else None
+        )
+        redirect_diagnostics = (
+            safe_redirect_location_diagnostics(
+                redirect_response.get("url"),
+                redirect_response.get("headers"),
+                request_url,
+                expected_login_url,
+            )
+            if isinstance(redirect_response, dict)
+            else {
+                "location_target_metadata": {"same_origin": False, "path": "/<missing>", "query_key_names": []},
+                "location_matches_next_request": None,
+                "location_matches_expected_login": None,
+            }
         )
         if not route_metadata["same_origin"] and not (
             isinstance(redirect_metadata, dict) and redirect_metadata["same_origin"]
@@ -1811,6 +2037,13 @@ def document_navigation_events(driver: webdriver.Chrome) -> list[dict[str, objec
                 "event": "document_redirect" if isinstance(redirect_response, dict) else "document_request",
                 "route_metadata": route_metadata,
                 "redirect_from_metadata": redirect_metadata or {},
+                "navigation_referrer_metadata": safe_url_metadata(navigation_referrer),
+                "selected_link_matches_request": (
+                    safe_same_shop_request_match(request_url, selected_signout_url)
+                    if selected_signout_url is not None and not isinstance(redirect_response, dict)
+                    else None
+                ),
+                **redirect_diagnostics,
                 "frame_scope": safe_document_frame_scope(params.get("frameId"), main_frame_id),
                 "initiator_type": initiator_type,
                 "initiator_scope": safe_initiator_scope(initiator_url),
@@ -1828,6 +2061,9 @@ def document_navigation_events(driver: webdriver.Chrome) -> list[dict[str, objec
                 "redirect_status_code": int(redirect_status)
                 if isinstance(redirect_status, (int, float)) and 0 <= redirect_status <= 599
                 else 0,
+                "from_service_worker": response_obj.get("fromServiceWorker")
+                if type(response_obj.get("fromServiceWorker")) is bool
+                else None,
             }
         )
     return safe_events[-16:]
@@ -1986,6 +2222,7 @@ def emit_registration_diagnostics(
         "registration_center_unobstructed": safe_diagnostic_boolean(
             state.get("center_unobstructed", diagnostics.get("registration_center_unobstructed"))
         ),
+        "registration_click": safe_registration_click_metadata(state.get("click_probe")),
         "registration_navigation_events": safe_registration_navigation_summary(
             state.get("navigation_events")
         ),
@@ -2214,6 +2451,22 @@ def fill(driver: webdriver.Chrome, selector: str, value: str) -> None:
     element = visible(driver, selector)
     element.clear()
     element.send_keys(value)
+
+
+def safe_selected_signout_metadata(signout: object, shop_url: str) -> dict[str, object]:
+    """Capture the native signout target without exposing its URL or query values."""
+    try:
+        element_id = signout.get_attribute("id")
+        href = signout.get_attribute("href")
+    except Exception:
+        element_id = None
+        href = None
+    target = safe_url_metadata(urljoin(shop_url.rstrip("/") + "/", href)) if isinstance(href, str) else {}
+    return {
+        "container": "account_menu",
+        "element_id": element_id if element_id == "signout_link" else "other",
+        "target": target,
+    }
 
 
 def visible_signout_link(driver: webdriver.Chrome):
@@ -3052,10 +3305,113 @@ def logout(
 
     mark_substage("resolve_signout_link")
     link = visible_signout_link(driver)
-    mark_substage("click_signout")
-    link.click()
-    mark_substage("wait_signed_out")
-    wait_for_signed_out_state(driver)
+    selected_signout = safe_selected_signout_metadata(link, BASE)
+    try:
+        raw_signout_href = link.get_attribute("href")
+    except Exception:
+        raw_signout_href = None
+    signout_url = (
+        urljoin(driver.current_url, raw_signout_href)
+        if isinstance(raw_signout_href, str)
+        else ""
+    )
+    try:
+        service_worker_controlled = driver.execute_script(
+            "return Boolean(navigator.serviceWorker && navigator.serviceWorker.controller);"
+        ) is True
+    except Exception:
+        service_worker_controlled = False
+    driver.execute_cdp_cmd("Network.setBypassServiceWorker", {"bypass": True})
+    try:
+        clear_document_navigation_events(driver)
+        mark_substage("click_signout")
+        link.click()
+        mark_substage("wait_logout_document")
+        WebDriverWait(driver, 30).until(
+            lambda browser: browser.execute_script("return document.readyState") == "complete"
+        )
+        logout_events = document_navigation_events(
+            driver,
+            selected_signout_url=signout_url,
+            expected_login_url=login_url,
+        )
+        top_level_events = [
+            event for event in logout_events
+            if isinstance(event, dict) and event.get("frame_scope") == "top_frame"
+        ]
+        safe_logout_trace = safe_registration_navigation_summary(top_level_events)
+        print(
+            "ORDENOWA_NORMAL_BROWSER_LOGOUT_SAFE_TRACE="
+            + json.dumps(
+                {
+                    "service_worker_controlled_before_bypass": service_worker_controlled,
+                    "bypass_enabled": True,
+                    "selected_signout": selected_signout,
+                    "expected_login_route": safe_url_metadata(login_url),
+                    "events": safe_logout_trace,
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
+        if not top_level_events:
+            raise AssertionError("network-only customer logout document was not observed")
+        initial_logout_event = next(
+            (
+                event for event in top_level_events
+                if event.get("event") == "document_request"
+            ),
+            None,
+        )
+        if not isinstance(initial_logout_event, dict):
+            raise AssertionError("native customer signout did not begin with a top-level document request")
+        if selected_signout.get("element_id") != "signout_link":
+            raise AssertionError("native account-menu signout link was not selected")
+        if "mylogout" not in selected_signout.get("target", {}).get("query_key_names", []):
+            raise AssertionError("selected native signout link did not target the PrestaShop logout action")
+        if initial_logout_event.get("selected_link_matches_request") is not True:
+            raise AssertionError("native logout request did not match the selected account-menu link")
+        if "mylogout" not in initial_logout_event.get("route", {}).get("query_keys", []):
+            raise AssertionError("observed native logout request did not include the PrestaShop logout action")
+        redirect_events = [
+            event for event in top_level_events
+            if event.get("event") == "document_redirect"
+            and event.get("redirect_status_code") in {301, 302, 303, 307, 308}
+        ]
+        if not redirect_events:
+            raise AssertionError("network-only customer logout did not produce a document redirect")
+        if any(event.get("location_matches_next_request") is not True for event in redirect_events):
+            raise AssertionError("native logout redirect Location did not match the browser's next request")
+        if redirect_events[-1].get("location_matches_expected_login") is not True:
+            raise AssertionError("native logout redirect Location did not target the generated login route")
+        final_logout_event = top_level_events[-1]
+        if final_logout_event.get("status_code") != 200:
+            raise AssertionError("network-only customer logout destination did not return HTTP 200")
+        if final_logout_event.get("from_service_worker") is not False:
+            raise AssertionError("network-only customer logout was still served by a service worker")
+        if not safe_generated_route_match(driver.current_url, login_url):
+            raise AssertionError("network-only customer logout did not reach the generated login route")
+        visible(driver, '#login-form input[name="email"]')
+        mark_substage("wait_signed_out")
+        wait_for_signed_out_state(driver)
+    finally:
+        primary_error = sys.exc_info()[1]
+        try:
+            driver.execute_cdp_cmd("Network.setBypassServiceWorker", {"bypass": False})
+        except Exception as error:
+            print(
+                "ORDENOWA_SERVICE_WORKER_RESTORE_FAILURE=" + type(error).__name__,
+                file=sys.stderr,
+            )
+            if primary_error is None:
+                raise AssertionError("could not restore normal service worker handling after logout probe") from error
+            add_note = getattr(primary_error, "add_note", None)
+            if callable(add_note):
+                add_note(
+                    "Could not restore normal service worker handling after logout probe "
+                    f"({type(error).__name__})."
+                )
 
     mark_substage("reopen_account")
     driver.get(account_url)
@@ -3159,6 +3515,9 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         stage = "registration_link_click"
         set_registration_control(failure_control, "display-register-form", "anchor")
         clear_document_navigation_events(driver)
+        registration_state["click_probe_armed"] = arm_registration_link_click_probe(
+            driver, registration_link
+        )
         try:
             registration_state["center_unobstructed"] = click_centered(driver, registration_link)
         finally:
@@ -3175,6 +3534,10 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             )
             registration_state["target_route_matched"] = safe_generated_route_match(
                 registration_after_click_url, registration_url
+            )
+            registration_state["click_probe"] = read_registration_link_click_probe(
+                driver,
+                registration_state.get("click_probe_armed") is True,
             )
             registration_state["navigation_events"] = document_navigation_events(driver)
         stage = "registration_form_load"

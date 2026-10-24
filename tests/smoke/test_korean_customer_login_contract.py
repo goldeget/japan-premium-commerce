@@ -6,7 +6,7 @@ import json
 import re
 import unittest
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, parse_qsl, unquote, urljoin, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -423,6 +423,10 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
             "top_level_frame_id",
             "safe_refresh_header_metadata",
             "safe_response_refresh_metadata",
+            "_header_value",
+            "safe_generated_route_match",
+            "safe_same_shop_request_match",
+            "safe_redirect_location_diagnostics",
             "document_navigation_events",
         }
         helper_nodes = [
@@ -508,9 +512,10 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
             "json": json,
             "math": __import__("math"),
             "parse_qs": parse_qs,
+            "parse_qsl": parse_qsl,
             "re": re,
             "unquote": unquote,
-            "urljoin": __import__("urllib.parse", fromlist=["urljoin"]).urljoin,
+            "urljoin": urljoin,
             "urlparse": urlparse,
             "webdriver": webdriver_namespace,
         }
