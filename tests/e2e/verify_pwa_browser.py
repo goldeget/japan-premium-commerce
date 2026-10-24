@@ -85,6 +85,28 @@ PWA_DIAGNOSTIC_BACK_VALUES = {
     "order-detail",
     "order-follow",
 }
+PWA_PRIVATE_CUSTOMER_ROUTES = {
+    "address",
+    "addresses",
+    "cart",
+    "discount",
+    "getfile",
+    "guest-tracking",
+    "history",
+    "identity",
+    "my-account",
+    "order",
+    "order-confirmation",
+    "order-detail",
+    "order-follow",
+    "order-opc",
+    "order-return",
+    "order-slip",
+    "pdf-invoice",
+    "pdf-order-return",
+    "pdf-order-slip",
+}
+PWA_DIAGNOSTIC_BACK_VALUES.update(PWA_PRIVATE_CUSTOMER_ROUTES)
 PWA_DIAGNOSTIC_WORKER_SOURCES = {
     "cache-storage",
     "fallback-code",
@@ -231,6 +253,34 @@ def same_origin(reference_url: str, candidate_url: str) -> bool:
             and reference_port == candidate_port
         )
     except (TypeError, ValueError):
+        return False
+
+
+def is_private_customer_back_target(value: object, shop_url: str) -> bool:
+    """Recognize same-origin private back destinations without retaining their URL values."""
+    if not isinstance(value, str) or not value.strip() or len(value) > 8192:
+        return False
+    candidate = value.strip()
+    if candidate.casefold() in PWA_PRIVATE_CUSTOMER_ROUTES:
+        return True
+    try:
+        absolute_url = urljoin(shop_url.rstrip("/") + "/", candidate)
+        if not same_origin(shop_url, absolute_url):
+            return False
+        parsed = urlparse(absolute_url)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        if any(
+            controller.casefold() in PWA_PRIVATE_CUSTOMER_ROUTES
+            for controller in query.get("controller", [])
+        ):
+            return True
+        path = unquote(parsed.path or "/", errors="strict")
+        return any(
+            segment.casefold() in PWA_PRIVATE_CUSTOMER_ROUTES
+            for segment in path.split("/")
+            if segment
+        )
+    except (TypeError, UnicodeDecodeError, ValueError):
         return False
 
 
@@ -602,6 +652,9 @@ def _safe_navigation_target_metadata(value: object) -> dict[str, object]:
     back = value.get("back")
     if isinstance(back, str) and back.casefold() in PWA_DIAGNOSTIC_BACK_VALUES:
         safe["back"] = back.casefold()
+    back_is_private_route = value.get("back_is_private_route")
+    if type(back_is_private_route) is bool:
+        safe["back_is_private_route"] = back_is_private_route
     return safe
 
 
@@ -625,12 +678,17 @@ def safe_navigation_target(candidate_url: str, shop_url: str) -> dict[str, objec
             else:
                 candidate_path = "/<other>"
         query_values = parse_qs(candidate.query, keep_blank_values=True)
+        back_values = query_values.get("back", [])
         safe = _safe_navigation_target_metadata(
             {
                 "path": candidate_path,
                 "query_keys": list(query_values),
                 "controller": query_values.get("controller", [""])[-1],
-                "back": query_values.get("back", [""])[-1],
+                "back": back_values[-1] if back_values else "",
+                "back_is_private_route": any(
+                    is_private_customer_back_target(back, shop_url)
+                    for back in back_values
+                ),
             }
         )
         return safe
@@ -1051,17 +1109,35 @@ def validate_logged_out_navigation_trace(
         raise AssertionError("logged-out redirect chain lacks a no-store cache policy")
     if navigation_trace_has_cache_hit(trace):
         raise AssertionError("logged-out protected document was served from a browser or service-worker cache")
-    expected_value = service_worker_expected
-    if any(step.get("from_service_worker") is not expected_value for step in worker_steps if isinstance(step, dict)):
-        condition = "service worker" if service_worker_expected else "network without service worker"
-        raise AssertionError(f"logged-out navigation provenance did not match {condition} mode")
     if service_worker_expected:
-        if any(
-            step.get("service_worker_source") in {"cache-storage", "http-cache"}
-            for step in worker_steps
-            if isinstance(step, dict)
+        if redirects[0].get("from_service_worker") is not True:
+            raise AssertionError("the protected route was not first handled by the service worker")
+        for index, step in enumerate(redirects):
+            provenance = step.get("from_service_worker")
+            if provenance is True:
+                if step.get("service_worker_source") != "network":
+                    raise AssertionError("service worker did not use the network for a private document")
+                continue
+            preceding_redirect = redirects[index - 1] if index > 0 else None
+            preceding_target = preceding_redirect.get("target") if isinstance(preceding_redirect, dict) else None
+            if (
+                provenance is not False
+                or not isinstance(preceding_target, dict)
+                or preceding_target.get("back_is_private_route") is not True
+            ):
+                raise AssertionError("native redirect hop did not follow a private back route")
+        final_provenance = final.get("from_service_worker")
+        if final_provenance is True:
+            if final.get("service_worker_source") != "network":
+                raise AssertionError("service worker did not use the network for the sign-in page")
+        elif (
+            final_provenance is not False
+            or not isinstance(redirects[-1].get("target"), dict)
+            or redirects[-1]["target"].get("back_is_private_route") is not True
         ):
-            raise AssertionError("service worker returned a cached private customer document")
+            raise AssertionError("native redirect hop did not follow a private back route")
+    elif any(step.get("from_service_worker") is not False for step in worker_steps if isinstance(step, dict)):
+        raise AssertionError("logged-out navigation provenance did not match network without service worker mode")
 
 
 def validate_logout_navigation_trace(trace: object) -> None:

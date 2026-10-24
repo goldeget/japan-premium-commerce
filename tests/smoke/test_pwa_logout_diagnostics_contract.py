@@ -1346,6 +1346,71 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
                 service_worker_expected=True,
             )
 
+    def test_safe_navigation_target_classifies_private_back_urls_without_exposing_them(self) -> None:
+        shop_url = "http://localhost:18080"
+        friendly = pwa_browser.safe_navigation_target(
+            "http://localhost:18080/ko/?back=%2Fko%2Fmy-account",
+            shop_url,
+        )
+        controller = pwa_browser.safe_navigation_target(
+            "http://localhost:18080/ko/?back=%2Findex.php%3Fcontroller%3Dorder-detail",
+            shop_url,
+        )
+        external = pwa_browser.safe_navigation_target(
+            "http://localhost:18080/ko/?back=https%3A%2F%2Fother.example%2Fko%2Fmy-account",
+            shop_url,
+        )
+        public = pwa_browser.safe_navigation_target(
+            "http://localhost:18080/ko/?back=%2Fko%2Fsearch",
+            shop_url,
+        )
+
+        self.assertIs(friendly.get("back_is_private_route"), True)
+        self.assertIs(controller.get("back_is_private_route"), True)
+        self.assertIs(external.get("back_is_private_route"), False)
+        self.assertIs(public.get("back_is_private_route"), False)
+        for metadata in (friendly, controller, external, public):
+            self.assertNotIn("my-account", repr(metadata))
+            self.assertNotIn("order-detail", repr(metadata))
+            self.assertNotIn("other.example", repr(metadata))
+
+    def test_logged_out_pwa_navigation_allows_native_network_hop_after_private_redirect(self) -> None:
+        trace = {
+            "observed": True,
+            "redirects_truncated": False,
+            "redirects": [{
+                "status": 302,
+                "target": {
+                    "path": "/ko/<other>",
+                    "query_keys": ["back"],
+                    "back_is_private_route": True,
+                },
+                "private_cache_policy": True,
+                "from_service_worker": True,
+                "from_disk_cache": False,
+                "from_prefetch_cache": False,
+                "request_served_from_cache": False,
+                "service_worker_source": "network",
+            }],
+            "final": {
+                "status": 200,
+                "target": {"path": "/ko/로그인"},
+                "private_cache_policy": True,
+                "from_service_worker": False,
+                "from_disk_cache": False,
+                "from_prefetch_cache": False,
+                "request_served_from_cache": False,
+                "service_worker_source": None,
+            },
+            "final_route_matches_login": True,
+        }
+
+        pwa_browser.validate_logged_out_navigation_trace(trace, service_worker_expected=True)
+
+        trace["redirects"][0]["target"]["back_is_private_route"] = False
+        with self.assertRaisesRegex(AssertionError, "native redirect hop"):
+            pwa_browser.validate_logged_out_navigation_trace(trace, service_worker_expected=True)
+
     def test_offline_fallback_must_match_the_requested_locale_and_language(self) -> None:
         helper = getattr(pwa_browser, "assert_offline_fallback_content", lambda *_args: None)
 

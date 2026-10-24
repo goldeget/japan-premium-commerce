@@ -53,15 +53,10 @@ let fetchCalls = 0;
 let cacheOpenCalls = 0;
 let responsePromise = null;
 let fetchOptions = null;
-const opaqueRedirectResponse = {
-  type: 'opaqueredirect',
-  status: 0,
-  headers: {get: () => null},
-  text: async () => '',
-};
 const self = {
   addEventListener: (name, callback) => { listeners[name] = callback; },
   clients: {claim: async () => {}},
+  location: {origin: 'http://localhost:18080'},
   navigator: {language: 'en-US'},
   skipWaiting: async () => {},
 };
@@ -69,10 +64,6 @@ const fetch = async (request, options) => {
   fetchCalls += 1;
   fetchOptions = options ?? null;
   if (config.offline) throw new TypeError('offline');
-  if (config.opaqueRedirect) {
-    if (request.redirect === 'manual' && options?.redirect !== 'follow') return opaqueRedirectResponse;
-    return new Response('followed redirect response', {status: 200});
-  }
   return new Response('online response', {status: 200});
 };
 const caches = {open: async () => { cacheOpenCalls += 1; throw new Error('cache must not be opened'); }};
@@ -98,7 +89,6 @@ listeners.fetch({request, respondWith: promise => { responsePromise = promise; }
     intercepted: responsePromise !== null,
     status: response?.status ?? null,
     responseType: response?.type ?? 'default',
-    opaqueRedirectReturned: response === opaqueRedirectResponse,
     cacheControl: response?.headers.get('Cache-Control') ?? null,
     body,
     fetchCalls,
@@ -153,13 +143,12 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
         self.assertEqual("online response", result["body"])
         self.assertEqual(
             {
-                "redirect": "follow",
                 "referrer": "http://localhost:18080/ja/my-account",
                 "referrerPolicy": "strict-origin-when-cross-origin",
             },
             result["fetchOptions"],
         )
-        self.assertEqual("follow", result["fetchOptions"]["redirect"])
+        self.assertNotIn("redirect", result["fetchOptions"])
         self.assertEqual(0, result["cacheOpenCalls"])
 
     def test_logout_action_navigation_is_left_to_browser_redirect_handling(self) -> None:
@@ -175,27 +164,108 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
         self.assertEqual(0, result["fetchCalls"])
         self.assertEqual(0, result["cacheOpenCalls"])
 
-    def test_navigation_follows_redirects_to_the_network_destination(self) -> None:
+    def test_private_return_navigation_is_left_to_browser_redirect_handling(self) -> None:
+        private_routes = (
+            "address",
+            "addresses",
+            "cart",
+            "discount",
+            "getfile",
+            "guest-tracking",
+            "history",
+            "identity",
+            "my-account",
+            "order",
+            "order-confirmation",
+            "order-detail",
+            "order-follow",
+            "order-opc",
+            "order-return",
+            "order-slip",
+            "pdf-invoice",
+            "pdf-order-return",
+            "pdf-order-slip",
+        )
+        targets = [f"/ko/my-account?back={route}" for route in private_routes]
+        targets.append("/ko/my-account?back=search&back=my-account")
+        for target in targets:
+            with self.subTest(target=target):
+                result = self.run_worker(
+                    method="GET",
+                    mode="navigate",
+                    url=f"http://localhost:18080{target}",
+                    offline=False,
+                    language="ko-KR",
+                )
+
+                self.assertIs(result["intercepted"], False)
+                self.assertEqual(0, result["fetchCalls"])
+                self.assertEqual(0, result["cacheOpenCalls"])
+
+    def test_public_return_navigation_remains_worker_managed(self) -> None:
+        for route in ("search", "authentication", "password", "registration"):
+            with self.subTest(route=route):
+                result = self.run_worker(
+                    method="GET",
+                    mode="navigate",
+                    url=f"http://localhost:18080/ko/?back={route}",
+                    offline=False,
+                    language="ko-KR",
+                )
+
+                self.assertIs(result["intercepted"], True)
+                self.assertEqual(1, result["fetchCalls"])
+
+    def test_private_return_navigation_recognizes_same_origin_url_targets(self) -> None:
+        targets = (
+            (
+                "same-origin friendly route",
+                "http://localhost:18080/ko/my-account?back=%2Fko%2Fmy-account",
+                False,
+            ),
+            (
+                "same-origin controller route",
+                "http://localhost:18080/ko/?back=%2Findex.php%3Fcontroller%3Dorder-detail",
+                False,
+            ),
+            (
+                "foreign route containing a private slug",
+                "http://localhost:18080/ko/?back=https%3A%2F%2Fother.example%2Fko%2Fmy-account",
+                True,
+            ),
+        )
+        for label, url, intercepted in targets:
+            with self.subTest(target=label):
+                result = self.run_worker(
+                    method="GET",
+                    mode="navigate",
+                    url=url,
+                    offline=False,
+                    language="ko-KR",
+                )
+
+                self.assertIs(result["intercepted"], intercepted)
+                self.assertEqual(1 if intercepted else 0, result["fetchCalls"])
+
+    def test_worker_does_not_override_browser_navigation_redirect_mode(self) -> None:
         result = self.run_worker(
             method="GET",
             mode="navigate",
             offline=False,
-            opaqueRedirect=True,
+            redirect="manual",
             language="ja-JP",
         )
 
         self.assertIs(result["intercepted"], True)
         self.assertEqual(200, result["status"])
-        self.assertEqual("followed redirect response", result["body"])
-        self.assertIs(result["opaqueRedirectReturned"], False)
         self.assertEqual(
             {
-                "redirect": "follow",
                 "referrer": "http://localhost:18080/ja/my-account",
                 "referrerPolicy": "strict-origin-when-cross-origin",
             },
             result["fetchOptions"],
         )
+        self.assertNotIn("redirect", result["fetchOptions"])
 
     def test_non_navigation_and_non_get_requests_are_left_to_the_browser(self) -> None:
         for method, mode in (("GET", "cors"), ("POST", "navigate")):
