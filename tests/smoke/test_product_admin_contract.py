@@ -40,6 +40,18 @@ class ProductAdminContractTests(unittest.TestCase):
             with self.subTest(browser=expected):
                 self.assertIn(expected, browser)
 
+    def test_english_fallback_php_fixture_preserves_required_legacy_fields(self) -> None:
+        fixture = (ROOT / "tests" / "catalog" / "product_admin_draft.php").read_text(encoding="utf-8")
+        fallback = fixture.split("$englishFallbackDraft = ProductAdminDraft::fromArray([", 1)[1].split(
+            "\n]);", 1
+        )[0]
+
+        for existing_field in ("'name_ja'", "'name_ko'", "'description_ja'", "'description_ko'"):
+            with self.subTest(field=existing_field):
+                self.assertIn(existing_field, fallback)
+        self.assertNotIn("'name_en'", fallback)
+        self.assertNotIn("'description_en'", fallback)
+
     def test_global_admin_controller_qualifies_builtin_exception_without_global_import(self) -> None:
         controller = (MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php").read_text(encoding="utf-8")
 

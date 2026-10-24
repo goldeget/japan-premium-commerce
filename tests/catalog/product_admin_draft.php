@@ -41,11 +41,13 @@ assertProductDraftSame([], $draft->combinationQuantities, 'Product drafts withou
 
 $englishFallbackDraft = ProductAdminDraft::fromArray([
     'name_ja' => '旧呼称',
+    'name_ko' => '',
     'price_jpy' => '1280',
     'tax_rules_group_id' => '0',
     'quantity' => '1',
     'category_ids' => ['2'],
     'description_ja' => '日本語のみの旧商品説明',
+    'description_ko' => '',
 ]);
 assertProductDraftSame('旧呼称', $englishFallbackDraft->nameEn, 'Legacy callers without English product names should fall back to Japanese.');
 assertProductDraftSame('日本語のみの旧商品説明', $englishFallbackDraft->descriptionEn, 'Legacy callers without English descriptions should fall back to Japanese.');
