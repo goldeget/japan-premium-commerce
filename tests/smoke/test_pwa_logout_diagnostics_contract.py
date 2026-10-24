@@ -9,6 +9,18 @@ from tests.e2e import verify_pwa_browser as pwa_browser
 
 
 class PwaLogoutDiagnosticsTests(unittest.TestCase):
+    def test_logout_route_classifier_recognizes_japanese_and_korean_login_slugs(self) -> None:
+        classifier = pwa_browser.customer_route_class
+
+        self.assertEqual(
+            "authentication",
+            classifier("http://localhost:18080/ja/ログイン", "http://localhost:18080"),
+        )
+        self.assertEqual(
+            "authentication",
+            classifier("http://localhost:18080/ko/로그인", "http://localhost:18080"),
+        )
+
     def test_logout_diagnostics_redact_urls_and_bound_counts(self) -> None:
         secret_url = (
             "http://localhost:18080/ko/authentication"
@@ -380,6 +392,124 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         self.assertNotIn("private-token-sentinel", repr(trace))
         self.assertNotIn("private-request-id", repr(trace))
 
+    def test_document_navigation_trace_matches_redirect_location_and_redacts_referrer(self) -> None:
+        requested_url = "http://localhost:18080/ko/my-account"
+        target_url = "http://localhost:18080/ko/authentication?back=my-account&token=private-token-sentinel"
+        events = [
+            {
+                "method": "Network.requestWillBeSent",
+                "params": {
+                    "requestId": "private-request-id",
+                    "loaderId": "main-loader",
+                    "frameId": "main-frame",
+                    "type": "Document",
+                    "request": {
+                        "url": requested_url + "?token=request-token-sentinel",
+                        "method": "GET",
+                        "headers": {
+                            "Referer": requested_url + "?email=private-email-sentinel",
+                        },
+                    },
+                },
+            },
+            {
+                "method": "Network.requestWillBeSent",
+                "params": {
+                    "requestId": "private-request-id",
+                    "loaderId": "main-loader",
+                    "frameId": "main-frame",
+                    "type": "Document",
+                    "redirectResponse": {
+                        "url": requested_url,
+                        "status": 302,
+                        "headers": {"Location": target_url},
+                    },
+                    "request": {"url": target_url, "method": "GET"},
+                },
+            },
+        ]
+
+        trace = pwa_browser.safe_document_navigation_trace(
+            events,
+            requested_url + "?token=request-token-sentinel",
+            "http://localhost:18080",
+            "main-frame",
+            expected_final_url="http://localhost:18080/ko/authentication",
+        )
+
+        self.assertEqual("/ko/my-account", trace.get("navigation_referrer", {}).get("path"))
+        self.assertTrue(trace.get("redirects", [{}])[0].get("location_matches_next_request"))
+        self.assertEqual(
+            "/ko/authentication",
+            trace.get("redirects", [{}])[0].get("location_target", {}).get("path"),
+        )
+        self.assertTrue(trace.get("redirects", [{}])[0].get("location_matches_expected_login"))
+        formatted = pwa_browser._format_navigation_trace(trace)
+        self.assertIn(";navigation_referrer=/ko/my-account", formatted)
+        self.assertIn("redirect1_location_match=true", formatted)
+        self.assertIn("redirect1_login_match=true", formatted)
+        for secret in ("private-token-sentinel", "request-token-sentinel", "private-email-sentinel", "private-request-id"):
+            self.assertNotIn(secret, repr(trace))
+            self.assertNotIn(secret, formatted)
+
+        events[1]["params"]["request"]["url"] = "http://localhost:18080/ko/other?back=my-account"
+        mismatched_trace = pwa_browser.safe_document_navigation_trace(
+            events,
+            requested_url + "?token=request-token-sentinel",
+            "http://localhost:18080",
+            "main-frame",
+        )
+        self.assertFalse(mismatched_trace["redirects"][0]["location_matches_next_request"])
+
+    def test_redirect_location_is_checked_against_login_route_even_when_browser_follows_it(self) -> None:
+        events = [
+            {
+                "method": "Network.requestWillBeSent",
+                "params": {
+                    "requestId": "request-one",
+                    "loaderId": "loader-one",
+                    "frameId": "main-frame",
+                    "type": "Document",
+                    "request": {
+                        "url": "http://localhost:18080/ko/?mylogout",
+                        "method": "GET",
+                        "headers": {"Referer": "http://localhost:18080/ko/my-account"},
+                    },
+                },
+            },
+            {
+                "method": "Network.requestWillBeSent",
+                "params": {
+                    "requestId": "request-one",
+                    "loaderId": "loader-one",
+                    "frameId": "main-frame",
+                    "type": "Document",
+                    "redirectResponse": {
+                        "url": "http://localhost:18080/ko/?mylogout",
+                        "status": 302,
+                        "headers": {"Location": "/ko/unexpected?token=secret"},
+                    },
+                    "request": {
+                        "url": "http://localhost:18080/ko/unexpected?token=secret",
+                        "method": "GET",
+                    },
+                },
+            },
+        ]
+        trace = pwa_browser.safe_document_navigation_trace(
+            events,
+            "http://localhost:18080/ko/?mylogout",
+            "http://localhost:18080",
+            "main-frame",
+            expected_final_url="http://localhost:18080/ko/authentication",
+        )
+
+        redirect = trace.get("redirects", [{}])[0]
+        self.assertTrue(redirect.get("location_matches_next_request"))
+        self.assertFalse(redirect.get("location_matches_expected_login"))
+        self.assertNotIn("secret", repr(trace))
+        self.assertNotIn("unexpected", pwa_browser._format_navigation_trace(trace))
+
     def test_document_navigation_trace_redacts_off_origin_targets_and_keeps_unknown_provenance_unknown(self) -> None:
         trace_builder = getattr(pwa_browser, "safe_document_navigation_trace", None)
         self.assertTrue(callable(trace_builder), "safe main-frame navigation trace is missing")
@@ -516,7 +646,11 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         trace = {
             "observed": True,
             "redirects_truncated": False,
-            "redirects": [{"status": 302}],
+            "redirects": [{
+                "status": 302,
+                "location_matches_next_request": True,
+                "location_matches_expected_login": True,
+            }],
             "final": {
                 "status": 200,
                 "private_cache_policy": True,
@@ -529,6 +663,14 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         }
 
         validator(trace)
+        trace["redirects"][0]["location_matches_next_request"] = False
+        with self.assertRaisesRegex(AssertionError, "Location did not match"):
+            validator(trace)
+        trace["redirects"][0]["location_matches_next_request"] = True
+        trace["redirects"][0]["location_matches_expected_login"] = False
+        with self.assertRaisesRegex(AssertionError, "generated sign-in route"):
+            validator(trace)
+        trace["redirects"][0]["location_matches_expected_login"] = True
         trace["final"]["status"] = 404
         with self.assertRaisesRegex(AssertionError, "HTTP 200"):
             validator(trace)
@@ -705,7 +847,7 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
             pwa_browser.validate_logged_out_navigation_trace(trace, service_worker_expected=True)
         trace["final"]["target"]["path"] = "/ja/authentication"
         trace["final"]["private_cache_policy"] = False
-        with self.assertRaisesRegex(AssertionError, "private/no-store"):
+        with self.assertRaisesRegex(AssertionError, "no-store"):
             pwa_browser.validate_logged_out_navigation_trace(trace, service_worker_expected=True)
 
     def test_document_navigation_trace_rejects_redirect_chains_beyond_the_observed_limit(self) -> None:
@@ -903,6 +1045,8 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
                 {
                     "status": 302,
                     "target": {"path": "/ja/authentication", "controller": "authentication"},
+                    "location_matches_next_request": True,
+                    "location_matches_expected_login": True,
                     "private_cache_policy": True,
                     "from_service_worker": True,
                     "from_disk_cache": False,

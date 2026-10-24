@@ -11,7 +11,7 @@ import uuid
 from collections.abc import Callable
 from http.client import HTTPConnection
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urljoin, urlparse
+from urllib.parse import parse_qs, parse_qsl, unquote, urljoin, urlparse
 
 try:
     from selenium import webdriver
@@ -396,7 +396,8 @@ def customer_route_class(candidate_url: str, shop_url: str) -> str:
         return "other"
 
     if controller == "authentication" or any(
-        segment in {"authentication", "login", "password-reset", "password-recovery", "ログイン"}
+        segment in PWA_DIAGNOSTIC_AUTH_ROUTE_SEGMENTS
+        or segment in {"password-reset", "password-recovery"}
         for segment in segments
     ):
         return "authentication"
@@ -637,6 +638,43 @@ def safe_navigation_target(candidate_url: str, shop_url: str) -> dict[str, objec
         return {"path": "<other>", "query_keys": []}
 
 
+def _header_value(headers: object, expected_name: str) -> str | None:
+    if not isinstance(headers, dict):
+        return None
+    for name, value in headers.items():
+        if isinstance(name, str) and name.casefold() == expected_name.casefold():
+            return value if isinstance(value, str) else None
+    return None
+
+
+def redirect_location_matches_request(
+    response_url: object,
+    headers: object,
+    next_request_url: object,
+    shop_url: str,
+) -> bool | None:
+    """Compare a redirect's Location with the browser's next request without returning either URL."""
+    location = _header_value(headers, "location")
+    if not isinstance(response_url, str) or not isinstance(location, str) or not location.strip():
+        return None
+    if not isinstance(next_request_url, str):
+        return None
+    try:
+        destination = urljoin(response_url, location)
+        actual = urljoin(shop_url.rstrip("/") + "/", next_request_url)
+        if not same_origin(shop_url, destination) or not same_origin(shop_url, actual):
+            return False
+        expected = urlparse(destination)
+        followed = urlparse(actual)
+        expected_path = unquote(expected.path or "/", errors="strict")
+        followed_path = unquote(followed.path or "/", errors="strict")
+        expected_query = sorted(parse_qsl(expected.query, keep_blank_values=True))
+        followed_query = sorted(parse_qsl(followed.query, keep_blank_values=True))
+        return expected_path == followed_path and expected_query == followed_query
+    except (TypeError, UnicodeDecodeError, ValueError):
+        return False
+
+
 def chrome_performance_events(entries: object) -> list[dict[str, object]]:
     """Unwrap Chrome performance-log envelopes into CDP method/params events."""
     if not isinstance(entries, list):
@@ -714,6 +752,7 @@ def safe_document_navigation_trace(
         "observed": False,
         "method": "unknown",
         "initial_target": safe_navigation_target(requested_url, shop_url),
+        "navigation_referrer": {"path": "<missing>", "query_keys": []},
         "redirects": [],
         "redirects_truncated": False,
         "final": {
@@ -757,6 +796,9 @@ def safe_document_navigation_trace(
         loader_id = candidate_loader_id if isinstance(candidate_loader_id, str) and candidate_loader_id else None
         method = request.get("method")
         initial_method = method if isinstance(method, str) and method in {"GET", "POST", "HEAD"} else "other"
+        referrer = _header_value(request.get("headers"), "referer")
+        if referrer:
+            trace["navigation_referrer"] = safe_navigation_target(referrer, shop_url)
         break
     if first_index is None or request_id is None:
         return trace
@@ -794,11 +836,37 @@ def safe_document_navigation_trace(
             request = params.get("request")
             redirect_response = params.get("redirectResponse")
             if isinstance(redirect_response, dict) and isinstance(request, dict):
+                redirect_url = redirect_response.get("url", current_request_url)
+                raw_location = _header_value(redirect_response.get("headers"), "location")
+                try:
+                    location_target = (
+                        urljoin(redirect_url, raw_location)
+                        if isinstance(redirect_url, str) and isinstance(raw_location, str)
+                        else None
+                    )
+                except (TypeError, ValueError):
+                    location_target = None
                 redirects.append(
                     {
                         "status": _safe_http_status(redirect_response.get("status")),
                         "target": safe_navigation_target(
                             request.get("url", ""), shop_url
+                        ),
+                        "location_target": (
+                            safe_navigation_target(location_target, shop_url)
+                            if isinstance(location_target, str)
+                            else {"path": "<missing>", "query_keys": []}
+                        ),
+                        "location_matches_next_request": redirect_location_matches_request(
+                            redirect_url,
+                            redirect_response.get("headers"),
+                            request.get("url"),
+                            shop_url,
+                        ),
+                        "location_matches_expected_login": (
+                            same_storefront_route(location_target, expected_final_url, shop_url)
+                            if isinstance(location_target, str) and expected_final_url is not None
+                            else None
                         ),
                         "request_served_from_cache": current_request_served_from_cache,
                         **_safe_response_cache_provenance(redirect_response),
@@ -866,6 +934,7 @@ def _format_navigation_trace(value: object) -> str:
     method = value.get("method")
     method = method if isinstance(method, str) and method in {"GET", "POST", "HEAD", "other"} else "unknown"
     formatted = f"{method} {_format_safe_target(value.get('initial_target'))}"
+    formatted += f";navigation_referrer={_format_safe_target(value.get('navigation_referrer'))}"
     redirects = value.get("redirects")
     if isinstance(redirects, list):
         for index, redirect in enumerate(redirects[:PWA_DIAGNOSTIC_MAX_REDIRECTS], start=1):
@@ -874,6 +943,8 @@ def _format_navigation_trace(value: object) -> str:
             status = redirect.get("status")
             safe_status = status if type(status) is int and 100 <= status <= 599 else "?"
             formatted += f";{safe_status}->{_format_safe_target(redirect.get('target'))}"
+            formatted += f";redirect{index}_location_match={_diagnostic_boolean(redirect.get('location_matches_next_request'))}"
+            formatted += f";redirect{index}_login_match={_diagnostic_boolean(redirect.get('location_matches_expected_login'))}"
             formatted += f";redirect{index}_service_worker={_diagnostic_boolean(redirect.get('from_service_worker'))}"
             formatted += f";redirect{index}_disk_cache={_diagnostic_boolean(redirect.get('from_disk_cache'))}"
             formatted += f";redirect{index}_prefetch_cache={_diagnostic_boolean(redirect.get('from_prefetch_cache'))}"
@@ -977,7 +1048,7 @@ def validate_logged_out_navigation_trace(
         not isinstance(step, dict) or step.get("private_cache_policy") is not True
         for step in worker_steps
     ):
-        raise AssertionError("logged-out redirect chain lacks private/no-store response headers")
+        raise AssertionError("logged-out redirect chain lacks a no-store cache policy")
     if navigation_trace_has_cache_hit(trace):
         raise AssertionError("logged-out protected document was served from a browser or service-worker cache")
     expected_value = service_worker_expected
@@ -1006,6 +1077,17 @@ def validate_logout_navigation_trace(trace: object) -> None:
         for step in redirects
     ):
         raise AssertionError("customer logout did not follow a sign-in redirect")
+    redirect_steps = [
+        step for step in redirects
+        if isinstance(step, dict) and step.get("status") in {301, 302, 303, 307, 308}
+    ]
+    if any(step.get("location_matches_next_request") is not True for step in redirect_steps):
+        raise AssertionError("customer logout Location did not match the browser's next request")
+    if (
+        redirect_steps[-1].get("location_matches_expected_login") is not None
+        and redirect_steps[-1].get("location_matches_expected_login") is not True
+    ):
+        raise AssertionError("customer logout Location did not target the generated sign-in route")
     final = trace.get("final")
     if not isinstance(final, dict) or final.get("status") != 200:
         raise AssertionError("customer logout destination did not return HTTP 200")
@@ -1025,7 +1107,7 @@ def validate_logout_navigation_trace(trace: object) -> None:
     if not route_matches_login:
         raise AssertionError("customer logout did not land on the authentication route")
     if final.get("private_cache_policy") is not True:
-        raise AssertionError("customer logout destination lacks private/no-store response headers")
+        raise AssertionError("customer logout destination lacks a no-store cache policy")
     if navigation_trace_has_cache_hit(trace):
         raise AssertionError("customer logout destination was served from a browser or service-worker cache")
 
@@ -1120,7 +1202,7 @@ def response_has_private_cache_policy(headers: dict[str, object]) -> bool:
     if not isinstance(cache_control, str):
         return False
     directives = {part.split("=", 1)[0].strip().lower() for part in cache_control.split(",")}
-    return bool({"private", "no-store"} & directives)
+    return "no-store" in directives
 
 
 def exposes_test_identity(body_text: str, first_name: str, last_name: str, email: str) -> bool:
@@ -1263,6 +1345,7 @@ def matching_document_responses(
     driver: webdriver.Chrome,
     requested_url: str,
     shop_url: str,
+    main_frame_id: str,
     performance_entries: object | None = None,
 ) -> list[dict[str, object]] | None:
     if performance_entries is None:
@@ -1279,6 +1362,8 @@ def matching_document_responses(
         try:
             method = event.get("method")
             params = event.get("params", {})
+            if params.get("frameId") != main_frame_id:
+                continue
             if params.get("type") != "Document":
                 continue
             response = None
@@ -1309,6 +1394,7 @@ def assert_private_document_cache_headers(
     shop_url: str,
     route_label: str,
     *,
+    main_frame_id: str,
     performance_entries: object | None = None,
     trace_main_frame_id: str | None = None,
     expected_final_url: str | None = None,
@@ -1322,6 +1408,7 @@ def assert_private_document_cache_headers(
         driver,
         requested_url,
         shop_url,
+        main_frame_id,
         performance_entries=performance_entries,
     )
     if not responses:
@@ -1401,14 +1488,13 @@ def assert_private_document_cache_headers(
             safe_metadata["navigation_trace"] = observed["navigation_trace"]
         directive_summary = ",".join(safe_directives) or "missing"
         message = (
-            f"FAIL: {route_label} response lacks Cache-Control private/no-store semantics "
+            f"FAIL: {route_label} response lacks Cache-Control no-store semantics "
             f"(observed directives={directive_summary}, pragma={observed['pragma_present']}, "
             f"expires={observed['expires_present']})."
         )
         print(message, file=sys.stderr)
         raise PwaDiagnosticAssertionError(message, "cache_policy_missing", safe_metadata)
-    policy = "no-store" if "no-store" in observed["cache_control"].lower() else "private"
-    print(f"PASS: {route_label} response uses Cache-Control {policy}.")
+    print(f"PASS: {route_label} response uses Cache-Control no-store.")
     return observed
 
 
@@ -1442,6 +1528,9 @@ def navigate_private_document(
     WebDriverWait(driver, 30).until(
         lambda browser: browser.execute_script("return document.readyState") == "complete"
     )
+    main_frame_id = current_main_frame_id(driver)
+    if not main_frame_id:
+        raise AssertionError("Chrome main frame could not be identified for private response verification")
     mark_substage("cache_policy")
     if capture_navigation_trace:
         try:
@@ -1455,11 +1544,18 @@ def navigate_private_document(
             requested_url,
             shop_url,
             route_label,
+            main_frame_id=main_frame_id,
             performance_entries=performance_entries,
-            trace_main_frame_id=current_main_frame_id(driver),
+            trace_main_frame_id=main_frame_id,
             expected_final_url=expected_final_url,
         )
-    return assert_private_document_cache_headers(driver, requested_url, shop_url, route_label)
+    return assert_private_document_cache_headers(
+        driver,
+        requested_url,
+        shop_url,
+        route_label,
+        main_frame_id=main_frame_id,
+    )
 
 
 def customer_checkout_url_from_cart(driver: webdriver.Chrome, shop_url: str) -> str:

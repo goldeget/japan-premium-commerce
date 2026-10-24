@@ -677,8 +677,8 @@ class PwaInstallabilityContractTests(unittest.TestCase):
         self.assertFalse(same_origin("https://shop.example/store/", "http://shop.example/login"))
         self.assertFalse(same_origin("https://shop.example/store/", "https://other.example/login"))
 
-    def test_private_document_responses_require_private_or_no_store_cache_control(self) -> None:
-        self.assertTrue(response_has_private_cache_policy({"Cache-Control": "private, max-age=60"}))
+    def test_private_document_responses_require_no_store_cache_control(self) -> None:
+        self.assertFalse(response_has_private_cache_policy({"Cache-Control": "private, max-age=60"}))
         self.assertTrue(response_has_private_cache_policy({"cache-control": "no-store"}))
         self.assertFalse(response_has_private_cache_policy({"Pragma": "no-cache", "Expires": "0"}))
         self.assertFalse(response_has_private_cache_policy({}))
@@ -781,7 +781,8 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         self.assertIn('"authenticated cart"', viewport)
         self.assertIn('"customer_order_route"', viewport)
         self.assertIn('"authenticated order"', viewport)
-        self.assertIn("assert_private_document_cache_headers(driver, requested_url, shop_url, route_label)", navigate)
+        self.assertIn("assert_private_document_cache_headers(\n        driver,", navigate)
+        self.assertIn("main_frame_id=main_frame_id", navigate)
         self.assertNotIn("pwa-{label}-failure.png", self.source)
         self.assertNotIn("print(body_text", self.source)
 
@@ -798,7 +799,7 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
 
         with self.assertRaises(AssertionError) as no_response:
             pwa_browser.assert_private_document_cache_headers(
-                Driver([]), secret_url, shop_url, "logged-out account"
+                Driver([]), secret_url, shop_url, "logged-out account", main_frame_id="main-frame"
             )
         self.assertEqual(no_response.exception.diagnostic_code, "document_response_missing")
         self.assertEqual(no_response.exception.safe_metadata, {"response_count": 0})
@@ -811,6 +812,7 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
                         "method": "Network.responseReceived",
                         "params": {
                             "type": "Document",
+                            "frameId": "main-frame",
                             "response": {
                                 "url": secret_url,
                                 "status": 302,
@@ -825,7 +827,11 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         }
         with self.assertRaises(AssertionError) as missing_policy:
             pwa_browser.assert_private_document_cache_headers(
-                Driver([missing_policy_event] * 25), secret_url, shop_url, "logged-out account"
+                Driver([missing_policy_event] * 25),
+                secret_url,
+                shop_url,
+                "logged-out account",
+                main_frame_id="main-frame",
             )
         self.assertEqual(missing_policy.exception.diagnostic_code, "cache_policy_missing")
         self.assertEqual(
@@ -846,6 +852,44 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
             "; response_count=20",
         )
         self.assertEqual(pwa_browser.response_count_diagnostic(1000), "; response_count=20")
+
+    def test_private_document_cache_check_ignores_same_url_iframe_response(self) -> None:
+        shop_url = "http://localhost:18080"
+        requested_url = shop_url + "/ko/my-account"
+
+        def document_response(frame_id: str, cache_control: str) -> dict[str, object]:
+            return {
+                "method": "Network.responseReceived",
+                "params": {
+                    "type": "Document",
+                    "frameId": frame_id,
+                    "response": {
+                        "url": requested_url,
+                        "status": 200,
+                        "headers": {"Cache-Control": cache_control},
+                    },
+                },
+            }
+
+        class Driver:
+            def get_log(self, _log_type: str) -> list[dict[str, object]]:
+                return []
+
+        with redirect_stderr(io.StringIO()):
+            with self.assertRaises(AssertionError) as missing_main_frame_policy:
+                pwa_browser.assert_private_document_cache_headers(
+                    Driver(),
+                    requested_url,
+                    shop_url,
+                    "logged-out account",
+                    main_frame_id="main-frame",
+                    performance_entries=[
+                        document_response("main-frame", "private, max-age=60"),
+                        document_response("private-iframe", "no-store"),
+                    ],
+                )
+
+        self.assertEqual(1, missing_main_frame_policy.exception.safe_metadata["response_count"])
 
     def test_emitted_private_response_count_uses_the_bounded_formatter(self) -> None:
         viewport = function_source(self.source, "run_viewport")
@@ -956,6 +1000,7 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
                             "method": "Network.responseReceived",
                             "params": {
                                 "type": "Document",
+                                "frameId": "main-frame",
                                 "response": {"url": url, "status": status, "headers": headers},
                             },
                         }
@@ -968,7 +1013,11 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
                 {
                     "message": {
                         "method": "Network.requestWillBeSent",
-                        "params": {"type": "Document", "redirectResponse": redirect_response},
+                        "params": {
+                            "type": "Document",
+                            "frameId": "main-frame",
+                            "redirectResponse": redirect_response,
+                        },
                     }
                 }
             )
@@ -989,17 +1038,19 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
             canonical_url,
             shop_url,
             "authenticated order",
+            main_frame_id="main-frame",
         )
         self.assertEqual(200, observed["status"])
         self.assertEqual("private, no-store", observed["cache_control"])
 
         with redirect_stderr(io.StringIO()):
-            with self.assertRaisesRegex(AssertionError, "lacks Cache-Control private/no-store semantics"):
+            with self.assertRaisesRegex(AssertionError, "lacks Cache-Control no-store semantics"):
                 pwa_browser.assert_private_document_cache_headers(
                     Driver({"Cache-Control": "public, max-age=3600"}),
                     canonical_url,
                     shop_url,
                     "authenticated order",
+                    main_frame_id="main-frame",
                 )
 
     def test_pwa_order_route_qa_temporarily_opens_only_its_run_scoped_checkout(self) -> None:
