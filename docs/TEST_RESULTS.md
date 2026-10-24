@@ -14,6 +14,8 @@
 | PC·모바일 캡처 | artifact 보관 | [run #40134196682 artifact](https://github.com/goldeget/japan-premium-commerce/actions/runs/40134196682/artifacts/12576851933)의 `ordenowa-storefront-browser-40134196682-1` (15,618,931 bytes), Step 61 coverage PASS, metadata상 미만료. ZIP 본문은 실행환경 프록시가 파일 저장소 연결을 403으로 거부해 직접 확인하지 못했다. |
 | 수정 SHA 전체 isolated Actions [#40134196682](https://github.com/goldeget/japan-premium-commerce/actions/runs/40134196682) | PASS | SHA `b99b61559978dd8b4c25819623669e0d92deb768`; run conclusion `success`, Step 65 aggregate PASS, failed/cancelled step 없음. 회원/로그아웃 Step 34, PWA lifecycle/privacy-cache Step 41, Tokyo/Osaka 무료배송·과세/면세·DB/관리자 금액 대조 Steps 52–57, 재시작·일본우편 데이터 Steps 62–64가 통과했다. Step 49 조건부 skip, Step 66 진단은 실패가 없어 skip, Step 68 run 전용 자원 정리 PASS. |
 
+회원 QA의 check-run에는 한국어 로그아웃 trace 10개가 있다. Account-page/menu에서 선택한 same-origin `/ko/?mylogout` 링크가 실제 문서 요청과 일치했다. 응답은 두 번의 HTTP 302 후 로그인 페이지 HTTP 200이었고 두 redirect의 `Location`은 이어진 요청과 일치했다. Worker가 우회 전 브라우저를 제어했으며 네트워크 전용 비교 중 bypass가 켜졌고 30개 요청/redirect 응답이 모두 `from_service_worker=false`였다. 이 후속 증거에서는 404가 재현되지 않았다.
+
 직전 full run에서 고객 계정 가입/로그인/로그아웃 Step 34는 통과했고 재현된 PWA 실패는 로그아웃 404가 아니라 빈 체크아웃 trace 생성 단계에서 발생했다. `b99b615`는 cache policy 확인에 사용할 최종 URL과 navigation trace에 사용할 최초 URL을 분리했다. 후속 full run은 성공했고 Step 34와 Step 41을 통과했으며 원래 HTTP 404는 재현되지 않았다. 다만 #40036387808의 원 요청/리다이렉트 및 service worker 경로는 artifact 본문에 접근하지 못해 확정하지 못했다. 실기기 PWA 설치 및 실제 운영 자료 검증은 별도다.
 
 이전 CI의 배송·세금·주문 성공 범위와 그 합성 데이터 한계는 아래 2026-10-23 표 및 `DEVELOPMENT_STATUS.md`의 최신 출시 준비 표를 함께 참조한다. 실제 상품, seller tax mapping, carrier 운영 설정 및 실결제 결과로 확대 해석하지 않는다.
