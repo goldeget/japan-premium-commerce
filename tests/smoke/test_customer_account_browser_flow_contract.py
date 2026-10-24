@@ -657,6 +657,14 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn('"location_target"', summary)
         self.assertIn('"location_matches_next_request"', summary)
         self.assertIn('"location_matches_expected_login"', summary)
+        logout = self.source.split("def logout(", 1)[1].split("\n\ndef run_viewport", 1)[0]
+        self.assertIn('initial_logout_event.get("route_metadata")', logout)
+        self.assertIn("initial_route_metadata.get(", logout)
+        self.assertIn('"query_key_names"', logout)
+        self.assertNotIn(
+            'initial_logout_event.get("route", {}).get("query_keys", [])',
+            logout,
+        )
 
     def test_logout_reports_service_worker_bypass_restore_failure(self) -> None:
         logout = self.source.split("def logout(", 1)[1].split("\n\ndef run_viewport", 1)[0]

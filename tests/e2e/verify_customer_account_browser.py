@@ -3372,7 +3372,10 @@ def logout(
             raise AssertionError("selected native signout link did not target the PrestaShop logout action")
         if initial_logout_event.get("selected_link_matches_request") is not True:
             raise AssertionError("native logout request did not match the selected account-menu link")
-        if "mylogout" not in initial_logout_event.get("route", {}).get("query_keys", []):
+        initial_route_metadata = initial_logout_event.get("route_metadata")
+        if not isinstance(initial_route_metadata, dict) or "mylogout" not in initial_route_metadata.get(
+            "query_key_names", []
+        ):
             raise AssertionError("observed native logout request did not include the PrestaShop logout action")
         redirect_events = [
             event for event in top_level_events
