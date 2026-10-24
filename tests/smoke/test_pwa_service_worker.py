@@ -51,8 +51,30 @@ const config = JSON.parse(process.argv[2]);
 const listeners = {};
 let fetchCalls = 0;
 let cacheOpenCalls = 0;
-let responsePromise = null;
-let fetchOptions = null;
+let activeConfig = config;
+let currentTime = Number.isFinite(config.now) ? config.now : 0;
+let nextTimerId = 1;
+const timers = new Map();
+const setTimeout = (callback, delay = 0) => {
+  const timerId = nextTimerId++;
+  timers.set(timerId, {at: currentTime + Math.max(0, Number(delay) || 0), callback});
+  return timerId;
+};
+const clearTimeout = timerId => timers.delete(timerId);
+const advanceBy = milliseconds => {
+  const target = currentTime + milliseconds;
+  while (true) {
+    const due = [...timers.entries()]
+      .filter(([, timer]) => timer.at <= target)
+      .sort((left, right) => left[1].at - right[1].at)[0];
+    if (!due) break;
+    timers.delete(due[0]);
+    currentTime = due[1].at;
+    due[1].callback();
+  }
+  currentTime = target;
+};
+const FakeDate = class extends Date { static now() { return currentTime; } };
 const self = {
   addEventListener: (name, callback) => { listeners[name] = callback; },
   clients: {claim: async () => {}},
@@ -62,39 +84,60 @@ const self = {
 };
 const fetch = async (request, options) => {
   fetchCalls += 1;
-  fetchOptions = options ?? null;
-  if (config.offline) throw new TypeError('offline');
+  activeConfig.fetchOptions = options ?? null;
+  if (activeConfig.offline) throw new TypeError('offline');
   return new Response('online response', {status: 200});
 };
 const caches = {open: async () => { cacheOpenCalls += 1; throw new Error('cache must not be opened'); }};
-vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {self, fetch, Response, caches, URL});
-const request = {
-  url: config.url || 'http://localhost:18080/ja/identity',
-  method: config.method,
-  mode: config.mode,
-  redirect: config.redirect || 'manual',
-  referrer: config.referrer || 'http://localhost:18080/ja/my-account',
-  referrerPolicy: 'strict-origin-when-cross-origin',
-  headers: {get: name => name === 'Accept-Language' ? config.language : null},
-};
-listeners.fetch({request, respondWith: promise => { responsePromise = promise; }});
+vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {
+  self, fetch, Response, caches, URL, Date: FakeDate, setTimeout, clearTimeout,
+});
 (async () => {
-  let response = null;
-  let body = '';
-  if (responsePromise) {
-    response = await responsePromise;
-    body = await response.text();
+  const eventConfigs = Array.isArray(config.events) ? config.events : [config];
+  const events = [];
+  for (const eventConfig of eventConfigs) {
+    if (Number.isFinite(eventConfig.advanceMs)) advanceBy(eventConfig.advanceMs);
+    activeConfig = {...config, ...eventConfig};
+    const beforeFetchCalls = fetchCalls;
+    const beforeCacheOpenCalls = cacheOpenCalls;
+    let responsePromise = null;
+    let fetchOptions = null;
+    let waitUntilCalls = 0;
+    const request = {
+      url: activeConfig.url || 'http://localhost:18080/ja/identity',
+      method: activeConfig.method,
+      mode: activeConfig.mode,
+      redirect: activeConfig.redirect || 'manual',
+      referrer: activeConfig.referrer || 'http://localhost:18080/ja/my-account',
+      referrerPolicy: 'strict-origin-when-cross-origin',
+      headers: {get: name => name === 'Accept-Language' ? activeConfig.language : null},
+    };
+    listeners.fetch({
+      request,
+      clientId: activeConfig.clientId || '',
+      resultingClientId: activeConfig.resultingClientId || '',
+      waitUntil: _promise => { waitUntilCalls += 1; },
+      respondWith: promise => { responsePromise = promise; },
+    });
+    let response = null;
+    let body = '';
+    if (responsePromise) {
+      response = await responsePromise;
+      body = await response.text();
+    }
+    events.push({
+      intercepted: responsePromise !== null,
+      status: response?.status ?? null,
+      responseType: response?.type ?? 'default',
+      cacheControl: response?.headers.get('Cache-Control') ?? null,
+      body,
+      fetchCalls: fetchCalls - beforeFetchCalls,
+      fetchOptions: activeConfig.fetchOptions ?? fetchOptions,
+      cacheOpenCalls: cacheOpenCalls - beforeCacheOpenCalls,
+      waitUntilCalls,
+    });
   }
-  process.stdout.write(JSON.stringify({
-    intercepted: responsePromise !== null,
-    status: response?.status ?? null,
-    responseType: response?.type ?? 'default',
-    cacheControl: response?.headers.get('Cache-Control') ?? null,
-    body,
-    fetchCalls,
-    fetchOptions,
-    cacheOpenCalls,
-  }));
+  process.stdout.write(JSON.stringify({...events[0], events, fetchCalls, cacheOpenCalls}));
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
 
@@ -170,6 +213,126 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
 
         self.assertIs(result["intercepted"], False)
         self.assertEqual(0, result["fetchCalls"])
+        self.assertEqual(0, result["cacheOpenCalls"])
+
+    def test_logout_redirect_chain_bypasses_only_the_source_clients_navigation(self) -> None:
+        result = self.run_worker(
+            events=[
+                {
+                    "method": "GET",
+                    "mode": "navigate",
+                    "url": "http://localhost:18080/ko/?mylogout",
+                    "clientId": "logout-source",
+                    "resultingClientId": "logout-destination",
+                },
+                {
+                    "method": "GET",
+                    "mode": "navigate",
+                    "url": "http://localhost:18080/ko/category",
+                    "clientId": "other-source",
+                    "offline": True,
+                },
+                {
+                    "method": "GET",
+                    "mode": "navigate",
+                    "url": "http://localhost:18080/ko/category",
+                    "clientId": "logout-source",
+                    "resultingClientId": "different-destination",
+                    "offline": True,
+                },
+                {
+                    "method": "GET",
+                    "mode": "navigate",
+                    "url": "http://localhost:18080/ko/",
+                    "clientId": "logout-source",
+                    "resultingClientId": "logout-destination",
+                },
+                {
+                    "method": "GET",
+                    "mode": "navigate",
+                    "url": "http://localhost:18080/ko/?back=my-account",
+                    "clientId": "logout-source",
+                    "resultingClientId": "logout-destination",
+                },
+                {
+                    "method": "GET",
+                    "mode": "navigate",
+                    "url": "http://localhost:18080/ko/authentication",
+                    "clientId": "logout-source",
+                    "resultingClientId": "logout-destination",
+                },
+                {
+                    "method": "GET",
+                    "mode": "navigate",
+                    "url": "http://localhost:18080/ko/login",
+                    "clientId": "logout-source",
+                    "resultingClientId": "logout-destination",
+                },
+                {
+                    "method": "GET",
+                    "mode": "navigate",
+                    "url": "http://localhost:18080/ko/category",
+                    "clientId": "logout-destination",
+                    "offline": True,
+                    "language": "ko-KR",
+                },
+            ],
+        )
+
+        events = result["events"]
+        self.assertEqual([False, True, True, False, False, False, False, True], [event["intercepted"] for event in events])
+        self.assertEqual(1, events[0]["waitUntilCalls"], "the logout event must lease the worker for its redirect chain")
+        self.assertEqual(503, events[1]["status"], "another client must retain normal offline fallback")
+        self.assertEqual(503, events[2]["status"], "a different destination client must keep normal offline fallback")
+        self.assertEqual(503, events[7]["status"], "ordinary navigation after the auth document commits must resume worker fallback")
+        self.assertEqual("no-store", events[7]["cacheControl"])
+        self.assertEqual(0, result["cacheOpenCalls"])
+
+    def test_logout_redirect_marker_expires_and_missing_client_id_does_not_create_global_bypass(self) -> None:
+        result = self.run_worker(
+            events=[
+                {
+                    "method": "GET",
+                    "mode": "navigate",
+                    "url": "http://localhost:18080/ja/?mylogout",
+                    "offline": True,
+                },
+                {
+                    "method": "GET",
+                    "mode": "navigate",
+                    "url": "http://localhost:18080/ja/",
+                    "offline": True,
+                },
+                {
+                    "method": "GET",
+                    "mode": "navigate",
+                    "url": "http://localhost:18080/ja/?mylogout",
+                    "clientId": "expiring-source",
+                    "resultingClientId": "expiring-destination",
+                },
+                {
+                    "method": "GET",
+                    "mode": "navigate",
+                    "url": "http://localhost:18080/ja/",
+                    "clientId": "expiring-source",
+                    "resultingClientId": "expiring-destination",
+                    "offline": True,
+                },
+                {
+                    "method": "GET",
+                    "mode": "navigate",
+                    "url": "http://localhost:18080/ja/category",
+                    "clientId": "expiring-source",
+                    "offline": True,
+                    "advanceMs": 30000,
+                },
+            ],
+        )
+
+        events = result["events"]
+        self.assertEqual([False, True, False, False, True], [event["intercepted"] for event in events])
+        self.assertEqual(503, events[1]["status"], "logout without a source client must not bypass other public requests")
+        self.assertEqual(503, events[4]["status"], "an expired logout marker must not suppress offline fallback")
         self.assertEqual(0, result["cacheOpenCalls"])
 
     def test_private_return_navigation_is_left_to_browser_redirect_handling(self) -> None:
@@ -1225,6 +1388,99 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         self.assertIn('if [[ "$pwa_checkout_override_attempted" == 1 ]]', restore)
         self.assertIn("--force-recreate", restore)
         self.assertIn("fail-closed base checkout environment", restore)
+
+    def test_guest_tracking_cache_policy_checks_the_final_canonical_document(self) -> None:
+        navigate = function_source(self.source, "navigate_private_document")
+        guest_routes = function_source(self.source, "verify_logged_out_private_routes")
+
+        self.assertIn("cache_policy_final_document", navigate)
+        self.assertIn("cache_policy_url = driver.current_url", navigate)
+        self.assertIn("cache_policy_final_document=route_stage == \"guest_tracking\"", guest_routes)
+        self.assertIn('observed.get("status") != 200', guest_routes)
+        self.assertIn('wait_visible(driver, "#guestOrderTrackingForm")', guest_routes)
+
+    def test_guest_tracking_cache_check_uses_final_same_origin_response(self) -> None:
+        shop_url = "http://localhost:18080"
+        legacy_url = shop_url + "/index.php?controller=guest-tracking"
+        canonical_url = shop_url + "/ja/guest-tracking"
+        entries = [
+            {
+                "message": json.dumps(
+                    {
+                        "message": {
+                            "method": "Network.requestWillBeSent",
+                            "params": {
+                                "type": "Document",
+                                "frameId": "main-frame",
+                                "redirectResponse": {
+                                    "url": legacy_url,
+                                    "status": 302,
+                                    "headers": {"Cache-Control": "no-cache"},
+                                },
+                            },
+                        }
+                    }
+                )
+            },
+            {
+                "message": json.dumps(
+                    {
+                        "message": {
+                            "method": "Network.responseReceived",
+                            "params": {
+                                "type": "Document",
+                                "frameId": "main-frame",
+                                "response": {
+                                    "url": canonical_url,
+                                    "status": 200,
+                                    "headers": {"Cache-Control": "private, no-store"},
+                                },
+                            },
+                        }
+                    }
+                )
+            },
+        ]
+
+        class Driver:
+            current_url = shop_url
+
+            def get_log(self, _log_type: str) -> list[dict[str, str]]:
+                return entries
+
+            def get(self, _url: str) -> None:
+                self.current_url = canonical_url
+
+            def execute_script(self, _script: str) -> str:
+                return "complete"
+
+            def execute_cdp_cmd(self, method: str, _params: dict[str, object]) -> dict[str, object]:
+                if method == "Page.getFrameTree":
+                    return {"frameTree": {"frame": {"id": "main-frame"}}}
+                raise AssertionError("unexpected browser command")
+
+        class ReadyWait:
+            def __init__(self, browser: Driver, _timeout: int) -> None:
+                self.browser = browser
+
+            def until(self, predicate: object) -> None:
+                self.assert_ready(predicate)
+
+            def assert_ready(self, predicate: object) -> None:
+                if not callable(predicate) or not predicate(self.browser):
+                    raise AssertionError("test browser did not become ready")
+
+        with patch.object(pwa_browser, "WebDriverWait", ReadyWait):
+            observed = pwa_browser.navigate_private_document(
+                Driver(),
+                legacy_url,
+                shop_url,
+                "logged-out guest tracking",
+                cache_policy_final_document=True,
+            )
+
+        self.assertEqual(200, observed["status"])
+        self.assertEqual("private, no-store", observed["cache_control"])
 
     def test_pwa_customer_creation_requires_exact_run_scoped_ci_shop_before_chromium(self) -> None:
         main = function_source(self.source, "main")

@@ -48,6 +48,11 @@ const PRIVATE_RETURN_ROUTES = new Set([
   'pdf-order-slip',
 ]);
 
+const LOGOUT_REDIRECT_TTL_MS = 10000;
+const LOGOUT_REDIRECT_MAX_HOPS = 6;
+const MAX_LOGOUT_REDIRECT_CLIENTS = 16;
+const logoutRedirectClients = new Map();
+
 const isPrivateReturnRoute = (value) => {
   if (typeof value !== 'string' || !value.trim()) return false;
   const route = value.trim().toLowerCase();
@@ -72,6 +77,39 @@ const isPrivateReturnRoute = (value) => {
   }
 };
 
+const releaseLogoutRedirectClient = (clientId, marker) => {
+  if (logoutRedirectClients.get(clientId) !== marker) return;
+  logoutRedirectClients.delete(clientId);
+  clearTimeout(marker.timerId);
+  marker.resolveLifetime();
+};
+
+const beginLogoutRedirectClient = (event, clientId, resultingClientId) => {
+  const previous = logoutRedirectClients.get(clientId);
+  if (previous) releaseLogoutRedirectClient(clientId, previous);
+
+  let resolveLifetime;
+  const marker = {
+    resultingClientId,
+    expiresAt: Date.now() + LOGOUT_REDIRECT_TTL_MS,
+    remainingHops: LOGOUT_REDIRECT_MAX_HOPS,
+    resolveLifetime: () => {},
+    timerId: 0,
+  };
+  const lifetime = new Promise((resolve) => {
+    resolveLifetime = resolve;
+  });
+  marker.resolveLifetime = resolveLifetime;
+  marker.timerId = setTimeout(() => releaseLogoutRedirectClient(clientId, marker), LOGOUT_REDIRECT_TTL_MS);
+  logoutRedirectClients.set(clientId, marker);
+  while (logoutRedirectClients.size > MAX_LOGOUT_REDIRECT_CLIENTS) {
+    const oldestClientId = logoutRedirectClients.keys().next().value;
+    if (typeof oldestClientId !== 'string') break;
+    releaseLogoutRedirectClient(oldestClientId, logoutRedirectClients.get(oldestClientId));
+  }
+  event.waitUntil(lifetime);
+};
+
 self.addEventListener('install', (event) => {
   event.waitUntil(self.skipWaiting());
 });
@@ -84,6 +122,46 @@ self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
   const isLogoutAction = url.searchParams.has('mylogout');
+  const isSameOriginGetNavigation = request.method === 'GET'
+    && request.mode === 'navigate'
+    && url.origin === self.location.origin;
+  const clientId = typeof event.clientId === 'string' ? event.clientId : '';
+  const resultingClientId = typeof event.resultingClientId === 'string' ? event.resultingClientId : '';
+
+  for (const [markedClientId, marker] of logoutRedirectClients) {
+    if (marker.expiresAt <= Date.now()) {
+      releaseLogoutRedirectClient(markedClientId, marker);
+      continue;
+    }
+    if (
+      marker.resultingClientId
+      && clientId === marker.resultingClientId
+      && clientId !== markedClientId
+    ) {
+      // The destination document committed and is now the source of a later navigation.
+      releaseLogoutRedirectClient(markedClientId, marker);
+    }
+  }
+
+  if (isSameOriginGetNavigation && isLogoutAction && clientId) {
+    beginLogoutRedirectClient(event, clientId, resultingClientId);
+    return;
+  }
+
+  if (isSameOriginGetNavigation && clientId) {
+    const marker = logoutRedirectClients.get(clientId);
+    const resultClientMatches = !marker?.resultingClientId
+      || !resultingClientId
+      || marker.resultingClientId === resultingClientId;
+    if (marker && resultClientMatches) {
+      marker.remainingHops -= 1;
+      if (marker.remainingHops <= 0) {
+        releaseLogoutRedirectClient(clientId, marker);
+      }
+      return;
+    }
+  }
+
   const isPrivateCustomerNavigation = isPrivateReturnRoute(url.href);
   const isPrivateReturnNavigation = url.searchParams.getAll('back').some(isPrivateReturnRoute);
   // Let Chrome follow private-route redirects natively; navigation Request objects can use manual mode.

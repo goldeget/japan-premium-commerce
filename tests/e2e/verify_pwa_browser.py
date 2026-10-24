@@ -1610,6 +1610,7 @@ def navigate_private_document(
     *,
     capture_navigation_trace: bool = False,
     expected_final_url: str | None = None,
+    cache_policy_final_document: bool = False,
 ) -> dict[str, object]:
     def mark_substage(name: str) -> None:
         if set_substage is not None:
@@ -1631,6 +1632,11 @@ def navigate_private_document(
     WebDriverWait(driver, 30).until(
         lambda browser: browser.execute_script("return document.readyState") == "complete"
     )
+    cache_policy_url = requested_url
+    if cache_policy_final_document:
+        cache_policy_url = driver.current_url
+        if not same_origin(shop_url, cache_policy_url):
+            raise AssertionError(f"{route_label} canonical destination left the isolated shop origin")
     main_frame_id = current_main_frame_id(driver)
     if not main_frame_id:
         raise AssertionError("Chrome main frame could not be identified for private response verification")
@@ -1644,7 +1650,7 @@ def navigate_private_document(
             raise AssertionError(message)
         return assert_private_document_cache_headers(
             driver,
-            requested_url,
+            cache_policy_url,
             shop_url,
             route_label,
             main_frame_id=main_frame_id,
@@ -1654,7 +1660,7 @@ def navigate_private_document(
         )
     return assert_private_document_cache_headers(
         driver,
-        requested_url,
+        cache_policy_url,
         shop_url,
         route_label,
         main_frame_id=main_frame_id,
@@ -2306,6 +2312,7 @@ def verify_logged_out_private_routes(
             shop_url,
             f"logged-out {route_stage.replace('_', ' ')}",
             set_substage=lambda name: set_substage(f"request_{route_stage}_{name}"),
+            cache_policy_final_document=route_stage == "guest_tracking",
         )
         if expected_status is not None and observed.get("status") != expected_status:
             raise AssertionError(
