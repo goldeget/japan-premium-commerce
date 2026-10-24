@@ -3340,19 +3340,29 @@ def logout(
             if isinstance(event, dict) and event.get("frame_scope") == "top_frame"
         ]
         safe_logout_trace = safe_registration_navigation_summary(top_level_events)
+        safe_logout_trace_json = json.dumps(
+            {
+                "service_worker_controlled_before_bypass": service_worker_controlled,
+                "bypass_enabled": True,
+                "selected_signout": selected_signout,
+                "expected_login_route": safe_url_metadata(login_url),
+                "events": safe_logout_trace,
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+        )
         print(
             "ORDENOWA_NORMAL_BROWSER_LOGOUT_SAFE_TRACE="
-            + json.dumps(
-                {
-                    "service_worker_controlled_before_bypass": service_worker_controlled,
-                    "bypass_enabled": True,
-                    "selected_signout": selected_signout,
-                    "expected_login_route": safe_url_metadata(login_url),
-                    "events": safe_logout_trace,
-                },
-                ensure_ascii=True,
-                sort_keys=True,
-            ),
+            + safe_logout_trace_json,
+            file=sys.stderr,
+        )
+        annotation = (
+            safe_logout_trace_json.replace("%", "%25")
+            .replace("\r", "%0D")
+            .replace("\n", "%0A")
+        )
+        print(
+            "::notice title=ORDENOWA network-only customer logout::" + annotation,
             file=sys.stderr,
         )
         if not top_level_events:

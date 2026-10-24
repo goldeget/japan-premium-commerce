@@ -665,6 +665,9 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             'initial_logout_event.get("route", {}).get("query_keys", [])',
             logout,
         )
+        self.assertIn("ORDENOWA_NORMAL_BROWSER_LOGOUT_SAFE_TRACE=", logout)
+        self.assertIn("::notice title=ORDENOWA network-only customer logout::", logout)
+        self.assertIn("safe_logout_trace", logout)
 
     def test_logout_reports_service_worker_bypass_restore_failure(self) -> None:
         logout = self.source.split("def logout(", 1)[1].split("\n\ndef run_viewport", 1)[0]
