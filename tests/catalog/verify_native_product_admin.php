@@ -53,10 +53,11 @@ $kernel->boot();
 $shopId = 1;
 $shop = new Shop($shopId);
 $languageId = (int) Language::getIdByIso('ja', true);
+$englishLanguageId = (int) Language::getIdByIso('en', true);
 $currencyId = (int) Currency::getIdByIsoCode('JPY', $shopId);
 $categoryId = (int) Configuration::get('PS_HOME_CATEGORY');
-if (!Validate::isLoadedObject($shop) || $languageId < 1 || $currencyId < 1 || $categoryId < 1) {
-    throw new RuntimeException('The isolated shop is missing Japanese, JPY, or its home category.');
+if (!Validate::isLoadedObject($shop) || $languageId < 1 || $englishLanguageId < 1 || $currencyId < 1 || $categoryId < 1) {
+    throw new RuntimeException('The isolated shop is missing Japanese, English, JPY, or its home category.');
 }
 $context = Context::getContext();
 $context->shop = $shop;
@@ -131,12 +132,14 @@ $imageUpload = ['name' => 'synthetic-product.png', 'tmp_name' => $imagePath, 'si
 $manager = new PrestaShopNativeProductManager();
 $draft = ProductAdminDraft::fromArray([
     'name_ja' => 'ORDENOWA CI 合成商品',
+    'name_en' => 'ORDENOWA CI Synthetic Product',
     'name_ko' => 'ORDENOWA CI 합성 상품',
     'price_jpy' => '1280',
     'tax_rules_group_id' => '0',
     'quantity' => '3',
     'category_ids' => [(string) $categoryId],
     'description_ja' => 'CI用の商品説明',
+    'description_en' => 'Synthetic English product description',
     'description_ko' => 'CI용 상세 설명',
     'options' => "色:青|赤\nサイズ:S|M",
 ]);
@@ -144,11 +147,21 @@ $draft = ProductAdminDraft::fromArray([
 $stage = 'native product create';
 $productId = $manager->save(null, $draft, [$imageUpload]);
 $product = new Product($productId, false, $languageId, $shopId);
+$englishProduct = new Product($productId, false, $englishLanguageId, $shopId);
 $combinationRows = Db::getInstance()->executeS(
     'SELECT `id_product_attribute` FROM `' . _DB_PREFIX_ . 'product_attribute` WHERE `id_product` = ' . (int) $productId . ' ORDER BY `id_product_attribute` ASC'
 );
 $createdCombinationIds = array_map(static fn (array $row): int => (int) $row['id_product_attribute'], is_array($combinationRows) ? $combinationRows : []);
 $imageIds = $manager->imageIds($productId);
+$englishSlug = (string) Db::getInstance()->getValue(
+    'SELECT `link_rewrite` FROM `' . _DB_PREFIX_ . 'product_lang`'
+    . ' WHERE `id_product` = ' . (int) $productId . ' AND `id_lang` = ' . (int) $englishLanguageId
+    . ' AND `id_shop` = ' . (int) $shopId . ' LIMIT 1'
+);
+$englishImageLegend = (string) Db::getInstance()->getValue(
+    'SELECT `legend` FROM `' . _DB_PREFIX_ . 'image_lang`'
+    . ' WHERE `id_image` = ' . (int) ($imageIds[0] ?? 0) . ' AND `id_lang` = ' . (int) $englishLanguageId . ' LIMIT 1'
+);
 $categories = array_map('intval', Product::getProductCategories($productId));
 $createdEditor = $manager->editorData($productId);
 $createdManagedProducts = array_values(array_filter(
@@ -166,9 +179,15 @@ if (!Validate::isLoadedObject($product)
     || (int) $product->id_category_default !== $categoryId
     || !in_array($categoryId, $categories, true)
     || ($createdEditor['name_ja'] ?? '') !== 'ORDENOWA CI 合成商品'
+    || ($createdEditor['name_en'] ?? '') !== 'ORDENOWA CI Synthetic Product'
     || ($createdEditor['name_ko'] ?? '') !== 'ORDENOWA CI 합성 상품'
     || ($createdEditor['description_ja'] ?? '') !== 'CI用の商品説明'
+    || ($createdEditor['description_en'] ?? '') !== 'Synthetic English product description'
     || ($createdEditor['description_ko'] ?? '') !== 'CI용 상세 설명'
+    || (string) $englishProduct->name !== 'ORDENOWA CI Synthetic Product'
+    || strip_tags((string) $englishProduct->description) !== 'Synthetic English product description'
+    || $englishSlug !== (string) Tools::str2url('ORDENOWA CI Synthetic Product')
+    || $englishImageLegend !== 'ORDENOWA CI Synthetic Product'
     || !in_array($categoryId, $createdEditor['category_ids'] ?? [], true)
     || count($createdManagedProducts) !== 1
     || $createdManagedProducts[0]['name'] !== 'ORDENOWA CI 合成商品'
@@ -232,17 +251,20 @@ if (!$tooManyImagesRejected
 $stage = 'native product edit';
 $editedDraft = ProductAdminDraft::fromArray([
     'name_ja' => 'ORDENOWA CI 合成商品 수정',
+    'name_en' => 'ORDENOWA CI Synthetic Product edited',
     'name_ko' => 'ORDENOWA CI 합성 상품 수정',
     'price_jpy' => '1490',
     'tax_rules_group_id' => '0',
     'quantity' => '5',
     'category_ids' => [(string) $editCategoryId],
     'description_ja' => '更新した説明',
+    'description_en' => 'Updated English product description',
     'description_ko' => '수정한 상세 설명',
     'options' => "色:青|緑\nサイズ:S|M",
 ]);
 $savedProductId = $manager->save($productId, $editedDraft, [$imageUpload], [$imageIds[0]]);
 $editedProduct = new Product($savedProductId, false, $languageId, $shopId);
+$editedEnglishProduct = new Product($savedProductId, false, $englishLanguageId, $shopId);
 $editedCombinationRows = Db::getInstance()->executeS(
     'SELECT `id_product_attribute` FROM `' . _DB_PREFIX_ . 'product_attribute` WHERE `id_product` = ' . (int) $savedProductId . ' ORDER BY `id_product_attribute` ASC'
 );
@@ -276,6 +298,15 @@ $expectedEditedCombinationValueSets = ['青|S', '青|M', '緑|S', '緑|M'];
 sort($expectedEditedCombinationValueSets, SORT_STRING);
 $editedCategoryIds = array_map('intval', Product::getProductCategories($savedProductId));
 $newImageIds = $manager->imageIds($savedProductId);
+$editedEnglishSlug = (string) Db::getInstance()->getValue(
+    'SELECT `link_rewrite` FROM `' . _DB_PREFIX_ . 'product_lang`'
+    . ' WHERE `id_product` = ' . (int) $savedProductId . ' AND `id_lang` = ' . (int) $englishLanguageId
+    . ' AND `id_shop` = ' . (int) $shopId . ' LIMIT 1'
+);
+$editedEnglishImageLegend = (string) Db::getInstance()->getValue(
+    'SELECT `legend` FROM `' . _DB_PREFIX_ . 'image_lang`'
+    . ' WHERE `id_image` = ' . (int) ($newImageIds[0] ?? 0) . ' AND `id_lang` = ' . (int) $englishLanguageId . ' LIMIT 1'
+);
 $editedEditor = $manager->editorData($savedProductId);
 $editedOptionGroups = $manager->optionGroups($savedProductId, $languageId, $shopId);
 $editedManagedProducts = array_values(array_filter(
@@ -292,9 +323,15 @@ $editChecks = [
         && (string) $editedProduct->visibility === 'none'
         && !(bool) $editedProduct->available_for_order,
     'editor Japanese name' => ($editedEditor['name_ja'] ?? '') === 'ORDENOWA CI 合成商品 수정',
+    'editor English name' => ($editedEditor['name_en'] ?? '') === 'ORDENOWA CI Synthetic Product edited',
     'editor Korean name' => ($editedEditor['name_ko'] ?? '') === 'ORDENOWA CI 합성 상품 수정',
     'Japanese description' => ($editedEditor['description_ja'] ?? '') === '更新した説明',
+    'English description' => ($editedEditor['description_en'] ?? '') === 'Updated English product description',
     'Korean description' => ($editedEditor['description_ko'] ?? '') === '수정한 상세 설명',
+    'native English product name' => (string) $editedEnglishProduct->name === 'ORDENOWA CI Synthetic Product edited',
+    'native English product description' => strip_tags((string) $editedEnglishProduct->description) === 'Updated English product description',
+    'English product slug' => $editedEnglishSlug === (string) Tools::str2url('ORDENOWA CI Synthetic Product edited'),
+    'English image legend' => $editedEnglishImageLegend === 'ORDENOWA CI Synthetic Product edited',
     'category default' => (int) $editedProduct->id_category_default === $editCategoryId,
     'categories' => ($editedEditor['category_ids'] ?? []) === [$editCategoryId],
     'category association changed' => !in_array($editCategoryId, $createdEditor['category_ids'] ?? [], true),

@@ -836,11 +836,13 @@ def run() -> None:
         if not manager_page_state["product_heading"] or not manager_page_state["product_form_present"]:
             raise AssertionError("Korean product registration and management UI is missing")
         visible(driver, 'form #name_ja')
+        visible(driver, 'form #name_en')
+        visible(driver, 'form #description_en')
         if "판매 활성화 기능이 없습니다" not in driver.find_element(By.TAG_NAME, "body").text:
             raise AssertionError("the product page must state that its entries remain inactive")
         for selector in (
-            "#name_ja", "#name_ko", "#price_jpy", "#tax_rules_group_id", "#quantity", "#options",
-            "#description_ja", "#description_ko", "#product_images", 'input[name="category_ids[]"]',
+            "#name_ja", "#name_en", "#name_ko", "#price_jpy", "#tax_rules_group_id", "#quantity", "#options",
+            "#description_ja", "#description_en", "#description_ko", "#product_images", 'input[name="category_ids[]"]',
         ):
             visible(driver, selector)
         if visible(driver, "#tax_rules_group_id").get_attribute("value") != "":
@@ -856,9 +858,12 @@ def run() -> None:
         stage = "native_product_create"
         suffix = os.environ.get("GITHUB_RUN_ID", "local")
         japanese_name = f"ORDENOWA CI 合成商品 {suffix}"
+        english_name = f"ORDENOWA CI Synthetic Product {suffix}"
         korean_name = f"ORDENOWA CI 합성 상품 {suffix}"
         create_operation = "fill_name_ja"
         fill(driver, "#name_ja", japanese_name)
+        create_operation = "fill_name_en"
+        fill(driver, "#name_en", english_name)
         create_operation = "fill_name_ko"
         fill(driver, "#name_ko", korean_name)
         create_operation = "select_synthetic_tax_rules_group"
@@ -871,6 +876,8 @@ def run() -> None:
         fill(driver, "#options", "色:青|赤\nサイズ:S|M")
         create_operation = "fill_description_ja"
         fill(driver, "#description_ja", "CI用の商品説明")
+        create_operation = "fill_description_en"
+        fill(driver, "#description_en", "Synthetic English product description")
         create_operation = "fill_description_ko"
         fill(driver, "#description_ko", "CI용 상세 설명")
         create_operation = "select_default_category"
@@ -908,12 +915,14 @@ def run() -> None:
             raise AssertionError("the saved product did not receive a native PrestaShop ID")
         for selector, expected in (
             ("#name_ja", japanese_name),
+            ("#name_en", english_name),
             ("#name_ko", korean_name),
             ("#price_jpy", "1100"),
             ("#tax_rules_group_id", str(TAX_RULES_GROUP_ID)),
             ("#quantity", "0"),
             ("#options", "色:青|赤\nサイズ:S|M"),
             ("#description_ja", "CI用の商品説明"),
+            ("#description_en", "Synthetic English product description"),
             ("#description_ko", "CI용 상세 설명"),
         ):
             if visible(driver, selector).get_attribute("value") != expected:
@@ -946,6 +955,10 @@ def run() -> None:
         edit_operation = "verify_initial_edit_data"
         if visible(driver, "#name_ja").get_attribute("value") != japanese_name:
             raise AssertionError("the existing product was not loaded into the edit form")
+        if visible(driver, "#name_en").get_attribute("value") != english_name:
+            raise AssertionError("the existing English product name was not loaded into the edit form")
+        if visible(driver, "#description_en").get_attribute("value") != "Synthetic English product description":
+            raise AssertionError("the existing English product description was not loaded into the edit form")
         if visible(driver, "#tax_rules_group_id").get_attribute("value") != str(TAX_RULES_GROUP_ID):
             raise AssertionError("the selected native tax rules group was not reloaded from the saved product")
         edit_operation = "remove_old_image"
@@ -954,6 +967,8 @@ def run() -> None:
         old_image_checkbox.click()
         edit_operation = "fill_name_ja"
         fill(driver, "#name_ja", japanese_name + " 수정")
+        edit_operation = "fill_name_en"
+        fill(driver, "#name_en", english_name + " edited")
         edit_operation = "fill_name_ko"
         fill(driver, "#name_ko", korean_name + " 수정")
         if visible(driver, "#tax_rules_group_id").get_attribute("value") != str(TAX_RULES_GROUP_ID):
@@ -967,16 +982,20 @@ def run() -> None:
         fill(driver, "#options", edited_options)
         edit_operation = "fill_description_ja"
         fill(driver, "#description_ja", "更新した説明")
+        edit_operation = "fill_description_en"
+        fill(driver, "#description_en", "Updated English product description")
         edit_operation = "fill_description_ko"
         fill(driver, "#description_ko", "수정한 상세 설명")
         expected_edit_fields = {
             "#name_ja": japanese_name + " 수정",
+            "#name_en": english_name + " edited",
             "#name_ko": korean_name + " 수정",
             "#price_jpy": "1490",
             "#tax_rules_group_id": str(TAX_RULES_GROUP_ID),
             "#quantity": "5",
             "#options": edited_options,
             "#description_ja": "更新した説明",
+            "#description_en": "Updated English product description",
             "#description_ko": "수정한 상세 설명",
         }
         edit_operation = "read_edit_categories"
@@ -1039,6 +1058,8 @@ def run() -> None:
             raise AssertionError("product name edit did not persist")
         if visible(driver, "#name_ko").get_attribute("value") != korean_name + " 수정":
             raise AssertionError("Korean product name edit did not persist")
+        if visible(driver, "#name_en").get_attribute("value") != english_name + " edited":
+            raise AssertionError("English product name edit did not persist")
         if visible(driver, "#price_jpy").get_attribute("value") != "1490":
             raise AssertionError("product price edit did not persist")
         if visible(driver, "#tax_rules_group_id").get_attribute("value") != str(TAX_RULES_GROUP_ID):
@@ -1051,6 +1072,8 @@ def run() -> None:
             raise AssertionError("Japanese product detail edit did not persist")
         if visible(driver, "#description_ko").get_attribute("value") != "수정한 상세 설명":
             raise AssertionError("Korean product detail edit did not persist")
+        if visible(driver, "#description_en").get_attribute("value") != "Updated English product description":
+            raise AssertionError("English product detail edit did not persist")
         saved_category_ids = {
             checkbox.get_attribute("value")
             for checkbox in driver.find_elements(By.CSS_SELECTOR, 'input[name="category_ids[]"]')

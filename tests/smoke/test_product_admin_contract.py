@@ -15,6 +15,31 @@ MODULE = ROOT / "modules" / "kuraneacatalog"
 
 
 class ProductAdminContractTests(unittest.TestCase):
+    def test_product_manager_round_trips_english_fields_alongside_japanese_and_korean(self) -> None:
+        draft = (MODULE / "src" / "Domain" / "ProductAdminDraft.php").read_text(encoding="utf-8")
+        controller = (MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php").read_text(encoding="utf-8")
+        service = (MODULE / "src" / "Integration" / "PrestaShopNativeProductManager.php").read_text(encoding="utf-8")
+        persistence = (ROOT / "tests" / "catalog" / "verify_native_product_admin.php").read_text(encoding="utf-8")
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+
+        for expected in ("nameEn", "descriptionEn", "name_en", "description_en"):
+            with self.subTest(draft=expected):
+                self.assertIn(expected, draft)
+        self.assertIn("$values['name_en'] ?? ''", draft)
+        self.assertIn("$values['description_en'] ?? ''", draft)
+        for expected in ('Tools::getValue(\'name_en\'', 'Tools::getValue(\'description_en\'', 'renderTextField(\'name_en\'', 'renderTextArea(\'description_en\''):
+            with self.subTest(controller=expected):
+                self.assertIn(expected, controller)
+        for expected in ("'en' => null", "'name_en'", "'description_en'", "$draft->nameEn", "$draft->descriptionEn"):
+            with self.subTest(service=expected):
+                self.assertIn(expected, service)
+        for expected in ("name_en", "description_en", "English name", "English description", "link_rewrite", "image_lang", "English image legend"):
+            with self.subTest(persistence=expected):
+                self.assertIn(expected, persistence)
+        for expected in ('#name_en', '#description_en', 'fill(driver, "#name_en"', 'fill(driver, "#description_en"'):
+            with self.subTest(browser=expected):
+                self.assertIn(expected, browser)
+
     def test_global_admin_controller_qualifies_builtin_exception_without_global_import(self) -> None:
         controller = (MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php").read_text(encoding="utf-8")
 
@@ -31,6 +56,7 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("Tab::getIdFromClassName('ShopParameters')", module)
         self.assertIn("상품 등록·관리", module)
         self.assertIn("상품명 (일본어)", controller)
+        self.assertIn("상품명 (영어)", controller)
         self.assertIn("상품명 (한국어)", controller)
         self.assertIn("상세 설명", controller)
         self.assertIn("상품 이미지", controller)
@@ -159,7 +185,7 @@ class ProductAdminContractTests(unittest.TestCase):
             "tests/catalog/verify_native_product_admin.php",
             "tests/e2e/verify_product_admin_browser.py",
             "product-admin-e2e.log",
-            "Verify Japanese and Korean native product draft validation in PHP",
+            "Verify Japanese, English, and Korean native product draft validation in PHP",
         ):
             with self.subTest(workflow=expected):
                 self.assertIn(expected, workflow)
@@ -695,11 +721,16 @@ class ProductAdminContractTests(unittest.TestCase):
             edit_flow,
             "Chromium must verify the edited Korean name on the same product record",
         )
+        self.assertIn(
+            'if visible(driver, "#description_en").get_attribute("value") != "Synthetic English product description":',
+            edit_flow,
+            "Chromium must confirm the saved English description is reloaded before editing it",
+        )
         self.assertIn('edited_links = product_links(driver, product_id)', edit_flow)
         self.assertIn('edited_links[0].find_element(By.XPATH, "./ancestor::li[contains(@class, \'well\')]")', edit_flow)
         self.assertIn('f"ID {product_id}"', edit_flow)
 
-    def test_browser_product_create_reads_back_both_localized_descriptions(self) -> None:
+    def test_browser_product_create_reads_back_ja_en_ko_descriptions(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
         create_flow = browser.split('stage = "native_product_create"', 1)[1].split(
             'stage = "native_product_edit"', 1
@@ -707,6 +738,7 @@ class ProductAdminContractTests(unittest.TestCase):
         persisted_fields = create_flow.split("for selector, expected in (", 1)[1].split("):", 1)[0]
 
         self.assertIn('("#description_ja", "CI用の商品説明")', persisted_fields)
+        self.assertIn('("#description_en", "Synthetic English product description")', persisted_fields)
         self.assertIn('("#description_ko", "CI용 상세 설명")', persisted_fields)
 
     def test_browser_category_fixture_uses_home_and_excludes_technical_root(self) -> None:

@@ -16,12 +16,14 @@ final class ProductAdminDraft
      */
     private function __construct(
         public readonly string $nameJa,
+        public readonly string $nameEn,
         public readonly string $nameKo,
         public readonly int $priceJpy,
         public readonly int $taxRulesGroupId,
         public readonly int $quantity,
         public readonly array $categoryIds,
         public readonly string $descriptionJa,
+        public readonly string $descriptionEn,
         public readonly string $descriptionKo,
         public readonly array $optionGroups,
         public readonly array $combinationQuantities
@@ -32,6 +34,10 @@ final class ProductAdminDraft
     public static function fromArray(array $values): self
     {
         $nameJa = self::text($values['name_ja'] ?? null, '일본어 상품명', 128, true, true);
+        $nameEn = self::text($values['name_en'] ?? '', '영어 상품명', 128, false, true);
+        if ($nameEn === '') {
+            $nameEn = $nameJa;
+        }
         $nameKo = self::text($values['name_ko'] ?? null, '한국어 상품명', 128, false, true);
         if ($nameKo === '') {
             $nameKo = $nameJa;
@@ -85,6 +91,10 @@ final class ProductAdminDraft
         }
 
         $descriptionJa = self::text($values['description_ja'] ?? null, '일본어 상세 설명', 20000, false);
+        $descriptionEn = self::text($values['description_en'] ?? '', '영어 상세 설명', 20000, false);
+        if ($descriptionEn === '') {
+            $descriptionEn = $descriptionJa;
+        }
         $descriptionKo = self::text($values['description_ko'] ?? null, '한국어 상세 설명', 20000, false);
         if ($descriptionKo === '') {
             $descriptionKo = $descriptionJa;
@@ -92,12 +102,14 @@ final class ProductAdminDraft
 
         return new self(
             $nameJa,
+            $nameEn,
             $nameKo,
             (int) $priceValue,
             (int) $taxRulesGroupValue,
             (int) $quantityValue,
             $categoryIds,
             $descriptionJa,
+            $descriptionEn,
             $descriptionKo,
             self::parseOptionGroups($values['options'] ?? ''),
             self::parseCombinationQuantities($values['combination_quantities'] ?? [])

@@ -15,6 +15,7 @@ on:
       - 'modules/kuraneabusinessprofile/**'
       - 'modules/kuraneacatalog/**'
       - 'tests/business_profile/**'
+      - 'tests/admin_locale/**'
       - 'tests/catalog/**'
       - 'assets/brand/ordenowa/**'
       - 'tests/smoke/fresh_install.sh'
@@ -64,6 +65,7 @@ on:
       - 'modules/kuraneabusinessprofile/**'
       - 'modules/kuraneacatalog/**'
       - 'tests/business_profile/**'
+      - 'tests/admin_locale/**'
       - 'tests/catalog/**'
       - 'assets/brand/ordenowa/**'
       - 'tests/smoke/fresh_install.sh'
@@ -146,7 +148,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard -v
 
       - name: Verify isolated unpaid checkout contracts
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract tests.business_profile.test_shipping_admin_links_contract -v
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract tests.business_profile.test_shipping_admin_links_contract tests.admin_locale.test_admin_locale_overlay -v
 
       - name: Verify Korean native product manager contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_product_admin_contract -v
@@ -210,7 +212,7 @@ jobs:
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             runuser -g www-data -u www-data -- php /tmp/verify_catalog_installation.php
 
-      - name: Verify Japanese and Korean native product draft validation in PHP
+      - name: Verify Japanese, English, and Korean native product draft validation in PHP
         shell: bash
         run: |
           set -euo pipefail
@@ -219,7 +221,7 @@ jobs:
             < tests/catalog/product_admin_draft.php
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             runuser -g www-data -u www-data -- php -r \
-            'require "/var/www/html/modules/kuraneacatalog/autoload.php"; require "/tmp/product_admin_draft.php"; echo "PASS: Japanese and Korean product draft boundaries.\n";'
+            'require "/var/www/html/modules/kuraneacatalog/autoload.php"; require "/tmp/product_admin_draft.php"; echo "PASS: Japanese, English, and Korean product draft boundaries.\n";'
 
       - name: Verify native inactive Korean admin product create and edit persistence
         shell: bash

@@ -110,12 +110,14 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
     {
         return [
             'name_ja' => Tools::getValue('name_ja', ''),
+            'name_en' => Tools::getValue('name_en', ''),
             'name_ko' => Tools::getValue('name_ko', ''),
             'price_jpy' => Tools::getValue('price_jpy', ''),
             'tax_rules_group_id' => Tools::getValue('tax_rules_group_id', null),
             'quantity' => Tools::getValue('quantity', '0'),
             'category_ids' => Tools::getValue('category_ids', []),
             'description_ja' => Tools::getValue('description_ja', ''),
+            'description_en' => Tools::getValue('description_en', ''),
             'description_ko' => Tools::getValue('description_ko', ''),
             'options' => Tools::getValue('options', ''),
             'combination_quantities' => Tools::getValue('combination_quantities', []),
@@ -162,6 +164,7 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
             . '<input type="hidden" name="token" value="' . $this->escape($token) . '">'
             . '<input type="hidden" name="id_product" value="' . $this->editorProductId . '">'
             . $this->renderTextField('name_ja', '상품명 (일본어)', (string) ($values['name_ja'] ?? ''), true, '예: ORDENOWA CI 合成商品')
+            . $this->renderTextField('name_en', '상품명 (영어)', (string) ($values['name_en'] ?? ''), false, '영어 고객 화면에 표시할 상품명입니다. 비워 두면 일본어 상품명을 사용합니다.')
             . $this->renderTextField('name_ko', '상품명 (한국어)', (string) ($values['name_ko'] ?? ''), false, '고객 언어별 상품명을 입력합니다.')
             . $this->renderTaxRulesGroupField($taxRulesGroups, $selectedTaxRulesGroupId)
             . $this->renderTextField('price_jpy', '세금 포함 판매 가격 (JPY)', (string) ($values['price_jpy'] ?? ''), true, '고객에게 표시할 세금 포함 가격입니다. 선택한 일본 세금 규칙 그룹으로 세전 금액을 환산합니다. 주소별 세율이 달라 하나의 가격으로 환산할 수 없으면 저장이 차단됩니다.')
@@ -173,6 +176,7 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
                 (array) ($values['combination_quantities'] ?? [])
             )
             . $this->renderTextArea('description_ja', '상세 설명 (일본어)', (string) ($values['description_ja'] ?? ''), '텍스트로 입력하며 HTML은 실행되지 않습니다.')
+            . $this->renderTextArea('description_en', '상세 설명 (영어)', (string) ($values['description_en'] ?? ''), '영어 고객 화면에 표시할 상세 설명입니다. 비워 두면 일본어 상세 설명을 사용합니다.')
             . $this->renderTextArea('description_ko', '상세 설명 (한국어)', (string) ($values['description_ko'] ?? ''), '비워 두면 일본어 상세 설명을 사용합니다.')
             . $this->renderImages($imageIds, $this->selectedImageIds)
             . '<div class="form-group"><button class="btn btn-primary" type="submit" name="submitKuraneaProductSave" value="1">'
@@ -324,12 +328,14 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
     {
         return [
             'name_ja' => '',
+            'name_en' => '',
             'name_ko' => '',
             'price_jpy' => '',
             'tax_rules_group_id' => '',
             'quantity' => '0',
             'category_ids' => [],
             'description_ja' => '',
+            'description_en' => '',
             'description_ko' => '',
             'options' => '',
             'image_ids' => [],

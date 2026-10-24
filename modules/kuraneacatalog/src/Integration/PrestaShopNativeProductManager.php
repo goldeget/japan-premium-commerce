@@ -116,7 +116,7 @@ final class PrestaShopNativeProductManager
                 ON pl.`id_lang` = l.`id_lang` AND pl.`id_product` = ' . (int) $productId . ' AND pl.`id_shop` = ' . (int) $shopId . '
             WHERE l.`active` = 1
         ');
-        $localized = ['ja' => null, 'ko' => null];
+        $localized = ['ja' => null, 'en' => null, 'ko' => null];
         foreach (is_array($rows) ? $rows : [] as $row) {
             $iso = (string) ($row['iso_code'] ?? '');
             if (array_key_exists($iso, $localized)) {
@@ -126,8 +126,10 @@ final class PrestaShopNativeProductManager
         $fallbackName = is_array($product->name) ? (string) reset($product->name) : (string) $product->name;
         $fallbackDescription = is_array($product->description) ? (string) reset($product->description) : (string) $product->description;
         $nameJa = (string) ($localized['ja']['name'] ?? $fallbackName);
+        $nameEn = (string) ($localized['en']['name'] ?? $nameJa);
         $nameKo = (string) ($localized['ko']['name'] ?? $nameJa);
         $descriptionJa = $this->htmlToPlainText((string) ($localized['ja']['description'] ?? $fallbackDescription));
+        $descriptionEn = $this->htmlToPlainText((string) ($localized['en']['description'] ?? $descriptionJa));
         $descriptionKo = $this->htmlToPlainText((string) ($localized['ko']['description'] ?? $descriptionJa));
         $combinationStockRows = $this->combinationStockRows($productId, $languageId, $shopId);
         // The default is the product-level stock row; variant stocks remain
@@ -143,11 +145,13 @@ final class PrestaShopNativeProductManager
         return [
             'id_product' => $productId,
             'name_ja' => $nameJa,
+            'name_en' => $nameEn,
             'name_ko' => $nameKo,
             'price_jpy' => (int) \Tools::ps_round($taxCalculator->addTaxes((float) $product->price), 0),
             'tax_rules_group_id' => $taxRulesGroupId,
             'quantity' => $quantity,
             'description_ja' => $descriptionJa,
+            'description_en' => $descriptionEn,
             'description_ko' => $descriptionKo,
             'category_ids' => array_map('intval', \Product::getProductCategories($productId)),
             'options' => $this->optionText($productId, $languageId, $shopId),
@@ -255,16 +259,18 @@ final class PrestaShopNativeProductManager
         }
 
         $languages = \Language::getLanguages(false);
-        $product->name = $this->localizedValues($languages, $draft->nameJa, $draft->nameKo);
+        $product->name = $this->localizedValues($languages, $draft->nameJa, $draft->nameEn, $draft->nameKo);
         $product->link_rewrite = $this->localizedSlugs($languages, $draft);
         $product->description = $this->localizedValues(
             $languages,
             $this->plainTextToHtml($draft->descriptionJa),
+            $this->plainTextToHtml($draft->descriptionEn),
             $this->plainTextToHtml($draft->descriptionKo)
         );
         $product->description_short = $this->localizedValues(
             $languages,
             $this->plainTextToHtml($draft->descriptionJa),
+            $this->plainTextToHtml($draft->descriptionEn),
             $this->plainTextToHtml($draft->descriptionKo)
         );
         $product->price = $priceTaxExcluded;
@@ -687,7 +693,7 @@ final class PrestaShopNativeProductManager
             $image->id_product = $productId;
             $image->position = \Image::getHighestPosition($productId) + 1;
             $image->cover = !\Image::getCover($productId, $shopId);
-            $image->legend = $this->localizedValues(\Language::getLanguages(false), $draft->nameJa, $draft->nameKo);
+            $image->legend = $this->localizedValues(\Language::getLanguages(false), $draft->nameJa, $draft->nameEn, $draft->nameKo);
             if (!$image->add() || !$image->associateTo([$shopId], $productId)) {
                 throw new RuntimeException('상품 이미지 연결을 저장하지 못했습니다.');
             }
@@ -737,7 +743,7 @@ final class PrestaShopNativeProductManager
     /** @param list<array<string, mixed>> $languages
      *  @return array<int,string>
      */
-    private function localizedValues(array $languages, string $japanese, string $korean): array
+    private function localizedValues(array $languages, string $japanese, string $english, string $korean): array
     {
         $values = [];
         foreach ($languages as $language) {
@@ -748,6 +754,7 @@ final class PrestaShopNativeProductManager
             $iso = (string) ($language['iso_code'] ?? '');
             $values[$id] = match ($iso) {
                 'ko' => $korean,
+                'en' => $english,
                 'ja' => $japanese,
                 default => $japanese,
             };
@@ -770,7 +777,11 @@ final class PrestaShopNativeProductManager
             if ($id < 1) {
                 continue;
             }
-            $source = (string) (($language['iso_code'] ?? '') === 'ko' ? $draft->nameKo : $draft->nameJa);
+            $source = match ((string) ($language['iso_code'] ?? '')) {
+                'en' => $draft->nameEn,
+                'ko' => $draft->nameKo,
+                default => $draft->nameJa,
+            };
             $slug = (string) \Tools::str2url($source);
             $values[$id] = $slug !== ''
                 ? (string) \Tools::substr($slug, 0, 128)

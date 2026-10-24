@@ -13,27 +13,42 @@ function assertProductDraftSame(mixed $expected, mixed $actual, string $message)
 
 $draft = ProductAdminDraft::fromArray([
     'name_ja' => 'CI 合成商品',
+    'name_en' => 'CI Synthetic Product',
     'name_ko' => 'CI 합성 상품',
     'price_jpy' => '1280',
     'tax_rules_group_id' => '0',
     'quantity' => '6',
     'category_ids' => ['2', '4'],
     'description_ja' => "日本語の商品説明\n2行目",
+    'description_en' => "English product description\nSecond line",
     'description_ko' => "한국어 상품 설명\n둘째 줄",
     'options' => "色:青|赤\nサイズ:S|M",
 ]);
 
 assertProductDraftSame('CI 合成商品', $draft->nameJa, 'Product drafts should retain the Japanese product name.');
+assertProductDraftSame('CI Synthetic Product', $draft->nameEn, 'Product drafts should retain the English product name.');
 assertProductDraftSame('CI 합성 상품', $draft->nameKo, 'Product drafts should retain the Korean product name.');
 assertProductDraftSame(1280, $draft->priceJpy, 'Product drafts should use integer JPY prices.');
 assertProductDraftSame(0, $draft->taxRulesGroupId, 'Product drafts should retain an explicit no-tax group selection.');
 assertProductDraftSame(6, $draft->quantity, 'Product drafts should retain stock quantity.');
 assertProductDraftSame([2, 4], $draft->categoryIds, 'Product drafts should normalize category identifiers.');
+assertProductDraftSame("English product description\nSecond line", $draft->descriptionEn, 'Product drafts should retain the English description.');
 assertProductDraftSame([
     ['name' => '色', 'values' => ['青', '赤']],
     ['name' => 'サイズ', 'values' => ['S', 'M']],
 ], $draft->optionGroups, 'Product drafts should parse native option groups and values.');
 assertProductDraftSame([], $draft->combinationQuantities, 'Product drafts without a posted variant map should retain the legacy shared quantity behavior.');
+
+$englishFallbackDraft = ProductAdminDraft::fromArray([
+    'name_ja' => '旧呼称',
+    'price_jpy' => '1280',
+    'tax_rules_group_id' => '0',
+    'quantity' => '1',
+    'category_ids' => ['2'],
+    'description_ja' => '日本語のみの旧商品説明',
+]);
+assertProductDraftSame('旧呼称', $englishFallbackDraft->nameEn, 'Legacy callers without English product names should fall back to Japanese.');
+assertProductDraftSame('日本語のみの旧商品説明', $englishFallbackDraft->descriptionEn, 'Legacy callers without English descriptions should fall back to Japanese.');
 
 $variantDraft = ProductAdminDraft::fromArray([
     'name_ja' => 'CI 合成商品',
@@ -59,6 +74,7 @@ assertProductDraftSame(
 
 $boundaryDraft = ProductAdminDraft::fromArray([
     'name_ja' => str_repeat('日', 128),
+    'name_en' => str_repeat('E', 128),
     'name_ko' => str_repeat('한', 128),
     'price_jpy' => '1280',
     'tax_rules_group_id' => '0',
@@ -69,6 +85,7 @@ $boundaryDraft = ProductAdminDraft::fromArray([
     'options' => str_repeat('옵', 64) . ':' . str_repeat('値', 128),
 ]);
 assertProductDraftSame(128, mb_strlen($boundaryDraft->nameJa, 'UTF-8'), 'Japanese product names should allow the native 128-character limit.');
+assertProductDraftSame(128, mb_strlen($boundaryDraft->nameEn, 'UTF-8'), 'English product names should allow the native 128-character limit.');
 assertProductDraftSame(128, mb_strlen($boundaryDraft->nameKo, 'UTF-8'), 'Korean product names should allow the native 128-character limit.');
 assertProductDraftSame(64, mb_strlen($boundaryDraft->optionGroups[0]['name'], 'UTF-8'), 'Korean option group names should use character limits.');
 assertProductDraftSame(128, mb_strlen($boundaryDraft->optionGroups[0]['values'][0], 'UTF-8'), 'Japanese option values should use character limits.');
@@ -87,6 +104,7 @@ foreach ([
     ['options' => "壊れた書式"],
     ['options' => "色:青|赤\nサイズ:S|M\n素材:綿|絹\n形:小|大"],
     ['name_ja' => str_repeat('日', 129)],
+    ['name_en' => str_repeat('E', 129)],
     ['name_ko' => str_repeat('한', 129)],
     ['options' => str_repeat('옵', 65) . ':値'],
     ['options' => '色:' . str_repeat('赤', 129)],
