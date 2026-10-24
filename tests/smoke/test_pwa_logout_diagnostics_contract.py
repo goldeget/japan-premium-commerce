@@ -1611,6 +1611,164 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         )
         self.assertIn("validate_logged_out_navigation_trace(", logout)
 
+    def test_empty_order_redirect_requires_cart_destination_and_safe_cache_policies(self) -> None:
+        trace = {
+            "observed": True,
+            "redirects_truncated": False,
+            "initial_target": {
+                "path": "/en/index.php",
+                "controller": "order",
+                "private_customer_route": True,
+            },
+            "redirects": [
+                {
+                    "status": 302,
+                    "target": {"path": "/en/order", "controller": "order"},
+                    "location_matches_next_request": True,
+                    "private_cache_policy": False,
+                    "revalidation_cache_policy": True,
+                    "from_service_worker": False,
+                    "from_disk_cache": False,
+                    "from_prefetch_cache": False,
+                    "request_served_from_cache": False,
+                    "service_worker_source": "network",
+                },
+                {
+                    "status": 302,
+                    "target": {"path": "/en/cart", "controller": "cart"},
+                    "location_matches_next_request": True,
+                    "private_cache_policy": True,
+                    "revalidation_cache_policy": True,
+                    "from_service_worker": False,
+                    "from_disk_cache": False,
+                    "from_prefetch_cache": False,
+                    "request_served_from_cache": False,
+                    "service_worker_source": "network",
+                },
+            ],
+            "final": {
+                "status": 200,
+                "target": {"path": "/en/cart", "controller": "cart"},
+                "private_cache_policy": True,
+                "revalidation_cache_policy": True,
+                "from_service_worker": False,
+                "from_disk_cache": False,
+                "from_prefetch_cache": False,
+                "request_served_from_cache": False,
+                "service_worker_source": "network",
+            },
+        }
+        validate = getattr(
+            pwa_browser,
+            "validate_logged_out_empty_order_cart_navigation_trace",
+            None,
+        )
+        self.assertTrue(callable(validate), "the empty checkout trace needs a dedicated validator")
+        validate(trace)
+
+        trace["redirects"][0]["revalidation_cache_policy"] = False
+        with self.assertRaisesRegex(AssertionError, "canonical empty-order redirect"):
+            validate(trace)
+
+        trace["redirects"][0]["revalidation_cache_policy"] = True
+        trace["final"]["target"] = {"path": "/en/order", "controller": "order"}
+        with self.assertRaisesRegex(AssertionError, "cart"):
+            validate(trace)
+
+    def test_empty_order_browser_trace_distinguishes_rewrite_from_private_cart_responses(self) -> None:
+        shop_url = "http://localhost:18080"
+        requested_url = shop_url + "/en/index.php?controller=order"
+        canonical_url = shop_url + "/en/order"
+        cart_url = shop_url + "/en/cart?action=show"
+        events = [
+            {
+                "method": "Network.requestWillBeSent",
+                "params": {
+                    "requestId": "empty-order-request",
+                    "loaderId": "empty-order-loader",
+                    "frameId": "main-frame",
+                    "type": "Document",
+                    "request": {"url": requested_url, "method": "GET"},
+                },
+            },
+            {
+                "method": "Network.requestWillBeSent",
+                "params": {
+                    "requestId": "empty-order-request",
+                    "loaderId": "empty-order-loader",
+                    "frameId": "main-frame",
+                    "type": "Document",
+                    "redirectResponse": {
+                        "url": requested_url,
+                        "status": 302,
+                        "headers": {
+                            "Location": canonical_url,
+                            "Cache-Control": "no-cache",
+                            "Pragma": "no-cache",
+                            "Expires": "0",
+                        },
+                        "fromServiceWorker": False,
+                        "fromDiskCache": False,
+                        "fromPrefetchCache": False,
+                    },
+                    "request": {"url": canonical_url, "method": "GET"},
+                },
+            },
+            {
+                "method": "Network.requestWillBeSent",
+                "params": {
+                    "requestId": "empty-order-request",
+                    "loaderId": "empty-order-loader",
+                    "frameId": "main-frame",
+                    "type": "Document",
+                    "redirectResponse": {
+                        "url": canonical_url,
+                        "status": 302,
+                        "headers": {
+                            "Location": cart_url,
+                            "Cache-Control": "private, no-store, max-age=0",
+                        },
+                        "fromServiceWorker": False,
+                        "fromDiskCache": False,
+                        "fromPrefetchCache": False,
+                    },
+                    "request": {"url": cart_url, "method": "GET"},
+                },
+            },
+            {
+                "method": "Network.responseReceived",
+                "params": {
+                    "requestId": "empty-order-request",
+                    "loaderId": "empty-order-loader",
+                    "frameId": "main-frame",
+                    "type": "Document",
+                    "response": {
+                        "url": cart_url,
+                        "status": 200,
+                        "headers": {"Cache-Control": "private, no-store, max-age=0"},
+                        "fromServiceWorker": False,
+                        "fromDiskCache": False,
+                        "fromPrefetchCache": False,
+                    },
+                },
+            },
+        ]
+
+        trace = pwa_browser.safe_document_navigation_trace(
+            events, requested_url, shop_url, "main-frame"
+        )
+
+        self.assertFalse(trace["redirects"][0]["private_cache_policy"])
+        self.assertTrue(trace["redirects"][0]["revalidation_cache_policy"])
+        self.assertTrue(trace["redirects"][1]["private_cache_policy"])
+        self.assertTrue(trace["final"]["private_cache_policy"])
+        pwa_browser.validate_logged_out_empty_order_cart_navigation_trace(trace)
+        self.assertIn("redirect1_revalidation_cache_policy=true", pwa_browser._format_navigation_trace(trace))
+
+        trace["redirects"][0]["from_disk_cache"] = None
+        with self.assertRaisesRegex(AssertionError, "cache provenance is unavailable"):
+            pwa_browser.validate_logged_out_empty_order_cart_navigation_trace(trace)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -346,7 +346,8 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
             "history",
             "identity",
             "my-account",
-            "내-계정",
+            "マイアカウント",
+            "내 계정",
             "order",
             "order-confirmation",
             "order-detail",
@@ -368,6 +369,25 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
                     url=f"http://localhost:18080{target}",
                     offline=False,
                     language="ko-KR",
+                )
+
+                self.assertIs(result["intercepted"], False)
+                self.assertEqual(0, result["fetchCalls"])
+                self.assertEqual(0, result["cacheOpenCalls"])
+
+    def test_generated_japanese_and_korean_account_paths_bypass_service_worker(self) -> None:
+        paths = (
+            "/ja/%E3%83%9E%E3%82%A4%E3%82%A2%E3%82%AB%E3%82%A6%E3%83%B3%E3%83%88",
+            "/ko/%EB%82%B4%20%EA%B3%84%EC%A0%95",
+        )
+        for path in paths:
+            with self.subTest(path=path):
+                result = self.run_worker(
+                    method="GET",
+                    mode="navigate",
+                    url=f"http://localhost:18080{path}",
+                    offline=False,
+                    language="ja-JP" if path.startswith("/ja/") else "ko-KR",
                 )
 
                 self.assertIs(result["intercepted"], False)
@@ -408,7 +428,7 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
         for target in (
             "http://localhost:18080/ko/identity",
             "http://localhost:18080/ko/order-detail",
-            "http://localhost:18080/ko/%EB%82%B4-%EA%B3%84%EC%A0%95",
+            "http://localhost:18080/ko/%EB%82%B4%20%EA%B3%84%EC%A0%95",
             "http://localhost:18080/index.php?controller=identity",
             "http://localhost:18080/index.php?controller=order-detail",
         ):
@@ -1024,21 +1044,26 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         self.assertIn('div.dropdown-menu[aria-labelledby="userMenuButton"] a[href]', account_link)
         self.assertIn("if not same_origin(base_url, account_url):", account_link)
 
-    def test_confirmed_korean_account_route_is_private_and_safely_classified(self) -> None:
-        account_url = "http://localhost:18080/ko/%EB%82%B4-%EA%B3%84%EC%A0%95"
+    def test_confirmed_japanese_and_korean_account_routes_are_private_and_safely_classified(self) -> None:
+        shop_url = "http://localhost:18080"
+        routes = (
+            (
+                "http://localhost:18080/ja/%E3%83%9E%E3%82%A4%E3%82%A2%E3%82%AB%E3%82%A6%E3%83%B3%E3%83%88",
+                "/ja/マイアカウント",
+            ),
+            (
+                "http://localhost:18080/ko/%EB%82%B4%20%EA%B3%84%EC%A0%95",
+                "/ko/내 계정",
+            ),
+        )
 
-        self.assertTrue(
-            pwa_browser.is_private_customer_back_target(
-                account_url, "http://localhost:18080"
-            )
-        )
-        self.assertEqual(
-            "account",
-            pwa_browser.customer_route_class(account_url, "http://localhost:18080"),
-        )
-        metadata = pwa_browser.safe_navigation_target(account_url, "http://localhost:18080")
-        self.assertEqual("/ko/내-계정", metadata["path"])
-        self.assertIs(metadata["private_customer_route"], True)
+        for account_url, safe_path in routes:
+            with self.subTest(safe_path=safe_path):
+                self.assertTrue(pwa_browser.is_private_customer_back_target(account_url, shop_url))
+                self.assertEqual("account", pwa_browser.customer_route_class(account_url, shop_url))
+                metadata = pwa_browser.safe_navigation_target(account_url, shop_url)
+                self.assertEqual(safe_path, metadata["path"])
+                self.assertIs(metadata["private_customer_route"], True)
 
     def test_locale_controller_url_preserves_path_and_query_locale_selectors(self) -> None:
         shop_url = "http://shop.example.test/store"
@@ -1100,16 +1125,24 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         self.assertIn("localized_controller_url(", viewport)
         self.assertIn('"index.php?controller=my-account"', viewport)
         self.assertIn('"index.php?controller=cart&action=show"', viewport)
-        self.assertIn('"index.php?controller=order"', viewport)
+        self.assertIn('"index.php?controller=order-detail"', viewport)
         self.assertNotIn('driver.get(urljoin(base_url + "/", route))', viewport)
         self.assertIn("if not is_private_customer_back_target(account_url, base_url):", viewport)
         self.assertIn('if customer_route_class(account_url, base_url) != "account":', viewport)
         self.assertIn("navigate_private_document(", viewport)
-        self.assertIn('if route_stage in {"guest_account_route", "guest_order_route"}', viewport)
+        self.assertIn('if route_stage in {"guest_account_route", "guest_order_detail_route"}', viewport)
         self.assertIn('observed.get("status") != 302', viewport)
         self.assertIn("validate_logged_out_navigation_trace(", viewport)
         self.assertIn('observed.get("navigation_trace")', viewport)
         self.assertIn("wait_for_logout_login_form(driver, base_url)", viewport)
+
+    def test_guest_empty_checkout_is_checked_as_a_private_cart_redirect(self) -> None:
+        viewport = function_source(self.source, "run_viewport")
+
+        self.assertIn("validate_logged_out_empty_order_cart_navigation_trace(", viewport)
+        self.assertIn('cache_policy_final_document=True', viewport)
+        self.assertIn("wait_for_empty_cart(driver)", viewport)
+        self.assertIn('assert_empty_cache_storage(driver, "guest empty checkout")', viewport)
 
     def test_logout_and_history_require_login_form_and_check_both_test_names(self) -> None:
         logout = function_source(self.source, "verify_logout_protection")
@@ -1627,7 +1660,8 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
             "guest_authentication_route",
             "guest_account_route",
             "guest_cart_route",
-            "guest_order_route",
+            "guest_order_detail_route",
+            "guest_empty_checkout_route",
             "chrome_shutdown",
         ):
             with self.subTest(stage=stage):

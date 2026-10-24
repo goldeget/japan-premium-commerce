@@ -62,7 +62,8 @@ PWA_DIAGNOSTIC_ROUTE_SEGMENTS = {
     "history",
     "identity",
     "index.php",
-    "내-계정",
+    "マイアカウント",
+    "내 계정",
     *PWA_DIAGNOSTIC_AUTH_ROUTE_SEGMENTS,
     "my-account",
     "order",
@@ -104,7 +105,8 @@ PWA_PRIVATE_CUSTOMER_ROUTES = {
     "history",
     "identity",
     "my-account",
-    "내-계정",
+    "マイアカウント",
+    "내 계정",
     "order",
     "order-confirmation",
     "order-detail",
@@ -542,6 +544,8 @@ def customer_route_class(candidate_url: str, shop_url: str) -> str:
         return "authentication"
     if controller in {
         "my-account",
+        "マイアカウント",
+        "내 계정",
         "identity",
         "addresses",
         "address",
@@ -553,7 +557,8 @@ def customer_route_class(candidate_url: str, shop_url: str) -> str:
     } or any(
         segment in {
             "my-account",
-            "내-계정",
+            "マイアカウント",
+            "내 계정",
             "account",
             "identity",
             "addresses",
@@ -877,6 +882,9 @@ def _safe_response_cache_provenance(response: dict[str, object]) -> dict[str, ob
         "private_cache_policy": (
             response_has_private_cache_policy(headers) if isinstance(headers, dict) else None
         ),
+        "revalidation_cache_policy": (
+            response_has_revalidation_policy(headers) if isinstance(headers, dict) else None
+        ),
         "service_worker_source": (
             source if isinstance(source, str) and source in PWA_DIAGNOSTIC_WORKER_SOURCES else None
         ),
@@ -1107,6 +1115,7 @@ def _format_navigation_trace(value: object) -> str:
             formatted += f";redirect{index}_prefetch_cache={_diagnostic_boolean(redirect.get('from_prefetch_cache'))}"
             formatted += f";redirect{index}_request_cache={_diagnostic_boolean(redirect.get('request_served_from_cache'))}"
             formatted += f";redirect{index}_private_cache_policy={_diagnostic_boolean(redirect.get('private_cache_policy'))}"
+            formatted += f";redirect{index}_revalidation_cache_policy={_diagnostic_boolean(redirect.get('revalidation_cache_policy'))}"
             source = redirect.get("service_worker_source")
             if isinstance(source, str) and source in PWA_DIAGNOSTIC_WORKER_SOURCES:
                 formatted += f";redirect{index}_worker_source={source}"
@@ -1242,6 +1251,76 @@ def validate_logged_out_navigation_trace(
             raise AssertionError("native redirect hop did not follow a private back route")
     elif any(step.get("from_service_worker") is not False for step in worker_steps if isinstance(step, dict)):
         raise AssertionError("logged-out navigation provenance did not match network without service worker mode")
+
+
+def validate_logged_out_empty_order_cart_navigation_trace(trace: object) -> None:
+    """Require the empty checkout route to end at a private cart without cached customer data."""
+    if not isinstance(trace, dict) or trace.get("observed") is not True:
+        raise AssertionError("logged-out empty checkout navigation was not observed")
+    if trace.get("redirects_truncated") is True:
+        raise AssertionError("logged-out empty checkout redirect chain is incomplete")
+
+    initial = _safe_navigation_target_metadata(trace.get("initial_target"))
+    if initial.get("controller") != "order":
+        raise AssertionError("logged-out empty checkout did not start at the order controller")
+
+    redirects = trace.get("redirects")
+    redirects = redirects if isinstance(redirects, list) else []
+    if len(redirects) != 2:
+        raise AssertionError("logged-out empty checkout did not follow its canonical cart redirects")
+    canonical_order, empty_cart = redirects
+    if not isinstance(canonical_order, dict) or canonical_order.get("status") != 302:
+        raise AssertionError("canonical empty-order redirect did not return HTTP 302")
+    canonical_target = _safe_navigation_target_metadata(canonical_order.get("target"))
+    if (
+        canonical_target.get("controller") != "order"
+        or canonical_order.get("location_matches_next_request") is not True
+    ):
+        raise AssertionError("canonical empty-order redirect changed the requested route")
+    if (
+        canonical_order.get("private_cache_policy") is not True
+        and canonical_order.get("revalidation_cache_policy") is not True
+    ):
+        raise AssertionError("canonical empty-order redirect lacks a no-store or no-cache policy")
+
+    if not isinstance(empty_cart, dict) or empty_cart.get("status") != 302:
+        raise AssertionError("empty checkout did not redirect to the cart")
+    cart_target = _safe_navigation_target_metadata(empty_cart.get("target"))
+    if (
+        cart_target.get("controller") != "cart"
+        or empty_cart.get("location_matches_next_request") is not True
+        or empty_cart.get("private_cache_policy") is not True
+    ):
+        raise AssertionError("empty checkout cart redirect is not a verified no-store cart response")
+
+    final = trace.get("final")
+    if not isinstance(final, dict) or final.get("status") != 200:
+        raise AssertionError("logged-out empty cart did not return HTTP 200")
+    final_target = _safe_navigation_target_metadata(final.get("target"))
+    if final_target.get("controller") != "cart" or final.get("private_cache_policy") is not True:
+        raise AssertionError("logged-out empty checkout did not finish on a no-store cart page")
+    for step in [*redirects, final]:
+        if not isinstance(step, dict):
+            raise AssertionError("logged-out empty checkout cache provenance is incomplete")
+        if (
+            type(step.get("from_service_worker")) is not bool
+            or type(step.get("from_disk_cache")) is not bool
+            or type(step.get("from_prefetch_cache")) is not bool
+        ):
+            raise AssertionError("logged-out empty checkout cache provenance is unavailable")
+        if (
+            step.get("from_disk_cache") is True
+            or step.get("from_prefetch_cache") is True
+            or step.get("request_served_from_cache") is True
+        ):
+            raise AssertionError("logged-out empty checkout was served from a browser cache")
+        if (
+            step.get("from_service_worker") is True
+            and step.get("service_worker_source") != "network"
+        ):
+            raise AssertionError("service worker served cached content for logged-out empty checkout")
+    if navigation_trace_has_cache_hit(trace):
+        raise AssertionError("logged-out empty checkout used a browser or service-worker cache")
 
 
 def validate_logout_navigation_trace(trace: object) -> None:
@@ -1398,6 +1477,15 @@ def response_has_private_cache_policy(headers: dict[str, object]) -> bool:
     return "no-store" in directives
 
 
+def response_has_revalidation_policy(headers: dict[str, object]) -> bool:
+    """Recognize no-cache redirects which must be revalidated before reuse."""
+    cache_control = _header_value(headers, "cache-control") or ""
+    pragma = _header_value(headers, "pragma") or ""
+    directives = {part.split("=", 1)[0].strip().lower() for part in cache_control.split(",")}
+    pragma_directives = {part.split("=", 1)[0].strip().lower() for part in pragma.split(",")}
+    return "no-cache" in directives or "no-cache" in pragma_directives
+
+
 def exposes_test_identity(body_text: str, first_name: str, last_name: str, email: str) -> bool:
     for name in (first_name, last_name):
         if name and re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", body_text, re.IGNORECASE):
@@ -1422,6 +1510,19 @@ def assert_empty_cache_storage(driver: webdriver.Chrome, stage: str) -> None:
         raise AssertionError(f"CacheStorage was unavailable at {stage}")
     if snapshot.get("caches") != 0 or snapshot.get("entries") != 0:
         raise AssertionError(f"CacheStorage retained entries at {stage}")
+
+
+def wait_for_empty_cart(driver: webdriver.Chrome) -> None:
+    def empty(browser: webdriver.Chrome) -> bool:
+        return (
+            not browser.find_elements(By.CSS_SELECTOR, ".cart__item")
+            and bool(browser.find_elements(By.CSS_SELECTOR, ".cart__empty"))
+        )
+
+    WebDriverWait(driver, 30, poll_frequency=0.2).until(
+        empty,
+        message="logged-out empty checkout did not land on an empty cart",
+    )
 
 
 def wait_visible(driver: webdriver.Chrome, selector: str):
@@ -3054,8 +3155,10 @@ def run_viewport(
                 ),
             ),
             (
-                "guest_order_route",
-                localized_controller_url(base_url, locale_home_url, "index.php?controller=order"),
+                "guest_order_detail_route",
+                localized_controller_url(
+                    base_url, locale_home_url, "index.php?controller=order-detail"
+                ),
             ),
         ):
             stage = route_stage
@@ -3063,7 +3166,7 @@ def run_viewport(
                 raise AssertionError("guest route escaped the isolated storefront origin")
             expected_login_url = (
                 signin_url
-                if route_stage in {"guest_account_route", "guest_order_route"}
+                if route_stage in {"guest_account_route", "guest_order_detail_route"}
                 else None
             )
             observed = navigate_private_document(
@@ -3093,6 +3196,34 @@ def run_viewport(
                     f"logged-out {route_stage.replace('_', ' ')} exposed the synthetic customer's identity"
                 )
             assert_empty_cache_storage(driver, f"guest {route_stage}")
+
+        if locale == "en":
+            stage = "guest_empty_checkout_route"
+            empty_order_url = localized_controller_url(
+                base_url, locale_home_url, "index.php?controller=order"
+            )
+            empty_checkout = navigate_private_document(
+                driver,
+                empty_order_url,
+                base_url,
+                "logged-out empty checkout",
+                capture_navigation_trace=True,
+                cache_policy_final_document=True,
+            )
+            if empty_checkout.get("status") != 200:
+                raise AssertionError("logged-out empty checkout did not return to the cart")
+            validate_logged_out_empty_order_cart_navigation_trace(
+                empty_checkout.get("navigation_trace")
+            )
+            final_target = safe_navigation_target(driver.current_url, base_url)
+            if final_target.get("controller") != "cart":
+                raise AssertionError("logged-out empty checkout did not finish on the cart route")
+            assert_document_locale(driver, locale, "logged-out empty checkout cart")
+            wait_for_empty_cart(driver)
+            body_text = driver.find_element(By.TAG_NAME, "body").text
+            if exposes_test_identity(body_text, "Pwa", "Session", email):
+                raise AssertionError("logged-out empty checkout exposed the synthetic customer's identity")
+            assert_empty_cache_storage(driver, "guest empty checkout")
 
         print(
             f"PASS: {label} Chromium secure-context installability prerequisites, official manifest icons, "
