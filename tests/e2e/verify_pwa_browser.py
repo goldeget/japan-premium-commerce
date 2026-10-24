@@ -1015,7 +1015,7 @@ def validate_logged_out_navigation_trace(
     *,
     service_worker_expected: bool,
 ) -> None:
-    """Require a completed login redirect with the expected worker and cache path."""
+    """Require a login redirect whose service-worker hops use the private network path."""
     if not isinstance(trace, dict) or trace.get("observed") is not True:
         raise AssertionError("logged-out protected account navigation was not observed")
     if trace.get("redirects_truncated") is True:
@@ -1091,12 +1091,8 @@ def validate_logout_navigation_trace(trace: object) -> None:
     final = trace.get("final")
     if not isinstance(final, dict) or final.get("status") != 200:
         raise AssertionError("customer logout destination did not return HTTP 200")
-    if any(
-        step.get("from_service_worker") is not False
-        for step in [*redirect_steps, final]
-        if isinstance(step, dict)
-    ):
-        raise AssertionError("customer logout navigation was handled by the service worker")
+    if redirect_steps[0].get("from_service_worker") is not False:
+        raise AssertionError("customer logout action response was handled by the service worker")
     if any(
         step.get("private_cache_policy") is not True
         for step in [*redirect_steps, final]
@@ -1122,6 +1118,11 @@ def validate_logout_navigation_trace(trace: object) -> None:
         raise AssertionError("customer logout destination lacks a no-store cache policy")
     if navigation_trace_has_cache_hit(trace):
         raise AssertionError("customer logout destination was served from a browser or service-worker cache")
+    for step in [*redirect_steps[1:], final]:
+        if type(step.get("from_service_worker")) is not bool:
+            raise AssertionError("customer logout redirect provenance is unavailable")
+        if step.get("from_service_worker") is True and step.get("service_worker_source") != "network":
+            raise AssertionError("customer logout service worker did not use the network response")
 
 
 def _format_selected_signout(value: object) -> str:

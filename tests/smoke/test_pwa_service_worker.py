@@ -69,7 +69,10 @@ const fetch = async (_request, options) => {
   fetchCalls += 1;
   fetchOptions = options ?? null;
   if (config.offline) throw new TypeError('offline');
-  if (config.opaqueRedirect) return opaqueRedirectResponse;
+  if (config.opaqueRedirect) {
+    if (options?.redirect === 'manual') return opaqueRedirectResponse;
+    return new Response('followed redirect response', {status: 200});
+  }
   return new Response('online response', {status: 200});
 };
 const caches = {open: async () => { cacheOpenCalls += 1; throw new Error('cache must not be opened'); }};
@@ -78,7 +81,7 @@ const request = {
   url: config.url || 'http://localhost:18080/ja/identity',
   method: config.method,
   mode: config.mode,
-  redirect: config.redirect || 'manual',
+  redirect: config.redirect || 'follow',
   referrer: 'http://localhost:18080/ja/my-account',
   referrerPolicy: 'strict-origin-when-cross-origin',
   headers: {get: name => name === 'Accept-Language' ? config.language : null},
@@ -150,12 +153,12 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
         self.assertEqual("online response", result["body"])
         self.assertEqual(
             {
-                "redirect": "manual",
                 "referrer": "http://localhost:18080/ja/my-account",
                 "referrerPolicy": "strict-origin-when-cross-origin",
             },
             result["fetchOptions"],
         )
+        self.assertNotIn("redirect", result["fetchOptions"])
         self.assertEqual(0, result["cacheOpenCalls"])
 
     def test_logout_action_navigation_is_left_to_browser_redirect_handling(self) -> None:
@@ -171,7 +174,7 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
         self.assertEqual(0, result["fetchCalls"])
         self.assertEqual(0, result["cacheOpenCalls"])
 
-    def test_opaque_redirect_response_is_returned_unchanged_for_browser_navigation(self) -> None:
+    def test_navigation_follows_redirects_to_the_network_destination(self) -> None:
         result = self.run_worker(
             method="GET",
             mode="navigate",
@@ -181,10 +184,16 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
         )
 
         self.assertIs(result["intercepted"], True)
-        self.assertEqual("opaqueredirect", result["responseType"])
-        self.assertEqual(0, result["status"])
-        self.assertIs(result["opaqueRedirectReturned"], True)
-        self.assertEqual("manual", result["fetchOptions"]["redirect"])
+        self.assertEqual(200, result["status"])
+        self.assertEqual("followed redirect response", result["body"])
+        self.assertIs(result["opaqueRedirectReturned"], False)
+        self.assertEqual(
+            {
+                "referrer": "http://localhost:18080/ja/my-account",
+                "referrerPolicy": "strict-origin-when-cross-origin",
+            },
+            result["fetchOptions"],
+        )
 
     def test_non_navigation_and_non_get_requests_are_left_to_the_browser(self) -> None:
         for method, mode in (("GET", "cors"), ("POST", "navigate")):
