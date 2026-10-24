@@ -1739,6 +1739,109 @@ def find_admin_detail_url(driver: webdriver.Chrome, order: dict) -> str:
     )
 
 
+def cancel_unpaid_desktop_order_through_admin(
+    driver: webdriver.Chrome,
+    order: dict,
+    verified_order: dict,
+) -> None:
+    """Cancel only this run's verified offline desktop order through the native BO form."""
+    expected_email = checkout_registration_email("desktop", RUN_ID, RUN_ATTEMPT)
+    if (
+        order.get("viewport") != "desktop"
+        or int(order.get("order_id", 0)) < 1
+        or order.get("email") != expected_email
+        or int(verified_order.get("order_id", 0)) != int(order.get("order_id", 0))
+        or verified_order.get("reference") != order.get("reference")
+        or verified_order.get("email") != expected_email
+        or verified_order.get("payment_module") != "ps_checkpayment"
+        or float(verified_order.get("total_paid_real", -1)) != 0.0
+        or int(verified_order.get("cancelled_state_id", 0)) < 1
+        or verified_order.get("currency") != "JPY"
+        or int(verified_order.get("product_quantity", 0)) != 1
+    ):
+        raise AssertionError("admin cancellation target is not this run's verified unpaid desktop check-payment order")
+
+    status_form = driver.find_element(By.CSS_SELECTOR, "form.card-details-form")
+    status_select = status_form.find_element(
+        By.CSS_SELECTOR,
+        'select[name="update_order_status[new_order_status_id]"]',
+    )
+    status_choices = Select(status_select)
+    cancelled_state_id = str(int(verified_order["cancelled_state_id"]))
+    cancelled_option = next(
+        (
+            option
+            for option in status_choices.options
+            if option.get_attribute("value") == cancelled_state_id
+        ),
+        None,
+    )
+    if cancelled_option is None:
+        raise AssertionError("the native order status form omitted PS_OS_CANCELED")
+
+    cancelled_label = cancelled_option.text.strip()
+    cancelled_value = cancelled_option.get_attribute("value")
+    current_option = status_choices.first_selected_option
+    if current_option.get_attribute("value") == cancelled_value:
+        raise AssertionError("the desktop order was already canceled before the Back Office status action")
+
+    history_table_selector = 'table[data-role="history-grid-table"]'
+    latest_history_status_selector = (
+        'table[data-role="history-grid-table"] tbody tr:first-child '
+        'td[data-role="status-column"] span'
+    )
+    history_rows_before = driver.find_elements(By.CSS_SELECTOR, history_table_selector + " tbody tr")
+    if not history_rows_before:
+        raise AssertionError("the desktop order detail has no native status history to update")
+    if (
+        driver.find_element(By.CSS_SELECTOR, latest_history_status_selector)
+        .text.strip()
+        .casefold()
+        == cancelled_label.casefold()
+    ):
+        raise AssertionError("the desktop order history was already canceled before the Back Office status action")
+
+    # Select2 is the native control initialized from the form's data-toggle="select2".
+    visible(driver, "form.card-details-form .select2-selection").click()
+    cancel_choice = WebDriverWait(driver, 20).until(
+        lambda browser: next(
+            (
+                element
+                for element in browser.find_elements(By.CSS_SELECTOR, ".select2-results__option")
+                if element.is_displayed()
+                and element.get_attribute("aria-selected") != "true"
+                and element.text.strip() == cancelled_label
+            ),
+            None,
+        )
+    )
+    cancel_choice.click()
+    if Select(status_select).first_selected_option.get_attribute("value") != cancelled_value:
+        raise AssertionError("the Back Office order status selector did not choose Canceled")
+
+    status_form.find_element(By.CSS_SELECTOR, "button.update-status").click()
+
+    def latest_history_is_cancelled(browser: webdriver.Chrome) -> bool:
+        if order["reference"] not in browser.find_element(By.TAG_NAME, "body").text:
+            return False
+        if not (
+            is_modern_admin_order_detail_url(browser.current_url, str(order["order_id"]))
+            or is_legacy_admin_order_detail_url(browser.current_url, str(order["order_id"]))
+        ):
+            return False
+        rows = browser.find_elements(By.CSS_SELECTOR, history_table_selector + " tbody tr")
+        if len(rows) != len(history_rows_before) + 1:
+            return False
+        latest_status = browser.find_element(By.CSS_SELECTOR, latest_history_status_selector).text
+        return latest_status.strip() == cancelled_label
+
+    WebDriverWait(driver, 35).until(latest_history_is_cancelled)
+    print(
+        f"PASS: native Back Office status form canceled unpaid desktop order {order['reference']} "
+        "and displayed the native cancellation status as the latest history entry"
+    )
+
+
 def run_admin_order_view() -> None:
     options = browser_options(1440, 960)
     driver = webdriver.Chrome(options=options)
@@ -1754,6 +1857,14 @@ def run_admin_order_view() -> None:
             json.loads((DEST / f"ci-checkout-{label}.json").read_text(encoding="utf-8"))
             for label in ("desktop", "mobile")
         ]
+        verified_orders = {
+            label: json.loads(
+                (DEST / f"ci-checkout-{label}-verified.json")
+                .read_text(encoding="utf-8")
+                .splitlines()[0]
+            )
+            for label in ("desktop", "mobile")
+        }
         for order in orders:
             stage = f"admin_order_{order['viewport']}_open"
             detail_url = find_admin_detail_url(driver, order)
@@ -1788,6 +1899,14 @@ def run_admin_order_view() -> None:
                 str(DEST / f"checkout-admin-order-{order['viewport']}-detail-mobile.png")
             )
             driver.set_window_size(1440, 960)
+            if order["viewport"] == "desktop":
+                stage = "admin_order_desktop_cancel"
+                cancel_unpaid_desktop_order_through_admin(
+                    driver,
+                    order,
+                    verified_orders["desktop"],
+                )
+                driver.save_screenshot(str(DEST / "checkout-admin-order-desktop-canceled.png"))
             print(
                 f"PASS: separate Back Office session opened unpaid browser order {order['reference']} "
                 f"and read its Japanese delivery address"

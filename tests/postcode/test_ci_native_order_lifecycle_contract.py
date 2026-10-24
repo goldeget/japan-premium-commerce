@@ -30,18 +30,25 @@ class CiNativeOrderLifecycleContractTests(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertIn(required, self.source)
 
-    def test_unpaid_cancellation_uses_native_history_and_keeps_paid_amount_zero(self) -> None:
+    def test_unpaid_cancellation_readback_requires_latest_admin_history_and_zero_paid_amount(self) -> None:
         for required in (
             "Configuration::get('PS_OS_CANCELED')",
-            "new OrderHistory()",
-            "changeIdOrderState(",
-            "->addWithemail(",
+            "Back Office unpaid cancellation readback",
+            "SELECT `id_order_state`, `id_employee` FROM `",
+            "ORDER BY `date_add` DESC, `id_order_history` DESC LIMIT 2",
+            "$unpaidHistory[0]['id_order_state']",
+            "$unpaidHistory[0]['id_employee']",
+            "$unpaidHistory[1]['id_order_state']",
+            "$cancelledOrder->hasBeenPaid()",
             "total_paid_real",
             "PS_OS_CANCELED",
             "order_history",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, self.source)
+        self.assertNotIn("new OrderHistory()", self.source)
+        self.assertNotIn("changeIdOrderState(", self.source)
+        self.assertNotIn("->addWithemail(", self.source)
 
     def test_native_return_and_credit_slip_require_enabled_returns_and_a_paid_like_order(self) -> None:
         for required in (

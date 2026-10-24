@@ -67,12 +67,20 @@ if (!Validate::isLoadedObject($customer)
 
 $stage = 'unpaid ps_checkpayment order';
 $state = new OrderState((int) $order->current_state, (int) $order->id_lang);
+$cancelledStateId = (int) Configuration::get('PS_OS_CANCELED');
+$cancelledState = $cancelledStateId > 0
+    ? new OrderState($cancelledStateId, (int) $order->id_lang)
+    : false;
 $currency = new Currency((int) $order->id_currency);
 if ((string) $order->module !== 'ps_checkpayment'
     || !Validate::isLoadedObject($state)
     || (bool) $state->paid
     || (float) $order->total_paid_real !== 0.0
     || (float) $order->total_paid_tax_incl <= 0.0
+    || !($cancelledState instanceof OrderState)
+    || !Validate::isLoadedObject($cancelledState)
+    || (bool) $cancelledState->paid
+    || (bool) $cancelledState->logable
     || !Validate::isLoadedObject($currency)
     || (string) $currency->iso_code !== 'JPY'
 ) {
@@ -126,6 +134,7 @@ echo json_encode([
     'product_id' => $productId,
     'product_quantity' => (int) $orderDetails[0]['product_quantity'],
     'payment_module' => (string) $order->module,
+    'cancelled_state_id' => $cancelledStateId,
     'state' => (string) $state->name,
     'total_paid_real' => (float) $order->total_paid_real,
     'currency' => (string) $currency->iso_code,

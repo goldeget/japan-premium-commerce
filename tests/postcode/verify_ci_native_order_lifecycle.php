@@ -172,7 +172,6 @@ if (!Validate::isLoadedObject($unpaidState)
     || (bool) $unpaidState->paid
     || $unpaidOrder->hasBeenPaid()
     || (float) $unpaidOrder->total_paid_real !== 0.0
-    || $unpaidOrder->current_state === $cancelledStateId
     || !($cancelledState instanceof OrderState)
     || !Validate::isLoadedObject($cancelledState)
     || (bool) $cancelledState->paid
@@ -229,36 +228,28 @@ if ($paidLikeOrderId < 1) {
     }
 }
 
-$stage = 'native unpaid cancellation';
+$stage = 'Back Office unpaid cancellation readback';
 $database = Db::getInstance();
-$historyBefore = (int) $database->getValue(
-    'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'order_history` WHERE `id_order` = ' . (int) $unpaidOrder->id
-);
-$history = new OrderHistory();
-$history->id_order = (int) $unpaidOrder->id;
-$history->id_employee = (int) $context->employee->id;
-$history->changeIdOrderState($cancelledStateId, $unpaidOrder);
-if (!$history->addWithemail()) {
-    throw new RuntimeException('PrestaShop could not persist the native canceled-order history event.');
-}
 $cancelledOrder = new Order((int) $unpaidOrder->id);
 $savedCancelledState = new OrderState((int) $cancelledOrder->current_state, (int) $cancelledOrder->id_lang);
-$historyAfter = (int) $database->getValue(
-    'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'order_history` WHERE `id_order` = ' . (int) $cancelledOrder->id
-);
-$lastHistoryStateId = (int) $database->getValue(
-    'SELECT `id_order_state` FROM `' . _DB_PREFIX_ . 'order_history` WHERE `id_order` = ' . (int) $cancelledOrder->id
-    . ' ORDER BY `id_order_history` DESC LIMIT 1'
+$unpaidHistory = $database->executeS(
+    'SELECT `id_order_state`, `id_employee` FROM `' . _DB_PREFIX_ . 'order_history`'
+    . ' WHERE `id_order` = ' . (int) $cancelledOrder->id
+    . ' ORDER BY `date_add` DESC, `id_order_history` DESC LIMIT 2'
 );
 if (!Validate::isLoadedObject($cancelledOrder)
     || !Validate::isLoadedObject($savedCancelledState)
     || (int) $cancelledOrder->current_state !== $cancelledStateId
-    || $lastHistoryStateId !== $cancelledStateId
-    || $historyAfter !== $historyBefore + 1
+    || !is_array($unpaidHistory)
+    || count($unpaidHistory) < 2
+    || (int) ($unpaidHistory[0]['id_order_state'] ?? 0) !== $cancelledStateId
+    || (int) ($unpaidHistory[0]['id_employee'] ?? 0) < 1
+    || (int) ($unpaidHistory[1]['id_order_state'] ?? 0) === $cancelledStateId
     || (bool) $savedCancelledState->paid
     || (float) $cancelledOrder->total_paid_real !== 0.0
+    || $cancelledOrder->hasBeenPaid()
 ) {
-    throw new RuntimeException('The unpaid order did not persist the native canceled status and unpaid totals.');
+    throw new RuntimeException('The Back Office did not persist a new canceled status history entry for the still-unpaid order.');
 }
 
 $report = [
@@ -362,7 +353,7 @@ if ($report['status'] === 'partial') {
     fwrite(STDOUT, 'UNSUPPORTED: native RMA/credit-slip checks were not run: ' . $unsupportedReason . PHP_EOL);
 }
 fwrite(STDOUT, sprintf(
-    "PASS: run-scoped unpaid order #%d was canceled through native order history; cash refund was not requested.\n",
+    "PASS: run-scoped unpaid order #%d was canceled through the native Back Office status form; cash refund was not requested.\n",
     (int) $cancelledOrder->id
 ));
 if ($report['return_request'] === 'passed' && $report['credit_slip'] === 'passed') {
