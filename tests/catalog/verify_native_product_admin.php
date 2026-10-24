@@ -168,33 +168,37 @@ $createdManagedProducts = array_values(array_filter(
     $manager->managedProducts(),
     static fn (array $row): bool => (int) $row['id_product'] === $productId
 ));
-if (!Validate::isLoadedObject($product)
-    || !str_starts_with((string) $product->reference, 'OWA-ADMIN-')
-    || (bool) $product->active
-    || (string) $product->visibility !== 'none'
-    || (bool) $product->available_for_order
-    || (bool) $product->show_price
-    || (int) round((float) $product->price) !== 1280
-    || (string) $product->name !== 'ORDENOWA CI 合成商品'
-    || (int) $product->id_category_default !== $categoryId
-    || !in_array($categoryId, $categories, true)
-    || ($createdEditor['name_ja'] ?? '') !== 'ORDENOWA CI 合成商品'
-    || ($createdEditor['name_en'] ?? '') !== 'ORDENOWA CI Synthetic Product'
-    || ($createdEditor['name_ko'] ?? '') !== 'ORDENOWA CI 합성 상품'
-    || ($createdEditor['description_ja'] ?? '') !== 'CI用の商品説明'
-    || ($createdEditor['description_en'] ?? '') !== 'Synthetic English product description'
-    || ($createdEditor['description_ko'] ?? '') !== 'CI용 상세 설명'
-    || (string) $englishProduct->name !== 'ORDENOWA CI Synthetic Product'
-    || strip_tags((string) $englishProduct->description) !== 'Synthetic English product description'
-    || $englishSlug !== (string) Tools::str2url('ORDENOWA CI Synthetic Product')
-    || $englishImageLegend !== 'ORDENOWA CI Synthetic Product'
-    || !in_array($categoryId, $createdEditor['category_ids'] ?? [], true)
-    || count($createdManagedProducts) !== 1
-    || $createdManagedProducts[0]['name'] !== 'ORDENOWA CI 合成商品'
-    || !is_array($combinationRows)
-    || count($combinationRows) !== 4
-    || count($imageIds) !== 1) {
-    throw new RuntimeException('The created native product is missing fields or violated its inactive sale gate.');
+$createdManagedProduct = $createdManagedProducts[0] ?? [];
+$createChecks = [
+    'loaded product' => Validate::isLoadedObject($product),
+    'managed product reference' => str_starts_with((string) $product->reference, 'OWA-ADMIN-'),
+    'inactive sale gate' => !(bool) $product->active
+        && (string) $product->visibility === 'none'
+        && !(bool) $product->available_for_order,
+    'hidden price' => !(bool) $product->show_price,
+    'JPY price' => (int) round((float) $product->price) === 1280,
+    'Japanese name' => (string) $product->name === 'ORDENOWA CI 合成商品',
+    'default category' => (int) $product->id_category_default === $categoryId,
+    'category association' => in_array($categoryId, $categories, true),
+    'editor Japanese name' => ($createdEditor['name_ja'] ?? '') === 'ORDENOWA CI 合成商品',
+    'English name' => ($createdEditor['name_en'] ?? '') === 'ORDENOWA CI Synthetic Product',
+    'editor Korean name' => ($createdEditor['name_ko'] ?? '') === 'ORDENOWA CI 합성 상품',
+    'Japanese description' => ($createdEditor['description_ja'] ?? '') === 'CI用の商品説明',
+    'English description' => ($createdEditor['description_en'] ?? '') === 'Synthetic English product description',
+    'Korean description' => ($createdEditor['description_ko'] ?? '') === 'CI용 상세 설명',
+    'native English product name' => (string) $englishProduct->name === 'ORDENOWA CI Synthetic Product',
+    'native English product description' => strip_tags((string) $englishProduct->description) === 'Synthetic English product description',
+    'English product slug' => $englishSlug === (string) Tools::str2url('ORDENOWA CI Synthetic Product'),
+    'English image legend' => $englishImageLegend === 'ORDENOWA CI Synthetic Product',
+    'editor category association' => in_array($categoryId, $createdEditor['category_ids'] ?? [], true),
+    'managed product filter' => count($createdManagedProducts) === 1,
+    'managed product Japanese name' => ($createdManagedProduct['name'] ?? '') === 'ORDENOWA CI 合成商品',
+    'native option combinations' => is_array($combinationRows) && count($combinationRows) === 4,
+    'product image count' => count($imageIds) === 1,
+];
+$createFailures = array_keys(array_filter($createChecks, static fn (bool $passed): bool => !$passed));
+if ($createFailures !== []) {
+    throw new RuntimeException('Native product create failed checks: ' . implode(', ', $createFailures) . '.');
 }
 
 $createdEditorCombinationIds = array_map('intval', array_keys($createdEditor['combination_quantities'] ?? []));

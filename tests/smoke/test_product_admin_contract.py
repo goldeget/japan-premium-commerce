@@ -40,6 +40,15 @@ class ProductAdminContractTests(unittest.TestCase):
             with self.subTest(browser=expected):
                 self.assertIn(expected, browser)
 
+    def test_native_product_create_reports_individual_failed_persistence_fields(self) -> None:
+        integration = (ROOT / "tests" / "catalog" / "verify_native_product_admin.php").read_text(encoding="utf-8")
+
+        self.assertIn("$createChecks = [", integration)
+        self.assertIn("Native product create failed checks:", integration)
+        for check in ("Japanese name", "English name", "English product slug", "English image legend", "inactive sale gate"):
+            with self.subTest(check=check):
+                self.assertIn(f"'{check}' =>", integration)
+
     def test_english_fallback_php_fixture_preserves_required_legacy_fields(self) -> None:
         fixture = (ROOT / "tests" / "catalog" / "product_admin_draft.php").read_text(encoding="utf-8")
         fallback = fixture.split("$englishFallbackDraft = ProductAdminDraft::fromArray([", 1)[1].split(
