@@ -20,7 +20,7 @@ class DeploymentConfigContractTests(unittest.TestCase):
         self.assertIn("${PS_DOMAIN:-localhost:${SHOP_PORT:-8080}}", compose)
         self.assertIn("SHOP_BIND_ADDRESS=127.0.0.1", env_example)
         self.assertIn("SHOP_PORT=8080", env_example)
-        self.assertIn("PS_DOMAIN=localhost:8080", env_example)
+        self.assertNotIn("PS_DOMAIN=", env_example, "the sample must not pin the host when SHOP_PORT changes")
 
     def test_compose_documents_that_the_domain_is_fixed_during_first_install(self) -> None:
         operations = ROOT / "docs" / "PRODUCTION_DEPLOYMENT.md"

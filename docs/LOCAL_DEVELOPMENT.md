@@ -15,6 +15,7 @@ PrestaShop 공식 이미지의 첫 실행 스크립트는 앱 파일을 영속 �
 ## 설정 및 정적 구성 확인
 
 저장소 루트에서 `.env.example`을 복사해 `.env`를 만들고, 데이터베이스 암호와 관리자 암호 placeholder를 로컬 전용 값으로 바꾸세요. 관리자 계정은 `ADMIN_MAIL`과 `ADMIN_PASSWD`로 지정합니다. `.env`는 Git에서 무시됩니다.
+`.env.example`은 `PS_DOMAIN`을 고정하지 않으므로 `SHOP_PORT`만 바꾸면 Compose 기본 host도 같은 포트를 따릅니다. 별도 host가 필요하면 `.env`에 `PS_DOMAIN`을 지정하세요.
 
 ```sh
 cp .env.example .env
