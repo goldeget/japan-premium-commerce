@@ -73,7 +73,7 @@ const request = {
   method: config.method,
   mode: config.mode,
   redirect: config.redirect || 'manual',
-  referrer: 'http://localhost:18080/ja/my-account',
+  referrer: config.referrer || 'http://localhost:18080/ja/my-account',
   referrerPolicy: 'strict-origin-when-cross-origin',
   headers: {get: name => name === 'Accept-Language' ? config.language : null},
 };
@@ -123,7 +123,11 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
 
     def test_offline_navigation_returns_localized_no_store_fallback(self) -> None:
         result = self.run_worker(
-            method="GET", mode="navigate", offline=True, language="ko-KR,ko;q=0.9"
+            method="GET",
+            mode="navigate",
+            url="http://localhost:18080/ko/",
+            offline=True,
+            language="ko-KR,ko;q=0.9",
         )
 
         self.assertIs(result["intercepted"], True)
@@ -135,7 +139,11 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
 
     def test_online_navigation_keeps_the_network_response_without_opening_cache(self) -> None:
         result = self.run_worker(
-            method="GET", mode="navigate", offline=False, language="ja-JP"
+            method="GET",
+            mode="navigate",
+            url="http://localhost:18080/ja/category",
+            offline=False,
+            language="ja-JP",
         )
 
         self.assertIs(result["intercepted"], True)
@@ -202,6 +210,57 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
                 self.assertEqual(0, result["fetchCalls"])
                 self.assertEqual(0, result["cacheOpenCalls"])
 
+    def test_same_path_public_navigation_keeps_the_offline_fallback(self) -> None:
+        result = self.run_worker(
+            method="GET",
+            mode="navigate",
+            url="http://localhost:18080/ko/category?sort=price",
+            referrer="http://localhost:18080/ko/category?sort=name",
+            offline=True,
+            language="ko-KR",
+        )
+
+        self.assertIs(result["intercepted"], True)
+        self.assertEqual(503, result["status"])
+        self.assertEqual("no-store", result["cacheControl"])
+        self.assertIn("연결을 확인해 주세요", result["body"])
+        self.assertEqual(1, result["fetchCalls"])
+        self.assertEqual(0, result["cacheOpenCalls"])
+
+    def test_private_back_target_is_left_to_browser_redirect_handling(self) -> None:
+        result = self.run_worker(
+            method="GET",
+            mode="navigate",
+            url="http://localhost:18080/ko/private-route?back=my-account",
+            referrer="http://localhost:18080/ko/authentication",
+            offline=False,
+            language="ko-KR",
+        )
+
+        self.assertIs(result["intercepted"], False)
+        self.assertEqual(0, result["fetchCalls"])
+
+    def test_direct_private_customer_routes_are_left_to_the_browser(self) -> None:
+        for target in (
+            "http://localhost:18080/ko/identity",
+            "http://localhost:18080/ko/order-detail",
+            "http://localhost:18080/index.php?controller=identity",
+            "http://localhost:18080/index.php?controller=order-detail",
+        ):
+            with self.subTest(target=target):
+                result = self.run_worker(
+                    method="GET",
+                    mode="navigate",
+                    url=target,
+                    referrer="http://localhost:18080/ko/authentication",
+                    offline=True,
+                    language="ko-KR",
+                )
+
+                self.assertIs(result["intercepted"], False)
+                self.assertEqual(0, result["fetchCalls"])
+                self.assertEqual(0, result["cacheOpenCalls"])
+
     def test_public_return_navigation_remains_worker_managed(self) -> None:
         for route in ("search", "authentication", "password", "registration"):
             with self.subTest(route=route):
@@ -252,6 +311,7 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
             method="GET",
             mode="navigate",
             offline=False,
+            url="http://localhost:18080/ja/category",
             redirect="manual",
             language="ja-JP",
         )

@@ -655,17 +655,20 @@ def _safe_navigation_target_metadata(value: object) -> dict[str, object]:
     back_is_private_route = value.get("back_is_private_route")
     if type(back_is_private_route) is bool:
         safe["back_is_private_route"] = back_is_private_route
+    private_customer_route = value.get("private_customer_route")
+    if type(private_customer_route) is bool:
+        safe["private_customer_route"] = private_customer_route
     return safe
 
 
 def safe_navigation_target(candidate_url: str, shop_url: str) -> dict[str, object]:
     """Return bounded route metadata without URL origins or query values."""
     if not isinstance(candidate_url, str) or len(candidate_url) > 8192:
-        return {"path": "<off-origin>", "query_keys": []}
+        return {"path": "<off-origin>", "query_keys": [], "private_customer_route": False}
     try:
         absolute_url = urljoin(shop_url.rstrip("/") + "/", candidate_url)
         if not same_origin(shop_url, absolute_url):
-            return {"path": "<off-origin>", "query_keys": []}
+            return {"path": "<off-origin>", "query_keys": [], "private_customer_route": False}
         shop = urlparse(shop_url)
         candidate = urlparse(absolute_url)
         base_path = shop.path.rstrip("/")
@@ -689,11 +692,14 @@ def safe_navigation_target(candidate_url: str, shop_url: str) -> dict[str, objec
                     is_private_customer_back_target(back, shop_url)
                     for back in back_values
                 ),
+                "private_customer_route": is_private_customer_back_target(
+                    absolute_url, shop_url
+                ),
             }
         )
         return safe
     except (TypeError, ValueError, IndexError):
-        return {"path": "<other>", "query_keys": []}
+        return {"path": "<other>", "query_keys": [], "private_customer_route": False}
 
 
 def _header_value(headers: object, expected_name: str) -> str | None:
@@ -983,6 +989,9 @@ def _format_safe_target(value: object) -> str:
         formatted += f";controller={controller}"
     if isinstance(back, str):
         formatted += f";back={back}"
+    private_customer_route = target.get("private_customer_route")
+    if type(private_customer_route) is bool:
+        formatted += f";private_customer_route={str(private_customer_route).lower()}"
     return formatted
 
 
@@ -1110,8 +1119,8 @@ def validate_logged_out_navigation_trace(
     if navigation_trace_has_cache_hit(trace):
         raise AssertionError("logged-out protected document was served from a browser or service-worker cache")
     if service_worker_expected:
-        if redirects[0].get("from_service_worker") is not True:
-            raise AssertionError("the protected route was not first handled by the service worker")
+        initial_target = _safe_navigation_target_metadata(trace.get("initial_target"))
+        initial_route_is_private = initial_target.get("private_customer_route") is True
         for index, step in enumerate(redirects):
             provenance = step.get("from_service_worker")
             if provenance is True:
@@ -1122,8 +1131,11 @@ def validate_logged_out_navigation_trace(
             preceding_target = preceding_redirect.get("target") if isinstance(preceding_redirect, dict) else None
             if (
                 provenance is not False
-                or not isinstance(preceding_target, dict)
-                or preceding_target.get("back_is_private_route") is not True
+                or not (
+                    initial_route_is_private and index == 0
+                    or isinstance(preceding_target, dict)
+                    and preceding_target.get("back_is_private_route") is True
+                )
             ):
                 raise AssertionError("native redirect hop did not follow a private back route")
         final_provenance = final.get("from_service_worker")
@@ -1132,8 +1144,11 @@ def validate_logged_out_navigation_trace(
                 raise AssertionError("service worker did not use the network for the sign-in page")
         elif (
             final_provenance is not False
-            or not isinstance(redirects[-1].get("target"), dict)
-            or redirects[-1]["target"].get("back_is_private_route") is not True
+            or not (
+                initial_route_is_private
+                or isinstance(redirects[-1].get("target"), dict)
+                and redirects[-1]["target"].get("back_is_private_route") is True
+            )
         ):
             raise AssertionError("native redirect hop did not follow a private back route")
     elif any(step.get("from_service_worker") is not False for step in worker_steps if isinstance(step, dict)):

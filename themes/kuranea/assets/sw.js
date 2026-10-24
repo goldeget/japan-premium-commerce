@@ -84,12 +84,14 @@ self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
   const isLogoutAction = url.searchParams.has('mylogout');
+  const isPrivateCustomerNavigation = isPrivateReturnRoute(url.href);
   const isPrivateReturnNavigation = url.searchParams.getAll('back').some(isPrivateReturnRoute);
   // Let Chrome follow private-route redirects natively; navigation Request objects can use manual mode.
   if (
     request.method !== 'GET'
     || request.mode !== 'navigate'
     || isLogoutAction
+    || isPrivateCustomerNavigation
     || isPrivateReturnNavigation
   ) {
     return;

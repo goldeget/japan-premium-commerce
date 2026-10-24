@@ -1374,6 +1374,81 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
             self.assertNotIn("order-detail", repr(metadata))
             self.assertNotIn("other.example", repr(metadata))
 
+    def test_safe_navigation_target_marks_private_customer_route_without_exposing_it(self) -> None:
+        shop_url = "http://localhost:18080"
+        private = pwa_browser.safe_navigation_target(
+            shop_url + "/ko/identity?customer=private-customer-id",
+            shop_url,
+        )
+        public = pwa_browser.safe_navigation_target(shop_url + "/ko/category", shop_url)
+        external = pwa_browser.safe_navigation_target(
+            "https://other.example/ko/identity?customer=private-customer-id",
+            shop_url,
+        )
+
+        self.assertIs(private.get("private_customer_route"), True)
+        self.assertIs(public.get("private_customer_route"), False)
+        self.assertNotIn("private-customer-id", repr(private))
+        self.assertIs(external.get("private_customer_route"), False)
+
+    def test_document_trace_marks_private_initial_route_without_exposing_urls(self) -> None:
+        shop_url = "http://localhost:18080"
+        requested_url = shop_url + "/ko/identity?customer=private-customer-id"
+        events = [{
+            "method": "Network.requestWillBeSent",
+            "params": {
+                "requestId": "private-request-id",
+                "loaderId": "private-loader-id",
+                "frameId": "main-frame",
+                "type": "Document",
+                "request": {"url": requested_url, "method": "GET"},
+            },
+        }]
+
+        trace = pwa_browser.safe_document_navigation_trace(
+            events, requested_url, shop_url, "main-frame"
+        )
+
+        self.assertIs(trace["initial_target"].get("private_customer_route"), True)
+        self.assertNotIn("private-customer-id", repr(trace))
+        self.assertNotIn("http://localhost:18080", repr(trace))
+        self.assertNotIn("private-request-id", repr(trace))
+        self.assertIn("private_customer_route=true", pwa_browser._format_navigation_trace(trace))
+
+    def test_logged_out_pwa_navigation_accepts_native_hops_for_private_initial_route(self) -> None:
+        trace = {
+            "observed": True,
+            "initial_target": {"path": "/<other>", "private_customer_route": True},
+            "redirects_truncated": False,
+            "redirects": [{
+                "status": 302,
+                "target": {"path": "/ko/ログイン", "query_keys": ["back"]},
+                "private_cache_policy": True,
+                "from_service_worker": False,
+                "from_disk_cache": False,
+                "from_prefetch_cache": False,
+                "request_served_from_cache": False,
+                "service_worker_source": None,
+            }],
+            "final": {
+                "status": 200,
+                "target": {"path": "/ko/ログイン"},
+                "private_cache_policy": True,
+                "from_service_worker": False,
+                "from_disk_cache": False,
+                "from_prefetch_cache": False,
+                "request_served_from_cache": False,
+                "service_worker_source": None,
+            },
+            "final_route_matches_login": True,
+        }
+
+        pwa_browser.validate_logged_out_navigation_trace(trace, service_worker_expected=True)
+
+        trace["initial_target"]["private_customer_route"] = False
+        with self.assertRaisesRegex(AssertionError, "native redirect hop"):
+            pwa_browser.validate_logged_out_navigation_trace(trace, service_worker_expected=True)
+
     def test_logged_out_pwa_navigation_allows_native_network_hop_after_private_redirect(self) -> None:
         trace = {
             "observed": True,
@@ -1462,7 +1537,7 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
     def test_safe_navigation_target_handles_malformed_and_japanese_routes_without_losing_slashes(self) -> None:
         shop_url = "http://localhost:18080"
         self.assertEqual(
-            {"path": "<off-origin>", "query_keys": []},
+            {"path": "<off-origin>", "query_keys": [], "private_customer_route": False},
             pwa_browser.safe_navigation_target(None, shop_url),
         )
         self.assertEqual(
