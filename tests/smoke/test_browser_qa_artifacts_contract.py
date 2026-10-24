@@ -62,6 +62,19 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
             "- name: Upload browser QA screenshots", 1
         )[1].split("- name:", 1)[0])
 
+    def test_pwa_success_requires_account_and_logout_captures_for_all_locale_viewport_cells(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        verification = workflow.split(
+            "- name: Verify browser QA screenshot coverage", 1
+        )[1].split("- name:", 1)[0]
+
+        for viewport in ("desktop", "mobile"):
+            for locale in ("ja", "en", "ko"):
+                for capture in ("installability", "offline-fallback", "account", "logged-out-account"):
+                    artifact = f"pwa-{viewport}-{locale}-{capture}.png"
+                    with self.subTest(artifact=artifact):
+                        self.assertTrue(artifact in verification, f"missing required PWA capture: {artifact}")
+
     def test_brand_stale_publish_target_is_forwarded_to_the_step_summary(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         step = workflow.split(

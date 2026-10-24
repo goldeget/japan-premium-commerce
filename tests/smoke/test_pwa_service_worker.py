@@ -52,22 +52,35 @@ const listeners = {};
 let fetchCalls = 0;
 let cacheOpenCalls = 0;
 let responsePromise = null;
+let fetchOptions = null;
+const opaqueRedirectResponse = {
+  type: 'opaqueredirect',
+  status: 0,
+  headers: {get: () => null},
+  text: async () => '',
+};
 const self = {
   addEventListener: (name, callback) => { listeners[name] = callback; },
   clients: {claim: async () => {}},
   navigator: {language: 'en-US'},
   skipWaiting: async () => {},
 };
-const fetch = async () => {
+const fetch = async (_request, options) => {
   fetchCalls += 1;
+  fetchOptions = options ?? null;
   if (config.offline) throw new TypeError('offline');
+  if (config.opaqueRedirect) return opaqueRedirectResponse;
   return new Response('online response', {status: 200});
 };
 const caches = {open: async () => { cacheOpenCalls += 1; throw new Error('cache must not be opened'); }};
 vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {self, fetch, Response, caches});
 const request = {
+  url: 'http://localhost:18080/ja/identity',
   method: config.method,
   mode: config.mode,
+  redirect: config.redirect || 'manual',
+  referrer: 'http://localhost:18080/ja/my-account',
+  referrerPolicy: 'strict-origin-when-cross-origin',
   headers: {get: name => name === 'Accept-Language' ? config.language : null},
 };
 listeners.fetch({request, respondWith: promise => { responsePromise = promise; }});
@@ -81,9 +94,12 @@ listeners.fetch({request, respondWith: promise => { responsePromise = promise; }
   process.stdout.write(JSON.stringify({
     intercepted: responsePromise !== null,
     status: response?.status ?? null,
+    responseType: response?.type ?? 'default',
+    opaqueRedirectReturned: response === opaqueRedirectResponse,
     cacheControl: response?.headers.get('Cache-Control') ?? null,
     body,
     fetchCalls,
+    fetchOptions,
     cacheOpenCalls,
   }));
 })().catch(error => { console.error(error); process.exitCode = 1; });
@@ -132,7 +148,30 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
         self.assertIs(result["intercepted"], True)
         self.assertEqual(200, result["status"])
         self.assertEqual("online response", result["body"])
+        self.assertEqual(
+            {
+                "redirect": "manual",
+                "referrer": "http://localhost:18080/ja/my-account",
+                "referrerPolicy": "strict-origin-when-cross-origin",
+            },
+            result["fetchOptions"],
+        )
         self.assertEqual(0, result["cacheOpenCalls"])
+
+    def test_opaque_redirect_response_is_returned_unchanged_for_browser_navigation(self) -> None:
+        result = self.run_worker(
+            method="GET",
+            mode="navigate",
+            offline=False,
+            opaqueRedirect=True,
+            language="ja-JP",
+        )
+
+        self.assertIs(result["intercepted"], True)
+        self.assertEqual("opaqueredirect", result["responseType"])
+        self.assertEqual(0, result["status"])
+        self.assertIs(result["opaqueRedirectReturned"], True)
+        self.assertEqual("manual", result["fetchOptions"]["redirect"])
 
     def test_non_navigation_and_non_get_requests_are_left_to_the_browser(self) -> None:
         for method, mode in (("GET", "cors"), ("POST", "navigate")):
@@ -479,7 +518,7 @@ class PwaOfflineWorkerNetworkTests(unittest.TestCase):
         ):
             with self.assertRaises(ChromeBrowserCdpError) as rejected:
                 verify_offline_fallback(
-                    driver, "http://localhost:18080", Path("unused.png"), stages.append
+                    driver, "http://localhost:18080", "en", Path("unused.png"), stages.append
                 )
 
         self.assertRegex(str(rejected.exception), "Chrome rejected Network.emulateNetworkConditions")
@@ -507,7 +546,9 @@ class PwaOfflineWorkerNetworkTests(unittest.TestCase):
             def get(self, _url):
                 self.body = "You are offline" if self.worker_offline else "ORDENOWA"
 
-            def find_element(self, *_args):
+            def find_element(self, _by, selector):
+                if selector == "html":
+                    return SimpleNamespace(get_attribute=lambda _name: "en")
                 return SimpleNamespace(text=self.body)
 
             def save_screenshot(self, _path):
@@ -543,7 +584,9 @@ class PwaOfflineWorkerNetworkTests(unittest.TestCase):
         with patch("tests.e2e.verify_pwa_browser.By", SimpleNamespace(TAG_NAME="tag name")), patch(
             "tests.e2e.verify_pwa_browser.assert_empty_cache_storage"
         ), patch("tests.e2e.verify_pwa_browser.connect_browser_cdp", return_value=browser_cdp):
-            verify_offline_fallback(driver, "http://localhost:18080", Path("unused.png"), lambda _stage: None)
+            verify_offline_fallback(
+                driver, "http://localhost:18080", "en", Path("unused.png"), lambda _stage: None
+            )
 
         self.assertEqual("shop", browser_cdp.attached_target)
         self.assertEqual([True, False], browser_cdp.worker_states)
@@ -676,7 +719,17 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         )
         self.assertGreaterEqual(logout.count("exposes_test_identity(body_text, first_name, last_name, email)"), 2)
         self.assertIn("for name in (first_name, last_name):", identity_check)
-        self.assertIn('"Pwa",\n                "Session",', viewport)
+        self.assertIn('"Pwa",\n            "Session",', viewport)
+
+    def test_pwa_browser_uses_generated_locale_destinations_and_exact_browser_language(self) -> None:
+        locale_selection = function_source(self.source, "select_storefront_locale")
+        offline_check = function_source(self.source, "verify_offline_fallback")
+        viewport = function_source(self.source, "run_viewport")
+
+        self.assertIn("resolve_storefront_locale_url(option_values, locale, shop_url)", locale_selection)
+        self.assertIn('"Network.setExtraHTTPHeaders"', viewport)
+        self.assertIn('"Accept-Language": locale_profile["accept_language"]', viewport)
+        self.assertIn("assert_offline_fallback_content(driver, locale)", offline_check)
 
     def test_logout_qa_reports_only_a_bounded_substage_for_assertion_failures(self) -> None:
         logout = function_source(self.source, "verify_logout_protection")
@@ -685,6 +738,7 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
             "resolve_signout_link",
             "click_signout",
             "wait_signed_out_header",
+            "assert_logout_destination",
             "request_protected_account",
             "wait_protected_document",
             "assert_no_account_links",
@@ -703,6 +757,16 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         self.assertIn('re.fullmatch(r"[a-z][a-z0-9_]{0,63}", logout_substage)', viewport)
         self.assertIn('diagnostic = f"; substage={logout_substage}"', viewport)
         self.assertNotIn("str(error)", viewport)
+
+    def test_clicked_logout_response_is_validated_before_the_protected_route_revisit(self) -> None:
+        logout = function_source(self.source, "verify_logout_protection")
+
+        self.assertIn("validate_logout_navigation_trace(logout_trace)", logout)
+        self.assertLess(
+            logout.index("validate_logout_navigation_trace(logout_trace)"),
+            logout.index('mark_stage("request_protected_account")'),
+        )
+        self.assertIn('expected_final_url=expected_login_url', logout)
 
     def test_private_routes_fail_closed_when_document_cache_headers_are_unavailable(self) -> None:
         matcher = function_source(self.source, "matching_document_responses")
@@ -1096,10 +1160,7 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
         )
         for earlier, later in zip(ordered_stages, ordered_stages[1:]):
             self.assertLess(offline.index(f'set_stage("{earlier}")'), offline.index(f'set_stage("{later}")'))
-        self.assertLess(
-            offline.index('set_stage("offline_fallback_content")'),
-            offline.index("if not any(text in body"),
-        )
+        self.assertIn("assert_offline_fallback_content(driver, locale)", offline)
         self.assertLess(
             offline.index('set_stage("offline_cache_storage")'),
             offline.index('assert_empty_cache_storage(driver, "offline navigation")'),

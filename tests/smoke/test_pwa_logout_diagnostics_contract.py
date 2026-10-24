@@ -205,6 +205,10 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
                         },
                         "from_service_worker": True,
                         "from_disk_cache": False,
+                        "from_prefetch_cache": False,
+                        "private_cache_policy": True,
+                        "request_served_from_cache": False,
+                        "service_worker_source": "network",
                     }
                 ],
                 "final": {
@@ -217,7 +221,12 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
                     },
                     "from_service_worker": True,
                     "from_disk_cache": False,
+                    "from_prefetch_cache": False,
+                    "private_cache_policy": True,
+                    "request_served_from_cache": False,
+                    "service_worker_source": "network",
                 },
+                "final_route_matches_login": False,
             },
             "protected_network_trace": {
                 "observed": True,
@@ -258,7 +267,10 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         self.assertIn("302->/ja/identity", diagnostic)
         self.assertIn("protected_pwa_trace=GET /ja/identity", diagnostic)
         self.assertIn("302->/ja/authentication", diagnostic)
+        self.assertIn("redirect1_service_worker=true", diagnostic)
+        self.assertIn("redirect1_private_cache_policy=true", diagnostic)
         self.assertIn("final=404:/ja/authentication;service_worker=true;disk_cache=false", diagnostic)
+        self.assertIn("final_route_matches_login=false", diagnostic)
         self.assertIn("protected_network_trace=GET /ja/identity", diagnostic)
         self.assertIn("final=404:/ja/authentication;service_worker=false;disk_cache=false", diagnostic)
         self.assertIn("query_keys=back,token", diagnostic)
@@ -406,6 +418,125 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         self.assertNotIn("external.invalid", repr(trace))
         self.assertNotIn("private-token-sentinel", repr(trace))
 
+    def test_generated_login_match_is_bound_to_the_captured_final_response_url(self) -> None:
+        shop_url = "http://localhost:18080"
+        requested_url = shop_url + "/ko/my-account"
+        expected_login_url = (
+            shop_url + "/index.php?controller=authentication&token=expected-secret"
+        )
+        actual_wrong_url = (
+            shop_url + "/index.php?controller=category&token=actual-secret"
+        )
+        actual_login_url = (
+            shop_url + "/index.php?back=my-account&controller=authentication&token=actual-secret"
+        )
+        events = [
+            {
+                "method": "Network.requestWillBeSent",
+                "params": {
+                    "requestId": "private-request-id",
+                    "loaderId": "private-loader-id",
+                    "frameId": "main-frame",
+                    "type": "Document",
+                    "request": {"url": requested_url, "method": "GET"},
+                },
+            },
+            {
+                "method": "Network.requestWillBeSent",
+                "params": {
+                    "requestId": "private-request-id",
+                    "loaderId": "private-loader-id",
+                    "frameId": "main-frame",
+                    "type": "Document",
+                    "redirectResponse": {
+                        "url": requested_url,
+                        "status": 302,
+                        "headers": {"Cache-Control": "private, no-store"},
+                        "fromServiceWorker": False,
+                        "fromDiskCache": False,
+                        "fromPrefetchCache": False,
+                    },
+                    "request": {"url": actual_wrong_url, "method": "GET"},
+                },
+            },
+            {
+                "method": "Network.responseReceived",
+                "params": {
+                    "requestId": "private-request-id",
+                    "loaderId": "private-loader-id",
+                    "frameId": "main-frame",
+                    "type": "Document",
+                    "response": {
+                        "url": actual_wrong_url,
+                        "status": 200,
+                        "headers": {"Cache-Control": "private, no-store"},
+                        "fromServiceWorker": False,
+                        "fromDiskCache": False,
+                    },
+                },
+            },
+        ]
+
+        trace = pwa_browser.safe_document_navigation_trace(
+            events,
+            requested_url,
+            shop_url,
+            "main-frame",
+            expected_final_url=expected_login_url,
+        )
+
+        self.assertFalse(trace["final_route_matches_login"])
+        self.assertNotIn("expected-secret", repr(trace))
+        self.assertNotIn("actual-secret", repr(trace))
+        self.assertNotIn("private-request-id", repr(trace))
+        with self.assertRaisesRegex(AssertionError, "authentication route"):
+            pwa_browser.validate_logged_out_navigation_trace(
+                trace,
+                service_worker_expected=False,
+            )
+
+        events[1]["params"]["request"]["url"] = actual_login_url
+        events[2]["params"]["response"]["url"] = actual_login_url
+        matching_trace = pwa_browser.safe_document_navigation_trace(
+            events,
+            requested_url,
+            shop_url,
+            "main-frame",
+            expected_final_url=expected_login_url,
+        )
+        self.assertTrue(matching_trace["final_route_matches_login"])
+        pwa_browser.validate_logged_out_navigation_trace(
+            matching_trace,
+            service_worker_expected=False,
+        )
+
+    def test_logout_trace_requires_a_successful_login_destination_after_redirect(self) -> None:
+        validator = getattr(pwa_browser, "validate_logout_navigation_trace", None)
+        self.assertTrue(callable(validator))
+        trace = {
+            "observed": True,
+            "redirects_truncated": False,
+            "redirects": [{"status": 302}],
+            "final": {
+                "status": 200,
+                "private_cache_policy": True,
+                "from_disk_cache": False,
+                "from_prefetch_cache": False,
+                "request_served_from_cache": False,
+                "service_worker_source": "network",
+            },
+            "final_route_matches_login": True,
+        }
+
+        validator(trace)
+        trace["final"]["status"] = 404
+        with self.assertRaisesRegex(AssertionError, "HTTP 200"):
+            validator(trace)
+        trace["final"]["status"] = 200
+        trace["final_route_matches_login"] = False
+        with self.assertRaisesRegex(AssertionError, "authentication route"):
+            validator(trace)
+
     def test_document_navigation_trace_rejects_loader_mismatch_and_does_not_keep_provisional_redirect_as_final(self) -> None:
         trace_builder = getattr(pwa_browser, "safe_document_navigation_trace", None)
         self.assertTrue(callable(trace_builder))
@@ -468,10 +599,17 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
             },
         ]
 
-        trace = trace_builder(events, requested_url, shop_url, "main-frame")
+        trace = trace_builder(
+            events,
+            requested_url,
+            shop_url,
+            "main-frame",
+            expected_final_url=shop_url + "/ja/authentication?token=expected-secret",
+        )
 
         self.assertEqual(1, len(trace["redirects"]))
         self.assertIsNone(trace["final"]["status"])
+        self.assertIsNone(trace["final_route_matches_login"])
         self.assertIsNone(trace["final"]["from_service_worker"])
         self.assertIsNone(trace["final"]["from_disk_cache"])
         self.assertNotIn("internal-id", repr(trace))
@@ -483,7 +621,10 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         redirect = {
             "url": requested_url,
             "status": 302.0,
-            "headers": {"Location": destination},
+            "headers": {
+                "Location": destination,
+                "Cache-Control": "private, no-store",
+            },
             "fromServiceWorker": True,
             "fromDiskCache": False,
         }
@@ -532,6 +673,7 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
                     "response": {
                         "url": destination,
                         "status": 200.0,
+                        "headers": {"Cache-Control": "private, no-store"},
                         "fromServiceWorker": True,
                         "fromDiskCache": False,
                         "serviceWorkerResponseSource": "network",
@@ -555,6 +697,434 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         trace["final"]["request_served_from_cache"] = True
         with self.assertRaisesRegex(AssertionError, "browser or service-worker cache"):
             pwa_browser.validate_logged_out_navigation_trace(trace, service_worker_expected=True)
+
+        trace["final"]["request_served_from_cache"] = False
+        trace["final"]["target"]["path"] = "/ja/category"
+        trace["final"]["target"].pop("controller", None)
+        with self.assertRaisesRegex(AssertionError, "authentication route"):
+            pwa_browser.validate_logged_out_navigation_trace(trace, service_worker_expected=True)
+        trace["final"]["target"]["path"] = "/ja/authentication"
+        trace["final"]["private_cache_policy"] = False
+        with self.assertRaisesRegex(AssertionError, "private/no-store"):
+            pwa_browser.validate_logged_out_navigation_trace(trace, service_worker_expected=True)
+
+    def test_document_navigation_trace_rejects_redirect_chains_beyond_the_observed_limit(self) -> None:
+        shop_url = "http://localhost:18080"
+        requested_url = shop_url + "/ja/identity"
+        current_url = requested_url
+        events = [
+            {
+                "method": "Network.requestWillBeSent",
+                "params": {
+                    "requestId": "long-chain",
+                    "loaderId": "long-loader",
+                    "frameId": "main-frame",
+                    "type": "Document",
+                    "request": {"url": requested_url, "method": "GET"},
+                },
+            }
+        ]
+        for index in range(9):
+            next_url = shop_url + f"/ja/authentication?step={index + 1}"
+            events.append(
+                {
+                    "method": "Network.requestWillBeSent",
+                    "params": {
+                        "requestId": "long-chain",
+                        "loaderId": "long-loader",
+                        "frameId": "main-frame",
+                        "type": "Document",
+                        "redirectResponse": {
+                            "url": current_url,
+                            "status": 302,
+                            "headers": {"Cache-Control": "private, no-store"},
+                            "fromServiceWorker": True,
+                            "fromDiskCache": index == 8,
+                        },
+                        "request": {"url": next_url, "method": "GET"},
+                    },
+                }
+            )
+            current_url = next_url
+        events.append(
+            {
+                "method": "Network.responseReceived",
+                "params": {
+                    "requestId": "long-chain",
+                    "loaderId": "long-loader",
+                    "frameId": "main-frame",
+                    "type": "Document",
+                    "response": {
+                        "url": current_url,
+                        "status": 200,
+                        "headers": {"Cache-Control": "private, no-store"},
+                        "fromServiceWorker": True,
+                        "fromDiskCache": False,
+                        "serviceWorkerResponseSource": "network",
+                    },
+                },
+            }
+        )
+
+        trace = pwa_browser.safe_document_navigation_trace(
+            events, requested_url, shop_url, "main-frame"
+        )
+
+        with self.assertRaisesRegex(AssertionError, "redirect chain is incomplete"):
+            pwa_browser.validate_logged_out_navigation_trace(
+                trace, service_worker_expected=True
+            )
+
+    def test_logout_snapshot_failure_preserves_an_existing_primary_failure(self) -> None:
+        helper = getattr(pwa_browser, "capture_logout_snapshot_preserving_error", lambda *_args, **_kwargs: ({}, None))
+
+        primary_error = pwa_browser.TimeoutException("login form timeout")
+        with patch.object(
+            pwa_browser,
+            "safe_logout_wait_diagnostics",
+            side_effect=RuntimeError("diagnostic snapshot unavailable"),
+        ):
+            snapshot, reported_error = helper(
+                object(),
+                "http://localhost:18080",
+                prior_error=primary_error,
+            )
+
+        self.assertEqual({}, snapshot)
+        self.assertIs(primary_error, reported_error)
+
+    def test_original_network_failure_stage_survives_service_worker_restore_checks(self) -> None:
+        helper = getattr(pwa_browser, "prefer_primary_failure_substage", lambda *_args: "")
+        primary_error = AssertionError("network comparison failed")
+
+        self.assertEqual(
+            "request_network_account_login_form",
+            helper(
+                primary_error,
+                "request_network_account_login_form",
+                "request_restored_account_final_response",
+            ),
+        )
+
+    def test_bypass_failure_keeps_the_original_error_and_attempts_to_restore_the_worker(self) -> None:
+        class FakeElement:
+            def __init__(self, owner: "FakeDriver") -> None:
+                self.owner = owner
+
+            def is_displayed(self) -> bool:
+                return True
+
+            def is_enabled(self) -> bool:
+                return True
+
+            def get_attribute(self, name: str) -> str:
+                return {
+                    "id": "signout_link",
+                    "href": "/ja/index.php?mylogout",
+                }.get(name, "")
+
+            def click(self) -> None:
+                self.owner.signed_out = True
+
+        class FakeBody:
+            text = "Sign in"
+
+        class FakeDriver:
+            current_url = "http://localhost:18080/ja/identity"
+
+            def __init__(self) -> None:
+                self.signed_out = False
+                self.bypass_calls: list[bool] = []
+                self.events: list[str] = []
+                self.signout = FakeElement(self)
+
+            def find_elements(self, by: str, selector: str) -> list[FakeElement]:
+                if selector == "a.account-menu__link--signout" and not self.signed_out:
+                    return [self.signout]
+                if selector == "#login-form input[name='email']" and self.signed_out:
+                    return [self.signout]
+                return []
+
+            def find_element(self, by: str, selector: str) -> FakeBody:
+                return FakeBody()
+
+            def execute_script(self, _script: str) -> str:
+                return "complete"
+
+            def get_log(self, _name: str) -> list[dict[str, object]]:
+                return []
+
+            def execute_cdp_cmd(self, method: str, parameters: dict[str, object]) -> dict[str, object]:
+                if method == "Network.setBypassServiceWorker":
+                    bypass = parameters.get("bypass") is True
+                    self.bypass_calls.append(bypass)
+                    self.events.append("bypass-on" if bypass else "bypass-off")
+                    if bypass:
+                        raise RuntimeError("network comparison failed")
+                return {}
+
+            def save_screenshot(self, _path: str) -> bool:
+                return True
+
+        class ImmediateWait:
+            def __init__(self, driver: FakeDriver, *_args: object, **_kwargs: object) -> None:
+                self.driver = driver
+
+            def until(self, predicate, message: str | None = None):
+                result = predicate(self.driver)
+                if not result:
+                    raise pwa_browser.TimeoutException(message or "condition did not match")
+                return result
+
+        class FakeBy:
+            CSS_SELECTOR = "css selector"
+            TAG_NAME = "tag name"
+            ID = "id"
+
+        driver = FakeDriver()
+        navigation_count = 0
+
+        def navigate(*_args: object, **_kwargs: object) -> dict[str, object]:
+            nonlocal navigation_count
+            navigation_count += 1
+            driver.events.append(f"navigation-{navigation_count}")
+            return {"status": 302, "navigation_trace": valid_trace}
+
+        def wait_for_worker(_driver: object) -> dict[str, str]:
+            driver.events.append("worker-ready")
+            return {"activeState": "activated"}
+
+        valid_trace = {
+            "observed": True,
+            "redirects_truncated": False,
+            "method": "GET",
+            "initial_target": {"path": "/ja/identity", "query_keys": []},
+            "redirects": [
+                {
+                    "status": 302,
+                    "target": {"path": "/ja/authentication", "controller": "authentication"},
+                    "private_cache_policy": True,
+                    "from_service_worker": True,
+                    "from_disk_cache": False,
+                    "from_prefetch_cache": False,
+                    "request_served_from_cache": False,
+                    "service_worker_source": "network",
+                }
+            ],
+            "final": {
+                "status": 200,
+                "target": {"path": "/ja/authentication", "controller": "authentication"},
+                "private_cache_policy": True,
+                "from_service_worker": True,
+                "from_disk_cache": False,
+                "from_prefetch_cache": False,
+                "request_served_from_cache": False,
+                "service_worker_source": "network",
+            },
+        }
+
+        with (
+            patch.object(pwa_browser, "WebDriverWait", ImmediateWait),
+            patch.object(pwa_browser, "By", FakeBy),
+            patch.object(pwa_browser, "current_main_frame_id", return_value="main-frame"),
+            patch.object(pwa_browser, "safe_document_navigation_trace", return_value=valid_trace),
+            patch.object(pwa_browser, "navigate_private_document", side_effect=navigate),
+            patch.object(pwa_browser, "wait_for_logout_login_form"),
+            patch.object(pwa_browser, "wait_for_service_worker", side_effect=wait_for_worker),
+            patch.object(pwa_browser, "assert_empty_cache_storage"),
+            patch.object(pwa_browser, "safe_logout_wait_diagnostics", return_value={}),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "network comparison failed"):
+                pwa_browser.verify_logout_protection(
+                    driver,
+                    "http://localhost:18080/ja/identity",
+                    "http://localhost:18080",
+                    "Pwa",
+                    "Session",
+                    "qa@example.invalid",
+                    Path("/tmp/pwa-logged-out.png"),
+                    set_substage=lambda _stage: None,
+                )
+
+        self.assertEqual([True, False], driver.bypass_calls)
+        self.assertLess(driver.events.index("bypass-off"), driver.events.index("navigation-2"))
+        self.assertLess(driver.events.index("navigation-2"), driver.events.index("worker-ready"))
+
+    def test_pwa_browser_matrix_includes_each_locale_at_each_viewport(self) -> None:
+        matrix = getattr(pwa_browser, "pwa_browser_cases", lambda: ())()
+
+        self.assertEqual(
+            (
+                ("desktop", "ja", 1440, 960, "desktop-ja"),
+                ("desktop", "en", 1440, 960, "desktop-en"),
+                ("desktop", "ko", 1440, 960, "desktop-ko"),
+                ("mobile", "ja", 390, 844, "mobile-ja"),
+                ("mobile", "en", 390, 844, "mobile-en"),
+                ("mobile", "ko", 390, 844, "mobile-ko"),
+            ),
+            matrix,
+        )
+
+    def test_generated_language_destination_is_used_and_restricted_to_shop_origin(self) -> None:
+        resolver = getattr(pwa_browser, "resolve_storefront_locale_url", lambda *_args: "")
+        shop_url = "http://localhost:18080"
+
+        self.assertEqual(
+            "http://localhost:18080/generated/language?locale=ko",
+            resolver(
+                [
+                    {"iso_code": "ja", "value": "http://localhost:18080/generated/language?locale=ja"},
+                    {"iso_code": "ko", "value": "http://localhost:18080/generated/language?locale=ko"},
+                ],
+                "ko",
+                shop_url,
+            ),
+        )
+        with self.assertRaisesRegex(AssertionError, "language selector changed the isolated shop origin"):
+            resolver([{"iso_code": "ko", "value": "https://external.invalid/ko"}], "ko", shop_url)
+
+    def test_generated_signin_route_matches_unknown_localized_slugs_without_exposing_urls(self) -> None:
+        matcher = getattr(pwa_browser, "same_storefront_route", lambda *_args: False)
+        shop_url = "http://localhost:18080"
+
+        self.assertTrue(
+            matcher(
+                "http://localhost:18080/ko/로그인?back=identity",
+                "http://localhost:18080/ko/로그인",
+                shop_url,
+            )
+        )
+        self.assertFalse(
+            matcher(
+                "http://localhost:18080/ko/my-account",
+                "http://localhost:18080/ko/로그인",
+                shop_url,
+            )
+        )
+        self.assertFalse(
+            matcher(
+                "http://localhost:18080/index.php?controller=category",
+                "http://localhost:18080/index.php?controller=authentication",
+                shop_url,
+            )
+        )
+        self.assertTrue(
+            matcher(
+                "http://localhost:18080/index.php?controller=authentication&back=my-account&token=actual-token",
+                "http://localhost:18080/index.php?controller=authentication&token=expected-token",
+                shop_url,
+            )
+        )
+        self.assertTrue(
+            matcher(
+                "http://localhost:18080/ko/%EB%A1%9C%EA%B7%B8%EC%9D%B8?lang=KO&isolang=KO&controller=authentication&back=identity",
+                "http://localhost:18080/ko/로그인?controller=authentication&isolang=ko&lang=ko",
+                shop_url,
+            )
+        )
+        for candidate_url, expected_url in (
+            (
+                "http://localhost:18080/index.php?controller=authentication&id_lang=2",
+                "http://localhost:18080/index.php?controller=authentication&id_lang=1",
+            ),
+            (
+                "http://localhost:18080/index.php?controller=authentication&isolang=en",
+                "http://localhost:18080/index.php?controller=authentication&isolang=ja",
+            ),
+            (
+                "http://localhost:18080/index.php?controller=authentication&lang=en",
+                "http://localhost:18080/index.php?controller=authentication&lang=ja",
+            ),
+            (
+                "http://localhost:18080/index.php?controller=authentication&lang=",
+                "http://localhost:18080/index.php?controller=authentication",
+            ),
+        ):
+            with self.subTest(candidate_url=candidate_url):
+                self.assertFalse(matcher(candidate_url, expected_url, shop_url))
+        trace = {
+            "observed": True,
+            "redirects": [
+                {
+                    "status": 302,
+                    "private_cache_policy": True,
+                    "from_service_worker": True,
+                    "from_disk_cache": False,
+                    "from_prefetch_cache": False,
+                    "request_served_from_cache": False,
+                    "service_worker_source": "network",
+                }
+            ],
+            "final": {
+                "status": 200,
+                "target": {"path": "/ko/<other>"},
+                "private_cache_policy": True,
+                "from_service_worker": True,
+                "from_disk_cache": False,
+                "from_prefetch_cache": False,
+                "request_served_from_cache": False,
+                "service_worker_source": "network",
+            },
+            "final_route_matches_login": True,
+        }
+        pwa_browser.validate_logged_out_navigation_trace(
+            trace,
+            service_worker_expected=True,
+        )
+        trace["final_route_matches_login"] = False
+        with self.assertRaisesRegex(AssertionError, "authentication route"):
+            pwa_browser.validate_logged_out_navigation_trace(
+                trace,
+                service_worker_expected=True,
+            )
+
+    def test_offline_fallback_must_match_the_requested_locale_and_language(self) -> None:
+        helper = getattr(pwa_browser, "assert_offline_fallback_content", lambda *_args: None)
+
+        class FakeBy:
+            TAG_NAME = "tag name"
+
+        class FakeElement:
+            def __init__(self, *, language: str = "", text: str = "") -> None:
+                self.language = language
+                self.text = text
+
+            def get_attribute(self, name: str) -> str:
+                return self.language if name == "lang" else ""
+
+        class FakeDriver:
+            def __init__(self, language: str, body: str) -> None:
+                self.html = FakeElement(language=language)
+                self.body = FakeElement(text=body)
+
+            def find_element(self, _by: str, name: str) -> FakeElement:
+                return self.html if name == "html" else self.body
+
+        with patch.object(pwa_browser, "By", FakeBy):
+            with self.assertRaisesRegex(AssertionError, "expected storefront locale"):
+                helper(
+                    FakeDriver("ja", "インターネットに接続できません"),
+                    "ko",
+                )
+            with self.assertRaisesRegex(AssertionError, "expected Korean offline fallback"):
+                helper(FakeDriver("ko", "インターネットに接続できません"), "ko")
+            helper(FakeDriver("ko", "연결을 확인해 주세요"), "ko")
+
+    def test_browser_locale_profile_sets_a_deterministic_accept_language(self) -> None:
+        profile = getattr(pwa_browser, "browser_locale_profile", lambda _locale: {})
+
+        self.assertEqual(
+            {"browser_tag": "ja-JP", "accept_language": "ja-JP,ja;q=0.9"},
+            profile("ja"),
+        )
+        self.assertEqual(
+            {"browser_tag": "en-US", "accept_language": "en-US,en;q=0.9"},
+            profile("en"),
+        )
+        self.assertEqual(
+            {"browser_tag": "ko-KR", "accept_language": "ko-KR,ko;q=0.9"},
+            profile("ko"),
+        )
 
     def test_safe_navigation_target_handles_malformed_and_japanese_routes_without_losing_slashes(self) -> None:
         shop_url = "http://localhost:18080"

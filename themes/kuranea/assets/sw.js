@@ -41,7 +41,11 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    fetch(request).catch(() => new Response(offlinePage(request.headers.get('Accept-Language') || self.navigator.language || 'ja'), {
+    fetch(request, {
+      redirect: 'manual',
+      referrer: request.referrer,
+      referrerPolicy: request.referrerPolicy,
+    }).catch(() => new Response(offlinePage(request.headers.get('Accept-Language') || self.navigator.language || 'ja'), {
       status: 503,
       headers: {
         'Content-Type': 'text/html; charset=utf-8',

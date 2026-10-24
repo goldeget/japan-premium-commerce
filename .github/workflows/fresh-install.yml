@@ -1760,11 +1760,30 @@ jobs:
           if [[ "$PWA_BROWSER_QA_OUTCOME" == success ]]; then
             required_artifacts+=(
               pwa-e2e.log
-              pwa-desktop-installability.png
-              pwa-mobile-installability.png
-              pwa-desktop-offline-fallback.png
-              pwa-mobile-offline-fallback.png
-              pwa-desktop-logged-out-account.png
+              pwa-desktop-ja-installability.png
+              pwa-desktop-en-installability.png
+              pwa-desktop-ko-installability.png
+              pwa-mobile-ja-installability.png
+              pwa-mobile-en-installability.png
+              pwa-mobile-ko-installability.png
+              pwa-desktop-ja-offline-fallback.png
+              pwa-desktop-en-offline-fallback.png
+              pwa-desktop-ko-offline-fallback.png
+              pwa-mobile-ja-offline-fallback.png
+              pwa-mobile-en-offline-fallback.png
+              pwa-mobile-ko-offline-fallback.png
+              pwa-desktop-ja-account.png
+              pwa-desktop-en-account.png
+              pwa-desktop-ko-account.png
+              pwa-mobile-ja-account.png
+              pwa-mobile-en-account.png
+              pwa-mobile-ko-account.png
+              pwa-desktop-ja-logged-out-account.png
+              pwa-desktop-en-logged-out-account.png
+              pwa-desktop-ko-logged-out-account.png
+              pwa-mobile-ja-logged-out-account.png
+              pwa-mobile-en-logged-out-account.png
+              pwa-mobile-ko-logged-out-account.png
             )
           fi
           if [[ "$CHECKOUT_CUSTOMER_BROWSER_QA_OUTCOME" == success ]]; then

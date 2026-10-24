@@ -37,6 +37,12 @@ PWA_LOGOUT_ROUTE_CLASSES = {"authentication", "account", "home", "other"}
 PWA_DIAGNOSTIC_MAX_REDIRECTS = 8
 PWA_DIAGNOSTIC_MAX_PATH_LENGTH = 160
 PWA_DIAGNOSTIC_MAX_QUERY_KEYS = 8
+PWA_DIAGNOSTIC_AUTH_ROUTE_SEGMENTS = {
+    "authentication",
+    "login",
+    "\u30ed\u30b0\u30a4\u30f3",
+    "\ub85c\uadf8\uc778",
+}
 PWA_DIAGNOSTIC_ROUTE_SEGMENTS = {
     "account",
     "addresses",
@@ -48,7 +54,7 @@ PWA_DIAGNOSTIC_ROUTE_SEGMENTS = {
     "history",
     "identity",
     "index.php",
-    "login",
+    *PWA_DIAGNOSTIC_AUTH_ROUTE_SEGMENTS,
     "my-account",
     "order",
     "order-detail",
@@ -62,7 +68,9 @@ PWA_DIAGNOSTIC_QUERY_KEYS = {
     "action",
     "back",
     "controller",
+    "id_lang",
     "id_order",
+    "lang",
     "mylogout",
     "token",
 }
@@ -82,6 +90,16 @@ PWA_DIAGNOSTIC_WORKER_SOURCES = {
     "fallback-code",
     "http-cache",
     "network",
+}
+PWA_SUPPORTED_LOCALES = ("ja", "en", "ko")
+PWA_VIEWPORTS = (
+    ("desktop", 1440, 960),
+    ("mobile", 390, 844),
+)
+PWA_OFFLINE_FALLBACKS = {
+    "ja": ("Japanese", "インターネットに接続できません"),
+    "en": ("English", "You are offline"),
+    "ko": ("Korean", "연결을 확인해 주세요"),
 }
 
 
@@ -214,6 +232,148 @@ def same_origin(reference_url: str, candidate_url: str) -> bool:
         )
     except (TypeError, ValueError):
         return False
+
+
+def same_storefront_route(candidate_url: str, expected_url: str, shop_url: str) -> bool:
+    """Compare same-origin route semantics internally without exposing query values."""
+    if not same_origin(shop_url, candidate_url) or not same_origin(shop_url, expected_url):
+        return False
+    try:
+        candidate = urlparse(urljoin(shop_url.rstrip("/") + "/", candidate_url))
+        expected = urlparse(urljoin(shop_url.rstrip("/") + "/", expected_url))
+        candidate_path = unquote(candidate.path or "/", errors="strict").rstrip("/") or "/"
+        expected_path = unquote(expected.path or "/", errors="strict").rstrip("/") or "/"
+        if candidate_path != expected_path:
+            return False
+        candidate_query = parse_qs(candidate.query, keep_blank_values=True)
+        expected_query = parse_qs(expected.query, keep_blank_values=True)
+        if candidate_query.get("controller", []) != expected_query.get("controller", []):
+            return False
+        for key in ("id_lang", "isolang", "lang"):
+            candidate_values = candidate_query.get(key, [])
+            expected_values = expected_query.get(key, [])
+            if key in {"isolang", "lang"}:
+                candidate_values = [value.casefold() for value in candidate_values]
+                expected_values = [value.casefold() for value in expected_values]
+            if candidate_values != expected_values:
+                return False
+    except (TypeError, UnicodeDecodeError, ValueError):
+        return False
+    return True
+
+
+def annotate_generated_login_route_match(
+    trace: dict[str, object],
+    response_url: object,
+    expected_login_url: str | None,
+    shop_url: str,
+) -> bool | None:
+    """Store only a safe match between the final response and generated sign-in route."""
+    if expected_login_url is None:
+        return None
+    matches = (
+        same_storefront_route(response_url, expected_login_url, shop_url)
+        if isinstance(response_url, str)
+        else None
+    )
+    trace["final_route_matches_login"] = matches
+    return matches
+
+
+def browser_locale_profile(locale: str) -> dict[str, str]:
+    profiles = {
+        "ja": {"browser_tag": "ja-JP", "accept_language": "ja-JP,ja;q=0.9"},
+        "en": {"browser_tag": "en-US", "accept_language": "en-US,en;q=0.9"},
+        "ko": {"browser_tag": "ko-KR", "accept_language": "ko-KR,ko;q=0.9"},
+    }
+    try:
+        return dict(profiles[locale])
+    except KeyError as error:
+        raise AssertionError("unsupported storefront locale requested by PWA QA") from error
+
+
+def pwa_browser_cases() -> tuple[tuple[str, str, int, int, str], ...]:
+    """Return one independent browser case for every supported locale and viewport."""
+    return tuple(
+        (device, locale, width, height, f"{device}-{locale}")
+        for device, width, height in PWA_VIEWPORTS
+        for locale in PWA_SUPPORTED_LOCALES
+    )
+
+
+def resolve_storefront_locale_url(
+    options: object, locale: str, shop_url: str
+) -> str:
+    """Resolve the native language selector destination without guessing route slugs."""
+    if locale not in PWA_SUPPORTED_LOCALES:
+        raise AssertionError("unsupported storefront locale requested by PWA QA")
+    if not isinstance(options, (list, tuple)):
+        raise AssertionError("the PrestaShop language selector is unavailable")
+    matches = [
+        option
+        for option in options
+        if isinstance(option, dict)
+        and isinstance(option.get("iso_code"), str)
+        and option["iso_code"].casefold() == locale
+    ]
+    if len(matches) != 1 or not isinstance(matches[0].get("value"), str) or not matches[0]["value"]:
+        raise AssertionError("the PrestaShop language selector has no unique locale destination")
+    destination = urljoin(shop_url.rstrip("/") + "/", matches[0]["value"])
+    if not same_origin(shop_url, destination):
+        raise AssertionError("the language selector changed the isolated shop origin")
+    return destination
+
+
+def assert_document_locale(driver: webdriver.Chrome, locale: str, page_label: str) -> None:
+    if locale not in PWA_SUPPORTED_LOCALES:
+        raise AssertionError("unsupported storefront locale requested by PWA QA")
+    try:
+        document_language = (
+            driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or ""
+        ).casefold()
+    except Exception as error:
+        raise AssertionError(f"{page_label} did not expose a document language") from error
+    if document_language.split("-", 1)[0] != locale:
+        raise AssertionError(f"{page_label} did not render the expected storefront locale")
+
+
+def assert_offline_fallback_content(driver: webdriver.Chrome, locale: str) -> None:
+    if locale not in PWA_OFFLINE_FALLBACKS:
+        raise AssertionError("unsupported storefront locale requested by PWA QA")
+    language_name, expected_heading = PWA_OFFLINE_FALLBACKS[locale]
+    assert_document_locale(driver, locale, "offline fallback")
+    body = driver.find_element(By.TAG_NAME, "body").text
+    if expected_heading not in body:
+        raise AssertionError(
+            f"offline navigation did not show the expected {language_name} offline fallback"
+        )
+
+
+def select_storefront_locale(
+    driver: webdriver.Chrome, shop_url: str, locale: str
+) -> str:
+    """Open the localized home page using PrestaShop's generated language URL."""
+    options = WebDriverWait(driver, 30).until(
+        lambda browser: browser.find_elements(
+            By.CSS_SELECTOR,
+            "select.js-language-selector option[data-iso-code]",
+        )
+        or False
+    )
+    option_values = [
+        {
+            "iso_code": option.get_attribute("data-iso-code") or "",
+            "value": option.get_attribute("value") or "",
+        }
+        for option in options
+    ]
+    destination = resolve_storefront_locale_url(option_values, locale, shop_url)
+    driver.get(destination)
+    WebDriverWait(driver, 30).until(
+        lambda browser: browser.execute_script("return document.readyState") == "complete"
+    )
+    assert_document_locale(driver, locale, "localized storefront home")
+    return destination
 
 
 def customer_route_class(candidate_url: str, shop_url: str) -> str:
@@ -356,6 +516,31 @@ def safe_logout_wait_diagnostics(driver: webdriver.Chrome, shop_url: str) -> dic
     return metadata
 
 
+def capture_logout_snapshot_preserving_error(
+    driver: webdriver.Chrome,
+    shop_url: str,
+    *,
+    prior_error: BaseException | None = None,
+) -> tuple[dict[str, object], BaseException | None]:
+    """Capture bounded context without replacing the logout assertion that failed first."""
+    try:
+        snapshot = safe_logout_wait_diagnostics(driver, shop_url)
+    except Exception as diagnostic_error:
+        return {}, prior_error if prior_error is not None else diagnostic_error
+    return snapshot, prior_error
+
+
+def prefer_primary_failure_substage(
+    primary_error: BaseException | None,
+    primary_substage: str,
+    fallback_substage: str,
+) -> str:
+    """Keep reporting the stage that first failed even if restoration later fails too."""
+    if primary_error is not None and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", primary_substage):
+        return primary_substage
+    return fallback_substage
+
+
 def _safe_path(path: object) -> str:
     if not isinstance(path, str) or not path.startswith("/") or len(path) > 2048:
         return "<other>"
@@ -490,10 +675,16 @@ def _navigation_url_matches(candidate_url: object, requested_url: str, shop_url:
 def _safe_response_cache_provenance(response: dict[str, object]) -> dict[str, object]:
     from_service_worker = response.get("fromServiceWorker")
     from_disk_cache = response.get("fromDiskCache")
+    from_prefetch_cache = response.get("fromPrefetchCache")
     source = response.get("serviceWorkerResponseSource")
+    headers = response.get("headers")
     return {
         "from_service_worker": from_service_worker if type(from_service_worker) is bool else None,
         "from_disk_cache": from_disk_cache if type(from_disk_cache) is bool else None,
+        "from_prefetch_cache": from_prefetch_cache if type(from_prefetch_cache) is bool else None,
+        "private_cache_policy": (
+            response_has_private_cache_policy(headers) if isinstance(headers, dict) else None
+        ),
         "service_worker_source": (
             source if isinstance(source, str) and source in PWA_DIAGNOSTIC_WORKER_SOURCES else None
         ),
@@ -515,6 +706,7 @@ def safe_document_navigation_trace(
     main_frame_id: str,
     *,
     sensitive_values: tuple[str, ...] = (),
+    expected_final_url: str | None = None,
 ) -> dict[str, object]:
     """Correlate one main-frame document redirect chain and expose only safe metadata."""
     del sensitive_values  # URLs, query values, headers, and CDP identifiers are never returned.
@@ -523,14 +715,19 @@ def safe_document_navigation_trace(
         "method": "unknown",
         "initial_target": safe_navigation_target(requested_url, shop_url),
         "redirects": [],
+        "redirects_truncated": False,
         "final": {
             "status": None,
             "target": {"path": "<other>", "query_keys": []},
             "from_service_worker": None,
             "from_disk_cache": None,
+            "from_prefetch_cache": None,
+            "private_cache_policy": None,
             "service_worker_source": None,
         },
     }
+    if expected_final_url is not None:
+        trace["final_route_matches_login"] = None
     if not isinstance(events, (list, tuple)) or not isinstance(main_frame_id, str):
         return trace
 
@@ -608,12 +805,15 @@ def safe_document_navigation_trace(
                     }
                 )
                 if len(redirects) > PWA_DIAGNOSTIC_MAX_REDIRECTS:
+                    trace["redirects_truncated"] = True
                     redirects = redirects[:PWA_DIAGNOSTIC_MAX_REDIRECTS]
                 current_request_url = request.get("url") if isinstance(request.get("url"), str) else current_request_url
                 current_request_served_from_cache = None
                 # A responseReceived event for a redirect is provisional; its redirectResponse
                 # counterpart above is the authoritative hop and starts a new request.
                 final = None
+                if expected_final_url is not None:
+                    trace["final_route_matches_login"] = None
             elif isinstance(request, dict) and isinstance(request.get("url"), str):
                 current_request_url = request["url"]
                 current_request_served_from_cache = None
@@ -629,6 +829,13 @@ def safe_document_navigation_trace(
                 "request_served_from_cache": current_request_served_from_cache,
                 **_safe_response_cache_provenance(response),
             }
+            if expected_final_url is not None:
+                annotate_generated_login_route_match(
+                    trace,
+                    response.get("url"),
+                    expected_final_url,
+                    shop_url,
+                )
 
     trace["redirects"] = redirects
     if final is not None:
@@ -661,12 +868,28 @@ def _format_navigation_trace(value: object) -> str:
     formatted = f"{method} {_format_safe_target(value.get('initial_target'))}"
     redirects = value.get("redirects")
     if isinstance(redirects, list):
-        for redirect in redirects[:PWA_DIAGNOSTIC_MAX_REDIRECTS]:
+        for index, redirect in enumerate(redirects[:PWA_DIAGNOSTIC_MAX_REDIRECTS], start=1):
             if not isinstance(redirect, dict):
                 continue
             status = redirect.get("status")
             safe_status = status if type(status) is int and 100 <= status <= 599 else "?"
             formatted += f";{safe_status}->{_format_safe_target(redirect.get('target'))}"
+            formatted += f";redirect{index}_service_worker={_diagnostic_boolean(redirect.get('from_service_worker'))}"
+            formatted += f";redirect{index}_disk_cache={_diagnostic_boolean(redirect.get('from_disk_cache'))}"
+            formatted += f";redirect{index}_prefetch_cache={_diagnostic_boolean(redirect.get('from_prefetch_cache'))}"
+            formatted += f";redirect{index}_request_cache={_diagnostic_boolean(redirect.get('request_served_from_cache'))}"
+            formatted += f";redirect{index}_private_cache_policy={_diagnostic_boolean(redirect.get('private_cache_policy'))}"
+            source = redirect.get("service_worker_source")
+            if isinstance(source, str) and source in PWA_DIAGNOSTIC_WORKER_SOURCES:
+                formatted += f";redirect{index}_worker_source={source}"
+    if value.get("redirects_truncated") is True:
+        formatted += ";redirects_truncated=true"
+    if "final_route_matches_login" in value:
+        route_match = value.get("final_route_matches_login")
+        formatted += (
+            ";final_route_matches_login="
+            + (str(route_match).lower() if type(route_match) is bool else "unknown")
+        )
     final = value.get("final")
     if isinstance(final, dict):
         status = final.get("status")
@@ -684,6 +907,8 @@ def _format_navigation_trace(value: object) -> str:
         if isinstance(final_target.get("back"), str):
             formatted += f";final_back={final_target['back']}"
         formatted += f";request_cache={_diagnostic_boolean(final.get('request_served_from_cache'))}"
+        formatted += f";prefetch_cache={_diagnostic_boolean(final.get('from_prefetch_cache'))}"
+        formatted += f";private_cache_policy={_diagnostic_boolean(final.get('private_cache_policy'))}"
         source = final.get("service_worker_source")
         if isinstance(source, str) and source in PWA_DIAGNOSTIC_WORKER_SOURCES:
             formatted += f";worker_source={source}"
@@ -706,6 +931,7 @@ def navigation_trace_has_cache_hit(trace: object) -> bool:
         isinstance(step, dict)
         and (
             step.get("from_disk_cache") is True
+            or step.get("from_prefetch_cache") is True
             or step.get("request_served_from_cache") is True
             or step.get("service_worker_source") in {"cache-storage", "http-cache"}
         )
@@ -714,11 +940,15 @@ def navigation_trace_has_cache_hit(trace: object) -> bool:
 
 
 def validate_logged_out_navigation_trace(
-    trace: object, *, service_worker_expected: bool
+    trace: object,
+    *,
+    service_worker_expected: bool,
 ) -> None:
     """Require a completed login redirect with the expected worker and cache path."""
     if not isinstance(trace, dict) or trace.get("observed") is not True:
         raise AssertionError("logged-out protected account navigation was not observed")
+    if trace.get("redirects_truncated") is True:
+        raise AssertionError("logged-out protected account redirect chain is incomplete")
     redirects = trace.get("redirects")
     redirects = redirects if isinstance(redirects, list) else []
     if not redirects or not isinstance(redirects[0], dict) or redirects[0].get("status") != 302:
@@ -726,9 +956,30 @@ def validate_logged_out_navigation_trace(
     final = trace.get("final")
     if not isinstance(final, dict) or final.get("status") != 200:
         raise AssertionError("logged-out sign-in destination did not return HTTP 200")
+    final_target = _safe_navigation_target_metadata(final.get("target"))
+    final_path = final_target.get("path")
+    recognized_auth_route = (
+        final_target.get("controller") in PWA_DIAGNOSTIC_AUTH_ROUTE_SEGMENTS
+        or (
+            isinstance(final_path, str)
+            and final_path.rstrip("/").split("/")[-1]
+            in PWA_DIAGNOSTIC_AUTH_ROUTE_SEGMENTS
+        )
+    )
+    if "final_route_matches_login" in trace:
+        route_matches_login = trace.get("final_route_matches_login") is True
+    else:
+        route_matches_login = recognized_auth_route
+    if not route_matches_login:
+        raise AssertionError("logged-out redirect did not land on the authentication route")
+    worker_steps = [*redirects, final]
+    if any(
+        not isinstance(step, dict) or step.get("private_cache_policy") is not True
+        for step in worker_steps
+    ):
+        raise AssertionError("logged-out redirect chain lacks private/no-store response headers")
     if navigation_trace_has_cache_hit(trace):
         raise AssertionError("logged-out protected document was served from a browser or service-worker cache")
-    worker_steps = [*redirects, final]
     expected_value = service_worker_expected
     if any(step.get("from_service_worker") is not expected_value for step in worker_steps if isinstance(step, dict)):
         condition = "service worker" if service_worker_expected else "network without service worker"
@@ -740,6 +991,43 @@ def validate_logged_out_navigation_trace(
             if isinstance(step, dict)
         ):
             raise AssertionError("service worker returned a cached private customer document")
+
+
+def validate_logout_navigation_trace(trace: object) -> None:
+    """Require the clicked sign-out navigation itself to finish at a safe login page."""
+    if not isinstance(trace, dict) or trace.get("observed") is not True:
+        raise AssertionError("customer logout navigation was not observed")
+    if trace.get("redirects_truncated") is True:
+        raise AssertionError("customer logout redirect chain is incomplete")
+    redirects = trace.get("redirects")
+    redirects = redirects if isinstance(redirects, list) else []
+    if not any(
+        isinstance(step, dict) and step.get("status") in {301, 302, 303, 307, 308}
+        for step in redirects
+    ):
+        raise AssertionError("customer logout did not follow a sign-in redirect")
+    final = trace.get("final")
+    if not isinstance(final, dict) or final.get("status") != 200:
+        raise AssertionError("customer logout destination did not return HTTP 200")
+    final_target = _safe_navigation_target_metadata(final.get("target"))
+    final_path = final_target.get("path")
+    recognized_auth_route = (
+        final_target.get("controller") in PWA_DIAGNOSTIC_AUTH_ROUTE_SEGMENTS
+        or (
+            isinstance(final_path, str)
+            and final_path.rstrip("/").split("/")[-1] in PWA_DIAGNOSTIC_AUTH_ROUTE_SEGMENTS
+        )
+    )
+    if "final_route_matches_login" in trace:
+        route_matches_login = trace.get("final_route_matches_login") is True
+    else:
+        route_matches_login = recognized_auth_route
+    if not route_matches_login:
+        raise AssertionError("customer logout did not land on the authentication route")
+    if final.get("private_cache_policy") is not True:
+        raise AssertionError("customer logout destination lacks private/no-store response headers")
+    if navigation_trace_has_cache_hit(trace):
+        raise AssertionError("customer logout destination was served from a browser or service-worker cache")
 
 
 def _format_selected_signout(value: object) -> str:
@@ -788,14 +1076,23 @@ def format_logout_wait_diagnostic(metadata: dict[str, object]) -> str:
     selected = metadata.get("selected_signout")
     if isinstance(selected, dict):
         diagnostic += f"; selected_signout={_format_selected_signout(selected)}"
-    for key in ("logout_trace", "protected_pwa_trace", "protected_network_trace"):
+    for key in (
+        "logout_trace",
+        "protected_pwa_trace",
+        "protected_network_trace",
+        "post_restore_trace",
+    ):
         if key in metadata:
             diagnostic += f"; {key}={_format_navigation_trace(metadata.get(key))}"
     for key in (
+        "logout_identity_exposed",
+        "logout_cache_empty",
         "controlled_identity_exposed",
         "controlled_cache_empty",
         "network_identity_exposed",
         "network_cache_empty",
+        "post_restore_identity_exposed",
+        "service_worker_bypass_reset",
         "service_worker_restored",
     ):
         if key in metadata:
@@ -1014,6 +1311,7 @@ def assert_private_document_cache_headers(
     *,
     performance_entries: object | None = None,
     trace_main_frame_id: str | None = None,
+    expected_final_url: str | None = None,
 ) -> dict[str, object]:
     if performance_entries is None:
         try:
@@ -1076,6 +1374,7 @@ def assert_private_document_cache_headers(
             requested_url,
             shop_url,
             trace_main_frame_id,
+            expected_final_url=expected_final_url,
         )
     if not response_has_private_cache_policy(headers):
         directives = sorted({
@@ -1098,6 +1397,8 @@ def assert_private_document_cache_headers(
             "from_disk_cache": observed["from_disk_cache"],
             "from_service_worker": observed["from_service_worker"],
         }
+        if isinstance(observed.get("navigation_trace"), dict):
+            safe_metadata["navigation_trace"] = observed["navigation_trace"]
         directive_summary = ",".join(safe_directives) or "missing"
         message = (
             f"FAIL: {route_label} response lacks Cache-Control private/no-store semantics "
@@ -1119,6 +1420,7 @@ def navigate_private_document(
     set_substage: Callable[[str], None] | None = None,
     *,
     capture_navigation_trace: bool = False,
+    expected_final_url: str | None = None,
 ) -> dict[str, object]:
     def mark_substage(name: str) -> None:
         if set_substage is not None:
@@ -1155,6 +1457,7 @@ def navigate_private_document(
             route_label,
             performance_entries=performance_entries,
             trace_main_frame_id=current_main_frame_id(driver),
+            expected_final_url=expected_final_url,
         )
     return assert_private_document_cache_headers(driver, requested_url, shop_url, route_label)
 
@@ -1507,6 +1810,7 @@ def restore_offline_network_state(
 def verify_offline_fallback(
     driver: webdriver.Chrome,
     base_url: str,
+    locale: str,
     screenshot: Path,
     set_stage: Callable[[str], None],
 ) -> None:
@@ -1554,13 +1858,7 @@ def verify_offline_fallback(
         set_stage("offline_fallback_navigation")
         driver.get(base_url + "/")
         set_stage("offline_fallback_content")
-        body = driver.find_element(By.TAG_NAME, "body").text
-        if not any(text in body for text in (
-            "インターネットに接続できません",
-            "You are offline",
-            "연결을 확인해 주세요",
-        )):
-            raise AssertionError("offline navigation did not show the localized fallback")
+        assert_offline_fallback_content(driver, locale)
         set_stage("offline_fallback_screenshot")
         driver.save_screenshot(str(screenshot))
         set_stage("offline_cache_storage")
@@ -1679,14 +1977,19 @@ def create_session_customer(
     base_url: str,
     email: str,
     password: str,
+    start_url: str,
+    locale: str,
     set_stage: Callable[[str], None] | None = None,
-) -> str:
+) -> tuple[str, str]:
     def mark_stage(name: str) -> None:
         if set_stage is not None:
             set_stage(name)
 
+    if not same_origin(base_url, start_url):
+        raise AssertionError("localized customer sign-in home escaped the isolated shop")
     mark_stage("customer_signin_navigation")
-    driver.get(base_url + "/")
+    driver.get(start_url)
+    assert_document_locale(driver, locale, "localized customer home")
     signin_links = driver.find_elements(
         By.CSS_SELECTOR,
         "#_desktop_ps_customersignin a[href], #_mobile_ps_customersignin a[href]",
@@ -1701,6 +2004,10 @@ def create_session_customer(
         raise AssertionError("customer sign-in link escaped the isolated shop")
     mark_stage("customer_signin_page")
     driver.get(signin_url)
+    assert_document_locale(driver, locale, "customer sign-in page")
+    signin_url = driver.current_url
+    if not same_origin(base_url, signin_url):
+        raise AssertionError("customer sign-in page redirected outside the isolated shop")
     mark_stage("customer_registration_navigation")
     registration = wait_visible(driver, 'a[data-link-action="display-register-form"]')
     registration_url = urljoin(driver.current_url, registration.get_attribute("href") or "")
@@ -1708,6 +2015,7 @@ def create_session_customer(
         raise AssertionError("customer registration link escaped the isolated shop")
     mark_stage("customer_registration_form")
     driver.get(registration_url)
+    assert_document_locale(driver, locale, "customer registration page")
     form = WebDriverWait(driver, 30).until(
         EC.visibility_of_element_located((By.CSS_SELECTOR, "#customer-form"))
     )
@@ -1766,12 +2074,13 @@ def create_session_customer(
     )
     account_url = authenticated_account_url(driver, base_url)
     navigate_private_document(driver, account_url, base_url, "authenticated account")
+    assert_document_locale(driver, locale, "authenticated customer account")
     wait_visible(driver, "#identity_main_link")
     page_text = driver.find_element(By.TAG_NAME, "body").text
     if "Pwa" not in page_text or "Session" not in page_text:
         raise AssertionError("authenticated account page did not show the synthetic customer")
     assert_empty_cache_storage(driver, "authenticated customer account")
-    return account_url
+    return account_url, signin_url
 
 
 def verify_logged_out_private_routes(
@@ -1863,8 +2172,14 @@ def verify_logout_protection(
     email: str,
     screenshot: Path,
     set_substage: Callable[[str], None],
+    expected_login_url: str | None = None,
+    expected_locale: str | None = None,
 ) -> None:
+    logout_substage = ""
+
     def mark_stage(name: str) -> None:
+        nonlocal logout_substage
+        logout_substage = name
         set_substage(name)
 
     mark_stage("resolve_signout_link")
@@ -1920,6 +2235,7 @@ def verify_logout_protection(
         signout_url,
         shop_url,
         signout_frame_id or "",
+        expected_final_url=expected_login_url,
     )
     if logout_trace.get("observed") is not True or not any(
         isinstance(hop, dict) and hop.get("status") in {301, 302, 303, 307, 308}
@@ -1935,6 +2251,44 @@ def verify_logout_protection(
             protected_network_trace=safe_document_navigation_trace([], account_url, shop_url, ""),
         )
         raise error
+    logout_navigation_error: BaseException | None = None
+    logout_identity_exposed: bool | None = None
+    logout_cache_empty: bool | None = None
+    mark_stage("assert_logout_destination")
+    try:
+        validate_logout_navigation_trace(logout_trace)
+    except Exception as error:
+        logout_navigation_error = error
+    try:
+        if not any(
+            element.is_displayed()
+            for element in driver.find_elements(By.CSS_SELECTOR, "#login-form input[name='email']")
+        ):
+            raise AssertionError("customer logout did not display the login form")
+        if expected_locale is not None:
+            assert_document_locale(driver, expected_locale, "customer logout login page")
+    except Exception as error:
+        if logout_navigation_error is None:
+            logout_navigation_error = error
+    try:
+        logout_body_text = driver.find_element(By.TAG_NAME, "body").text
+        logout_identity_exposed = exposes_test_identity(
+            logout_body_text, first_name, last_name, email
+        )
+        if logout_identity_exposed and logout_navigation_error is None:
+            logout_navigation_error = AssertionError(
+                "customer logout page exposed the synthetic customer's identity"
+            )
+    except Exception as error:
+        if logout_navigation_error is None:
+            logout_navigation_error = error
+    try:
+        assert_empty_cache_storage(driver, "customer logout destination")
+        logout_cache_empty = True
+    except Exception as error:
+        logout_cache_empty = False
+        if logout_navigation_error is None:
+            logout_navigation_error = error
     mark_stage("request_protected_account")
     try:
         account_response = navigate_private_document(
@@ -1944,6 +2298,7 @@ def verify_logout_protection(
             "logged-out account",
             set_substage=lambda name: mark_stage(f"request_protected_account_{name}"),
             capture_navigation_trace=True,
+            expected_final_url=expected_login_url,
         )
     except Exception as error:
         attach_logout_context(
@@ -1983,10 +2338,14 @@ def verify_logout_protection(
     ):
         raise AssertionError("logged-out browser still shows an authenticated user menu")
     mark_stage("require_login_form")
-    normal_form_error: BaseException | None = None
-    normal_failure_substage = "require_login_form"
+    normal_form_error: BaseException | None = logout_navigation_error
+    normal_failure_substage = (
+        "assert_logout_destination" if logout_navigation_error is not None else "require_login_form"
+    )
     try:
         wait_for_logout_login_form(driver, shop_url)
+        if expected_locale is not None:
+            assert_document_locale(driver, expected_locale, "service-worker-controlled login page")
     except Exception as error:
         normal_form_error = error
     try:
@@ -2023,9 +2382,18 @@ def verify_logout_protection(
         if normal_form_error is None:
             normal_form_error = error
             normal_failure_substage = "assert_empty_pwa_cache"
-    pwa_snapshot = safe_logout_wait_diagnostics(driver, shop_url)
+    pwa_snapshot, snapshot_error = capture_logout_snapshot_preserving_error(
+        driver,
+        shop_url,
+        prior_error=normal_form_error,
+    )
+    if normal_form_error is None and snapshot_error is not None:
+        normal_form_error = snapshot_error
+        normal_failure_substage = "capture_pwa_diagnostic_snapshot"
     pwa_snapshot["controlled_identity_exposed"] = pwa_identity_exposed
     pwa_snapshot["controlled_cache_empty"] = pwa_cache_empty
+    pwa_snapshot["logout_identity_exposed"] = logout_identity_exposed
+    pwa_snapshot["logout_cache_empty"] = logout_cache_empty
     if pwa_identity_exposed is False:
         try:
             driver.save_screenshot(str(screenshot))
@@ -2039,6 +2407,9 @@ def verify_logout_protection(
     network_identity_exposed: bool | None = None
     network_cache_empty: bool | None = None
     bypass_reset_ok = False
+    service_worker_restored = False
+    service_worker_ready_after_reset = False
+    network_failure_substage = ""
     mark_stage("compare_service_worker_bypass")
     try:
         driver.execute_cdp_cmd("Network.setBypassServiceWorker", {"bypass": True})
@@ -2049,6 +2420,7 @@ def verify_logout_protection(
             "logged-out account without service worker",
             set_substage=lambda name: mark_stage(f"request_network_account_{name}"),
             capture_navigation_trace=True,
+            expected_final_url=expected_login_url,
         )
         candidate_trace = network_response.get("navigation_trace")
         if isinstance(candidate_trace, dict):
@@ -2060,6 +2432,8 @@ def verify_logout_protection(
         else:
             try:
                 wait_for_logout_login_form(driver, shop_url)
+                if expected_locale is not None:
+                    assert_document_locale(driver, expected_locale, "network-only login page")
             except Exception as error:
                 network_form_error = error
             try:
@@ -2092,20 +2466,62 @@ def verify_logout_protection(
     except Exception as error:
         network_form_error = error
     finally:
+        if network_form_error is not None and not network_failure_substage:
+            network_failure_substage = logout_substage
         try:
             driver.execute_cdp_cmd("Network.setBypassServiceWorker", {"bypass": False})
             bypass_reset_ok = True
         except Exception as error:
             if network_form_error is None:
                 network_form_error = error
-    try:
-        wait_for_service_worker(driver)
-    except Exception as error:
-        if network_form_error is None:
-            network_form_error = error
-    pwa_snapshot["service_worker_restored"] = bypass_reset_ok
+                network_failure_substage = logout_substage
+    if network_form_error is not None and not network_failure_substage:
+        network_failure_substage = logout_substage
+    post_restore_trace = safe_document_navigation_trace([], account_url, shop_url, "")
+    post_restore_identity_exposed: bool | None = None
+    if bypass_reset_ok:
+        mark_stage("verify_service_worker_restored_navigation")
+        try:
+            restored_response = navigate_private_document(
+                driver,
+                account_url,
+                shop_url,
+                "logged-out account after service worker restore",
+                set_substage=lambda name: mark_stage(f"request_restored_account_{name}"),
+                capture_navigation_trace=True,
+                expected_final_url=expected_login_url,
+            )
+            restored_trace = restored_response.get("navigation_trace")
+            if isinstance(restored_trace, dict):
+                post_restore_trace = restored_trace
+            if restored_response.get("status") != 302:
+                raise AssertionError("logged-out account did not redirect after service worker restore")
+            wait_for_service_worker(driver)
+            service_worker_ready_after_reset = True
+            validate_logged_out_navigation_trace(
+                post_restore_trace,
+                service_worker_expected=True,
+            )
+            wait_for_logout_login_form(driver, shop_url)
+            if expected_locale is not None:
+                assert_document_locale(driver, expected_locale, "restored service-worker login page")
+            restored_body_text = driver.find_element(By.TAG_NAME, "body").text
+            post_restore_identity_exposed = exposes_test_identity(
+                restored_body_text, first_name, last_name, email
+            )
+            if post_restore_identity_exposed:
+                raise AssertionError("restored service worker page exposed the synthetic customer's identity")
+            assert_empty_cache_storage(driver, "logged-out account after service worker restore")
+            service_worker_restored = service_worker_ready_after_reset
+        except Exception as error:
+            if network_form_error is None:
+                network_form_error = error
+    pwa_snapshot["service_worker_bypass_reset"] = bypass_reset_ok
+    pwa_snapshot["service_worker_restored"] = service_worker_restored
     pwa_snapshot["network_identity_exposed"] = network_identity_exposed
     pwa_snapshot["network_cache_empty"] = network_cache_empty
+    pwa_snapshot["post_restore_identity_exposed"] = post_restore_identity_exposed
+    pwa_snapshot["post_restore_trace"] = post_restore_trace
 
     if normal_form_error is not None:
         mark_stage(normal_failure_substage)
@@ -2119,6 +2535,13 @@ def verify_logout_protection(
         )
         raise normal_form_error
     if network_form_error is not None:
+        mark_stage(
+            prefer_primary_failure_substage(
+                network_form_error,
+                network_failure_substage,
+                logout_substage,
+            )
+        )
         attach_logout_context(
             network_form_error,
             snapshot=pwa_snapshot,
@@ -2155,6 +2578,8 @@ def verify_logout_protection(
     driver.get(account_url)
     mark_stage("require_login_form_after_history")
     wait_for_logout_login_form(driver, shop_url)
+    if expected_locale is not None:
+        assert_document_locale(driver, expected_locale, "login page after browser history")
     mark_stage("assert_empty_account_cache_after_history")
     assert_empty_cache_storage(driver, "account route after browser back")
 
@@ -2164,6 +2589,8 @@ def run_viewport(
     artifact_dir: Path,
     width: int,
     height: int,
+    device: str,
+    locale: str,
     label: str,
     isolated_product_id: int,
 ) -> None:
@@ -2173,12 +2600,14 @@ def run_viewport(
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument(f"--window-size={width},{height}")
-    options.add_argument("--lang=ja-JP")
+    locale_profile = browser_locale_profile(locale)
+    options.add_argument(f"--lang={locale_profile['browser_tag']}")
     options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
     driver = None
     stage = "chrome_start"
     primary_failure = False
     logout_substage = ""
+    locale_home_url = ""
 
     def update_offline_stage(next_stage: str) -> None:
         nonlocal stage
@@ -2193,12 +2622,18 @@ def run_viewport(
         driver.set_window_size(width, height)
         stage = "network_enable"
         driver.execute_cdp_cmd("Network.enable", {})
+        driver.execute_cdp_cmd(
+            "Network.setExtraHTTPHeaders",
+            {"headers": {"Accept-Language": locale_profile["accept_language"]}},
+        )
         stage = "storefront_navigation"
         driver.get(base_url + "/")
         stage = "storefront_ready"
         WebDriverWait(driver, 40).until(
             lambda browser: browser.execute_script("return document.readyState") == "complete"
         )
+        stage = "storefront_locale"
+        locale_home_url = select_storefront_locale(driver, base_url, locale)
         stage = "manifest"
         manifest = verify_manifest(driver, base_url)
         driver.save_screenshot(str(artifact_dir / f"pwa-{label}-installability.png"))
@@ -2236,20 +2671,27 @@ def run_viewport(
         verify_offline_fallback(
             driver,
             base_url,
+            locale,
             artifact_dir / f"pwa-{label}-offline-fallback.png",
             update_offline_stage,
         )
 
-        if label == "desktop":
-            stage = "customer_account_setup"
-            run_id = re.sub(r"[^0-9]", "", os.environ.get("GITHUB_RUN_ID", ""))
-            attempt = re.sub(r"[^0-9]", "", os.environ.get("GITHUB_RUN_ATTEMPT", ""))
-            unique = (run_id + attempt)[:20] or uuid.uuid4().hex[:16]
-            email = f"qa-ordenowa-pwa-{unique}@example.invalid"
-            password = f"Pwa-CI-{uuid.uuid4().hex[:20]}!"
-            account_url = create_session_customer(
-                driver, base_url, email, password, set_stage=update_offline_stage
-            )
+        stage = "customer_account_setup"
+        run_id = re.sub(r"[^0-9]", "", os.environ.get("GITHUB_RUN_ID", ""))
+        attempt = re.sub(r"[^0-9]", "", os.environ.get("GITHUB_RUN_ATTEMPT", ""))
+        unique = (run_id + attempt)[:20] or uuid.uuid4().hex[:16]
+        email = f"qa-ordenowa-pwa-{unique}-{label}@example.invalid"
+        password = f"Pwa-CI-{uuid.uuid4().hex[:20]}!"
+        account_url, signin_url = create_session_customer(
+            driver,
+            base_url,
+            email,
+            password,
+            locale_home_url,
+            locale,
+            set_stage=update_offline_stage,
+        )
+        if device == "desktop" and locale == "ja":
             stage = "customer_order_cart_setup"
             add_isolated_product_to_customer_cart(
                 driver,
@@ -2276,31 +2718,39 @@ def run_viewport(
             stage = "customer_account_before_logout"
             navigate_private_document(driver, account_url, base_url, "authenticated account before logout")
             wait_visible(driver, "#identity_main_link")
-            stage = "customer_logout"
-            verify_logout_protection(
-                driver,
-                account_url,
-                base_url,
-                "Pwa",
-                "Session",
-                email,
-                artifact_dir / "pwa-desktop-logged-out-account.png",
-                set_substage=update_logout_substage,
-            )
-            logout_substage = ""
+            assert_document_locale(driver, locale, "authenticated account before logout")
         else:
-            for route_stage, route in (
-                ("guest_authentication_route", "index.php?controller=authentication"),
-                ("guest_account_route", "index.php?controller=my-account"),
-                ("guest_cart_route", "index.php?controller=cart&action=show"),
-                ("guest_order_route", "index.php?controller=order"),
-            ):
-                stage = route_stage
-                driver.get(urljoin(base_url + "/", route))
-                WebDriverWait(driver, 30).until(
-                    lambda browser: browser.execute_script("return document.readyState") == "complete"
-                )
-                assert_empty_cache_storage(driver, f"guest {route.split('?', 1)[-1].split('&', 1)[0]}")
+            navigate_private_document(driver, account_url, base_url, "authenticated account before logout")
+            wait_visible(driver, "#identity_main_link")
+            assert_document_locale(driver, locale, "authenticated account before logout")
+        driver.save_screenshot(str(artifact_dir / f"pwa-{label}-account.png"))
+        stage = "customer_logout"
+        verify_logout_protection(
+            driver,
+            account_url,
+            base_url,
+            "Pwa",
+            "Session",
+            email,
+            artifact_dir / f"pwa-{label}-logged-out-account.png",
+            set_substage=update_logout_substage,
+            expected_login_url=signin_url,
+            expected_locale=locale,
+        )
+        logout_substage = ""
+        for route_stage, route in (
+            ("guest_authentication_route", "index.php?controller=authentication"),
+            ("guest_account_route", "index.php?controller=my-account"),
+            ("guest_cart_route", "index.php?controller=cart&action=show"),
+            ("guest_order_route", "index.php?controller=order"),
+        ):
+            stage = route_stage
+            driver.get(urljoin(base_url + "/", route))
+            WebDriverWait(driver, 30).until(
+                lambda browser: browser.execute_script("return document.readyState") == "complete"
+            )
+            assert_document_locale(driver, locale, f"logged-out {route_stage.replace('_', ' ')}")
+            assert_empty_cache_storage(driver, f"guest {route.split('?', 1)[-1].split('&', 1)[0]}")
 
         print(
             f"PASS: {label} Chromium secure-context installability prerequisites, official manifest icons, "
@@ -2344,6 +2794,9 @@ def run_viewport(
                         value = metadata.get(key)
                         if isinstance(value, bool):
                             diagnostic += f"; {key}={str(value).lower()}"
+                    navigation_trace = metadata.get("navigation_trace")
+                    if isinstance(navigation_trace, dict):
+                        diagnostic += f"; navigation_trace={_format_navigation_trace(navigation_trace)}"
         if isinstance(error, ChromeBrowserCdpError):
             code = getattr(error, "diagnostic_code", "")
             cause = getattr(error, "cause_type", "")
@@ -2420,11 +2873,20 @@ def main() -> int:
         return 2
     isolated_product_id = int(product_id_text)
     failed = []
-    for width, height, label in ((1440, 960, "desktop"), (390, 844, "mobile")):
+    for device, locale, width, height, label in pwa_browser_cases():
         try:
-            run_viewport(base_url, artifact_dir, width, height, label, isolated_product_id)
+            run_viewport(
+                base_url,
+                artifact_dir,
+                width,
+                height,
+                device,
+                locale,
+                label,
+                isolated_product_id,
+            )
         except Exception as error:
-            print(f"FAIL: {label} PWA browser QA ({type(error).__name__}).", file=sys.stderr)
+            print(f"FAIL: {device}/{locale} PWA browser QA ({type(error).__name__}).", file=sys.stderr)
             failed.append(label)
     print("INFO: real iOS and Android device installation was not tested.")
     print("INFO: Chromium headless installability prerequisites passed; native install prompt was not opened.")
