@@ -33,6 +33,12 @@ REQUIRED_PRIVATE_ROUTES = {
     "pdf-order-slip",
     "registration",
 }
+PRIVATE_ROUTE_LIST_PATTERN = re.compile(
+    r"if\s*\(\s*in_array\(\$controllerName,\s*\[\s*"
+    r"(?P<routes>'[a-z][a-z-]*'(?:\s*,\s*'[a-z][a-z-]*')*\s*,?)"
+    r"\s*\],\s*true\)\s*(?:\|\|\s*\$isLogoutAction\s*)?\)\s*\{",
+    re.DOTALL,
+)
 
 
 def method_source(source: str, method_name: str) -> str:
@@ -51,13 +57,14 @@ class PrivateCustomerCacheRouteContractTests(unittest.TestCase):
         cls.pwa = PWA_BROWSER.read_text(encoding="utf-8")
 
     def test_customer_data_controllers_receive_private_no_store_headers_early(self) -> None:
-        route_match = re.search(
-            r"if \(in_array\(\$controllerName, \[(.*?)\], true\)\)",
-            self.hook,
-            re.DOTALL,
-        )
+        route_match = PRIVATE_ROUTE_LIST_PATTERN.search(self.hook)
         self.assertIsNotNone(route_match, "early private response route list must remain explicit")
-        routes = set(re.findall(r"'([a-z][a-z-]*)'", route_match.group(1)))
+        self.assertNotIn(
+            "$isLogoutAction",
+            route_match.group("routes"),
+            "private route extraction must stop before the logout guard and later controller checks",
+        )
+        routes = set(re.findall(r"'([a-z][a-z-]*)'", route_match.group("routes")))
         self.assertTrue(
             REQUIRED_PRIVATE_ROUTES.issubset(routes),
             f"missing private customer-data route(s): {sorted(REQUIRED_PRIVATE_ROUTES - routes)}",
@@ -96,13 +103,9 @@ class PrivateCustomerCacheRouteContractTests(unittest.TestCase):
         )
         self.assertIn("if (in_array($controllerName, [", self.hook)
         self.assertIn("|| $isLogoutAction)", self.hook)
-        private_route_list = re.search(
-            r"if \(in_array\(\$controllerName, \[(.*?)\], true\)\)",
-            self.hook,
-            re.DOTALL,
-        )
+        private_route_list = PRIVATE_ROUTE_LIST_PATTERN.search(self.hook)
         self.assertIsNotNone(private_route_list)
-        routes = set(re.findall(r"'([a-z][a-z-]*)'", private_route_list.group(1)))
+        routes = set(re.findall(r"'([a-z][a-z-]*)'", private_route_list.group("routes")))
         self.assertNotIn("index", routes, "the public homepage must not inherit customer cache headers")
 
     def test_isolated_pwa_checks_logged_out_customer_routes_without_logging_urls(self) -> None:
