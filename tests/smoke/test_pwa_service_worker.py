@@ -73,9 +73,9 @@ const fetch = async (_request, options) => {
   return new Response('online response', {status: 200});
 };
 const caches = {open: async () => { cacheOpenCalls += 1; throw new Error('cache must not be opened'); }};
-vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {self, fetch, Response, caches});
+vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {self, fetch, Response, caches, URL});
 const request = {
-  url: 'http://localhost:18080/ja/identity',
+  url: config.url || 'http://localhost:18080/ja/identity',
   method: config.method,
   mode: config.mode,
   redirect: config.redirect || 'manual',
@@ -156,6 +156,19 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
             },
             result["fetchOptions"],
         )
+        self.assertEqual(0, result["cacheOpenCalls"])
+
+    def test_logout_action_navigation_is_left_to_browser_redirect_handling(self) -> None:
+        result = self.run_worker(
+            method="GET",
+            mode="navigate",
+            url="http://localhost:18080/ko/?mylogout",
+            offline=False,
+            language="ko-KR",
+        )
+
+        self.assertIs(result["intercepted"], False)
+        self.assertEqual(0, result["fetchCalls"])
         self.assertEqual(0, result["cacheOpenCalls"])
 
     def test_opaque_redirect_response_is_returned_unchanged_for_browser_navigation(self) -> None:

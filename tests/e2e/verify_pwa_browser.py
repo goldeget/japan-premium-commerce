@@ -1091,6 +1091,12 @@ def validate_logout_navigation_trace(trace: object) -> None:
     final = trace.get("final")
     if not isinstance(final, dict) or final.get("status") != 200:
         raise AssertionError("customer logout destination did not return HTTP 200")
+    if any(
+        step.get("from_service_worker") is not False
+        for step in [*redirect_steps, final]
+        if isinstance(step, dict)
+    ):
+        raise AssertionError("customer logout navigation was handled by the service worker")
     final_target = _safe_navigation_target_metadata(final.get("target"))
     final_path = final_target.get("path")
     recognized_auth_route = (

@@ -36,7 +36,8 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const request = event.request;
-  if (request.method !== 'GET' || request.mode !== 'navigate') {
+  const isLogoutAction = new URL(request.url).searchParams.has('mylogout');
+  if (request.method !== 'GET' || request.mode !== 'navigate' || isLogoutAction) {
     return;
   }
 

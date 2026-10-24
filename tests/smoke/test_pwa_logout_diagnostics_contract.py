@@ -650,6 +650,7 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
                 "status": 302,
                 "location_matches_next_request": True,
                 "location_matches_expected_login": True,
+                "from_service_worker": False,
             }],
             "final": {
                 "status": 200,
@@ -658,6 +659,7 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
                 "from_prefetch_cache": False,
                 "request_served_from_cache": False,
                 "service_worker_source": "network",
+                "from_service_worker": False,
             },
             "final_route_matches_login": True,
         }
@@ -678,6 +680,31 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         trace["final_route_matches_login"] = False
         with self.assertRaisesRegex(AssertionError, "authentication route"):
             validator(trace)
+
+    def test_logout_trace_rejects_a_service_worker_intercepted_redirect(self) -> None:
+        trace = {
+            "observed": True,
+            "redirects_truncated": False,
+            "redirects": [{
+                "status": 302,
+                "location_matches_next_request": True,
+                "location_matches_expected_login": True,
+                "from_service_worker": True,
+            }],
+            "final": {
+                "status": 200,
+                "private_cache_policy": True,
+                "from_disk_cache": False,
+                "from_prefetch_cache": False,
+                "request_served_from_cache": False,
+                "service_worker_source": "network",
+                "from_service_worker": False,
+            },
+            "final_route_matches_login": True,
+        }
+
+        with self.assertRaisesRegex(AssertionError, "service worker"):
+            pwa_browser.validate_logout_navigation_trace(trace)
 
     def test_document_navigation_trace_rejects_loader_mismatch_and_does_not_keep_provisional_redirect_as_final(self) -> None:
         trace_builder = getattr(pwa_browser, "safe_document_navigation_trace", None)
@@ -1066,12 +1093,44 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
                 "service_worker_source": "network",
             },
         }
+        network_logout_trace = {
+            "observed": True,
+            "redirects_truncated": False,
+            "redirects": [
+                {
+                    "status": 302,
+                    "target": {"path": "/ja/authentication", "controller": "authentication"},
+                    "location_matches_next_request": True,
+                    "location_matches_expected_login": True,
+                    "private_cache_policy": True,
+                    "from_service_worker": False,
+                    "from_disk_cache": False,
+                    "from_prefetch_cache": False,
+                    "request_served_from_cache": False,
+                    "service_worker_source": "network",
+                }
+            ],
+            "final": {
+                "status": 200,
+                "target": {"path": "/ja/authentication", "controller": "authentication"},
+                "private_cache_policy": True,
+                "from_service_worker": False,
+                "from_disk_cache": False,
+                "from_prefetch_cache": False,
+                "request_served_from_cache": False,
+                "service_worker_source": "network",
+            },
+            "final_route_matches_login": True,
+        }
+
+        def navigation_trace(_events: object, requested_url: str, *_args: object, **_kwargs: object):
+            return network_logout_trace if "mylogout" in requested_url else valid_trace
 
         with (
             patch.object(pwa_browser, "WebDriverWait", ImmediateWait),
             patch.object(pwa_browser, "By", FakeBy),
             patch.object(pwa_browser, "current_main_frame_id", return_value="main-frame"),
-            patch.object(pwa_browser, "safe_document_navigation_trace", return_value=valid_trace),
+            patch.object(pwa_browser, "safe_document_navigation_trace", side_effect=navigation_trace),
             patch.object(pwa_browser, "navigate_private_document", side_effect=navigate),
             patch.object(pwa_browser, "wait_for_logout_login_form"),
             patch.object(pwa_browser, "wait_for_service_worker", side_effect=wait_for_worker),
