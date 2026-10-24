@@ -274,10 +274,10 @@ def is_private_customer_back_target(value: object, shop_url: str) -> bool:
             for controller in query.get("controller", [])
         ):
             return True
-        path = unquote(parsed.path or "/", errors="strict")
+        path_segments = (parsed.path or "/").split("/")
         return any(
-            segment.casefold() in PWA_PRIVATE_CUSTOMER_ROUTES
-            for segment in path.split("/")
+            unquote(segment, errors="strict").casefold() in PWA_PRIVATE_CUSTOMER_ROUTES
+            for segment in path_segments
             if segment
         )
     except (TypeError, UnicodeDecodeError, ValueError):
@@ -1145,8 +1145,7 @@ def validate_logged_out_navigation_trace(
         elif (
             final_provenance is not False
             or not (
-                initial_route_is_private
-                or isinstance(redirects[-1].get("target"), dict)
+                isinstance(redirects[-1].get("target"), dict)
                 and redirects[-1]["target"].get("back_is_private_route") is True
             )
         ):

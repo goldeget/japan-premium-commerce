@@ -1381,6 +1381,10 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
             shop_url,
         )
         public = pwa_browser.safe_navigation_target(shop_url + "/ko/category", shop_url)
+        near_match = pwa_browser.safe_navigation_target(shop_url + "/ko/identity-help", shop_url)
+        encoded_separator = pwa_browser.safe_navigation_target(
+            shop_url + "/ko%2Fidentity", shop_url
+        )
         external = pwa_browser.safe_navigation_target(
             "https://other.example/ko/identity?customer=private-customer-id",
             shop_url,
@@ -1388,6 +1392,8 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
 
         self.assertIs(private.get("private_customer_route"), True)
         self.assertIs(public.get("private_customer_route"), False)
+        self.assertIs(near_match.get("private_customer_route"), False)
+        self.assertIs(encoded_separator.get("private_customer_route"), False)
         self.assertNotIn("private-customer-id", repr(private))
         self.assertIs(external.get("private_customer_route"), False)
 
@@ -1434,11 +1440,11 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
                 "status": 200,
                 "target": {"path": "/ko/ログイン"},
                 "private_cache_policy": True,
-                "from_service_worker": False,
+                "from_service_worker": True,
                 "from_disk_cache": False,
                 "from_prefetch_cache": False,
                 "request_served_from_cache": False,
-                "service_worker_source": None,
+                "service_worker_source": "network",
             },
             "final_route_matches_login": True,
         }
@@ -1483,6 +1489,37 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         pwa_browser.validate_logged_out_navigation_trace(trace, service_worker_expected=True)
 
         trace["redirects"][0]["target"]["back_is_private_route"] = False
+        with self.assertRaisesRegex(AssertionError, "native redirect hop"):
+            pwa_browser.validate_logged_out_navigation_trace(trace, service_worker_expected=True)
+
+    def test_private_initial_route_does_not_allow_native_auth_response_without_private_back(self) -> None:
+        trace = {
+            "observed": True,
+            "initial_target": {"path": "/<other>", "private_customer_route": True},
+            "redirects_truncated": False,
+            "redirects": [{
+                "status": 302,
+                "target": {"path": "/ko/authentication", "query_keys": []},
+                "private_cache_policy": True,
+                "from_service_worker": False,
+                "from_disk_cache": False,
+                "from_prefetch_cache": False,
+                "request_served_from_cache": False,
+                "service_worker_source": None,
+            }],
+            "final": {
+                "status": 200,
+                "target": {"path": "/ko/authentication"},
+                "private_cache_policy": True,
+                "from_service_worker": False,
+                "from_disk_cache": False,
+                "from_prefetch_cache": False,
+                "request_served_from_cache": False,
+                "service_worker_source": None,
+            },
+            "final_route_matches_login": True,
+        }
+
         with self.assertRaisesRegex(AssertionError, "native redirect hop"):
             pwa_browser.validate_logged_out_navigation_trace(trace, service_worker_expected=True)
 
