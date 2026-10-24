@@ -309,7 +309,84 @@ final class PrestaShopNativeProductManager
             throw new RuntimeException('상품의 비활성 판매 보호 상태를 저장하지 못했습니다.');
         }
 
+        $this->persistLocalizedFields($savedProductId, $draft, $shopId);
+
         return $savedProductId;
+    }
+
+    private function persistLocalizedFields(int $productId, ProductAdminDraft $draft, int $shopId): void
+    {
+        $languages = \Language::getLanguages(false);
+        $slugs = $this->localizedSlugs($languages, $draft);
+        $legends = $this->localizedValues($languages, $draft->nameJa, $draft->nameEn, $draft->nameKo);
+        $imageIds = $this->imageIds($productId);
+
+        foreach ($languages as $language) {
+            $languageId = (int) ($language['id_lang'] ?? 0);
+            if ($languageId < 1) {
+                continue;
+            }
+            if (!array_key_exists($languageId, $slugs) || !array_key_exists($languageId, $legends)) {
+                throw new RuntimeException('상품 URL과 이미지 설명에 필요한 언어별 값을 만들지 못했습니다.');
+            }
+
+            $savedSlug = (string) \Db::getInstance()->getValue(
+                'SELECT `link_rewrite` FROM `' . _DB_PREFIX_ . 'product_lang`'
+                . ' WHERE `id_product` = ' . (int) $productId
+                . ' AND `id_lang` = ' . (int) $languageId
+                . ' AND `id_shop` = ' . (int) $shopId . ' LIMIT 1',
+                false
+            );
+            if ($savedSlug !== $slugs[$languageId]) {
+                // Isolated CI readback found this field blank after the normal
+                // multilingual save. Correct only mismatched language rows.
+                $localizedProduct = new \Product($productId, false, $languageId, $shopId);
+                $localizedProduct->link_rewrite = $slugs[$languageId];
+                $localizedProduct->setFieldsToUpdate(['link_rewrite' => [$languageId => true]]);
+                if (!$localizedProduct->update()) {
+                    throw new RuntimeException('상품 URL 슬러그의 언어별 설정을 저장하지 못했습니다.');
+                }
+                $savedSlug = (string) \Db::getInstance()->getValue(
+                    'SELECT `link_rewrite` FROM `' . _DB_PREFIX_ . 'product_lang`'
+                    . ' WHERE `id_product` = ' . (int) $productId
+                    . ' AND `id_lang` = ' . (int) $languageId
+                    . ' AND `id_shop` = ' . (int) $shopId . ' LIMIT 1',
+                    false
+                );
+                if ($savedSlug !== $slugs[$languageId]) {
+                    throw new RuntimeException('상품 URL 슬러그의 언어별 저장값을 다시 확인하지 못했습니다.');
+                }
+            }
+
+            foreach ($imageIds as $imageId) {
+                $image = new \Image($imageId, $languageId, $shopId);
+                if (!\Validate::isLoadedObject($image) || (int) $image->id_product !== $productId) {
+                    throw new RuntimeException('상품 이미지의 언어별 설명을 저장할 이미지를 찾지 못했습니다.');
+                }
+                $savedLegend = (string) \Db::getInstance()->getValue(
+                    'SELECT `legend` FROM `' . _DB_PREFIX_ . 'image_lang`'
+                    . ' WHERE `id_image` = ' . (int) $imageId
+                    . ' AND `id_lang` = ' . (int) $languageId . ' LIMIT 1',
+                    false
+                );
+                if ($savedLegend !== $legends[$languageId]) {
+                    $image->legend = $legends[$languageId];
+                    $image->setFieldsToUpdate(['legend' => [$languageId => true]]);
+                    if (!$image->update()) {
+                        throw new RuntimeException('상품 이미지 설명의 언어별 설정을 저장하지 못했습니다.');
+                    }
+                    $savedLegend = (string) \Db::getInstance()->getValue(
+                        'SELECT `legend` FROM `' . _DB_PREFIX_ . 'image_lang`'
+                        . ' WHERE `id_image` = ' . (int) $imageId
+                        . ' AND `id_lang` = ' . (int) $languageId . ' LIMIT 1',
+                        false
+                    );
+                    if ($savedLegend !== $legends[$languageId]) {
+                        throw new RuntimeException('상품 이미지 설명의 언어별 저장값을 다시 확인하지 못했습니다.');
+                    }
+                }
+            }
+        }
     }
 
     /** @return array{name:string,values:list<string>}[] */

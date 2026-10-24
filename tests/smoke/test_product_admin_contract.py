@@ -51,6 +51,34 @@ class ProductAdminContractTests(unittest.TestCase):
         for readback_key in ("english-field readback", "expected_slug", "saved_slug", "expected_image_legend", "saved_image_legend"):
             with self.subTest(readback=readback_key):
                 self.assertIn(readback_key, integration)
+        for edit_readback in ("english-field readback", "expected_slug", "saved_slug", "expected_image_legend", "saved_image_legend"):
+            with self.subTest(edit_readback=edit_readback):
+                self.assertIn(edit_readback, integration.split("$englishEditFieldReadback", 1)[1])
+
+    def test_native_manager_reapplies_localized_slugs_and_image_legends_per_language(self) -> None:
+        service = (MODULE / "src" / "Integration" / "PrestaShopNativeProductManager.php").read_text(encoding="utf-8")
+        save_method = service.split("public function save(", 1)[1].split("public function optionGroups(", 1)[0]
+
+        self.assertIn("$this->persistLocalizedFields($savedProductId, $draft, $shopId);", save_method)
+        persistence = service.split("private function persistLocalizedFields(", 1)[1].split("private function optionText(", 1)[0]
+        for expected in (
+            "\\Language::getLanguages(false)",
+            "if (!array_key_exists($languageId, $slugs) || !array_key_exists($languageId, $legends))",
+            "SELECT `link_rewrite` FROM `",
+            "SELECT `legend` FROM `",
+            "$savedSlug !== $slugs[$languageId]",
+            "$savedLegend !== $legends[$languageId]",
+            "상품 URL 슬러그의 언어별 저장값을 다시 확인하지 못했습니다.",
+            "상품 이미지 설명의 언어별 저장값을 다시 확인하지 못했습니다.",
+            "new \\Product($productId, false, $languageId, $shopId)",
+            "setFieldsToUpdate(['link_rewrite' => [$languageId => true]])",
+            "new \\Image($imageId, $languageId, $shopId)",
+            "setFieldsToUpdate(['legend' => [$languageId => true]])",
+            "if (!$localizedProduct->update())",
+            "if (!$image->update())",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, persistence)
 
     def test_english_fallback_php_fixture_preserves_required_legacy_fields(self) -> None:
         fixture = (ROOT / "tests" / "catalog" / "product_admin_draft.php").read_text(encoding="utf-8")

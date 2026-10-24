@@ -371,7 +371,20 @@ $editChecks = [
 ];
 $editFailures = array_keys(array_filter($editChecks, static fn (bool $passed): bool => !$passed));
 if ($editFailures !== []) {
-    throw new RuntimeException('Native product edit failed checks: ' . implode(', ', $editFailures) . '.');
+    $englishEditFieldReadback = json_encode([
+        'english_language_id' => $englishLanguageId,
+        'expected_slug' => (string) Tools::str2url('ORDENOWA CI Synthetic Product edited'),
+        'saved_slug' => substr($editedEnglishSlug, 0, 128),
+        'expected_image_legend' => 'ORDENOWA CI Synthetic Product edited',
+        'saved_image_legend' => substr($editedEnglishImageLegend, 0, 128),
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if (!is_string($englishEditFieldReadback)) {
+        $englishEditFieldReadback = '{}';
+    }
+    throw new RuntimeException(
+        'Native product edit failed checks: ' . implode(', ', $editFailures)
+        . '; english-field readback=' . substr($englishEditFieldReadback, 0, 800) . '.'
+    );
 }
 foreach ($editedCombinationRows as $row) {
     if ((int) StockAvailable::getQuantityAvailableByProduct($savedProductId, (int) $row['id_product_attribute'], $shopId) !== 5) {
