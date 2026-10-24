@@ -43,6 +43,7 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(
     fetch(request, {
+      redirect: 'follow',
       referrer: request.referrer,
       referrerPolicy: request.referrerPolicy,
     }).catch(() => new Response(offlinePage(request.headers.get('Accept-Language') || self.navigator.language || 'ja'), {

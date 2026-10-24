@@ -65,12 +65,12 @@ const self = {
   navigator: {language: 'en-US'},
   skipWaiting: async () => {},
 };
-const fetch = async (_request, options) => {
+const fetch = async (request, options) => {
   fetchCalls += 1;
   fetchOptions = options ?? null;
   if (config.offline) throw new TypeError('offline');
   if (config.opaqueRedirect) {
-    if (options?.redirect === 'manual') return opaqueRedirectResponse;
+    if (request.redirect === 'manual' && options?.redirect !== 'follow') return opaqueRedirectResponse;
     return new Response('followed redirect response', {status: 200});
   }
   return new Response('online response', {status: 200});
@@ -81,7 +81,7 @@ const request = {
   url: config.url || 'http://localhost:18080/ja/identity',
   method: config.method,
   mode: config.mode,
-  redirect: config.redirect || 'follow',
+  redirect: config.redirect || 'manual',
   referrer: 'http://localhost:18080/ja/my-account',
   referrerPolicy: 'strict-origin-when-cross-origin',
   headers: {get: name => name === 'Accept-Language' ? config.language : null},
@@ -153,12 +153,13 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
         self.assertEqual("online response", result["body"])
         self.assertEqual(
             {
+                "redirect": "follow",
                 "referrer": "http://localhost:18080/ja/my-account",
                 "referrerPolicy": "strict-origin-when-cross-origin",
             },
             result["fetchOptions"],
         )
-        self.assertNotIn("redirect", result["fetchOptions"])
+        self.assertEqual("follow", result["fetchOptions"]["redirect"])
         self.assertEqual(0, result["cacheOpenCalls"])
 
     def test_logout_action_navigation_is_left_to_browser_redirect_handling(self) -> None:
@@ -189,6 +190,7 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
         self.assertIs(result["opaqueRedirectReturned"], False)
         self.assertEqual(
             {
+                "redirect": "follow",
                 "referrer": "http://localhost:18080/ja/my-account",
                 "referrerPolicy": "strict-origin-when-cross-origin",
             },
