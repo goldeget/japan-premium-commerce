@@ -28,7 +28,7 @@ services:
       mariadb:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${SHOP_PORT:-8080}:80"
+      - "${SHOP_BIND_ADDRESS:-127.0.0.1}:${SHOP_PORT:-8080}:80"
     environment:
       DB_SERVER: mariadb
       DB_PORT: "3306"
@@ -38,7 +38,7 @@ services:
       PS_INSTALL_AUTO: "1"
       PS_LANGUAGE: ja
       PS_COUNTRY: JP
-      PS_DOMAIN: localhost:${SHOP_PORT:-8080}
+      PS_DOMAIN: ${PS_DOMAIN:-localhost:${SHOP_PORT:-8080}}
       PS_ERASE_DB: "0"
       # The installer defaults its bundle-assets target to admin-dev when the
       # source /admin folder is renamed before installation. Keep real admin
@@ -67,7 +67,7 @@ services:
         bind:
           create_host_path: false
     healthcheck:
-      test: ["CMD-SHELL", "curl --silent --show-error --fail --output /dev/null --header 'Host: localhost:${SHOP_PORT:-8080}' http://127.0.0.1/"]
+      test: ["CMD-SHELL", "curl --silent --show-error --fail --output /dev/null --header 'Host: ${PS_DOMAIN:-localhost:${SHOP_PORT:-8080}}' http://127.0.0.1/"]
       interval: 30s
       timeout: 5s
       retries: 10
