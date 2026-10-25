@@ -10,6 +10,7 @@ use PrestaShopBundle\Translation\TranslatorLanguageLoader;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
+use Symfony\Component\HttpKernel\Event\ResponseEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\Translation\Loader\XliffFileLoader;
 use Symfony\Contracts\Translation\TranslatorInterface;
@@ -35,6 +36,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
     {
         return [
             KernelEvents::REQUEST => ['onKernelRequest', self::PRIORITY],
+            KernelEvents::RESPONSE => ['onKernelResponse', 0],
         ];
     }
 
@@ -51,6 +53,78 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
         }
 
         $this->loadKoreanCatalogue(self::KOREAN_LOCALE);
+    }
+
+    public function onKernelResponse(ResponseEvent $event): void
+    {
+        if (!$event->isMainRequest() || !in_array(self::MODULE_NAME, $this->activeModules, true)) {
+            return;
+        }
+
+        $request = $event->getRequest();
+        $route = (string) $request->attributes->get('_route', '');
+        if (!str_starts_with($route, 'admin_')) {
+            return;
+        }
+
+        $response = $event->getResponse();
+        if ($response->isRedirection()) {
+            return;
+        }
+
+        $contentType = strtolower((string) $response->headers->get('Content-Type', ''));
+        if (!str_contains($contentType, 'text/html')) {
+            return;
+        }
+
+        $content = $response->getContent();
+        if (!is_string($content) || $content === '') {
+            return;
+        }
+
+        $koreanLanguageAttribute = 'lang="' . self::KOREAN_LOCALE . '"';
+        $htmlTagCount = 0;
+        $localizedContent = preg_replace_callback(
+            '/<html\b[^>]*>/i',
+            static function (array $matches) use ($koreanLanguageAttribute): string {
+                $htmlTag = $matches[0];
+                $languageAttributeCount = 0;
+                $localizedTag = preg_replace(
+                    '/\s+lang\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)/i',
+                    ' ' . $koreanLanguageAttribute,
+                    $htmlTag,
+                    1,
+                    $languageAttributeCount
+                );
+                if (!is_string($localizedTag)) {
+                    return $htmlTag;
+                }
+
+                if ($languageAttributeCount > 0) {
+                    return $localizedTag;
+                }
+
+                $closingBracket = strrpos($htmlTag, '>');
+                if ($closingBracket === false) {
+                    return $htmlTag;
+                }
+
+                return substr($htmlTag, 0, $closingBracket)
+                    . ' ' . $koreanLanguageAttribute
+                    . substr($htmlTag, $closingBracket);
+            },
+            $content,
+            1,
+            $htmlTagCount
+        );
+
+        if ($htmlTagCount !== 1 || !is_string($localizedContent) || $localizedContent === $content) {
+            return;
+        }
+
+        $response->setContent($localizedContent);
+        $response->headers->remove('Content-Length');
+        $response->headers->remove('ETag');
     }
 
     private function applyKoreanAdminLocale(Request $request): bool

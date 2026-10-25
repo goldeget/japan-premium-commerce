@@ -133,6 +133,28 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertIn("$admin->id_lang = $englishLanguageId;", source)
         self.assertIn("$admin->update()", source)
 
+    def test_admin_response_sets_korean_lang_on_legacy_symfony_shell(self) -> None:
+        source = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text(encoding="utf-8")
+        self.assertIn("public function onKernelResponse(ResponseEvent $event)", source)
+        subscribed_events = source.split("public static function getSubscribedEvents()", 1)[1].split(
+            "public function onKernelRequest", 1
+        )[0]
+        response_handler = source.split("public function onKernelResponse(", 1)[1].split(
+            "\n    private function", 1
+        )[0]
+
+        self.assertIn("KernelEvents::RESPONSE", subscribed_events)
+        for marker in (
+            "$event->isMainRequest()",
+            "str_starts_with($route, 'admin_')",
+            "text/html",
+            "self::KOREAN_LOCALE",
+            "setContent(",
+            "Content-Length",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, response_handler)
+
     def test_overlay_resources_use_prestashop_translator_loader(self) -> None:
         source_path = MODULE / "src" / "AdminLocaleSubscriber.php"
         services_path = MODULE / "config" / "services.yml"
