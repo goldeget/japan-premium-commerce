@@ -489,6 +489,12 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertIn("strtoupper('AdminParentOrders')", access_setup)
         self.assertIn("Access::isGranted($ordersParentReadRole, (int) $profile->id)", access_setup)
         self.assertIn("$profileAccesses[$ordersParentTabId]['view'] ?? '0'", access_setup)
+        self.assertIn("'SELL'", access_setup)
+        self.assertIn("$sellTabId = (int) Tab::getIdFromClassName('SELL');", access_setup)
+        self.assertIn("$sellReadRole = sprintf(", access_setup)
+        self.assertIn("strtoupper('SELL')", access_setup)
+        self.assertIn("Access::isGranted($sellReadRole, (int) $profile->id)", access_setup)
+        self.assertIn("$profileAccesses[$sellTabId]['view'] ?? '0'", access_setup)
 
     def test_view_only_employee_orders_link_accepts_only_same_origin_list_routes(self):
         namespace: dict[str, object] = {
@@ -671,7 +677,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         fixture = FIXTURE.read_text(encoding="utf-8")
         self.assertIn("$employee->default_tab = (int) Tab::getIdFromClassName('AdminBusinessProfile');", fixture)
         access_setup = fixture.split("$access = new Access();", 1)[1].split("$employee = new Employee();", 1)[0]
-        self.assertIn("foreach (['AdminBusinessProfile', 'AdminDashboard', 'AdminOrders', 'AdminParentOrders', 'ShopParameters'] as $className)", access_setup)
+        self.assertIn("foreach (['AdminBusinessProfile', 'AdminDashboard', 'AdminOrders', 'AdminParentOrders', 'SELL', 'ShopParameters'] as $className)", access_setup)
         self.assertIn("$access->updateLgcAccess((int) $profile->id, $tabId, 'view', true, false)", access_setup)
         for permission in ("'edit' => 'UPDATE'", "'add' => 'CREATE'", "'delete' => 'DELETE'"):
             self.assertIn(permission, access_setup)

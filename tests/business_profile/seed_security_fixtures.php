@@ -78,7 +78,7 @@ try {
     securityFixtureRequire((bool) $profile->add(), 'The isolated view-only profile could not be created.');
 
     $access = new Access();
-    foreach (['AdminBusinessProfile', 'AdminDashboard', 'AdminOrders', 'AdminParentOrders', 'ShopParameters'] as $className) {
+    foreach (['AdminBusinessProfile', 'AdminDashboard', 'AdminOrders', 'AdminParentOrders', 'SELL', 'ShopParameters'] as $className) {
         $tabId = (int) Tab::getIdFromClassName($className);
         securityFixtureRequire($tabId > 0, 'A required isolated Back Office tab is missing.');
         securityFixtureRequire(
@@ -132,6 +132,16 @@ try {
         Access::isGranted($ordersParentReadRole, (int) $profile->id),
         'The isolated view-only profile does not have the expected Orders navigation parent read permission.'
     );
+    $sellTabId = (int) Tab::getIdFromClassName('SELL');
+    $sellReadRole = sprintf(
+        '%s%s_READ',
+        \PrestaShop\PrestaShop\Core\Security\Permission::PREFIX_TAB,
+        strtoupper('SELL')
+    );
+    securityFixtureRequire(
+        Access::isGranted($sellReadRole, (int) $profile->id),
+        'The isolated view-only profile does not have the expected Sell navigation root read permission.'
+    );
     Profile::resetCacheAccesses();
     $profileAccesses = Profile::getProfileAccesses((int) $profile->id);
     securityFixtureRequire(
@@ -145,6 +155,10 @@ try {
     securityFixtureRequire(
         ($profileAccesses[$ordersParentTabId]['view'] ?? '0') === '1',
         'The isolated view-only profile does not expose the Orders parent in native tab navigation.'
+    );
+    securityFixtureRequire(
+        ($profileAccesses[$sellTabId]['view'] ?? '0') === '1',
+        'The isolated view-only profile does not expose Sell in native tab navigation.'
     );
 
     $employee = new Employee();
