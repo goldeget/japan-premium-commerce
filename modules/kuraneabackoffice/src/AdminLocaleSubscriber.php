@@ -65,14 +65,10 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
         $moduleActive = in_array(self::MODULE_NAME, $this->activeModules, true);
         $adminRoute = str_starts_with($route, 'admin_');
         $gateFields = self::diagnosticGateFields($request);
-        $diagnosticOptIn = $gateFields['env_diagnostics'] === '1'
-            || $gateFields['server_diagnostics'] === '1';
         $isolatedCiDiagnosticEnabled = self::isIsolatedCiDiagnosticRequest($request)
             && $gateFields['probe_header'] === '1'
             && $gateFields['probe_controller'] === '1';
-        $diagnosticProbeEnabled = $diagnosticOptIn
-            && $gateFields['probe_header'] === '1'
-            && $gateFields['probe_controller'] === '1';
+        $diagnosticProbeEnabled = $isolatedCiDiagnosticEnabled;
         $diagnosticFields = [
             'main_request' => $isMainRequest ? '1' : '0',
             'module_active' => $moduleActive ? '1' : '0',
@@ -243,13 +239,20 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
     private static function isIsolatedCiDiagnosticRequest(Request $request): bool
     {
         $fields = self::diagnosticGateFields($request);
-
-        return $fields['server_ci'] === '1'
+        $serverGate = $fields['server_ci'] === '1'
             && $fields['server_actions'] === '1'
             && $fields['server_run_id_valid'] === '1'
             && $fields['server_run_attempt_valid'] === '1'
             && $fields['server_diagnostics'] === '1'
             && $fields['server_project_match'] === '1';
+        $environmentGate = $fields['env_ci'] === '1'
+            && $fields['env_actions'] === '1'
+            && $fields['env_run_id_valid'] === '1'
+            && $fields['env_run_attempt_valid'] === '1'
+            && $fields['env_diagnostics'] === '1'
+            && $fields['env_project_match'] === '1';
+
+        return $serverGate || $environmentGate;
     }
 
     /** @return array<string, string> */

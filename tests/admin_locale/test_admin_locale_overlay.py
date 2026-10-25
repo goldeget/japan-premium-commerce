@@ -286,21 +286,40 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         missing_fields = [field for field in required_fields if field not in subscriber]
         self.assertEqual([], missing_fields, f"missing bounded diagnostic fields: {missing_fields}")
         self.assertIn("$gateFields = self::diagnosticGateFields($request);", subscriber)
-        self.assertIn("$gateFields['env_diagnostics'] === '1'", subscriber)
-        self.assertIn("$gateFields['probe_header'] === '1'", subscriber)
-        self.assertIn("$gateFields['probe_controller'] === '1'", subscriber)
         self.assertIn("$isolatedCiDiagnosticEnabled = self::isIsolatedCiDiagnosticRequest($request)", subscriber)
+        self.assertIn("'env_diagnostics' => getenv('KURANEA_ADMIN_LOCALE_DIAGNOSTICS') === '1'", subscriber)
+        isolated_gate = " ".join(subscriber.split()).split(
+            "$isolatedCiDiagnosticEnabled =", 1
+        )[1].split("$diagnosticProbeEnabled =", 1)[0]
+        self.assertIn("$gateFields['probe_header'] === '1'", isolated_gate)
+        self.assertIn("$gateFields['probe_controller'] === '1'", isolated_gate)
         self.assertIn("'response_listener' => '1'", subscriber)
         self.assertNotIn("'run_id' => $runId", subscriber)
         self.assertNotIn("'project_name' =>", subscriber)
 
-    def test_admin_locale_probe_collects_render_metrics_when_request_server_gate_fails(self) -> None:
+    def test_admin_locale_probe_requires_a_complete_server_or_process_environment_ci_gate(self) -> None:
         subscriber = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text(encoding="utf-8")
-        response_measurement = subscriber.split("$htmlTagCount = 0;", 1)[1].split(
-            "$localizedContent = preg_replace_callback", 1
+        normalized_subscriber = " ".join(subscriber.split())
+        gate_method = normalized_subscriber.split(
+            "private static function isIsolatedCiDiagnosticRequest(Request $request): bool", 1
+        )[1].split("private static function diagnosticGateFields", 1)[0]
+        self.assertIn("return $serverGate || $environmentGate;", gate_method)
+        for gate_name, prefix in (("serverGate", "server"), ("environmentGate", "env")):
+            with self.subTest(gate=gate_name):
+                self.assertIn(f"${gate_name} =", gate_method)
+                for field in ("ci", "actions", "run_id_valid", "run_attempt_valid", "diagnostics", "project_match"):
+                    self.assertIn(f"$fields['{prefix}_{field}'] === '1'", gate_method)
+
+        probe_gate = normalized_subscriber.split("$diagnosticProbeEnabled =", 1)[1].split(";", 1)[0]
+        self.assertIn("$isolatedCiDiagnosticEnabled", probe_gate)
+        self.assertNotIn("$diagnosticOptIn", probe_gate)
+
+    def test_admin_locale_response_diagnostic_contract_is_executed_in_ci(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
+        checkout_contract_step = workflow.split("- name: Verify isolated unpaid checkout contracts", 1)[1].split(
+            "- name:", 1
         )[0]
-        self.assertIn("if ($diagnosticProbeEnabled)", response_measurement)
-        self.assertNotIn("if ($isolatedCiDiagnosticEnabled)", response_measurement)
+        self.assertIn("tests.admin_locale.test_admin_locale_response_diagnostic", checkout_contract_step)
 
     def test_admin_locale_browser_probe_captures_original_navigation_and_bounded_dom_categories(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_admin_security_browser.py").read_text(encoding="utf-8")
@@ -327,15 +346,9 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
     def test_admin_locale_diagnostic_response_requires_explicit_probe_header_and_controller(self) -> None:
         subscriber = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text(encoding="utf-8")
         normalized_subscriber = " ".join(subscriber.split())
-        self.assertIn(
-            "$diagnosticOptIn = $gateFields['env_diagnostics'] === '1'"
-            " || $gateFields['server_diagnostics'] === '1';",
-            normalized_subscriber,
-        )
         probe_gate = normalized_subscriber.split("$diagnosticProbeEnabled =", 1)[1].split(";", 1)[0]
-        self.assertIn("$diagnosticOptIn", probe_gate)
-        self.assertIn("$gateFields['probe_header'] === '1'", probe_gate)
-        self.assertIn("$gateFields['probe_controller'] === '1'", probe_gate)
+        self.assertIn("$isolatedCiDiagnosticEnabled", probe_gate)
+        self.assertNotIn("$diagnosticOptIn", normalized_subscriber)
         self.assertNotIn("$backOfficeControllerProbe", probe_gate)
 
     def test_admin_locale_diagnostic_bounds_browser_transport_metadata(self) -> None:
