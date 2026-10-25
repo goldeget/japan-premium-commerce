@@ -28,9 +28,13 @@ if (getenv('CI') !== 'true'
 }
 
 $stage = 'PrestaShop bootstrap';
-set_exception_handler(static function (Throwable $exception) use (&$stage): void {
+$safeDiagnostic = '';
+set_exception_handler(static function (Throwable $exception) use (&$stage, &$safeDiagnostic): void {
     $exceptionType = preg_replace('/[^A-Za-z0-9_]/', '', get_class($exception)) ?: 'Exception';
     $diagnostic = sprintf('KURANEA_ORDER_LIFECYCLE_PREP_STAGE=%s; exception=%s', $stage, $exceptionType);
+    if ($safeDiagnostic !== '') {
+        $diagnostic .= '; ' . $safeDiagnostic;
+    }
     fwrite(STDERR, $diagnostic . PHP_EOL);
     if (getenv('GITHUB_ACTIONS') === 'true') {
         $annotation = str_replace(['%', "\r", "\n"], ['%25', '%0D', '%0A'], $diagnostic);
@@ -228,11 +232,46 @@ $paymentRow = Db::getInstance()->getRow(
 );
 $payment = is_array($paymentRow) ? new OrderPayment((int) ($paymentRow['id_order_payment'] ?? 0)) : false;
 $stage = 'validate native payment ledger row';
-if (!($payment instanceof OrderPayment)
-    || !Validate::isLoadedObject($payment)
-    || (string) $payment->order_reference !== (string) $preparedOrder->reference
-    || (float) $payment->amount <= 0.0
-) {
+$paymentLoaded = $payment instanceof OrderPayment && Validate::isLoadedObject($payment);
+$orderReferenceMatches = $paymentLoaded
+    && (string) $payment->order_reference === (string) $preparedOrder->reference;
+$amountIsPositive = $paymentLoaded && (float) $payment->amount > 0.0;
+if (!$paymentLoaded || !$orderReferenceMatches || !$amountIsPositive) {
+    $invoiceCount = -1;
+    $invoicePaymentAssociationCount = -1;
+    try {
+        $invoiceCountValue = Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'order_invoice` WHERE `id_order` = ' . (int) $preparedOrder->id
+        );
+        if (!is_numeric($invoiceCountValue)) {
+            throw new RuntimeException('The isolated invoice count was unavailable.');
+        }
+        $invoiceCount = (int) $invoiceCountValue;
+        $invoiceCount = min(9, max(0, $invoiceCount));
+    } catch (Throwable $diagnosticException) {
+        $invoiceCount = -1;
+    }
+    try {
+        $invoicePaymentAssociationCountValue = Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'order_invoice_payment` WHERE `id_order` = ' . (int) $preparedOrder->id
+        );
+        if (!is_numeric($invoicePaymentAssociationCountValue)) {
+            throw new RuntimeException('The isolated invoice-payment association count was unavailable.');
+        }
+        $invoicePaymentAssociationCount = (int) $invoicePaymentAssociationCountValue;
+        $invoicePaymentAssociationCount = min(9, max(0, $invoicePaymentAssociationCount));
+    } catch (Throwable $diagnosticException) {
+        $invoicePaymentAssociationCount = -1;
+    }
+    $safeDiagnostic = sprintf(
+        'invoice_count=%s; invoice_payment_association_count=%s; payment_row_found=%d; payment_loaded=%d; order_reference_matches=%d; amount_positive=%d',
+        $invoiceCount < 0 ? 'unavailable' : (string) $invoiceCount,
+        $invoicePaymentAssociationCount < 0 ? 'unavailable' : (string) $invoicePaymentAssociationCount,
+        is_array($paymentRow) ? 1 : 0,
+        $paymentLoaded ? 1 : 0,
+        $orderReferenceMatches ? 1 : 0,
+        $amountIsPositive ? 1 : 0
+    );
     throw new RuntimeException('The native state transition did not create an order-linked payment ledger row.');
 }
 $stage = 'label native payment ledger as synthetic';

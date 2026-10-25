@@ -140,6 +140,38 @@ class CiNativeOrderLifecycleContractTests(unittest.TestCase):
             with self.subTest(stage=stage):
                 self.assertIn("$stage = '" + stage + "';", preparer)
 
+    def test_failed_payment_ledger_predicate_emits_bounded_safe_diagnostics(self) -> None:
+        preparer = PREPARER.read_text(encoding="utf-8")
+        diagnostic_block = preparer.split(
+            "$stage = 'validate native payment ledger row';", 1
+        )[1].split("$stage = 'label native payment ledger as synthetic';", 1)[0]
+
+        for required in (
+            "payment_row_found=",
+            "payment_loaded=",
+            "order_reference_matches=",
+            "amount_positive=",
+            "invoice_count=",
+            "invoice_payment_association_count=",
+            "min(9, max(0,",
+            "is_numeric($invoiceCountValue)",
+            "is_numeric($invoicePaymentAssociationCountValue)",
+            "use (&$stage, &$safeDiagnostic)",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, preparer)
+
+        self.assertIn("$safeDiagnostic", diagnostic_block)
+        safe_output = diagnostic_block.split("$safeDiagnostic = sprintf(", 1)[1].split(");", 1)[0]
+        for forbidden_value in (
+            "$payment->reference",
+            "$payment->amount",
+            "$preparedOrder->reference",
+            "$preparedOrder->id",
+        ):
+            with self.subTest(forbidden_value=forbidden_value):
+                self.assertNotIn(forbidden_value, safe_output)
+
     def test_returns_configuration_is_run_scoped_and_restored_by_verifier_shutdown(self) -> None:
         if not PREPARER.is_file():
             self.fail("the CI-only native order lifecycle fixture preparer is missing")
