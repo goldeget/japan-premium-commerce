@@ -57,7 +57,7 @@ jobs:
               tail -n 80 "$test_log"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            failure_line=$(head -n 1 "$test_log" | sed -E 's/; expected .*//; s/ in .*//' | cut -c1-500)
+            failure_line=$(grep -m1 '^PHP Fatal error: Uncaught ' "$test_log" | sed -E 's/; expected .*//; s/ in .*//' | cut -c1-500) || failure_line='Offline catalog tests failed; see the bounded step summary.'
             failure_line="${failure_line//'%'/'%25'}"
             failure_line="${failure_line//$'\r'/'%0D'}"
             failure_line="${failure_line//$'\n'/'%0A'}"
