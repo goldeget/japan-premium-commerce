@@ -175,7 +175,7 @@ create_restore_service() {
     create_status=$?
   fi
 
-  fail "run-scoped restore container creation failed ($(format_compose_create_failure "$service" "$create_status" "$stdout_path" "$stderr_path"))."
+  fail "run-scoped restore container creation failed ($(format_compose_create_failure "$service" "$create_status" "$stdout_path" "$stderr_path" "$restore_project"))."
 }
 
 # Validate the effective Compose volume mapping without printing the config,

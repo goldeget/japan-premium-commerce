@@ -181,6 +181,157 @@ class BackupRestoreDrillContractTests(unittest.TestCase):
             "service=mariadb; exit=1; stdout=unclassified; stderr=unclassified",
         )
 
+    def test_restore_create_failure_adds_allowlisted_versions_and_partial_resource_states(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            bin_dir = temp / "bin"
+            bin_dir.mkdir()
+            docker_log = temp / "docker-calls.log"
+            docker = bin_dir / "docker"
+            docker.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$*\" >> \"$FAKE_DOCKER_LOG\"\n"
+                "case \"$1\" in\n"
+                "  version) printf '28.0.1|1.51|28.0.1|1.51\\n' ;;\n"
+                "  compose)\n"
+                "    if [ \"$2\" = version ]; then printf 'v2.34.0\\n'; exit 0; fi\n"
+                "    if [ \"$4\" = ps ] && [ \"$7\" = mariadb ]; then printf 'aaaaaaaaaaaa\\n'; exit 0; fi\n"
+                "    if [ \"$4\" = ps ] && [ \"$7\" = prestashop ]; then exit 0; fi\n"
+                "    exit 1 ;;\n"
+                "  ps) printf 'aaaaaaaaaaaa\\nbbbbbbbbbbbb\\n' ;;\n"
+                "  volume) printf 'private-volume-name\\n' ;;\n"
+                "  network) printf 'private-network-name\\n' ;;\n"
+                "  inspect) printf 'created\\n' ;;\n"
+                "  *) exit 1 ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            docker.chmod(0o755)
+            stdout_path = temp / "compose-create.stdout"
+            stderr_path = temp / "compose-create.stderr"
+            stdout_path.write_text("", encoding="utf-8")
+            stderr_path.write_text("create failed token=private-create-stderr", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; format_compose_create_failure "$2" "$3" "$4" "$5" "$6"',
+                    "diagnostics-test",
+                    str(DIAGNOSTICS),
+                    "mariadb",
+                    "1",
+                    str(stdout_path),
+                    str(stderr_path),
+                    "kuranea-ci-123-1-restore",
+                ],
+                env=os.environ | {
+                    "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
+                    "FAKE_DOCKER_LOG": str(docker_log),
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            docker_calls = docker_log.read_text(encoding="utf-8") if docker_log.exists() else ""
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        summary = result.stdout.strip()
+        for field in (
+            "service=mariadb; exit=1; stdout=no_diagnostic; stderr=unclassified",
+            "docker_client_version=28.0.1",
+            "docker_client_api=1.51",
+            "docker_server_version=28.0.1",
+            "docker_server_api=1.51",
+            "compose_version=v2.34.0",
+            "restore_containers=2",
+            "restore_volumes=1",
+            "restore_networks=1",
+            "mariadb_state=created",
+            "prestashop_state=none",
+        ):
+            self.assertIn(field, summary)
+        for private_value in (
+            "private-create-stderr",
+            "private-volume-name",
+            "private-network-name",
+            "aaaaaaaaaaaa",
+            "bbbbbbbbbbbb",
+            "kuranea-ci-123-1-restore",
+        ):
+            self.assertNotIn(private_value, summary)
+        self.assertIn("label=com.docker.compose.project=kuranea-ci-123-1-restore", docker_calls)
+
+    def test_restore_create_failure_context_uses_unavailable_markers_when_probes_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            bin_dir = temp / "bin"
+            bin_dir.mkdir()
+            docker = bin_dir / "docker"
+            docker.write_text(
+                "#!/bin/sh\n"
+                "case \"$1\" in\n"
+                "  version) printf 'private-daemon-output password=private-version\\n'; exit 1 ;;\n"
+                "  compose) printf 'private-compose-output\\n' >&2; exit 1 ;;\n"
+                "  ps|volume|network) printf 'private-resource-id\\n'; exit 1 ;;\n"
+                "  inspect) printf 'private-state\\n'; exit 1 ;;\n"
+                "  *) exit 1 ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            docker.chmod(0o755)
+            stdout_path = temp / "compose-create.stdout"
+            stderr_path = temp / "compose-create.stderr"
+            stdout_path.write_text("", encoding="utf-8")
+            stderr_path.write_text("docker create private-create-stderr", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; format_compose_create_failure "$2" "$3" "$4" "$5" "$6"',
+                    "diagnostics-test",
+                    str(DIAGNOSTICS),
+                    "mariadb",
+                    "1",
+                    str(stdout_path),
+                    str(stderr_path),
+                    "kuranea-ci-123-1-restore",
+                ],
+                env=os.environ | {
+                    "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        summary = result.stdout.strip()
+        for field in (
+            "service=mariadb; exit=1; stdout=no_diagnostic; stderr=unclassified",
+            "docker_client_version=unavailable",
+            "docker_client_api=unavailable",
+            "docker_server_version=unavailable",
+            "docker_server_api=unavailable",
+            "compose_version=unavailable",
+            "restore_containers=unavailable",
+            "restore_volumes=unavailable",
+            "restore_networks=unavailable",
+            "mariadb_state=unavailable",
+            "prestashop_state=unavailable",
+        ):
+            self.assertIn(field, summary)
+        for private_value in (
+            "private-daemon-output",
+            "private-version",
+            "private-compose-output",
+            "private-resource-id",
+            "private-state",
+            "private-create-stderr",
+        ):
+            self.assertNotIn(private_value, summary)
+
     def test_restored_prestart_file_archives_are_compared_without_output(self) -> None:
         source = SCRIPT.read_text(encoding="utf-8")
         self.assertIn("restored_app_archive", source)
