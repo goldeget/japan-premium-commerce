@@ -27,6 +27,73 @@ def load_script():
 
 
 class AdminPasswordResetContractTests(unittest.TestCase):
+    def test_login_route_accepts_only_canonical_and_index_php_paths_on_admin_origin(self):
+        module = load_script()
+        self.assertTrue(
+            hasattr(module, "is_admin_login_route"),
+            "native reset completion must recognize the exact PrestaShop login route variants",
+        )
+        admin_url = "http://localhost:18080/admin-kuranea"
+        for candidate in (
+            "http://localhost:18080/admin-kuranea/login",
+            "http://localhost:18080/admin-kuranea/index.php/login",
+        ):
+            with self.subTest(candidate=candidate):
+                self.assertTrue(module.is_admin_login_route(candidate, admin_url))
+
+        for candidate in (
+            "https://localhost:18080/admin-kuranea/login",
+            "http://outside.example:18080/admin-kuranea/login",
+            "http://localhost:18081/admin-kuranea/login",
+            "http://localhost:18080/admin-kuranea-evil/login",
+            "http://localhost:18080/admin-kuranea/index.php/login/extra",
+            "http://localhost:18080/admin-kuranea/unexpected/login",
+        ):
+            with self.subTest(candidate=candidate):
+                self.assertFalse(module.is_admin_login_route(candidate, admin_url))
+
+    def test_login_page_check_requires_visible_form_on_an_exact_login_route(self):
+        module = load_script()
+        self.assertTrue(
+            hasattr(module, "is_admin_login_page"),
+            "a route match must also require the real visible Back Office login form",
+        )
+
+        class Form:
+            def __init__(self, visible):
+                self.visible = visible
+
+            def is_displayed(self):
+                return self.visible
+
+        class Driver:
+            def __init__(self, current_url, visible):
+                self.current_url = current_url
+                self.form = Form(visible)
+
+            def find_elements(self, by, selector):
+                return [self.form] if selector == "#login_form" else []
+
+        admin_url = "http://localhost:18080/admin-kuranea"
+        self.assertTrue(
+            module.is_admin_login_page(
+                Driver("http://localhost:18080/admin-kuranea/index.php/login", True),
+                admin_url,
+            )
+        )
+        self.assertFalse(
+            module.is_admin_login_page(
+                Driver("http://localhost:18080/admin-kuranea/login", False),
+                admin_url,
+            )
+        )
+        self.assertFalse(
+            module.is_admin_login_page(
+                Driver("http://outside.example:18080/admin-kuranea/login", True),
+                admin_url,
+            )
+        )
+
     def test_native_reset_failure_gate_accepts_assertion_and_non_assertion_errors(self):
         module = load_script()
         self.assertTrue(
@@ -61,10 +128,6 @@ class AdminPasswordResetContractTests(unittest.TestCase):
         )
 
         reset_token = "a" * 40
-        expected_url = (
-            "http://localhost:18080/admin-kuranea/index.php/reset-password/"
-            + reset_token
-        )
 
         class LoginForm:
             def is_displayed(self):
@@ -93,23 +156,22 @@ class AdminPasswordResetContractTests(unittest.TestCase):
             screenshot = directory / "not-used.png"
             driver = Driver(
                 screenshot,
-                expected_url + "?token=query-secret&customer=private-id",
+                "http://localhost:18080/admin-kuranea/index.php/login?token=query-secret&customer=private-id",
             )
             output = StringIO()
             with patch.dict("os.environ", {"GITHUB_STEP_SUMMARY": str(summary)}), redirect_stdout(output):
                 state = module.capture_native_reset_failure_diagnostic(
                     driver,
                     "http://localhost:18080/admin-kuranea",
-                    expected_url,
                     directory,
                 )
 
             expected_state = {
                 "same_origin": "true",
-                "pathname": "/admin-kuranea/index.php/reset-password/[redacted]",
+                "pathname": "/admin-kuranea/index.php/login",
                 "login_form_visible": "false",
                 "document_ready": "complete",
-                "expected_route_match": "true",
+                "login_route_match": "true",
                 "screenshot": "admin-password-reset-failure.png",
                 "screenshot_saved": "true",
             }
@@ -118,7 +180,7 @@ class AdminPasswordResetContractTests(unittest.TestCase):
             self.assertEqual(driver.screenshot_path.name, "admin-password-reset-failure.png")
 
             published = output.getvalue() + summary.read_text(encoding="utf-8")
-            for value in ("same_origin=true", "document_ready=complete", "expected_route_match=true"):
+            for value in ("same_origin=true", "document_ready=complete", "login_route_match=true"):
                 self.assertIn(value, published)
             self.assertIn("::error title=ORDENOWA native reset form diagnostics::", published)
             self.assertIn("admin-password-reset-failure.png", published)

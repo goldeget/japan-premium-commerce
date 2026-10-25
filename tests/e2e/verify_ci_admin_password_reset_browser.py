@@ -306,11 +306,36 @@ def new_driver():
 
 
 def visible_login_form(driver) -> bool:
-    from selenium.webdriver.common.by import By
-
     try:
-        forms = driver.find_elements(By.CSS_SELECTOR, "#login_form")
+        forms = driver.find_elements("css selector", "#login_form")
         return any(form.is_displayed() for form in forms)
+    except Exception:
+        return False
+
+
+def is_admin_login_route(candidate: str, admin_login_url: str) -> bool:
+    try:
+        actual = urlparse(candidate)
+        admin = urlparse(admin_login_url)
+        admin_root = admin.path.rstrip("/")
+        allowed_paths = {
+            admin_root + "/login",
+            admin_root + "/index.php/login",
+        }
+        return (
+            (actual.scheme, actual.hostname, actual.port)
+            == (admin.scheme, admin.hostname, admin.port)
+            and actual.username is None
+            and actual.password is None
+            and actual.path in allowed_paths
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def is_admin_login_page(driver, admin_login_url: str) -> bool:
+    try:
+        return is_admin_login_route(str(driver.current_url), admin_login_url) and visible_login_form(driver)
     except Exception:
         return False
 
@@ -371,7 +396,6 @@ def redacted_admin_pathname(path: str) -> str:
 def native_reset_failure_state(
     driver,
     admin_login_url: str,
-    expected_reset_url: str,
     screenshot_saved: bool,
 ) -> dict[str, str]:
     try:
@@ -381,22 +405,16 @@ def native_reset_failure_state(
     try:
         actual = urlparse(current_url)
         admin = urlparse(admin_login_url)
-        expected = urlparse(expected_reset_url)
         same_origin = (actual.scheme, actual.hostname, actual.port) == (
             admin.scheme,
             admin.hostname,
             admin.port,
         )
-        expected_route_match = (
-            same_origin
-            and (actual.scheme, actual.hostname, actual.port)
-            == (expected.scheme, expected.hostname, expected.port)
-            and actual.path == expected.path
-        )
+        login_route_match = is_admin_login_route(current_url, admin_login_url)
         pathname = redacted_admin_pathname(actual.path or "/")
     except (TypeError, ValueError):
         same_origin = False
-        expected_route_match = False
+        login_route_match = False
         pathname = "/"
 
     try:
@@ -418,7 +436,7 @@ def native_reset_failure_state(
         "pathname": pathname,
         "login_form_visible": login_state,
         "document_ready": ready_state,
-        "expected_route_match": "true" if expected_route_match else "false",
+        "login_route_match": "true" if login_route_match else "false",
         "screenshot": "admin-password-reset-failure.png",
         "screenshot_saved": "true" if screenshot_saved else "false",
     }
@@ -430,7 +448,7 @@ def format_native_reset_failure_state(state: dict[str, str]) -> str:
         "pathname",
         "login_form_visible",
         "document_ready",
-        "expected_route_match",
+        "login_route_match",
         "screenshot",
         "screenshot_saved",
     )
@@ -442,7 +460,7 @@ def format_native_reset_failure_state(state: dict[str, str]) -> str:
         raise ValueError("native reset diagnostic form state is invalid")
     if state["document_ready"] not in {"loading", "interactive", "complete", "unknown"}:
         raise ValueError("native reset diagnostic document state is invalid")
-    if state["expected_route_match"] not in {"true", "false"}:
+    if state["login_route_match"] not in {"true", "false"}:
         raise ValueError("native reset diagnostic route state is invalid")
     if state["screenshot"] != "admin-password-reset-failure.png":
         raise ValueError("native reset diagnostic screenshot name is invalid")
@@ -456,7 +474,6 @@ def format_native_reset_failure_state(state: dict[str, str]) -> str:
 def capture_native_reset_failure_diagnostic(
     driver,
     admin_login_url: str,
-    expected_reset_url: str,
     artifact_dir: Path,
 ) -> dict[str, str]:
     screenshot_path = artifact_dir / "admin-password-reset-failure.png"
@@ -467,7 +484,6 @@ def capture_native_reset_failure_diagnostic(
     state = native_reset_failure_state(
         driver,
         admin_login_url,
-        expected_reset_url,
         screenshot_saved,
     )
     diagnostic = format_native_reset_failure_state(state)
@@ -546,7 +562,7 @@ def run() -> bool:
             "form#forgot_password_form input[type='submit']",
         ).click()
         WebDriverWait(driver, 30).until(lambda browser: visible_login_form(browser))
-        if urlparse(driver.current_url).path != urlparse(admin_login_url).path + "/login":
+        if not is_admin_login_page(driver, admin_login_url):
             raise AssertionError("the employee reset request did not return to the Back Office login")
         if not driver.save_screenshot(str(dest / "admin-password-reset-request.png")):
             raise AssertionError("the reset request screenshot could not be saved")
@@ -572,7 +588,7 @@ def run() -> bool:
         reset_passwords[1].send_keys(new_password)
         visible(driver, "form#reset_password_form button[type='submit'], form#reset_password_form input[type='submit']").click()
         WebDriverWait(driver, 30).until(lambda browser: visible_login_form(browser))
-        if urlparse(driver.current_url).path != urlparse(admin_login_url).path + "/login":
+        if not is_admin_login_page(driver, admin_login_url):
             raise AssertionError("the native employee reset form did not return to the Back Office login")
         write_safe_log(log_path, stage, "passed")
 
@@ -603,14 +619,13 @@ def run() -> bool:
                 capture_native_reset_failure_diagnostic(
                     driver,
                     admin_login_url,
-                    reset_url,
                     dest,
                 )
             except Exception:
                 sys.stdout.write(
                     "ORDENOWA_ADMIN_RESET_FAILURE=same_origin=false; pathname=/; "
                     "login_form_visible=unknown; document_ready=unknown; "
-                    "expected_route_match=false; screenshot=admin-password-reset-failure.png; "
+                    "login_route_match=false; screenshot=admin-password-reset-failure.png; "
                     "screenshot_saved=false\n"
                 )
         try:
