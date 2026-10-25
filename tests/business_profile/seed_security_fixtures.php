@@ -42,12 +42,14 @@ require_once '/var/www/html/config/config.inc.php';
 $suffix = bin2hex(random_bytes(4));
 $emails = [
     'admin' => sprintf('ordenowa-security-view-%s-%s-%s@example.invalid', $runId, $attempt, $suffix),
+    'dashboard' => sprintf('ordenowa-security-dashboard-%s-%s-%s@example.invalid', $runId, $attempt, $suffix),
     'replay' => sprintf('ordenowa-reset-token-replay-%s-%s-%s@example.invalid', $runId, $attempt, $suffix),
     'expired' => sprintf('ordenowa-reset-token-expired-%s-%s-%s@example.invalid', $runId, $attempt, $suffix),
 ];
 
 $profile = null;
 $employee = null;
+$dashboardEmployee = null;
 $admin = null;
 $adminOriginalLanguageId = 0;
 $customers = [];
@@ -100,6 +102,23 @@ try {
         );
     }
 
+    $dashboardTabId = (int) Tab::getIdFromClassName('AdminDashboard');
+    $dashboardReadRole = sprintf(
+        '%s%s_READ',
+        \PrestaShop\PrestaShop\Core\Security\Permission::PREFIX_TAB,
+        strtoupper('AdminDashboard')
+    );
+    securityFixtureRequire(
+        Access::isGranted($dashboardReadRole, (int) $profile->id),
+        'The isolated view-only profile does not have the expected Dashboard read permission.'
+    );
+    Profile::resetCacheAccesses();
+    $profileAccesses = Profile::getProfileAccesses((int) $profile->id);
+    securityFixtureRequire(
+        ($profileAccesses[$dashboardTabId]['view'] ?? '0') === '1',
+        'The isolated view-only profile does not expose Dashboard in native tab navigation.'
+    );
+
     $employee = new Employee();
     $employee->firstname = 'ORDENOWA';
     $employee->lastname = 'CI View Only';
@@ -115,6 +134,25 @@ try {
     $employee->bo_width = max(0, (int) $admin->bo_width);
     $employee->bo_menu = (bool) $admin->bo_menu;
     securityFixtureRequire((bool) $employee->add(), 'The isolated view-only employee could not be created.');
+
+    $dashboardEmployee = new Employee();
+    $dashboardEmployee->firstname = 'ORDENOWA';
+    $dashboardEmployee->lastname = 'CI View Only Dashboard';
+    $dashboardEmployee->email = $emails['dashboard'];
+    $dashboardEmployee->id_lang = $englishLanguageId;
+    $dashboardEmployee->passwd = (string) $admin->passwd;
+    $dashboardEmployee->active = true;
+    $dashboardEmployee->id_profile = (int) $profile->id;
+    $dashboardEmployee->default_tab = $dashboardTabId;
+    $dashboardEmployee->bo_color = (string) ($admin->bo_color ?: '#6f42c1');
+    $dashboardEmployee->bo_theme = (string) ($admin->bo_theme ?: 'default');
+    $dashboardEmployee->bo_css = (string) ($admin->bo_css ?: 'theme.css');
+    $dashboardEmployee->bo_width = max(0, (int) $admin->bo_width);
+    $dashboardEmployee->bo_menu = (bool) $admin->bo_menu;
+    securityFixtureRequire(
+        (bool) $dashboardEmployee->add(),
+        'The isolated view-only Dashboard employee could not be created.'
+    );
 
     $shopId = max(1, (int) Shop::getContextShopID());
     $defaultGroup = (int) Configuration::get('PS_CUSTOMER_GROUP');
@@ -136,6 +174,7 @@ try {
     echo 'ORDENOWA_SECURITY_FIXTURE=' . json_encode(
         [
             'view_only_employee_email' => $emails['admin'],
+            'dashboard_view_only_employee_email' => $emails['dashboard'],
             'reset_replay_customer_email' => $emails['replay'],
             'reset_expired_customer_email' => $emails['expired'],
         ],
@@ -159,6 +198,9 @@ try {
     }
     if ($employee instanceof Employee && (int) $employee->id > 0) {
         $employee->delete();
+    }
+    if ($dashboardEmployee instanceof Employee && (int) $dashboardEmployee->id > 0) {
+        $dashboardEmployee->delete();
     }
     if ($profile instanceof Profile && (int) $profile->id > 0) {
         $profile->delete();

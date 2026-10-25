@@ -16,6 +16,21 @@ FRESH_INSTALL_SMOKE = ROOT / "tests" / "smoke" / "fresh_install.sh"
 
 
 class FreshInstallWorkflowContractTests(unittest.TestCase):
+    def test_security_fixture_passes_a_run_scoped_dashboard_employee_to_chromium(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        fixture_step = workflow.split(
+            "- name: Prepare isolated admin security and reset-token fixtures", 1
+        )[1].split("- name:", 1)[0]
+        browser_step = workflow.split(
+            "- name: Verify Back Office token and view-only authorization in Chromium", 1
+        )[1].split("- name:", 1)[0]
+
+        self.assertIn("dashboard_view_only_employee_email", fixture_step)
+        self.assertIn("DASHBOARD_VIEW_ONLY_EMAIL", fixture_step)
+        self.assertIn("ordenowa-security-dashboard", fixture_step)
+        self.assertIn("output.writelines(values)", fixture_step)
+        self.assertIn("tests/e2e/verify_admin_security_browser.py", browser_step)
+
     def test_native_order_lifecycle_contract_runs_in_fresh_install_preflight(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("tests.postcode.test_ci_native_order_lifecycle_contract", workflow)

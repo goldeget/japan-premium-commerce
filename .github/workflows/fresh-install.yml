@@ -962,6 +962,7 @@ jobs:
           values = []
           for key, variable, prefix in (
               ('view_only_employee_email', 'VIEW_ONLY_EMPLOYEE_EMAIL', 'ordenowa-security-view'),
+              ('dashboard_view_only_employee_email', 'DASHBOARD_VIEW_ONLY_EMAIL', 'ordenowa-security-dashboard'),
               ('reset_replay_customer_email', 'REPLAY_CUSTOMER_EMAIL', 'ordenowa-reset-token-replay'),
               ('reset_expired_customer_email', 'EXPIRED_CUSTOMER_EMAIL', 'ordenowa-reset-token-expired'),
           ):

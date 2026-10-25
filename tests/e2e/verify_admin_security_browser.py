@@ -29,6 +29,7 @@ ADMIN_LOGIN = os.environ["ADMIN_LOGIN_URL"].rstrip("/")
 ADMIN_EMAIL = os.environ["ADMIN_MAIL"]
 ADMIN_PASSWORD = os.environ["ADMIN_PASSWD"]
 VIEW_ONLY_EMAIL = os.environ["VIEW_ONLY_EMPLOYEE_EMAIL"]
+DASHBOARD_VIEW_ONLY_EMAIL = os.environ["DASHBOARD_VIEW_ONLY_EMAIL"]
 COMPOSE_PROJECT = os.environ.get("CI_COMPOSE_PROJECT_NAME", "")
 DEST = Path(os.environ["QA_ARTIFACT_DIR"])
 DEST.mkdir(parents=True, exist_ok=True)
@@ -216,7 +217,7 @@ def _admin_controller_for_url(url: str) -> str:
     if controllers == ["AdminBusinessProfile"]:
         return "AdminBusinessProfile"
     if controllers == ["AdminDashboard"]:
-        return "AdminDashboard"
+        return "AdminDashboard" if actual.path == admin_path + "/index.php" else "other"
     if controllers == ["AdminOrders"]:
         return "AdminOrders"
     if controllers == ["AdminLogin"]:
@@ -626,6 +627,7 @@ def validate_isolated_ci_project() -> None:
         or os.environ.get("CI_COMPOSE_PROJECT_NAME", "") != expected_project
         or not ADMIN_EMAIL.strip().lower().endswith("@example.invalid")
         or not VIEW_ONLY_EMAIL.strip().lower().endswith("@example.invalid")
+        or not DASHBOARD_VIEW_ONLY_EMAIL.strip().lower().endswith("@example.invalid")
     ):
         raise ValueError("admin security QA requires its exact isolated GitHub Actions Compose project")
 
@@ -1281,25 +1283,6 @@ def run() -> bool:
         assert_korean_admin_locale(restricted_driver, "view-only profile settings")
         restricted_driver.save_screenshot(str(DEST / "admin-security-view-only-settings-korean.png"))
 
-        stage = "view_only_employee_dashboard_korean_locale"
-        dashboard_links = [
-            link
-            for link in restricted_driver.find_elements(By.CSS_SELECTOR, 'a[href*="controller=AdminDashboard"]')
-            if _admin_controller_for_url(link.get_attribute("href") or "") == "AdminDashboard"
-        ]
-        if not dashboard_links:
-            raise AssertionError("the view-only employee cannot reach the permitted admin dashboard")
-        restricted_driver.get(dashboard_links[0].get_attribute("href"))
-        WebDriverWait(restricted_driver, 30).until(
-            lambda browser: _admin_controller_for_url(browser.current_url) == "AdminDashboard"
-        )
-        assert_korean_admin_locale(restricted_driver, "view-only dashboard")
-        WebDriverWait(restricted_driver, 15).until(
-            lambda browser: "시작일" in browser.find_element(By.TAG_NAME, "body").text
-            and "종료일" in browser.find_element(By.TAG_NAME, "body").text
-        )
-        restricted_driver.save_screenshot(str(DEST / "admin-security-view-only-dashboard-korean.png"))
-
         stage = "view_only_employee_orders_korean_locale"
         orders_links = [
             link
@@ -1320,7 +1303,7 @@ def run() -> bool:
         stage = "view_only_employee_settings_restore"
         restricted_driver.get(restricted_settings_url)
         visible(restricted_driver, "form.ordenowa-profile-settings")
-        assert_korean_admin_locale(restricted_driver, "view-only profile settings after dashboard navigation")
+        assert_korean_admin_locale(restricted_driver, "view-only profile settings after orders navigation")
         stage = "view_only_employee_settings_value"
         restricted_original_value = current_setting(restricted_driver)
         stage = "view_only_employee_draft_pointer"
@@ -1340,6 +1323,21 @@ def run() -> bool:
         storefront_locale = (restricted_driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower()
         if not storefront_locale.startswith("ja"):
             raise AssertionError("the Back Office Korean locale setting changed the Japanese-first storefront locale")
+
+        stage = "view_only_dashboard_employee_login"
+        login(restricted_driver, DASHBOARD_VIEW_ONLY_EMAIL)
+        stage = "view_only_employee_dashboard_post_login_state"
+        emit_admin_post_login_state(restricted_driver, "view_only")
+        stage = "view_only_employee_dashboard_route"
+        if _admin_controller_for_url(restricted_driver.current_url) != "AdminDashboard":
+            raise AssertionError("the permitted view-only employee did not open its configured Dashboard tab")
+        stage = "view_only_employee_dashboard_korean_locale"
+        assert_korean_admin_locale(restricted_driver, "view-only dashboard")
+        WebDriverWait(restricted_driver, 15).until(
+            lambda browser: "시작일" in browser.find_element(By.TAG_NAME, "body").text
+            and "종료일" in browser.find_element(By.TAG_NAME, "body").text
+        )
+        restricted_driver.save_screenshot(str(DEST / "admin-security-view-only-dashboard-korean.png"))
 
         completed = True
     except Exception as error:

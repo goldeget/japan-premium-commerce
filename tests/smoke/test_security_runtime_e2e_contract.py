@@ -297,6 +297,45 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             self.assertIn(permission, access_setup)
         self.assertIn("$action === 'view' ? $granted : !$granted", access_setup)
 
+    def test_view_only_dashboard_access_is_read_back_and_opened_via_employee_default_tab(self):
+        fixture = FIXTURE.read_text(encoding="utf-8")
+        self.assertIn("$dashboardTabId = (int) Tab::getIdFromClassName('AdminDashboard');", fixture)
+        self.assertIn("Profile::resetCacheAccesses();", fixture)
+        self.assertIn("Profile::getProfileAccesses((int) $profile->id)", fixture)
+        self.assertIn("$dashboardEmployee->default_tab = $dashboardTabId;", fixture)
+        self.assertIn("'dashboard_view_only_employee_email' => $emails['dashboard']", fixture)
+
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+        self.assertIn('DASHBOARD_VIEW_ONLY_EMAIL = os.environ["DASHBOARD_VIEW_ONLY_EMAIL"]', source)
+        run = source.split("def run()", 1)[1].split("\n\nif __name__", 1)[0]
+        self.assertIn("login(restricted_driver, DASHBOARD_VIEW_ONLY_EMAIL)", run)
+        self.assertIn('stage = "view_only_employee_dashboard_route"', run)
+        self.assertIn('_admin_controller_for_url(restricted_driver.current_url) != "AdminDashboard"', run)
+        self.assertNotIn('a[href*="controller=AdminDashboard"]', run)
+
+    def test_dashboard_controller_requires_its_canonical_legacy_admin_path(self):
+        namespace: dict[str, object] = {
+            "parse_qs": parse_qs,
+            "urlparse": urlparse,
+            "BASE": "http://localhost:18080",
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
+            "webdriver": type("Webdriver", (), {"Chrome": object}),
+        }
+        controller_for_url = load_function(ADMIN_FLOW, "_admin_controller_for_url", namespace)
+
+        self.assertEqual(
+            controller_for_url(
+                "http://localhost:18080/admin-kuranea/index.php?controller=AdminDashboard&token=private-token"
+            ),
+            "AdminDashboard",
+        )
+        for url in (
+            "http://localhost:18080/admin-kuranea/sell/dashboard?controller=AdminDashboard&token=private-token",
+            "http://localhost:18080/admin-kuranea/other.php?controller=AdminDashboard&token=private-token",
+        ):
+            with self.subTest(url=url):
+                self.assertNotEqual(controller_for_url(url), "AdminDashboard")
+
     def test_admin_security_attempt_exposes_compromised_page_evidence_to_classifier(self):
         source = ADMIN_FLOW.read_text(encoding="utf-8")
         submit = source.split("def submit_settings_attempt(", 1)[1].split("\n\ndef ", 1)[0]
@@ -361,6 +400,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "COMPOSE_PROJECT": "kuranea-ci-123456789-2",
             "ADMIN_EMAIL": "ci-ordenowa@example.invalid",
             "VIEW_ONLY_EMAIL": "view-only@example.invalid",
+            "DASHBOARD_VIEW_ONLY_EMAIL": "dashboard-view-only@example.invalid",
             "EXPECTED_SHOP_PORT": 18080,
             "BASE": "http://localhost:18080",
             "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
