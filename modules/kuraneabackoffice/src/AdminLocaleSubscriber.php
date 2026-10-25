@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kuranea\Backoffice;
 
+use Kuranea\Backoffice\AdminDocumentLanguage;
 use PrestaShop\PrestaShop\Core\Context\LanguageContextBuilder;
 use PrestaShop\PrestaShop\Core\Language\LanguageRepositoryInterface;
 use PrestaShopBundle\Translation\TranslatorLanguageLoader;
@@ -146,51 +147,25 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
         }
         $diagnosticFields['body_present'] = '1';
 
-        $koreanLanguageAttribute = 'lang="' . self::KOREAN_LOCALE . '"';
         $htmlTagCount = 0;
+        $rootTagBefore = null;
         if ($diagnosticProbeEnabled) {
             preg_match_all('/<html\b[^>]*>/i', $content, $originalHtmlTags);
             $diagnosticFields['html_tags'] = (string) min(9999, count($originalHtmlTags[0] ?? []));
+            $rootTagBefore = AdminDocumentLanguage::rootTag($content);
             $diagnosticFields['lang_before'] = self::diagnosticLanguageCategory(
-                $originalHtmlTags[0][0] ?? null
+                $rootTagBefore
             );
             $diagnosticFields['lang_after'] = $diagnosticFields['lang_before'];
         }
-        $localizedContent = preg_replace_callback(
-            '/<html\b[^>]*>/i',
-            static function (array $matches) use ($koreanLanguageAttribute): string {
-                $htmlTag = $matches[0];
-                $languageAttributeCount = 0;
-                $localizedTag = preg_replace(
-                    '/\s+lang\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)/i',
-                    ' ' . $koreanLanguageAttribute,
-                    $htmlTag,
-                    1,
-                    $languageAttributeCount
-                );
-                if (!is_string($localizedTag)) {
-                    return $htmlTag;
-                }
-
-                if ($languageAttributeCount > 0) {
-                    return $localizedTag;
-                }
-
-                $closingBracket = strrpos($htmlTag, '>');
-                if ($closingBracket === false) {
-                    return $htmlTag;
-                }
-
-                return substr($htmlTag, 0, $closingBracket)
-                    . ' ' . $koreanLanguageAttribute
-                    . substr($htmlTag, $closingBracket);
-            },
-            $content,
-            1,
-            $htmlTagCount
-        );
+        $localizedContent = AdminDocumentLanguage::setRootLocale($content, self::KOREAN_LOCALE);
+        $htmlTagCount = $localizedContent === null ? 0 : 1;
         if ($diagnosticProbeEnabled) {
             $diagnosticFields['html_replacements'] = (string) $htmlTagCount;
+        }
+
+        if ($localizedContent === null) {
+            $localizedContent = $content;
         }
 
         if ($htmlTagCount !== 1 || !is_string($localizedContent) || $localizedContent === $content) {
@@ -210,12 +185,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
 
     private static function diagnosticLanguageCategoryFromContent(string $content): string
     {
-        $htmlTag = null;
-        if (preg_match('/<html\b[^>]*>/i', $content, $matches) === 1) {
-            $htmlTag = $matches[0];
-        }
-
-        return self::diagnosticLanguageCategory($htmlTag);
+        return self::diagnosticLanguageCategory(AdminDocumentLanguage::rootTag($content));
     }
 
     private static function diagnosticLanguageCategory(?string $htmlTag): string

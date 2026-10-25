@@ -181,6 +181,24 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
             with self.subTest(marker=marker):
                 self.assertIn(marker, response_handler)
 
+    def test_response_localization_targets_the_document_root(self) -> None:
+        source = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text(encoding="utf-8")
+        response_handler = source.split("public function onKernelResponse(", 1)[1].split(
+            "\n    private function", 1
+        )[0]
+        diagnostic = source.split("private static function diagnosticLanguageCategoryFromContent(", 1)[1].split(
+            "\n    private static function", 1
+        )[0]
+
+        self.assertIn("use Kuranea\\Backoffice\\AdminDocumentLanguage;", source)
+        self.assertIn("AdminDocumentLanguage::rootTag($content)", response_handler)
+        self.assertIn(
+            "AdminDocumentLanguage::setRootLocale($content, self::KOREAN_LOCALE)",
+            response_handler,
+        )
+        self.assertIn("AdminDocumentLanguage::rootTag($content)", diagnostic)
+        self.assertNotIn("preg_replace_callback(\n            '/<html\\b", response_handler)
+
     def test_legacy_shell_locale_failure_has_opt_in_safe_response_diagnostics(self) -> None:
         subscriber = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text(encoding="utf-8")
         browser = (ROOT / "tests" / "e2e" / "verify_admin_security_browser.py").read_text(encoding="utf-8")
