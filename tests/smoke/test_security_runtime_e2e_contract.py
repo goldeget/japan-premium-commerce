@@ -206,7 +206,9 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         route_stages = (
             'stage = "view_only_employee_settings_route"',
             'stage = "view_only_employee_direct_route"',
-            'stage = "view_only_employee_settings_render"',
+            'stage = "view_only_employee_settings_form_visible"',
+            'stage = "view_only_employee_settings_korean_label"',
+            'stage = "view_only_employee_settings_document_locale"',
             'stage = "view_only_employee_settings_value"',
             'stage = "view_only_employee_draft_pointer"',
             'stage = "view_only_employee_valid_token_post"',

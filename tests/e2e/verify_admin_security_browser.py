@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from shipping_admin_routes import is_korean_admin_language
 from selenium import webdriver
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
@@ -288,8 +289,10 @@ def current_profile_settings_url(driver: webdriver.Chrome) -> str:
 
 def assert_korean_admin_locale(driver: webdriver.Chrome, route_label: str) -> None:
     document_locale = driver.find_element(By.TAG_NAME, "html").get_attribute("lang")
-    if document_locale != "ko-KR":
-        raise AssertionError(f"{route_label} did not force the Korean Back Office locale")
+    if not isinstance(document_locale, str) or not is_korean_admin_language(document_locale):
+        error = AssertionError(f"{route_label} did not force the Korean Back Office locale")
+        error.admin_security_locale_flags = "korean=false"
+        raise error
 
 
 def login(driver: webdriver.Chrome, email: str) -> None:
@@ -990,10 +993,12 @@ def run() -> bool:
         restricted_settings_url = current_profile_settings_url(restricted_driver)
         stage = "view_only_employee_direct_route"
         restricted_driver.get(restricted_settings_url)
-        stage = "view_only_employee_settings_render"
+        stage = "view_only_employee_settings_form_visible"
         visible(restricted_driver, "form.ordenowa-profile-settings")
+        stage = "view_only_employee_settings_korean_label"
         if "브랜드·로고" not in restricted_driver.find_element(By.TAG_NAME, "body").text:
             raise AssertionError("Korean locale: the view-only profile page is missing Korean settings labels")
+        stage = "view_only_employee_settings_document_locale"
         assert_korean_admin_locale(restricted_driver, "view-only profile settings")
         restricted_driver.save_screenshot(str(DEST / "admin-security-view-only-settings-korean.png"))
 
@@ -1070,8 +1075,14 @@ def run() -> bool:
         diagnostic_request = getattr(error, "admin_security_request", None)
         diagnostic_state = getattr(error, "admin_security_state_recheck", None)
         diagnostic_navigation_state = getattr(error, "admin_security_navigation_state", None)
+        diagnostic_locale_flags = getattr(error, "admin_security_locale_flags", None)
         safe_fields = []
         safe_response = False
+        if isinstance(diagnostic_locale_flags, str) and re.fullmatch(
+            r"korean=false",
+            diagnostic_locale_flags,
+        ):
+            safe_fields.append(f"profile_locale={diagnostic_locale_flags}")
         if isinstance(diagnostic_substage, str) and re.fullmatch(r"[a-z0-9_]+", diagnostic_substage):
             safe_fields.append(f"substage={diagnostic_substage}")
         if isinstance(diagnostic_request, str) and re.fullmatch(

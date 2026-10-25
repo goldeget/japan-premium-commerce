@@ -45,12 +45,41 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertIn("Korean locale", browser)
         locale_assertion = browser.split("def assert_korean_admin_locale(", 1)[1].split("\ndef ", 1)[0]
         self.assertIn('driver.find_element(By.TAG_NAME, "html").get_attribute("lang")', locale_assertion)
-        self.assertIn('document_locale != "ko-KR"', locale_assertion)
+        self.assertTrue("is_korean_admin_language(document_locale)" in locale_assertion, "the browser QA must validate Korean as a language tag, not require the locale's region suffix")
         self.assertIn("AdminOrders", browser)
         self.assertIn("storefront_stays_japanese_after_admin_locale_test", browser)
         self.assertIn("admin-security-view-only-settings-korean.png", workflow)
         self.assertIn("admin-security-view-only-dashboard-korean.png", workflow)
         self.assertIn("admin-security-view-only-orders-korean.png", workflow)
+
+    def test_legacy_korean_iso_tag_is_accepted_without_accepting_other_languages(self) -> None:
+        from tests.e2e.shipping_admin_routes import is_korean_admin_language
+
+        browser = (ROOT / "tests" / "e2e" / "verify_admin_security_browser.py").read_text(encoding="utf-8")
+        self.assertTrue("from shipping_admin_routes import is_korean_admin_language" in browser, "the legacy browser check must share the supported Korean-tag parser")
+        locale_assertion = browser.split("def assert_korean_admin_locale(", 1)[1].split("\ndef ", 1)[0]
+        self.assertTrue("is_korean_admin_language(document_locale)" in locale_assertion, "the security browser check must accept PrestaShop's legacy `ko` tag")
+
+        for language, expected in (("ko", True), ("ko-KR", True), ("KO-kr", True), ("en", False), ("fr-FR", False), ("", False)):
+            with self.subTest(language=language):
+                self.assertEqual(expected, is_korean_admin_language(language))
+
+    def test_view_only_profile_locale_failure_reports_exact_render_boundary(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_admin_security_browser.py").read_text(encoding="utf-8")
+
+        settings_check = browser.split('stage = "view_only_employee_settings_route"', 1)[1].split(
+            'stage = "view_only_employee_dashboard_korean_locale"', 1
+        )[0]
+        form_stage = 'stage = "view_only_employee_settings_form_visible"'
+        label_stage = 'stage = "view_only_employee_settings_korean_label"'
+        locale_stage = 'stage = "view_only_employee_settings_document_locale"'
+        self.assertIn(form_stage, settings_check)
+        self.assertIn(label_stage, settings_check)
+        self.assertIn(locale_stage, settings_check)
+        self.assertLess(settings_check.index(form_stage), settings_check.index(label_stage))
+        self.assertLess(settings_check.index(label_stage), settings_check.index(locale_stage))
+        self.assertIn('safe_fields.append(f"profile_locale={diagnostic_locale_flags}")', browser)
+        self.assertIn('r"korean=false"', browser)
 
     def test_anonymous_login_uses_korean_admin_language_context(self) -> None:
         path = MODULE / "src" / "AdminLocaleSubscriber.php"
