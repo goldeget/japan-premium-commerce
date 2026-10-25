@@ -152,15 +152,9 @@ def capture_checkbox_click_blocker(driver: webdriver.Chrome, checkbox, artifact_
     except Exception:
         topmost = None
 
-    limits = {"tag": 24, "id": 80, "class": 120}
-    safe_target = (
-        {
-            key: re.sub(r"[^A-Za-z0-9_.: -]", "", str(topmost.get(key, "")))[:limit]
-            for key, limit in limits.items()
-        }
-        if isinstance(topmost, dict)
-        else {"tag": "", "id": "", "class": ""}
-    )
+    safe_target = sanitize_click_target_metadata(topmost) if isinstance(topmost, dict) else {
+        "tag": "", "id": "", "class": ""
+    }
     diagnostic = json.dumps(safe_target, ensure_ascii=True, sort_keys=True)
     print("ORDENOWA_RETURN_CLICK_BLOCKER_SAFE_STATE=" + diagnostic)
     annotation = diagnostic.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
@@ -174,6 +168,26 @@ def capture_checkbox_click_blocker(driver: webdriver.Chrome, checkbox, artifact_
     except Exception:
         pass
     return safe_target, screenshot_name
+
+
+def sanitize_click_target_metadata(topmost: dict[str, object]) -> dict[str, str]:
+    safe_tags = {
+        "a", "button", "div", "form", "header", "input", "label", "li", "main",
+        "nav", "section", "span", "svg", "textarea", "ul",
+    }
+    safe_classes = {
+        "btn", "btn-primary", "btn-secondary", "collapse", "dropdown-menu", "fade",
+        "fixed-top", "modal", "modal-backdrop", "navbar-collapse", "offcanvas",
+        "offcanvas-backdrop", "popover", "show", "sticky-top", "tooltip",
+        "kuranea-mobile-nav",
+    }
+    tag = str(topmost.get("tag", "")).lower()
+    classes = str(topmost.get("class", "")).split()
+    return {
+        "tag": tag if tag in safe_tags else "",
+        "id": "",
+        "class": " ".join(class_name for class_name in classes if class_name in safe_classes),
+    }
 
 
 def capture_submit_click_blocker(driver: webdriver.Chrome, submit_button, artifact_dir: Path):
@@ -243,7 +257,6 @@ def capture_submit_click_blocker(driver: webdriver.Chrome, submit_button, artifa
             viewport_values = topmost.get("viewport")
             if not isinstance(viewport_values, dict):
                 viewport_values = {}
-            limits = {"tag": 24, "id": 80, "class": 120}
             diagnostic = {
                 "status": result_status,
                 "exception_type": None,
@@ -258,10 +271,7 @@ def capture_submit_click_blocker(driver: webdriver.Chrome, submit_button, artifa
                     key: bounded_number(viewport_values.get(key), 0, 10000)
                     for key in ("width", "height")
                 },
-                **{
-                    key: re.sub(r"[^A-Za-z0-9_.: -]", "", str(topmost.get(key, "")))[:limit]
-                    for key, limit in limits.items()
-                },
+                **sanitize_click_target_metadata(topmost),
             }
     except Exception as error:
         exception_type = re.sub(r"[^A-Za-z0-9_]", "", type(error).__name__)[:48] or "Exception"

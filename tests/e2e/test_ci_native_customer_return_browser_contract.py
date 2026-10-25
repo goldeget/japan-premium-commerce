@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import ast
+import json
+import re
 import unittest
 from pathlib import Path
 
@@ -89,8 +92,9 @@ class CiNativeCustomerReturnBrowserContractTests(unittest.TestCase):
             'tag: target.tagName.toLowerCase()',
             "id: target.id",
             'class: typeof target.className === "string" ? target.className : ""',
-            'limits = {"tag": 24, "id": 80, "class": 120}',
-            '[:limit]',
+            "sanitize_click_target_metadata(topmost)",
+            '"btn-primary"',
+            '"modal-backdrop"',
             "ORDENOWA_RETURN_CLICK_BLOCKER_SAFE_STATE=",
             "::error title=Return checkbox pointer target::",
             'customer-return-click-intercepted.png',
@@ -120,7 +124,6 @@ class CiNativeCustomerReturnBrowserContractTests(unittest.TestCase):
             'tag: target.tagName.toLowerCase()',
             "id: target.id",
             'class: typeof target.className === "string" ? target.className : ""',
-            'limits = {"tag": 24, "id": 80, "class": 120}',
             'status: target ? "target" : "no_target"',
             '"status": "unexpected_result"',
             '"status": "script_error"',
@@ -140,6 +143,92 @@ class CiNativeCustomerReturnBrowserContractTests(unittest.TestCase):
         ):
             with self.subTest(required=required):
                 self.assertContract(self.source, required)
+
+    def test_submit_blocker_selector_metadata_redacts_unknown_identifiers(self) -> None:
+        tree = ast.parse(self.source)
+        sanitizer = next(
+            (
+                node
+                for node in tree.body
+                if isinstance(node, ast.FunctionDef) and node.name == "sanitize_click_target_metadata"
+            ),
+            None,
+        )
+        self.assertIsNotNone(sanitizer, "click blocker needs a strict selector metadata sanitizer")
+        namespace = {"re": re}
+        exec(compile(ast.Module(body=[sanitizer], type_ignores=[]), str(FLOW), "exec"), namespace)
+        sanitize = namespace["sanitize_click_target_metadata"]
+
+        examples = (
+            "Jane Doe",
+            "JaneDoe",
+            "jane.doe@example.com",
+            "customer-12345",
+        )
+        for example in examples:
+            with self.subTest(example=example):
+                safe = sanitize({"tag": "div", "id": example, "class": example})
+                serialized = json.dumps(safe, ensure_ascii=True, sort_keys=True)
+                self.assertNotIn(example, serialized)
+                self.assertEqual(safe["id"], "")
+
+        safe = sanitize({"tag": "button", "id": "submitButton", "class": "btn btn-primary customer-12345"})
+        self.assertEqual(safe["class"], "btn btn-primary")
+        self.assertEqual(safe["tag"], "button")
+
+        for required in (
+            'print("ORDENOWA_RETURN_SUBMIT_BLOCKER_SAFE_STATE=" + diagnostic_json)',
+            '"::error title=Return submit click target::" + annotation',
+            'summary.write(f"Safe browser hit-test state: `{diagnostic_json}`\\n")',
+            '"submit_click_diagnostic": submit_click_diagnostic',
+            "submit_click_diagnostic, submit_failure_screenshot_name = capture_submit_click_blocker(",
+        ):
+            with self.subTest(required=required):
+                self.assertContract(self.source, required)
+
+    def test_checkbox_and_submit_blocker_share_strict_selector_metadata_allowlist(self) -> None:
+        tree = ast.parse(self.source)
+        sanitizer = next(
+            (
+                node
+                for node in tree.body
+                if isinstance(node, ast.FunctionDef) and node.name == "sanitize_click_target_metadata"
+            ),
+            None,
+        )
+        self.assertIsNotNone(sanitizer, "click blocker diagnostics need a shared selector metadata sanitizer")
+        namespace = {"re": re}
+        exec(compile(ast.Module(body=[sanitizer], type_ignores=[]), str(FLOW), "exec"), namespace)
+        sanitize = namespace["sanitize_click_target_metadata"]
+
+        for function_name in ("capture_checkbox_click_blocker", "capture_submit_click_blocker"):
+            function = next(
+                node for node in tree.body
+                if isinstance(node, ast.FunctionDef) and node.name == function_name
+            )
+            calls = {
+                node.func.id
+                for node in ast.walk(function)
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            }
+            self.assertIn("sanitize_click_target_metadata", calls, function_name)
+
+        private_values = (
+            "Jane Doe",
+            "JaneDoe",
+            "jane.doe@example.com",
+            "customer-12345",
+        )
+        for private_value in private_values:
+            with self.subTest(private_value=private_value):
+                safe = sanitize({"tag": "div", "id": private_value, "class": private_value})
+                serialized = json.dumps(safe, ensure_ascii=True, sort_keys=True)
+                self.assertNotIn(private_value, serialized)
+                self.assertEqual(safe["id"], "")
+                self.assertEqual(safe["class"], "")
+
+        safe = sanitize({"tag": "button", "id": "submitButton", "class": "btn btn-primary customer-12345"})
+        self.assertEqual(safe, {"tag": "button", "id": "", "class": "btn btn-primary"})
 
 
 if __name__ == "__main__":
