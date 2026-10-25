@@ -250,6 +250,7 @@ def _admin_controller_for_url(url: str) -> str:
     if controllers == ["AdminDashboard"]:
         dashboard_paths = {
             admin_path + "/index.php",
+            admin_path + "/index.php/sell/dashboard",
             admin_path + "/sell/dashboard",
         }
         return "AdminDashboard" if actual.path in dashboard_paths else "other"

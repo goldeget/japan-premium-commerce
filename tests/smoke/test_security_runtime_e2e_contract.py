@@ -859,9 +859,16 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             ),
             "AdminDashboard",
         )
+        self.assertEqual(
+            controller_for_url(
+                "http://localhost:18080/admin-kuranea/index.php/sell/dashboard?controller=AdminDashboard&token=private-token"
+            ),
+            "AdminDashboard",
+        )
         for url in (
             "http://localhost:18080/admin-kuranea/other.php?controller=AdminDashboard&token=private-token",
             "http://localhost:18080/admin-kuranea/sell/dashboard/extra?controller=AdminDashboard&token=private-token",
+            "http://localhost:18080/admin-kuranea/index.php/sell/dashboard/extra?controller=AdminDashboard&token=private-token",
             "http://outside.example/admin-kuranea/sell/dashboard?controller=AdminDashboard&token=private-token",
         ):
             with self.subTest(url=url):
