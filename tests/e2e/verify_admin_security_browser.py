@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 
 from admin_locale_diagnostics import (
     SAFE_ADMIN_LOCALE_RESPONSE_PATTERN,
+    format_average_order_value_kpi_match,
     format_orders_body_match_sources,
     parse_admin_locale_response_diagnostic,
 )
@@ -78,6 +79,7 @@ SAFE_ADMIN_ORDERS_STATE_PATTERN = (
     r"body_match_source_categories=(?:unknown|none|other_visible_content|"
     r"(?:toolbar|breadcrumb|navigation|kpi|grid_header|grid_controls|grid_actions|grid_body|modal|alert|empty_state)"
     r"(?:,(?:toolbar|breadcrumb|navigation|kpi|grid_header|grid_controls|grid_actions|grid_body|modal|alert|empty_state))*);"
+    r"kpi_average_order_value_match=(?:true|false|unknown);"
     r"alert_visible=(?:true|false|unknown);"
     r"body_has_korean_order_label=(?:true|false|unknown)"
 )
@@ -620,6 +622,7 @@ def assert_korean_admin_locale(
 def safe_admin_orders_state(driver: webdriver.Chrome) -> str:
     """Classify only bounded, non-customer-specific signals from the orders page."""
     body_match_source_categories = "unknown"
+    kpi_average_order_value_match = "unknown"
     try:
         actual_url = urlparse(driver.current_url)
         admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
@@ -720,9 +723,24 @@ def safe_admin_orders_state(driver: webdriver.Chrome) -> str:
                 source_category_flags,
                 english_order_label,
             )
+            average_order_value_kpi_match = driver.execute_script(
+                r"""
+                const element = document.querySelector('#box-average-order');
+                if (!element) return null;
+                const style = window.getComputedStyle(element);
+                return element.getClientRects().length > 0
+                  && style.display !== 'none'
+                  && style.visibility !== 'hidden'
+                  && /\border(s)?\b/i.test(element.innerText || '');
+                """
+            )
+            kpi_average_order_value_match = format_average_order_value_kpi_match(
+                average_order_value_kpi_match
+            )
         except Exception:
             # Category instrumentation is diagnostic only; the strict assertion below remains decisive.
             body_match_source_categories = "unknown"
+            kpi_average_order_value_match = "unknown"
         heading_state = "missing"
         for heading in driver.find_elements(By.CSS_SELECTOR, ".header-toolbar h1.title"):
             if not heading.is_displayed():
@@ -819,6 +837,7 @@ def safe_admin_orders_state(driver: webdriver.Chrome) -> str:
         f"permission_denied={_diagnostic_bool(permission_denied)};"
         f"english_order_label={_diagnostic_bool(english_order_label)};"
         f"body_match_source_categories={body_match_source_categories};"
+        f"kpi_average_order_value_match={kpi_average_order_value_match};"
         f"alert_visible={_diagnostic_bool(alert_visible)};"
         f"body_has_korean_order_label={_diagnostic_bool(body_has_korean_order_label)}"
     )

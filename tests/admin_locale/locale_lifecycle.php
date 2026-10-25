@@ -129,9 +129,15 @@ foreach ([
     // of the current locale. Default translation exposes later locale resets.
     if ($activeModules !== [] && str_starts_with($route, 'admin_')) {
         same('주문', $translator->trans('Orders', [], 'Admin.Navigation.Menu', 'ko-KR'), $route . ' explicit Korean catalogue');
+        if ($route === 'admin_orders_index') {
+            same('평균 주문 금액', $translator->trans('Average Order Value', [], 'Admin.Global', 'ko-KR'), $route . ' explicit Admin.Global KPI translation');
+        }
     }
     $context->getTranslator();
     same($expectedOrders, $translator->trans('Orders', [], 'Admin.Navigation.Menu'), $route . ' Orders title');
+    if ($activeModules !== [] && $route === 'admin_orders_index') {
+        same('평균 주문 금액', $translator->trans('Average Order Value', [], 'Admin.Global'), $route . ' default Admin.Global KPI translation');
+    }
     same($expectedLocale, $builder->build()->getLocale(), $route . ' final language context');
     same($expectedLocale, $context->language->locale, $route . ' legacy language');
     same($expectedLocale, $translator->getLocale(), $route . ' translator locale');

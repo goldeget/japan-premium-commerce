@@ -4,11 +4,21 @@ import unittest
 
 from tests.e2e.admin_locale_diagnostics import (
     ORDER_LABEL_SOURCE_CATEGORIES,
+    format_average_order_value_kpi_match,
     format_orders_body_match_sources,
 )
 
 
 class OrdersLocaleDiagnosticTests(unittest.TestCase):
+    def test_average_order_kpi_diagnostic_is_a_boolean_category_only(self) -> None:
+        self.assertEqual(format_average_order_value_kpi_match(True), "true")
+        self.assertEqual(format_average_order_value_kpi_match(False), "false")
+        self.assertEqual(format_average_order_value_kpi_match(None), "unknown")
+        self.assertEqual(
+            format_average_order_value_kpi_match("Average Order Value for private@example.invalid"),
+            "unknown",
+        )
+
     def test_matches_are_reported_as_fixed_categories_only(self) -> None:
         categories = {name: False for name in ORDER_LABEL_SOURCE_CATEGORIES}
         categories["toolbar"] = True

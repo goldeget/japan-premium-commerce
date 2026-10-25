@@ -20,6 +20,13 @@ ORDER_LABEL_SOURCE_CATEGORIES = (
 )
 
 
+def format_average_order_value_kpi_match(value: object) -> str:
+    """Format the known KPI source check as a boolean; never return rendered text."""
+    if type(value) is bool:
+        return "true" if value else "false"
+    return "unknown"
+
+
 def format_orders_body_match_sources(categories: object, body_match: object) -> str:
     """Format only fixed UI categories; never return matched text, selectors, or values."""
     if (

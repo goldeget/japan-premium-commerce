@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlparse
 
 from tests.e2e.admin_locale_diagnostics import (
     ORDER_LABEL_SOURCE_CATEGORIES,
+    format_average_order_value_kpi_match,
     format_orders_body_match_sources,
 )
 
@@ -413,6 +414,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
 
     def test_view_only_orders_diagnostic_contains_only_allowlisted_page_state(self):
         source = ADMIN_FLOW.read_text(encoding="utf-8")
+        self.assertIn("format_average_order_value_kpi_match,", source)
         namespace: dict[str, object] = {
             "parse_qs": parse_qs,
             "urlparse": urlparse,
@@ -422,6 +424,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "By": type("By", (), {"CSS_SELECTOR": "css selector", "TAG_NAME": "tag name"}),
             "is_korean_admin_language": lambda locale: locale.casefold() in {"ko", "ko-kr"},
             "webdriver": type("Webdriver", (), {"Chrome": object}),
+            "format_average_order_value_kpi_match": format_average_order_value_kpi_match,
             "format_orders_body_match_sources": format_orders_body_match_sources,
         }
         load_function(ADMIN_FLOW, "_admin_controller_for_url", namespace)
@@ -450,6 +453,8 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
                 raise AssertionError(f"unexpected element selector: {selector}")
 
             def execute_script(self, script: str) -> dict[str, object]:
+                if "box-average-order" in script:
+                    return True
                 if "sourceSelectors" in script:
                     return {
                         category: category == "grid_body"
@@ -485,7 +490,8 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "document_locale=korean;login_form_visible=false;admin_shell_visible=true;"
             "body_text=present;orders_heading=korean;orders_grid_heading=korean;orders_grid_visible=true;"
             "orders_empty_state_visible=true;orders_empty_state_korean=true;"
-            "permission_denied=false;english_order_label=true;body_match_source_categories=grid_body;alert_visible=false;"
+            "permission_denied=false;english_order_label=true;body_match_source_categories=grid_body;"
+            "kpi_average_order_value_match=true;alert_visible=false;"
             "body_has_korean_order_label=false",
         )
         pattern_assignment = next(
@@ -524,6 +530,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "By": type("By", (), {"CSS_SELECTOR": "css selector", "TAG_NAME": "tag name"}),
             "is_korean_admin_language": lambda locale: locale.casefold() in {"ko", "ko-kr"},
             "webdriver": type("Webdriver", (), {"Chrome": object}),
+            "format_average_order_value_kpi_match": format_average_order_value_kpi_match,
             "format_orders_body_match_sources": format_orders_body_match_sources,
         }
         load_function(ADMIN_FLOW, "_admin_controller_for_url", namespace)
