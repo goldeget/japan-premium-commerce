@@ -313,6 +313,29 @@ def visible_login_form(driver) -> bool:
         return False
 
 
+def visible_login_error(driver) -> bool:
+    try:
+        alerts = driver.find_elements("css selector", ".alert.alert-danger")
+        return any(alert.is_displayed() for alert in alerts)
+    except Exception:
+        return False
+
+
+def old_password_rejection_visible(driver, admin_login_url: str) -> bool:
+    """Require a login error on the actual Back Office login route after submit."""
+    try:
+        if not is_admin_login_route(str(driver.current_url), admin_login_url):
+            return False
+    except Exception:
+        return False
+    return visible_login_form(driver) and visible_login_error(driver)
+
+
+def assert_no_login_error_before_submit(driver) -> None:
+    if visible_login_error(driver):
+        raise AssertionError("the isolated employee login did not start from a clean login page")
+
+
 def is_admin_login_route(candidate: str, admin_login_url: str) -> bool:
     try:
         actual = urlparse(candidate)
@@ -340,7 +363,13 @@ def is_admin_login_page(driver, admin_login_url: str) -> bool:
         return False
 
 
-def fill_login(driver, admin_login_url: str, email: str, password: str) -> None:
+def fill_login(
+    driver,
+    admin_login_url: str,
+    email: str,
+    password: str,
+    require_clean_page: bool = False,
+) -> None:
     from selenium.webdriver.common.by import By
 
     driver.get(admin_login_url.rstrip("/") + "/login")
@@ -350,6 +379,8 @@ def fill_login(driver, admin_login_url: str, email: str, password: str) -> None:
     email_input.send_keys(email)
     password_input.clear()
     password_input.send_keys(password)
+    if require_clean_page:
+        assert_no_login_error_before_submit(driver)
     visible(driver, "#login_form button[type='submit'], #login_form input[type='submit']").click()
 
 
@@ -431,12 +462,23 @@ def native_reset_failure_state(
     except Exception:
         login_state = "unknown"
 
+    try:
+        login_errors = driver.find_elements("css selector", ".alert.alert-danger")
+        login_error_visible = any(error.is_displayed() for error in login_errors)
+        login_error_state = "true" if login_error_visible else "false"
+    except Exception:
+        login_error_state = "unknown"
+
+    dashboard_route_match = login_controller(current_url, admin_login_url) == "AdminDashboard"
+
     return {
         "same_origin": "true" if same_origin else "false",
         "pathname": pathname,
         "login_form_visible": login_state,
         "document_ready": ready_state,
         "login_route_match": "true" if login_route_match else "false",
+        "dashboard_route_match": "true" if dashboard_route_match else "false",
+        "login_error_visible": login_error_state,
         "screenshot": "admin-password-reset-failure.png",
         "screenshot_saved": "true" if screenshot_saved else "false",
     }
@@ -449,6 +491,8 @@ def format_native_reset_failure_state(state: dict[str, str]) -> str:
         "login_form_visible",
         "document_ready",
         "login_route_match",
+        "dashboard_route_match",
+        "login_error_visible",
         "screenshot",
         "screenshot_saved",
     )
@@ -462,6 +506,10 @@ def format_native_reset_failure_state(state: dict[str, str]) -> str:
         raise ValueError("native reset diagnostic document state is invalid")
     if state["login_route_match"] not in {"true", "false"}:
         raise ValueError("native reset diagnostic route state is invalid")
+    if state["dashboard_route_match"] not in {"true", "false"}:
+        raise ValueError("native reset diagnostic dashboard state is invalid")
+    if state["login_error_visible"] not in {"true", "false", "unknown"}:
+        raise ValueError("native reset diagnostic error state is invalid")
     if state["screenshot"] != "admin-password-reset-failure.png":
         raise ValueError("native reset diagnostic screenshot name is invalid")
     if state["screenshot_saved"] not in {"true", "false"}:
@@ -478,9 +526,15 @@ def capture_native_reset_failure_diagnostic(
 ) -> dict[str, str]:
     screenshot_path = artifact_dir / "admin-password-reset-failure.png"
     try:
-        screenshot_saved = bool(driver.save_screenshot(str(screenshot_path)))
+        fields_cleared = clear_sensitive_form_values_before_screenshot(driver)
     except Exception:
-        screenshot_saved = False
+        fields_cleared = False
+    screenshot_saved = False
+    if fields_cleared:
+        try:
+            screenshot_saved = bool(driver.save_screenshot(str(screenshot_path)))
+        except Exception:
+            screenshot_saved = False
     state = native_reset_failure_state(
         driver,
         admin_login_url,
@@ -501,6 +555,25 @@ def capture_native_reset_failure_diagnostic(
     return state
 
 
+def clear_sensitive_form_values_before_screenshot(driver) -> bool:
+    """Clear and verify all login/reset password fields before a failure capture."""
+    script = """
+        const fields = document.querySelectorAll(
+            '#login_form input[type="email"], '
+            + '#login_form input[type="password"], '
+            + 'form#reset_password_form input[type="password"]'
+        );
+        Array.from(fields).forEach(function(input) { input.value = ''; });
+        return fields.length > 0 && Array.from(fields).every(function(input) {
+            return input.value === '';
+        });
+    """
+    try:
+        return driver.execute_script(script) is True
+    except Exception:
+        return False
+
+
 def should_capture_native_reset_diagnostic(
     stage: str,
     error: Exception,
@@ -508,7 +581,7 @@ def should_capture_native_reset_diagnostic(
     expected_reset_url: str | None,
 ) -> bool:
     return (
-        stage == "native_reset_form"
+        stage in {"native_reset_form", "old_password_rejected"}
         and isinstance(error, Exception)
         and driver is not None
         and bool(expected_reset_url)
@@ -593,11 +666,16 @@ def run() -> bool:
         write_safe_log(log_path, stage, "passed")
 
         stage = "old_password_rejected"
-        fill_login(driver, admin_login_url, employee_email, admin_password)
-        WebDriverWait(driver, 30).until(lambda browser: visible_login_form(browser))
-        danger_alerts = driver.find_elements(By.CSS_SELECTOR, ".alert.alert-danger")
-        if not any(alert.is_displayed() for alert in danger_alerts):
-            raise AssertionError("the old employee password was not rejected with a login error")
+        fill_login(
+            driver,
+            admin_login_url,
+            employee_email,
+            admin_password,
+            require_clean_page=True,
+        )
+        WebDriverWait(driver, 30).until(
+            lambda browser: old_password_rejection_visible(browser, admin_login_url)
+        )
         write_safe_log(log_path, stage, "passed")
 
         stage = "new_password_login"
@@ -625,7 +703,8 @@ def run() -> bool:
                 sys.stdout.write(
                     "ORDENOWA_ADMIN_RESET_FAILURE=same_origin=false; pathname=/; "
                     "login_form_visible=unknown; document_ready=unknown; "
-                    "login_route_match=false; screenshot=admin-password-reset-failure.png; "
+                    "login_route_match=false; dashboard_route_match=false; login_error_visible=unknown; "
+                    "screenshot=admin-password-reset-failure.png; "
                     "screenshot_saved=false\n"
                 )
         try:

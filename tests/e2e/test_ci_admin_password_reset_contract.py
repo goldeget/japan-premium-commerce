@@ -111,14 +111,165 @@ class AdminPasswordResetContractTests(unittest.TestCase):
                         expected_url,
                     )
                 )
-        self.assertFalse(
-            module.should_capture_native_reset_diagnostic(
-                "old_password_rejected",
-                ValueError("safe"),
-                object(),
-                expected_url,
-            )
+        for stage in ("old_password_rejected", "new_password_login"):
+            with self.subTest(stage=stage):
+                self.assertEqual(
+                    stage == "old_password_rejected",
+                    module.should_capture_native_reset_diagnostic(
+                        stage,
+                        ValueError("safe"),
+                        object(),
+                        expected_url,
+                    ),
+                )
+
+    def test_old_password_rejection_waits_for_a_visible_error_response(self):
+        module = load_script()
+        self.assertTrue(
+            hasattr(module, "old_password_rejection_visible"),
+            "old-password QA must wait for the submitted rejection response, not the already-visible login form",
         )
+
+        class Element:
+            def __init__(self, visible):
+                self.visible = visible
+
+            def is_displayed(self):
+                return self.visible
+
+        class Driver:
+            def __init__(self, selectors, current_url="http://localhost:18080/admin-kuranea/index.php/login"):
+                self.selectors = selectors
+                self.current_url = current_url
+
+            def find_elements(self, by, selector):
+                return self.selectors.get(selector, [])
+
+        self.assertFalse(
+            module.old_password_rejection_visible(
+                Driver({"#login_form": [Element(True)], ".alert.alert-danger": []}),
+                "http://localhost:18080/admin-kuranea",
+            ),
+            "a visible form before the POST response must not count as old-password rejection",
+        )
+        self.assertTrue(
+            module.old_password_rejection_visible(
+                Driver({"#login_form": [Element(True)], ".alert.alert-danger": [Element(True)]}),
+                "http://localhost:18080/admin-kuranea",
+            ),
+            "the submitted login error should prove the old password was rejected",
+        )
+        self.assertFalse(
+            module.old_password_rejection_visible(
+                Driver({"#login_form": [Element(False)], ".alert.alert-danger": []}),
+                "http://localhost:18080/admin-kuranea",
+            ),
+            "an accepted old password must not be classified as rejected",
+        )
+        self.assertFalse(
+            module.old_password_rejection_visible(
+                Driver(
+                    {"#login_form": [Element(True)], ".alert.alert-danger": [Element(True)]},
+                    "http://localhost:18080/admin-kuranea/index.php/dashboard",
+                ),
+                "http://localhost:18080/admin-kuranea",
+            ),
+            "a danger alert outside the canonical Back Office login route must not count as rejection",
+        )
+
+    def test_old_password_attempt_starts_from_a_clean_page_after_its_final_navigation(self):
+        module = load_script()
+        self.assertTrue(
+            hasattr(module, "assert_no_login_error_before_submit"),
+            "old-password rejection must not be inferred from a stale alert loaded before the credential POST",
+        )
+
+        class Element:
+            def __init__(self, visible):
+                self.visible = visible
+
+            def is_displayed(self):
+                return self.visible
+
+        self.assertIsNone(module.assert_no_login_error_before_submit(
+            type("Driver", (), {"find_elements": lambda self, by, selector: []})()
+        ))
+        with self.assertRaisesRegex(AssertionError, "clean login page"):
+            module.assert_no_login_error_before_submit(
+                type(
+                    "Driver",
+                    (),
+                    {"find_elements": lambda self, by, selector: [Element(True)] if selector == ".alert.alert-danger" else []},
+                )()
+            )
+
+        source = SCRIPT.read_text(encoding="utf-8")
+        fill_login = source.split("def fill_login(", 1)[1].split("\n\ndef write_safe_log", 1)[0]
+        stage = source.split('stage = "old_password_rejected"', 1)[1].split(
+            'stage = "new_password_login"', 1
+        )[0]
+        self.assertIn("require_clean_page", fill_login)
+        self.assertIn("assert_no_login_error_before_submit(driver)", fill_login)
+        self.assertIn("require_clean_page=True", stage)
+        self.assertLess(fill_login.index("driver.get("), fill_login.index("assert_no_login_error_before_submit(driver)"))
+        self.assertLess(fill_login.index("password_input.send_keys(password)"), fill_login.index("assert_no_login_error_before_submit(driver)"))
+        self.assertLess(fill_login.index("assert_no_login_error_before_submit(driver)"), fill_login.index(".click()"))
+
+    def test_failure_screenshot_is_saved_only_after_all_sensitive_form_fields_are_cleared(self):
+        module = load_script()
+        self.assertTrue(
+            hasattr(module, "clear_sensitive_form_values_before_screenshot"),
+            "password reset failure captures must clear both login and reset-form password values",
+        )
+
+        class Driver:
+            current_url = "http://localhost:18080/admin-kuranea/index.php/login"
+
+            def __init__(self, mask_result):
+                self.mask_result = mask_result
+                self.mask_script = ""
+                self.mask_scripts = []
+                self.save_calls = 0
+
+            def execute_script(self, script):
+                if script == "return document.readyState":
+                    return "complete"
+                self.mask_script = script
+                self.mask_scripts.append(script)
+                return self.mask_result
+
+            def find_elements(self, by, selector):
+                return []
+
+            def save_screenshot(self, filename):
+                self.save_calls += 1
+                Path(filename).write_bytes(b"synthetic screenshot")
+                return True
+
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            driver = Driver(False)
+            output = StringIO()
+            with redirect_stdout(output):
+                state = module.capture_native_reset_failure_diagnostic(
+                    driver,
+                    "http://localhost:18080/admin-kuranea",
+                    directory,
+                )
+            self.assertEqual(driver.save_calls, 0)
+            self.assertEqual(state["screenshot_saved"], "false")
+            self.assertFalse((directory / "admin-password-reset-failure.png").exists())
+            self.assertIn("ORDENOWA_ADMIN_RESET_FAILURE=", output.getvalue())
+
+            mask_script = driver.mask_script
+            for selector in (
+                "#login_form input[type=\"email\"]",
+                "#login_form input[type=\"password\"]",
+                "form#reset_password_form input[type=\"password\"]",
+            ):
+                self.assertIn(selector, mask_script)
+            self.assertIn("fields.length > 0", mask_script)
+            self.assertIn("input.value === ''", mask_script)
 
     def test_native_reset_assertion_diagnostic_redacts_url_and_records_safe_state(self):
         module = load_script()
@@ -137,15 +288,34 @@ class AdminPasswordResetContractTests(unittest.TestCase):
             def __init__(self, screenshot_path: Path, current_url: str):
                 self.screenshot_path = screenshot_path
                 self.current_url = current_url
+                self.credentials_masked = False
+                self.credentials_masked_before_screenshot = False
+                self.fields = {
+                    '#login_form input[type="email"]': "customer@example.invalid",
+                    '#login_form input[type="password"]': "old-secret",
+                    'form#reset_password_form input[type="password"]': "new-secret",
+                }
 
             def save_screenshot(self, filename: str) -> bool:
+                self.credentials_masked_before_screenshot = self.credentials_masked
+                if any(value != "" for value in self.fields.values()):
+                    raise AssertionError("screenshot must wait until every sensitive field is empty")
                 self.screenshot_path = Path(filename)
                 self.screenshot_path.write_bytes(b"synthetic screenshot")
                 return True
 
             def execute_script(self, script: str) -> str:
-                self.assert_ready_query = script == "return document.readyState"
-                return "complete"
+                if script == "return document.readyState":
+                    self.assert_ready_query = True
+                    return "complete"
+                if all(
+                    selector in script
+                    for selector in self.fields
+                ) and all(marker in script for marker in ("input.value = ''", "input.value === ''", "fields.length > 0")):
+                    self.fields = {selector: "" for selector in self.fields}
+                    self.credentials_masked = True
+                    return True
+                return False
 
             def find_elements(self, by: str, selector: str) -> list[LoginForm]:
                 return [LoginForm()] if selector == "#login_form" else []
@@ -172,15 +342,24 @@ class AdminPasswordResetContractTests(unittest.TestCase):
                 "login_form_visible": "false",
                 "document_ready": "complete",
                 "login_route_match": "true",
+                "dashboard_route_match": "false",
+                "login_error_visible": "false",
                 "screenshot": "admin-password-reset-failure.png",
                 "screenshot_saved": "true",
             }
             self.assertEqual(state, expected_state)
             self.assertTrue((directory / "admin-password-reset-failure.png").is_file())
             self.assertEqual(driver.screenshot_path.name, "admin-password-reset-failure.png")
+            self.assertTrue(driver.credentials_masked_before_screenshot)
 
             published = output.getvalue() + summary.read_text(encoding="utf-8")
-            for value in ("same_origin=true", "document_ready=complete", "login_route_match=true"):
+            for value in (
+                "same_origin=true",
+                "document_ready=complete",
+                "login_route_match=true",
+                "dashboard_route_match=false",
+                "login_error_visible=false",
+            ):
                 self.assertIn(value, published)
             self.assertIn("::error title=ORDENOWA native reset form diagnostics::", published)
             self.assertIn("admin-password-reset-failure.png", published)
@@ -192,6 +371,8 @@ class AdminPasswordResetContractTests(unittest.TestCase):
         run = source.split("def run() -> bool:", 1)[1].split("\n\nif __name__", 1)[0]
         exception_handler = run[run.rindex("except Exception as error:") :].split("finally:", 1)[0]
         self.assertIn("should_capture_native_reset_diagnostic(stage, error, driver, reset_url)", exception_handler)
+        capture_gate = source.split("def should_capture_native_reset_diagnostic(", 1)[1].split("\n\ndef run()", 1)[0]
+        self.assertIn('stage in {"native_reset_form", "old_password_rejected"}', capture_gate)
         self.assertNotIn("isinstance(error, AssertionError)", exception_handler)
         self.assertIn("error_type = type(error).__name__", exception_handler)
         self.assertNotIn("str(error)", exception_handler)
@@ -200,6 +381,18 @@ class AdminPasswordResetContractTests(unittest.TestCase):
             exception_handler.index("capture_native_reset_failure_diagnostic("),
             run.index("driver.quit()"),
         )
+
+    def test_old_password_stage_waits_for_submitted_rejection_and_reports_safe_route_state(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        stage = source.split('stage = "old_password_rejected"', 1)[1].split(
+            'stage = "new_password_login"', 1
+        )[0]
+        self.assertIn("old_password_rejection_visible(browser, admin_login_url)", stage)
+        self.assertIn("require_clean_page=True", stage)
+        self.assertNotIn("until(lambda browser: visible_login_form(browser))", stage)
+        for expected in ("dashboard_route_match", "login_error_visible", "GITHUB_STEP_SUMMARY"):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, source)
 
     def test_artifacts_are_confined_to_the_actions_runner_temp_directory(self):
         module = load_script()

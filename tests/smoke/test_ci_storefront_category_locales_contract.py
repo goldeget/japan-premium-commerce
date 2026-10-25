@@ -58,12 +58,65 @@ class StorefrontCategoryLocalesContractTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, source)
 
+    def test_browser_uses_generated_locale_routes_and_writes_redacted_failure_evidence(self) -> None:
+        browser = ROOT / "tests" / "e2e" / "verify_storefront_category_locale_browser.py"
+        source = browser.read_text(encoding="utf-8")
+
+        self.assertIn("select.js-language-selector option[data-iso-code]", source)
+        self.assertIn("data-iso-code", source)
+        self.assertIn("urljoin(", source)
+        self.assertIn("select_by_value(option_value)", source)
+        self.assertIn("same_origin", source)
+        self.assertIn("document_language.split(\"-\")[0] == html_language", source)
+        self.assertNotIn("/index.php?id_lang={language_id}", source)
+        self.assertNotIn("language_ids.get(locale)", source)
+        failure_evidence = source.split("def failure_evidence(", 1)[1].split("\n\ndef main", 1)[0]
+        self.assertNotIn("target_url", failure_evidence)
+        self.assertIn("current_parts = urlparse(current_url)", failure_evidence)
+        self.assertIn("same_origin = is_same_origin(current_url, reference_url)", failure_evidence)
+        self.assertIn("pathname = redact_pathname(current_parts.path)", failure_evidence)
+        browser_loop = source.split("for locale, (html_language", 1)[1].split(
+            "driver.save_screenshot(str(DEST / screenshot))", 1
+        )[0]
+        self.assertLess(
+            browser_loop.index("select_language(driver, locale)"),
+            browser_loop.index("is_same_origin(str(driver.current_url), reference_url)"),
+        )
+        self.assertNotIn("driver.get(failure_target)", browser_loop)
+        for safe_field in (
+            '"locale"',
+            '"same_origin"',
+            '"pathname"',
+            '"selector_destination_same_origin"',
+            '"selector_destination_pathname"',
+            '"selector_destination_query"',
+            '"approved_query"',
+            '"id_lang"',
+            '"isolang"',
+            '"lang"',
+            '"document_lang"',
+            '"ready_state"',
+            '"screenshot_saved"',
+        ):
+            with self.subTest(safe_field=safe_field):
+                self.assertIn(safe_field, source)
+        self.assertIn("ORDENOWA_CATEGORY_LOCALE_SAFE_STATE=", source)
+        self.assertIn("storefront-category-locale-failure.json", source)
+        self.assertIn("driver.save_screenshot", source)
+        self.assertLess(
+            source.index("driver.save_screenshot(str(DEST / failure_screenshot))"),
+            source.index("driver.quit()"),
+        )
+
     def test_workflow_runs_fixture_after_install_and_captures_its_browser_results(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("Prepare isolated default category locale data", workflow)
         self.assertIn("Verify JA/EN/KO default category labels in Chromium", workflow)
         self.assertIn("prepare_ci_storefront_locale_fixtures.php", workflow)
         self.assertIn("verify_storefront_category_locale_browser.py", workflow)
+        category_step = workflow.split("id: storefront_category_locale_browser_qa", 1)[1].split("\n      - name:", 1)[0]
+        self.assertIn("SHOP_BASE_URL: http://localhost:18080", category_step)
+        self.assertNotIn("SHOP_BASE_URL: http://127.0.0.1:18080", category_step)
         self.assertIn("storefront-category-ja.png", workflow)
         self.assertIn("storefront-category-en.png", workflow)
         self.assertIn("storefront-category-ko.png", workflow)

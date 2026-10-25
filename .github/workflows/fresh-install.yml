@@ -57,6 +57,10 @@ on:
       - 'tests/smoke/test_currency_bootstrap_contract.py'
       - 'tests/smoke/test_saved_order_tax_contract.py'
       - 'tests/smoke/test_product_admin_browser_guard.py'
+      - 'tests/fixtures/ci-catalog-import.compose.yaml'
+      - 'tests/smoke/test_catalog_import_browser_workflow_contract.py'
+      - 'tests/smoke/test_catalog_import_admin_contract.py'
+      - 'tests/smoke/test_catalog_fetcher_contract.py'
       - 'tests/fixtures/ci-checkout.compose.yaml'
       - 'tests/postcode/**'
       - 'tests/e2e/**'
@@ -116,6 +120,10 @@ on:
       - 'tests/smoke/test_currency_bootstrap_contract.py'
       - 'tests/smoke/test_saved_order_tax_contract.py'
       - 'tests/smoke/test_product_admin_browser_guard.py'
+      - 'tests/fixtures/ci-catalog-import.compose.yaml'
+      - 'tests/smoke/test_catalog_import_browser_workflow_contract.py'
+      - 'tests/smoke/test_catalog_import_admin_contract.py'
+      - 'tests/smoke/test_catalog_fetcher_contract.py'
       - 'tests/fixtures/ci-checkout.compose.yaml'
       - 'tests/postcode/**'
       - 'tests/e2e/**'
@@ -177,7 +185,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_docker_run_recovery -v
 
       - name: Verify fresh-install workflow contracts
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_backup_restore_drill_contract tests.smoke.test_deployment_config_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_customer_registration_privacy_gate_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_checkout_reassurance_contract tests.smoke.test_ci_storefront_category_locales_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_pwa_registration_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard tests.business_profile.test_admin_recovery_fixture_contract tests.e2e.test_ci_admin_password_reset_contract tests.e2e.test_ci_admin_order_status_contract -v
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_catalog_import_browser_workflow_contract tests.smoke.test_catalog_import_admin_contract tests.smoke.test_catalog_fetcher_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_backup_restore_drill_contract tests.smoke.test_deployment_config_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_customer_registration_privacy_gate_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_checkout_reassurance_contract tests.smoke.test_ci_storefront_category_locales_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_pwa_registration_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard tests.business_profile.test_admin_recovery_fixture_contract tests.e2e.test_ci_admin_password_reset_contract tests.e2e.test_ci_admin_order_status_contract -v
 
       - name: Verify isolated unpaid checkout contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract tests.business_profile.test_shipping_admin_links_contract tests.business_profile.test_admin_profile_history_contract tests.admin_locale.test_admin_locale_overlay tests.admin_locale.test_admin_locale_response_diagnostic tests.admin_locale.test_orders_empty_state_asset tests.admin_locale.test_orders_locale_overlay tests.postcode.test_ci_native_order_lifecycle_contract tests.e2e.test_ci_admin_return_browser_contract tests.e2e.test_ci_native_customer_return_browser_contract tests.e2e.test_ci_admin_password_reset_contract -v
@@ -1091,6 +1099,76 @@ jobs:
             exit "$browser_status"
           fi
 
+      - name: Enable exact run synthetic catalog import adapter
+        id: catalog_import_fixture
+        if: always() && !cancelled() && steps.tax_fixture.outcome == 'success' && steps.chromium_setup.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_project="kuranea-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          [[ "$CI" == true && "$GITHUB_ACTIONS" == true && "$KURANEA_ISOLATED_CI" == 1 ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          [[ "$CI_COMPOSE_PROJECT_NAME" == "$expected_project" ]]
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" -f compose.yaml -f tests/fixtures/ci-catalog-import.compose.yaml \
+            up -d --no-deps --force-recreate --wait --wait-timeout 300 prestashop
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/ordenowa-ci-catalog-import-fixture-fetcher.php' \
+            < tests/catalog/catalog_import_fixture_fetcher.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/ordenowa-ci-catalog-import-amazon.synthetic.html' \
+            < tests/catalog/fixtures/amazon-jp-product.synthetic.html
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/ordenowa-ci-catalog-import-rakuten.synthetic.html' \
+            < tests/catalog/fixtures/rakuten-product.synthetic.html
+
+      - name: Verify synthetic catalog import review and native draft in Chromium
+        id: catalog_import_browser_qa
+        if: always() && !cancelled() && steps.catalog_import_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          SHOP_BASE_URL: http://localhost:18080
+          ADMIN_LOGIN_URL: http://localhost:18080/admin-kuranea
+          ADMIN_MAIL: ci-ordenowa@example.invalid
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" tests/e2e/verify_catalog_import_browser.py \
+            2>&1 | tee "$QA_ARTIFACT_DIR/catalog-import-e2e.log"
+          product_id=$(python3 -c 'import json,os; from pathlib import Path; print(int(json.loads((Path(os.environ["QA_ARTIFACT_DIR"])/"catalog-import-readback.json").read_text())["linked_product_id"]))')
+          [[ "$product_id" =~ ^[1-9][0-9]*$ ]]
+          # Read-only native persistence evidence, independent of the manager's status copy.
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T -e IMPORT_PRODUCT_ID="$product_id" prestashop \
+            php -r '
+          require "/var/www/html/config/config.inc.php";
+          $id = (int) getenv("IMPORT_PRODUCT_ID");
+          if ($id < 1) { exit(1); }
+          $db = Db::getInstance();
+          $p = $db->getRow("SELECT active, visibility, available_for_order FROM " . _DB_PREFIX_ . "product WHERE id_product=" . $id);
+          $s = $db->getRow("SELECT active, visibility, available_for_order FROM " . _DB_PREFIX_ . "product_shop WHERE id_shop=1 AND id_product=" . $id);
+          $images = (int) $db->getValue("SELECT COUNT(*) FROM " . _DB_PREFIX_ . "image WHERE id_product=" . $id);
+          $combinations = (int) $db->getValue("SELECT COUNT(*) FROM " . _DB_PREFIX_ . "product_attribute WHERE id_product=" . $id);
+          $sameReference = (int) $db->getValue("SELECT COUNT(*) FROM " . _DB_PREFIX_ . "product WHERE reference=(SELECT reference FROM (SELECT reference FROM " . _DB_PREFIX_ . "product WHERE id_product=" . $id . ") AS imported)");
+          foreach ([$p, $s] as $row) {
+              if (!$row || (int) $row["active"] !== 0 || $row["visibility"] !== "none" || (int) $row["available_for_order"] !== 0) { exit(1); }
+          }
+          if ($images !== 1 || $combinations !== 2 || $sameReference !== 1) { exit(1); }
+          echo json_encode(["linked_product_id" => $id, "active" => false, "visibility" => "none", "available_for_order" => false, "images" => $images, "combinations" => $combinations, "same_reference_product_count" => $sameReference]), PHP_EOL;
+          ' | tee "$QA_ARTIFACT_DIR/catalog-import-persistence.json"
+
+      - name: Restore base Compose after synthetic catalog import QA
+        id: catalog_import_restore
+        if: always() && steps.catalog_import_fixture.outcome != 'skipped'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CI_COMPOSE_PROJECT_NAME" == "kuranea-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ]]
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" \
+            up -d --no-deps --force-recreate --wait --wait-timeout 300 prestashop
+          printf 'PASS: restored base Compose; synthetic import fixture mode removed.\n'
+
       - name: Verify real product detail and cart in Chromium (no payment)
         id: storefront_browser_qa
         if: always() && !cancelled() && steps.shipping_product_fixture.outcome == 'success' && steps.chromium_setup.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
@@ -1117,7 +1195,8 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
-          SHOP_BASE_URL: http://127.0.0.1:18080
+          # Match Compose PS_DOMAIN so generated language links stay same-origin.
+          SHOP_BASE_URL: http://localhost:18080
           QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
           CI_CATEGORY_LOCALE_FIXTURE_REPORT: ${{ runner.temp }}/ordenowa-browser-qa/storefront-category-locale-fixture.json
         run: |
@@ -2162,6 +2241,9 @@ jobs:
           ACCOUNT_BROWSER_QA_OUTCOME: ${{ steps.account_browser_qa.outcome }}
           ACCOUNT_CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.account_checkout_override.outcome }}
           ACCOUNT_CHECKOUT_RESTORE_OUTCOME: ${{ steps.account_checkout_restore.outcome }}
+          CATALOG_IMPORT_FIXTURE_OUTCOME: ${{ steps.catalog_import_fixture.outcome }}
+          CATALOG_IMPORT_BROWSER_QA_OUTCOME: ${{ steps.catalog_import_browser_qa.outcome }}
+          CATALOG_IMPORT_RESTORE_OUTCOME: ${{ steps.catalog_import_restore.outcome }}
           PRODUCT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.product_admin_browser_qa.outcome }}
           STOREFRONT_BROWSER_QA_OUTCOME: ${{ steps.storefront_browser_qa.outcome }}
           BLOCKREASSURANCE_RUNTIME_OUTCOME: ${{ steps.blockreassurance_runtime.outcome }}
@@ -2435,6 +2517,17 @@ jobs:
           if [[ "$VARIANT_FIXTURE_OUTCOME" == success ]]; then
             required_artifacts+=(
               variant-product-fixture.log
+            )
+          fi
+          if [[ "$CATALOG_IMPORT_BROWSER_QA_OUTCOME" == success ]]; then
+            required_artifacts+=(
+              catalog-import-e2e.log
+              catalog-import-batch.png
+              catalog-import-rejected.png
+              catalog-import-draft.png
+              catalog-import-reimport.png
+              catalog-import-readback.json
+              catalog-import-persistence.json
             )
           fi
           if [[ "$PRODUCT_ADMIN_BROWSER_QA_OUTCOME" == success ]]; then
@@ -2796,6 +2889,9 @@ jobs:
           ACCOUNT_BROWSER_QA_OUTCOME: ${{ steps.account_browser_qa.outcome }}
           ACCOUNT_CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.account_checkout_override.outcome }}
           ACCOUNT_CHECKOUT_RESTORE_OUTCOME: ${{ steps.account_checkout_restore.outcome }}
+          CATALOG_IMPORT_FIXTURE_OUTCOME: ${{ steps.catalog_import_fixture.outcome }}
+          CATALOG_IMPORT_BROWSER_QA_OUTCOME: ${{ steps.catalog_import_browser_qa.outcome }}
+          CATALOG_IMPORT_RESTORE_OUTCOME: ${{ steps.catalog_import_restore.outcome }}
           PRODUCT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.product_admin_browser_qa.outcome }}
           STOREFRONT_BROWSER_QA_OUTCOME: ${{ steps.storefront_browser_qa.outcome }}
           BLOCKREASSURANCE_RUNTIME_OUTCOME: ${{ steps.blockreassurance_runtime.outcome }}
@@ -2908,6 +3004,9 @@ jobs:
             "account=$ACCOUNT_BROWSER_QA_OUTCOME" \
             "account_checkout_override=$ACCOUNT_CHECKOUT_OVERRIDE_OUTCOME" \
             "account_checkout_restore=$ACCOUNT_CHECKOUT_RESTORE_OUTCOME" \
+            "catalog_import_fixture=$CATALOG_IMPORT_FIXTURE_OUTCOME" \
+            "catalog_import_browser_qa=$CATALOG_IMPORT_BROWSER_QA_OUTCOME" \
+            "catalog_import_restore=$CATALOG_IMPORT_RESTORE_OUTCOME" \
             "product_admin=$PRODUCT_ADMIN_BROWSER_QA_OUTCOME" \
             "storefront=$STOREFRONT_BROWSER_QA_OUTCOME" \
             "blockreassurance_runtime=$BLOCKREASSURANCE_RUNTIME_OUTCOME" \
