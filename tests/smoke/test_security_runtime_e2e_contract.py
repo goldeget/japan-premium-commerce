@@ -12,6 +12,11 @@ import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
+from tests.e2e.admin_locale_diagnostics import (
+    ORDER_LABEL_SOURCE_CATEGORIES,
+    format_orders_body_match_sources,
+)
+
 
 ROOT = Path(__file__).resolve().parents[2]
 ADMIN_FLOW = ROOT / "tests" / "e2e" / "verify_admin_security_browser.py"
@@ -417,6 +422,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "By": type("By", (), {"CSS_SELECTOR": "css selector", "TAG_NAME": "tag name"}),
             "is_korean_admin_language": lambda locale: locale.casefold() in {"ko", "ko-kr"},
             "webdriver": type("Webdriver", (), {"Chrome": object}),
+            "format_orders_body_match_sources": format_orders_body_match_sources,
         }
         load_function(ADMIN_FLOW, "_admin_controller_for_url", namespace)
         load_function(ADMIN_FLOW, "_diagnostic_bool", namespace)
@@ -440,10 +446,15 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
                 if selector == "html":
                     return Element(lang="ko-KR")
                 if selector == "body":
-                    return Element("주문 고객 private@example.invalid")
+                    return Element("Order private@example.invalid")
                 raise AssertionError(f"unexpected element selector: {selector}")
 
             def execute_script(self, script: str) -> dict[str, object]:
+                if "sourceSelectors" in script:
+                    return {
+                        category: category == "grid_body"
+                        for category in ORDER_LABEL_SOURCE_CATEGORIES
+                    }
                 return {"http_status": 200, "document_ready": "complete"}
 
             def find_elements(self, by: str, selector: str) -> list[Element]:
@@ -474,8 +485,8 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "document_locale=korean;login_form_visible=false;admin_shell_visible=true;"
             "body_text=present;orders_heading=korean;orders_grid_heading=korean;orders_grid_visible=true;"
             "orders_empty_state_visible=true;orders_empty_state_korean=true;"
-            "permission_denied=false;english_order_label=false;alert_visible=false;"
-            "body_has_korean_order_label=true",
+            "permission_denied=false;english_order_label=true;body_match_source_categories=grid_body;alert_visible=false;"
+            "body_has_korean_order_label=false",
         )
         pattern_assignment = next(
             node
@@ -488,6 +499,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             )
         )
         self.assertIsNotNone(re.fullmatch(ast.literal_eval(pattern_assignment.value), diagnostic))
+        self.assertNotIn("Order private@example.invalid", diagnostic)
         self.assertNotIn("private@example.invalid", diagnostic)
 
     def test_view_only_orders_diagnostic_matches_prestashop_92_markup(self):
@@ -512,6 +524,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "By": type("By", (), {"CSS_SELECTOR": "css selector", "TAG_NAME": "tag name"}),
             "is_korean_admin_language": lambda locale: locale.casefold() in {"ko", "ko-kr"},
             "webdriver": type("Webdriver", (), {"Chrome": object}),
+            "format_orders_body_match_sources": format_orders_body_match_sources,
         }
         load_function(ADMIN_FLOW, "_admin_controller_for_url", namespace)
         load_function(ADMIN_FLOW, "_diagnostic_bool", namespace)
@@ -539,6 +552,8 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
                 raise AssertionError(f"unexpected element selector: {selector}")
 
             def execute_script(self, script: str) -> dict[str, object]:
+                if "sourceSelectors" in script:
+                    return {category: False for category in ORDER_LABEL_SOURCE_CATEGORIES}
                 return {"http_status": 200, "document_ready": "complete"}
 
             def find_elements(self, by: str, selector: str) -> list[Element]:

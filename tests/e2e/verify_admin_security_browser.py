@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 
 from admin_locale_diagnostics import (
     SAFE_ADMIN_LOCALE_RESPONSE_PATTERN,
+    format_orders_body_match_sources,
     parse_admin_locale_response_diagnostic,
 )
 from shipping_admin_routes import is_korean_admin_language
@@ -74,6 +75,9 @@ SAFE_ADMIN_ORDERS_STATE_PATTERN = (
     r"orders_empty_state_visible=(?:true|false|unknown);"
     r"orders_empty_state_korean=(?:true|false|unknown);"
     r"permission_denied=(?:true|false|unknown);english_order_label=(?:true|false|unknown);"
+    r"body_match_source_categories=(?:unknown|none|other_visible_content|"
+    r"(?:toolbar|breadcrumb|navigation|kpi|grid_header|grid_controls|grid_actions|grid_body|modal|alert|empty_state)"
+    r"(?:,(?:toolbar|breadcrumb|navigation|kpi|grid_header|grid_controls|grid_actions|grid_body|modal|alert|empty_state))*);"
     r"alert_visible=(?:true|false|unknown);"
     r"body_has_korean_order_label=(?:true|false|unknown)"
 )
@@ -615,6 +619,7 @@ def assert_korean_admin_locale(
 
 def safe_admin_orders_state(driver: webdriver.Chrome) -> str:
     """Classify only bounded, non-customer-specific signals from the orders page."""
+    body_match_source_categories = "unknown"
     try:
         actual_url = urlparse(driver.current_url)
         admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
@@ -677,6 +682,47 @@ def safe_admin_orders_state(driver: webdriver.Chrome) -> str:
             )
         )
         english_order_label = bool(re.search(r"\border(s)?\b", body_text, re.IGNORECASE))
+        try:
+            source_category_flags = driver.execute_script(
+                r"""
+                const orderLabelPattern = /\border(s)?\b/i;
+                const isVisibleTextMatch = (element) => {
+                  const style = window.getComputedStyle(element);
+                  return element.getClientRects().length > 0
+                    && style.display !== 'none'
+                    && style.visibility !== 'hidden'
+                    && orderLabelPattern.test(element.innerText || '');
+                };
+                const sourceSelectors = {
+                  toolbar: ['.header-toolbar'],
+                  breadcrumb: ['.breadcrumb', 'nav[aria-label="Breadcrumb"]'],
+                  navigation: ['#nav-sidebar', '.nav-bar'],
+                  kpi: ['.card-kpis', '.kpi-row'],
+                  grid_header: ['.js-grid-panel thead'],
+                  grid_controls: ['.js-grid-panel .js-grid-header', '.js-grid-panel .card-header'],
+                  grid_actions: [
+                    '.js-grid-panel .js-bulk-actions-btn',
+                    '.js-grid-panel .dropdown-menu.show',
+                    '.js-grid-panel .js-grid-actions'
+                  ],
+                  grid_body: ['.js-grid-panel tbody'],
+                  modal: ['.modal.show', '[role="dialog"]'],
+                  alert: ['[role="alert"]', '.alert'],
+                  empty_state: ['.showcase-list-card']
+                };
+                return Object.fromEntries(Object.entries(sourceSelectors).map(([category, selectors]) => [
+                  category,
+                  selectors.some((selector) => Array.from(document.querySelectorAll(selector)).some(isVisibleTextMatch))
+                ]));
+                """
+            )
+            body_match_source_categories = format_orders_body_match_sources(
+                source_category_flags,
+                english_order_label,
+            )
+        except Exception:
+            # Category instrumentation is diagnostic only; the strict assertion below remains decisive.
+            body_match_source_categories = "unknown"
         heading_state = "missing"
         for heading in driver.find_elements(By.CSS_SELECTOR, ".header-toolbar h1.title"):
             if not heading.is_displayed():
@@ -757,6 +803,7 @@ def safe_admin_orders_state(driver: webdriver.Chrome) -> str:
         orders_empty_state_korean = "unknown"
         permission_denied = "unknown"
         english_order_label = "unknown"
+        body_match_source_categories = "unknown"
         alert_visible = "unknown"
         body_has_korean_order_label = "unknown"
 
@@ -771,6 +818,7 @@ def safe_admin_orders_state(driver: webdriver.Chrome) -> str:
         f"orders_empty_state_korean={_diagnostic_bool(orders_empty_state_korean)};"
         f"permission_denied={_diagnostic_bool(permission_denied)};"
         f"english_order_label={_diagnostic_bool(english_order_label)};"
+        f"body_match_source_categories={body_match_source_categories};"
         f"alert_visible={_diagnostic_bool(alert_visible)};"
         f"body_has_korean_order_label={_diagnostic_bool(body_has_korean_order_label)}"
     )

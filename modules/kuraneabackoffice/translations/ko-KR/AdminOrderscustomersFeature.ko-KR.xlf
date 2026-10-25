@@ -7,6 +7,11 @@
         <target state="final">새 주문 추가</target>
         <note>PrestaShop AdminOrders toolbar action.</note>
       </trans-unit>
+      <trans-unit id="kuranea-change-order-status-bulk-action" approved="yes">
+        <source>Change Order Status</source>
+        <target state="final">주문 상태 변경</target>
+        <note>PrestaShop AdminOrders bulk action.</note>
+      </trans-unit>
       <trans-unit id="kuranea-orders-empty-state-title" approved="yes">
         <source>Manage your orders</source>
         <target state="final">주문 관리</target>

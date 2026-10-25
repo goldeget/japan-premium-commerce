@@ -5,6 +5,37 @@ from __future__ import annotations
 import re
 
 
+ORDER_LABEL_SOURCE_CATEGORIES = (
+    "toolbar",
+    "breadcrumb",
+    "navigation",
+    "kpi",
+    "grid_header",
+    "grid_controls",
+    "grid_actions",
+    "grid_body",
+    "modal",
+    "alert",
+    "empty_state",
+)
+
+
+def format_orders_body_match_sources(categories: object, body_match: object) -> str:
+    """Format only fixed UI categories; never return matched text, selectors, or values."""
+    if (
+        not isinstance(categories, dict)
+        or set(categories) != set(ORDER_LABEL_SOURCE_CATEGORIES)
+        or any(type(categories[name]) is not bool for name in ORDER_LABEL_SOURCE_CATEGORIES)
+        or type(body_match) is not bool
+    ):
+        return "unknown"
+
+    matches = [name for name in ORDER_LABEL_SOURCE_CATEGORIES if categories[name]]
+    if matches:
+        return ",".join(matches)
+    return "other_visible_content" if body_match else "none"
+
+
 _PHP_RESPONSE_PATTERN = (
     r"stage=(?:request_scope|redirect|not_admin_route|not_html|empty_body|content_unchanged|html_tag_count|rewritten);"
     r"main_request=[01];module_active=[01];admin_route=[01];is_redirect=[01];http_status=[1-5][0-9]{2};"

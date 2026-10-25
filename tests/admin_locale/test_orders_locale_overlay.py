@@ -25,6 +25,8 @@ OVERLAYS = {
     "Admin.Orderscustomers.Feature": (
         "AdminOrderscustomersFeature.ko-KR.xlf",
         {
+            "Add new order": "새 주문 추가",
+            "Change Order Status": "주문 상태 변경",
             "Manage your orders": "주문 관리",
             ORDERS_FEATURE_DESCRIPTION: (
                 "이 페이지에서 모든 주문을 확인하고 주요 정보를 한 번에 볼 수 있습니다. "
@@ -91,6 +93,31 @@ class OrdersLocaleOverlayTests(unittest.TestCase):
                         self.assertIsNotNone(target)
                         self.assertEqual(expected_target, target.strip())
                         self.assertNotIn(source, target)
+
+    def test_orders_body_match_diagnostic_exposes_only_allowlisted_source_categories(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_admin_security_browser.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("body_match_source_categories=", browser)
+        for category in (
+            "toolbar",
+            "breadcrumb",
+            "navigation",
+            "kpi",
+            "grid_header",
+            "grid_controls",
+            "grid_actions",
+            "grid_body",
+            "modal",
+            "alert",
+            "empty_state",
+            "other_visible_content",
+        ):
+            with self.subTest(category=category):
+                self.assertIn(category, browser)
+
+        self.assertIn(r're.search(r"\border(s)?\b", body_text, re.IGNORECASE)', browser)
 
 
 if __name__ == "__main__":
