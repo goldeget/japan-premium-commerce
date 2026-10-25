@@ -19,21 +19,35 @@ use PrestaShop\PrestaShop\Adapter\SymfonyContainer;
 use PrestaShop\PrestaShop\Core\Context\Employee;
 use PrestaShop\PrestaShop\Core\Context\EmployeeContext;
 use PrestaShop\PrestaShop\Core\Context\LanguageContextBuilder;
+use PrestaShop\PrestaShop\Core\Domain\Configuration\ShopConfigurationInterface;
 use PrestaShop\PrestaShop\Core\Domain\Language\ValueObject\LanguageId;
+use PrestaShop\PrestaShop\Core\Domain\Shop\ValueObject\ShopConstraint;
 use PrestaShop\PrestaShop\Core\Language\LanguageInterface;
 use PrestaShop\PrestaShop\Core\Language\LanguageRepositoryInterface;
 use PrestaShop\PrestaShop\Core\Localization\Locale;
 use PrestaShopBundle\EventListener\Admin\Context\LanguageContextSubscriber;
 use PrestaShopBundle\EventListener\Admin\Context\LegacyContextSubscriber;
+use PrestaShopBundle\EventListener\Admin\UserLocaleSubscriber;
+use PrestaShopBundle\Security\Admin\SessionEmployeeInterface;
+use PrestaShopBundle\Security\Admin\SessionEmployeeProvider;
 use PrestaShopBundle\Translation\TranslatorComponent;
 use PrestaShopBundle\Translation\TranslatorLanguageLoader;
+use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Controller\ControllerReference;
 use Symfony\Component\HttpKernel\Event\ControllerEvent;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
+use Symfony\Component\HttpKernel\EventListener\LocaleAwareListener;
+use Symfony\Component\HttpKernel\Fragment\InlineFragmentRenderer;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorage;
+use Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken;
+use Symfony\Component\Security\Core\User\UserInterface;
 
 // Avoid ObjectModel's database bootstrap while retaining the real context code.
 class ObjectModel { public int $id; }
@@ -85,6 +99,13 @@ $configuration = new class implements \PrestaShop\PrestaShop\Core\ConfigurationI
     public function get($key) { return 3; }
     public function set($key, $value) {}
 };
+$shopConfiguration = new class implements ShopConfigurationInterface {
+    public function get($key, $default = null, ?ShopConstraint $shopConstraint = null) { return 3; }
+    public function set($key, $value, ?ShopConstraint $shopConstraint = null) { return $this; }
+    public function has($key, ?ShopConstraint $shopConstraint = null) { return true; }
+    public function remove($key) { return $this; }
+    public function keys() { return []; }
+};
 $kernel = new class implements HttpKernelInterface {
     public function handle(Request $request, int $type = self::MAIN_REQUEST, bool $catch = true): \Symfony\Component\HttpFoundation\Response { throw new LogicException('No HTTP server is used.'); }
 };
@@ -106,6 +127,32 @@ foreach ([
     $context = new Context();
     $context->language = new Language(3);
     (new ReflectionProperty(ContextCore::class, 'translator'))->setValue($context, $translator);
+    $requestStack = new RequestStack();
+    $securityContainer = new Container();
+    $tokenStorage = new TokenStorage();
+    if ($employeeLanguageId !== null) {
+        $sessionEmployee = new class($employeeLanguageId) implements SessionEmployeeInterface, UserInterface {
+            private string $locale;
+            public function __construct(int $languageId) { $this->locale = [1 => 'en-US', 2 => 'ko-KR'][$languageId]; }
+            public function getId(): int { return 1; }
+            public function getUserIdentifier(): string { return 'fixture@example.invalid'; }
+            public function getPassword(): string { return ''; }
+            public function getProfileId(): int { return 1; }
+            public function getDefaultLocale(): string { return $this->locale; }
+            public function getRoles(): array { return []; }
+            public function eraseCredentials(): void {}
+        };
+        $tokenStorage->setToken(new UsernamePasswordToken($sessionEmployee, 'main', []));
+    }
+    $securityContainer->set('security.token_storage', $tokenStorage);
+    $security = new Security($securityContainer);
+    $userLocaleSubscriber = new UserLocaleSubscriber(
+        $shopConfiguration,
+        $repository,
+        $security,
+        new SessionEmployeeProvider($requestStack)
+    );
+    $localeAwareListener = new LocaleAwareListener([$translator], $requestStack);
     $legacyContext = new class($context) extends LegacyContext {
         public function __construct(private Context $context) {}
         public function getContext() { return $this->context; }
@@ -115,14 +162,18 @@ foreach ([
     $coreLanguage = new LanguageContextSubscriber($builder, new EmployeeContext($employee, [1]), $configuration);
     // The module loader must not reach DB: the Korean catalogue already exists.
     $loader = (new ReflectionClass(TranslatorLanguageLoader::class))->newInstanceWithoutConstructor();
-    $module = new AdminLocaleSubscriber($repository, $builder, $translator, $loader, $shopRoot . '/modules/kuraneabackoffice', $activeModules);
+    $module = new AdminLocaleSubscriber($repository, $builder, $translator, $loader, $requestStack, $shopRoot . '/modules/kuraneabackoffice', $activeModules);
     $dispatcher = new EventDispatcher();
     $dispatcher->addSubscriber($coreLanguage);
     $dispatcher->addSubscriber($module);
     $dispatcher->addSubscriber(new LegacyContextSubscriber([$builder]));
     $request = Request::create('/');
     $request->attributes->set('_route', $route);
-    $dispatcher->dispatch(new RequestEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST), KernelEvents::REQUEST);
+    $requestStack->push($request);
+    $mainRequestEvent = new RequestEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST);
+    $userLocaleSubscriber->onKernelRequest($mainRequestEvent);
+    $localeAwareListener->onKernelRequest($mainRequestEvent);
+    $dispatcher->dispatch($mainRequestEvent, KernelEvents::REQUEST);
     $dispatcher->dispatch(new ControllerEvent($kernel, static function () {}, $request, HttpKernelInterface::MAIN_REQUEST), KernelEvents::CONTROLLER);
 
     // An explicit Korean translation proves domain registration independently
@@ -137,6 +188,48 @@ foreach ([
     same($expectedOrders, $translator->trans('Orders', [], 'Admin.Navigation.Menu'), $route . ' Orders title');
     if ($activeModules !== [] && $route === 'admin_orders_index') {
         same('평균 주문 금액', $translator->trans('Average Order Value', [], 'Admin.Global'), $route . ' default Admin.Global KPI translation');
+
+        $fragmentKernel = new class($requestStack, $userLocaleSubscriber, $localeAwareListener, $module, $translator) implements HttpKernelInterface {
+            public ?Request $lastRequest = null;
+            public function __construct(
+                private RequestStack $requestStack,
+                private UserLocaleSubscriber $userLocaleSubscriber,
+                private LocaleAwareListener $localeAwareListener,
+                private AdminLocaleSubscriber $adminLocaleSubscriber,
+                private TranslatorComponent $translator
+            ) {}
+            public function handle(Request $request, int $type = self::MAIN_REQUEST, bool $catch = true): Response
+            {
+                $this->lastRequest = $request;
+                $this->requestStack->push($request);
+                try {
+                    $event = new RequestEvent($this, $request, $type);
+                    $this->userLocaleSubscriber->onKernelRequest($event);
+                    $this->localeAwareListener->onKernelRequest($event);
+                    $this->adminLocaleSubscriber->onKernelRequest($event);
+                    return new Response($this->translator->trans('Average Order Value', [], 'Admin.Global'));
+                } finally {
+                    $this->requestStack->pop();
+                }
+            }
+        };
+        $controllerReference = new ControllerReference(
+            'PrestaShopBundle\\Controller\\Admin\\CommonController::renderKpiRowAction'
+        );
+        $fragmentRenderer = new InlineFragmentRenderer($fragmentKernel);
+        $response = $fragmentRenderer->render($controllerReference, $request);
+        $kpiSubrequest = $fragmentKernel->lastRequest;
+        if (!$kpiSubrequest instanceof Request) {
+            throw new RuntimeException($route . ' KPI fragment request was not dispatched');
+        }
+
+        same('ko-KR', $kpiSubrequest->attributes->get('_locale'), $route . ' generated KPI fragment locale');
+        same('ko-KR', $kpiSubrequest->getLocale(), $route . ' KPI fragment locale');
+        same(
+            '평균 주문 금액',
+            $response->getContent(),
+            $route . ' rendered KPI fragment translation'
+        );
     }
     same($expectedLocale, $builder->build()->getLocale(), $route . ' final language context');
     same($expectedLocale, $context->language->locale, $route . ' legacy language');
@@ -145,4 +238,4 @@ foreach ([
         same($employeeLanguageId, $employee->getLanguageId(), $route . ' employee preference');
     }
 }
-echo "PASS: Korean Orders survives core language initialization; storefront and employee preferences are preserved.\n";
+echo "PASS: Korean Orders and its KPI fragment preserve the admin locale; storefront and employee preferences are preserved.\n";

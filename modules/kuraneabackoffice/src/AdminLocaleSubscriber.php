@@ -12,6 +12,7 @@ use PrestaShopBundle\EventListener\Admin\Context\LanguageContextSubscriber;
 use PrestaShopBundle\Translation\TranslatorLanguageLoader;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\Event\ResponseEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
@@ -31,6 +32,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
         private readonly LanguageContextBuilder $languageContextBuilder,
         private readonly TranslatorInterface $translator,
         private readonly TranslatorLanguageLoader $translatorLanguageLoader,
+        private readonly RequestStack $requestStack,
         private readonly string $modulePath,
         private readonly array $activeModules,
     ) {
@@ -47,17 +49,41 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
 
     public function onKernelRequest(RequestEvent $event): void
     {
-        if (!$event->isMainRequest() || !in_array(self::MODULE_NAME, $this->activeModules, true)) {
+        if (!in_array(self::MODULE_NAME, $this->activeModules, true)) {
             return;
         }
 
         $request = $event->getRequest();
+        if (!$event->isMainRequest()) {
+            $this->applyKoreanAdminSubrequestLocale($request);
+
+            return;
+        }
+
         $route = (string) $request->attributes->get('_route', '');
         if (!str_starts_with($route, 'admin_') || !$this->applyKoreanAdminLocale($request)) {
             return;
         }
 
         $this->loadKoreanCatalogue(self::KOREAN_LOCALE);
+    }
+
+    private function applyKoreanAdminSubrequestLocale(Request $request): void
+    {
+        $parentRequest = $this->requestStack->getMainRequest();
+        if (
+            $parentRequest === null
+            || !str_starts_with((string) $parentRequest->attributes->get('_route', ''), 'admin_')
+            || $parentRequest->getLocale() !== self::KOREAN_LOCALE
+        ) {
+            return;
+        }
+
+        // PrestaShop resets subrequests to the employee locale before this listener runs.
+        $request->setLocale(self::KOREAN_LOCALE);
+        if (method_exists($this->translator, 'setLocale')) {
+            $this->translator->setLocale(self::KOREAN_LOCALE);
+        }
     }
 
     public function onKernelResponse(ResponseEvent $event): void

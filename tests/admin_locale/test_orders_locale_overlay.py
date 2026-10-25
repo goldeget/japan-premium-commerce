@@ -119,6 +119,23 @@ class OrdersLocaleOverlayTests(unittest.TestCase):
 
         self.assertIn(r're.search(r"\border(s)?\b", body_text, re.IGNORECASE)', browser)
 
+    def test_orders_kpi_locale_is_preserved_for_symfony_controller_fragments(self) -> None:
+        subscriber = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text(encoding="utf-8")
+        lifecycle = (ROOT / "tests" / "admin_locale" / "locale_lifecycle.php").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("$this->requestStack->getMainRequest()", subscriber)
+        self.assertIn("$parentRequest->getLocale() !== self::KOREAN_LOCALE", subscriber)
+        self.assertIn("$request->setLocale(self::KOREAN_LOCALE)", subscriber)
+        self.assertIn("$this->translator->setLocale(self::KOREAN_LOCALE)", subscriber)
+        self.assertIn("InlineFragmentRenderer", lifecycle)
+        self.assertIn("ControllerReference", lifecycle)
+        self.assertIn("UserLocaleSubscriber", lifecycle)
+        self.assertIn("LocaleAwareListener", lifecycle)
+        self.assertIn("$response->getContent()", lifecycle)
+        self.assertIn("render($controllerReference, $request)", lifecycle)
+
 
 if __name__ == "__main__":
     unittest.main()
