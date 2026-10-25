@@ -18,6 +18,7 @@ NEW_STEP_IDS = (
     "variant_fixture", "cart_controls_browser_qa",
     "security_fixture", "admin_security_browser_qa", "reset_token_browser_qa",
     "pwa_browser_qa", "shipping_free_fixture", "shipping_free_admin_access", "shipping_free_admin_configure",
+    "security_locale_restore",
     "shipping_free_restart", "shipping_free_admin_readback",
     "shipping_free_customer_browser_qa", "shipping_free_osaka_mobile_browser_qa",
     "shipping_free_taxable_browser_qa", "shipping_free_order_persistence",
@@ -194,7 +195,7 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
         outcome_vars = re.findall(r"^          ([A-Z_]+): \$\{\{ steps\.([a-z_]+)\.outcome \}\}", aggregate, re.MULTILINE)
         step_to_var = {step_id: variable for variable, step_id in outcome_vars}
         self.assertTrue(set(NEW_STEP_IDS).issubset(step_to_var), set(NEW_STEP_IDS) - step_to_var.keys())
-        env = {**os.environ, **{variable: "success" for variable, _ in outcome_vars}}
+        env = {**os.environ, **{variable: "success" for variable, _ in outcome_vars}, "SECURITY_ADMIN_LOCALE_MUTATED": "1"}
         command = shell_body(aggregate)
         self.assertEqual(subprocess.run(["bash", "-c", command], env=env, capture_output=True).returncode, 0)
         for step_id in NEW_STEP_IDS:
@@ -203,6 +204,16 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
                     result = subprocess.run(["bash", "-c", command], env={**env, step_to_var[step_id]: outcome}, capture_output=True, text=True)
                     self.assertNotEqual(result.returncode, 0, f"{step_id}={outcome} was ignored")
                     self.assertIn(outcome, result.stdout)
+
+    def test_locale_restore_skip_is_ignored_when_admin_language_was_not_changed(self) -> None:
+        aggregate = step("Aggregate browser QA and postal verification failures")
+        outcome_vars = re.findall(r"^          ([A-Z_]+): \$\{\{ steps\.([a-z_]+)\.outcome \}\}", aggregate, re.MULTILINE)
+        env = {**os.environ, **{variable: "success" for variable, _ in outcome_vars}, "SECURITY_ADMIN_LOCALE_MUTATED": ""}
+        env["SECURITY_LOCALE_RESTORE_OUTCOME"] = "skipped"
+
+        result = subprocess.run(["bash", "-c", shell_body(aggregate)], env=env, capture_output=True, text=True)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_successful_cart_requires_its_evidence_even_when_another_step_failed(self) -> None:
         coverage = step("Verify browser QA screenshot coverage")
