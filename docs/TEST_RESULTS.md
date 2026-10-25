@@ -1,6 +1,22 @@
 # ORDENOWA 테스트 결과
 
-## 2026-10-25 — Step 63 제목 오탐 수정 및 RMA 집중 진단
+## 2026-10-25 — 관리자 RMA tokenless 경로 수정 및 전체 QA
+
+검증 코드 SHA `bb26f06168e0a10a50607ce4e5171666656611b1` (`main` `ee02a3657448d563508687614a246e05ac61eecd`). 수정 커밋은 `[admin-return-focus] diagnose tokenized return navigation`이다. 집중 run [#40225474420](https://github.com/goldeget/japan-premium-commerce/actions/runs/40225474420)과 전체 run [#40226037762](https://github.com/goldeget/japan-premium-commerce/actions/runs/40226037762)이 모두 성공했다. 전체 Step 80 aggregate는 `PASS: isolated browser QA and official postcode verification completed.`를 기록했고 workflow conclusion도 `success`다.
+
+| 검사 | 결과 | 근거 |
+| --- | --- | --- |
+| 로컬 RMA/workflow 계약 | PASS | 관련 계약 149개; Step 8 정확한 사전 검사 142개씩 (security focus false/true); Step 9 43개씩 (false/true). Python compile, workflow YAML parse, embedded shell `bash -n`, `git diff --check` 통과. |
+| 실제 경고 화면 | 확인 | tokenless 직접 경로의 classifier 결과 `prestashop_security_compromised`; 정확한 same-origin `/security/compromised` 경로와 `#security-compromised-page` marker가 확인됐고 marker visible=true. tokenless probe 화면 캡처 true. 응답 상태 코드는 성공 요약에 기록되지 않아 별도 주장하지 않는다. |
+| 실제 메뉴 이동 | PASS | 앱 생성 메뉴 링크가 same-origin/admin/return path 검사와 세션 `token`/`_token` 검사 통과. tokenized menu route classification `none`; 비교값 `tokenless_compromised_tokenized_clear`. 로그인·라우팅 문제는 앱이 아니라 tokenless 테스트 이동 방식이었다. |
+| RMA 대상 및 상태 전환 | PASS | #402254와 #402260 Step 70. 동일 run-scoped 주문/RMA 일치, `1_to_2` 네이티브 저장·새 문서 재조회·success alert 후 state 2, `2_to_1` 저장·재조회 후 state 1, original state restored=true. |
+| 전체 regression 범위 | PASS | #402260의 account, product, storefront/cart, PWA/private cache, free-shipping/tax/order, RMA/lifecycle, backup/restore, restart, Japan Post, screenshot coverage 관련 steps가 성공; Step 80 aggregate 성공. Step 74는 비집중 dashboard screenshot 단계라 skipped이며 aggregate 요구사항은 아니다. |
+| 기존 title/fon트 변경 | 보존 및 PASS | 상품 화면 Step 42 통과. Chromium font cache Steps 30–32 통과; full run은 archive cache를 복원했다. #40214404446의 실제 HTTP 상태는 여전히 미확인으로 남긴다. |
+| 캡처 산출물 | Actions에 저장 | `admin-return-security-compromised.png`, `admin-return-state-control.png`는 Step 73/75 coverage로 검증됐다. Artifact 다운로드 요청이 403을 반환해 파일을 로컬에서 열어보지는 못했다. |
+
+운영 DB·named volume·운영 배포·실결제·실거래는 변경하지 않았다. 전체 QA는 격리 run 데이터와 합성 fixtures만 사용했다. 위 PASS는 기술/격리 QA 기준이며 실제 판매자, 실상품, 세무 분류, 운송사 계약, 결제/환불 절차나 운영 호스트의 준비 완료를 의미하지 않는다.
+
+## 이전 실행 — Step 63 제목 오탐 수정 및 RMA 집중 진단 (superseded by the result above)
 
 코드 검증 SHA `9c6c05346bad3afcaa1ac539308393061e44d35f` (`main`은 `ee02a3657448d563508687614a246e05ac61eecd`). 전체 Actions [#40221893987](https://github.com/goldeget/japan-premium-commerce/actions/runs/40221893987)은 **FAIL**이며 Step 80 실제 aggregate의 유일한 실패는 `order_return_admin_browser=failure`다. Step 70의 화면상 초록 conclusion은 `continue-on-error`를 반영하므로 통과로 보지 않았다.
 

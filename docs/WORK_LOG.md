@@ -1,5 +1,17 @@
 # ORDENOWA 작업 기록
 
+## 2026-10-25 — RMA tokenless 경고 확인, 수정, 집중·전체 QA 통과
+
+- 시작 기준 원격 `work`는 `0d9f5d4827010c05a1b4a45647015427f865a6b4`; 시작 시 로컬 변경과 미추적 계획/`__pycache__` 파일을 보존했다. 원격 `main` `ee02a3657448d563508687614a246e05ac61eecd`는 수정하지 않았다.
+- tokenless 경로의 정적 검사만으로 원인을 확정하지 않고, PrestaShop 9.2 보안 경고 fixture의 native marker와 exact route 검사를 브라우저 진단에 연결했다. 관리자 로그인 후 생성된 반품 메뉴 anchor를 검사해 same origin, 관리자 path, exact return route 및 단일 세션 token 존재를 확인하고 그 href를 메모리에서만 사용했다. 하드코딩 tokenless path와 정상 tokenized menu 이동을 비교했다.
+- 실제 브라우저 결과: tokenless probe는 exact `security/compromised` path + native marker로 분류됐고 marker가 보였다. 앱 생성 메뉴 링크는 검증에 통과했으며 tokenized 복귀 분류는 `none`; comparison은 `tokenless_compromised_tokenized_clear`. 이를 통해 테스트 이동에 session token이 빠져 있었음이 확인됐다. 보안검증이나 권한을 완화하지 않았다.
+- 대상 synthetic RMA 동일성 검증 뒤 native form에서 1→2 저장, 새 문서 GET 후 state 2 확인, 2→1 저장 및 새 GET 후 state 1 확인, 원래 상태 복원을 확인했다. 모든 단계에서 native save와 success alert가 확인됐다.
+- 회귀 보호: unresolved token comparison은 grid 대기 전에 실패해야 한다는 contract를 추가했다. 로컬 관련 계약 149개, Step 8 142개 false/true 각각, Step 9 43개 false/true 각각 통과했다. workflow YAML, embedded shell, Python compile, `git diff --check`도 통과했다.
+- 독립 코드 수정 커밋 `[admin-return-focus] diagnose tokenized return navigation` `bb26f06168e0a10a50607ce4e5171666656611b1`를 `work`에 push했고 `git ls-remote`로 SHA 일치를 확인했다. 자동 집중 Actions [#40225474420](https://github.com/goldeget/japan-premium-commerce/actions/runs/40225474420)는 RMA Step 70 저장/복원과 Step 80 aggregate 성공. 이어 최종 코드에 전체 QA 1회 [#40226037762](https://github.com/goldeget/japan-premium-commerce/actions/runs/40226037762)를 dispatch했고, Step 80 `PASS: isolated browser QA and official postcode verification completed.` 및 workflow success를 확인했다.
+- 두 run의 Step 73/75에서 경고 요소와 상태 control screenshot 업로드/coverage가 성공했다. Artifact 다운로드는 403을 반환해 이미지를 로컬에서 시각 열람하지 못했다. GitHub log에서 safe route classifications, screenshot captured=true, transition readback 및 aggregate를 확인했다.
+- 상품 제목 `404` 오탐 수정과 폰트 캐시를 그대로 보존했다. 전체 run Step 42 상품 검증, Steps 30–32 font cache/Chromium 준비 통과. run `40214404446` 자체의 실제 문서 HTTP 상태는 미확인 상태로 유지한다.
+- 합성 고객/주문, Mailpit 및 isolated DB만 사용했으며 기존 개발 DB/named volume, 운영환경, `main`은 변경하지 않았다. 실결제·배포·실거래를 실행하지 않았다. 판매자·실SKU/권리/세무/배송/결제/환불/법률·운영 인프라 자료는 사용자 제공 기준대로 미정/대기로 유지한다.
+
 ## 2026-10-25 — Step63 오탐 수정 확인 및 RMA 집중 실패 단계 확정
 
 - 작업 시작 때 `work` 로컬 `HEAD`와 `origin/work`는 `9c6c05346bad3afcaa1ac539308393061e44d35f`로 일치했다. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`. 기존 미추적 사용자 파일은 변경·삭제·스테이징하지 않았다.

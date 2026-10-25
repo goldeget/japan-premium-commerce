@@ -1,30 +1,21 @@
 # ORDENOWA 개발 현황
 
-## 현재 출시 체크리스트 (2026-10-25 18:43 UTC)
+## 현재 출시 체크리스트 (2026-10-25 19:45 UTC)
 
-최신 코드 `work` SHA는 `9c6c05346bad3afcaa1ac539308393061e44d35f`다. 이전 수정 `6020439ef085be775f2246fe2cb4f8d704902582`는 합성 상품명이 실행 ID에 `404`를 포함할 때 제목 부분 문자열 검사로 정상 페이지를 거부하던 오탐을 제거했다. 검사는 상품 식별과 실제 상세 화면을 확인하고 가능한 문서 응답 상태도 판정한다. 기존 실행 [#40214404446](https://github.com/goldeget/japan-premium-commerce/actions/runs/40214404446)의 실제 HTTP 상태는 기록되지 않아 **미확인**이다. 후속 집중 실행 [#40221893987](https://github.com/goldeget/japan-premium-commerce/actions/runs/40221893987)은 Step 67의 PC·모바일 상품/장바구니 검사에서 문서 상태 200을 확인하고 통과했다.
+현재 검증된 `work` 코드 커밋은 **bb26f06168e0a10a50607ce4e5171666656611b1**이다. `main`은 **ee02a3657448d563508687614a246e05ac61eecd**로 변경하지 않았다. 관리자 RMA 토큰 이동 수정의 집중 Actions [#40225474420](https://github.com/goldeget/japan-premium-commerce/actions/runs/40225474420)과 전체 격리 QA [#40226037762](https://github.com/goldeget/japan-premium-commerce/actions/runs/40226037762)은 모두 성공했다. 전체 run의 Step 80 실제 aggregate와 workflow conclusion 모두 성공이다.
 
-같은 실행의 관리자 RMA Step 70 실제 outcome은 **FAIL**이다(초록 step conclusion이 아니라 process exit와 Step 80 aggregate 기준). 요청한 `/admin-kuranea/sell/customer-service/merchandise-return/` 뒤 현재 경로는 안전 진단에서 `/admin-kuranea/<redacted>/<redacted>`였고, same-origin 관리자 문서 HTTP 200, `readyState=complete`, 오류 표시 없음, 로그인 폼 없음, `other_admin`, 그리드 없음으로 끝났다. 마지막 완료 단계는 `return_list_navigation`, 실패 단계는 `return_grid`; RMA 식별·1→2 저장/재조회·2→1 복원은 실행되지 않았다. 관측 결과는 목록 이동 후 다른 관리자 경로 형태로 이동했음을 확인하지만, 경로 조각이 마스킹되어 앱 라우팅과 테스트 경로 중 어느 쪽이 원인인지는 아직 확정되지 않았다. Step 80 aggregate도 `order_return_admin_browser=failure`로 실패했으므로 전체 QA를 추가 실행하지 않았다. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다.
+| 항목 | 현재 상태 | 근거 / 범위 |
+| --- | --- | --- |
+| 상품 제목 `404` 오탐 | 완료 | 상품 식별과 실제 상품 화면을 확인하도록 수정했다. #402260 Step 42 통과. 과거 #40214404446의 최종 HTTP 상태는 미기록이라 계속 미확인으로 둔다. |
+| Chromium 폰트 캐시 | 완료 | #402254와 #402260 Steps 30–32에서 캐시 키, archive restore, Chromium 준비 통과. 폰트 재다운로드 지연은 재발하지 않았다. |
+| 관리자 RMA 이동과 상태 저장 | 완료 (격리 QA) | tokenless 하드코딩 경로에서 PrestaShop `security/compromised`의 정적 경로와 native DOM marker가 모두 일치하고 화면 표시가 확인됐다. 생성된 메뉴 링크는 같은 origin·관리자·반품 경로와 세션 token을 가졌고, 이를 다시 열자 정상 반품 목록이 나왔다. 테스트 이동이 token을 누락한 것이 원인이며 PrestaShop token 검사는 유지했다. |
+| 동일 RMA 1→2→1 | 완료 (run 전용 합성 데이터) | #402254 및 #402260 Step 70에서 상태 1→2 저장, 성공 알림, 새 문서 GET 재조회 `readback_state=2`; 이후 2→1 저장·새 GET `readback_state=1`; 원상 복원 true. |
+| 브랜드·계정·상품·주문·PWA·무료배송·백업 | 완료 (격리 QA 범위) | #402260 관련 browser, 주문/금액, restart, backup/restore, Japan Post, screenshot coverage steps와 Step 80 aggregate 성공. 합성 fixtures, Mailpit, run 전용 DB를 사용했고 실결제는 없었다. |
+| 운영 출시 준비 | 자료·환경 대기 | 실제 판매자/LOGISTEED 관계, 판매 SKU와 이미지 권리, 상품별 세무 정보, 배송 계약·지역, 결제 및 취소/환불 정책, 승인 법률 문안, 운영 domain/TLS/SMTP/secrets, 운영 백업·복원 책임, iOS/Android 실기기가 제공되지 않았다. |
 
-확정된 정책: 고객 언어는 일본어 기본, 영어·한국어 추가; 통화 JPY; 브랜드 ORDENOWA/オーデノワ/오데노와; 상품 표시는 세금 포함 최종가; 지원 일본 배송지역의 고객 배송비 ¥0; 결제 때 별도 배송비·추가 세금·플랫폼 수수료 ¥0. 과세 상품은 실제 분류대로 기록한다. 실제 배송지역·운송사·무료배송 비용 부담/계약은 미정이다.
+RMA 화면 캡처는 Actions artifact `ordenowa-storefront-browser-40225474420-1` 및 `ordenowa-storefront-browser-40226037762-1`에 포함된다. 실패 경고 요소 캡처 이름은 `admin-return-security-compromised.png`, 상태 control 캡처 이름은 `admin-return-state-control.png`이며 Step 73 업로드와 Step 75 coverage가 성공했다. 이 실행환경의 artifact 다운로드는 HTTP 403이라 파일을 로컬에서 시각 열람하지 못했다. 로그에는 native warning marker가 visible, 캡처 완료, coverage 성공이 남아 있다.
 
-| 항목 | 완료 조건 | 현재 상태 | 근거 | 남은 작업 | 필요한 입력 |
-| --- | --- | --- | --- | --- | --- |
-| 보기 전용 관리자·Dashboard | 실제 페이지·한국어 UI·쓰기 차단·경로 제한 | 완료 (격리 QA 범위) | #402098 `ADMIN_SECURITY_BROWSER_QA_OUTCOME=success`; 별도 Dashboard screenshot 단계는 `skipped` | 운영 host에서 재확인 | 운영 staff account/access owner 미정 |
-| 브랜드·PWA | 공식 자산 게시, email logo, private cache, PWA | 완료 (합성 격리 QA 범위) | #402098 brand/email/PWA outcomes 모두 `success`; screenshot coverage 통과 | 운영 domain·iOS/Android에서 시각 확인 | staging HTTPS·실기기 미정 |
-| SEO escaping/metadata | 입력 escape와 공개 metadata 표시 | 코드 수정 완료, 운영 host 검증 필요 | SEO escaping 수정은 `work`에 있음; run에는 실운영 hostname 없음 | staging에서 title/description/OG 확인 | staging/production domain 미정 |
-| 고객 계정 | 가입·로그인·로그아웃·재설정·토큰 보호 | 완료 (Mailpit 격리 QA 범위) | #402098 `ACCOUNT_BROWSER_QA_OUTCOME=success`, `RESET_TOKEN_BROWSER_QA_OUTCOME=success` | 운영 메일 설정에서 별도 확인 | SMTP sender/domain/test inbox 미정 |
-| 관리자 암호 복구 | 기존 암호 거부, 새 암호 Dashboard 로그인 | 완료 (Mailpit 격리 QA 범위) | #402098 `ADMIN_RECOVERY_BROWSER_OUTCOME=success` | 운영 SMTP에서 확인 | SMTP 제공자·발신 도메인 미정 |
-| 고객 반품 제출 | native form 제출 및 주문 추적 목록 readback | 완료 (합성 CI 주문) | #402098 `ORDER_RETURN_BROWSER_OUTCOME=success`; submit click 뒤 1개 요청을 읽음 | 실제 정책에 따른 고객 acceptance | 실제 취소/반품/환불 정책·담당자 미정 |
-| 관리자 RMA·취소/credit slip | RMA 상태 저장/복원, 합성 주문 lifecycle | **원인 미확정·집중 검증 실패** | #402218 Step 70 실제 실패: `last_completed_stage=return_list_navigation`, `failure_stage=return_grid`, `TimeoutException`; 요청 경로와 달리 최종 안전 경로는 `/admin-kuranea/<redacted>/<redacted>`, HTTP 200, `other_admin`, no error marker, no login form, no grid. Step 80 aggregate `order_return_admin_browser=failure`; 같은 RMA 상태 저장/복원까지 도달하지 못함 | 안전한 경로 원인을 추가 근거로 분리하고 필요한 최소 수정 후 집중 실행을 통과시킨 뒤, 그때만 전체 QA 1회 실행 | 코드 검증에는 외부 입력 없음. 운영 판매자/상품/정책 자료는 별도 자료·환경 대기 |
-| 관리자 상품 등록/수정 | 상품 필드·이미지·옵션·재고 등록·수정 | 완료 (합성 격리 QA 범위) | #402098 `PRODUCT_ADMIN_BROWSER_QA_OUTCOME=success`; 실상품은 별도 | 실제 SKU acceptance | SKU·언어별 문안·가격·재고·옵션·이미지 권리·세금분류 미정 |
-| 검색/장바구니/가격/세금/무료배송/주문 | Tokyo/Osaka checkout, ¥0 shipping, 주문·관리자 금액 대조 | 완료 (합성 격리 QA 범위) | #402098 customer/admin checkout, taxable/exempt, coupon/quantity, order readback outcomes 성공 | 실제 제품·배송계약으로 인수 확인; 실결제는 미실행 | 배송지역·운송사·서비스/비용 계약 미정; 고객 요금 ¥0은 확정 |
-| CI 백업·복원·재시작·우편번호 | run 전용 DB/files/queue 복구, 재시작, import, 정리 | 완료 (합성 격리 QA 범위) | #402098 backup, restart, postal import/verify, screenshot coverage, cleanup success | 운영 restore drill은 별도 | 운영 저장소·암호화/보존·RPO/RTO·담당자/대상 미정 |
-| 한국어 관리자 전체 범위 | 모든 승인 화면/오류/안내의 현지화 | 검증 필요 | 여러 주요 화면 보완은 있으나 전체 coverage inventory 없음 | 미검증 core/custom 화면 목록과 QA | 실제 고객 안내/법률 문안 미정 |
-| 판매자·상품·세무·배송·결제·법률 | 승인된 운영정보와 적법한 판매 절차 | 자료·환경 대기 | 사용자가 실제 값은 ‘미정’임을 확인; 합성 QA는 운영 준비가 아님 | 승인자료를 보안 경로로 반영 후 acceptance | 판매자·LOGISTEED 관계/권한, 고객센터, SKU/권리/세금, 운송·환불·결제, 약관/개인정보/특상법 문안 미정 |
-| 운영 인프라·메일·백업·실기기 | HTTPS 운영, 메일, release/rollback, restore, PWA 기기검증 | 자료·환경 대기 | 현재 QA는 run 전용 CI; production target 미제공 | 승인된 staging에서 배포/복원/기기 확인 | host/owner, domain/DNS/TLS, SMTP, registry/release owner/secrets 경로, production admin access owner, backup 책임자/저장소, iOS·Android 기기 미정 |
-
-**현재 판단:** Step 63 제목 오탐 수정은 PC·모바일 브라우저에서 실제 HTTP 200과 상품 화면으로 확인됐다. 관리자 RMA 집중 실행은 그리드 단계에서 실패했으며 동일 RMA 저장/복원은 검증되지 않았고 전체 QA도 실행하지 않았다. RMA 원인은 아직 미확정이므로 완료로 표시하지 않는다. 운영 판매자·상품·결제·배송·법률 자료와 운영환경·기기 접근도 미정이므로 정식 출시는 차단 상태다. 공개 LOGISTEED 정보는 `company_reference`에만 쓰고 실제 판매자나 고객센터 정보로 옮기지 않는다.
+**개발 판단:** 이번 RMA 코드/CI 개발 범위는 완료했고 전체 격리 QA도 통과했다. 정식 운영 출시는 위 운영 자료·환경이 준비되기 전까지 가능하다고 판단하지 않는다. 실배포·실결제·실거래는 활성화하지 않았다.
 
 ## 이번 고정 범위 결과 (2026-10-25 11:39 UTC)
 
