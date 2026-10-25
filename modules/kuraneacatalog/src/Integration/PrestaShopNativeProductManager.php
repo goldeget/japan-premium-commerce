@@ -18,6 +18,7 @@ use RuntimeException;
 final class PrestaShopNativeProductManager
 {
     private const REFERENCE_PREFIX = 'OWA-ADMIN-';
+    private const IMPORT_REFERENCE_PREFIX = 'OWA-IMPORT-';
     private const MAX_IMAGES = 5;
     private const MAX_IMAGE_BYTES = 10485760;
 
@@ -79,7 +80,7 @@ final class PrestaShopNativeProductManager
                 ON ps.`id_product` = p.`id_product` AND ps.`id_shop` = ' . (int) $shopId . '
             INNER JOIN `' . _DB_PREFIX_ . 'product_lang` pl
                 ON pl.`id_product` = p.`id_product` AND pl.`id_shop` = ' . (int) $shopId . ' AND pl.`id_lang` = ' . (int) $languageId . '
-            WHERE p.`reference` LIKE \'OWA-ADMIN-%\'
+            WHERE (p.`reference` LIKE \'OWA-ADMIN-%\' OR p.`reference` LIKE \'OWA-IMPORT-%\')
                 AND p.`active` = 0 AND ps.`active` = 0
                 AND p.`visibility` = \'none\' AND p.`available_for_order` = 0
             ORDER BY ps.`date_upd` DESC, p.`id_product` DESC
@@ -165,7 +166,7 @@ final class PrestaShopNativeProductManager
     public function combinationStockRows(int $productId, int $languageId, int $shopId): array
     {
         $rows = \Db::getInstance()->executeS('
-            SELECT pa.`id_product_attribute`, agl.`name` AS `group_name`, al.`name` AS `attribute_name`
+            SELECT pa.`id_product_attribute`, pa.`price`, agl.`name` AS `group_name`, al.`name` AS `attribute_name`
             FROM `' . _DB_PREFIX_ . 'product_attribute` pa
             INNER JOIN `' . _DB_PREFIX_ . 'product_attribute_combination` pac
                 ON pac.`id_product_attribute` = pa.`id_product_attribute`
@@ -217,7 +218,8 @@ final class PrestaShopNativeProductManager
         ?int $productId,
         ProductAdminDraft $draft,
         array $uploads = [],
-        array $removeImageIds = []
+        array $removeImageIds = [],
+        ?string $importReference = null
     ): int {
         [$languageId, $shopId] = $this->contextIds();
         $this->requireJpyDefaultCurrency();
@@ -230,6 +232,10 @@ final class PrestaShopNativeProductManager
         $this->validateUploads($uploads);
 
         $isNew = $productId === null || $productId < 1;
+        if ($importReference !== null
+            && (!$isNew || preg_match('/\AOWA-IMPORT-[A-F0-9]{24}\z/D', $importReference) !== 1)) {
+            throw new InvalidArgumentException('가져온 상품 초안 식별값이 올바르지 않습니다.');
+        }
         $product = $isNew
             ? new \Product()
             : $this->loadManagedProduct((int) $productId, $languageId, $shopId);
@@ -254,7 +260,7 @@ final class PrestaShopNativeProductManager
             $draft
         );
         if ($isNew) {
-            $product->reference = self::REFERENCE_PREFIX . strtoupper(bin2hex(random_bytes(6)));
+            $product->reference = $importReference ?? self::REFERENCE_PREFIX . strtoupper(bin2hex(random_bytes(6)));
             $product->id_shop_default = $shopId;
         }
 
@@ -312,6 +318,243 @@ final class PrestaShopNativeProductManager
         $this->persistLocalizedFields($savedProductId, $draft, $shopId);
 
         return $savedProductId;
+    }
+
+    /**
+     * Create one inactive native draft per provider product identity. A source
+     * refresh never updates this record; staff must open the manager and decide
+     * which changes to apply so editorial values, sale price, and stock survive.
+     *
+     * @param list<array{name:string,tmp_name:string,size:int,error:int}> $uploads
+     */
+    public function saveImportedDraft(
+        string $providerProductKey,
+        ProductAdminDraft $draft,
+        array $uploads = []
+    ): int {
+        return $this->saveImportedDraftWithResult($providerProductKey, $draft, $uploads)->productId;
+    }
+
+    /**
+     * @param list<array{name:string,tmp_name:string,size:int,error:int}> $uploads
+     */
+    public function saveImportedDraftWithResult(
+        string $providerProductKey,
+        ProductAdminDraft $draft,
+        array $uploads = []
+    ): NativeImportedDraftResult {
+        if (!in_array(substr($providerProductKey, 0, strpos($providerProductKey, ':') ?: 0), ['amazon_jp', 'rakuten_ichiba'], true)
+            || strlen($providerProductKey) > 512) {
+            throw new InvalidArgumentException('가져온 상품 원본 식별값을 확인해 주세요.');
+        }
+        if (!method_exists('Product', 'getIdByReference') || !method_exists('Db', 'getInstance')) {
+            throw new RuntimeException('PrestaShop에서 중복 방지 상품 저장을 지원하지 않습니다.');
+        }
+
+        $reference = self::IMPORT_REFERENCE_PREFIX . strtoupper(substr(hash('sha256', $providerProductKey), 0, 24));
+        $database = \Db::getInstance();
+        if (!is_object($database) || !method_exists($database, 'getValue')) {
+            throw new RuntimeException('PrestaShop에서 안전한 가져오기 잠금을 사용할 수 없습니다.');
+        }
+        $lockName = 'kuranea_import_' . substr(hash('sha256', $reference), 0, 48);
+        if ((int) $database->getValue("SELECT GET_LOCK('" . $lockName . "', 10)", false) !== 1) {
+            throw new RuntimeException('가져온 상품 중복 확인 잠금을 확보하지 못했습니다.');
+        }
+
+        try {
+            $existingId = (int) \Product::getIdByReference($reference);
+            if ($existingId > 0) {
+                $existing = new \Product($existingId);
+                if ((int) ($existing->id ?? 0) !== $existingId
+                    || (string) ($existing->reference ?? '') !== $reference
+                    || (bool) ($existing->active ?? true)
+                    || (string) ($existing->visibility ?? '') !== 'none'
+                    || (bool) ($existing->available_for_order ?? true)
+                    || (bool) ($existing->show_price ?? true)) {
+                    throw new RuntimeException('가져오기 식별값을 사용하는 상품이 안전한 비활성 초안이 아닙니다.');
+                }
+
+                $uploadCount = count(array_filter(
+                    $uploads,
+                    static fn (array $upload): bool => ($upload['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK
+                ));
+                $this->assertPersistedImportedDraftMatches(
+                    $existingId,
+                    $draft,
+                    $uploadCount > 0 ? $uploadCount : null
+                );
+
+                return new NativeImportedDraftResult($existingId, false);
+            }
+
+            $createdId = $this->save(null, $draft, $uploads, [], $reference);
+            $this->assertPersistedImportedDraftMatches(
+                $createdId,
+                $draft,
+                count(array_filter(
+                    $uploads,
+                    static fn (array $upload): bool => ($upload['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK
+                ))
+            );
+
+            return new NativeImportedDraftResult($createdId, true);
+        } finally {
+            if ((int) $database->getValue("SELECT RELEASE_LOCK('" . $lockName . "')", false) !== 1) {
+                throw new RuntimeException('가져온 상품 중복 확인 잠금을 해제하지 못했습니다.');
+            }
+        }
+    }
+
+    private function assertPersistedImportedDraftMatches(
+        int $productId,
+        ProductAdminDraft $draft,
+        ?int $expectedImageCount
+    ): void {
+        $actual = $this->editorData($productId);
+        [$languageId, $shopId] = $this->contextIds();
+        $product = new \Product($productId, false, $languageId, $shopId);
+        $shopState = \Db::getInstance()->getRow('
+            SELECT `active`, `available_for_order`
+            FROM `' . _DB_PREFIX_ . 'product_shop`
+            WHERE `id_product` = ' . (int) $productId . ' AND `id_shop` = ' . (int) $shopId
+        );
+        if (!\Validate::isLoadedObject($product)
+            || !is_array($shopState)
+            || (bool) $product->active
+            || (string) $product->visibility !== 'none'
+            || (bool) $product->available_for_order
+            || (bool) $product->show_price
+            || (bool) ($shopState['active'] ?? true)
+            || (bool) ($shopState['available_for_order'] ?? true)) {
+            throw new RuntimeException('가져온 상품 초안의 비활성 판매 게이트 readback이 일치하지 않습니다.');
+        }
+
+        $normalizeText = static fn (mixed $value): string => str_replace("\r\n", "\n", trim((string) $value));
+        $fieldPairs = [
+            'name_ja' => $draft->nameJa,
+            'name_en' => $draft->nameEn,
+            'name_ko' => $draft->nameKo,
+            'description_ja' => $draft->descriptionJa,
+            'description_en' => $draft->descriptionEn,
+            'description_ko' => $draft->descriptionKo,
+        ];
+        foreach ($fieldPairs as $field => $expected) {
+            if ($normalizeText($actual[$field] ?? null) !== $normalizeText($expected)) {
+                throw new RuntimeException('가져온 상품의 언어별 필드 readback이 검토한 초안과 다릅니다.');
+            }
+        }
+
+        $expectedCategoryIds = $draft->categoryIds;
+        $actualCategoryIds = array_map('intval', is_array($actual['category_ids'] ?? null) ? $actual['category_ids'] : []);
+        sort($expectedCategoryIds, SORT_NUMERIC);
+        sort($actualCategoryIds, SORT_NUMERIC);
+        if ($actualCategoryIds !== $expectedCategoryIds
+            || (int) ($actual['price_jpy'] ?? 0) !== $draft->priceJpy
+            || (int) ($actual['tax_rules_group_id'] ?? -1) !== $draft->taxRulesGroupId) {
+            throw new RuntimeException('가져온 상품의 가격·세금·카테고리 readback이 검토한 초안과 다릅니다.');
+        }
+
+        $expectedOptionLines = [];
+        foreach ($draft->optionGroups as $group) {
+            $expectedOptionLines[] = $group['name'] . ':' . implode('|', $group['values']);
+        }
+        if ($normalizeText($actual['options'] ?? null) !== $normalizeText(implode("\n", $expectedOptionLines))) {
+            throw new RuntimeException('가져온 상품의 옵션 readback이 검토한 초안과 다릅니다.');
+        }
+
+        $expectedOptionMemberships = [];
+        if ($draft->optionGroups !== []) {
+            $expectedSets = [[]];
+            foreach ($draft->optionGroups as $group) {
+                $nextSets = [];
+                foreach ($expectedSets as $set) {
+                    foreach ($group['values'] as $value) {
+                        $nextSets[] = [...$set, [$group['name'], $value]];
+                    }
+                }
+                $expectedSets = $nextSets;
+            }
+            foreach ($expectedSets as $set) {
+                usort($set, static fn (array $left, array $right): int => [$left[0], $left[1]] <=> [$right[0], $right[1]]);
+                $expectedOptionMemberships[] = json_encode($set, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+            }
+        }
+
+        $optionRows = \Db::getInstance()->executeS('
+            SELECT pa.`id_product_attribute`, agl.`name` AS `group_name`, al.`name` AS `attribute_name`
+            FROM `' . _DB_PREFIX_ . 'product_attribute` pa
+            LEFT JOIN `' . _DB_PREFIX_ . 'product_attribute_combination` pac
+                ON pac.`id_product_attribute` = pa.`id_product_attribute`
+            LEFT JOIN `' . _DB_PREFIX_ . 'attribute` a ON a.`id_attribute` = pac.`id_attribute`
+            LEFT JOIN `' . _DB_PREFIX_ . 'attribute_group` ag ON ag.`id_attribute_group` = a.`id_attribute_group`
+            LEFT JOIN `' . _DB_PREFIX_ . 'attribute_group_lang` agl
+                ON agl.`id_attribute_group` = ag.`id_attribute_group` AND agl.`id_lang` = ' . (int) $languageId . '
+            LEFT JOIN `' . _DB_PREFIX_ . 'attribute_lang` al
+                ON al.`id_attribute` = a.`id_attribute` AND al.`id_lang` = ' . (int) $languageId . '
+            WHERE pa.`id_product` = ' . (int) $productId . '
+            ORDER BY pa.`id_product_attribute` ASC, ag.`position` ASC, a.`position` ASC
+        ');
+        if (!is_array($optionRows)) {
+            throw new RuntimeException('가져온 상품의 네이티브 옵션 조합을 읽지 못했습니다.');
+        }
+        $actualOptionSets = [];
+        $actualCombinationPriceAdjustments = [];
+        foreach ($optionRows as $row) {
+            $combinationId = (int) ($row['id_product_attribute'] ?? 0);
+            if ($combinationId < 1) {
+                throw new RuntimeException('가져온 상품의 네이티브 옵션 조합 ID가 올바르지 않습니다.');
+            }
+            $actualOptionSets[$combinationId] ??= [];
+            $priceAdjustment = $row['price'] ?? null;
+            if (!is_numeric($priceAdjustment)) {
+                throw new RuntimeException('가져온 상품 옵션의 가격 조정을 읽지 못했습니다.');
+            }
+            $actualCombinationPriceAdjustments[$combinationId] = (float) $priceAdjustment;
+            $groupName = $row['group_name'] ?? null;
+            $attributeName = $row['attribute_name'] ?? null;
+            if (!is_string($groupName) || $groupName === '' || !is_string($attributeName) || $attributeName === '') {
+                continue;
+            }
+            $actualOptionSets[$combinationId][] = [$groupName, $attributeName];
+        }
+        $actualOptionMemberships = [];
+        foreach ($actualOptionSets as $set) {
+            if (count($set) !== count($draft->optionGroups)) {
+                throw new RuntimeException('가져온 상품의 네이티브 옵션 조합에 속성 누락 또는 중복이 있습니다.');
+            }
+            usort($set, static fn (array $left, array $right): int => [$left[0], $left[1]] <=> [$right[0], $right[1]]);
+            $actualOptionMemberships[] = json_encode($set, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        }
+        sort($expectedOptionMemberships, SORT_STRING);
+        sort($actualOptionMemberships, SORT_STRING);
+        if ($actualOptionMemberships !== $expectedOptionMemberships) {
+            throw new RuntimeException('가져온 상품의 네이티브 옵션 조합이 검토한 전체 옵션 조합과 일치하지 않습니다.');
+        }
+        foreach ($actualCombinationPriceAdjustments as $priceAdjustment) {
+            if ($priceAdjustment !== 0.0) {
+                throw new RuntimeException('가져온 상품 옵션에 검토되지 않은 개별 가격 조정이 있습니다.');
+            }
+        }
+
+        $combinationQuantities = $actual['combination_quantities'] ?? null;
+        if (!is_array($combinationQuantities)) {
+            throw new RuntimeException('가져온 상품의 옵션별 재고를 읽지 못했습니다.');
+        }
+        if ($combinationQuantities === []) {
+            if ((int) ($actual['quantity'] ?? -1) !== $draft->quantity) {
+                throw new RuntimeException('가져온 상품 자체 재고 readback이 검토한 초안과 다릅니다.');
+            }
+        } else {
+            foreach ($combinationQuantities as $quantity) {
+                if ((int) $quantity !== $draft->quantity) {
+                    throw new RuntimeException('가져온 상품 옵션별 재고 readback이 검토한 초안과 다릅니다.');
+                }
+            }
+        }
+
+        if ($expectedImageCount !== null && count($this->imageIds($productId)) !== $expectedImageCount) {
+            throw new RuntimeException('가져온 상품 이미지 연결 readback이 요청된 파일 수와 다릅니다.');
+        }
     }
 
     private function persistLocalizedFields(int $productId, ProductAdminDraft $draft, int $shopId): void
@@ -495,12 +738,22 @@ final class PrestaShopNativeProductManager
     {
         $product = new \Product($productId, false, $languageId, $shopId);
         if (!\Validate::isLoadedObject($product)
-            || !str_starts_with((string) $product->reference, self::REFERENCE_PREFIX)) {
+            || (!str_starts_with((string) $product->reference, self::REFERENCE_PREFIX)
+                && !str_starts_with((string) $product->reference, self::IMPORT_REFERENCE_PREFIX))) {
             throw new InvalidArgumentException('ORDENOWA 한국어 상품 관리에서 만든 상품만 수정할 수 있습니다.');
         }
+        $shopState = \Db::getInstance()->getRow('
+            SELECT `active`, `available_for_order`
+            FROM `' . _DB_PREFIX_ . 'product_shop`
+            WHERE `id_product` = ' . (int) $productId . ' AND `id_shop` = ' . (int) $shopId
+        );
         if ((bool) $product->active
             || (string) $product->visibility !== 'none'
-            || (bool) $product->available_for_order) {
+            || (bool) $product->available_for_order
+            || (bool) $product->show_price
+            || !is_array($shopState)
+            || (bool) ($shopState['active'] ?? true)
+            || (bool) ($shopState['available_for_order'] ?? true)) {
             throw new InvalidArgumentException('판매 보호 상태가 변경된 상품은 이 화면에서 수정할 수 없습니다.');
         }
 

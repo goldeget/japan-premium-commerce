@@ -466,5 +466,176 @@ foreach ($quantityValidationCases as $caseName => $invalidQuantityMap) {
     }
 }
 
+$stage = 'synthetic imported product draft and duplicate guard';
+$importedDraft = ProductAdminDraft::fromArray([
+    'name_ja' => 'ORDENOWA CI 合成取込草案',
+    'name_en' => 'ORDENOWA CI Synthetic Imported Draft',
+    'name_ko' => 'ORDENOWA CI 합성 수집 초안',
+    'price_jpy' => '1560',
+    'tax_rules_group_id' => '0',
+    'quantity' => '2',
+    'category_ids' => [(string) $categoryId],
+    'description_ja' => 'CI fixture only. Source price and own sale price are separate.',
+    'description_en' => 'CI fixture only. Source price and own sale price are separate.',
+    'description_ko' => 'CI 합성 검증용입니다. 출처 가격과 판매 가격은 별도입니다.',
+    'options' => "色:青|赤\nサイズ:S|M",
+]);
+$importProductKey = 'amazon_jp:CI-SYNTHETIC-IMPORT-' . $runId . '-' . $attempt;
+$importedProductId = $manager->saveImportedDraft($importProductKey, $importedDraft, [$imageUpload]);
+$importedProduct = new Product($importedProductId, false, $languageId, $shopId);
+$importedReference = (string) $importedProduct->reference;
+$importedImageIds = $manager->imageIds($importedProductId);
+$importedCombinationRows = Db::getInstance()->executeS(
+    'SELECT pa.`id_product_attribute`, pa.`price`, agl.`name` AS `group_name`, al.`name` AS `attribute_name`'
+    . ' FROM `' . _DB_PREFIX_ . 'product_attribute` pa'
+    . ' INNER JOIN `' . _DB_PREFIX_ . 'product_attribute_combination` pac'
+    . ' ON pac.`id_product_attribute` = pa.`id_product_attribute`'
+    . ' INNER JOIN `' . _DB_PREFIX_ . 'attribute` a ON a.`id_attribute` = pac.`id_attribute`'
+    . ' INNER JOIN `' . _DB_PREFIX_ . 'attribute_group` ag ON ag.`id_attribute_group` = a.`id_attribute_group`'
+    . ' INNER JOIN `' . _DB_PREFIX_ . 'attribute_group_lang` agl'
+    . ' ON agl.`id_attribute_group` = ag.`id_attribute_group` AND agl.`id_lang` = ' . (int) $languageId
+    . ' INNER JOIN `' . _DB_PREFIX_ . 'attribute_lang` al'
+    . ' ON al.`id_attribute` = a.`id_attribute` AND al.`id_lang` = ' . (int) $languageId
+    . ' WHERE pa.`id_product` = ' . (int) $importedProductId
+    . ' ORDER BY pa.`id_product_attribute` ASC, ag.`position` ASC, a.`position` ASC'
+);
+$importedCombinationIds = array_map(
+    static fn (array $row): int => (int) $row['id_product_attribute'],
+    is_array($importedCombinationRows) ? $importedCombinationRows : []
+);
+$importedCombinationIds = array_values(array_unique($importedCombinationIds));
+$importedOptionMemberships = [];
+$importedVariantPriceAdjustments = [];
+foreach (is_array($importedCombinationRows) ? $importedCombinationRows : [] as $row) {
+    $combinationId = (int) $row['id_product_attribute'];
+    $importedOptionMemberships[$combinationId][] = (string) $row['group_name'] . '=' . (string) $row['attribute_name'];
+    $importedVariantPriceAdjustments[$combinationId] = (float) $row['price'];
+}
+$importedOptionMemberships = array_values(array_map(static function (array $labels): string {
+    sort($labels, SORT_STRING);
+    return implode('|', $labels);
+}, $importedOptionMemberships));
+sort($importedOptionMemberships, SORT_STRING);
+$expectedImportedOptionMemberships = [
+    'サイズ=M|色=赤',
+    'サイズ=M|色=青',
+    'サイズ=S|色=赤',
+    'サイズ=S|色=青',
+];
+sort($expectedImportedOptionMemberships, SORT_STRING);
+$changedImportDraft = ProductAdminDraft::fromArray([
+    'name_ja' => 'ORDENOWA CI CHANGED VALUE MUST NOT OVERWRITE',
+    'name_en' => 'CHANGED VALUE MUST NOT OVERWRITE',
+    'name_ko' => '덮어쓰면 안 되는 변경 값',
+    'price_jpy' => '9999',
+    'tax_rules_group_id' => '0',
+    'quantity' => '99',
+    'category_ids' => [(string) $editCategoryId],
+    'description_ja' => 'Changed source values must not overwrite administrator edits.',
+    'description_en' => 'Changed source values must not overwrite administrator edits.',
+    'description_ko' => '다시 수집한 값이 관리자 편집을 자동 덮어쓰면 안 됩니다.',
+    'options' => '色:緑|白',
+]);
+$productCountBeforeImportedRetry = (int) Db::getInstance()->getValue(
+    'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'product`'
+);
+$duplicateImportedProductId = $manager->saveImportedDraft($importProductKey, $importedDraft);
+$productCountAfterImportedRetry = (int) Db::getInstance()->getValue(
+    'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'product`'
+);
+$changedDuplicateDraftRejected = false;
+try {
+    $manager->saveImportedDraft($importProductKey, $changedImportDraft);
+} catch (RuntimeException) {
+    $changedDuplicateDraftRejected = true;
+}
+$tamperedImportedProduct = new Product($importedProductId, false, $languageId, $shopId);
+$tamperedImportedProduct->show_price = 1;
+if (!$tamperedImportedProduct->update()) {
+    throw new RuntimeException('Could not set the isolated imported draft price-display guard fixture.');
+}
+$unsafeImportedDraftRejected = false;
+try {
+    $manager->saveImportedDraft($importProductKey, $changedImportDraft);
+} catch (RuntimeException) {
+    $unsafeImportedDraftRejected = true;
+}
+$tamperedImportedProduct = new Product($importedProductId, false, $languageId, $shopId);
+$tamperedImportedProduct->show_price = 0;
+if (!$tamperedImportedProduct->update()) {
+    throw new RuntimeException('Could not restore the isolated imported draft price-display guard fixture.');
+}
+$reloadedImportedProduct = new Product($importedProductId, false, $languageId, $shopId);
+$reloadedImportedEditor = $manager->editorData($importedProductId);
+$reloadedImportedImageIds = $manager->imageIds($importedProductId);
+if ($importedProductId < 1
+    || $duplicateImportedProductId !== $importedProductId
+    || $productCountAfterImportedRetry !== $productCountBeforeImportedRetry
+    || !preg_match('/\AOWA-IMPORT-[A-F0-9]{24}\z/D', $importedReference)
+    || (bool) $reloadedImportedProduct->active
+    || (string) $reloadedImportedProduct->visibility !== 'none'
+    || (bool) $reloadedImportedProduct->available_for_order
+    || (bool) $reloadedImportedProduct->show_price
+    || !$unsafeImportedDraftRejected
+    || !$changedDuplicateDraftRejected
+    || $reloadedImportedEditor['name_ja'] !== 'ORDENOWA CI 合成取込草案'
+    || $reloadedImportedEditor['price_jpy'] !== 1560
+    || $reloadedImportedEditor['quantity'] !== 2
+    || $reloadedImportedEditor['options'] !== "色:青|赤\nサイズ:S|M"
+    || count($reloadedImportedImageIds) !== 1
+    || $reloadedImportedImageIds !== $importedImageIds
+    || count($importedCombinationIds) !== 4
+    || $importedOptionMemberships !== $expectedImportedOptionMemberships
+    || count($importedVariantPriceAdjustments) !== 4
+    || array_filter($importedVariantPriceAdjustments, static fn (float $adjustment): bool => $adjustment !== 0.0) !== []
+    || (float) $reloadedImportedProduct->price !== 1560.0) {
+    throw new RuntimeException('Imported native draft creation, option membership/pricing, image persistence, duplicate guard, or inactive-sale boundary failed.');
+}
+
+$variantPriceAdjustment = (float) Db::getInstance()->getValue(
+    'SELECT `price` FROM `' . _DB_PREFIX_ . 'product_attribute`'
+    . ' WHERE `id_product_attribute` = ' . (int) ($importedCombinationIds[0] ?? 0)
+    . ' AND `id_product` = ' . (int) $importedProductId
+);
+if (!Db::getInstance()->update(
+    'product_attribute',
+    ['price' => 25.0],
+    '`id_product_attribute` = ' . (int) ($importedCombinationIds[0] ?? 0)
+        . ' AND `id_product` = ' . (int) $importedProductId
+)) {
+    throw new RuntimeException('Could not prepare the isolated unreviewed imported variant price fixture.');
+}
+$unreviewedImportedVariantPriceRetryRejected = false;
+try {
+    $manager->saveImportedDraft($importProductKey, $importedDraft);
+} catch (RuntimeException) {
+    $unreviewedImportedVariantPriceRetryRejected = true;
+}
+$variantPriceRestored = Db::getInstance()->update(
+    'product_attribute',
+    ['price' => $variantPriceAdjustment],
+    '`id_product_attribute` = ' . (int) ($importedCombinationIds[0] ?? 0)
+        . ' AND `id_product` = ' . (int) $importedProductId
+);
+if (!$unreviewedImportedVariantPriceRetryRejected || !$variantPriceRestored) {
+    throw new RuntimeException('An imported draft retry accepted or failed to restore an unreviewed combination price.');
+}
+
+// Keep every option value represented while omitting one Cartesian tuple. A
+// flattened option-group readback alone would incorrectly accept this draft.
+$incompleteCombination = new Combination($importedCombinationIds[0] ?? 0);
+if (!Validate::isLoadedObject($incompleteCombination) || !$incompleteCombination->delete()) {
+    throw new RuntimeException('Could not prepare the isolated incomplete imported combination fixture.');
+}
+$incompleteImportedDraftRetryRejected = false;
+try {
+    $manager->saveImportedDraft($importProductKey, $importedDraft);
+} catch (RuntimeException) {
+    $incompleteImportedDraftRetryRejected = true;
+}
+if (!$incompleteImportedDraftRetryRejected) {
+    throw new RuntimeException('An imported draft retry accepted a missing native option combination.');
+}
+
 @unlink($imagePath);
-printf("PASS: Korean admin service created and edited native inactive product ID=%d with JPY, categories, 4 variants, stock, and image replacement.\n", $productId);
+printf("PASS: Korean admin service created and edited native inactive product ID=%d with JPY, categories, 4 variants, stock, and image replacement; imported inactive draft ID=%d retained its native image/options and rejected duplicate overwrite.\n", $productId, $importedProductId);

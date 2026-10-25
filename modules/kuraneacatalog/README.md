@@ -1,32 +1,37 @@
-# KURANEA catalog review module
+# ORDENOWA catalog collection and review
 
-This directory contains dependency-free PHP value objects and offline parsers for Amazon Japan and Rakuten Ichiba product-page snapshots.
+`kuraneacatalog` retains the original Amazon Japan and Rakuten Ichiba HTML parsers and connects them to a bounded URL fetcher, persistent review queue, and PrestaShop's native product manager.
 
-## Scope and safeguards
+## Collection and review flow
 
-- Parsers accept an HTML string already present in memory. They never fetch product pages, download images, use cookies, launch a browser, or contact marketplace servers.
-- Only HTTPS source URLs on the provider's exact configured Japanese marketplace hostnames are accepted.
-- `tests/catalog/fixtures/*.synthetic.html` contains invented test data and must not be represented as actual Amazon or Rakuten listings.
-- Parsed snapshots retain provider, source URL, provider product ID, fetch time, content fingerprint, image metadata, provider rating/review provenance, JPY price, and options.
-- Every snapshot and review-queue entry starts in `pending`. Provider reviews are marked `source_site` and non-publishable; ORDENOWA customer reviews are not populated by these parsers.
-- `ProductReviewQueue` is an in-memory domain behavior used to test identity and update semantics. It is not persistent storage and is not an administrator review screen.
+The Korean Back Office screen accepts one or more supported product URLs, stores a run-independent import batch outside the public web root, and processes at most one URL per request. Each batch accepts at most 10 URLs; duplicate provider/product identities in one batch collapse to one item. Item state and attempt count are persisted so staff can see queued, processing, succeeded, and failed results and retry eligible failures. Retry attempts are capped. Expired processing leases can be recovered without treating an old worker's result as current.
 
-## Persistent review and explicit TEST/DEMO registration
+The fetcher accepts only canonical Amazon Japan and Rakuten product-page paths over HTTPS. It resolves and validates public addresses, pins the connection destination, disables automatic redirects, revalidates each redirect, caps the request at 15 seconds and decoded response at 2 MiB, and uses the configured proxy. It does not send cookies, authenticate, bypass CAPTCHA, or follow arbitrary hosts. CAPTCHA/access blocking and unsupported pages are recorded as fixed Korean failure categories; raw response and transport exception details are not persisted.
 
-- Compose mounts `catalog_review_data` at `/var/lib/kuranea/catalog-review`, outside `/var/www/html`. The entrypoint only sets ownership and permissions on the mounted directory; it does not clear existing queue data. `KURANEA_CATALOG_QUEUE_DIR` injects this location into `CatalogQueueRepositoryFactory`.
-- `JsonFileProductReviewQueueRepository` stores complete normalized snapshots in a schema-versioned JSON file. It uses an adjacent process lock and atomic replacement. The module preserves the queue volume when uninstalled.
-- Changed source content returns to `pending` review. An approved item retains the staff identity, timestamp, and native product ID. Re-importing identical content is idempotent.
-- The Korean Back Office tab checks view/edit access and gets the approver identity from the authenticated employee context. Approval requires a POST, PrestaShop admin token, an explicit confirmation checkbox, and `KURANEA_CATALOG_TEST_DEMO_APPROVAL=1`.
-- Only `ProductApprovalService::approve(..., confirmed: true)` calls the native registration interface. The explicit confirmation and staff identity are required for a pending item.
-- `PrestaShopNativeProductRegistrar` refuses to run unless PrestaShop is bootstrapped and the shop default currency is JPY. It registers a hidden, inactive, non-orderable product with a `[TEST/DEMO]` name, `TEST-` reference, and escaped source provenance. It does not import source reviews or images.
-- The review screen displays queued snapshots, but there is no marketplace fetcher, background importer, or native product registration test in this repository. Only explicitly enqueued snapshots appear in the queue. The fresh-install CI verifies module/tab installation and queue persistence, not `Product::add()` behavior.
+Parsers preserve source provider, product ID, canonical URL, fetch time, JPY source price, categories, available image metadata, options, source availability, and source-review provenance where present. Missing fields remain missing. A parsed source price is a reference value, not the ORDENOWA sale price or own stock. Source-site reviews are not registered as ORDENOWA customer reviews.
 
-## Run offline parser tests
+The persistent review queue deduplicates by provider/product identity, retains the previous snapshot for changed-source comparison, records approval/rejection metadata, and preserves a linked native draft. Its current JSON backend has hard limits of 5,000 source identities and 32 MiB; over-limit operations fail without pruning existing records. This is not capacity evidence for the 10,000/100,000-item targets in the older master directive. A source refresh never silently overwrites the existing draft, manager edits, sale price, or own stock. Staff must review source changes again.
 
-The project does not require Composer or another package for this parser:
+## Native drafts, images, and variants
+
+Approval creates or reuses one deterministic native product reference per source identity. Imported products are `active=0`, `visibility=none`, `available_for_order=0`, and `show_price=0` at product and shop level. Customer publication is not part of this import flow; separate seller and operating approval gates remain in effect.
+
+Staff enter reviewed Japanese, English, and Korean text, a JPY sale price, an own-stock quantity, category, tax treatment and evidence. English and Korean review must be confirmed. Taxable products require a real PrestaShop tax group; explicit exemption requires a separate review reference. The source price is shown as context and is never silently used as the sale price. If staff choose the same number, they confirm that choice explicitly.
+
+Source image URLs are metadata only. The importer does not download remote images. Only local files uploaded by staff are connected as native product images, with a recorded rights-review basis and reference. A synthetic CI image marker explicitly makes no usage-rights claim and is restricted to its exact disposable Actions fixture.
+
+Options are reviewed before approval and become native Cartesian combinations with one uniform base price. The current adapter does not represent sparse option combinations or per-combination price differences; those source products must not be treated as faithfully imported until such support is implemented.
+
+## Verification boundaries
+
+`tests/catalog/fixtures/*.synthetic.html` and the exact-run browser adapter are invented data. They verify parser, queue, admin review, native draft persistence, image upload, options, duplicate prevention, and safe failure flow in an isolated environment. They do not establish compatibility with current live Amazon/Rakuten markup or real marketplace access.
+
+No production SKU URL list was present in the supplied project material, and the managed cloud egress policy does not allow the marketplace hosts. No CAPTCHA or access restriction is bypassed. Live source compatibility remains unverified until a permitted item URL or authorized feed/export and allowed network route are available.
+
+Run the PHP domain/parser/persistence checks in the existing isolated GitHub Actions workflow:
 
 ```sh
 php tests/catalog/run.php
 ```
 
-Fixtures are artificial contract tests. Their passing result does not establish compatibility with current live Amazon or Rakuten page markup, and no marketplace access is part of this test suite.
+The isolated fresh-install workflow also runs the exact-run synthetic admin browser check and reads the created native draft back from PrestaShop. A green result proves only that tested code SHA and fixture workflow; it is not a live-import, production catalog, seller, tax, rights, publication, or customer-visible-product acceptance.

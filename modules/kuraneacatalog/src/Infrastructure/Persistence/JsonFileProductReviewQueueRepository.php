@@ -19,8 +19,19 @@ use RuntimeException;
  */
 final class JsonFileProductReviewQueueRepository implements ProductReviewQueueRepositoryInterface
 {
-    public function __construct(private readonly string $filePath)
-    {
+    // This JSON backend is capped; larger catalogs need a different storage backend.
+    public const MAX_ENTRIES = 5000;
+    public const MAX_STORAGE_BYTES = 33554432;
+
+    public function __construct(
+        private readonly string $filePath,
+        private readonly int $maxEntries = self::MAX_ENTRIES,
+        private readonly int $maxStorageBytes = self::MAX_STORAGE_BYTES
+    ) {
+        if ($maxEntries < 1 || $maxEntries > self::MAX_ENTRIES
+            || $maxStorageBytes < 1 || $maxStorageBytes > self::MAX_STORAGE_BYTES) {
+            throw new \InvalidArgumentException('Catalog review queue limits must be positive and cannot exceed the fixed backend caps.');
+        }
         $directory = dirname($this->filePath);
         if (trim($this->filePath) === '' || !is_dir($directory) || !is_writable($directory) || is_dir($this->filePath)) {
             throw new RuntimeException('Catalog review queue directory must already exist and be writable.');
@@ -37,15 +48,26 @@ final class JsonFileProductReviewQueueRepository implements ProductReviewQueueRe
         return $this->access(static function (array &$entries) use ($snapshot, $queuedAt): array {
             $key = $snapshot->deduplicationKey;
             $existing = $entries[$key] ?? null;
-            if ($existing instanceof ProductReviewQueueEntry && $existing->snapshot->contentHash === $snapshot->contentHash) {
-                return [$existing, false];
+            if ($existing instanceof ProductReviewQueueEntry) {
+                if ($snapshot->fetchedAt <= $existing->snapshot->fetchedAt) {
+                    return [$existing, false];
+                }
+                if ($existing->snapshot->contentHash === $snapshot->contentHash) {
+                    $refreshed = $existing->refreshSameContentSnapshot($snapshot);
+                    $entries[$key] = $refreshed;
+                    return [$refreshed, true];
+                }
             }
 
             $entry = new ProductReviewQueueEntry(
                 $key,
                 ProductReviewQueueEntry::STATUS_PENDING,
                 $snapshot->withApprovalStatus('pending'),
-                $existing?->queuedAt ?? $queuedAt ?? new DateTimeImmutable('now', new DateTimeZone('UTC'))
+                $existing?->queuedAt ?? $queuedAt ?? new DateTimeImmutable('now', new DateTimeZone('UTC')),
+                previousSnapshot: $existing?->snapshot,
+                linkedProductId: $existing?->nativeProductId ?? $existing?->linkedProductId,
+                imageRightsEvidence: $existing?->imageRightsEvidence,
+                importReviewEvidence: null
             );
             $entries[$key] = $entry;
 
@@ -70,19 +92,60 @@ final class JsonFileProductReviewQueueRepository implements ProductReviewQueueRe
         });
     }
 
+    public function linkDraftIfCurrent(
+        string $idempotencyKey,
+        string $expectedContentHash,
+        int $nativeProductId,
+        ?\Kuranea\Catalog\Domain\ProductImageRightsEvidence $imageRightsEvidence = null,
+        ?\Kuranea\Catalog\Domain\ProductImportReviewEvidence $importReviewEvidence = null
+    ): ?ProductReviewQueueEntry {
+        return $this->access(static function (array &$entries) use (
+            $idempotencyKey,
+            $expectedContentHash,
+            $nativeProductId,
+            $imageRightsEvidence,
+            $importReviewEvidence
+        ): array {
+            $entry = $entries[$idempotencyKey] ?? null;
+            if (!$entry instanceof ProductReviewQueueEntry || $entry->snapshot->contentHash !== $expectedContentHash) {
+                return [null, false];
+            }
+            $linked = $entry->linkDraft($nativeProductId, $imageRightsEvidence, $importReviewEvidence);
+            $entries[$idempotencyKey] = $linked;
+            return [$linked, $linked !== $entry];
+        });
+    }
+
+    public function containsLinkedNativeProduct(int $nativeProductId): bool
+    {
+        if ($nativeProductId < 1) return false;
+        return $this->access(static function (array &$entries) use ($nativeProductId): array {
+            foreach ($entries as $entry) {
+                if ($entry->nativeProductId === $nativeProductId || $entry->linkedProductId === $nativeProductId) {
+                    return [true, false];
+                }
+            }
+            return [false, false];
+        });
+    }
+
     public function approveIfPending(
         string $idempotencyKey,
         string $expectedContentHash,
         int $nativeProductId,
         string $approvedBy,
-        DateTimeImmutable $approvedAt
+        DateTimeImmutable $approvedAt,
+        ?\Kuranea\Catalog\Domain\ProductImageRightsEvidence $imageRightsEvidence = null,
+        ?\Kuranea\Catalog\Domain\ProductImportReviewEvidence $importReviewEvidence = null
     ): ?ProductReviewQueueEntry {
         return $this->access(static function (array &$entries) use (
             $idempotencyKey,
             $expectedContentHash,
             $nativeProductId,
             $approvedBy,
-            $approvedAt
+            $approvedAt,
+            $imageRightsEvidence,
+            $importReviewEvidence
         ): array {
             $entry = $entries[$idempotencyKey] ?? null;
             if (!$entry instanceof ProductReviewQueueEntry || $entry->snapshot->contentHash !== $expectedContentHash) {
@@ -95,10 +158,38 @@ final class JsonFileProductReviewQueueRepository implements ProductReviewQueueRe
                 return [null, false];
             }
 
-            $approved = $entry->approve($nativeProductId, $approvedBy, $approvedAt);
+            $approved = $entry->approve($nativeProductId, $approvedBy, $approvedAt, $imageRightsEvidence, $importReviewEvidence);
             $entries[$idempotencyKey] = $approved;
 
             return [$approved, true];
+        });
+    }
+
+    public function rejectIfPending(
+        string $idempotencyKey,
+        string $expectedContentHash,
+        string $rejectedBy,
+        DateTimeImmutable $rejectedAt,
+        string $rejectionReason
+    ): ?ProductReviewQueueEntry {
+        return $this->access(static function (array &$entries) use (
+            $idempotencyKey,
+            $expectedContentHash,
+            $rejectedBy,
+            $rejectedAt,
+            $rejectionReason
+        ): array {
+            $entry = $entries[$idempotencyKey] ?? null;
+            if (!$entry instanceof ProductReviewQueueEntry
+                || $entry->snapshot->contentHash !== $expectedContentHash
+                || $entry->status !== ProductReviewQueueEntry::STATUS_PENDING) {
+                return [null, false];
+            }
+
+            $rejected = $entry->reject($rejectedBy, $rejectedAt, $rejectionReason);
+            $entries[$idempotencyKey] = $rejected;
+
+            return [$rejected, true];
         });
     }
 
@@ -159,8 +250,14 @@ final class JsonFileProductReviewQueueRepository implements ProductReviewQueueRe
             throw new RuntimeException('Catalog review queue file cannot be a symbolic link.');
         }
 
-        $contents = file_get_contents($this->filePath);
-        if ($contents === false) {
+        clearstatcache(true, $this->filePath);
+        $size = filesize($this->filePath);
+        if ($size === false || $size > $this->maxStorageBytes) {
+            throw new RuntimeException('Catalog review queue exceeds its fixed file-size limit; refusing to overwrite it.');
+        }
+        // Bound the read as well as the stat check if an external writer changes the file.
+        $contents = file_get_contents($this->filePath, false, null, 0, $this->maxStorageBytes + 1);
+        if ($contents === false || strlen($contents) > $this->maxStorageBytes) {
             throw new RuntimeException('Could not read the catalog review queue file.');
         }
 
@@ -171,6 +268,9 @@ final class JsonFileProductReviewQueueRepository implements ProductReviewQueueRe
         }
         if (!is_array($document) || ($document['schemaVersion'] ?? null) !== 1 || !is_array($document['entries'] ?? null)) {
             throw new RuntimeException('Catalog review queue schema is unsupported; refusing to overwrite it.');
+        }
+        if (count($document['entries']) > $this->maxEntries) {
+            throw new RuntimeException('Catalog review queue exceeds its fixed entry limit; refusing to overwrite it.');
         }
 
         $entries = [];
@@ -195,6 +295,9 @@ final class JsonFileProductReviewQueueRepository implements ProductReviewQueueRe
     /** @param array<string, ProductReviewQueueEntry> $entries */
     private function writeEntries(array $entries): void
     {
+        if (count($entries) > $this->maxEntries) {
+            throw new RuntimeException('Catalog review queue would exceed its fixed entry limit.');
+        }
         $serializedEntries = [];
         foreach ($entries as $key => $entry) {
             $serializedEntries[$key] = $entry->toArray();
@@ -206,6 +309,9 @@ final class JsonFileProductReviewQueueRepository implements ProductReviewQueueRe
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
         } catch (JsonException $exception) {
             throw new RuntimeException('Could not encode the catalog review queue.', 0, $exception);
+        }
+        if (strlen($contents) > $this->maxStorageBytes) {
+            throw new RuntimeException('Catalog review queue would exceed its fixed file-size limit.');
         }
 
         $temporaryPath = tempnam(dirname($this->filePath), '.kuranea-catalog-queue-');

@@ -157,9 +157,11 @@ try {
     $changedEntry = $reopenedAfterApproval->enqueue($changedSnapshot, $catalogFetchedAt->modify('+1 day'));
     assertCatalogWorkflowSame(ProductReviewQueueEntry::STATUS_PENDING, $changedEntry->status, 'Changed source content must return to manual review after an earlier approval.');
     assertCatalogWorkflowSame(null, $changedEntry->nativeProductId, 'Changed content must not reuse the previous native product identity.');
+    assertCatalogWorkflowSame(7001, $changedEntry->linkedProductId, 'Changed content must retain a link to the existing native draft.');
+    assertCatalogWorkflowSame($catalogSnapshot->contentHash, $changedEntry->previousSnapshot?->contentHash, 'Changed content should retain the previous snapshot for comparison.');
     $approvedChange = $approvalServiceAfterReload->approve($changedSnapshot->deduplicationKey, 'catalog-operator', $catalogFetchedAt->modify('+1 day'), true);
-    assertCatalogWorkflowSame(7002, $approvedChange->nativeProductId, 'A new content version should register a separate TEST product.');
-    assertCatalogWorkflowTrue($registration->reference !== $registrar->registrations[1]->reference, 'Different approved content versions should use different idempotent TEST references.');
+    assertCatalogWorkflowSame(7001, $approvedChange->nativeProductId, 'A changed source revision should stay linked to the existing native draft.');
+    assertCatalogWorkflowSame(1, count($registrar->registrations), 'Reapproval of changed source content must not register a duplicate native product.');
 
     $concurrentQueue = new JsonFileProductReviewQueueRepository($catalogQueueDir . '/concurrent-queue.json');
     $concurrentQueue->enqueue($catalogSnapshot, $catalogFetchedAt);

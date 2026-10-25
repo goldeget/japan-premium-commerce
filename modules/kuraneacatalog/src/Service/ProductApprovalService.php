@@ -51,8 +51,14 @@ final class ProductApprovalService
         }
 
         $approvalTimestamp = $approvedAt ?? new DateTimeImmutable('now', new DateTimeZone('UTC'));
-        $registration = NativeProductRegistration::fromSnapshot($entry->snapshot, $approvedBy, $approvalTimestamp);
-        $nativeProductId = $this->registrar->register($registration);
+        if ($entry->linkedProductId !== null) {
+            // A changed source revision remains linked to the existing draft.
+            // Re-approval never creates a duplicate or overwrites staff edits.
+            $nativeProductId = $entry->linkedProductId;
+        } else {
+            $registration = NativeProductRegistration::fromSnapshot($entry->snapshot, $approvedBy, $approvalTimestamp);
+            $nativeProductId = $this->registrar->register($registration);
+        }
         if ($nativeProductId < 1) {
             throw new RuntimeException('Native product registrar returned an invalid product identity.');
         }

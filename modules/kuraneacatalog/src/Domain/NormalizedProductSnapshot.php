@@ -62,6 +62,31 @@ final class NormalizedProductSnapshot
         );
     }
 
+    public function withFetchedAt(DateTimeImmutable $fetchedAt): self
+    {
+        return new self(
+            $this->source,
+            $this->sourceProductId,
+            $this->deduplicationKey,
+            $this->sourceUrl,
+            $this->name,
+            $this->brand,
+            $this->description,
+            $this->categories,
+            $this->priceJpy,
+            $this->currency,
+            $this->images,
+            $this->options,
+            $this->reviews,
+            $this->sourceRating,
+            $this->sourceReviewCount,
+            $this->availability,
+            $this->approvalStatus,
+            $fetchedAt,
+            $this->contentHash
+        );
+    }
+
     /** @return array<string, mixed> */
     public function toArray(): array
     {
@@ -99,7 +124,9 @@ final class NormalizedProductSnapshot
             'sourceReviewCount' => $this->sourceReviewCount,
             'availability' => $this->availability,
             'approvalStatus' => $this->approvalStatus,
-            'fetchedAt' => $this->fetchedAt->format(DATE_ATOM),
+            // Keep subsecond precision so concurrent import attempts have a
+            // stable ordering after a JSON repository reload.
+            'fetchedAt' => $this->fetchedAt->format('Y-m-d\\TH:i:s.uP'),
             'contentHash' => $this->contentHash,
         ];
     }

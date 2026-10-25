@@ -61,8 +61,9 @@ php modules/kuraneapostcode/bin/import-ken-all.php --file=/absolute/path/to/KEN_
   주문을 만들고 관리자 조회 객체의 배송지 포맷을 검사한다. 로컬 컨테이너에서는 PHP
   문법 검사만 했고 DB 쓰기는 하지 않았다.
 - `bin/update-ken-all.sh` 수동 갱신 명령은 공식 HTTPS host/ZIP/CSV를 검증한 뒤 기존
-  트랜잭션 importer를 호출한다. 6개 mock 기반 계약 테스트는 통과했지만 실제
-  다운로드와 DB 교체는 아직 실행하지 않았다.
+  트랜잭션 importer를 호출한다. GitHub Actions 격리 shop에서 이 명령으로 공식 KEN_ALL
+  ZIP을 다운로드·가져오고 주소 수가 100,000건 이상인지 확인한다. 이는 해당 CI의
+  임시 DB 검증이며 운영 데이터 갱신 증거가 아니다. 6개 mock 기반 계약 테스트도 통과했다.
 - 빈 설치 Action run `39703327857`은 이미지 빌드와 캐시 권한 검사 이후
   `Start the empty-volume shop` 단계에서 실패했다. redacted diagnostics artifact는
   생성됐지만 API/익명 다운로드 제한으로 로그를 읽지 못했다. `errno 28` 여부를 확정하지

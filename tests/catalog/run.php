@@ -80,10 +80,10 @@ assertCatalogSame(1, count($reviewQueue->pending()), 'A new product should appea
 assertCatalogTrue($reviewQueue->enqueue($amazon, $fetchedAt) === $queueEntry, 'Re-importing identical content should be idempotent.');
 
 $amazonPriceChangedHtml = str_replace('"price": "5980"', '"price": "5990"', fixture('amazon-jp-product.synthetic.html'));
-$amazonPriceChanged = $amazonParser->parse($amazonPriceChangedHtml, $amazonUrl, $fetchedAt);
+$amazonPriceChanged = $amazonParser->parse($amazonPriceChangedHtml, $amazonUrl, $fetchedAt->modify('+1 second'));
 assertCatalogSame($amazon->deduplicationKey, $amazonPriceChanged->deduplicationKey, 'Price updates should not create a duplicate source product.');
 assertCatalogTrue($amazon->contentHash !== $amazonPriceChanged->contentHash, 'Product changes should update the content fingerprint.');
-$updatedQueueEntry = $reviewQueue->enqueue($amazonPriceChanged, $fetchedAt);
+$updatedQueueEntry = $reviewQueue->enqueue($amazonPriceChanged, $amazonPriceChanged->fetchedAt);
 assertCatalogSame(1, count($reviewQueue->pending()), 'Changed source content should update, not duplicate, a pending review entry.');
 assertCatalogSame($amazonPriceChanged->contentHash, $updatedQueueEntry->snapshot->contentHash, 'A changed snapshot should replace the queued content.');
 
@@ -127,5 +127,12 @@ require __DIR__ . '/native_product_registrar_lock.php';
 require __DIR__ . '/admin_review_contract.php';
 require __DIR__ . '/admin_review_controller.php';
 require __DIR__ . '/product_admin_draft.php';
+require __DIR__ . '/security_fetcher.php';
+require __DIR__ . '/import_batch_repository.php';
+require __DIR__ . '/review_rejection.php';
+require __DIR__ . '/review_queue_persistence.php';
+require __DIR__ . '/review_queue_limits.php';
+require __DIR__ . '/product_image_rights_evidence.php';
+require __DIR__ . '/catalog_import_service.php';
 
-echo "PASS: offline Amazon JP and Rakuten synthetic catalog parser checks\n";
+echo "PASS: offline Amazon JP and Rakuten synthetic catalog parser, fetch, persistence, and review checks\n";

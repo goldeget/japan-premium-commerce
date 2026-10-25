@@ -1,0 +1,16 @@
+# Applied only to the exact disposable Actions project during synthetic import QA.
+services:
+  prestashop:
+    environment:
+      CI: "true"
+      GITHUB_ACTIONS: "true"
+      GITHUB_RUN_ID: ${GITHUB_RUN_ID:?GitHub Actions run ID is required for isolated catalog QA}
+      GITHUB_RUN_ATTEMPT: ${GITHUB_RUN_ATTEMPT:?GitHub Actions run attempt is required for isolated catalog QA}
+      KURANEA_CI_RUN_ID: ${GITHUB_RUN_ID:?GitHub Actions run ID is required for synthetic image evidence}
+      KURANEA_CI_RUN_ATTEMPT: ${GITHUB_RUN_ATTEMPT:?GitHub Actions run attempt is required for synthetic image evidence}
+      KURANEA_ISOLATED_CI: "1"
+      KURANEA_CI_PROJECT_NAME: ${CI_COMPOSE_PROJECT_NAME:?unique Compose project is required for isolated catalog QA}
+      KURANEA_CATALOG_IMPORT_FIXTURE_MODE: "1"
+      # Keep synthetic evidence out of the persistent base review queue volume.
+      # Recreating the base Compose service discards this container-only path.
+      KURANEA_CATALOG_QUEUE_DIR: /var/lib/kuranea/catalog-import-qa

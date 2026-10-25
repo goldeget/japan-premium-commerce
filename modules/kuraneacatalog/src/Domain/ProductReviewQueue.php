@@ -22,15 +22,24 @@ final class ProductReviewQueue implements ProductReviewQueueRepositoryInterface
     ): ProductReviewQueueEntry {
         $key = $snapshot->deduplicationKey;
         $existing = $this->entries[$key] ?? null;
-        if ($existing !== null && $existing->snapshot->contentHash === $snapshot->contentHash) {
-            return $existing;
+        if ($existing !== null) {
+            if ($snapshot->fetchedAt <= $existing->snapshot->fetchedAt) {
+                return $existing;
+            }
+            if ($existing->snapshot->contentHash === $snapshot->contentHash) {
+                return $this->entries[$key] = $existing->refreshSameContentSnapshot($snapshot);
+            }
         }
 
         $entry = new ProductReviewQueueEntry(
             $key,
             ProductReviewQueueEntry::STATUS_PENDING,
             $snapshot->withApprovalStatus('pending'),
-            $existing?->queuedAt ?? $queuedAt ?? new DateTimeImmutable('now', new DateTimeZone('UTC'))
+            $existing?->queuedAt ?? $queuedAt ?? new DateTimeImmutable('now', new DateTimeZone('UTC')),
+            previousSnapshot: $existing?->snapshot,
+            linkedProductId: $existing?->nativeProductId ?? $existing?->linkedProductId,
+            imageRightsEvidence: $existing?->imageRightsEvidence,
+            importReviewEvidence: null
         );
         $this->entries[$key] = $entry;
 
@@ -51,12 +60,40 @@ final class ProductReviewQueue implements ProductReviewQueueRepositoryInterface
         $this->entries[$entry->idempotencyKey] = $entry;
     }
 
+    public function linkDraftIfCurrent(
+        string $idempotencyKey,
+        string $expectedContentHash,
+        int $nativeProductId,
+        ?ProductImageRightsEvidence $imageRightsEvidence = null,
+        ?ProductImportReviewEvidence $importReviewEvidence = null
+    ): ?ProductReviewQueueEntry {
+        $entry = $this->entries[$idempotencyKey] ?? null;
+        if ($entry === null || $entry->snapshot->contentHash !== $expectedContentHash) {
+            return null;
+        }
+        $linked = $entry->linkDraft($nativeProductId, $imageRightsEvidence, $importReviewEvidence);
+        return $this->entries[$idempotencyKey] = $linked;
+    }
+
+    public function containsLinkedNativeProduct(int $nativeProductId): bool
+    {
+        if ($nativeProductId < 1) return false;
+        foreach ($this->entries as $entry) {
+            if ($entry->nativeProductId === $nativeProductId || $entry->linkedProductId === $nativeProductId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public function approveIfPending(
         string $idempotencyKey,
         string $expectedContentHash,
         int $nativeProductId,
         string $approvedBy,
-        DateTimeImmutable $approvedAt
+        DateTimeImmutable $approvedAt,
+        ?ProductImageRightsEvidence $imageRightsEvidence = null,
+        ?ProductImportReviewEvidence $importReviewEvidence = null
     ): ?ProductReviewQueueEntry {
         $entry = $this->entries[$idempotencyKey] ?? null;
         if ($entry === null || $entry->snapshot->contentHash !== $expectedContentHash) {
@@ -69,7 +106,30 @@ final class ProductReviewQueue implements ProductReviewQueueRepositoryInterface
             return null;
         }
 
-        return $this->entries[$idempotencyKey] = $entry->approve($nativeProductId, $approvedBy, $approvedAt);
+        return $this->entries[$idempotencyKey] = $entry->approve(
+            $nativeProductId,
+            $approvedBy,
+            $approvedAt,
+            $imageRightsEvidence,
+            $importReviewEvidence
+        );
+    }
+
+    public function rejectIfPending(
+        string $idempotencyKey,
+        string $expectedContentHash,
+        string $rejectedBy,
+        DateTimeImmutable $rejectedAt,
+        string $rejectionReason
+    ): ?ProductReviewQueueEntry {
+        $entry = $this->entries[$idempotencyKey] ?? null;
+        if ($entry === null
+            || $entry->snapshot->contentHash !== $expectedContentHash
+            || $entry->status !== ProductReviewQueueEntry::STATUS_PENDING) {
+            return null;
+        }
+
+        return $this->entries[$idempotencyKey] = $entry->reject($rejectedBy, $rejectedAt, $rejectionReason);
     }
 
     /** @return list<ProductReviewQueueEntry> */

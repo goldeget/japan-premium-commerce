@@ -115,7 +115,7 @@ class ProductAdminContractTests(unittest.TestCase):
         integration = (ROOT / "tests" / "catalog" / "verify_native_product_admin.php").read_text(encoding="utf-8")
         readbacks = re.findall(r"Db::getInstance\(\)->getValue\(\s*(.*?)\n\);", integration, re.DOTALL)
 
-        self.assertEqual(4, len(readbacks))
+        self.assertEqual(7, len(readbacks))
         for query in readbacks:
             with self.subTest(query=query):
                 self.assertNotRegex(query, r"\bLIMIT\b")
@@ -199,6 +199,8 @@ class ProductAdminContractTests(unittest.TestCase):
         service = service_path.read_text(encoding="utf-8")
         for expected in (
             "available_for_order",
+            "show_price",
+            "product_shop",
             "visibility",
             "active",
             "StockAvailable::setQuantity",
@@ -222,6 +224,98 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("new \\Product((int) $product->id, false, null, $shopId)", save_method)
         self.assertLess(save_method.index("$this->loadManagedProduct"), save_method.index("new \\Product((int) $product->id, false, null, $shopId)"))
         self.assertIn("Tools::getAdminTokenLite", (MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php").read_text(encoding="utf-8"))
+
+    def test_imported_product_editor_rejects_new_images_but_keeps_other_edits_and_removals(self) -> None:
+        controller = (MODULE / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php").read_text(encoding="utf-8")
+        save_method = controller.split("private function processProductSave(", 1)[1].split(
+            "private function submittedValues()", 1
+        )[0]
+        self.assertIn("private function isImportedProduct(", controller)
+        imported_check = controller.split("private function isImportedProduct(", 1)[1].split(
+            "private function fail(", 1
+        )[0]
+        upload_check = controller.split("private function hasSuccessfulImageUpload(", 1)[1].split(
+            "private function renderManager(", 1
+        )[0]
+        image_renderer = controller.split("private function renderImages(", 1)[1].split(
+            "private function emptyFormValues()", 1
+        )[0]
+
+        self.assertIn("$this->isImportedProduct($this->editorProductId)", save_method)
+        self.assertIn("UPLOAD_ERR_OK", upload_check)
+        self.assertIn("$this->hasSuccessfulImageUpload($uploads)", save_method)
+        self.assertIn("$uploads = []", save_method)
+        self.assertIn("$this->selectedImageIds", save_method)
+        self.assertIn("ProductAdminDraft::fromArray($this->formValues)", save_method)
+        self.assertIn("save(", save_method)
+        self.assertIn("가져온 초안에는 이 화면에서 새 이미지를 추가하지 않았습니다", save_method)
+        self.assertIn("str_starts_with((string) $product->reference, 'OWA-IMPORT-')", imported_check)
+        self.assertIn('CatalogQueueRepositoryFactory::fromEnvironment(_PS_ROOT_DIR_)', imported_check)
+        self.assertIn('containsLinkedNativeProduct($productId)', imported_check)
+        self.assertIn('return true', imported_check)
+        self.assertIn("disabled", image_renderer)
+        self.assertIn("출처 이미지 검수에서 사용권을 기록한 뒤 연결해 주세요", image_renderer)
+        self.assertIn('name="remove_image_ids[]"', image_renderer)
+
+    def test_imported_draft_creation_and_retry_require_complete_persisted_readback(self) -> None:
+        service = (MODULE / "src" / "Integration" / "PrestaShopNativeProductManager.php").read_text(encoding="utf-8")
+        imported_method = service.split("public function saveImportedDraftWithResult(", 1)[1].split(
+            "private function persistLocalizedFields(", 1
+        )[0]
+
+        existing_retry = imported_method.split("if ($existingId > 0)", 1)[1].split(
+            "return new NativeImportedDraftResult($existingId, false)", 1
+        )[0]
+        created_save = imported_method.split("$createdId = $this->save(null", 1)[1]
+        self.assertIn("$this->assertPersistedImportedDraftMatches(", existing_retry)
+        self.assertIn("$this->assertPersistedImportedDraftMatches(", created_save)
+        helper = service.split("private function assertPersistedImportedDraftMatches(", 1)[1].split(
+            "private function persistLocalizedFields(", 1
+        )[0]
+        for persisted_field in (
+            "editorData($productId)",
+            "name_ja",
+            "name_en",
+            "name_ko",
+            "description_ja",
+            "description_en",
+            "description_ko",
+            "price_jpy",
+            "tax_rules_group_id",
+            "category_ids",
+            "combination_quantities",
+            "imageIds($productId)",
+            "show_price",
+            "available_for_order",
+            "visibility",
+            "active",
+        ):
+            with self.subTest(field=persisted_field):
+                self.assertIn(persisted_field, helper)
+
+    def test_imported_draft_readback_compares_exact_native_combination_tuples(self) -> None:
+        service = (MODULE / "src" / "Integration" / "PrestaShopNativeProductManager.php").read_text(encoding="utf-8")
+        helper = service.split("private function assertPersistedImportedDraftMatches(", 1)[1].split(
+            "private function persistLocalizedFields(", 1
+        )[0]
+        for marker in (
+            "product_attribute_combination",
+            "$expectedOptionMemberships",
+            "$actualOptionMemberships",
+            "actualCombinationPriceAdjustments",
+            "네이티브 옵션 조합이 검토한 전체 옵션 조합",
+            "검토되지 않은 개별 가격 조정",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, helper)
+
+        integration = (ROOT / "tests" / "catalog" / "verify_native_product_admin.php").read_text(encoding="utf-8")
+        self.assertIn("incomplete imported combination", integration)
+        self.assertIn("$incompleteImportedDraftRetryRejected", integration)
+        self.assertIn("unreviewed imported variant price", integration)
+        self.assertIn("$unreviewedImportedVariantPriceRetryRejected", integration)
+        self.assertIn("$productCountBeforeImportedRetry", integration)
+        self.assertIn("$productCountAfterImportedRetry", integration)
 
     def test_ci_product_persistence_and_browser_flows_cover_create_and_edit(self) -> None:
         integration = ROOT / "tests" / "catalog" / "verify_native_product_admin.php"

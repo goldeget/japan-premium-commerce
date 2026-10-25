@@ -6,6 +6,7 @@ require_once dirname(__FILE__, 3) . '/autoload.php';
 
 use Kuranea\Catalog\Domain\ProductAdminDraft;
 use Kuranea\Catalog\Integration\PrestaShopNativeProductManager;
+use Kuranea\Catalog\Infrastructure\Persistence\CatalogQueueRepositoryFactory;
 
 class AdminOrdenowaProductManagerController extends ModuleAdminController
 {
@@ -100,16 +101,27 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
 
         try {
             $draft = ProductAdminDraft::fromArray($this->formValues);
+            $uploads = $this->normalizedUploads();
+            $isImportedDraft = $this->editorProductId > 0 && $this->isImportedProduct($this->editorProductId);
+            $newImageUploadRejected = $isImportedDraft && $this->hasSuccessfulImageUpload($uploads);
+            if ($newImageUploadRejected) {
+                // The generic editor has no persisted image-rights review flow.
+                // Keep the other submitted edits and requested removals, but do
+                // not pass a new image to the native product manager.
+                $uploads = [];
+            }
             $savedId = $manager->save(
                 $this->editorProductId > 0 ? $this->editorProductId : null,
                 $draft,
-                $this->normalizedUploads(),
+                $uploads,
                 $this->selectedImageIds
             );
             $this->editorProductId = $savedId;
             $this->formValues = $manager->editorData($savedId);
             $this->selectedImageIds = [];
-            $this->succeed(sprintf('상품 ID %d를 비활성 상태로 저장했습니다.', $savedId));
+            $this->succeed($newImageUploadRejected
+                ? sprintf('상품 ID %d의 변경 사항을 비활성 상태로 저장했습니다. 가져온 초안에는 이 화면에서 새 이미지를 추가하지 않았습니다. 출처 이미지 검수에서 사용권을 기록한 뒤 연결해 주세요.', $savedId)
+                : sprintf('상품 ID %d를 비활성 상태로 저장했습니다.', $savedId));
         } catch (\InvalidArgumentException $exception) {
             $this->fail($exception->getMessage());
         } catch (Throwable) {
@@ -157,6 +169,18 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
         return $uploads;
     }
 
+    /** @param list<array{name:string,tmp_name:string,size:int,error:int}> $uploads */
+    private function hasSuccessfulImageUpload(array $uploads): bool
+    {
+        foreach ($uploads as $upload) {
+            if (($upload['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /** @param list<array{id_category:int,name:string}> $categories
      *  @param list<array{id_tax_rules_group:int,name:string}> $taxRulesGroups
      */
@@ -165,6 +189,7 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
         $action = (string) $this->context->link->getAdminLink('AdminOrdenowaProductManager');
         $token = (string) Tools::getAdminTokenLite('AdminOrdenowaProductManager');
         $editing = $this->editorProductId > 0;
+        $isImportedDraft = $editing && $this->isImportedProduct($this->editorProductId);
         $values = $this->formValues;
         $selectedTaxRulesGroupId = $values['tax_rules_group_id'] ?? '';
         $selectedCategories = array_map('intval', (array) ($values['category_ids'] ?? []));
@@ -190,7 +215,7 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
             . $this->renderTextArea('description_ja', '상세 설명 (일본어)', (string) ($values['description_ja'] ?? ''), '텍스트로 입력하며 HTML은 실행되지 않습니다.')
             . $this->renderTextArea('description_en', '상세 설명 (영어)', (string) ($values['description_en'] ?? ''), '영어 고객 화면에 표시할 상세 설명입니다. 비워 두면 일본어 상세 설명을 사용합니다.')
             . $this->renderTextArea('description_ko', '상세 설명 (한국어)', (string) ($values['description_ko'] ?? ''), '비워 두면 일본어 상세 설명을 사용합니다.')
-            . $this->renderImages($imageIds, $this->selectedImageIds)
+            . $this->renderImages($imageIds, $this->selectedImageIds, !$isImportedDraft)
             . '<div class="form-group"><button class="btn btn-primary" type="submit" name="submitKuraneaProductSave" value="1">'
             . ($editing ? '상품 수정 저장' : '비활성 상품 등록') . '</button> '
             . ($editing ? '<a class="btn btn-default" href="' . $this->escape($action) . '">새 상품 등록</a>' : '')
@@ -314,11 +339,16 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
     }
 
     /** @param list<int> $imageIds */
-    private function renderImages(array $imageIds, array $selectedImageIds): string
+    private function renderImages(array $imageIds, array $selectedImageIds, bool $allowNewUploads): string
     {
-        $html = '<div class="form-group"><label for="product_images">상품 이미지</label>'
-            . '<input class="form-control" id="product_images" name="product_images[]" type="file" accept="image/jpeg,image/png,image/webp" multiple>'
-            . '<p class="help-block">JPEG, PNG, WEBP · 이미지당 최대 10MB · 한 번에 최대 5개</p>';
+        $html = '<div class="form-group"><label for="product_images">상품 이미지</label>';
+        if ($allowNewUploads) {
+            $html .= '<input class="form-control" id="product_images" name="product_images[]" type="file" accept="image/jpeg,image/png,image/webp" multiple>'
+                . '<p class="help-block">JPEG, PNG, WEBP · 이미지당 최대 10MB · 한 번에 최대 5개</p>';
+        } else {
+            $html .= '<input class="form-control" id="product_images" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled>'
+                . '<p class="help-block">가져온 초안의 새 이미지는 출처 이미지 검수에서 사용권을 기록한 뒤 연결해 주세요.</p>';
+        }
         if ($imageIds !== []) {
             $html .= '<div class="ordenowa-product-images">';
             foreach ($imageIds as $imageId) {
@@ -367,6 +397,28 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
     private function canEdit(): bool
     {
         return $this->canView() && $this->access('edit');
+    }
+
+    private function isImportedProduct(int $productId): bool
+    {
+        $product = new \Product($productId);
+        if (!\Validate::isLoadedObject($product)) {
+            throw new \RuntimeException('관리 상품을 확인할 수 없습니다.');
+        }
+
+        if (str_starts_with((string) $product->reference, 'OWA-IMPORT-')) {
+            return true;
+        }
+
+        try {
+            // Product reference can be edited in PrestaShop's native editor.
+            // The persisted source-to-product link is the stable origin marker.
+            return CatalogQueueRepositoryFactory::fromEnvironment(_PS_ROOT_DIR_)
+                ->containsLinkedNativeProduct($productId);
+        } catch (Throwable) {
+            // If origin cannot be checked, do not bypass image-rights review.
+            return true;
+        }
     }
 
     private function fail(string $message): void
