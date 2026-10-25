@@ -89,12 +89,10 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
             "- name: Verify official ORDENOWA brand upload and publish in Chromium", 1
         )[1].split("- name:", 1)[0]
 
-        self.assertIn(
-            'stale_target_line=$(rg \'^ORDENOWA_PUBLISH_STALE_TARGET=\' "$log_file" | tail -n 1 || true)',
-            step,
-        )
-        self.assertIn('if [ -n "$stale_target_line" ]; then', step)
-        self.assertIn('printf \'%s\\n\' "$stale_target_line" >> "$GITHUB_STEP_SUMMARY"', step)
+        self.assertIn('stale_target_line = latest_line("ORDENOWA_PUBLISH_STALE_TARGET=")', step)
+        self.assertIn('for line in (diagnostics_line, stale_target_line, admin_login_safe_state):', step)
+        self.assertIn('summary.write(line + "\\n")', step)
+        self.assertNotIn("rg ", step)
 
     def test_browser_qa_runs_independently_then_aggregates_failures(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
