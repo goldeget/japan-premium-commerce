@@ -130,8 +130,14 @@ if (!Validate::isLoadedObject($currentState)
     throw new RuntimeException('The native delivered state or unpaid mobile order cannot safely create a synthetic paid-like fixture.');
 }
 $existingPayments = $sourceOrder->getOrderPaymentCollection();
-if ($existingPayments->count() !== 0) {
-    throw new RuntimeException('The mobile source order already has a native payment ledger entry.');
+if ($existingPayments->count() !== 0 || $sourceOrder->getInvoicesCollection()->count() !== 0) {
+    throw new RuntimeException('The mobile source order already has a native payment or invoice.');
+}
+$existingInvoicePaymentAssociationCount = Db::getInstance()->getValue(
+    'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'order_invoice_payment` WHERE `id_order` = ' . (int) $sourceOrder->id
+);
+if (!is_numeric($existingInvoicePaymentAssociationCount) || (int) $existingInvoicePaymentAssociationCount !== 0) {
+    throw new RuntimeException('The mobile source order already has invoice-payment associations.');
 }
 $existingReturns = OrderReturn::getOrdersReturn((int) $sourceOrder->id_customer, (int) $sourceOrder->id, false);
 $existingSlips = OrderSlip::getOrdersSlip((int) $sourceOrder->id_customer, (int) $sourceOrder->id);
@@ -197,6 +203,33 @@ if (!Configuration::updateValue($markerName, $markerJson, false, null, $shopId))
 }
 if (!Configuration::updateValue('PS_ORDER_RETURN', true, false, null, $shopId)) {
     throw new RuntimeException('PS_ORDER_RETURN could not be enabled in the isolated shop.');
+}
+
+$stage = 'create native invoice and synthetic CI payment';
+$sourceOrder->setInvoice();
+$sourceInvoices = $sourceOrder->getInvoicesCollection()->getResults();
+if (!is_array($sourceInvoices) || count($sourceInvoices) !== 1) {
+    throw new RuntimeException('PrestaShop did not create exactly one native invoice for the synthetic paid-like fixture.');
+}
+$invoice = reset($sourceInvoices);
+$syntheticPaymentMethod = 'CI ONLY synthetic paid-like test; no funds captured';
+if (!($invoice instanceof OrderInvoice) || !Validate::isLoadedObject($invoice)) {
+    throw new RuntimeException('PrestaShop did not load the native invoice for the synthetic paid-like fixture.');
+}
+$paymentAmount = (float) $invoice->getRestPaid();
+if ($paymentAmount <= 0.0 || !Validate::isLoadedObject($context->currency)) {
+    throw new RuntimeException('The synthetic CI payment amount or order currency is invalid.');
+}
+if (!$sourceOrder->addOrderPayment(
+    $paymentAmount,
+    $syntheticPaymentMethod,
+    null,
+    $context->currency,
+    null,
+    $invoice,
+    (int) $context->employee->id
+)) {
+    throw new RuntimeException('PrestaShop could not create the synthetic CI payment through the native order model.');
 }
 
 $stage = 'native synthetic paid-like state transition';

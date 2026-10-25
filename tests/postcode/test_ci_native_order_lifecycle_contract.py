@@ -98,6 +98,38 @@ class CiNativeOrderLifecycleContractTests(unittest.TestCase):
         self.assertNotIn("changeIdOrderState($paymentStateId", source)
         self.assertNotIn("changeIdOrderState($webservicePaymentStateId", source)
 
+    def test_paid_like_fixture_uses_native_order_payment_api_before_paid_state_transition(self) -> None:
+        source = PREPARER.read_text(encoding="utf-8")
+        required_calls = (
+            "$sourceOrder->setInvoice();",
+            "$sourceOrder->getInvoicesCollection()",
+            "$invoice->getRestPaid()",
+            "$sourceOrder->addOrderPayment(",
+        )
+        missing_calls = [required for required in required_calls if required not in source]
+        self.assertFalse(
+            missing_calls,
+            f"the fixture must use native invoice and payment APIs before paid transition: {missing_calls}",
+        )
+        if missing_calls:
+            return
+
+        invoice_creation = source.index("$sourceOrder->setInvoice();")
+        invoice_readback = source.index("$sourceOrder->getInvoicesCollection()", invoice_creation)
+        invoice_balance = source.index("$invoice->getRestPaid()", invoice_readback)
+        native_payment = source.index("$sourceOrder->addOrderPayment(", invoice_balance)
+        paid_state_transition = source.index("$history->changeIdOrderState($deliveredStateId, $sourceOrder);", native_payment)
+
+        self.assertLess(invoice_creation, invoice_readback)
+        self.assertLess(invoice_readback, invoice_balance)
+        self.assertLess(invoice_balance, native_payment)
+        self.assertLess(native_payment, paid_state_transition)
+        self.assertIn("$syntheticPaymentMethod", source[native_payment:paid_state_transition])
+        self.assertIn("$invoice", source[native_payment:paid_state_transition])
+        self.assertIn("$context->employee->id", source[native_payment:paid_state_transition])
+        self.assertIn("synthetic CI-only", source)
+        self.assertNotRegex(source, r"Db::getInstance\(\)->insert\s*\(")
+
     def test_order_product_readbacks_initialize_language_and_currency_before_price_formatting(self) -> None:
         preparer = PREPARER.read_text(encoding="utf-8")
         source_order_readback = preparer.index("$sourceProducts = $sourceOrder->getProducts();")
