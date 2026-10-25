@@ -125,7 +125,7 @@ try {
     assertCatalogAdminTrue(str_contains($catalogAdminController->content, 'amazon_jp:B0KURANEA1'), 'The source-qualified deduplication key should retain its provider identity.');
     $imageMetadataMatches = [];
     assertCatalogAdminTrue(
-        preg_match('/<p><strong>이미지 메타데이터<\/strong><\/p><ul>(.*?)<\/ul>/s', $catalogAdminController->content, $imageMetadataMatches) === 1,
+        preg_match('/<p><strong>출처 이미지 메타데이터<\/strong>[^<]*<\/p><ul>(.*?)<\/ul>/s', $catalogAdminController->content, $imageMetadataMatches) === 1,
         'The review screen should render image metadata for the synthetic source fixture.'
     );
     $imageMetadataHtml = $imageMetadataMatches[1];

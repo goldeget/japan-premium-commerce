@@ -55,6 +55,23 @@ class ProductAdminContractTests(unittest.TestCase):
             with self.subTest(edit_readback=edit_readback):
                 self.assertIn(edit_readback, integration.split("$englishEditFieldReadback", 1)[1])
 
+    def test_imported_native_draft_reports_only_fixed_failed_check_names(self) -> None:
+        integration = (ROOT / "tests" / "catalog" / "verify_native_product_admin.php").read_text(encoding="utf-8")
+        checks = integration.split("$importedDraftChecks = [", 1)[1].split("];", 1)[0]
+
+        self.assertIn("Imported native draft checks failed:", integration)
+        self.assertIn("implode(',', $failedImportedDraftChecks)", integration)
+        for check in (
+            "product_count_unchanged",
+            "combination_membership_readback",
+            "combination_price_count_readback",
+            "combination_price_adjustments_zero",
+            "base_price_readback",
+        ):
+            with self.subTest(check=check):
+                self.assertIn(f"'{check}' =>", checks)
+        self.assertNotIn("var_export($importedDraftChecks", integration)
+
     def test_native_manager_reapplies_localized_slugs_and_image_legends_per_language(self) -> None:
         service = (MODULE / "src" / "Integration" / "PrestaShopNativeProductManager.php").read_text(encoding="utf-8")
         save_method = service.split("public function save(", 1)[1].split("public function optionGroups(", 1)[0]

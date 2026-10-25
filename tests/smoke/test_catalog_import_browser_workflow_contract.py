@@ -61,7 +61,8 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertNotIn('UPDATE ', browser)
         integration = (ROOT / 'tests/catalog/verify_native_product_admin.php').read_text()
         self.assertIn('$productCountBeforeImportedRetry', integration)
-        self.assertIn('$productCountAfterImportedRetry !== $productCountBeforeImportedRetry', integration)
+        self.assertIn('$productCountAfterImportedRetry === $productCountBeforeImportedRetry', integration)
+        self.assertIn("'product_count_unchanged' =>", integration)
 
     def test_browser_uses_exact_fixture_urls_and_observes_native_readback(self):
         source = self.read_required('tests/e2e/verify_catalog_import_browser.py')

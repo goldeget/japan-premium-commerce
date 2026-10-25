@@ -568,28 +568,38 @@ if (!$tamperedImportedProduct->update()) {
 $reloadedImportedProduct = new Product($importedProductId, false, $languageId, $shopId);
 $reloadedImportedEditor = $manager->editorData($importedProductId);
 $reloadedImportedImageIds = $manager->imageIds($importedProductId);
-if ($importedProductId < 1
-    || $duplicateImportedProductId !== $importedProductId
-    || $productCountAfterImportedRetry !== $productCountBeforeImportedRetry
-    || !preg_match('/\AOWA-IMPORT-[A-F0-9]{24}\z/D', $importedReference)
-    || (bool) $reloadedImportedProduct->active
-    || (string) $reloadedImportedProduct->visibility !== 'none'
-    || (bool) $reloadedImportedProduct->available_for_order
-    || (bool) $reloadedImportedProduct->show_price
-    || !$unsafeImportedDraftRejected
-    || !$changedDuplicateDraftRejected
-    || $reloadedImportedEditor['name_ja'] !== 'ORDENOWA CI 合成取込草案'
-    || $reloadedImportedEditor['price_jpy'] !== 1560
-    || $reloadedImportedEditor['quantity'] !== 2
-    || $reloadedImportedEditor['options'] !== "色:青|赤\nサイズ:S|M"
-    || count($reloadedImportedImageIds) !== 1
-    || $reloadedImportedImageIds !== $importedImageIds
-    || count($importedCombinationIds) !== 4
-    || $importedOptionMemberships !== $expectedImportedOptionMemberships
-    || count($importedVariantPriceAdjustments) !== 4
-    || array_filter($importedVariantPriceAdjustments, static fn (float $adjustment): bool => $adjustment !== 0.0) !== []
-    || (float) $reloadedImportedProduct->price !== 1560.0) {
-    throw new RuntimeException('Imported native draft creation, option membership/pricing, image persistence, duplicate guard, or inactive-sale boundary failed.');
+$importedDraftChecks = [
+    'product_id_valid' => $importedProductId > 0,
+    'duplicate_reuses_product' => $duplicateImportedProductId === $importedProductId,
+    'product_count_unchanged' => $productCountAfterImportedRetry === $productCountBeforeImportedRetry,
+    'import_reference_format' => preg_match('/\AOWA-IMPORT-[A-F0-9]{24}\z/D', $importedReference) === 1,
+    'inactive_flag' => !(bool) $reloadedImportedProduct->active,
+    'hidden_visibility' => (string) $reloadedImportedProduct->visibility === 'none',
+    'ordering_disabled' => !(bool) $reloadedImportedProduct->available_for_order,
+    'price_hidden' => !(bool) $reloadedImportedProduct->show_price,
+    'tampered_price_retry_rejected' => $unsafeImportedDraftRejected,
+    'changed_duplicate_rejected' => $changedDuplicateDraftRejected,
+    'japanese_name_readback' => ($reloadedImportedEditor['name_ja'] ?? null) === 'ORDENOWA CI 合成取込草案',
+    'sale_price_readback' => ($reloadedImportedEditor['price_jpy'] ?? null) === 1560,
+    'own_stock_readback' => ($reloadedImportedEditor['quantity'] ?? null) === 2,
+    'option_text_readback' => ($reloadedImportedEditor['options'] ?? null) === "色:青|赤\nサイズ:S|M",
+    'image_count_readback' => count($reloadedImportedImageIds) === 1,
+    'image_identity_preserved' => $reloadedImportedImageIds === $importedImageIds,
+    'combination_count_readback' => count($importedCombinationIds) === 4,
+    'combination_membership_readback' => $importedOptionMemberships === $expectedImportedOptionMemberships,
+    'combination_price_count_readback' => count($importedVariantPriceAdjustments) === 4,
+    'combination_price_adjustments_zero' => array_filter(
+        $importedVariantPriceAdjustments,
+        static fn (float $adjustment): bool => $adjustment !== 0.0
+    ) === [],
+    'base_price_readback' => (float) $reloadedImportedProduct->price === 1560.0,
+];
+$failedImportedDraftChecks = array_keys(array_filter(
+    $importedDraftChecks,
+    static fn (bool $passed): bool => !$passed
+));
+if ($failedImportedDraftChecks !== []) {
+    throw new RuntimeException('Imported native draft checks failed: ' . implode(',', $failedImportedDraftChecks));
 }
 
 $variantPriceAdjustment = (float) Db::getInstance()->getValue(
