@@ -1,10 +1,13 @@
 """Safety contracts for the isolated backup/restore drill runner."""
 from __future__ import annotations
 
+import io
 import os
 from pathlib import Path
+import re
 import shlex
 import subprocess
+import tarfile
 import tempfile
 import unittest
 
@@ -12,6 +15,66 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tests" / "smoke" / "backup_restore_drill.sh"
 DIAGNOSTICS = ROOT / "tests" / "smoke" / "backup_restore_diagnostics.sh"
+
+
+def file_tree_comparator_program() -> str:
+    source = SCRIPT.read_text(encoding="utf-8")
+    match = re.search(
+        r"(?ms)^compare_file_tree_archives\(\) \{.*?^  python3 - \"\$1\" \"\$2\" <<'FILE_TREE_COMPARATOR_PY'\n(.*?)^FILE_TREE_COMPARATOR_PY$",
+        source,
+    )
+    if match is None:
+        raise AssertionError("the backup runner must define its private file-tree archive comparator")
+    return match.group(1)
+
+
+def write_tree_archive(path: Path, entries: list[dict[str, object]], *, archive_format: int) -> None:
+    with tarfile.open(path, "w", format=archive_format) as archive:
+        for entry in entries:
+            info = tarfile.TarInfo(str(entry["name"]))
+            info.mode = int(entry.get("mode", 0o640))
+            info.uid = int(entry.get("uid", 1000))
+            info.gid = int(entry.get("gid", 1000))
+            info.mtime = float(entry.get("mtime", 1_700_000_000))
+            info.uname = str(entry.get("uname", "backup-user"))
+            info.gname = str(entry.get("gname", "backup-group"))
+            pax_headers = dict(entry.get("pax_headers", {}))
+            if entry.get("pax_comment"):
+                pax_headers["comment"] = str(entry["pax_comment"])
+            if pax_headers:
+                info.pax_headers = pax_headers
+
+            kind = entry.get("kind", "file")
+            if kind == "file":
+                payload = bytes(entry.get("payload", b""))
+                info.type = tarfile.REGTYPE
+                info.size = len(payload)
+                archive.addfile(info, io.BytesIO(payload))
+            elif kind == "directory":
+                info.type = tarfile.DIRTYPE
+                info.size = 0
+                archive.addfile(info)
+            elif kind == "symlink":
+                info.type = tarfile.SYMTYPE
+                info.linkname = str(entry["target"])
+                info.size = 0
+                archive.addfile(info)
+            elif kind == "hardlink":
+                info.type = tarfile.LNKTYPE
+                info.linkname = str(entry["target"])
+                info.size = 0
+                archive.addfile(info)
+            else:
+                raise AssertionError(f"unsupported test archive member kind: {kind}")
+
+
+def compare_file_tree_archives(first: Path, second: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [os.environ.get("PYTHON", "python3"), "-c", file_tree_comparator_program(), str(first), str(second)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
 
 class BackupRestoreDrillContractTests(unittest.TestCase):
@@ -346,12 +409,207 @@ class BackupRestoreDrillContractTests(unittest.TestCase):
         ):
             self.assertNotIn(private_value, summary)
 
-    def test_restored_prestart_file_archives_are_compared_without_output(self) -> None:
+    def test_restored_prestart_file_trees_are_compared_without_output(self) -> None:
         source = SCRIPT.read_text(encoding="utf-8")
         self.assertIn("restored_app_archive", source)
         self.assertIn("restored_queue_archive", source)
-        self.assertGreaterEqual(source.count("cmp -s \"$app_archive\" \"$restored_app_archive\""), 1)
-        self.assertGreaterEqual(source.count("cmp -s \"$queue_archive\" \"$restored_queue_archive\""), 1)
+        self.assertIn('compare_file_tree_archives "$app_archive" "$restored_app_archive"', source)
+        self.assertIn('compare_file_tree_archives "$queue_archive" "$restored_queue_archive"', source)
+        self.assertNotIn('cmp -s "$app_archive" "$restored_app_archive"', source)
+        self.assertNotIn('cmp -s "$queue_archive" "$restored_queue_archive"', source)
+
+    def test_equivalent_file_trees_ignore_tar_order_headers_and_directory_timestamps(self) -> None:
+        comparator = file_tree_comparator_program()
+        self.assertTrue(comparator.strip())
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            original = temp / "original.tar"
+            restored = temp / "restored.tar"
+            write_tree_archive(
+                original,
+                [
+                    {"name": ".", "kind": "directory", "mode": 0o755, "uid": 0, "gid": 0, "mtime": 1_700_000_000},
+                    {"name": "./assets", "kind": "directory", "mode": 0o750, "uid": 1000, "gid": 1000, "mtime": 1_700_000_001},
+                    {"name": "./assets/logo.bin", "payload": b"private-image-bytes", "mtime": 1_700_000_002},
+                    {"name": "./assets/current", "kind": "symlink", "target": "logo.bin", "mtime": 1_700_000_003},
+                ],
+                archive_format=tarfile.USTAR_FORMAT,
+            )
+            write_tree_archive(
+                restored,
+                [
+                    {"name": "assets/current", "kind": "symlink", "target": "logo.bin", "mtime": 1_700_000_003, "pax_comment": "different-header"},
+                    {"name": "assets/logo.bin", "payload": b"private-image-bytes", "mtime": 1_700_000_002, "pax_comment": "different-header"},
+                    {"name": "assets", "kind": "directory", "mode": 0o750, "uid": 1000, "gid": 1000, "mtime": 1_799_999_999, "pax_comment": "different-header"},
+                    {"name": "", "kind": "directory", "mode": 0o755, "uid": 0, "gid": 0, "mtime": 1_799_999_999, "pax_comment": "different-header"},
+                ],
+                archive_format=tarfile.PAX_FORMAT,
+            )
+
+            result = compare_file_tree_archives(original, restored)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+
+    def test_root_directory_names_are_canonical_and_root_metadata_is_checked(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            expected = temp / "expected.tar"
+            write_tree_archive(
+                expected,
+                [
+                    {"name": ".", "kind": "directory", "mode": 0o755, "uid": 0, "gid": 0},
+                    {"name": "shop.txt", "payload": b"same", "mtime": 1_700_000_000},
+                ],
+                archive_format=tarfile.USTAR_FORMAT,
+            )
+            equivalent = temp / "equivalent.tar"
+            write_tree_archive(
+                equivalent,
+                [
+                    {"name": "", "kind": "directory", "mode": 0o755, "uid": 0, "gid": 0, "mtime": 1_799_999_999, "pax_comment": "different-header"},
+                    {"name": "shop.txt", "payload": b"same", "mtime": 1_700_000_000, "pax_comment": "different-header"},
+                ],
+                archive_format=tarfile.PAX_FORMAT,
+            )
+
+            equivalent_result = compare_file_tree_archives(expected, equivalent)
+            self.assertEqual(equivalent_result.returncode, 0, equivalent_result.stderr)
+            self.assertEqual(equivalent_result.stdout, "")
+            self.assertEqual(equivalent_result.stderr, "")
+
+            for mismatch, root_metadata in (
+                ("mode", {"mode": 0o700, "uid": 0, "gid": 0}),
+                ("ownership", {"mode": 0o755, "uid": 1000, "gid": 0}),
+            ):
+                with self.subTest(root_metadata=mismatch):
+                    changed_root = temp / f"root-{mismatch}.tar"
+                    write_tree_archive(
+                        changed_root,
+                        [
+                            {"name": "", "kind": "directory", **root_metadata},
+                            {"name": "shop.txt", "payload": b"same", "mtime": 1_700_000_000},
+                        ],
+                        archive_format=tarfile.PAX_FORMAT,
+                    )
+
+                    result = compare_file_tree_archives(expected, changed_root)
+
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, "")
+                    self.assertEqual(result.stderr, "")
+
+    def test_archive_member_paths_reject_absolute_and_parent_traversal(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            for unsafe_name in ("/absolute.txt", "folder/../outside.txt"):
+                with self.subTest(path_kind=unsafe_name.startswith("/")):
+                    archive = temp / f"unsafe-{len(unsafe_name)}.tar"
+                    write_tree_archive(
+                        archive,
+                        [{"name": unsafe_name, "payload": b"private-path-fixture"}],
+                        archive_format=tarfile.PAX_FORMAT,
+                    )
+
+                    result = compare_file_tree_archives(archive, archive)
+
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, "")
+                    self.assertEqual(result.stderr, "")
+
+    def test_archive_member_paths_reject_duplicate_canonical_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            archive = Path(temp_dir) / "duplicate.tar"
+            write_tree_archive(
+                archive,
+                [
+                    {"name": "./file.txt", "payload": b"first"},
+                    {"name": "file.txt", "payload": b"second"},
+                ],
+                archive_format=tarfile.PAX_FORMAT,
+            )
+
+            result = compare_file_tree_archives(archive, archive)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+
+    def test_archive_rejects_hard_links_with_unsafe_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            for unsafe_target in ("../outside.txt", "/absolute-target.txt"):
+                with self.subTest(target_kind=unsafe_target.startswith("/")):
+                    archive = temp / f"hardlink-{len(unsafe_target)}.tar"
+                    write_tree_archive(
+                        archive,
+                        [{"name": "link.txt", "kind": "hardlink", "target": unsafe_target}],
+                        archive_format=tarfile.PAX_FORMAT,
+                    )
+
+                    result = compare_file_tree_archives(archive, archive)
+
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, "")
+                    self.assertEqual(result.stderr, "")
+
+    def test_changed_content_missing_entries_or_required_metadata_are_rejected_silently(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            expected = temp / "expected.tar"
+            write_tree_archive(
+                expected,
+                [
+                    {"name": "file.txt", "payload": b"private-original-content", "mode": 0o640, "uid": 1000, "gid": 1000, "mtime": 1_700_000_000},
+                    {"name": "shortcut", "kind": "symlink", "target": "file.txt", "mode": 0o777},
+                ],
+                archive_format=tarfile.PAX_FORMAT,
+            )
+            mismatches = {
+                "changed content": [
+                    {"name": "file.txt", "payload": b"private-changed-content", "mode": 0o640, "uid": 1000, "gid": 1000, "mtime": 1_700_000_000},
+                    {"name": "shortcut", "kind": "symlink", "target": "file.txt", "mode": 0o777},
+                ],
+                "missing entry": [
+                    {"name": "file.txt", "payload": b"private-original-content", "mode": 0o640, "uid": 1000, "gid": 1000, "mtime": 1_700_000_000},
+                ],
+                "mode": [
+                    {"name": "file.txt", "payload": b"private-original-content", "mode": 0o600, "uid": 1000, "gid": 1000, "mtime": 1_700_000_000},
+                    {"name": "shortcut", "kind": "symlink", "target": "file.txt", "mode": 0o777},
+                ],
+                "ownership": [
+                    {"name": "file.txt", "payload": b"private-original-content", "mode": 0o640, "uid": 1001, "gid": 1000, "mtime": 1_700_000_000},
+                    {"name": "shortcut", "kind": "symlink", "target": "file.txt", "mode": 0o777},
+                ],
+                "group ownership": [
+                    {"name": "file.txt", "payload": b"private-original-content", "mode": 0o640, "uid": 1000, "gid": 1001, "mtime": 1_700_000_000},
+                    {"name": "shortcut", "kind": "symlink", "target": "file.txt", "mode": 0o777},
+                ],
+                "modification time": [
+                    {"name": "file.txt", "payload": b"private-original-content", "mode": 0o640, "uid": 1000, "gid": 1000, "mtime": 1_700_000_001},
+                    {"name": "shortcut", "kind": "symlink", "target": "file.txt", "mode": 0o777},
+                ],
+                "extended attribute": [
+                    {"name": "file.txt", "payload": b"private-original-content", "mode": 0o640, "uid": 1000, "gid": 1000, "mtime": 1_700_000_000, "pax_headers": {"SCHILY.xattr.user.label": "original"}},
+                    {"name": "shortcut", "kind": "symlink", "target": "file.txt", "mode": 0o777},
+                ],
+                "symlink target": [
+                    {"name": "file.txt", "payload": b"private-original-content", "mode": 0o640, "uid": 1000, "gid": 1000, "mtime": 1_700_000_000},
+                    {"name": "shortcut", "kind": "symlink", "target": "different-target", "mode": 0o777},
+                ],
+            }
+
+            for name, entries in mismatches.items():
+                with self.subTest(mismatch=name):
+                    actual = temp / f"{name.replace(' ', '-')}.tar"
+                    write_tree_archive(actual, entries, archive_format=tarfile.PAX_FORMAT)
+
+                    result = compare_file_tree_archives(expected, actual)
+
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, "")
+                    self.assertEqual(result.stderr, "")
 
     def test_final_cleanup_attempts_main_project_even_if_restore_cleanup_fails(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")

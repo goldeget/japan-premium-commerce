@@ -9,6 +9,93 @@ fail() {
   exit 1
 }
 
+compare_file_tree_archives() {
+  python3 - "$1" "$2" <<'FILE_TREE_COMPARATOR_PY'
+import hashlib
+import sys
+import tarfile
+from decimal import Decimal
+
+
+def canonical_name(name):
+    if name.startswith("/") or "\0" in name:
+        raise ValueError
+    parts = []
+    for part in name.split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            raise ValueError
+        parts.append(part)
+    return "/".join(parts)
+
+
+def canonical_mtime(member):
+    raw = member.pax_headers.get("mtime")
+    if raw is None:
+        raw = str(member.mtime)
+    return Decimal(raw)
+
+
+def file_digest(archive, member):
+    stream = archive.extractfile(member)
+    if stream is None:
+        raise ValueError
+    digest = hashlib.sha256()
+    with stream:
+        while True:
+            chunk = stream.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.digest()
+
+
+def semantic_pax_metadata(member):
+    prefixes = ("SCHILY.xattr.", "LIBARCHIVE.xattr.", "SCHILY.acl.", "LIBARCHIVE.acl.")
+    return tuple(sorted((key, value) for key, value in member.pax_headers.items() if key.startswith(prefixes)))
+
+
+def manifest(path):
+    tree = {}
+    with tarfile.open(path, "r:*") as archive:
+        for member in archive:
+            name = canonical_name(member.name)
+            if not name and not member.isdir():
+                raise ValueError
+            if name in tree:
+                raise ValueError
+
+            metadata = (member.mode & 0o7777, member.uid, member.gid, semantic_pax_metadata(member))
+            if member.isdir():
+                # Restoring children can change directory timestamps; stable metadata still matters.
+                value = ("directory",) + metadata
+            elif member.isfile():
+                value = ("file",) + metadata + (member.size, canonical_mtime(member), file_digest(archive, member))
+            elif member.issym():
+                value = ("symlink",) + metadata + (canonical_mtime(member), member.linkname)
+            elif member.islnk():
+                value = ("hardlink",) + metadata + (canonical_mtime(member), canonical_name(member.linkname))
+            elif member.isfifo():
+                value = ("fifo",) + metadata + (canonical_mtime(member),)
+            elif member.ischr():
+                value = ("character-device",) + metadata + (canonical_mtime(member), member.devmajor, member.devminor)
+            elif member.isblk():
+                value = ("block-device",) + metadata + (canonical_mtime(member), member.devmajor, member.devminor)
+            else:
+                raise ValueError
+            tree[name] = value
+    return tree
+
+
+try:
+    equivalent = manifest(sys.argv[1]) == manifest(sys.argv[2])
+except Exception:
+    sys.exit(1)
+sys.exit(0 if equivalent else 1)
+FILE_TREE_COMPARATOR_PY
+}
+
 [[ "${GITHUB_ACTIONS:-}" == true ]] || fail 'GitHub Actions guard did not match.'
 [[ "${KURANEA_ISOLATED_CI:-}" == 1 ]] || fail 'isolated CI guard did not match.'
 [[ "${GITHUB_RUN_ID:-}" =~ ^[0-9]+$ ]] || fail 'run ID is not numeric.'
@@ -294,14 +381,14 @@ fi
 if ! docker cp -a "$restore_app_container:/var/www/html/." - >"$restored_app_archive" 2>"$stderr_file"; then
   fail 'restored PrestaShop files could not be read back.'
 fi
-if ! cmp -s "$app_archive" "$restored_app_archive"; then
-  fail 'restored PrestaShop files did not match the private CI snapshot.'
+if ! compare_file_tree_archives "$app_archive" "$restored_app_archive"; then
+  fail 'restored PrestaShop file tree did not match the private CI snapshot.'
 fi
 if ! docker cp -a "$restore_app_container:/var/lib/kuranea/catalog-review/." - >"$restored_queue_archive" 2>"$stderr_file"; then
   fail 'restored catalog queue files could not be read back.'
 fi
-if ! cmp -s "$queue_archive" "$restored_queue_archive"; then
-  fail 'restored catalog queue files did not match the private CI snapshot.'
+if ! compare_file_tree_archives "$queue_archive" "$restored_queue_archive"; then
+  fail 'restored catalog queue file tree did not match the private CI snapshot.'
 fi
 
 if ! docker compose -p "$restore_project" exec -T mariadb sh -ec '
