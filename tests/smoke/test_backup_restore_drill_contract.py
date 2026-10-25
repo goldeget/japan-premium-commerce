@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -110,6 +111,39 @@ class BackupRestoreDrillContractTests(unittest.TestCase):
         self.assertLess(app_volume, queue_volume)
         self.assertLess(queue_volume, start_database)
         self.assertLess(start_database, clear_target_files)
+
+    def test_restore_create_error_is_classified_without_echoing_stderr(self) -> None:
+        source = SCRIPT.read_text(encoding="utf-8")
+        match = re.search(
+            r"(?ms)^classify_compose_create_error\(\) \{\n.*?^\}",
+            source,
+        )
+        self.assertIsNotNone(match, "restore container failure needs a safe error classifier")
+        if match is None:
+            return
+
+        classifier = match.group(0)
+        self.assertIn('cause=$(classify_compose_create_error "$stderr_file")', source)
+        cases = (
+            ("no space left on device; password=must-not-be-printed", "storage_capacity"),
+            ("permission denied while connecting to docker.sock", "docker_access"),
+            ("pull access denied for image", "image_access"),
+            ("unexpected private diagnostic text", "unclassified"),
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            stderr_path = Path(temp_dir) / "private.stderr"
+            for diagnostic, expected in cases:
+                with self.subTest(expected=expected):
+                    stderr_path.write_text(diagnostic, encoding="utf-8")
+                    result = subprocess.run(
+                        ["bash", "-c", classifier + '\nclassify_compose_create_error "$1"', "classifier-test", str(stderr_path)],
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.strip(), expected)
+                    self.assertNotIn("must-not-be-printed", result.stdout + result.stderr)
 
     def test_restored_prestart_file_archives_are_compared_without_output(self) -> None:
         source = SCRIPT.read_text(encoding="utf-8")

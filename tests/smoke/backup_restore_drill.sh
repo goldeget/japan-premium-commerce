@@ -7,6 +7,33 @@ fail() {
   exit 1
 }
 
+# Docker stderr can contain image references, host paths, or injected values.
+# Reduce it to a fixed diagnostic category before adding any detail to CI logs.
+classify_compose_create_error() {
+  local stderr_path=$1
+  [[ -r "$stderr_path" ]] || { printf 'diagnostic_unavailable'; return 0; }
+
+  if grep -Eiq '(no space left on device|disk quota exceeded)' "$stderr_path"; then
+    printf 'storage_capacity'
+  elif grep -Eiq '(permission denied|cannot connect to.*docker daemon|error during connect|is the docker daemon running)' "$stderr_path"; then
+    printf 'docker_access'
+  elif grep -Eiq '(pull access denied|unauthorized|authentication required|denied: requested access|error getting credentials)' "$stderr_path"; then
+    printf 'image_access'
+  elif grep -Eiq '(manifest unknown|no such image|image[^[:cntrl:]]*not found)' "$stderr_path"; then
+    printf 'image_unavailable'
+  elif grep -Eiq '(invalid reference format|invalid tag)' "$stderr_path"; then
+    printf 'image_reference'
+  elif grep -Eiq '(failed to create network|network[^[:cntrl:]]*(already exists|not found))' "$stderr_path"; then
+    printf 'network_setup'
+  elif grep -Eiq '(failed to create volume|volume[^[:cntrl:]]*(already exists|in use))' "$stderr_path"; then
+    printf 'volume_setup'
+  elif grep -Eiq '(error response from daemon|failed to create|conflict)' "$stderr_path"; then
+    printf 'daemon_create'
+  else
+    printf 'unclassified'
+  fi
+}
+
 [[ "${GITHUB_ACTIONS:-}" == true ]] || fail 'GitHub Actions guard did not match.'
 [[ "${KURANEA_ISOLATED_CI:-}" == 1 ]] || fail 'isolated CI guard did not match.'
 [[ "${GITHUB_RUN_ID:-}" =~ ^[0-9]+$ ]] || fail 'run ID is not numeric.'
@@ -228,7 +255,7 @@ fi
 restore_project_owned=1
 printf 'restore_project_owned=true\n' >> "$GITHUB_OUTPUT"
 if ! docker compose -p "$restore_project" create --no-deps mariadb prestashop >/dev/null 2>"$stderr_file"; then
-  fail 'run-scoped restore containers could not be created.'
+  fail "run-scoped restore containers could not be created (cause=$(classify_compose_create_error "$stderr_file"))."
 fi
 
 restore_db_container=$(docker compose -p "$restore_project" ps -a -q mariadb 2>/dev/null) \
