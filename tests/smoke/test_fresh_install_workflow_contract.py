@@ -16,6 +16,24 @@ FRESH_INSTALL_SMOKE = ROOT / "tests" / "smoke" / "fresh_install.sh"
 
 
 class FreshInstallWorkflowContractTests(unittest.TestCase):
+    def test_pwa_registration_diagnostics_contract_triggers_and_runs_in_fresh_install_ci(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("  push:\n", workflow)
+        self.assertIn("  pull_request:\n", workflow)
+        push_event = workflow.split("  push:\n", 1)[1].split("  pull_request:\n", 1)[0]
+        pull_request_event = workflow.split("  pull_request:\n", 1)[1].split(
+            "  workflow_dispatch:", 1
+        )[0]
+        contract_path = "tests/smoke/test_pwa_registration_diagnostics_contract.py"
+        for event, event_block in (("push", push_event), ("pull_request", pull_request_event)):
+            with self.subTest(event=event):
+                self.assertIn(contract_path, event_block)
+
+        preflight = workflow.split("- name: Verify fresh-install workflow contracts", 1)[1].split(
+            "- name:", 1
+        )[0]
+        self.assertIn("tests.smoke.test_pwa_registration_diagnostics_contract", preflight)
+
     def test_security_admin_locale_restore_requires_mutation_marker_and_is_conditionally_aggregated(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         restore_step = workflow.split("- name: Restore CI administrator language after locale QA", 1)[1].split(

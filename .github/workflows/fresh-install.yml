@@ -46,6 +46,7 @@ on:
       - 'tests/smoke/test_security_runtime_e2e_contract.py'
       - 'tests/smoke/test_pwa_service_worker.py'
       - 'tests/smoke/test_pwa_logout_diagnostics_contract.py'
+      - 'tests/smoke/test_pwa_registration_diagnostics_contract.py'
       - 'tests/smoke/test_private_customer_cache_routes_contract.py'
       - 'tests/smoke/test_taxable_checkout_browser_contract.py'
       - 'tests/smoke/test_isolated_browser_target_guards.py'
@@ -101,6 +102,7 @@ on:
       - 'tests/smoke/test_security_runtime_e2e_contract.py'
       - 'tests/smoke/test_pwa_service_worker.py'
       - 'tests/smoke/test_pwa_logout_diagnostics_contract.py'
+      - 'tests/smoke/test_pwa_registration_diagnostics_contract.py'
       - 'tests/smoke/test_private_customer_cache_routes_contract.py'
       - 'tests/smoke/test_taxable_checkout_browser_contract.py'
       - 'tests/smoke/test_isolated_browser_target_guards.py'
@@ -156,7 +158,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_docker_run_recovery -v
 
       - name: Verify fresh-install workflow contracts
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_backup_restore_drill_contract tests.smoke.test_deployment_config_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard tests.e2e.test_ci_admin_order_status_contract -v
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_backup_restore_drill_contract tests.smoke.test_deployment_config_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_pwa_registration_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard tests.e2e.test_ci_admin_order_status_contract -v
 
       - name: Verify isolated unpaid checkout contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract tests.business_profile.test_shipping_admin_links_contract tests.business_profile.test_admin_profile_history_contract tests.admin_locale.test_admin_locale_overlay -v
