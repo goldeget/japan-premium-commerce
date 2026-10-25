@@ -10,6 +10,10 @@ import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from admin_locale_diagnostics import (
+    SAFE_ADMIN_LOCALE_RESPONSE_PATTERN,
+    parse_admin_locale_response_diagnostic,
+)
 from shipping_admin_routes import is_korean_admin_language
 from selenium import webdriver
 from selenium.common.exceptions import StaleElementReferenceException
@@ -55,15 +59,6 @@ SAFE_ADMIN_NAVIGATION_STATE_PATTERN = (
     r"login_form_visible=(?:true|false); current_controller=(?:AdminBusinessProfile|AdminDashboard|AdminOrders|AdminLogin|none|other); "
     r"business_profile_link_count=(?:0|[1-9][0-9]{0,3}); dashboard_link_count=(?:0|[1-9][0-9]{0,3})"
 )
-SAFE_ADMIN_LOCALE_RESPONSE_PATTERN = (
-    r"(?:redirect=opaque|unavailable:(?:[A-Za-z][A-Za-z0-9_]{0,63}|invalid_diagnostic)|"
-    r"stage=(?:request_scope|redirect|not_admin_route|not_html|empty_body|content_unchanged|html_tag_count|rewritten);"
-    r"main_request=[01];module_active=[01];admin_route=[01];is_redirect=[01];http_status=[1-5][0-9]{2};"
-    r"is_html=(?:not_checked|[01]);body_present=(?:not_checked|[01]);"
-    r"html_tags=(?:not_checked|[0-9]{1,4});html_replacements=(?:not_checked|[01]);"
-    r"lang_before=(?:not_checked|none|other|korean);lang_after=(?:not_checked|none|other|korean);rewritten=[01])"
-)
-
 TOKEN_DOM_DETECTOR_JS = r"""
 function inspectInvalidTokenPage(body, responseUrl, targetUrl) {
   const responseDocument = new DOMParser().parseFromString(body, 'text/html');
@@ -340,7 +335,7 @@ def read_admin_locale_response_diagnostic(driver: webdriver.Chrome) -> str:
               headers: {"X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC": "1"}
             }).then(response => done(response.type === "opaqueredirect"
               ? "redirect=opaque"
-              : response.headers.get("X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC") || "missing"))
+              : response.headers.get("X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC")))
               .catch(error => done(`unavailable:${error.name}`));
             """
         )
@@ -349,12 +344,9 @@ def read_admin_locale_response_diagnostic(driver: webdriver.Chrome) -> str:
         safe_error_type = error_type if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", error_type) else "Error"
         return f"unavailable:{safe_error_type}"
 
-    if isinstance(diagnostic, str) and re.fullmatch(
-        SAFE_ADMIN_LOCALE_RESPONSE_PATTERN,
-        diagnostic,
-    ):
-        return diagnostic
-    return "unavailable:invalid_diagnostic"
+    return parse_admin_locale_response_diagnostic(
+        diagnostic if isinstance(diagnostic, str) else None
+    )
 
 
 def login(driver: webdriver.Chrome, email: str) -> None:

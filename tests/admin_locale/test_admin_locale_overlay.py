@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import hashlib
 import re
 import unittest
@@ -239,15 +238,14 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
 
     def test_admin_locale_annotation_accepts_opaque_redirect_and_allowlists_response_fields(self) -> None:
         browser = (ROOT / "tests" / "e2e" / "verify_admin_security_browser.py").read_text(encoding="utf-8")
-        module = ast.parse(browser)
-        assignment = next(
-            node
-            for node in module.body
-            if isinstance(node, ast.Assign)
-            and any(isinstance(target, ast.Name) and target.id == "SAFE_ADMIN_LOCALE_RESPONSE_PATTERN" for target in node.targets)
+        self.assertIn("from admin_locale_diagnostics import", browser)
+        self.assertIn("return parse_admin_locale_response_diagnostic(", browser)
+        self.assertIn("response.headers.get(\"X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC\")", browser)
+        from tests.e2e.admin_locale_diagnostics import (
+            SAFE_ADMIN_LOCALE_RESPONSE_PATTERN as pattern,
+            parse_admin_locale_response_diagnostic,
         )
-        pattern = ast.literal_eval(assignment.value)
-        self.assertEqual(browser.count("SAFE_ADMIN_LOCALE_RESPONSE_PATTERN"), 3)
+
         valid = (
             "stage=rewritten;main_request=1;module_active=1;admin_route=1;is_redirect=0;http_status=200;"
             "is_html=1;body_present=1;html_tags=1;html_replacements=1;lang_before=other;lang_after=korean;rewritten=1"
@@ -258,6 +256,7 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertIsNotNone(re.fullmatch(pattern, "unavailable:JavascriptException"))
         self.assertIsNotNone(re.fullmatch(pattern, "unavailable:invalid_diagnostic"))
         self.assertIsNone(re.fullmatch(pattern, valid.replace("main_request=1", "request_url=https://secret.invalid")))
+        self.assertEqual(parse_admin_locale_response_diagnostic(None), "unavailable:missing_header")
 
     def test_security_fixture_restores_primary_employee_language_before_restart_check(self) -> None:
         restore_path = ROOT / "tests" / "business_profile" / "restore_ci_admin_locale.php"
