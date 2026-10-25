@@ -110,7 +110,7 @@ class CiNativeCustomerReturnBrowserContractTests(unittest.TestCase):
             'stage = "return_list_readback"', 1
         )[0]
         self.assertIn("except ElementClickInterceptedException:", submit_block)
-        self.assertIn("capture_submit_click_blocker(driver, submit_button, artifact_dir)", submit_block)
+        self.assertIn("capture_submit_click_blocker(", submit_block)
         self.assertIn("submit_button.click()", submit_block)
         self.assertLess(submit_block.index("submit_button.click()"), submit_block.index("except ElementClickInterceptedException:"))
         self.assertLess(submit_block.index("capture_submit_click_blocker("), submit_block.index("raise"))
@@ -121,6 +121,16 @@ class CiNativeCustomerReturnBrowserContractTests(unittest.TestCase):
             "id: target.id",
             'class: typeof target.className === "string" ? target.className : ""',
             'limits = {"tag": 24, "id": 80, "class": 120}',
+            'status: target ? "target" : "no_target"',
+            '"status": "unexpected_result"',
+            '"status": "script_error"',
+            'result_status = topmost.get("status")',
+            '"ready_state": ready_state',
+            '"center_in_viewport": topmost.get("center_in_viewport") is True',
+            '"button_rect": {',
+            '"viewport": {',
+            '"exception_type": exception_type',
+            '"submit_click_diagnostic": submit_click_diagnostic',
             "ORDENOWA_RETURN_SUBMIT_BLOCKER_SAFE_STATE=",
             "::error title=Return submit click target::",
             'GITHUB_STEP_SUMMARY',

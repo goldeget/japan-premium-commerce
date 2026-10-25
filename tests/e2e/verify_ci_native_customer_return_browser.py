@@ -78,6 +78,7 @@ def write_redacted_result(
     failure_screenshot: str | None,
     submit_click_intercept_target: dict[str, str] | None,
     submit_failure_screenshot: str | None,
+    submit_click_diagnostic: dict[str, object] | None,
 ) -> None:
     result = {
         "status": status,
@@ -94,6 +95,7 @@ def write_redacted_result(
         "failure_screenshot": failure_screenshot,
         "submit_click_intercept_target": submit_click_intercept_target,
         "submit_failure_screenshot": submit_failure_screenshot,
+        "submit_click_diagnostic": submit_click_diagnostic,
     }
     output_path.write_text(
         json.dumps(result, ensure_ascii=True, sort_keys=True, indent=2) + "\n",
@@ -180,41 +182,111 @@ def capture_submit_click_blocker(driver: webdriver.Chrome, submit_button, artifa
             """
             const element = arguments[0];
             const rect = element.getBoundingClientRect();
-            const target = document.elementFromPoint(
-              rect.left + rect.width / 2,
-              rect.top + rect.height / 2
-            );
-            if (!target) return null;
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            const target = document.elementFromPoint(centerX, centerY);
+            const bounded = (value, minimum, maximum) => Number.isFinite(value)
+              ? Math.max(minimum, Math.min(maximum, Math.round(value))) : 0;
+            const readyState = ["loading", "interactive", "complete"].includes(document.readyState)
+              ? document.readyState : "unknown";
+            const viewportWidth = bounded(window.innerWidth, 0, 10000);
+            const viewportHeight = bounded(window.innerHeight, 0, 10000);
             return {
-              tag: target.tagName.toLowerCase(),
-              id: target.id,
-              class: typeof target.className === "string" ? target.className : ""
+              status: target ? "target" : "no_target",
+              ready_state: readyState,
+              target_present: Boolean(target),
+              center_in_viewport: centerX >= 0 && centerY >= 0
+                && centerX < window.innerWidth && centerY < window.innerHeight,
+              button_rect: {
+                x: bounded(rect.x, -10000, 10000),
+                y: bounded(rect.y, -10000, 10000),
+                width: bounded(rect.width, 0, 10000),
+                height: bounded(rect.height, 0, 10000)
+              },
+              viewport: {width: viewportWidth, height: viewportHeight},
+              tag: target ? target.tagName.toLowerCase() : "",
+              id: target ? target.id : "",
+              class: target && typeof target.className === "string" ? target.className : ""
             };
             """,
             submit_button,
         )
-    except Exception:
-        topmost = None
+        if not isinstance(topmost, dict):
+            diagnostic = {
+                "status": "unexpected_result",
+                "exception_type": None,
+                "ready_state": "unknown",
+                "target_present": None,
+                "center_in_viewport": None,
+                "button_rect": {"x": 0, "y": 0, "width": 0, "height": 0},
+                "viewport": {"width": 0, "height": 0},
+                "tag": "",
+                "id": "",
+                "class": "",
+            }
+        else:
+            result_status = topmost.get("status")
+            if result_status not in {"target", "no_target"}:
+                result_status = "unexpected_result"
+            ready_state = topmost.get("ready_state")
+            if ready_state not in {"loading", "interactive", "complete"}:
+                ready_state = "unknown"
 
-    limits = {"tag": 24, "id": 80, "class": 120}
-    safe_target = (
-        {
-            key: re.sub(r"[^A-Za-z0-9_.: -]", "", str(topmost.get(key, "")))[:limit]
-            for key, limit in limits.items()
+            def bounded_number(value, minimum, maximum):
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    return 0
+                return max(minimum, min(maximum, round(value)))
+
+            rect_values = topmost.get("button_rect")
+            if not isinstance(rect_values, dict):
+                rect_values = {}
+            viewport_values = topmost.get("viewport")
+            if not isinstance(viewport_values, dict):
+                viewport_values = {}
+            limits = {"tag": 24, "id": 80, "class": 120}
+            diagnostic = {
+                "status": result_status,
+                "exception_type": None,
+                "ready_state": ready_state,
+                "target_present": topmost.get("target_present") is True,
+                "center_in_viewport": topmost.get("center_in_viewport") is True,
+                "button_rect": {
+                    key: bounded_number(rect_values.get(key), -10000 if key in {"x", "y"} else 0, 10000)
+                    for key in ("x", "y", "width", "height")
+                },
+                "viewport": {
+                    key: bounded_number(viewport_values.get(key), 0, 10000)
+                    for key in ("width", "height")
+                },
+                **{
+                    key: re.sub(r"[^A-Za-z0-9_.: -]", "", str(topmost.get(key, "")))[:limit]
+                    for key, limit in limits.items()
+                },
+            }
+    except Exception as error:
+        exception_type = re.sub(r"[^A-Za-z0-9_]", "", type(error).__name__)[:48] or "Exception"
+        diagnostic = {
+            "status": "script_error",
+            "exception_type": exception_type,
+            "ready_state": "unknown",
+            "target_present": None,
+            "center_in_viewport": None,
+            "button_rect": {"x": 0, "y": 0, "width": 0, "height": 0},
+            "viewport": {"width": 0, "height": 0},
+            "tag": "",
+            "id": "",
+            "class": "",
         }
-        if isinstance(topmost, dict)
-        else {"tag": "", "id": "", "class": ""}
-    )
-    diagnostic = json.dumps(safe_target, ensure_ascii=True, sort_keys=True)
-    print("ORDENOWA_RETURN_SUBMIT_BLOCKER_SAFE_STATE=" + diagnostic)
-    annotation = diagnostic.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    diagnostic_json = json.dumps(diagnostic, ensure_ascii=True, sort_keys=True)
+    print("ORDENOWA_RETURN_SUBMIT_BLOCKER_SAFE_STATE=" + diagnostic_json)
+    annotation = diagnostic_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
     print("::error title=Return submit click target::" + annotation)
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
     if summary_path:
         try:
             with open(summary_path, "a", encoding="utf-8") as summary:
                 summary.write("### Return submit click blocker\n\n")
-                summary.write(f"Safe topmost target: `{diagnostic}`\n")
+                summary.write(f"Safe browser hit-test state: `{diagnostic_json}`\n")
         except OSError:
             pass
 
@@ -225,7 +297,7 @@ def capture_submit_click_blocker(driver: webdriver.Chrome, submit_button, artifa
             screenshot_name = screenshot_path.name
     except Exception:
         pass
-    return safe_target, screenshot_name
+    return diagnostic, screenshot_name
 
 
 def main() -> int:
@@ -246,6 +318,7 @@ def main() -> int:
     failure_screenshot_name = None
     submit_click_intercept_target = None
     submit_failure_screenshot_name = None
+    submit_click_diagnostic = None
 
     try:
         base_url = read_isolated_shop_url()
@@ -367,7 +440,12 @@ def main() -> int:
         try:
             submit_button.click()
         except ElementClickInterceptedException:
-            submit_click_intercept_target, submit_failure_screenshot_name = capture_submit_click_blocker(driver, submit_button, artifact_dir)
+            submit_click_diagnostic, submit_failure_screenshot_name = capture_submit_click_blocker(
+                driver, submit_button, artifact_dir
+            )
+            submit_click_intercept_target = {
+                key: submit_click_diagnostic.get(key, "") for key in ("tag", "id", "class")
+            }
             raise
         return_form_submitted = True
 
@@ -423,6 +501,7 @@ def main() -> int:
             failure_screenshot=failure_screenshot_name,
             submit_click_intercept_target=submit_click_intercept_target,
             submit_failure_screenshot=submit_failure_screenshot_name,
+            submit_click_diagnostic=submit_click_diagnostic,
         )
 
     if status != "passed":
