@@ -2,7 +2,7 @@
 
 ## 현재 QA 및 출시 체크리스트 (2026-10-25 21:20 UTC)
 
-원격 `work`와 최신 코드 HEAD는 `95af3a9104b6e3f7bfc861155bdc73db9a91ab98`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd` 그대로다. 최신 코드의 전체 격리 Actions [#40233614104](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104)은 workflow 성공이며 Step 80 실제 aggregate는 `PASS: isolated browser QA and official postcode verification completed.`다. Aggregate의 storefront/PWA browser outcomes도 각각 success이며 Step 42, 49, 73, 75, 83이 성공했다. 새 artifact [ID 12613919270](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104/artifacts/12613919270)의 수정 화면 시각 재검수는 아직 대기 중이다. 현재 코드의 로컬 영향 테스트 121개도 통과했다.
+검증 대상 코드 commit SHA는 `95af3a9104b6e3f7bfc861155bdc73db9a91ab98`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd` 그대로다. 이 검증 뒤 `work`에는 문서 전용 업데이트가 올라갔고 앱/테스트 코드는 바뀌지 않았다. 전체 격리 Actions [#40233614104](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104)은 workflow 성공이며 Step 80 실제 aggregate는 `PASS: isolated browser QA and official postcode verification completed.`다. Aggregate의 storefront/PWA browser outcomes도 각각 success이며 Step 42, 49, 73, 75, 83이 성공했다. 새 artifact [ID 12613919270](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104/artifacts/12613919270)의 수정 화면 시각 재검수는 아직 대기 중이다. 검증 대상 코드의 로컬 영향 테스트 121개도 통과했다.
 
 | 영역 | 상태 | 근거 / 다음 담당 |
 | --- | --- | --- |

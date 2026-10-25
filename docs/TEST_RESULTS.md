@@ -2,7 +2,7 @@
 
 ## 2026-10-25 — 시각 QA 잔여 항목 수정 및 전체 격리 검증 완료
 
-현재 코드 SHA `95af3a9104b6e3f7bfc861155bdc73db9a91ab98`가 remote `work`다. 최신 전체 격리 Actions [#40233614104](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104)은 workflow 성공, Step 80 aggregate `PASS: isolated browser QA and official postcode verification completed.`로 종료했다. Aggregate에 기록된 `STOREFRONT_BROWSER_QA_OUTCOME=success`, `PWA_BROWSER_QA_OUTCOME=success`; Step 42 product/cart, Step 49 PWA, Step 73/75 screenshots, Step 83 run-only cleanup 모두 성공했다. 직전 성공 run #40231567083은 SHA `aed4a3cc6e143258e9f493603dd226bfa41b34aa`의 별도 기준점으로 보존한다.
+QA source code SHA는 `95af3a9104b6e3f7bfc861155bdc73db9a91ab98`다. 검증 후 `work`에 문서 전용 업데이트가 올라갔으며 앱과 QA 코드는 변경되지 않았다. 최신 전체 격리 Actions [#40233614104](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104)은 workflow 성공, Step 80 aggregate `PASS: isolated browser QA and official postcode verification completed.`로 종료했다. Aggregate에 기록된 `STOREFRONT_BROWSER_QA_OUTCOME=success`, `PWA_BROWSER_QA_OUTCOME=success`; Step 42 product/cart, Step 49 PWA, Step 73/75 screenshots, Step 83 run-only cleanup 모두 성공했다. 직전 성공 run #40231567083은 SHA `aed4a3cc6e143258e9f493603dd226bfa41b34aa`의 별도 기준점으로 보존한다.
 
 Work-mode GPT가 #402315 browser artifact [ID 12613108935](https://github.com/goldeget/japan-premium-commerce/actions/runs/40231567083/artifacts/12613108935)를 열어 다음을 확인했다: `詳細を表示`, 모바일 checkout button visibility, 일본어 `マイアカウント`는 수정됐다. 남은 영어 정책 문구, catalog category data, KO account heading, long-title breadcrumb를 별도로 분류했다. screenshot inspection은 클릭/입력 상호작용 검사가 아니다.
 

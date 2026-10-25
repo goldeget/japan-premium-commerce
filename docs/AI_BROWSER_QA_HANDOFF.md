@@ -2,7 +2,7 @@
 
 ## 최신 수정 코드 검수 상태 (2026-10-25 21:20 UTC)
 
-- Current `work` SHA: `95af3a9104b6e3f7bfc861155bdc73db9a91ab98`; `main` unchanged at `ee02a3657448d563508687614a246e05ac61eecd`.
+- QA source commit SHA: `95af3a9104b6e3f7bfc861155bdc73db9a91ab98` (the subsequent branch update is documentation-only); `main` unchanged at `ee02a3657448d563508687614a246e05ac61eecd`.
 - Prior full isolated run #40231567083 verified SHA `aed4a3c` successfully. Work-mode GPT opened its browser artifact [ID 12613108935](https://github.com/goldeget/japan-premium-commerce/actions/runs/40231567083/artifacts/12613108935): Japanese details copy, mobile checkout controls, and the Japanese account heading were confirmed fixed.
 - That review found policy condition content still English, default/synthetic `Clothes`/`Art` categories, a Korean `My Account` heading, and the long mobile breadcrumb. Code fixes for Korean account chrome and wrapping the final product breadcrumb item are in `95af3a9`.
 - Full isolated run [#40233614104](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104) verified source SHA `95af3a9104b6e3f7bfc861155bdc73db9a91ab98`: workflow and Step 80 aggregate succeeded. The aggregate recorded `STOREFRONT_BROWSER_QA_OUTCOME=success` and `PWA_BROWSER_QA_OUTCOME=success`; Step 42 product/cart, Step 49 PWA lifecycle/private-cache, Step 73 artifact upload, Step 75 screenshot coverage, and Step 83 isolated cleanup succeeded. New browser artifact: [ID 12613919270](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104/artifacts/12613919270), `ordenowa-storefront-browser-40233614104-1`.
