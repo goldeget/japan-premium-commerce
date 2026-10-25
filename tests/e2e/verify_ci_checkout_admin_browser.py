@@ -1743,6 +1743,7 @@ def cancel_unpaid_desktop_order_through_admin(
     driver: webdriver.Chrome,
     order: dict,
     verified_order: dict,
+    stage_callback=None,
 ) -> None:
     """Cancel only this run's verified offline desktop order through the native BO form."""
     expected_email = checkout_registration_email("desktop", RUN_ID, RUN_ATTEMPT)
@@ -1803,6 +1804,7 @@ def cancel_unpaid_desktop_order_through_admin(
 
     # Select2 is the native control initialized from the form's data-toggle="select2".
     visible(driver, "form.card-details-form .select2-selection").click()
+    _mark_checkout_stage(stage_callback, "select2_option.locate")
     cancel_choice = WebDriverWait(driver, 20).until(
         lambda browser: next(
             (
@@ -1815,10 +1817,21 @@ def cancel_unpaid_desktop_order_through_admin(
             None,
         )
     )
+    _mark_checkout_stage(stage_callback, "select2_option.click")
     cancel_choice.click()
+    _mark_checkout_stage(stage_callback, "native_status.verify_after_select2")
+    # Select2 updates the native control and may replace nodes in the status form.
+    # Reacquire both elements after the option click instead of reusing stale handles.
+    status_form = driver.find_element(By.CSS_SELECTOR, "form.card-details-form")
+    status_select = status_form.find_element(
+        By.CSS_SELECTOR,
+        'select[name="update_order_status[new_order_status_id]"]',
+    )
     if Select(status_select).first_selected_option.get_attribute("value") != cancelled_value:
         raise AssertionError("the Back Office order status selector did not choose Canceled")
 
+    _mark_checkout_stage(stage_callback, "native_status.submit")
+    status_form = driver.find_element(By.CSS_SELECTOR, "form.card-details-form")
     status_form.find_element(By.CSS_SELECTOR, "button.update-status").click()
 
     def latest_history_is_cancelled(browser: webdriver.Chrome) -> bool:
@@ -1835,6 +1848,7 @@ def cancel_unpaid_desktop_order_through_admin(
         latest_status = browser.find_element(By.CSS_SELECTOR, latest_history_status_selector).text
         return latest_status.strip() == cancelled_label
 
+    _mark_checkout_stage(stage_callback, "history.persisted_wait")
     WebDriverWait(driver, 35).until(latest_history_is_cancelled)
     print(
         f"PASS: native Back Office status form canceled unpaid desktop order {order['reference']} "
@@ -1850,6 +1864,10 @@ def run_admin_order_view() -> None:
         def set_login_stage(login_stage: str) -> None:
             nonlocal stage
             stage = f"administrator_login_{login_stage}"
+
+        def set_cancel_stage(cancel_stage: str) -> None:
+            nonlocal stage
+            stage = f"admin_order_desktop_cancel_{cancel_stage}"
 
         admin_login(driver, set_login_stage)
         driver.save_screenshot(str(DEST / "checkout-admin-login.png"))
@@ -1905,6 +1923,7 @@ def run_admin_order_view() -> None:
                     driver,
                     order,
                     verified_orders["desktop"],
+                    set_cancel_stage,
                 )
                 driver.save_screenshot(str(DEST / "checkout-admin-order-desktop-canceled.png"))
             print(

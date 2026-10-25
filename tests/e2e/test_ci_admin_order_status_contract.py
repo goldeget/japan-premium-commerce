@@ -72,6 +72,45 @@ class CiAdminOrderStatusContractTests(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertContains(self.browser_order_source, required)
 
+    def test_admin_cancel_requeries_native_controls_after_select2_mutation(self) -> None:
+        helper = self.admin_source.split(
+            "def cancel_unpaid_desktop_order_through_admin(", 1
+        )[1].split("\ndef ", 1)[0]
+        for stage in (
+            '"select2_option.locate"',
+            '"select2_option.click"',
+            '"native_status.verify_after_select2"',
+            '"native_status.submit"',
+            '"history.persisted_wait"',
+        ):
+            with self.subTest(stage=stage):
+                self.assertContains(helper, stage)
+
+        select2_mutation = helper.split("cancel_choice.click()", 1)[1]
+        fresh_form = select2_mutation.index(
+            'status_form = driver.find_element(By.CSS_SELECTOR, "form.card-details-form")'
+        )
+        fresh_select = select2_mutation.index("status_select = status_form.find_element")
+        selected_check = select2_mutation.index(
+            "if Select(status_select).first_selected_option"
+        )
+        self.assertLess(fresh_form, fresh_select)
+        self.assertLess(fresh_select, selected_check)
+
+        submit_stage = select2_mutation.index(
+            '_mark_checkout_stage(stage_callback, "native_status.submit")'
+        )
+        submit_form = select2_mutation.index(
+            'status_form = driver.find_element(By.CSS_SELECTOR, "form.card-details-form")',
+            submit_stage,
+        )
+        submit_button = select2_mutation.index(
+            'status_form.find_element(By.CSS_SELECTOR, "button.update-status")',
+            submit_form,
+        )
+        self.assertLess(submit_stage, submit_form)
+        self.assertLess(submit_form, submit_button)
+
     def test_lifecycle_verifier_checks_ui_cancellation_without_mutating_status(self) -> None:
         for required in (
             "SELECT `id_order_state`, `id_employee` FROM `",
