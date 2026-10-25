@@ -219,7 +219,7 @@ if (!Validate::isLoadedObject($preparedOrder)
     throw new RuntimeException('The native delivered-state transition did not produce a return-eligible synthetic order.');
 }
 
-$stage = 'mark native payment ledger as synthetic';
+$stage = 'load native invoice payment association';
 $paymentRow = Db::getInstance()->getRow(
     'SELECT op.`id_order_payment`, op.`order_reference` FROM `' . _DB_PREFIX_ . 'order_payment` op'
     . ' INNER JOIN `' . _DB_PREFIX_ . 'order_invoice_payment` oip ON oip.`id_order_payment` = op.`id_order_payment`'
@@ -227,6 +227,7 @@ $paymentRow = Db::getInstance()->getRow(
     . ' ORDER BY op.`id_order_payment` DESC LIMIT 1'
 );
 $payment = is_array($paymentRow) ? new OrderPayment((int) ($paymentRow['id_order_payment'] ?? 0)) : false;
+$stage = 'validate native payment ledger row';
 if (!($payment instanceof OrderPayment)
     || !Validate::isLoadedObject($payment)
     || (string) $payment->order_reference !== (string) $preparedOrder->reference
@@ -234,12 +235,14 @@ if (!($payment instanceof OrderPayment)
 ) {
     throw new RuntimeException('The native state transition did not create an order-linked payment ledger row.');
 }
+$stage = 'label native payment ledger as synthetic';
 $payment->payment_method = 'CI ONLY synthetic paid-like test; no funds captured';
 if (!$payment->update() || (string) $payment->payment_method !== 'CI ONLY synthetic paid-like test; no funds captured') {
     throw new RuntimeException('The native order payment ledger row could not be labeled as synthetic CI data.');
 }
 $marker['paid_like_order_id'] = (int) $preparedOrder->id;
 $markerJson = json_encode($marker, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+$stage = 'persist native return configuration marker';
 if (!Configuration::updateValue($markerName, $markerJson, false, null, $shopId)) {
     throw new RuntimeException('The prepared paid-like order ID could not be recorded for configuration restoration.');
 }

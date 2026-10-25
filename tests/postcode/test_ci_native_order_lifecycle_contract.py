@@ -129,6 +129,17 @@ class CiNativeOrderLifecycleContractTests(unittest.TestCase):
         self.assertLess(history_write, cache_clear)
         self.assertLess(cache_clear, paid_readback)
 
+    def test_synthetic_payment_failure_stage_identifies_the_exact_native_boundary(self) -> None:
+        preparer = PREPARER.read_text(encoding="utf-8")
+        for stage in (
+            "load native invoice payment association",
+            "validate native payment ledger row",
+            "label native payment ledger as synthetic",
+            "persist native return configuration marker",
+        ):
+            with self.subTest(stage=stage):
+                self.assertIn("$stage = '" + stage + "';", preparer)
+
     def test_returns_configuration_is_run_scoped_and_restored_by_verifier_shutdown(self) -> None:
         if not PREPARER.is_file():
             self.fail("the CI-only native order lifecycle fixture preparer is missing")
