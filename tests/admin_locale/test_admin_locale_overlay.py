@@ -514,6 +514,11 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertTrue(path.is_file(), "missing module-owned Admin.Global overlay")
         self.assertEqual("평균 주문 금액", translations(path).get("Average Order Value"))
 
+    def test_orders_feature_overlay_translates_new_order_toolbar_action(self) -> None:
+        path = MODULE / "translations" / "ko-KR" / "AdminOrderscustomersFeature.ko-KR.xlf"
+        self.assertTrue(path.is_file(), "missing module-owned Admin.Orderscustomers.Feature overlay")
+        self.assertEqual("새 주문 추가", translations(path).get("Add new order"))
+
     def test_admin_navigation_header_overlay_translates_view_store_action(self) -> None:
         subscriber = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text()
         self.assertIn("AdminNavigationHeader.ko-KR.xlf", subscriber)

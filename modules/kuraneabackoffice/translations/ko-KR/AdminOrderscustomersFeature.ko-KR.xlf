@@ -2,6 +2,11 @@
 <xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
   <file original="Admin.Orderscustomers.Feature.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
     <body>
+      <trans-unit id="kuranea-add-new-order-toolbar-action" approved="yes">
+        <source>Add new order</source>
+        <target state="final">새 주문 추가</target>
+        <note>PrestaShop AdminOrders toolbar action.</note>
+      </trans-unit>
       <trans-unit id="kuranea-orders-empty-state-title" approved="yes">
         <source>Manage your orders</source>
         <target state="final">주문 관리</target>
