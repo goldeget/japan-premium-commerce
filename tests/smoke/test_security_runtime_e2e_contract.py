@@ -510,6 +510,8 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "http://localhost:18080/admin-kuranea/index.php?controller=AdminOrders&vieworder&id_order=42&token=fixture",
             "http://localhost:18080/admin-kuranea/index.php?controller=AdminOrders&submitAction=deleteorder&id_order=42&token=fixture",
             "http://localhost:18080/admin-kuranea/index.php?controller=AdminOrders&token=fixture&unexpected=1",
+            "http://localhost:18080/admin-kuranea/index.php?Controller=AdminOrders&token=fixture",
+            "http://localhost:18080/admin-kuranea/index.php?controller=AdminOrders&Token=fixture",
             "http://outside.example/admin-kuranea/sell/orders",
             "http://localhost:18081/admin-kuranea/sell/orders",
             "http://localhost:18080/admin-kuranea-evil/sell/orders",

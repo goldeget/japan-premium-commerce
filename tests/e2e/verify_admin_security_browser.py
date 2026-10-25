@@ -260,13 +260,11 @@ def is_admin_orders_list_url(url: str) -> bool:
     if actual.path != admin_path + "/index.php":
         return False
     query = parse_qs(actual.query, keep_blank_values=True)
-    normalized_query = {key.casefold(): values for key, values in query.items()}
     return (
-        len(normalized_query) == len(query)
-        and set(normalized_query) == {"controller", "token"}
-        and normalized_query.get("controller") == ["AdminOrders"]
-        and len(normalized_query.get("token", [])) == 1
-        and bool(normalized_query["token"][0].strip())
+        set(query) == {"controller", "token"}
+        and query.get("controller") == ["AdminOrders"]
+        and len(query.get("token", [])) == 1
+        and bool(query["token"][0].strip())
     )
 
 
