@@ -377,6 +377,136 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertNotIn("str(error)", handler)
         self.assertNotIn("{error}", handler)
 
+    def test_view_only_orders_failure_captures_page_before_check_and_emits_bounded_diagnostic(self):
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+        self.assertIn("SAFE_ADMIN_ORDERS_STATE_PATTERN", source)
+        self.assertIn("def safe_admin_orders_state(", source)
+        self.assertIn("ORDENOWA_ADMIN_ORDERS_STATE=", source)
+
+        run = source.split("def run()", 1)[1].split("\n\nif __name__", 1)[0]
+        orders_stage = run.split('stage = "view_only_employee_orders_korean_locale"', 1)[1].split(
+            'stage = "view_only_employee_settings_restore"', 1
+        )[0]
+        self.assertLess(
+            orders_stage.index('save_screenshot(str(DEST / "admin-security-view-only-orders-korean.png"))'),
+            orders_stage.index("if not orders_label_ready"),
+        )
+        self.assertIn("wait_for_korean_orders_label", orders_stage)
+        self.assertIn("safe_admin_orders_state(restricted_driver)", orders_stage)
+        wait_for_label = source.split("def wait_for_korean_orders_label(", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn('"주문" in browser.find_element(By.TAG_NAME, "body").text', wait_for_label)
+
+        handler = run.split("except Exception as error:", 1)[1].split("finally:", 1)[0]
+        self.assertIn("admin_security_orders_state", handler)
+        self.assertIn("SAFE_ADMIN_ORDERS_STATE_PATTERN", handler)
+        self.assertIn("ORDENOWA_ADMIN_ORDERS_STATE=", handler)
+
+    def test_view_only_orders_diagnostic_contains_only_allowlisted_page_state(self):
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+        namespace: dict[str, object] = {
+            "parse_qs": parse_qs,
+            "urlparse": urlparse,
+            "re": re,
+            "BASE": "http://localhost:18080",
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
+            "By": type("By", (), {"CSS_SELECTOR": "css selector", "TAG_NAME": "tag name"}),
+            "is_korean_admin_language": lambda locale: locale.casefold() in {"ko", "ko-kr"},
+            "webdriver": type("Webdriver", (), {"Chrome": object}),
+        }
+        load_function(ADMIN_FLOW, "_admin_controller_for_url", namespace)
+        safe_state = load_function(ADMIN_FLOW, "safe_admin_orders_state", namespace)
+
+        class Element:
+            def __init__(self, text: str = "", lang: str | None = None) -> None:
+                self.text = text
+                self.lang = lang
+
+            def get_attribute(self, name: str) -> str | None:
+                return self.lang if name == "lang" else None
+
+            def is_displayed(self) -> bool:
+                return True
+
+        class Driver:
+            current_url = "http://localhost:18080/admin-kuranea/sell/orders"
+
+            def find_element(self, by: str, selector: str) -> Element:
+                if selector == "html":
+                    return Element(lang="ko-KR")
+                if selector == "body":
+                    return Element("Orders Customer private@example.invalid")
+                raise AssertionError(f"unexpected element selector: {selector}")
+
+            def find_elements(self, by: str, selector: str) -> list[Element]:
+                if selector == "#login_form":
+                    return []
+                if selector == "main h1":
+                    return [Element("Orders")]
+                if selector == "main table, main [role='grid'], main .grid-table":
+                    return [Element()]
+                if selector == "[role='alert'], .alert-danger":
+                    return []
+                return []
+
+        diagnostic = safe_state(Driver())
+        self.assertEqual(
+            diagnostic,
+            "route=AdminOrders;document_locale=korean;login_form_visible=false;"
+            "orders_heading=english;orders_grid_visible=true;alert_visible=false;"
+            "body_has_korean_order_label=false",
+        )
+        pattern_assignment = next(
+            node
+            for node in ast.parse(source).body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "SAFE_ADMIN_ORDERS_STATE_PATTERN" for target in node.targets)
+        )
+        self.assertIsNotNone(re.fullmatch(ast.literal_eval(pattern_assignment.value), diagnostic))
+        self.assertNotIn("private@example.invalid", diagnostic)
+
+    def test_view_only_orders_content_wait_retries_a_stale_dom_read(self):
+        class StaleElementReferenceException(Exception):
+            pass
+
+        class TimeoutException(Exception):
+            pass
+
+        class Wait:
+            def __init__(self, driver, timeout: int) -> None:
+                self.driver = driver
+                self.timeout = timeout
+
+            def until(self, condition):
+                for _ in range(3):
+                    result = condition(self.driver)
+                    if result:
+                        return result
+                raise TimeoutException()
+
+        class Element:
+            text = "주문 목록"
+
+        class Driver:
+            reads = 0
+
+            def find_element(self, by: str, selector: str) -> Element:
+                self.reads += 1
+                if self.reads == 1:
+                    raise StaleElementReferenceException()
+                return Element()
+
+        namespace: dict[str, object] = {
+            "WebDriverWait": Wait,
+            "TimeoutException": TimeoutException,
+            "StaleElementReferenceException": StaleElementReferenceException,
+            "By": type("By", (), {"TAG_NAME": "tag name"}),
+            "webdriver": type("Webdriver", (), {"Chrome": object}),
+        }
+        wait_for_label = load_function(ADMIN_FLOW, "wait_for_korean_orders_label", namespace)
+        driver = Driver()
+        self.assertTrue(wait_for_label(driver))
+        self.assertEqual(driver.reads, 2)
+
     def test_read_only_fixture_opens_its_allowed_settings_tab_without_granting_write_roles(self):
         fixture = FIXTURE.read_text(encoding="utf-8")
         self.assertIn("$employee->default_tab = (int) Tab::getIdFromClassName('AdminBusinessProfile');", fixture)

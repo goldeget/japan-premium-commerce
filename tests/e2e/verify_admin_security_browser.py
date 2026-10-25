@@ -17,7 +17,7 @@ from admin_locale_diagnostics import (
 )
 from shipping_admin_routes import is_korean_admin_language
 from selenium import webdriver
-from selenium.common.exceptions import StaleElementReferenceException
+from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -60,6 +60,12 @@ SAFE_ADMIN_SECURITY_RESPONSE_PATTERN = (
 SAFE_ADMIN_NAVIGATION_STATE_PATTERN = (
     r"login_form_visible=(?:true|false); current_controller=(?:AdminBusinessProfile|AdminDashboard|AdminOrders|AdminLogin|none|other); "
     r"business_profile_link_count=(?:0|[1-9][0-9]{0,3}); dashboard_link_count=(?:0|[1-9][0-9]{0,3})"
+)
+SAFE_ADMIN_ORDERS_STATE_PATTERN = (
+    r"route=AdminOrders;document_locale=(?:korean|other|missing);"
+    r"login_form_visible=(?:true|false);orders_heading=(?:korean|english|other|missing);"
+    r"orders_grid_visible=(?:true|false);alert_visible=(?:true|false);"
+    r"body_has_korean_order_label=(?:true|false)"
 )
 TOKEN_DOM_DETECTOR_JS = r"""
 function inspectInvalidTokenPage(body, responseUrl, targetUrl) {
@@ -501,6 +507,73 @@ def assert_korean_admin_locale(
         error.admin_security_locale_diagnostics = read_admin_locale_response_diagnostic(driver)
         error.admin_security_locale_navigation_diagnostics = navigation_diagnostic
         raise error
+
+
+def safe_admin_orders_state(driver: webdriver.Chrome) -> str:
+    """Classify only bounded, non-customer-specific signals from the orders page."""
+    try:
+        document_locale_value = driver.find_element(By.TAG_NAME, "html").get_attribute("lang")
+        document_locale = "korean" if is_korean_admin_language(document_locale_value or "") else "other"
+        login_form_visible = any(
+            element.is_displayed()
+            for element in driver.find_elements(By.CSS_SELECTOR, "#login_form")
+        )
+        body_text = driver.find_element(By.TAG_NAME, "body").text
+        body_has_korean_order_label = "주문" in body_text
+        heading_state = "missing"
+        for heading in driver.find_elements(By.CSS_SELECTOR, "main h1"):
+            if not heading.is_displayed():
+                continue
+            heading_text = heading.text
+            if "주문" in heading_text:
+                heading_state = "korean"
+            elif re.search(r"\border(s)?\b", heading_text, re.IGNORECASE):
+                heading_state = "english"
+            else:
+                heading_state = "other"
+            break
+        orders_grid_visible = any(
+            element.is_displayed()
+            for element in driver.find_elements(
+                By.CSS_SELECTOR,
+                "main table, main [role='grid'], main .grid-table",
+            )
+        )
+        alert_visible = any(
+            element.is_displayed()
+            for element in driver.find_elements(By.CSS_SELECTOR, "[role='alert'], .alert-danger")
+        )
+        document_locale_state = document_locale
+    except Exception:
+        document_locale_state = "missing"
+        login_form_visible = False
+        heading_state = "missing"
+        orders_grid_visible = False
+        alert_visible = False
+        body_has_korean_order_label = False
+
+    return (
+        f"route=AdminOrders;document_locale={document_locale_state};"
+        f"login_form_visible={str(login_form_visible).lower()};orders_heading={heading_state};"
+        f"orders_grid_visible={str(orders_grid_visible).lower()};"
+        f"alert_visible={str(alert_visible).lower()};"
+        f"body_has_korean_order_label={str(body_has_korean_order_label).lower()}"
+    )
+
+
+def wait_for_korean_orders_label(driver: webdriver.Chrome) -> bool:
+    """Wait for the existing Korean content requirement instead of sampling before hydration."""
+    def has_korean_order_label(browser: webdriver.Chrome) -> bool:
+        try:
+            return "주문" in browser.find_element(By.TAG_NAME, "body").text
+        except StaleElementReferenceException:
+            return False
+
+    try:
+        WebDriverWait(driver, 30).until(has_korean_order_label)
+    except TimeoutException:
+        return False
+    return True
 
 
 def read_admin_locale_response_diagnostic(driver: webdriver.Chrome) -> str:
@@ -1314,9 +1387,12 @@ def run() -> bool:
             lambda browser: _admin_controller_for_url(browser.current_url) == "AdminOrders"
         )
         assert_korean_admin_locale(restricted_driver, "view-only orders")
-        if "주문" not in restricted_driver.find_element(By.TAG_NAME, "body").text:
-            raise AssertionError("Korean locale: the orders list is missing Korean order labels")
+        orders_label_ready = wait_for_korean_orders_label(restricted_driver)
         restricted_driver.save_screenshot(str(DEST / "admin-security-view-only-orders-korean.png"))
+        if not orders_label_ready:
+            error = AssertionError("Korean locale: the orders list is missing Korean order labels")
+            error.admin_security_orders_state = safe_admin_orders_state(restricted_driver)
+            raise error
 
         stage = "view_only_employee_settings_restore"
         restricted_driver.get(restricted_settings_url)
@@ -1373,6 +1449,7 @@ def run() -> bool:
         diagnostic_locale_flags = getattr(error, "admin_security_locale_flags", None)
         diagnostic_locale_response = getattr(error, "admin_security_locale_diagnostics", None)
         diagnostic_locale_navigation = getattr(error, "admin_security_locale_navigation_diagnostics", None)
+        diagnostic_orders_state = getattr(error, "admin_security_orders_state", None)
         safe_fields = []
         safe_response = False
         if isinstance(diagnostic_locale_flags, str) and re.fullmatch(
@@ -1405,6 +1482,11 @@ def run() -> bool:
             diagnostic_navigation_state,
         ):
             safe_fields.append(f"navigation={diagnostic_navigation_state}")
+        if isinstance(diagnostic_orders_state, str) and re.fullmatch(
+            SAFE_ADMIN_ORDERS_STATE_PATTERN,
+            diagnostic_orders_state,
+        ):
+            safe_fields.append(f"orders_page={diagnostic_orders_state}")
         if isinstance(diagnostic_response, str) and (
             diagnostic_response == "not_evaluated"
             or re.fullmatch(r"classification_error:[A-Za-z][A-Za-z0-9]*", diagnostic_response)
@@ -1417,6 +1499,11 @@ def run() -> bool:
             print(f"ORDENOWA_ADMIN_SECURITY_DIAGNOSTIC={'; '.join(safe_fields)}", file=sys.stderr)
         if isinstance(diagnostic_substage, str) and re.fullmatch(r"[a-z0-9_]+", diagnostic_substage):
             print(f"ORDENOWA_ADMIN_SECURITY_SUBSTAGE={diagnostic_substage}", file=sys.stderr)
+        if isinstance(diagnostic_orders_state, str) and re.fullmatch(
+            SAFE_ADMIN_ORDERS_STATE_PATTERN,
+            diagnostic_orders_state,
+        ):
+            print(f"ORDENOWA_ADMIN_ORDERS_STATE={diagnostic_orders_state}", file=sys.stderr)
         if safe_response:
             print(f"ORDENOWA_ADMIN_SECURITY_RESPONSE={diagnostic_response}", file=sys.stderr)
         print(
