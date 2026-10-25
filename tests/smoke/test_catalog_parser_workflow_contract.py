@@ -15,6 +15,8 @@ class CatalogParserWorkflowContract(unittest.TestCase):
         self.assertIn('if php tests/catalog/run.php >"$test_log" 2>&1; then', step)
         self.assertIn('test_status=$?', step)
         self.assertIn('tail -n 80 "$test_log"', step)
+        self.assertIn('head -n 1 "$test_log" | sed -E \'s/; expected .*//; s/ in .*//\'', step)
+        self.assertNotIn('tail -n 1 "$test_log"', step)
         self.assertIn('>> "$GITHUB_STEP_SUMMARY"', step)
         self.assertIn('echo "::error title=Offline catalog parser tests::$failure_line"', step)
         self.assertIn("tests.smoke.test_catalog_parser_workflow_contract", source)
