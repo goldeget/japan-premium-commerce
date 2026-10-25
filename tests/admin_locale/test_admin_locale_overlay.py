@@ -287,11 +287,26 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertEqual([], missing_fields, f"missing bounded diagnostic fields: {missing_fields}")
         self.assertIn("$gateFields = self::diagnosticGateFields($request);", subscriber)
         self.assertIn("$gateFields['env_diagnostics'] === '1'", subscriber)
-        self.assertIn("preg_match('/\\AAdmin[A-Za-z0-9_]{1,64}\\z/D', $controllerName) === 1", subscriber)
+        self.assertIn("$gateFields['probe_header'] === '1'", subscriber)
+        self.assertIn("$gateFields['probe_controller'] === '1'", subscriber)
         self.assertIn("$isolatedCiDiagnosticEnabled = self::isIsolatedCiDiagnosticRequest($request)", subscriber)
         self.assertIn("'response_listener' => '1'", subscriber)
         self.assertNotIn("'run_id' => $runId", subscriber)
         self.assertNotIn("'project_name' =>", subscriber)
+
+    def test_admin_locale_diagnostic_response_requires_explicit_probe_header_and_controller(self) -> None:
+        subscriber = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text(encoding="utf-8")
+        normalized_subscriber = " ".join(subscriber.split())
+        self.assertIn(
+            "$diagnosticOptIn = $gateFields['env_diagnostics'] === '1'"
+            " || $gateFields['server_diagnostics'] === '1';",
+            normalized_subscriber,
+        )
+        probe_gate = normalized_subscriber.split("$diagnosticProbeEnabled =", 1)[1].split(";", 1)[0]
+        self.assertIn("$diagnosticOptIn", probe_gate)
+        self.assertIn("$gateFields['probe_header'] === '1'", probe_gate)
+        self.assertIn("$gateFields['probe_controller'] === '1'", probe_gate)
+        self.assertNotIn("$backOfficeControllerProbe", probe_gate)
 
     def test_admin_locale_diagnostic_bounds_browser_transport_metadata(self) -> None:
         from tests.e2e.admin_locale_diagnostics import parse_admin_locale_response_diagnostic

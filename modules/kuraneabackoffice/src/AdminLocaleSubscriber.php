@@ -65,17 +65,14 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
         $moduleActive = in_array(self::MODULE_NAME, $this->activeModules, true);
         $adminRoute = str_starts_with($route, 'admin_');
         $gateFields = self::diagnosticGateFields($request);
-        $controllerQueryValue = $request->query->all()['controller'] ?? null;
-        $controllerName = is_string($controllerQueryValue) ? $controllerQueryValue : '';
-        $backOfficeControllerProbe = is_string($controllerName)
-            && preg_match('/\AAdmin[A-Za-z0-9_]{1,64}\z/D', $controllerName) === 1;
+        $diagnosticOptIn = $gateFields['env_diagnostics'] === '1'
+            || $gateFields['server_diagnostics'] === '1';
         $isolatedCiDiagnosticEnabled = self::isIsolatedCiDiagnosticRequest($request)
             && $gateFields['probe_header'] === '1'
             && $gateFields['probe_controller'] === '1';
-        $diagnosticProbeEnabled = (
-            $gateFields['env_diagnostics'] === '1'
-            || $gateFields['server_diagnostics'] === '1'
-        ) && $backOfficeControllerProbe;
+        $diagnosticProbeEnabled = $diagnosticOptIn
+            && $gateFields['probe_header'] === '1'
+            && $gateFields['probe_controller'] === '1';
         $diagnosticFields = [
             'main_request' => $isMainRequest ? '1' : '0',
             'module_active' => $moduleActive ? '1' : '0',
