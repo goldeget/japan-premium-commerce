@@ -1922,6 +1922,10 @@ jobs:
               admin-security-view-only-settings-korean.png
               admin-security-view-only-dashboard-korean.png
               admin-security-view-only-orders-korean.png
+              admin-security-legacy-profile-korean.png
+              admin-security-legacy-bank-accounts-korean.png
+              admin-security-legacy-product-manager-korean.png
+              admin-security-legacy-catalog-review-korean.png
             )
           fi
           if [[ "$RESET_TOKEN_BROWSER_QA_OUTCOME" == success ]]; then

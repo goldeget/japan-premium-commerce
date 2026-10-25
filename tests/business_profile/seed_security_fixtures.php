@@ -53,8 +53,10 @@ $customers = [];
 try {
     $admin = new Employee();
     securityFixtureRequire($admin->getByEmail($adminEmail) !== false, 'The CI administrator employee could not be loaded.');
-$englishLanguageId = (int) Language::getIdByIso('en', true);
-securityFixtureRequire($englishLanguageId > 0, 'The isolated shop has no active English language for the locale test employee.');
+    $englishLanguageId = (int) Language::getIdByIso('en', true);
+    securityFixtureRequire($englishLanguageId > 0, 'The isolated shop has no active English language for the locale test employee.');
+    $admin->id_lang = $englishLanguageId;
+    securityFixtureRequire((bool) $admin->update(), 'The isolated administrator could not be set to English for legacy locale checks.');
 
     $languageNames = [];
     foreach (Language::getLanguages(false) as $language) {

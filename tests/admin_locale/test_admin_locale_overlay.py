@@ -95,17 +95,43 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertIn("getOneByLocaleOrIsoCode", source)
         self.assertIn("PRIORITY = 14", source)
 
-    def test_legacy_business_profile_header_uses_korean_context_language(self) -> None:
-        controller_path = ROOT / "modules" / "kuraneabusinessprofile" / "controllers" / "admin" / "AdminBusinessProfileController.php"
-        self.assertTrue(controller_path.is_file(), "missing legacy business-profile Back Office controller")
-        controller = controller_path.read_text(encoding="utf-8")
-        self.assertIn("public function initHeader()", controller)
-        init_header = controller.split("public function initHeader()", 1)[1].split("\n    public function initContent()", 1)[0]
-
+    def test_all_legacy_module_admin_headers_use_korean_context_language(self) -> None:
+        controller_paths = (
+            ROOT / "modules" / "kuraneabusinessprofile" / "controllers" / "admin" / "AdminBusinessProfileController.php",
+            ROOT / "modules" / "kuraneabusinessprofile" / "controllers" / "admin" / "AdminBusinessProfileBanksController.php",
+            ROOT / "modules" / "kuraneacatalog" / "controllers" / "admin" / "AdminOrdenowaProductManagerController.php",
+            ROOT / "modules" / "kuraneacatalog" / "controllers" / "admin" / "AdminKuraneaCatalogReviewController.php",
+        )
         language_assignment = "$this->context->language = new Language($koreanLanguageId);"
-        self.assertIn("Language::getIdByIso('ko', true)", init_header)
-        self.assertIn(language_assignment, init_header)
-        self.assertLess(init_header.index(language_assignment), init_header.index("parent::initHeader();"))
+        for controller_path in controller_paths:
+            with self.subTest(controller=controller_path.name):
+                self.assertTrue(controller_path.is_file(), f"missing legacy Back Office controller: {controller_path}")
+                controller = controller_path.read_text(encoding="utf-8")
+                self.assertIn("extends ModuleAdminController", controller)
+                self.assertTrue(
+                    "public function initHeader()" in controller,
+                    f"missing Korean legacy header override: {controller_path}",
+                )
+                init_header = controller.split("public function initHeader()", 1)[1].split(
+                    "\n    public function initContent()", 1
+                )[0]
+                self.assertTrue(
+                    "Language::getIdByIso('ko', true)" in init_header,
+                    f"missing Korean language lookup: {controller_path}",
+                )
+                self.assertTrue(language_assignment in init_header, f"missing context language assignment: {controller_path}")
+                self.assertLess(
+                    init_header.index(language_assignment),
+                    init_header.index("parent::initHeader();"),
+                    f"language assignment must precede the PrestaShop header: {controller_path}",
+                )
+
+    def test_admin_browser_fixture_uses_english_employee_for_legacy_locale_routes(self) -> None:
+        fixture = ROOT / "tests" / "business_profile" / "seed_security_fixtures.php"
+        self.assertTrue(fixture.is_file(), "missing isolated admin browser fixture")
+        source = fixture.read_text(encoding="utf-8")
+        self.assertIn("$admin->id_lang = $englishLanguageId;", source)
+        self.assertIn("$admin->update()", source)
 
     def test_overlay_resources_use_prestashop_translator_loader(self) -> None:
         source_path = MODULE / "src" / "AdminLocaleSubscriber.php"

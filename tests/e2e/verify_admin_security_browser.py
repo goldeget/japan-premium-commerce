@@ -287,6 +287,29 @@ def current_profile_settings_url(driver: webdriver.Chrome) -> str:
     return current_url
 
 
+def generated_admin_controller_url(driver: webdriver.Chrome, controller: str) -> str:
+    """Find a same-origin, employee-tokenized link for an installed custom controller."""
+    for link in driver.find_elements(By.CSS_SELECTOR, 'a[href*="controller="]'):
+        href = link.get_attribute("href") or ""
+        actual = urlparse(href)
+        expected = urlparse(BASE)
+        admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
+        query = parse_qs(actual.query, keep_blank_values=True)
+        if query.get("controller") != [controller]:
+            continue
+        if (actual.scheme, actual.hostname, actual.port) != (
+            expected.scheme,
+            expected.hostname,
+            expected.port,
+        ) or not actual.path.startswith(admin_path + "/"):
+            raise AssertionError(f"the generated {controller} link left the isolated Back Office")
+        tokens = query.get("token", [])
+        if len(tokens) != 1 or not tokens[0].strip():
+            raise AssertionError(f"the generated {controller} link lacks the employee-scoped admin token")
+        return href
+    raise AssertionError(f"the full administrator cannot reach the {controller} screen")
+
+
 def assert_korean_admin_locale(driver: webdriver.Chrome, route_label: str) -> None:
     document_locale = driver.find_element(By.TAG_NAME, "html").get_attribute("lang")
     if not isinstance(document_locale, str) or not is_korean_admin_language(document_locale):
@@ -980,6 +1003,26 @@ def run() -> bool:
                 original_draft_pointer,
                 f"{mode}-token",
             )
+
+        legacy_admin_screens = (
+            ("AdminBusinessProfile", admin_settings_url, "브랜드·로고", "admin-security-legacy-profile-korean.png"),
+            ("AdminBusinessProfileBanks", None, "은행 계좌", "admin-security-legacy-bank-accounts-korean.png"),
+            ("AdminOrdenowaProductManager", None, "새 상품 등록", "admin-security-legacy-product-manager-korean.png"),
+            ("AdminKuraneaCatalogReview", None, "상품 검수 대기열", "admin-security-legacy-catalog-review-korean.png"),
+        )
+        for controller, route_url, content_marker, screenshot in legacy_admin_screens:
+            stage = f"admin_legacy_{controller.lower()}_route"
+            admin_driver.get(route_url or generated_admin_controller_url(admin_driver, controller))
+            WebDriverWait(admin_driver, 30).until(
+                lambda browser: parse_qs(urlparse(browser.current_url).query).get("controller") == [controller]
+            )
+            if any(element.is_displayed() for element in admin_driver.find_elements(By.CSS_SELECTOR, "#login_form")):
+                raise AssertionError(f"the {controller} route returned to the Back Office login form")
+            if content_marker not in admin_driver.find_element(By.TAG_NAME, "body").text:
+                raise AssertionError(f"the {controller} route is missing its Korean screen marker")
+            stage = f"admin_legacy_{controller.lower()}_korean_locale"
+            assert_korean_admin_locale(admin_driver, controller)
+            admin_driver.save_screenshot(str(DEST / screenshot))
 
         stage = "view_only_employee_login"
         restricted_driver = new_driver()

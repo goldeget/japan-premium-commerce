@@ -202,6 +202,18 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertIn("assert_security_attempt_rejected(response, mode)", guarded_attempt)
         run = source.split("def run()", 1)[1].split("\n\nif __name__", 1)[0]
         self.assertIn("verify_security_attempt_without_mutation(", run)
+        for controller, screenshot_name in (
+            ("AdminBusinessProfile", "profile"),
+            ("AdminBusinessProfileBanks", "bank-accounts"),
+            ("AdminOrdenowaProductManager", "product-manager"),
+            ("AdminKuraneaCatalogReview", "catalog-review"),
+        ):
+            with self.subTest(controller=controller):
+                self.assertIn(f'"{controller}"', run)
+                self.assertIn(f"admin-security-legacy-{screenshot_name}-korean.png", run)
+        route_helper = source.split("def generated_admin_controller_url(", 1)[1].split("\n\ndef ", 1)[0]
+        self.assertIn("expected.hostname", route_helper)
+        self.assertIn("employee-scoped admin token", route_helper)
         view_only = run.split('stage = "view_only_employee_post_login_state"', 1)[1]
         route_stages = (
             'stage = "view_only_employee_settings_route"',
@@ -246,6 +258,10 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "admin-security-view-only-settings-korean.png",
             "admin-security-view-only-dashboard-korean.png",
             "admin-security-view-only-orders-korean.png",
+            "admin-security-legacy-profile-korean.png",
+            "admin-security-legacy-bank-accounts-korean.png",
+            "admin-security-legacy-product-manager-korean.png",
+            "admin-security-legacy-catalog-review-korean.png",
         ):
             self.assertIn(screenshot, source)
         self.assertLess(run.index('assert_korean_admin_locale(restricted_driver, "view-only profile settings")'), run.index('admin-security-view-only-settings-korean.png'))
