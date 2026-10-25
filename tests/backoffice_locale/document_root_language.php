@@ -33,7 +33,7 @@ $prefixedDocument = "\xEF\xBB\xBF \n<!-- first example <html lang=\"fr\"> -->\n"
     . "\n<HTML data-example='one > two' LANG='ja-JP' id=root><body>ORDENOWA</body></HTML>";
 $expectedPrefixedDocument = "\xEF\xBB\xBF \n<!-- first example <html lang=\"fr\"> -->\n"
     . '<!DOCTYPE html [<!ENTITY sample "quoted > delimiter">]>'
-    . "\n<HTML data-example='one > two' lang=\"ko-KR\" id=root><body>ORDENOWA</body></HTML>";
+    . "\n<HTML data-example='one > two' LANG=\"ko-KR\" id=root><body>ORDENOWA</body></HTML>";
 if (AdminDocumentLanguage::setRootLocale($prefixedDocument, 'ko-KR') !== $expectedPrefixedDocument) {
     fwrite(STDERR, "Leading markup, uppercase tags, and quoted delimiters must preserve the actual document root.\n");
     exit(1);
