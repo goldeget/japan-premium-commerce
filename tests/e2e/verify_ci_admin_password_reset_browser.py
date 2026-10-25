@@ -338,6 +338,167 @@ def write_safe_log(log_path: Path, stage: str, result: str) -> None:
     sys.stdout.flush()
 
 
+def redacted_admin_pathname(path: str) -> str:
+    try:
+        decoded = unquote(path or "/", errors="replace")
+    except Exception:
+        return "/"
+    segments = decoded.split("/")
+    safe_segments: list[str] = []
+    for index, segment in enumerate(segments):
+        if not segment:
+            safe_segments.append("")
+            continue
+        previous = segments[index - 1] if index else ""
+        if (
+            previous == "reset-password"
+            or re.fullmatch(r"[a-fA-F0-9]{40}", segment)
+            or re.fullmatch(r"[0-9]{5,}", segment)
+            or "@" in segment
+            or "=" in segment
+            or len(segment) > 96
+            or not re.fullmatch(r"[A-Za-z0-9._~-]{1,96}", segment)
+        ):
+            safe_segments.append("[redacted]")
+        else:
+            safe_segments.append(segment)
+    safe_path = "/".join(safe_segments)
+    if not safe_path.startswith("/"):
+        safe_path = "/" + safe_path
+    return safe_path[:1024]
+
+
+def native_reset_failure_state(
+    driver,
+    admin_login_url: str,
+    expected_reset_url: str,
+    screenshot_saved: bool,
+) -> dict[str, str]:
+    try:
+        current_url = str(driver.current_url)
+    except Exception:
+        current_url = ""
+    try:
+        actual = urlparse(current_url)
+        admin = urlparse(admin_login_url)
+        expected = urlparse(expected_reset_url)
+        same_origin = (actual.scheme, actual.hostname, actual.port) == (
+            admin.scheme,
+            admin.hostname,
+            admin.port,
+        )
+        expected_route_match = (
+            same_origin
+            and (actual.scheme, actual.hostname, actual.port)
+            == (expected.scheme, expected.hostname, expected.port)
+            and actual.path == expected.path
+        )
+        pathname = redacted_admin_pathname(actual.path or "/")
+    except (TypeError, ValueError):
+        same_origin = False
+        expected_route_match = False
+        pathname = "/"
+
+    try:
+        ready_state = driver.execute_script("return document.readyState")
+        if ready_state not in {"loading", "interactive", "complete"}:
+            ready_state = "unknown"
+    except Exception:
+        ready_state = "unknown"
+
+    try:
+        login_forms = driver.find_elements("css selector", "#login_form")
+        login_form_visible = any(form.is_displayed() for form in login_forms)
+        login_state = "true" if login_form_visible else "false"
+    except Exception:
+        login_state = "unknown"
+
+    return {
+        "same_origin": "true" if same_origin else "false",
+        "pathname": pathname,
+        "login_form_visible": login_state,
+        "document_ready": ready_state,
+        "expected_route_match": "true" if expected_route_match else "false",
+        "screenshot": "admin-password-reset-failure.png",
+        "screenshot_saved": "true" if screenshot_saved else "false",
+    }
+
+
+def format_native_reset_failure_state(state: dict[str, str]) -> str:
+    keys = (
+        "same_origin",
+        "pathname",
+        "login_form_visible",
+        "document_ready",
+        "expected_route_match",
+        "screenshot",
+        "screenshot_saved",
+    )
+    if set(state) != set(keys):
+        raise ValueError("native reset diagnostic fields do not match the safe schema")
+    if state["same_origin"] not in {"true", "false"}:
+        raise ValueError("native reset diagnostic origin state is invalid")
+    if state["login_form_visible"] not in {"true", "false", "unknown"}:
+        raise ValueError("native reset diagnostic form state is invalid")
+    if state["document_ready"] not in {"loading", "interactive", "complete", "unknown"}:
+        raise ValueError("native reset diagnostic document state is invalid")
+    if state["expected_route_match"] not in {"true", "false"}:
+        raise ValueError("native reset diagnostic route state is invalid")
+    if state["screenshot"] != "admin-password-reset-failure.png":
+        raise ValueError("native reset diagnostic screenshot name is invalid")
+    if state["screenshot_saved"] not in {"true", "false"}:
+        raise ValueError("native reset diagnostic screenshot state is invalid")
+    if not re.fullmatch(r"/[A-Za-z0-9._~+/-\[\]-]{0,1024}", state["pathname"]):
+        raise ValueError("native reset diagnostic pathname is invalid")
+    return "; ".join(f"{key}={state[key]}" for key in keys)
+
+
+def capture_native_reset_failure_diagnostic(
+    driver,
+    admin_login_url: str,
+    expected_reset_url: str,
+    artifact_dir: Path,
+) -> dict[str, str]:
+    screenshot_path = artifact_dir / "admin-password-reset-failure.png"
+    try:
+        screenshot_saved = bool(driver.save_screenshot(str(screenshot_path)))
+    except Exception:
+        screenshot_saved = False
+    state = native_reset_failure_state(
+        driver,
+        admin_login_url,
+        expected_reset_url,
+        screenshot_saved,
+    )
+    diagnostic = format_native_reset_failure_state(state)
+    sys.stdout.write(f"ORDENOWA_ADMIN_RESET_FAILURE={diagnostic}\n")
+    annotation = diagnostic.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    sys.stdout.write(f"::error title=ORDENOWA native reset form diagnostics::{annotation}\n")
+    sys.stdout.flush()
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
+    if summary_path:
+        try:
+            with Path(summary_path).open("a", encoding="utf-8") as summary:
+                summary.write("ORDENOWA native reset form failure: " + diagnostic + "\n")
+        except OSError:
+            pass
+    return state
+
+
+def should_capture_native_reset_diagnostic(
+    stage: str,
+    error: Exception,
+    driver,
+    expected_reset_url: str | None,
+) -> bool:
+    return (
+        stage == "native_reset_form"
+        and isinstance(error, Exception)
+        and driver is not None
+        and bool(expected_reset_url)
+    )
+
+
 def run() -> bool:
     try:
         config = validate_isolated_environment(dict(os.environ))
@@ -359,6 +520,7 @@ def run() -> bool:
     log_path.write_text("", encoding="utf-8")
     driver = None
     stage = "browser_start"
+    reset_url: str | None = None
     succeeded = False
     try:
         admin_password = os.environ["ADMIN_PASSWD"]
@@ -436,6 +598,21 @@ def run() -> bool:
         error_type = type(error).__name__
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", error_type):
             error_type = "Exception"
+        if should_capture_native_reset_diagnostic(stage, error, driver, reset_url):
+            try:
+                capture_native_reset_failure_diagnostic(
+                    driver,
+                    admin_login_url,
+                    reset_url,
+                    dest,
+                )
+            except Exception:
+                sys.stdout.write(
+                    "ORDENOWA_ADMIN_RESET_FAILURE=same_origin=false; pathname=/; "
+                    "login_form_visible=unknown; document_ready=unknown; "
+                    "expected_route_match=false; screenshot=admin-password-reset-failure.png; "
+                    "screenshot_saved=false\n"
+                )
         try:
             write_safe_log(log_path, stage, "failed")
         except Exception:

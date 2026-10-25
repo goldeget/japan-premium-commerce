@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import importlib.util
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -23,6 +27,118 @@ def load_script():
 
 
 class AdminPasswordResetContractTests(unittest.TestCase):
+    def test_native_reset_failure_gate_accepts_assertion_and_non_assertion_errors(self):
+        module = load_script()
+        self.assertTrue(
+            hasattr(module, "should_capture_native_reset_diagnostic"),
+            "native reset form diagnostics must not filter caught failures by exception subtype",
+        )
+        expected_url = "http://localhost:18080/admin-kuranea/index.php/reset-password/" + ("a" * 40)
+        for error in (AssertionError("safe"), ValueError("safe"), TimeoutError("safe")):
+            with self.subTest(error_type=type(error).__name__):
+                self.assertTrue(
+                    module.should_capture_native_reset_diagnostic(
+                        "native_reset_form",
+                        error,
+                        object(),
+                        expected_url,
+                    )
+                )
+        self.assertFalse(
+            module.should_capture_native_reset_diagnostic(
+                "old_password_rejected",
+                ValueError("safe"),
+                object(),
+                expected_url,
+            )
+        )
+
+    def test_native_reset_assertion_diagnostic_redacts_url_and_records_safe_state(self):
+        module = load_script()
+        self.assertTrue(
+            hasattr(module, "capture_native_reset_failure_diagnostic"),
+            "native reset form assertions must save and report bounded diagnostics before browser cleanup",
+        )
+
+        reset_token = "a" * 40
+        expected_url = (
+            "http://localhost:18080/admin-kuranea/index.php/reset-password/"
+            + reset_token
+        )
+
+        class LoginForm:
+            def is_displayed(self):
+                return False
+
+        class Driver:
+            def __init__(self, screenshot_path: Path, current_url: str):
+                self.screenshot_path = screenshot_path
+                self.current_url = current_url
+
+            def save_screenshot(self, filename: str) -> bool:
+                self.screenshot_path = Path(filename)
+                self.screenshot_path.write_bytes(b"synthetic screenshot")
+                return True
+
+            def execute_script(self, script: str) -> str:
+                self.assert_ready_query = script == "return document.readyState"
+                return "complete"
+
+            def find_elements(self, by: str, selector: str) -> list[LoginForm]:
+                return [LoginForm()] if selector == "#login_form" else []
+
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            summary = directory / "step-summary.md"
+            screenshot = directory / "not-used.png"
+            driver = Driver(
+                screenshot,
+                expected_url + "?token=query-secret&customer=private-id",
+            )
+            output = StringIO()
+            with patch.dict("os.environ", {"GITHUB_STEP_SUMMARY": str(summary)}), redirect_stdout(output):
+                state = module.capture_native_reset_failure_diagnostic(
+                    driver,
+                    "http://localhost:18080/admin-kuranea",
+                    expected_url,
+                    directory,
+                )
+
+            expected_state = {
+                "same_origin": "true",
+                "pathname": "/admin-kuranea/index.php/reset-password/[redacted]",
+                "login_form_visible": "false",
+                "document_ready": "complete",
+                "expected_route_match": "true",
+                "screenshot": "admin-password-reset-failure.png",
+                "screenshot_saved": "true",
+            }
+            self.assertEqual(state, expected_state)
+            self.assertTrue((directory / "admin-password-reset-failure.png").is_file())
+            self.assertEqual(driver.screenshot_path.name, "admin-password-reset-failure.png")
+
+            published = output.getvalue() + summary.read_text(encoding="utf-8")
+            for value in ("same_origin=true", "document_ready=complete", "expected_route_match=true"):
+                self.assertIn(value, published)
+            self.assertIn("::error title=ORDENOWA native reset form diagnostics::", published)
+            self.assertIn("admin-password-reset-failure.png", published)
+            for secret in (reset_token, "query-secret", "private-id", "http://localhost:18080"):
+                self.assertNotIn(secret, published)
+
+    def test_native_reset_diagnostic_is_emitted_before_driver_quit(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        run = source.split("def run() -> bool:", 1)[1].split("\n\nif __name__", 1)[0]
+        exception_handler = run[run.rindex("except Exception as error:") :].split("finally:", 1)[0]
+        self.assertIn("should_capture_native_reset_diagnostic(stage, error, driver, reset_url)", exception_handler)
+        self.assertNotIn("isinstance(error, AssertionError)", exception_handler)
+        self.assertIn("error_type = type(error).__name__", exception_handler)
+        self.assertNotIn("str(error)", exception_handler)
+        self.assertIn("capture_native_reset_failure_diagnostic(", exception_handler)
+        self.assertLess(
+            exception_handler.index("capture_native_reset_failure_diagnostic("),
+            run.index("driver.quit()"),
+        )
+
     def test_artifacts_are_confined_to_the_actions_runner_temp_directory(self):
         module = load_script()
         self.assertTrue(
