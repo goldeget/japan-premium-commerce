@@ -82,9 +82,16 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         compose = COMPOSE.read_text(encoding="utf-8")
         overlay = (ROOT / "tests" / "fixtures" / "ci-checkout.compose.yaml").read_text(encoding="utf-8")
-        self.assertIn('CI: "false"', compose)
-        self.assertIn('GITHUB_ACTIONS: "false"', compose)
-        self.assertIn('KURANEA_ISOLATED_CI: "0"', compose)
+        for default in (
+            'CI: ${CI:-false}',
+            'GITHUB_ACTIONS: ${GITHUB_ACTIONS:-false}',
+            'GITHUB_RUN_ID: ${GITHUB_RUN_ID:-}',
+            'GITHUB_RUN_ATTEMPT: ${GITHUB_RUN_ATTEMPT:-}',
+            'KURANEA_ISOLATED_CI: ${KURANEA_ISOLATED_CI:-0}',
+            'KURANEA_CI_PROJECT_NAME: ${CI_COMPOSE_PROJECT_NAME:-}',
+        ):
+            with self.subTest(default=default):
+                self.assertIn(default, compose)
         self.assertIn('CI: "true"', overlay)
         self.assertIn('GITHUB_ACTIONS: "true"', overlay)
         self.assertIn("GITHUB_RUN_ID:", overlay)
@@ -250,7 +257,12 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         for variable, (_, aggregate_name) in required_checkout.items():
             for outcome in ("skipped", ""):
                 with self.subTest(variable=variable, outcome=outcome):
-                    case_environment = {**os.environ, **environment, variable: outcome}
+                    case_environment = {
+                        **os.environ,
+                        **environment,
+                        variable: outcome,
+                        "SECURITY_ADMIN_LOCALE_MUTATED": "",
+                    }
                     result = subprocess.run(
                         ["bash", "-c", script],
                         env=case_environment,
