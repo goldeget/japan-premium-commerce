@@ -169,7 +169,7 @@ create_restore_service() {
   local stderr_path="$snapshot_dir/compose-create-${service}.stderr"
   local create_status
 
-  if docker compose -p "$restore_project" create --no-deps "$service" >"$stdout_path" 2>"$stderr_path"; then
+  if docker compose -p "$restore_project" create "$service" >"$stdout_path" 2>"$stderr_path"; then
     return 0
   else
     create_status=$?

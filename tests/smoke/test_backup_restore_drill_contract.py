@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -113,6 +114,19 @@ class BackupRestoreDrillContractTests(unittest.TestCase):
         self.assertLess(app_volume, queue_volume)
         self.assertLess(queue_volume, start_database)
         self.assertLess(start_database, clear_target_files)
+
+    def test_restore_create_uses_supported_compose_238_arguments(self) -> None:
+        source = SCRIPT.read_text(encoding="utf-8")
+        helper = source.split("create_restore_service() {", 1)[1].split("\n}", 1)[0]
+        command = next(line.strip() for line in helper.splitlines() if line.strip().startswith("if docker compose "))
+        arguments = shlex.split(command.split(' >"$stdout_path"', 1)[0])[1:]
+
+        self.assertEqual(arguments[:5], ["docker", "compose", "-p", "$restore_project", "create"])
+        self.assertIn("$service", arguments[5:])
+        self.assertNotIn(
+            "--no-deps", arguments[5:],
+            "Compose 2.38.2 create does not support --no-deps (unlike up and run)",
+        )
 
     def test_restore_create_error_reports_service_and_both_safe_stream_categories(self) -> None:
         self.assertTrue(DIAGNOSTICS.is_file(), "restore container failure needs a dedicated safe classifier")
