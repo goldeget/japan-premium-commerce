@@ -84,6 +84,8 @@ if (!Validate::isLoadedObject($sourceCustomer)
     throw new RuntimeException('The fixture source must be the second, mobile, run-scoped ps_checkpayment browser order.');
 }
 
+$context->language = new Language((int) $sourceOrder->id_lang);
+$context->currency = new Currency((int) $sourceOrder->id_currency);
 $sourceProducts = $sourceOrder->getProducts();
 if (!is_array($sourceProducts) || count($sourceProducts) !== 1) {
     throw new RuntimeException('The mobile fixture source must contain exactly one product line.');

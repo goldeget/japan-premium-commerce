@@ -142,6 +142,9 @@ $loadTestOrder = static function (int $orderId, string $role) use ($runScopedEma
         throw new RuntimeException(sprintf('The supplied %s order is not an offline ps_checkpayment order.', $role));
     }
 
+    $context = Context::getContext();
+    $context->language = new Language((int) $order->id_lang);
+    $context->currency = new Currency((int) $order->id_currency);
     $products = $order->getProducts();
     if (!is_array($products) || count($products) !== 1) {
         throw new RuntimeException(sprintf('The supplied %s order must contain one test product line.', $role));
@@ -156,10 +159,6 @@ $loadTestOrder = static function (int $orderId, string $role) use ($runScopedEma
     ) {
         throw new RuntimeException(sprintf('The supplied %s order is not a single-unit run-scoped CI product order.', $role));
     }
-
-    $context = Context::getContext();
-    $context->language = new Language((int) $order->id_lang);
-    $context->currency = new Currency((int) $order->id_currency);
 
     return [$order, $customer, $products];
 };

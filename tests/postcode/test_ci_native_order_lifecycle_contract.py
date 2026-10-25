@@ -98,6 +98,27 @@ class CiNativeOrderLifecycleContractTests(unittest.TestCase):
         self.assertNotIn("changeIdOrderState($paymentStateId", source)
         self.assertNotIn("changeIdOrderState($webservicePaymentStateId", source)
 
+    def test_order_product_readbacks_initialize_language_and_currency_before_price_formatting(self) -> None:
+        preparer = PREPARER.read_text(encoding="utf-8")
+        source_order_readback = preparer.index("$sourceProducts = $sourceOrder->getProducts();")
+        for assignment in (
+            "$context->language = new Language((int) $sourceOrder->id_lang);",
+            "$context->currency = new Currency((int) $sourceOrder->id_currency);",
+        ):
+            with self.subTest(assignment=assignment):
+                self.assertIn(assignment, preparer)
+                self.assertLess(preparer.index(assignment), source_order_readback)
+
+        load_test_order = self.source.split("$loadTestOrder = static function", 1)[1].split("return [$order, $customer, $products];", 1)[0]
+        product_readback = load_test_order.index("$products = $order->getProducts();")
+        for assignment in (
+            "$context->language = new Language((int) $order->id_lang);",
+            "$context->currency = new Currency((int) $order->id_currency);",
+        ):
+            with self.subTest(assignment=assignment):
+                self.assertIn(assignment, load_test_order)
+                self.assertLess(load_test_order.index(assignment), product_readback)
+
     def test_returns_configuration_is_run_scoped_and_restored_by_verifier_shutdown(self) -> None:
         if not PREPARER.is_file():
             self.fail("the CI-only native order lifecycle fixture preparer is missing")
