@@ -111,6 +111,12 @@ class CiAdminOrderStatusContractTests(unittest.TestCase):
         self.assertLess(submit_stage, submit_form)
         self.assertLess(submit_form, submit_button)
 
+        persisted_wait = helper.split(
+            '_mark_checkout_stage(stage_callback, "history.persisted_wait")', 1
+        )[1]
+        self.assertContains(persisted_wait, "ignored_exceptions=(StaleElementReferenceException,)")
+        self.assertContains(persisted_wait, ".until(latest_history_is_cancelled)")
+
     def test_lifecycle_verifier_checks_ui_cancellation_without_mutating_status(self) -> None:
         for required in (
             "SELECT `id_order_state`, `id_employee` FROM `",

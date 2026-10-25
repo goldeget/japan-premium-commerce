@@ -1849,7 +1849,11 @@ def cancel_unpaid_desktop_order_through_admin(
         return latest_status.strip() == cancelled_label
 
     _mark_checkout_stage(stage_callback, "history.persisted_wait")
-    WebDriverWait(driver, 35).until(latest_history_is_cancelled)
+    WebDriverWait(
+        driver,
+        35,
+        ignored_exceptions=(StaleElementReferenceException,),
+    ).until(latest_history_is_cancelled)
     print(
         f"PASS: native Back Office status form canceled unpaid desktop order {order['reference']} "
         "and displayed the native cancellation status as the latest history entry"
