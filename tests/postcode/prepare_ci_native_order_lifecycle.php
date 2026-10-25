@@ -65,6 +65,95 @@ $context->employee = new Employee(1);
 if (!Validate::isLoadedObject($context->employee)) {
     throw new RuntimeException('The isolated Back Office employee could not be loaded.');
 }
+$readPaymentLedgerBoundary = static function (Order $order): array {
+    $invoiceCount = -1;
+    $invoicePaymentAssociationCount = -1;
+    $paymentCollectionCount = -1;
+    $paymentQueryAvailable = false;
+    $paymentRow = false;
+    try {
+        $value = Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'order_invoice` WHERE `id_order` = ' . (int) $order->id
+        );
+        if (is_numeric($value)) {
+            $invoiceCount = min(9, max(0, (int) $value));
+        }
+    } catch (Throwable $diagnosticException) {
+        $invoiceCount = -1;
+    }
+    try {
+        $value = Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'order_invoice_payment` WHERE `id_order` = ' . (int) $order->id
+        );
+        if (is_numeric($value)) {
+            $invoicePaymentAssociationCount = min(9, max(0, (int) $value));
+        }
+    } catch (Throwable $diagnosticException) {
+        $invoicePaymentAssociationCount = -1;
+    }
+    try {
+        $paymentCollectionCount = min(9, max(0, $order->getOrderPaymentCollection()->count()));
+    } catch (Throwable $diagnosticException) {
+        $paymentCollectionCount = -1;
+    }
+    try {
+        $paymentRow = Db::getInstance()->getRow(
+            'SELECT op.`id_order_payment`, op.`order_reference` FROM `' . _DB_PREFIX_ . 'order_payment` op'
+            . ' INNER JOIN `' . _DB_PREFIX_ . 'order_invoice_payment` oip ON oip.`id_order_payment` = op.`id_order_payment`'
+            . ' WHERE oip.`id_order` = ' . (int) $order->id
+            . ' ORDER BY op.`id_order_payment` DESC LIMIT 1'
+        );
+        $paymentQueryAvailable = true;
+    } catch (Throwable $diagnosticException) {
+        $paymentRow = false;
+    }
+    $payment = false;
+    try {
+        $payment = is_array($paymentRow)
+            ? new OrderPayment((int) ($paymentRow['id_order_payment'] ?? 0))
+            : false;
+    } catch (Throwable $diagnosticException) {
+        $payment = false;
+    }
+    $paymentLoaded = $payment instanceof OrderPayment && Validate::isLoadedObject($payment);
+
+    return [
+        'invoice_count' => $invoiceCount,
+        'invoice_payment_association_count' => $invoicePaymentAssociationCount,
+        'payment_collection_count' => $paymentCollectionCount,
+        'payment_query_available' => $paymentQueryAvailable,
+        'payment_row_found' => is_array($paymentRow),
+        'payment_loaded' => $paymentLoaded,
+        'order_reference_matches' => $paymentLoaded
+            && (string) $payment->order_reference === (string) $order->reference,
+        'amount_positive' => $paymentLoaded && (float) $payment->amount > 0.0,
+        'payment_row' => $paymentRow,
+        'payment' => $payment,
+    ];
+};
+$formatPaymentLedgerBoundary = static function (string $prefix, array $boundary): string {
+    $formatCount = static fn (int $count): string => $count < 0 ? 'unavailable' : (string) $count;
+
+    return sprintf(
+        '%s_invoice_count=%s; %s_invoice_payment_association_count=%s; %s_payment_collection_count=%s; %s_payment_query_available=%d; %s_payment_row_found=%d; %s_payment_loaded=%d; %s_order_reference_matches=%d; %s_amount_positive=%d',
+        $prefix,
+        $formatCount((int) ($boundary['invoice_count'] ?? -1)),
+        $prefix,
+        $formatCount((int) ($boundary['invoice_payment_association_count'] ?? -1)),
+        $prefix,
+        $formatCount((int) ($boundary['payment_collection_count'] ?? -1)),
+        $prefix,
+        !empty($boundary['payment_query_available']) ? 1 : 0,
+        $prefix,
+        !empty($boundary['payment_row_found']) ? 1 : 0,
+        $prefix,
+        !empty($boundary['payment_loaded']) ? 1 : 0,
+        $prefix,
+        !empty($boundary['order_reference_matches']) ? 1 : 0,
+        $prefix,
+        !empty($boundary['amount_positive']) ? 1 : 0
+    );
+};
 
 $stage = 'second run-scoped offline browser order preflight';
 $sourceOrder = new Order($sourceOrderId);
@@ -232,6 +321,16 @@ if (!$sourceOrder->addOrderPayment(
     throw new RuntimeException('PrestaShop could not create the synthetic CI payment through the native order model.');
 }
 
+$stage = 'read native payment ledger before status transition';
+$preTransitionLedger = $readPaymentLedgerBoundary($sourceOrder);
+$safeDiagnostic = $formatPaymentLedgerBoundary('pre_transition', $preTransitionLedger);
+if (empty($preTransitionLedger['payment_loaded'])
+    || empty($preTransitionLedger['order_reference_matches'])
+    || empty($preTransitionLedger['amount_positive'])
+) {
+    throw new RuntimeException('The native order API did not immediately persist a valid invoice-linked payment ledger row.');
+}
+
 $stage = 'native synthetic paid-like state transition';
 $history = new OrderHistory();
 $history->id_order = (int) $sourceOrder->id;
@@ -257,54 +356,16 @@ if (!Validate::isLoadedObject($preparedOrder)
 }
 
 $stage = 'load native invoice payment association';
-$paymentRow = Db::getInstance()->getRow(
-    'SELECT op.`id_order_payment`, op.`order_reference` FROM `' . _DB_PREFIX_ . 'order_payment` op'
-    . ' INNER JOIN `' . _DB_PREFIX_ . 'order_invoice_payment` oip ON oip.`id_order_payment` = op.`id_order_payment`'
-    . ' WHERE oip.`id_order` = ' . (int) $preparedOrder->id
-    . ' ORDER BY op.`id_order_payment` DESC LIMIT 1'
-);
-$payment = is_array($paymentRow) ? new OrderPayment((int) ($paymentRow['id_order_payment'] ?? 0)) : false;
+$postTransitionLedger = $readPaymentLedgerBoundary($preparedOrder);
+$safeDiagnostic = $formatPaymentLedgerBoundary('pre_transition', $preTransitionLedger)
+    . '; '
+    . $formatPaymentLedgerBoundary('post_transition', $postTransitionLedger);
+$payment = $postTransitionLedger['payment'];
 $stage = 'validate native payment ledger row';
-$paymentLoaded = $payment instanceof OrderPayment && Validate::isLoadedObject($payment);
-$orderReferenceMatches = $paymentLoaded
-    && (string) $payment->order_reference === (string) $preparedOrder->reference;
-$amountIsPositive = $paymentLoaded && (float) $payment->amount > 0.0;
+$paymentLoaded = !empty($postTransitionLedger['payment_loaded']);
+$orderReferenceMatches = !empty($postTransitionLedger['order_reference_matches']);
+$amountIsPositive = !empty($postTransitionLedger['amount_positive']);
 if (!$paymentLoaded || !$orderReferenceMatches || !$amountIsPositive) {
-    $invoiceCount = -1;
-    $invoicePaymentAssociationCount = -1;
-    try {
-        $invoiceCountValue = Db::getInstance()->getValue(
-            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'order_invoice` WHERE `id_order` = ' . (int) $preparedOrder->id
-        );
-        if (!is_numeric($invoiceCountValue)) {
-            throw new RuntimeException('The isolated invoice count was unavailable.');
-        }
-        $invoiceCount = (int) $invoiceCountValue;
-        $invoiceCount = min(9, max(0, $invoiceCount));
-    } catch (Throwable $diagnosticException) {
-        $invoiceCount = -1;
-    }
-    try {
-        $invoicePaymentAssociationCountValue = Db::getInstance()->getValue(
-            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'order_invoice_payment` WHERE `id_order` = ' . (int) $preparedOrder->id
-        );
-        if (!is_numeric($invoicePaymentAssociationCountValue)) {
-            throw new RuntimeException('The isolated invoice-payment association count was unavailable.');
-        }
-        $invoicePaymentAssociationCount = (int) $invoicePaymentAssociationCountValue;
-        $invoicePaymentAssociationCount = min(9, max(0, $invoicePaymentAssociationCount));
-    } catch (Throwable $diagnosticException) {
-        $invoicePaymentAssociationCount = -1;
-    }
-    $safeDiagnostic = sprintf(
-        'invoice_count=%s; invoice_payment_association_count=%s; payment_row_found=%d; payment_loaded=%d; order_reference_matches=%d; amount_positive=%d',
-        $invoiceCount < 0 ? 'unavailable' : (string) $invoiceCount,
-        $invoicePaymentAssociationCount < 0 ? 'unavailable' : (string) $invoicePaymentAssociationCount,
-        is_array($paymentRow) ? 1 : 0,
-        $paymentLoaded ? 1 : 0,
-        $orderReferenceMatches ? 1 : 0,
-        $amountIsPositive ? 1 : 0
-    );
     throw new RuntimeException('The native state transition did not create an order-linked payment ledger row.');
 }
 $stage = 'label native payment ledger as synthetic';

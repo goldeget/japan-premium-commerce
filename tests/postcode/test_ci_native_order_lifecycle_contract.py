@@ -130,6 +130,46 @@ class CiNativeOrderLifecycleContractTests(unittest.TestCase):
         self.assertIn("synthetic CI-only", source)
         self.assertNotRegex(source, r"Db::getInstance\(\)->insert\s*\(")
 
+    def test_native_payment_write_is_read_back_at_both_state_transition_boundaries(self) -> None:
+        source = PREPARER.read_text(encoding="utf-8")
+        required_reads = (
+            "$preTransitionLedger = $readPaymentLedgerBoundary($sourceOrder);",
+            "$postTransitionLedger = $readPaymentLedgerBoundary($preparedOrder);",
+        )
+        missing_reads = [required for required in required_reads if required not in source]
+        self.assertFalse(
+            missing_reads,
+            f"the fixture must read back the native ledger before and after status transition: {missing_reads}",
+        )
+        if missing_reads:
+            return
+
+        payment_write = source.index("$sourceOrder->addOrderPayment(")
+        pre_transition_readback = source.index(required_reads[0], payment_write)
+        pre_transition_validation = source.index("if (empty($preTransitionLedger['payment_loaded'])", pre_transition_readback)
+        state_transition = source.index("$history->changeIdOrderState($deliveredStateId, $sourceOrder);")
+        post_transition_readback = source.index(required_reads[1], state_transition)
+        final_ledger_validation = source.index("$stage = 'validate native payment ledger row';", post_transition_readback)
+
+        self.assertLess(payment_write, pre_transition_readback)
+        self.assertLess(pre_transition_readback, pre_transition_validation)
+        self.assertLess(pre_transition_validation, state_transition)
+        self.assertLess(state_transition, post_transition_readback)
+        self.assertLess(post_transition_readback, final_ledger_validation)
+        self.assertIn("$formatPaymentLedgerBoundary('pre_transition', $preTransitionLedger)", source)
+        self.assertIn("$formatPaymentLedgerBoundary('post_transition', $postTransitionLedger)", source)
+        for field in (
+            "invoice_count",
+            "invoice_payment_association_count",
+            "payment_collection_count",
+            "payment_row_found",
+            "payment_loaded",
+            "order_reference_matches",
+            "amount_positive",
+        ):
+            with self.subTest(field=field):
+                self.assertIn("'" + field + "'", source)
+
     def test_order_product_readbacks_initialize_language_and_currency_before_price_formatting(self) -> None:
         preparer = PREPARER.read_text(encoding="utf-8")
         source_order_readback = preparer.index("$sourceProducts = $sourceOrder->getProducts();")
@@ -174,9 +214,12 @@ class CiNativeOrderLifecycleContractTests(unittest.TestCase):
 
     def test_failed_payment_ledger_predicate_emits_bounded_safe_diagnostics(self) -> None:
         preparer = PREPARER.read_text(encoding="utf-8")
-        diagnostic_block = preparer.split(
-            "$stage = 'validate native payment ledger row';", 1
-        )[1].split("$stage = 'label native payment ledger as synthetic';", 1)[0]
+        pre_transition_diagnostic = preparer.split(
+            "$preTransitionLedger = $readPaymentLedgerBoundary($sourceOrder);", 1
+        )[1].split("$stage = 'native synthetic paid-like state transition';", 1)[0]
+        post_transition_diagnostic = preparer.split(
+            "$postTransitionLedger = $readPaymentLedgerBoundary($preparedOrder);", 1
+        )[1].split("$stage = 'validate native payment ledger row';", 1)[0]
 
         for required in (
             "payment_row_found=",
@@ -185,16 +228,20 @@ class CiNativeOrderLifecycleContractTests(unittest.TestCase):
             "amount_positive=",
             "invoice_count=",
             "invoice_payment_association_count=",
+            "payment_collection_count=",
+            "payment_query_available=",
             "min(9, max(0,",
-            "is_numeric($invoiceCountValue)",
-            "is_numeric($invoicePaymentAssociationCountValue)",
+            "is_numeric($value)",
             "use (&$stage, &$safeDiagnostic)",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, preparer)
 
-        self.assertIn("$safeDiagnostic", diagnostic_block)
-        safe_output = diagnostic_block.split("$safeDiagnostic = sprintf(", 1)[1].split(");", 1)[0]
+        self.assertIn("$safeDiagnostic", pre_transition_diagnostic)
+        self.assertIn("$safeDiagnostic", post_transition_diagnostic)
+        safe_output = preparer.split(
+            "$formatPaymentLedgerBoundary = static function", 1
+        )[1].split("};", 1)[0]
         for forbidden_value in (
             "$payment->reference",
             "$payment->amount",
