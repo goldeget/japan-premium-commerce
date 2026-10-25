@@ -333,9 +333,23 @@ def read_admin_locale_response_diagnostic(driver: webdriver.Chrome) -> str:
               credentials: "same-origin",
               redirect: "manual",
               headers: {"X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC": "1"}
-            }).then(response => done(response.type === "opaqueredirect"
-              ? "redirect=opaque"
-              : response.headers.get("X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC")))
+            }).then(response => {
+              const requestUrl = new URL(window.location.href);
+              let sameRoute = false;
+              try {
+                const responseUrl = new URL(response.url);
+                sameRoute = responseUrl.origin === requestUrl.origin
+                  && responseUrl.pathname === requestUrl.pathname
+                  && requestUrl.searchParams.get("controller") === "AdminBusinessProfile"
+                  && responseUrl.searchParams.get("controller") === "AdminBusinessProfile";
+              } catch (_) {
+                // Keep URL details private; the safe boolean below records only the comparison.
+              }
+              const diagnosticHeader = response.type === "opaqueredirect"
+                ? "redirect=opaque"
+                : response.headers.get("X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC") || "missing";
+              done(`${diagnosticHeader};browser_status=${response.status};browser_type=${response.type};browser_redirected=${response.redirected};browser_same_route=${sameRoute}`);
+            })
               .catch(error => done(`unavailable:${error.name}`));
             """
         )

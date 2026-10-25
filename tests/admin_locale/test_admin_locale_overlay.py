@@ -188,13 +188,16 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
 
         self.assertIn("X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC", subscriber)
         self.assertIn("$request->headers->get('X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC') === '1'", subscriber)
-        self.assertIn("$request->query->get('controller') === 'AdminBusinessProfile'", subscriber)
+        self.assertIn("$controllerQueryValue === 'AdminBusinessProfile'", subscriber)
         self.assertIn("self::isIsolatedCiDiagnosticRequest($request)", subscriber)
         for guard in (
             "$request->server->get('CI') === 'true'",
             "$request->server->get('GITHUB_ACTIONS') === 'true'",
             "$request->server->get('KURANEA_ADMIN_LOCALE_DIAGNOSTICS') === '1'",
-            "$request->server->get('KURANEA_CI_PROJECT_NAME') === $expectedProjectName",
+            "$request->server->get('KURANEA_CI_PROJECT_NAME')",
+            "'kuranea-ci-' . $serverRunId . '-' . $serverRunAttempt",
+            "preg_match('/\\A[0-9]+\\z/D', $serverRunId)",
+            "preg_match('/\\A[0-9]+\\z/D', $serverRunAttempt)",
         ):
             with self.subTest(guard=guard):
                 self.assertIn(guard, subscriber)
@@ -249,6 +252,9 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         valid = (
             "stage=rewritten;main_request=1;module_active=1;admin_route=1;is_redirect=0;http_status=200;"
             "is_html=1;body_present=1;html_tags=1;html_replacements=1;lang_before=other;lang_after=korean;rewritten=1"
+            ";response_listener=1;probe_header=1;probe_controller=1;server_ci=1;server_actions=1;"
+            "server_run_id_valid=1;server_run_attempt_valid=1;server_diagnostics=1;server_project_match=1;"
+            "env_ci=1;env_actions=1;env_run_id_valid=1;env_run_attempt_valid=1;env_diagnostics=1;env_project_match=1"
         )
 
         self.assertIsNotNone(re.fullmatch(pattern, valid))
@@ -257,6 +263,69 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertIsNotNone(re.fullmatch(pattern, "unavailable:invalid_diagnostic"))
         self.assertIsNone(re.fullmatch(pattern, valid.replace("main_request=1", "request_url=https://secret.invalid")))
         self.assertEqual(parse_admin_locale_response_diagnostic(None), "unavailable:missing_header")
+
+    def test_admin_locale_diagnostic_reports_safe_listener_and_gate_boundaries(self) -> None:
+        subscriber = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text(encoding="utf-8")
+        required_fields = (
+            "response_listener",
+            "probe_header",
+            "probe_controller",
+            "server_ci",
+            "server_actions",
+            "server_run_id_valid",
+            "server_run_attempt_valid",
+            "server_diagnostics",
+            "server_project_match",
+            "env_ci",
+            "env_actions",
+            "env_run_id_valid",
+            "env_run_attempt_valid",
+            "env_diagnostics",
+            "env_project_match",
+        )
+        missing_fields = [field for field in required_fields if field not in subscriber]
+        self.assertEqual([], missing_fields, f"missing bounded diagnostic fields: {missing_fields}")
+        self.assertIn("$gateFields = self::diagnosticGateFields($request);", subscriber)
+        self.assertIn("$gateFields['env_diagnostics'] === '1'", subscriber)
+        self.assertIn("preg_match('/\\AAdmin[A-Za-z0-9_]{1,64}\\z/D', $controllerName) === 1", subscriber)
+        self.assertIn("$isolatedCiDiagnosticEnabled = self::isIsolatedCiDiagnosticRequest($request)", subscriber)
+        self.assertIn("'response_listener' => '1'", subscriber)
+        self.assertNotIn("'run_id' => $runId", subscriber)
+        self.assertNotIn("'project_name' =>", subscriber)
+
+    def test_admin_locale_diagnostic_bounds_browser_transport_metadata(self) -> None:
+        from tests.e2e.admin_locale_diagnostics import parse_admin_locale_response_diagnostic
+
+        parsed = parse_admin_locale_response_diagnostic(
+            "missing;browser_status=200;browser_type=basic;"
+            "browser_redirected=false;browser_same_route=true"
+        )
+        self.assertEqual(
+            "unavailable:missing_header;browser_status=200;browser_type=basic;"
+            "browser_redirected=false;browser_same_route=true",
+            parsed,
+        )
+
+        invalid = parse_admin_locale_response_diagnostic(
+            "secret-token=do-not-log;browser_status=https://private.invalid/path?token=secret;"
+            "browser_type=basic;browser_redirected=false;browser_same_route=true"
+        )
+        self.assertEqual(
+            "unavailable:invalid_diagnostic;browser_status=unknown;browser_type=basic;"
+            "browser_redirected=false;browser_same_route=true",
+            invalid,
+        )
+
+        browser = (ROOT / "tests" / "e2e" / "verify_admin_security_browser.py").read_text(encoding="utf-8")
+        self.assertIn("browser_status=", browser)
+        self.assertIn("browser_type=", browser)
+        self.assertIn("browser_redirected=", browser)
+        self.assertIn("browser_same_route=", browser)
+        self.assertIn('response.headers.get("X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC")', browser)
+        self.assertIn("response.status", browser)
+        self.assertIn("response.type", browser)
+        self.assertIn("response.redirected", browser)
+        self.assertIn("response.url", browser)
 
     def test_security_fixture_restores_primary_employee_language_before_restart_check(self) -> None:
         restore_path = ROOT / "tests" / "business_profile" / "restore_ci_admin_locale.php"

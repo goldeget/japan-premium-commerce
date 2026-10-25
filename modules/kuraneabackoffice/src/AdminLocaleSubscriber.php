@@ -64,9 +64,18 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
         $isMainRequest = $event->isMainRequest();
         $moduleActive = in_array(self::MODULE_NAME, $this->activeModules, true);
         $adminRoute = str_starts_with($route, 'admin_');
-        $diagnosticEnabled = self::isIsolatedCiDiagnosticRequest($request)
-            && $request->headers->get('X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC') === '1'
-            && $request->query->get('controller') === 'AdminBusinessProfile';
+        $gateFields = self::diagnosticGateFields($request);
+        $controllerQueryValue = $request->query->all()['controller'] ?? null;
+        $controllerName = is_string($controllerQueryValue) ? $controllerQueryValue : '';
+        $backOfficeControllerProbe = is_string($controllerName)
+            && preg_match('/\AAdmin[A-Za-z0-9_]{1,64}\z/D', $controllerName) === 1;
+        $isolatedCiDiagnosticEnabled = self::isIsolatedCiDiagnosticRequest($request)
+            && $gateFields['probe_header'] === '1'
+            && $gateFields['probe_controller'] === '1';
+        $diagnosticProbeEnabled = (
+            $gateFields['env_diagnostics'] === '1'
+            || $gateFields['server_diagnostics'] === '1'
+        ) && $backOfficeControllerProbe;
         $diagnosticFields = [
             'main_request' => $isMainRequest ? '1' : '0',
             'module_active' => $moduleActive ? '1' : '0',
@@ -80,13 +89,28 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
             'lang_before' => 'not_checked',
             'lang_after' => 'not_checked',
             'rewritten' => '0',
+            'response_listener' => '1',
+            'probe_header' => $gateFields['probe_header'],
+            'probe_controller' => $gateFields['probe_controller'],
+            'server_ci' => $gateFields['server_ci'],
+            'server_actions' => $gateFields['server_actions'],
+            'server_run_id_valid' => $gateFields['server_run_id_valid'],
+            'server_run_attempt_valid' => $gateFields['server_run_attempt_valid'],
+            'server_diagnostics' => $gateFields['server_diagnostics'],
+            'server_project_match' => $gateFields['server_project_match'],
+            'env_ci' => $gateFields['env_ci'],
+            'env_actions' => $gateFields['env_actions'],
+            'env_run_id_valid' => $gateFields['env_run_id_valid'],
+            'env_run_attempt_valid' => $gateFields['env_run_attempt_valid'],
+            'env_diagnostics' => $gateFields['env_diagnostics'],
+            'env_project_match' => $gateFields['env_project_match'],
         ];
         $writeDiagnostic = static function (string $stage) use (
             $response,
-            $diagnosticEnabled,
+            $diagnosticProbeEnabled,
             &$diagnosticFields
         ): void {
-            if (!$diagnosticEnabled) {
+            if (!$diagnosticProbeEnabled) {
                 return;
             }
 
@@ -130,7 +154,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
 
         $koreanLanguageAttribute = 'lang="' . self::KOREAN_LOCALE . '"';
         $htmlTagCount = 0;
-        if ($diagnosticEnabled) {
+        if ($isolatedCiDiagnosticEnabled) {
             preg_match_all('/<html\b[^>]*>/i', $content, $originalHtmlTags);
             $diagnosticFields['html_tags'] = (string) min(9999, count($originalHtmlTags[0] ?? []));
             $diagnosticFields['lang_before'] = self::diagnosticLanguageCategory(
@@ -171,7 +195,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
             1,
             $htmlTagCount
         );
-        if ($diagnosticEnabled) {
+        if ($isolatedCiDiagnosticEnabled) {
             $diagnosticFields['html_replacements'] = (string) $htmlTagCount;
         }
 
@@ -180,7 +204,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
             return;
         }
 
-        if ($diagnosticEnabled) {
+        if ($isolatedCiDiagnosticEnabled) {
             $diagnosticFields['lang_after'] = self::diagnosticLanguageCategoryFromContent($localizedContent);
             $diagnosticFields['rewritten'] = '1';
         }
@@ -220,18 +244,56 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
 
     private static function isIsolatedCiDiagnosticRequest(Request $request): bool
     {
-        $runId = (string) $request->server->get('GITHUB_RUN_ID', '');
-        $runAttempt = (string) $request->server->get('GITHUB_RUN_ATTEMPT', '');
-        if (preg_match('/\A[0-9]+\z/D', $runId) !== 1 || preg_match('/\A[0-9]+\z/D', $runAttempt) !== 1) {
-            return false;
-        }
+        $fields = self::diagnosticGateFields($request);
 
-        $expectedProjectName = 'kuranea-ci-' . $runId . '-' . $runAttempt;
+        return $fields['server_ci'] === '1'
+            && $fields['server_actions'] === '1'
+            && $fields['server_run_id_valid'] === '1'
+            && $fields['server_run_attempt_valid'] === '1'
+            && $fields['server_diagnostics'] === '1'
+            && $fields['server_project_match'] === '1';
+    }
 
-        return $request->server->get('CI') === 'true'
-            && $request->server->get('GITHUB_ACTIONS') === 'true'
-            && $request->server->get('KURANEA_ADMIN_LOCALE_DIAGNOSTICS') === '1'
-            && $request->server->get('KURANEA_CI_PROJECT_NAME') === $expectedProjectName;
+    /** @return array<string, string> */
+    private static function diagnosticGateFields(Request $request): array
+    {
+        $serverRunId = (string) $request->server->get('GITHUB_RUN_ID', '');
+        $serverRunAttempt = (string) $request->server->get('GITHUB_RUN_ATTEMPT', '');
+        $environmentRunId = getenv('GITHUB_RUN_ID');
+        $environmentRunId = is_string($environmentRunId) ? $environmentRunId : '';
+        $environmentRunAttempt = getenv('GITHUB_RUN_ATTEMPT');
+        $environmentRunAttempt = is_string($environmentRunAttempt) ? $environmentRunAttempt : '';
+        $serverRunIdValid = preg_match('/\A[0-9]+\z/D', $serverRunId) === 1;
+        $serverRunAttemptValid = preg_match('/\A[0-9]+\z/D', $serverRunAttempt) === 1;
+        $environmentRunIdValid = preg_match('/\A[0-9]+\z/D', $environmentRunId) === 1;
+        $environmentRunAttemptValid = preg_match('/\A[0-9]+\z/D', $environmentRunAttempt) === 1;
+        $serverProjectMatches = $serverRunIdValid
+            && $serverRunAttemptValid
+            && $request->server->get('KURANEA_CI_PROJECT_NAME')
+                === 'kuranea-ci-' . $serverRunId . '-' . $serverRunAttempt;
+        $environmentProjectName = getenv('KURANEA_CI_PROJECT_NAME');
+        $environmentProjectName = is_string($environmentProjectName) ? $environmentProjectName : '';
+        $environmentProjectMatches = $environmentRunIdValid
+            && $environmentRunAttemptValid
+            && $environmentProjectName === 'kuranea-ci-' . $environmentRunId . '-' . $environmentRunAttempt;
+        $controllerQueryValue = $request->query->all()['controller'] ?? null;
+
+        return [
+            'probe_header' => $request->headers->get('X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC') === '1' ? '1' : '0',
+            'probe_controller' => $controllerQueryValue === 'AdminBusinessProfile' ? '1' : '0',
+            'server_ci' => $request->server->get('CI') === 'true' ? '1' : '0',
+            'server_actions' => $request->server->get('GITHUB_ACTIONS') === 'true' ? '1' : '0',
+            'server_run_id_valid' => $serverRunIdValid ? '1' : '0',
+            'server_run_attempt_valid' => $serverRunAttemptValid ? '1' : '0',
+            'server_diagnostics' => $request->server->get('KURANEA_ADMIN_LOCALE_DIAGNOSTICS') === '1' ? '1' : '0',
+            'server_project_match' => $serverProjectMatches ? '1' : '0',
+            'env_ci' => getenv('CI') === 'true' ? '1' : '0',
+            'env_actions' => getenv('GITHUB_ACTIONS') === 'true' ? '1' : '0',
+            'env_run_id_valid' => $environmentRunIdValid ? '1' : '0',
+            'env_run_attempt_valid' => $environmentRunAttemptValid ? '1' : '0',
+            'env_diagnostics' => getenv('KURANEA_ADMIN_LOCALE_DIAGNOSTICS') === '1' ? '1' : '0',
+            'env_project_match' => $environmentProjectMatches ? '1' : '0',
+        ];
     }
 
     private function applyKoreanAdminLocale(Request $request): bool
