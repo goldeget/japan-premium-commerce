@@ -84,6 +84,14 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertIn('len(image_results) == 1', source)
         self.assertIn('naturalWidth', source)
 
+    def test_browser_selects_and_reads_back_the_imported_category(self):
+        source = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        self.assertIn('expected_category_ids', source)
+        self.assertIn("form.find_elements(By.CSS_SELECTOR, 'input[name=\"category_ids[]\"]')", source)
+        self.assertIn("driver.find_elements(By.CSS_SELECTOR, 'input[name=\"category_ids[]\"]')", source)
+        self.assertIn('assert category_ids == expected_category_ids', source)
+        self.assertIn('read_native(driver, product_id, expected_category_ids)', source)
+
     def test_retry_controls_stop_after_the_fixed_attempt_limit(self):
         controller = (ROOT / 'modules/kuraneacatalog/controllers/admin/AdminKuraneaCatalogReviewController.php').read_text()
         render = controller.split('private function renderBatch(', 1)[1].split(

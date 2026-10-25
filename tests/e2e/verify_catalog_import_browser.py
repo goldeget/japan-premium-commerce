@@ -81,8 +81,14 @@ def manager_ids(driver):
     return sorted(set(ids))
 
 
-def read_native(driver, product_id):
+def read_native(driver, product_id, expected_category_ids):
     assert visible(driver, '[name="id_product"]').get_attribute('value') == str(product_id)
+    category_ids = sorted(
+        int(box.get_attribute('value'))
+        for box in driver.find_elements(By.CSS_SELECTOR, 'input[name="category_ids[]"]')
+        if box.is_selected()
+    )
+    assert category_ids == expected_category_ids
     expected = {'name_en': 'ORDENOWA synthetic kitchen tool', 'name_ko': 'ORDENOWA 합성 주방 도구',
                 'description_en': 'Synthetic test data reviewed for English.',
                 'description_ko': '한국어 검수를 완료한 합성 테스트 데이터입니다.', 'quantity': '0',
@@ -98,7 +104,8 @@ def read_native(driver, product_id):
     image_results = driver.execute_script('return Array.from(document.querySelectorAll(".ordenowa-product-image img")).map(i => ({complete:i.complete,width:i.naturalWidth}))')
     assert len(image_results) == 1 and all(image['complete'] and image['width'] > 0 for image in image_results)
     assert '비활성 · 비노출 · 주문 불가' in driver.find_element(By.TAG_NAME, 'body').text
-    return {'linked_product_id': product_id, 'image_count': len(images), 'combination_count': len(combinations),
+    return {'linked_product_id': product_id, 'category_ids': category_ids,
+            'image_count': len(images), 'combination_count': len(combinations),
             'unique_product_ids': manager_ids(driver)}
 
 
@@ -139,6 +146,19 @@ def run():
         stage = 'approve_amazon'
         entry = WebDriverWait(driver, 30).until(lambda d: article(d, AMAZON))
         form = entry.find_element(By.CSS_SELECTOR, '.catalog-import-review-form')
+        category_boxes = form.find_elements(By.CSS_SELECTOR, 'input[name="category_ids[]"]')
+        if not category_boxes:
+            raise AssertionError('No active shop category is available for the synthetic import fixture.')
+        first_category = next((box for box in category_boxes if box.is_enabled()), None)
+        if first_category is None:
+            raise AssertionError('No enabled shop category is available for the synthetic import fixture.')
+        if not first_category.is_selected():
+            first_category.click()
+        expected_category_ids = sorted(
+            int(box.get_attribute('value')) for box in category_boxes if box.is_selected()
+        )
+        if not expected_category_ids:
+            raise AssertionError('The synthetic import fixture requires at least one selected category.')
         for name, value in {'name_en': 'ORDENOWA synthetic kitchen tool', 'name_ko': 'ORDENOWA 합성 주방 도구',
                             'description_en': 'Synthetic test data reviewed for English.',
                             'description_ko': '한국어 검수를 완료한 합성 테스트 데이터입니다.',
@@ -163,7 +183,7 @@ def run():
         product_id = int(parse_qs(urlparse(product_link).query)['id_product'][0])
         stage = 'native_readback'
         driver.get(product_link)
-        readback = read_native(driver, product_id)
+        readback = read_native(driver, product_id, expected_category_ids)
         assert readback['unique_product_ids'] == sorted(before_ids + [product_id])
         driver.save_screenshot(str(DEST / 'catalog-import-draft.png'))
         stage = 'reimport'
@@ -173,7 +193,7 @@ def run():
         assert not article(driver, AMAZON)
         driver.save_screenshot(str(DEST / 'catalog-import-reimport.png'))
         driver.get(product_link)
-        after = read_native(driver, product_id)
+        after = read_native(driver, product_id, expected_category_ids)
         assert after == readback
         readback['reimport_same_product'] = True
         (DEST / 'catalog-import-readback.json').write_text(json.dumps(readback, sort_keys=True) + '\n')

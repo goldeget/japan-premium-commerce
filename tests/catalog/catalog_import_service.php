@@ -147,7 +147,7 @@ try {
     $fetcher->afterRead = static function () use ($batches, $fetcher, $service, $raceBatch, $raceItemId, $raceUrl, $newRaceHtml, $newRaceSnapshot, $queue): void {
         $batches->recoverStaleProcessing(
             $raceBatch->id,
-            new DateTimeImmutable('now', new DateTimeZone('UTC'))->modify('+' . (CatalogImportBatchItem::PROCESSING_LEASE_SECONDS + 1) . ' seconds')
+            (new DateTimeImmutable('now', new DateTimeZone('UTC')))->modify('+' . (CatalogImportBatchItem::PROCESSING_LEASE_SECONDS + 1) . ' seconds')
         );
         $fetcher->documents[$raceUrl] = $newRaceHtml;
         $service->processNext($raceBatch->id);

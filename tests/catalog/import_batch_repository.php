@@ -285,7 +285,7 @@ try {
     $retryLimitBatch = $repository->create(['https://www.amazon.co.jp/dp/B0KURANEA5']);
     $retryLimitItemId = $retryLimitBatch->items[0]->id;
     for ($attemptNumber = 1; $attemptNumber <= 3; ++$attemptNumber) {
-        $startedAt = new DateTimeImmutable('2026-10-25T11:00:00+00:00')->modify('+' . (($attemptNumber - 1) * 600) . ' seconds');
+        $startedAt = (new DateTimeImmutable('2026-10-25T11:00:00+00:00'))->modify('+' . (($attemptNumber - 1) * 600) . ' seconds');
         $retryLimitBatch = $repository->markProcessing($retryLimitBatch->id, $retryLimitItemId, $startedAt);
         catalogImportAssertSame($attemptNumber, $retryLimitBatch->item($retryLimitItemId)->attempts, 'Every processing start should count toward the fixed total attempt limit.');
         if ($attemptNumber === 3) {
