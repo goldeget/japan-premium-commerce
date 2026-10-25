@@ -248,7 +248,11 @@ def _admin_controller_for_url(url: str) -> str:
     if controllers == ["AdminBusinessProfile"]:
         return "AdminBusinessProfile"
     if controllers == ["AdminDashboard"]:
-        return "AdminDashboard" if actual.path == admin_path + "/index.php" else "other"
+        dashboard_paths = {
+            admin_path + "/index.php",
+            admin_path + "/sell/dashboard",
+        }
+        return "AdminDashboard" if actual.path in dashboard_paths else "other"
     if controllers == ["AdminOrders"]:
         return "AdminOrders"
     if controllers == ["AdminLogin"]:

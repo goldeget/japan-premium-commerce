@@ -711,20 +711,40 @@ jobs:
           browser_status=${PIPESTATUS[0]}
           set -e
           if [ "$browser_status" -ne 0 ]; then
-            failure_line=$(rg '^FAIL:' "$log_file" | tail -n 1 || true)
-            diagnostics_line=$(rg '^ORDENOWA_BRAND_SETTINGS_DIAGNOSTICS=' "$log_file" | tail -n 1 || true)
-            stale_target_line=$(rg '^ORDENOWA_PUBLISH_STALE_TARGET=' "$log_file" | tail -n 1 || true)
-            printf 'ORDENOWA brand browser failure: %s\n' "${failure_line:-See the uploaded brand browser log for the failing stage.}" >> "$GITHUB_STEP_SUMMARY"
-            if [ -n "$diagnostics_line" ]; then
-              printf '%s\n' "$diagnostics_line" >> "$GITHUB_STEP_SUMMARY"
-              diagnostics_annotation=${diagnostics_line//'%'/'%25'}
-              diagnostics_annotation=${diagnostics_annotation//$'\r'/'%0D'}
-              diagnostics_annotation=${diagnostics_annotation//$'\n'/'%0A'}
-              printf '::error title=ORDENOWA brand page state::%s\n' "$diagnostics_annotation"
-            fi
-            if [ -n "$stale_target_line" ]; then
-              printf '%s\n' "$stale_target_line" >> "$GITHUB_STEP_SUMMARY"
-            fi
+            python3 - "$log_file" "$GITHUB_STEP_SUMMARY" <<'PY'
+          from pathlib import Path
+          import sys
+
+          log_path = Path(sys.argv[1])
+          summary_path = Path(sys.argv[2])
+          lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+
+          def latest_line(prefix: str) -> str:
+              return next((line for line in reversed(lines) if line.startswith(prefix)), "")
+
+          failure_line = latest_line("FAIL:")
+          diagnostics_line = latest_line("ORDENOWA_BRAND_SETTINGS_DIAGNOSTICS=")
+          stale_target_line = latest_line("ORDENOWA_PUBLISH_STALE_TARGET=")
+          admin_login_safe_state = latest_line("ORDENOWA_BRAND_ADMIN_LOGIN_SAFE_STATE=")
+
+          with summary_path.open("a", encoding="utf-8") as summary:
+              summary.write(
+                  "ORDENOWA brand browser failure: "
+                  + (failure_line or "See the browser log for the failing stage.")
+                  + "\n"
+              )
+              for line in (diagnostics_line, stale_target_line, admin_login_safe_state):
+                  if line:
+                      summary.write(line + "\n")
+
+          for title, line in (
+              ("ORDENOWA brand page state", diagnostics_line),
+              ("ORDENOWA admin login safe state", admin_login_safe_state),
+          ):
+              if line:
+                  annotation = line.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+                  print(f"::error title={title}::{annotation}")
+          PY
             exit "$browser_status"
           fi
 

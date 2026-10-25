@@ -837,7 +837,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertIn('_admin_controller_for_url(restricted_driver.current_url) != "AdminDashboard"', run)
         self.assertNotIn('a[href*="controller=AdminDashboard"]', run)
 
-    def test_dashboard_controller_requires_its_canonical_legacy_admin_path(self):
+    def test_dashboard_controller_accepts_only_canonical_legacy_or_native_pretty_path(self):
         namespace: dict[str, object] = {
             "parse_qs": parse_qs,
             "urlparse": urlparse,
@@ -853,9 +853,16 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             ),
             "AdminDashboard",
         )
+        self.assertEqual(
+            controller_for_url(
+                "http://localhost:18080/admin-kuranea/sell/dashboard?controller=AdminDashboard&token=private-token"
+            ),
+            "AdminDashboard",
+        )
         for url in (
-            "http://localhost:18080/admin-kuranea/sell/dashboard?controller=AdminDashboard&token=private-token",
             "http://localhost:18080/admin-kuranea/other.php?controller=AdminDashboard&token=private-token",
+            "http://localhost:18080/admin-kuranea/sell/dashboard/extra?controller=AdminDashboard&token=private-token",
+            "http://outside.example/admin-kuranea/sell/dashboard?controller=AdminDashboard&token=private-token",
         ):
             with self.subTest(url=url):
                 self.assertNotEqual(controller_for_url(url), "AdminDashboard")

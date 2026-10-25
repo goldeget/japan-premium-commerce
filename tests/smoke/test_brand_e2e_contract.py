@@ -506,6 +506,49 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn('wait_for_settings_form("draft_form_wait")', helper)
         self.assertIn('wait_for_settings_form("persisted_form_wait")', helper)
 
+    def test_post_publish_admin_login_logo_timeout_emits_safe_page_state_and_precise_stage(self) -> None:
+        browser_flow = BRAND_E2E.read_text(encoding="utf-8")
+        run_flow = browser_flow.split("def run()", 1)[1].split('print("PASS:', 1)[0]
+        login_stage_start = run_flow.index('stage = "admin_login_after_publish"')
+        login_stage_end = run_flow.index('stage = "record_official_published_mobile_header_logo"', login_stage_start)
+        login_stage = run_flow[login_stage_start:login_stage_end]
+        self.assertIn("def emit_brand_admin_login_diagnostics(", browser_flow)
+        diagnostic = browser_flow.split("def emit_brand_admin_login_diagnostics(", 1)[1].split(
+            "\ndef ", 1
+        )[0]
+
+        for stage in (
+            'stage = "admin_login_after_publish_navigation"',
+            'stage = "admin_login_after_publish_logo_wait"',
+            'stage = "admin_login_after_publish_session_restore"',
+            'stage = "admin_login_after_publish_settings_link"',
+        ):
+            with self.subTest(stage=stage):
+                self.assertIn(stage, login_stage)
+        self.assertIn("except TimeoutException:", login_stage)
+        self.assertIn("emit_brand_admin_login_diagnostics(driver, stage)", login_stage)
+        self.assertIn('ORDENOWA_BRAND_ADMIN_LOGIN_SAFE_STATE=', diagnostic)
+        for field in (
+            "page_path",
+            "page_title",
+            "login_form_present",
+            "login_form_visible",
+            "logo_selector",
+            "logo_present",
+            "logo_visible",
+            "logo_natural_width",
+            "logo_natural_height",
+            "logo_path",
+        ):
+            with self.subTest(field=field):
+                self.assertIn(f'"{field}"', diagnostic)
+        self.assertIn("sanitize_brand_diagnostic_path", diagnostic)
+        self.assertIn("sanitize_brand_diagnostic_text", diagnostic)
+        self.assertNotIn("window.location.search", diagnostic)
+        self.assertNotIn("document.body", diagnostic)
+        self.assertNotIn("ADMIN_EMAIL", diagnostic)
+        self.assertNotIn("ADMIN_PASSWORD", diagnostic)
+
     def test_public_storefront_assertions_reuse_captured_admin_settings_url(self) -> None:
         browser_flow = BRAND_E2E.read_text(encoding="utf-8")
         run_flow = browser_flow.split("def run()", 1)[1].split("if __name__ ==", 1)[0]
@@ -569,7 +612,7 @@ class BrandE2EContractTests(unittest.TestCase):
         self.assertIn("driver.delete_all_cookies()", logo_assertion)
         self.assertIn('restore_admin_session(driver, stage_callback, stage_prefix + "_admin_session_restore")', logo_assertion)
         self.assertIn("restore_admin_session(", initial_restore)
-        self.assertIn('"official_publish_admin_session_restore"', initial_restore)
+        self.assertIn('"admin_login_after_publish_session_restore"', initial_restore)
         self.assertIn("def business_profile_settings_url(", browser_flow)
         self.assertIn('parse_qs(urlparse(href).query).get("controller", []) == ["AdminBusinessProfile"]', browser_flow)
         self.assertIn('settings_location.path.startswith("/admin-kuranea/")', browser_flow)

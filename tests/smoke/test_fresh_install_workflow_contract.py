@@ -373,9 +373,26 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("ORDENOWA_BRAND_SETTINGS_DIAGNOSTICS=", diagnostics)
         self.assertIn("window.location.pathname", diagnostics)
         self.assertNotIn("window.location.search", diagnostics)
-        self.assertIn('rg \'^ORDENOWA_BRAND_SETTINGS_DIAGNOSTICS=\' "$log_file"', workflow)
-        self.assertIn('diagnostics_line', workflow)
-        self.assertIn('::error title=ORDENOWA brand page state::%s\\n', workflow)
+        brand_step = workflow.split(
+            "- name: Verify official ORDENOWA brand upload and publish in Chromium", 1
+        )[1].split("- name:", 1)[0]
+        self.assertNotIn("rg ", brand_step)
+        self.assertIn("diagnostics_line", brand_step)
+        self.assertIn('("ORDENOWA brand page state", diagnostics_line)', brand_step)
+
+    def test_brand_browser_failure_diagnostics_are_extracted_without_ripgrep(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        brand_step = workflow.split(
+            "- name: Verify official ORDENOWA brand upload and publish in Chromium", 1
+        )[1].split("- name:", 1)[0]
+
+        self.assertIn('python3 - "$log_file" "$GITHUB_STEP_SUMMARY" <<\'PY\'', brand_step)
+        self.assertIn("ORDENOWA_BRAND_ADMIN_LOGIN_SAFE_STATE=", brand_step)
+        self.assertIn("ORDENOWA_BRAND_SETTINGS_DIAGNOSTICS=", brand_step)
+        self.assertIn("ORDENOWA_PUBLISH_STALE_TARGET=", brand_step)
+        self.assertIn('("ORDENOWA admin login safe state", admin_login_safe_state)', brand_step)
+        self.assertIn("failure_line", brand_step)
+        self.assertNotIn("rg ", brand_step)
 
     def test_reset_email_failure_annotation_comes_directly_from_browser_and_stays_in_step_log(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")

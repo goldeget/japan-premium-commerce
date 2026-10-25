@@ -1015,6 +1015,75 @@ def sanitize_brand_diagnostic_text(value: str) -> str:
     return " ".join(text.split())[:BRAND_DIAGNOSTIC_SNIPPET_CHARS]
 
 
+def sanitize_brand_diagnostic_path(value: str) -> str:
+    try:
+        path = urlparse(str(value or "")).path
+    except ValueError:
+        return "/[redacted]"
+
+    safe_segments: list[str] = []
+    for segment in path.split("/"):
+        if not segment:
+            continue
+        if re.fullmatch(r"[A-Za-z_-]{1,48}(?:\.[A-Za-z]{1,8})?", segment):
+            safe_segments.append(segment)
+        else:
+            safe_segments.append("[redacted]")
+    return "/" + "/".join(safe_segments)
+
+
+def emit_brand_admin_login_diagnostics(driver: webdriver.Chrome, stage: str) -> None:
+    selector = ".ordenowa-admin-login-brand img"
+    try:
+        raw = driver.execute_script(
+            r"""
+            const selector = arguments[0];
+            const logo = document.querySelector(selector);
+            const visible = element => Boolean(element && element.getClientRects().length
+              && getComputedStyle(element).display !== 'none'
+              && getComputedStyle(element).visibility !== 'hidden');
+            const loginForm = document.querySelector(
+              '#login_form, #login-form, form[action*="/login"], input[type="password"]'
+            );
+            return {
+              page_path: window.location.pathname,
+              page_title: document.title,
+              login_form_present: Boolean(loginForm),
+              login_form_visible: visible(loginForm),
+              logo_present: Boolean(logo),
+              logo_visible: visible(logo),
+              logo_natural_width: logo ? logo.naturalWidth : 0,
+              logo_natural_height: logo ? logo.naturalHeight : 0,
+              logo_src: logo ? (logo.currentSrc || logo.src || '') : ''
+            };
+            """,
+            selector,
+        )
+    except Exception:
+        raw = {}
+
+    def natural_dimension(value: object) -> int:
+        return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+    diagnostics = {
+        "stage": stage,
+        "page_path": sanitize_brand_diagnostic_path(raw.get("page_path", "")),
+        "page_title": sanitize_brand_diagnostic_text(raw.get("page_title", "")),
+        "login_form_present": bool(raw.get("login_form_present", False)),
+        "login_form_visible": bool(raw.get("login_form_visible", False)),
+        "logo_selector": selector,
+        "logo_present": bool(raw.get("logo_present", False)),
+        "logo_visible": bool(raw.get("logo_visible", False)),
+        "logo_natural_width": natural_dimension(raw.get("logo_natural_width")),
+        "logo_natural_height": natural_dimension(raw.get("logo_natural_height")),
+        "logo_path": sanitize_brand_diagnostic_path(raw.get("logo_src", "")),
+    }
+    print(
+        "ORDENOWA_BRAND_ADMIN_LOGIN_SAFE_STATE=" + json.dumps(diagnostics, ensure_ascii=True, sort_keys=True),
+        file=sys.stderr,
+    )
+
+
 def assert_no_legacy_brand_in_rendered_page(driver: webdriver.Chrome, label: str) -> None:
     diagnostics = driver.execute_script(
         r"""
@@ -1844,9 +1913,15 @@ def run() -> None:
         driver.save_screenshot(str(DEST / "brand-admin-history-restored-draft.png"))
 
         stage = "admin_login_after_publish"
+        stage = "admin_login_after_publish_navigation"
         driver.delete_all_cookies()
         driver.get(ADMIN_LOGIN + "/login")
-        login_logo = image_is_rendered(driver, ".ordenowa-admin-login-brand img")
+        stage = "admin_login_after_publish_logo_wait"
+        try:
+            login_logo = image_is_rendered(driver, ".ordenowa-admin-login-brand img")
+        except TimeoutException:
+            emit_brand_admin_login_diagnostics(driver, stage)
+            raise
         if login_logo["width"] < 1 or "admin-login.png" not in login_logo["src"]:
             raise AssertionError("published ORDENOWA admin login logo did not render")
         assert_uploaded_derivative_url(
@@ -1855,11 +1930,13 @@ def run() -> None:
         assert_no_legacy_brand_in_rendered_page(driver, "admin login")
         driver.save_screenshot(str(DEST / "brand-admin-login-after-publish.png"))
         official_admin_login_logo = login_logo["src"]
+        stage = "admin_login_after_publish_session_restore"
         restore_admin_session(
             driver,
             set_brand_assertion_stage,
-            "official_publish_admin_session_restore",
+            "admin_login_after_publish_session_restore",
         )
+        stage = "admin_login_after_publish_settings_link"
         settings_url = business_profile_settings_url(driver)
 
         stage = "record_official_published_mobile_header_logo"
