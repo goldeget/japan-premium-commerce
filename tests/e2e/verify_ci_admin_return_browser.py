@@ -27,6 +27,11 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.select import Select
 from selenium.webdriver.support.ui import WebDriverWait
 
+from safe_admin_browser_diagnostics import (
+    safe_admin_pathname,
+    safe_document_response_status,
+)
+
 
 RETURN_LIST_SUFFIX = "/sell/customer-service/merchandise-return/"
 RETURN_GRID_ID = "merchandise_return_grid_table"
@@ -96,12 +101,20 @@ class StageTracker:
         self.admin_path_matches = False
         self.safe_page_class = "unknown"
         self.document_ready_state = "unknown"
+        self.visible_error_marker = False
+        self.requested_pathname = "unknown"
+        self.observed_pathname = "unknown"
+        self.document_response_status = "unknown"
         self.return_grid_present = False
         self.target_order_matches = False
         self.order_detail_link_matches = False
         self.target_rma_matches = False
         self.selected_state = "unknown"
         self.save_success_visible = False
+        self.initial_state = "unknown"
+        self.final_state = "unknown"
+        self.original_state_restored = False
+        self.transition_results: list[dict[str, str | bool]] = []
 
     def begin(self, stage_name: str) -> None:
         if stage_name not in SAFE_DIAGNOSTIC_STAGES:
@@ -275,6 +288,9 @@ def collect_safe_page_diagnostics(
     stage.admin_path_matches = False
     stage.safe_page_class = "unknown"
     stage.document_ready_state = "unknown"
+    stage.visible_error_marker = False
+    stage.observed_pathname = "unknown"
+    stage.document_response_status = "unknown"
     stage.return_grid_present = False
     if driver is None or admin_root is None:
         return
@@ -282,18 +298,58 @@ def collect_safe_page_diagnostics(
         current_url = driver.current_url
         stage.same_admin_origin = same_admin_origin(current_url, admin_root)
         stage.admin_path_matches = is_admin_path(current_url, admin_root)
+        stage.observed_pathname = safe_admin_pathname(current_url, admin_root)
         page_class = safe_page_class(current_url, admin_root)
         stage.safe_page_class = page_class if page_class in SAFE_PAGE_CLASSES else "unknown"
+    except Exception:
+        return
+
+    try:
         ready_state = driver.execute_script("return document.readyState")
         stage.document_ready_state = (
             ready_state if ready_state in SAFE_DOCUMENT_READY_STATES[1:-1] else "other"
         )
-        if stage.safe_page_class == "admin_return_list":
+    except Exception:
+        pass
+
+    try:
+        response_status = driver.execute_script(
+            "const navigation = performance.getEntriesByType('navigation')[0]; "
+            "return navigation ? navigation.responseStatus : null;"
+        )
+        stage.document_response_status = safe_document_response_status(response_status)
+    except Exception:
+        pass
+
+    try:
+        structural_error_markers = driver.find_elements(
+            By.CSS_SELECTOR, ".page-not-found, [data-error-page]"
+        )
+        heading_or_alerts = driver.find_elements(By.CSS_SELECTOR, "h1, .alert-danger")
+        error_phrases = (
+            "page not found",
+            "not found",
+            "page unavailable",
+            "access denied",
+            "internal server error",
+        )
+        stage.visible_error_marker = any(
+            element.is_displayed() for element in structural_error_markers
+        ) or any(
+            element.is_displayed()
+            and any(phrase in (element.text or "").casefold() for phrase in error_phrases)
+            for element in heading_or_alerts
+        )
+    except Exception:
+        pass
+
+    if stage.safe_page_class == "admin_return_list":
+        try:
             stage.return_grid_present = len(
                 driver.find_elements(By.ID, RETURN_GRID_ID)
             ) == 1
-    except Exception:
-        pass
+        except Exception:
+            pass
 
 
 def return_id_from_edit_url(href: str, admin_root: str) -> int | None:
@@ -316,8 +372,11 @@ def find_existing_return(
     expected_order_id: int,
     stage: StageTracker,
 ):
+    requested_url = admin_root + RETURN_LIST_SUFFIX
     stage.begin("return_list_navigation")
-    visit(driver, admin_root + RETURN_LIST_SUFFIX)
+    stage.requested_pathname = safe_admin_pathname(requested_url, admin_root)
+    visit(driver, requested_url)
+    collect_safe_page_diagnostics(stage, driver, admin_root)
     stage.complete()
 
     stage.begin("return_grid")
@@ -379,10 +438,11 @@ def current_return_form(
     order_id: int,
     stage: StageTracker | None = None,
 ):
+    if stage is not None:
+        stage.target_rma_matches = False
+        stage.target_order_matches = False
+        stage.order_detail_link_matches = False
     if return_id_from_edit_url(driver.current_url, admin_root) != return_id:
-        if stage is not None:
-            stage.target_rma_matches = False
-            stage.order_detail_link_matches = False
         return None
     if stage is not None:
         stage.target_rma_matches = True
@@ -391,8 +451,6 @@ def current_return_form(
         "select" + RETURN_STATE_SELECTOR,
     )
     if len(status_selects) != 1:
-        if stage is not None:
-            stage.order_detail_link_matches = False
         return None
     status_select = status_selects[0]
     form = status_select.find_element(By.XPATH, "./ancestor::form[1]")
@@ -400,8 +458,6 @@ def current_return_form(
     if stage is not None:
         stage.order_detail_link_matches = order_link_matches
     if not order_link_matches:
-        if stage is not None:
-            stage.target_order_matches = False
         return None
     if stage is not None:
         stage.target_order_matches = True
@@ -415,14 +471,28 @@ def selected_state_token(raw_state: str | None) -> str:
 def save_and_verify_return_state_transition(
     driver: webdriver.Chrome,
     admin_root: str,
+    edit_url: str,
     return_id: int,
     order_id: int,
     previous_state_id: str,
     next_state_id: str,
     stage: StageTracker,
 ) -> None:
-    transition = f"transition_{previous_state_id}_to_{next_state_id}"
-    stage.begin(f"{transition}_select")
+    transition = f"{previous_state_id}_to_{next_state_id}"
+    evidence: dict[str, str | bool] = {
+        "transition": transition,
+        "native_save_submitted": False,
+        "new_post_save_document_observed": False,
+        "save_success_visible": False,
+        "fresh_get_completed": False,
+        "target_rma_matches": False,
+        "target_order_matches": False,
+        "order_detail_link_matches": False,
+        "readback_state": "unknown",
+    }
+    stage.transition_results.append(evidence)
+    stage_name = f"transition_{transition}"
+    stage.begin(f"{stage_name}_select")
     form_state = WebDriverWait(driver, 35).until(
         lambda browser: current_return_form(browser, admin_root, return_id, order_id, stage)
     )
@@ -435,28 +505,77 @@ def save_and_verify_return_state_transition(
     Select(status_select).select_by_value(next_state_id)
     stage.selected_state = selected_state_token(next_state_id)
     stage.complete()
-    stage.begin(f"{transition}_save")
-    form.find_element(By.NAME, SAVE_AND_STAY_NAME).click()
-    stage.complete()
-    stage.begin(f"{transition}_readback")
+    stage.begin(f"{stage_name}_save")
+    pre_save_document_time_origin = driver.execute_script("return performance.timeOrigin")
+    save_control = form.find_element(By.NAME, SAVE_AND_STAY_NAME)
+    if (form.get_attribute("method") or "").upper() != "POST":
+        raise TargetGuardError
+    if (save_control.get_attribute("type") or "").lower() != "submit":
+        raise TargetGuardError
+    action_url = save_control.get_attribute("formaction") or form.get_attribute("action") or driver.current_url
+    action_url = urljoin(driver.current_url, action_url)
+    if not is_admin_origin(action_url, admin_root):
+        raise TargetGuardError
+    stage.requested_pathname = safe_admin_pathname(action_url, admin_root)
+    save_control.click()
+    evidence["native_save_submitted"] = True
+    WebDriverWait(driver, 35).until(
+        lambda browser: browser.execute_script("return performance.timeOrigin") != pre_save_document_time_origin
+    )
+    WebDriverWait(driver, 35).until(EC.staleness_of(form))
+    WebDriverWait(driver, 35).until(
+        lambda browser: browser.execute_script("return document.readyState") == "complete"
+    )
+    evidence["new_post_save_document_observed"] = True
 
-    def target_state_saved(browser: webdriver.Chrome) -> bool:
-        updated = current_return_form(browser, admin_root, return_id, order_id, stage)
-        if updated is None:
-            stage.save_success_visible = False
-            return False
-        updated_form, updated_status_select = updated
-        selected_state_after = Select(updated_status_select).first_selected_option.get_attribute("value")
-        stage.selected_state = selected_state_token(selected_state_after)
-        success_notice = browser.find_elements(By.CSS_SELECTOR, 'div.alert.alert-success[role="alert"]')
-        stage.save_success_visible = bool(success_notice)
-        return (
-            selected_state_after == next_state_id
-            and stage.save_success_visible
-            and same_order_detail_link_matches(admin_root, order_id, updated_form)
+    updated_form, updated_status_select = WebDriverWait(driver, 35).until(
+        lambda browser: current_return_form(browser, admin_root, return_id, order_id, stage)
+    )
+    updated_state = Select(updated_status_select).first_selected_option.get_attribute("value")
+    stage.selected_state = selected_state_token(updated_state)
+    stage.save_success_visible = bool(
+        WebDriverWait(driver, 35).until(
+            lambda browser: browser.find_elements(
+                By.CSS_SELECTOR, 'div.alert.alert-success[role="alert"]'
+            )
         )
+    )
+    evidence["save_success_visible"] = stage.save_success_visible
+    if (
+        updated_state != next_state_id
+        or not stage.save_success_visible
+        or not stage.target_rma_matches
+        or not stage.target_order_matches
+        or not same_order_detail_link_matches(admin_root, order_id, updated_form)
+    ):
+        raise TargetGuardError
+    evidence["target_rma_matches"] = stage.target_rma_matches
+    evidence["target_order_matches"] = stage.target_order_matches
+    evidence["order_detail_link_matches"] = stage.order_detail_link_matches
+    stage.complete()
 
-    WebDriverWait(driver, 35).until(target_state_saved)
+    stage.begin(f"{stage_name}_readback")
+    stage.requested_pathname = safe_admin_pathname(edit_url, admin_root)
+    visit(driver, edit_url)
+    evidence["fresh_get_completed"] = True
+    readback_form, readback_select = WebDriverWait(driver, 35).until(
+        lambda browser: current_return_form(browser, admin_root, return_id, order_id, stage)
+    )
+    readback_state = Select(readback_select).first_selected_option.get_attribute("value")
+    stage.selected_state = selected_state_token(readback_state)
+    evidence["target_rma_matches"] = stage.target_rma_matches
+    evidence["target_order_matches"] = stage.target_order_matches
+    evidence["order_detail_link_matches"] = stage.order_detail_link_matches
+    evidence["readback_state"] = stage.selected_state
+    if (
+        readback_state != next_state_id
+        or not stage.target_rma_matches
+        or not stage.target_order_matches
+        or not same_order_detail_link_matches(admin_root, order_id, readback_form)
+    ):
+        raise TargetGuardError
+    stage.final_state = stage.selected_state
+    stage.original_state_restored = stage.final_state == stage.initial_state
     stage.complete()
 
 
@@ -465,6 +584,7 @@ def verify_existing_synthetic_return(
     admin_root: str,
     return_id: int,
     order_id: int,
+    edit_url: str,
     stage: StageTracker,
 ) -> None:
     stage.begin("edit_screen")
@@ -474,6 +594,8 @@ def verify_existing_synthetic_return(
     form, status_select = form_state
     initial_state = Select(status_select).first_selected_option.get_attribute("value")
     stage.selected_state = selected_state_token(initial_state)
+    stage.initial_state = stage.selected_state
+    stage.final_state = stage.selected_state
     if initial_state != WAITING_FOR_CONFIRMATION_STATE_ID:
         raise TargetGuardError
 
@@ -499,12 +621,19 @@ def verify_existing_synthetic_return(
         save_and_verify_return_state_transition(
             driver,
             admin_root,
+            edit_url,
             return_id,
             order_id,
             previous_state_id,
             next_state_id,
             stage,
         )
+    stage.original_state_restored = (
+        stage.initial_state == WAITING_FOR_CONFIRMATION_STATE_ID
+        and stage.final_state == stage.initial_state
+    )
+    if not stage.original_state_restored:
+        raise TargetGuardError
 
 
 def safe_exception_class_name(error: Exception) -> str:
@@ -539,7 +668,7 @@ def build_safe_diagnostics(
     exception_class: str,
     is_login_form_visible: bool,
     screenshot_captured: bool,
-) -> dict[str, str | bool]:
+) -> dict[str, object]:
     return {
         "last_completed_stage": stage.last_completed_stage,
         "failure_stage": stage.current_stage,
@@ -548,6 +677,10 @@ def build_safe_diagnostics(
         "admin_path_matches": stage.admin_path_matches,
         "safe_page_class": stage.safe_page_class,
         "document_ready_state": stage.document_ready_state,
+        "visible_error_marker": stage.visible_error_marker,
+        "requested_pathname": stage.requested_pathname,
+        "observed_pathname": stage.observed_pathname,
+        "document_response_status": stage.document_response_status,
         "return_grid_present": stage.return_grid_present,
         "target_order_matches": stage.target_order_matches,
         "order_detail_link_matches": stage.order_detail_link_matches,
@@ -556,6 +689,10 @@ def build_safe_diagnostics(
         "selected_state": stage.selected_state,
         "save_success_visible": stage.save_success_visible,
         "status_control_screenshot_captured": screenshot_captured,
+        "initial_state": stage.initial_state,
+        "final_state": stage.final_state,
+        "original_state_restored": stage.original_state_restored,
+        "transition_results": stage.transition_results,
     }
 
 
@@ -597,7 +734,24 @@ def capture_safe_status_screenshot(
         return False
 
 
-def report_failure_diagnostics(diagnostics: dict[str, str | bool]) -> None:
+def transition_evidence_lines(diagnostics: dict[str, object]) -> list[str]:
+    lines = []
+    for result in diagnostics["transition_results"]:
+        if not isinstance(result, dict):
+            continue
+        lines.append(
+            "transition={transition} native_save_submitted={native_save_submitted} "
+            "new_post_save_document_observed={new_post_save_document_observed} "
+            "save_success_visible={save_success_visible} fresh_get_completed={fresh_get_completed} "
+            "rma_match={target_rma_matches} order_match={target_order_matches} "
+            "order_link_match={order_detail_link_matches} readback_state={readback_state}".format(
+                **result
+            )
+        )
+    return lines
+
+
+def report_failure_diagnostics(diagnostics: dict[str, object]) -> None:
     safe_line = (
         "stage={failure_stage} last_completed={last_completed_stage} "
         "exception={exception_class} order_match={target_order_matches} "
@@ -605,12 +759,20 @@ def report_failure_diagnostics(diagnostics: dict[str, str | bool]) -> None:
         "rma_match={target_rma_matches} login_form={login_form_visible} "
         "same_admin_origin={same_admin_origin} admin_path={admin_path_matches} "
         "page_class={safe_page_class} ready_state={document_ready_state} "
+        "visible_error_marker={visible_error_marker} "
+        "requested_path={requested_pathname} observed_path={observed_pathname} "
+        "document_status={document_response_status} "
         "return_grid_present={return_grid_present} "
         "selected_state={selected_state} save_success={save_success_visible} "
-        "status_control_screenshot={status_control_screenshot_captured}"
+        "status_control_screenshot={status_control_screenshot_captured} "
+        "initial_state={initial_state} final_state={final_state} "
+        "original_state_restored={original_state_restored}"
     ).format(**diagnostics)
     sys.stdout.write("FAIL: native admin return browser stage diagnostics: " + safe_line + "\n")
     sys.stdout.write("::error title=ORDENOWA admin RMA browser::" + safe_line + "\n")
+    for evidence_line in transition_evidence_lines(diagnostics):
+        sys.stdout.write("RMA transition evidence: " + evidence_line + "\n")
+        sys.stdout.write("::error title=ORDENOWA RMA transition evidence::" + evidence_line + "\n")
 
     artifact_directory = os.environ.get("QA_ARTIFACT_DIR")
     if artifact_directory:
@@ -635,6 +797,10 @@ def report_failure_diagnostics(diagnostics: dict[str, str | bool]) -> None:
             f"- Admin path matched: `{diagnostics['admin_path_matches']}`\n"
             f"- Safe page class: `{diagnostics['safe_page_class']}`\n"
             f"- Document ready state: `{diagnostics['document_ready_state']}`\n"
+            f"- Visible error marker: `{diagnostics['visible_error_marker']}`\n"
+            f"- Requested pathname: `{diagnostics['requested_pathname']}`\n"
+            f"- Observed pathname: `{diagnostics['observed_pathname']}`\n"
+            f"- Document response status: `{diagnostics['document_response_status']}`\n"
             f"- Return grid present: `{diagnostics['return_grid_present']}`\n"
             f"- Target order matched: `{diagnostics['target_order_matches']}`\n"
             f"- Edit form order link matched: `{diagnostics['order_detail_link_matches']}`\n"
@@ -643,6 +809,44 @@ def report_failure_diagnostics(diagnostics: dict[str, str | bool]) -> None:
             f"- Selected state: `{diagnostics['selected_state']}`\n"
             f"- Save success alert visible: `{diagnostics['save_success_visible']}`\n"
             f"- Status control screenshot captured: `{diagnostics['status_control_screenshot_captured']}`\n"
+            f"- Initial state: `{diagnostics['initial_state']}`\n"
+            f"- Final state: `{diagnostics['final_state']}`\n"
+            f"- Original state restored: `{diagnostics['original_state_restored']}`\n"
+            "\n".join(f"- `{line}`" for line in transition_evidence_lines(diagnostics))
+            + "\n"
+        )
+        try:
+            with Path(summary_path).open("a", encoding="utf-8") as summary_file:
+                summary_file.write(summary)
+        except OSError:
+            pass
+
+
+def report_success_diagnostics(stage: StageTracker) -> None:
+    diagnostics = {
+        "initial_state": stage.initial_state,
+        "final_state": stage.final_state,
+        "original_state_restored": stage.original_state_restored,
+        "transition_results": stage.transition_results,
+    }
+    lines = transition_evidence_lines(diagnostics)
+    sys.stdout.write(
+        "PASS: native admin RMA state readback; "
+        f"initial_state={stage.initial_state} final_state={stage.final_state} "
+        f"original_state_restored={stage.original_state_restored}\n"
+    )
+    for evidence_line in lines:
+        sys.stdout.write("RMA transition evidence: " + evidence_line + "\n")
+
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        summary = (
+            "### Admin RMA browser transition verification\n"
+            f"- Initial state: `{stage.initial_state}`\n"
+            f"- Final state: `{stage.final_state}`\n"
+            f"- Original state restored: `{stage.original_state_restored}`\n"
+            + "\n".join(f"- `{line}`" for line in lines)
+            + "\n"
         )
         try:
             with Path(summary_path).open("a", encoding="utf-8") as summary_file:
@@ -666,6 +870,7 @@ def run_admin_return_browser() -> int:
             service=Service(log_output=os.devnull),
         )
         stage.begin("admin_login")
+        stage.requested_pathname = safe_admin_pathname(admin_root + "/login", admin_root)
         admin_login(driver, admin_root)
         stage.complete()
         stage.begin("return_list_navigation")
@@ -678,12 +883,14 @@ def run_admin_return_browser() -> int:
         if return_id_from_edit_url(edit_url, admin_root) != return_id:
             raise TargetGuardError
         stage.begin("edit_screen")
+        stage.requested_pathname = safe_admin_pathname(edit_url, admin_root)
         visit(driver, edit_url)
         verify_existing_synthetic_return(
             driver,
             admin_root,
             return_id,
             expected_order_id,
+            edit_url,
             stage,
         )
         stage.complete("complete")
@@ -726,6 +933,8 @@ def run_admin_return_browser() -> int:
                     )
                     report_failure_diagnostics(diagnostics)
                     outcome = 1
+    if outcome == 0:
+        report_success_diagnostics(stage)
     return outcome
 
 

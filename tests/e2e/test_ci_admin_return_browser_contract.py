@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
+import math
 import unittest
 from pathlib import Path
 
@@ -52,7 +54,8 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
         for required in (
             "WAITING_FOR_CONFIRMATION_STATE_ID = \"1\"",
             "selected_state_before",
-            "selected_state_after",
+            "updated_state",
+            "readback_state",
             "expected_order_id",
             "return_id",
             "same_order_detail_link_matches",
@@ -70,7 +73,7 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
             "for previous_state_id, next_state_id in RMA_STATE_TRANSITION_PATH:",
             "save_and_verify_return_state_transition(",
             "Select(status_select).select_by_value(next_state_id)",
-            "selected_state_after == next_state_id",
+            "updated_state != next_state_id",
             "current_return_form(browser, admin_root, return_id, order_id, stage)",
         )
         missing_calls = [required for required in required_calls if required not in self.source]
@@ -95,9 +98,9 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
             "def save_and_verify_return_state_transition(", 1
         )[1].split("def verify_existing_synthetic_return(", 1)[0]
         for stage_call in (
-            'stage.begin(f"{transition}_select")',
-            'stage.begin(f"{transition}_save")',
-            'stage.begin(f"{transition}_readback")',
+            'stage.begin(f"{stage_name}_select")',
+            'stage.begin(f"{stage_name}_save")',
+            'stage.begin(f"{stage_name}_readback")',
         ):
             self.assertIn(stage_call, transition_function)
 
@@ -105,6 +108,10 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
         for required in (
             '"return_list_navigation"',
             '"return_grid"',
+            '"requested_pathname"',
+            '"observed_pathname"',
+            '"document_response_status"',
+            '"visible_error_marker"',
             'stage.begin("return_list_navigation")',
             'stage.begin("return_grid")',
             '"same_admin_origin"',
@@ -122,8 +129,9 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
         )[0]
         self.assertLess(
             list_flow.index('stage.begin("return_list_navigation")'),
-            list_flow.index("visit(driver, admin_root + RETURN_LIST_SUFFIX)"),
+            list_flow.index("visit(driver, requested_url)"),
         )
+        self.assertIn("stage.requested_pathname = safe_admin_pathname(requested_url, admin_root)", list_flow)
         self.assertLess(
             list_flow.index("stage.complete()"),
             list_flow.index('stage.begin("return_grid")'),
@@ -132,12 +140,95 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
             list_flow.index('stage.begin("return_grid")'),
             list_flow.index("EC.presence_of_element_located"),
         )
+        self.assertIn("safe_admin_pathname(requested_url, admin_root)", list_flow)
+        self.assertIn("collect_safe_page_diagnostics(stage, driver, admin_root)", list_flow)
 
         origin_guard = self.source.split("def same_admin_origin(", 1)[1].split(
             "def is_admin_path(", 1
         )[0]
         self.assertIn("candidate_hostname == expected_hostname", origin_guard)
         self.assertIn("candidate_port == expected_port", origin_guard)
+
+    def test_safe_navigation_diagnostics_preserve_routes_and_redact_dynamic_values(self) -> None:
+        helper_path = ROOT / "tests" / "e2e" / "safe_admin_browser_diagnostics.py"
+        self.assertTrue(helper_path.is_file(), "safe route diagnostic helpers are missing")
+        spec = importlib.util.spec_from_file_location("safe_admin_browser_diagnostics", helper_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+
+        safe_path = helper.safe_admin_pathname(
+            "http://localhost:18080/admin-kuranea/index.php/sell/customer-service/"
+            "merchandise-return/98765/edit/?token=private-query-value",
+            "http://localhost:18080/admin-kuranea",
+        )
+        self.assertEqual(
+            safe_path,
+            "/admin-kuranea/index.php/sell/customer-service/merchandise-return/<id>/edit/",
+        )
+        self.assertNotIn("private-query-value", safe_path)
+        self.assertEqual(
+            helper.safe_admin_pathname(
+                "http://localhost:18080/admin-kuranea/" + "a" * 32 + "/index.php/",
+                "http://localhost:18080/admin-kuranea",
+            ),
+            "/admin-kuranea/<redacted>/index.php/",
+        )
+        self.assertEqual(
+            helper.safe_admin_pathname(
+                "http://localhost:18080/admin-kuranea/customer-name/orders/",
+                "http://localhost:18080/admin-kuranea",
+            ),
+            "/admin-kuranea/<redacted>/orders/",
+        )
+        self.assertEqual(
+            helper.safe_admin_pathname(
+                "http://localhost:18080/customer-name/profile/",
+                "http://localhost:18080/admin-kuranea",
+            ),
+            "same_origin_non_admin",
+        )
+        self.assertEqual(
+            helper.safe_admin_pathname(
+                "https://example.invalid/private/customer/name",
+                "http://localhost:18080/admin-kuranea",
+            ),
+            "outside_admin",
+        )
+
+        self.assertEqual(helper.safe_document_response_status(200), "200")
+        self.assertEqual(helper.safe_document_response_status(404), "404")
+        for unavailable in (None, 0, "200", True, 99, 600, math.nan, math.inf):
+            with self.subTest(unavailable=unavailable):
+                self.assertEqual(helper.safe_document_response_status(unavailable), "unknown")
+
+    def test_state_readback_requires_post_document_and_a_fresh_get(self) -> None:
+        transition_function = self.source.split(
+            "def save_and_verify_return_state_transition(", 1
+        )[1].split("def verify_existing_synthetic_return(", 1)[0]
+        for required in (
+            'pre_save_document_time_origin = driver.execute_script("return performance.timeOrigin")',
+            'browser.execute_script("return performance.timeOrigin") != pre_save_document_time_origin',
+            'if (form.get_attribute("method") or "").upper() != "POST":',
+            'if not is_admin_origin(action_url, admin_root):',
+            "EC.staleness_of(form)",
+            "new_post_save_document_observed",
+            "save_success_visible",
+            "visit(driver, edit_url)",
+            "fresh_get_completed",
+            "readback_state",
+            "target_rma_matches",
+            "target_order_matches",
+            "order_detail_link_matches",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, transition_function)
+        self.assertIn("original_state_restored", self.source)
+        self.assertIn("stage.initial_state = stage.selected_state", self.source)
+        self.assertIn("stage.requested_pathname = safe_admin_pathname(edit_url, admin_root)", self.source)
+        self.assertIn("stage.requested_pathname = safe_admin_pathname(action_url, admin_root)", self.source)
+        self.assertIn('".page-not-found, [data-error-page]"', self.source)
 
     def test_status_change_emails_are_confined_to_the_run_owned_mailpit(self) -> None:
         mailpit_setup = self.workflow.split("id: mailpit_setup", 1)[1].split("- name:", 1)[0]
@@ -216,10 +307,16 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
             '"admin_path_matches"',
             '"safe_page_class"',
             '"document_ready_state"',
+            '"requested_pathname"',
+            '"observed_pathname"',
+            '"document_response_status"',
+            '"visible_error_marker"',
             '"return_grid_present"',
             '"login_form_visible"',
             '"selected_state"',
             '"save_success_visible"',
+            '"original_state_restored"',
+            '"transition_results"',
             "def safe_exception_class_name(",
             "def build_safe_diagnostics(",
             "def report_failure_diagnostics(",
@@ -254,6 +351,16 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
         )[0]
         self.assertLess(runner.index("capture_safe_status_screenshot("), runner.index("driver.quit()"))
         self.assertLess(runner.index("report_failure_diagnostics(diagnostics)"), runner.index("driver.quit()"))
+        self.assertIn("report_success_diagnostics(stage)", runner)
+        coverage = self.workflow.split(
+            "- name: Verify browser QA screenshot coverage", 1
+        )[1].split("- name:", 1)[0]
+        for required in (
+            "requested_pathname", "observed_pathname", "document_response_status",
+            "transition_results", "safe_path_pattern", "new_post_save_document_observed",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, coverage)
 
     def test_failure_screenshot_is_only_the_verified_status_control(self) -> None:
         screenshot = self.source.split(

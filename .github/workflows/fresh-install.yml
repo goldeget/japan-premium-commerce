@@ -2123,14 +2123,16 @@ jobs:
             done
             if [[ -s "$artifact_dir/admin-return-diagnostics.json" ]]; then
               screenshot_captured=$(python3 - "$artifact_dir/admin-return-diagnostics.json" <<'PYDIAG'
-          import json, sys
+          import json, re, sys
           data = json.load(open(sys.argv[1], encoding='utf-8'))
           if set(data) != {
               'last_completed_stage', 'failure_stage', 'exception_class',
               'same_admin_origin', 'admin_path_matches', 'safe_page_class',
-              'document_ready_state', 'return_grid_present',
+              'document_ready_state', 'requested_pathname', 'observed_pathname',
+              'document_response_status', 'visible_error_marker', 'return_grid_present',
               'target_order_matches', 'order_detail_link_matches', 'target_rma_matches', 'login_form_visible',
               'selected_state', 'save_success_visible', 'status_control_screenshot_captured',
+              'initial_state', 'final_state', 'original_state_restored', 'transition_results',
           }:
               raise SystemExit('admin return diagnostic fields are not allowlisted')
           allowed_stages = {
@@ -2159,8 +2161,25 @@ jobs:
               raise SystemExit('admin return page class is not allowlisted')
           if data['document_ready_state'] not in allowed_ready_states:
               raise SystemExit('admin return document ready state is not allowlisted')
+          if not isinstance(data['visible_error_marker'], bool):
+              raise SystemExit('admin return error marker is invalid')
+          safe_path_pattern = r'/[A-Za-z0-9._~/<>{}-]{0,240}'
+          for key in ('requested_pathname', 'observed_pathname'):
+              value = data[key]
+              if value not in ('unknown', 'outside_admin', 'same_origin_non_admin') and (
+                  not isinstance(value, str) or re.fullmatch(safe_path_pattern, value) is None
+              ):
+                  raise SystemExit('admin return pathname is not safe')
+          if data['document_response_status'] != 'unknown' and data['document_response_status'] not in {
+              str(status) for status in range(100, 600)
+          }:
+              raise SystemExit('admin return document response status is invalid')
+          if data['initial_state'] not in ('1', '2', 'unknown') or data['final_state'] not in ('1', '2', 'unknown'):
+              raise SystemExit('admin return lifecycle state is not allowlisted')
+          if not isinstance(data['original_state_restored'], bool):
+              raise SystemExit('admin return original-state marker is invalid')
           for key in (
-              'same_admin_origin', 'admin_path_matches', 'return_grid_present',
+              'same_admin_origin', 'admin_path_matches', 'visible_error_marker', 'return_grid_present',
               'target_order_matches', 'order_detail_link_matches', 'target_rma_matches',
               'login_form_visible', 'save_success_visible',
           ):
@@ -2170,6 +2189,21 @@ jobs:
               raise SystemExit('admin return selected state is not allowlisted')
           if not isinstance(data['status_control_screenshot_captured'], bool):
               raise SystemExit('admin return screenshot marker is invalid')
+          result_fields = {
+              'transition', 'native_save_submitted', 'new_post_save_document_observed',
+              'save_success_visible', 'fresh_get_completed', 'target_rma_matches',
+              'target_order_matches', 'order_detail_link_matches', 'readback_state',
+          }
+          if not isinstance(data['transition_results'], list) or len(data['transition_results']) > 2:
+              raise SystemExit('admin return transition evidence is invalid')
+          for result in data['transition_results']:
+              if not isinstance(result, dict) or set(result) != result_fields:
+                  raise SystemExit('admin return transition evidence fields are not allowlisted')
+              if result['transition'] not in ('1_to_2', '2_to_1') or result['readback_state'] not in ('1', '2', 'unknown'):
+                  raise SystemExit('admin return transition state is not allowlisted')
+              for key in result_fields - {'transition', 'readback_state'}:
+                  if not isinstance(result[key], bool):
+                      raise SystemExit('admin return transition marker is invalid')
           print('true' if data['status_control_screenshot_captured'] else 'false')
           PYDIAG
               )
