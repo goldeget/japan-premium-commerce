@@ -120,7 +120,7 @@ $readPaymentLedgerBoundary = static function (Order $order): array {
             'SELECT op.`id_order_payment`, op.`order_reference` FROM `' . _DB_PREFIX_ . 'order_payment` op'
             . ' INNER JOIN `' . _DB_PREFIX_ . 'order_invoice_payment` oip ON oip.`id_order_payment` = op.`id_order_payment`'
             . ' WHERE oip.`id_order` = ' . (int) $order->id
-            . ' ORDER BY op.`id_order_payment` DESC LIMIT 1'
+            . ' ORDER BY op.`id_order_payment` DESC'
         );
         $paymentQueryAvailable = true;
     } catch (Throwable $diagnosticException) {

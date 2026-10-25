@@ -291,6 +291,17 @@ class CiNativeOrderLifecycleContractTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
         self.assertIn("tests.postcode.test_ci_native_order_lifecycle_contract", workflow)
 
+    def test_payment_row_lookup_leaves_single_row_limit_to_get_row(self) -> None:
+        preparer = PREPARER.read_text(encoding="utf-8")
+        payment_lookup = preparer.split(
+            "$paymentRow = Db::getInstance()->getRow(", 1
+        )[1].split(
+            ");", 1
+        )[0]
+
+        self.assertIn("ORDER BY op.`id_order_payment` DESC", payment_lookup)
+        self.assertNotRegex(payment_lookup, r"\bLIMIT\s+1\b")
+
     def test_returns_configuration_is_run_scoped_and_restored_by_verifier_shutdown(self) -> None:
         if not PREPARER.is_file():
             self.fail("the CI-only native order lifecycle fixture preparer is missing")
