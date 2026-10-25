@@ -868,6 +868,18 @@ body {
     color: var(--kuranea-navy);
     font-size: 1.25rem;
   }
+
+  body#product .breadcrumb {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  body#product .breadcrumb-item:last-child {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 @media (min-width: 768px) and (max-width: 991.98px) {

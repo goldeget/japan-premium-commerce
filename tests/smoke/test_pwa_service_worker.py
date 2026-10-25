@@ -1034,15 +1034,49 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.source = PWA_BROWSER.read_text(encoding="utf-8")
 
-    def test_japanese_account_sidebar_check_skips_hidden_mobile_sidebar(self) -> None:
+    def test_localized_account_sidebar_check_skips_hidden_mobile_sidebar(self) -> None:
         class FakeDriver:
             def find_element(self, *_args):
                 raise AssertionError("mobile account chrome must not inspect hidden sidebar content")
 
-        try:
-            pwa_browser._assert_japanese_customer_account_chrome(FakeDriver(), "ja", "mobile")
-        except Exception as error:
-            self.fail(f"Japanese mobile account check did not skip the hidden sidebar: {type(error).__name__}")
+        for locale in ("ja", "ko"):
+            with self.subTest(locale=locale):
+                try:
+                    pwa_browser._assert_customer_account_chrome(FakeDriver(), locale, "mobile")
+                except Exception as error:
+                    self.fail(f"{locale} mobile account check inspected the hidden sidebar: {type(error).__name__}")
+
+    def test_korean_account_sidebar_check_requires_korean_desktop_copy(self) -> None:
+        class FakeElement:
+            def __init__(self, text: str = "", aria_label: str = "") -> None:
+                self.text = text
+                self.aria_label = aria_label
+
+            def get_attribute(self, name: str) -> str | None:
+                return self.aria_label if name == "aria-label" else None
+
+        class FakeDriver:
+            def __init__(self, title: str, navigation_label: str) -> None:
+                self.title = FakeElement(text=title)
+                self.navigation = FakeElement(aria_label=navigation_label)
+
+            def find_element(self, _by: str, selector: str) -> FakeElement:
+                if selector == ".account-menu__title":
+                    return self.title
+                if selector == ".account-menu__nav":
+                    return self.navigation
+                raise AssertionError("unexpected customer account sidebar selector")
+
+        with patch.object(pwa_browser, "By", SimpleNamespace(CSS_SELECTOR="css selector")):
+            pwa_browser._assert_customer_account_chrome(
+                FakeDriver("내 계정", "내 계정 메뉴"), "ko", "desktop"
+            )
+        with self.assertRaisesRegex(AssertionError, "ko customer account sidebar"), patch.object(
+            pwa_browser, "By", SimpleNamespace(CSS_SELECTOR="css selector")
+        ):
+            pwa_browser._assert_customer_account_chrome(
+                FakeDriver("My Account", "My account navigation sidebar"), "ko", "desktop"
+            )
 
     def test_privacy_label_check_skips_hidden_mobile_sidebar_duplicate(self) -> None:
         class FakeLabel:

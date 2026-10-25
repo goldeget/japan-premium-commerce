@@ -15,7 +15,10 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
-from storefront_product_contract import product_page_failure_reason
+from storefront_product_contract import (
+    mobile_product_breadcrumb_failure_reason,
+    product_page_failure_reason,
+)
 
 BASE = os.environ["SHOP_BASE_URL"].rstrip("/")
 PRODUCT_ID = int(os.environ["CI_TEST_PRODUCT_ID"])
@@ -42,6 +45,43 @@ def document_response_status(browser):
         """
     )
     return status if type(status) is int and 100 <= status <= 599 else None
+
+
+def assert_mobile_product_breadcrumb(driver):
+    metrics = driver.execute_script(
+        """
+        const list = document.querySelector('.page-product .breadcrumb__wrapper .breadcrumb');
+        const current = list && list.lastElementChild;
+        const heading = document.querySelector('.page-product h1.product__name');
+        if (!list || !current || !heading) return null;
+        const clean = value => String(value || '').replace(/\\s+/g, ' ').trim();
+        const listRect = list.getBoundingClientRect();
+        const currentRect = current.getBoundingClientRect();
+        const currentText = clean(current.textContent);
+        const headingText = clean(heading.textContent);
+        return {
+          title_matches_heading: currentText === headingText,
+          title_length: Array.from(currentText).length,
+          breadcrumb_client_width: list.clientWidth,
+          breadcrumb_scroll_width: list.scrollWidth,
+          current_item_client_width: current.clientWidth,
+          current_item_scroll_width: current.scrollWidth,
+          within_breadcrumb_bounds: currentRect.left >= listRect.left - 1
+            && currentRect.right <= listRect.right + 1
+        };
+        """
+    )
+    if not isinstance(metrics, dict):
+        raise AssertionError("Mobile product breadcrumb or product heading is missing")
+    failure_reason = mobile_product_breadcrumb_failure_reason(**metrics)
+    assert_true(
+        failure_reason is None,
+        f"Mobile long product breadcrumb is clipped ({failure_reason or 'unknown'}).",
+    )
+    print(
+        "PASS: mobile product breadcrumb shows the full long synthetic title "
+        f"without horizontal clipping (title_chars={metrics['title_length']})"
+    )
 
 def run_viewport(width, height, label):
     options = Options()
@@ -144,6 +184,9 @@ def run_viewport(width, height, label):
                 not og_images,
                 "Global brand Open Graph image leaked onto a product page without a product cover.",
             )
+        if width <= 767:
+            assert_mobile_product_breadcrumb(driver)
+            driver.save_screenshot(str(DEST / f"{label}-product-detail-breadcrumb.png"))
         driver.save_screenshot(str(DEST / f"{label}-product-detail.png"))
         buttons = product_buttons
         assert_true(bool(buttons), "No add-to-cart control on active synthetic product.")

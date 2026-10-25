@@ -44,3 +44,28 @@ def product_page_failure_reason(
     if not add_to_cart_visible or not add_to_cart_enabled:
         return "add_to_cart_unavailable"
     return None
+
+
+def mobile_product_breadcrumb_failure_reason(
+    *,
+    title_matches_heading: bool,
+    title_length: int,
+    breadcrumb_client_width: int,
+    breadcrumb_scroll_width: int,
+    current_item_client_width: int,
+    current_item_scroll_width: int,
+    within_breadcrumb_bounds: bool,
+) -> str | None:
+    """Classify a long synthetic product breadcrumb that is clipped on mobile."""
+    if not title_matches_heading:
+        return "breadcrumb_title_mismatch"
+    if title_length < 40:
+        return "synthetic_title_too_short"
+    if (
+        breadcrumb_scroll_width > breadcrumb_client_width + 1
+        or current_item_scroll_width > current_item_client_width + 1
+    ):
+        return "breadcrumb_text_overflow"
+    if not within_breadcrumb_bounds:
+        return "breadcrumb_outside_bounds"
+    return None

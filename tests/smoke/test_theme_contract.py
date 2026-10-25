@@ -164,8 +164,8 @@ class ThemeContractTests(unittest.TestCase):
         self.assertEqual(account.get("My Account"), "マイアカウント")
         self.assertEqual(account.get("My account navigation sidebar"), "マイアカウントメニュー")
         browser = (ROOT / "tests" / "e2e" / "verify_pwa_browser.py").read_text(encoding="utf-8")
-        self.assertIn("def _assert_japanese_customer_account_chrome", browser)
-        self.assertIn("_assert_japanese_customer_account_chrome(driver, locale, device)", browser)
+        self.assertIn("def _assert_customer_account_chrome", browser)
+        self.assertIn("_assert_customer_account_chrome(driver, locale, device)", browser)
 
     def test_customer_privacy_and_synthetic_check_copy_use_the_child_theme_locale(self) -> None:
         gdpr = THEME / "modules" / "psgdpr" / "views" / "templates" / "front" / "customerAccount.tpl"
