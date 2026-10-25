@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file source-language="en-US" target-language="ko-KR" datatype="plaintext" original="Modules.Blockreassurance.Shop">
+    <body>
+      <trans-unit id="security-policy">
+        <source>Security policy</source>
+        <target state="final">보안 정책</target>
+      </trans-unit>
+      <trans-unit id="delivery-policy">
+        <source>Delivery policy</source>
+        <target state="final">배송 정책</target>
+      </trans-unit>
+      <trans-unit id="return-policy">
+        <source>Return policy</source>
+        <target state="final">반품 정책</target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

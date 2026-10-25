@@ -1436,6 +1436,47 @@ def wait_for_offline_payment_selection(driver: webdriver.Chrome) -> None:
         ) from None
 
 
+def assert_checkout_reassurance_copy(driver: webdriver.Chrome) -> None:
+    """Keep module editor hints and empty stock policy cards out of checkout."""
+    reassurance_blocks = driver.find_elements(By.CSS_SELECTOR, ".blockreassurance--checkout")
+    visible_count = 0
+    placeholder = "(edit with the Customer Reassurance module)"
+    stock_titles = {"Security policy", "Delivery policy", "Return policy"}
+    for container in reassurance_blocks:
+        if not container.is_displayed():
+            continue
+        for item in container.find_elements(By.CSS_SELECTOR, ".reassurance"):
+            if not item.is_displayed():
+                continue
+            visible_count += 1
+            visible_text = " ".join(item.text.split())
+            if placeholder.casefold() in visible_text.casefold():
+                raise AssertionError("checkout reassurance exposes its module editor hint")
+            if visible_text in stock_titles:
+                raise AssertionError("checkout reassurance shows an unconfigured stock policy title without policy copy")
+    print(f"PASS: checkout reassurance editor hint is absent (visible_items={visible_count}).")
+
+
+def accept_required_checkout_conditions(driver: webdriver.Chrome) -> int:
+    conditions = driver.find_elements(
+        By.CSS_SELECTOR,
+        '#conditions-to-approve input[type="checkbox"]',
+    )
+    visible_conditions = [condition for condition in conditions if condition.is_displayed()]
+    for condition in visible_conditions:
+        if condition.get_attribute("required") is None:
+            raise AssertionError("a visible native checkout condition checkbox is not required")
+        label = condition.find_element(By.XPATH, "following-sibling::label[1]")
+        if not label.is_displayed() or not label.text.strip():
+            raise AssertionError("a visible native checkout condition has no customer-facing label")
+        if condition.is_enabled() and not condition.is_selected():
+            click_at_center(driver, condition)
+        if not condition.is_selected():
+            raise AssertionError("a required native checkout condition could not be accepted")
+    print(f"Native required checkout conditions accepted: {len(visible_conditions)}")
+    return len(visible_conditions)
+
+
 def choose_delivery_and_offline_payment(driver: webdriver.Chrome, label: str) -> None:
     operation = "wait_delivery_radios"
     try:
@@ -1475,10 +1516,10 @@ def choose_delivery_and_offline_payment(driver: webdriver.Chrome, label: str) ->
         if other_selected:
             raise AssertionError("a payment provider other than offline ps_checkpayment was selected")
 
+        operation = "verify_checkout_reassurance_copy"
+        assert_checkout_reassurance_copy(driver)
         operation = "accept_checkout_conditions"
-        for condition in driver.find_elements(By.CSS_SELECTOR, '#conditions-to-approve input[type="checkbox"]'):
-            if condition.is_displayed() and condition.is_enabled() and not condition.is_selected():
-                click_at_center(driver, condition)
+        accept_required_checkout_conditions(driver)
         operation = "save_payment_review_screenshot"
         driver.save_screenshot(str(DEST / f"checkout-{label}-offline-payment-review.png"))
     except Exception:

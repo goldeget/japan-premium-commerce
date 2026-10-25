@@ -39,6 +39,8 @@ on:
       - 'tests/smoke/test_account_address_routes.py'
       - 'tests/smoke/test_reset_email_brand_contract.py'
       - 'tests/smoke/test_free_shipping_e2e_contract.py'
+      - 'tests/smoke/test_checkout_reassurance_contract.py'
+      - 'tests/smoke/test_ci_storefront_category_locales_contract.py'
       - 'tests/smoke/test_free_shipping_taxable_coupon_contract.py'
       - 'tests/smoke/test_free_shipping_exemption_contract.py'
       - 'tests/smoke/test_product_tax_rules_contract.py'
@@ -96,6 +98,8 @@ on:
       - 'tests/smoke/test_account_address_routes.py'
       - 'tests/smoke/test_reset_email_brand_contract.py'
       - 'tests/smoke/test_free_shipping_e2e_contract.py'
+      - 'tests/smoke/test_checkout_reassurance_contract.py'
+      - 'tests/smoke/test_ci_storefront_category_locales_contract.py'
       - 'tests/smoke/test_free_shipping_taxable_coupon_contract.py'
       - 'tests/smoke/test_free_shipping_exemption_contract.py'
       - 'tests/smoke/test_product_tax_rules_contract.py'
@@ -173,7 +177,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_docker_run_recovery -v
 
       - name: Verify fresh-install workflow contracts
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_backup_restore_drill_contract tests.smoke.test_deployment_config_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_customer_registration_privacy_gate_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_pwa_registration_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard tests.business_profile.test_admin_recovery_fixture_contract tests.e2e.test_ci_admin_password_reset_contract tests.e2e.test_ci_admin_order_status_contract -v
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_backup_restore_drill_contract tests.smoke.test_deployment_config_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_customer_registration_privacy_gate_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_checkout_reassurance_contract tests.smoke.test_ci_storefront_category_locales_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_pwa_registration_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard tests.business_profile.test_admin_recovery_fixture_contract tests.e2e.test_ci_admin_password_reset_contract tests.e2e.test_ci_admin_order_status_contract -v
 
       - name: Verify isolated unpaid checkout contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract tests.business_profile.test_shipping_admin_links_contract tests.business_profile.test_admin_profile_history_contract tests.admin_locale.test_admin_locale_overlay tests.admin_locale.test_admin_locale_response_diagnostic tests.admin_locale.test_orders_empty_state_asset tests.admin_locale.test_orders_locale_overlay tests.postcode.test_ci_native_order_lifecycle_contract tests.e2e.test_ci_admin_return_browser_contract tests.e2e.test_ci_native_customer_return_browser_contract tests.e2e.test_ci_admin_password_reset_contract -v
@@ -225,6 +229,60 @@ jobs:
           set -euo pipefail
           startup_logs=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" logs --no-color prestashop 2>&1)
           grep -q 'ORDENOWA bootstrap: storefront=ja, en/ko=enabled, admin=ko, theme=kuranea' <<< "$startup_logs"
+
+      - name: Verify installed Customer Reassurance module source and localized seed
+        id: blockreassurance_runtime
+        if: ${{ env.ORDENOWA_ADMIN_QA_FOCUS != 'true' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+        run: |
+          set -euo pipefail
+          mkdir -p "$QA_ARTIFACT_DIR"
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/verify_ci_blockreassurance_runtime.php' \
+            < tests/catalog/verify_ci_blockreassurance_runtime.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e CI=true \
+            -e GITHUB_ACTIONS=true \
+            -e KURANEA_ISOLATED_CI=1 \
+            -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            -e KURANEA_CI_RUN_ID="$GITHUB_RUN_ID" \
+            -e KURANEA_CI_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            prestashop runuser -g www-data -u www-data -- \
+            php /tmp/verify_ci_blockreassurance_runtime.php \
+            | tee "$QA_ARTIFACT_DIR/blockreassurance-runtime.json"
+          {
+            printf 'Installed `blockreassurance` source and stored JA/EN/KO seed rows:\n\n'
+            printf '\n```json\n'
+            cat "$QA_ARTIFACT_DIR/blockreassurance-runtime.json"
+            printf '```\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prepare isolated default category locale data
+        id: category_locale_fixture
+        if: ${{ env.ORDENOWA_ADMIN_QA_FOCUS != 'true' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+        run: |
+          set -euo pipefail
+          mkdir -p "$QA_ARTIFACT_DIR"
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/prepare_ci_storefront_locale_fixtures.php' \
+            < tests/catalog/prepare_ci_storefront_locale_fixtures.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e CI=true \
+            -e GITHUB_ACTIONS=true \
+            -e KURANEA_ISOLATED_CI=1 \
+            -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            -e KURANEA_CI_RUN_ID="$GITHUB_RUN_ID" \
+            -e KURANEA_CI_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            prestashop runuser -g www-data -u www-data -- \
+            php /tmp/prepare_ci_storefront_locale_fixtures.php \
+            | tee "$QA_ARTIFACT_DIR/storefront-category-locale-fixture.json"
 
       - name: Verify the installed KURANEA catalog review module and persistent queue
         if: ${{ env.ORDENOWA_ADMIN_QA_FOCUS != 'true' }}
@@ -1052,6 +1110,21 @@ jobs:
             "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
             tests/e2e/verify_storefront_browser.py \
             2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/storefront-product-cart-e2e.log"
+
+      - name: Verify JA/EN/KO default category labels in Chromium
+        id: storefront_category_locale_browser_qa
+        if: always() && !cancelled() && steps.category_locale_fixture.outcome == 'success' && steps.chromium_setup.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          SHOP_BASE_URL: http://127.0.0.1:18080
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+          CI_CATEGORY_LOCALE_FIXTURE_REPORT: ${{ runner.temp }}/ordenowa-browser-qa/storefront-category-locale-fixture.json
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
+            tests/e2e/verify_storefront_category_locale_browser.py \
+            2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/storefront-category-locale-e2e.log"
 
       - name: Verify native variant selection and cart controls in Chromium
         id: cart_controls_browser_qa
@@ -2091,6 +2164,9 @@ jobs:
           ACCOUNT_CHECKOUT_RESTORE_OUTCOME: ${{ steps.account_checkout_restore.outcome }}
           PRODUCT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.product_admin_browser_qa.outcome }}
           STOREFRONT_BROWSER_QA_OUTCOME: ${{ steps.storefront_browser_qa.outcome }}
+          BLOCKREASSURANCE_RUNTIME_OUTCOME: ${{ steps.blockreassurance_runtime.outcome }}
+          CATEGORY_LOCALE_FIXTURE_OUTCOME: ${{ steps.category_locale_fixture.outcome }}
+          STOREFRONT_CATEGORY_LOCALE_BROWSER_QA_OUTCOME: ${{ steps.storefront_category_locale_browser_qa.outcome }}
           CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.checkout_override.outcome }}
           CHECKOUT_CUSTOMER_BROWSER_QA_OUTCOME: ${{ steps.checkout_customer_browser_qa.outcome }}
           CHECKOUT_ORDER_PERSISTENCE_OUTCOME: ${{ steps.checkout_order_persistence.outcome }}
@@ -2301,6 +2377,20 @@ jobs:
               free-shipping-product-fixture.json
             )
           fi
+          if [[ "$BLOCKREASSURANCE_RUNTIME_OUTCOME" == success ]]; then
+            required_artifacts+=(blockreassurance-runtime.json)
+          fi
+          if [[ "$CATEGORY_LOCALE_FIXTURE_OUTCOME" == success ]]; then
+            required_artifacts+=(storefront-category-locale-fixture.json)
+          fi
+          if [[ "$STOREFRONT_CATEGORY_LOCALE_BROWSER_QA_OUTCOME" == success ]]; then
+            required_artifacts+=(
+              storefront-category-locale-e2e.log
+              storefront-category-ja.png
+              storefront-category-en.png
+              storefront-category-ko.png
+            )
+          fi
           if [[ "$EXEMPTION_PRODUCT_FIXTURE_OUTCOME" == success ]]; then
             required_artifacts+=(
               free-shipping-exemption-product-fixture.log
@@ -2451,6 +2541,8 @@ jobs:
               ci-checkout-mobile.json
               checkout-desktop.png
               checkout-mobile.png
+              checkout-desktop-offline-payment-review.png
+              checkout-mobile-offline-payment-review.png
             )
           fi
           if [[ "$CHECKOUT_ORDER_PERSISTENCE_OUTCOME" == success ]]; then
@@ -2706,6 +2798,9 @@ jobs:
           ACCOUNT_CHECKOUT_RESTORE_OUTCOME: ${{ steps.account_checkout_restore.outcome }}
           PRODUCT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.product_admin_browser_qa.outcome }}
           STOREFRONT_BROWSER_QA_OUTCOME: ${{ steps.storefront_browser_qa.outcome }}
+          BLOCKREASSURANCE_RUNTIME_OUTCOME: ${{ steps.blockreassurance_runtime.outcome }}
+          CATEGORY_LOCALE_FIXTURE_OUTCOME: ${{ steps.category_locale_fixture.outcome }}
+          STOREFRONT_CATEGORY_LOCALE_BROWSER_QA_OUTCOME: ${{ steps.storefront_category_locale_browser_qa.outcome }}
           CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.checkout_override.outcome }}
           CHECKOUT_CUSTOMER_BROWSER_QA_OUTCOME: ${{ steps.checkout_customer_browser_qa.outcome }}
           CHECKOUT_ORDER_PERSISTENCE_OUTCOME: ${{ steps.checkout_order_persistence.outcome }}
@@ -2815,6 +2910,9 @@ jobs:
             "account_checkout_restore=$ACCOUNT_CHECKOUT_RESTORE_OUTCOME" \
             "product_admin=$PRODUCT_ADMIN_BROWSER_QA_OUTCOME" \
             "storefront=$STOREFRONT_BROWSER_QA_OUTCOME" \
+            "blockreassurance_runtime=$BLOCKREASSURANCE_RUNTIME_OUTCOME" \
+            "category_locale_fixture=$CATEGORY_LOCALE_FIXTURE_OUTCOME" \
+            "storefront_category_locale_browser_qa=$STOREFRONT_CATEGORY_LOCALE_BROWSER_QA_OUTCOME" \
             "checkout_override=$CHECKOUT_OVERRIDE_OUTCOME" \
             "checkout_customer=$CHECKOUT_CUSTOMER_BROWSER_QA_OUTCOME" \
             "checkout_order_persistence=$CHECKOUT_ORDER_PERSISTENCE_OUTCOME" \
