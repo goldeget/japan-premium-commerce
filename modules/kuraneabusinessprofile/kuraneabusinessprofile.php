@@ -244,6 +244,15 @@ class Kuraneabusinessprofile extends Module
             header('Expires: 0', true);
         }
 
+        $isCustomerRegistrationRequest = $controllerName === 'registration'
+            || ($controllerName === 'authentication' && \Tools::isSubmit('submitCreate'));
+        if ($isCustomerRegistrationRequest && !CommerceGate::isRegistrationEnabled(
+            $this->publicProfile(),
+            $this->externalAuthorizationConfirmed()
+        )) {
+            \Tools::redirect($this->context->link->getPageLink('index'));
+        }
+
         if (!in_array($controllerName, ['order', 'order-opc'], true)) {
             return;
         }

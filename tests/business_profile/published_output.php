@@ -97,6 +97,17 @@ $checkoutGateEnvironment = [
     'KURANEA_CI_PROJECT_NAME' => getenv('KURANEA_CI_PROJECT_NAME'),
 ];
 try {
+    putenv('KURANEA_ISOLATED_CI=0');
+    assertBusinessProfileSame(
+        false,
+        \Kuranea\BusinessProfile\Customer\CommerceGate::isRegistrationEnabled($published),
+        'A pending seller profile must not expose customer registration outside the exact isolated QA override.'
+    );
+    assertBusinessProfileSame(
+        false,
+        \Kuranea\BusinessProfile\Customer\CommerceGate::isRegistrationEnabled($approved),
+        'A seller without externally confirmed approval must not expose customer registration.'
+    );
     foreach ([
         'CI' => 'true',
         'GITHUB_ACTIONS' => 'true',
@@ -112,11 +123,21 @@ try {
         \Kuranea\BusinessProfile\Customer\CommerceGate::isIsolatedCiCheckoutEnabled(),
         'A uniquely named GitHub Actions disposable Compose project must be able to reach unpaid checkout QA.'
     );
+    assertBusinessProfileSame(
+        true,
+        \Kuranea\BusinessProfile\Customer\CommerceGate::isRegistrationEnabled($published),
+        'Customer registration may open inside the exact disposable Actions project used for browser QA.'
+    );
     putenv('GITHUB_RUN_ATTEMPT=2');
     assertBusinessProfileSame(
         false,
         \Kuranea\BusinessProfile\Customer\CommerceGate::isIsolatedCiCheckoutEnabled(),
         'The isolated checkout route must reject a Compose project from another Actions attempt.'
+    );
+    assertBusinessProfileSame(
+        false,
+        \Kuranea\BusinessProfile\Customer\CommerceGate::isRegistrationEnabled($published),
+        'Customer registration must reject a Compose project from another Actions attempt.'
     );
     putenv('GITHUB_RUN_ATTEMPT=1');
     putenv('GITHUB_ACTIONS=false');

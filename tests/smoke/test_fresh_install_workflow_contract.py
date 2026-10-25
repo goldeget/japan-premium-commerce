@@ -187,10 +187,12 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         account_contract_path = "tests/smoke/test_customer_account_browser_flow_contract.py"
         login_contract_path = "tests/smoke/test_korean_customer_login_contract.py"
         email_brand_contract_path = "tests/smoke/test_reset_email_brand_contract.py"
+        privacy_gate_contract_path = "tests/smoke/test_customer_registration_privacy_gate_contract.py"
         for event, event_block in (("push", push_event), ("pull_request", pull_request_event)):
             self.assertIn(account_contract_path, event_block, f"account contract changes do not trigger {event} CI")
             self.assertIn(login_contract_path, event_block, f"Korean login contract changes do not trigger {event} CI")
             self.assertIn(email_brand_contract_path, event_block, f"email brand contract changes do not trigger {event} CI")
+            self.assertIn(privacy_gate_contract_path, event_block, f"registration privacy gate changes do not trigger {event} CI")
 
         contract_step = workflow.split("- name: Verify fresh-install workflow contracts", 1)[1].split(
             "- name:", 1
@@ -209,6 +211,32 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "tests.smoke.test_reset_email_brand_contract",
             contract_step,
             "fresh-install CI does not run the reset-email brand contract",
+        )
+        self.assertIn(
+            "tests.smoke.test_customer_registration_privacy_gate_contract",
+            contract_step,
+            "fresh-install CI does not run the customer registration privacy gate contract",
+        )
+
+    def test_chromium_setup_installs_and_resolves_japanese_and_korean_fonts(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        setup = workflow.split("- name: Prepare Chromium browser smoke environment", 1)[1].split(
+            "- name:", 1
+        )[0]
+
+        self.assertIn("sudo apt-get update", setup)
+        self.assertIn("sudo apt-get install -y fonts-noto-cjk", setup)
+        self.assertIn("sudo fc-cache -f", setup)
+        self.assertIn("fc-match -f '%{family[0]}' 'Noto Sans CJK JP'", setup)
+        self.assertIn("fc-match -f '%{family[0]}' 'Noto Sans CJK KR'", setup)
+        self.assertIn(
+            'if [[ "$jp_family" != "Noto Sans CJK JP" || "$kr_family" != "Noto Sans CJK KR" ]]; then',
+            setup,
+        )
+        self.assertLess(setup.index("sudo apt-get update"), setup.index("sudo apt-get install -y fonts-noto-cjk"))
+        self.assertLess(
+            setup.index("sudo apt-get install -y fonts-noto-cjk"),
+            setup.index("fc-match -f '%{family[0]}' 'Noto Sans CJK JP'"),
         )
 
     def test_published_reset_email_brand_runs_independently_before_account_flow(self) -> None:
@@ -237,9 +265,60 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         step_names = re.findall(r"^\s+- name: (.+)$", workflow, flags=re.MULTILINE)
         brand_position = step_names.index("Verify official ORDENOWA brand upload and publish in Chromium")
         email_position = step_names.index("Verify the published ORDENOWA password-reset email logo in Chromium")
+        account_override_position = step_names.index("Enable run-scoped checkout only for customer account browser QA")
         account_position = step_names.index("Verify customer registration, email login, logout, password reset, and my page in Chromium")
         self.assertEqual(email_position, brand_position + 1)
-        self.assertEqual(account_position, email_position + 1)
+        self.assertEqual(account_override_position, email_position + 1)
+        self.assertEqual(account_position, account_override_position + 1)
+
+    def test_customer_account_registration_uses_exact_ci_checkout_override_and_restores_it(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        override = workflow.split(
+            "- name: Enable run-scoped checkout only for customer account browser QA", 1
+        )[1].split("- name:", 1)[0]
+        account = workflow.split(
+            "- name: Verify customer registration, email login, logout, password reset, and my page in Chromium",
+            1,
+        )[1].split("- name:", 1)[0]
+        restore = workflow.split(
+            "- name: Restore fail-closed checkout after customer account browser QA", 1
+        )[1].split("- name:", 1)[0]
+        aggregate = workflow.split(
+            "- name: Aggregate browser QA and postal verification failures", 1
+        )[1].split("- name:", 1)[0]
+
+        self.assertIn("id: account_checkout_override", override)
+        self.assertIn("env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'", override)
+        self.assertIn("GITHUB_RUN_ID: ${{ github.run_id }}", override)
+        self.assertIn("GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}", override)
+        self.assertIn('expected_project="kuranea-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"', override)
+        self.assertIn('if [[ "$CI_COMPOSE_PROJECT_NAME" != "$expected_project" ]]', override)
+        self.assertIn("-f compose.yaml -f tests/fixtures/ci-checkout.compose.yaml config --quiet", override)
+        self.assertIn("-f compose.yaml -f tests/fixtures/ci-checkout.compose.yaml", override)
+        self.assertIn("id: account_browser_qa", account)
+        self.assertIn("steps.account_checkout_override.outcome == 'success'", account)
+        self.assertIn("id: account_checkout_restore", restore)
+        self.assertIn("env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'", restore)
+        self.assertIn("if: always() && steps.account_checkout_override.outcome != 'skipped'", restore)
+        self.assertIn(
+            'docker compose -p "$CI_COMPOSE_PROJECT_NAME" \\\n            up -d --no-deps --force-recreate --wait --wait-timeout 300 prestashop',
+            restore,
+        )
+        self.assertNotIn("tests/fixtures/ci-checkout.compose.yaml", restore)
+        self.assertIn("ACCOUNT_CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.account_checkout_override.outcome }}", aggregate)
+        self.assertIn("ACCOUNT_CHECKOUT_RESTORE_OUTCOME: ${{ steps.account_checkout_restore.outcome }}", aggregate)
+        self.assertIn('"account_checkout_override=$ACCOUNT_CHECKOUT_OVERRIDE_OUTCOME"', aggregate)
+        self.assertIn('"account_checkout_restore=$ACCOUNT_CHECKOUT_RESTORE_OUTCOME"', aggregate)
+
+        step_names = re.findall(r"^\s+- name: (.+)$", workflow, flags=re.MULTILINE)
+        self.assertLess(
+            step_names.index("Enable run-scoped checkout only for customer account browser QA"),
+            step_names.index("Verify customer registration, email login, logout, password reset, and my page in Chromium"),
+        )
+        self.assertEqual(
+            step_names[step_names.index("Verify customer registration, email login, logout, password reset, and my page in Chromium") + 1],
+            "Restore fail-closed checkout after customer account browser QA",
+        )
 
     def test_customer_account_e2e_uses_isolated_mailpit_and_publishes_browser_logs(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -373,6 +452,8 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         brand_step = "Verify official ORDENOWA brand upload and publish in Chromium"
         account_step = "Verify customer registration, email login, logout, password reset, and my page in Chromium"
         product_admin_step = "Verify Korean admin native product create and edit in Chromium"
+        account_override_step = "Enable run-scoped checkout only for customer account browser QA"
+        account_restore_step = "Restore fail-closed checkout after customer account browser QA"
         storefront_step = "Verify real product detail and cart in Chromium (no payment)"
         checkout_gate_step = "Enable run-scoped checkout only for the isolated order browser QA"
         order_step = "Verify browser customer search, Japan checkout, and unpaid offline order"
@@ -383,8 +464,10 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         email_step = "Verify the published ORDENOWA password-reset email logo in Chromium"
         email_position = step_names.index(email_step)
         self.assertEqual(step_names[brand_position + 1], email_step)
-        self.assertEqual(step_names[email_position + 1], account_step)
-        self.assertEqual(step_names[account_position + 1], product_admin_step)
+        self.assertEqual(step_names[email_position + 1], account_override_step)
+        self.assertEqual(step_names[account_position - 1], account_override_step)
+        self.assertEqual(step_names[account_position + 1], account_restore_step)
+        self.assertEqual(step_names[account_position + 2], product_admin_step)
         self.assertLess(product_admin_position, step_names.index(storefront_step))
         self.assertLess(product_admin_position, step_names.index(checkout_gate_step))
         self.assertLess(product_admin_position, step_names.index(order_step))

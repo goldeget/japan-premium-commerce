@@ -8,7 +8,7 @@ use Kuranea\BusinessProfile\Domain\ProfileValidator;
 
 final class CommerceGate
 {
-    /** Enable the storefront checkout route only for its matching disposable Actions project. */
+    /** Enable storefront commerce in the approved shop or its matching disposable Actions project. */
     public static function isIsolatedCiCheckoutEnabled(): bool
     {
         $runId = (string) getenv('GITHUB_RUN_ID');
@@ -35,5 +35,13 @@ final class CommerceGate
         }
 
         return (new ProfileValidator())->validateForPublish($publishedProfile) === [];
+    }
+
+    public static function isRegistrationEnabled(
+        ?array $publishedProfile,
+        bool $externalAuthorizationConfirmed = false
+    ): bool {
+        return self::isEnabled($publishedProfile, $externalAuthorizationConfirmed)
+            || self::isIsolatedCiCheckoutEnabled();
     }
 }

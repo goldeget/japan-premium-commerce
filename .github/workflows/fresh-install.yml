@@ -34,6 +34,7 @@ on:
       - 'tests/smoke/test_deployment_config_contract.py'
       - 'tests/smoke/test_fresh_install_workflow_contract.py'
       - 'tests/smoke/test_customer_account_browser_flow_contract.py'
+      - 'tests/smoke/test_customer_registration_privacy_gate_contract.py'
       - 'tests/smoke/test_korean_customer_login_contract.py'
       - 'tests/smoke/test_account_address_routes.py'
       - 'tests/smoke/test_reset_email_brand_contract.py'
@@ -90,6 +91,7 @@ on:
       - 'tests/smoke/test_deployment_config_contract.py'
       - 'tests/smoke/test_fresh_install_workflow_contract.py'
       - 'tests/smoke/test_customer_account_browser_flow_contract.py'
+      - 'tests/smoke/test_customer_registration_privacy_gate_contract.py'
       - 'tests/smoke/test_korean_customer_login_contract.py'
       - 'tests/smoke/test_account_address_routes.py'
       - 'tests/smoke/test_reset_email_brand_contract.py'
@@ -169,7 +171,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_docker_run_recovery -v
 
       - name: Verify fresh-install workflow contracts
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_backup_restore_drill_contract tests.smoke.test_deployment_config_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_pwa_registration_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard tests.e2e.test_ci_admin_order_status_contract -v
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_backup_restore_drill_contract tests.smoke.test_deployment_config_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_customer_registration_privacy_gate_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_pwa_registration_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard tests.e2e.test_ci_admin_order_status_contract -v
 
       - name: Verify isolated unpaid checkout contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract tests.business_profile.test_shipping_admin_links_contract tests.business_profile.test_admin_profile_history_contract tests.admin_locale.test_admin_locale_overlay tests.admin_locale.test_admin_locale_response_diagnostic tests.admin_locale.test_orders_empty_state_asset tests.admin_locale.test_orders_locale_overlay tests.postcode.test_ci_native_order_lifecycle_contract -v
@@ -667,6 +669,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
+          sudo fc-cache -f
+          jp_family="$(fc-match -f '%{family[0]}' 'Noto Sans CJK JP')"
+          kr_family="$(fc-match -f '%{family[0]}' 'Noto Sans CJK KR')"
+          if [[ "$jp_family" != "Noto Sans CJK JP" || "$kr_family" != "Noto Sans CJK KR" ]]; then
+            printf '::error title=ORDENOWA Chromium fonts::Noto CJK JP/KR font resolution failed (JP=%s, KR=%s).\n' \
+              "$jp_family" "$kr_family"
+            exit 1
+          fi
+          printf 'PASS: fontconfig resolves Japanese and Korean Noto CJK fonts.\n'
           python3 -m venv "$RUNNER_TEMP/ordenowa-browser-venv"
           "$RUNNER_TEMP/ordenowa-browser-venv/bin/pip" install --disable-pip-version-check --quiet selenium==4.27.1
           command -v google-chrome || command -v chromium
@@ -833,8 +846,29 @@ jobs:
             exit "$browser_status"
           fi
 
+      - name: Enable run-scoped checkout only for customer account browser QA
+        id: account_checkout_override
+        if: steps.compose_up.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          expected_project="kuranea-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if [[ "$CI_COMPOSE_PROJECT_NAME" != "$expected_project" ]]; then
+            echo '::error title=ORDENOWA account browser QA::Refusing the temporary checkout override outside this exact disposable GitHub Actions project.'
+            exit 1
+          fi
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" \
+            -f compose.yaml -f tests/fixtures/ci-checkout.compose.yaml config --quiet
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" \
+            -f compose.yaml -f tests/fixtures/ci-checkout.compose.yaml \
+            up -d --no-deps --wait --wait-timeout 300 prestashop
+
       - name: Verify customer registration, email login, logout, password reset, and my page in Chromium
-        if: ${{ env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true' }}
+        if: ${{ steps.account_checkout_override.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true' }}
         id: account_browser_qa
         continue-on-error: true
         shell: bash
@@ -900,6 +934,17 @@ jobs:
             fi
             exit "$browser_status"
           fi
+
+      - name: Restore fail-closed checkout after customer account browser QA
+        id: account_checkout_restore
+        if: always() && steps.account_checkout_override.outcome != 'skipped' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" \
+            up -d --no-deps --force-recreate --wait --wait-timeout 300 prestashop
+          printf 'PASS: restored the fail-closed base checkout environment after customer account browser QA.\n'
 
       - name: Verify Korean admin native product create and edit in Chromium
         id: product_admin_browser_qa
@@ -1862,6 +1907,8 @@ jobs:
           SHIPPING_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.shipping_admin_browser_qa.outcome }}
           RESET_EMAIL_BRAND_BROWSER_QA_OUTCOME: ${{ steps.reset_email_brand_browser_qa.outcome }}
           ACCOUNT_BROWSER_QA_OUTCOME: ${{ steps.account_browser_qa.outcome }}
+          ACCOUNT_CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.account_checkout_override.outcome }}
+          ACCOUNT_CHECKOUT_RESTORE_OUTCOME: ${{ steps.account_checkout_restore.outcome }}
           PRODUCT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.product_admin_browser_qa.outcome }}
           STOREFRONT_BROWSER_QA_OUTCOME: ${{ steps.storefront_browser_qa.outcome }}
           CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.checkout_override.outcome }}
@@ -2256,6 +2303,8 @@ jobs:
           SHIPPING_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.shipping_admin_browser_qa.outcome }}
           RESET_EMAIL_BRAND_BROWSER_QA_OUTCOME: ${{ steps.reset_email_brand_browser_qa.outcome }}
           ACCOUNT_BROWSER_QA_OUTCOME: ${{ steps.account_browser_qa.outcome }}
+          ACCOUNT_CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.account_checkout_override.outcome }}
+          ACCOUNT_CHECKOUT_RESTORE_OUTCOME: ${{ steps.account_checkout_restore.outcome }}
           PRODUCT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.product_admin_browser_qa.outcome }}
           STOREFRONT_BROWSER_QA_OUTCOME: ${{ steps.storefront_browser_qa.outcome }}
           CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.checkout_override.outcome }}
@@ -2325,6 +2374,8 @@ jobs:
             "shipping_admin=$SHIPPING_ADMIN_BROWSER_QA_OUTCOME" \
             "reset_email_brand=$RESET_EMAIL_BRAND_BROWSER_QA_OUTCOME" \
             "account=$ACCOUNT_BROWSER_QA_OUTCOME" \
+            "account_checkout_override=$ACCOUNT_CHECKOUT_OVERRIDE_OUTCOME" \
+            "account_checkout_restore=$ACCOUNT_CHECKOUT_RESTORE_OUTCOME" \
             "product_admin=$PRODUCT_ADMIN_BROWSER_QA_OUTCOME" \
             "storefront=$STOREFRONT_BROWSER_QA_OUTCOME" \
             "checkout_override=$CHECKOUT_OVERRIDE_OUTCOME" \
