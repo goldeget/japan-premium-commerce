@@ -17,6 +17,11 @@
         <target state="final">종료일</target>
         <note>PrestaShop dashboard date-range filter end label observed in the Korean dashboard.</note>
       </trans-unit>
+      <trans-unit id="kuranea-average-order-value-kpi" approved="yes">
+        <source>Average Order Value</source>
+        <target state="final">평균 주문 금액</target>
+        <note>PrestaShop AdminOrders KPI title.</note>
+      </trans-unit>
     </body>
   </file>
 </xliff>
