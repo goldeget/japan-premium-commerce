@@ -15,6 +15,34 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tests" / "smoke" / "backup_restore_drill.sh"
 DIAGNOSTICS = ROOT / "tests" / "smoke" / "backup_restore_diagnostics.sh"
+FILE_TREE_DIAGNOSTIC_CATEGORIES = (
+    "missing",
+    "extra",
+    "type",
+    "mode",
+    "uid_gid",
+    "mtime",
+    "size_content",
+    "link",
+    "xattr_acl",
+    "device",
+    "root_entry",
+)
+
+
+def expected_file_tree_diagnostic(**nonzero: int) -> dict[str, int]:
+    return {category: nonzero.get(category, 0) for category in FILE_TREE_DIAGNOSTIC_CATEGORIES}
+
+
+def parse_file_tree_diagnostic(result: subprocess.CompletedProcess[str]) -> dict[str, int]:
+    counts_pattern = " ".join(f"{category}=(\\d+)" for category in FILE_TREE_DIAGNOSTIC_CATEGORIES)
+    match = re.fullmatch(f"FILE_TREE_MISMATCH {counts_pattern}\\n?", result.stdout)
+    if match is None:
+        raise AssertionError("file-tree mismatch diagnostics must contain only fixed category counts")
+    counts = {category: int(value) for category, value in zip(FILE_TREE_DIAGNOSTIC_CATEGORIES, match.groups())}
+    if any(value > 999_999 for value in counts.values()):
+        raise AssertionError("file-tree mismatch counts must remain bounded")
+    return counts
 
 
 def file_tree_comparator_program() -> str:
@@ -63,6 +91,11 @@ def write_tree_archive(path: Path, entries: list[dict[str, object]], *, archive_
                 info.type = tarfile.LNKTYPE
                 info.linkname = str(entry["target"])
                 info.size = 0
+                archive.addfile(info)
+            elif kind in ("character-device", "block-device"):
+                info.type = tarfile.CHRTYPE if kind == "character-device" else tarfile.BLKTYPE
+                info.devmajor = int(entry.get("major", 1))
+                info.devminor = int(entry.get("minor", 1))
                 archive.addfile(info)
             else:
                 raise AssertionError(f"unsupported test archive member kind: {kind}")
@@ -116,6 +149,20 @@ class BackupRestoreDrillContractTests(unittest.TestCase):
             check=False,
         )
         return result, docker_log.read_text(encoding="utf-8") if docker_log.exists() else ""
+
+    def assert_private_file_tree_mismatch(
+        self,
+        result: subprocess.CompletedProcess[str],
+        expected_counts: dict[str, int],
+        private_values: tuple[str, ...] = (),
+    ) -> None:
+        if result.returncode != 1:
+            self.fail("file-tree mismatch must preserve a nonzero comparison result")
+        if result.stderr:
+            self.fail("file-tree comparison must not emit unclassified stderr")
+        self.assertEqual(parse_file_tree_diagnostic(result), expected_counts)
+        if any(value in result.stdout + result.stderr for value in private_values):
+            self.fail("file-tree mismatch diagnostics exposed private fixture material")
 
     def test_mismatched_run_project_is_rejected_before_docker_is_called(self) -> None:
         self.assertTrue(SCRIPT.is_file(), "the CI-only backup/restore drill script must exist")
@@ -409,12 +456,13 @@ class BackupRestoreDrillContractTests(unittest.TestCase):
         ):
             self.assertNotIn(private_value, summary)
 
-    def test_restored_prestart_file_trees_are_compared_without_output(self) -> None:
+    def test_restored_prestart_file_trees_use_bounded_private_safe_diagnostics(self) -> None:
         source = SCRIPT.read_text(encoding="utf-8")
         self.assertIn("restored_app_archive", source)
         self.assertIn("restored_queue_archive", source)
         self.assertIn('compare_file_tree_archives "$app_archive" "$restored_app_archive"', source)
         self.assertIn('compare_file_tree_archives "$queue_archive" "$restored_queue_archive"', source)
+        self.assertIn("fail 'restored catalog queue file tree did not match the private CI snapshot.'", source)
         self.assertNotIn('cmp -s "$app_archive" "$restored_app_archive"', source)
         self.assertNotIn('cmp -s "$queue_archive" "$restored_queue_archive"', source)
 
@@ -496,9 +544,100 @@ class BackupRestoreDrillContractTests(unittest.TestCase):
 
                     result = compare_file_tree_archives(expected, changed_root)
 
-                    self.assertNotEqual(result.returncode, 0)
-                    self.assertEqual(result.stdout, "")
-                    self.assertEqual(result.stderr, "")
+                    if mismatch == "mode":
+                        counts = expected_file_tree_diagnostic(mode=1, root_entry=1)
+                    else:
+                        counts = expected_file_tree_diagnostic(uid_gid=1, root_entry=1)
+                    self.assert_private_file_tree_mismatch(result, counts, ("shop.txt", "same"))
+
+    def test_mismatch_diagnostic_reports_only_bounded_private_safe_category_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            original = temp / "original.tar"
+            restored = temp / "restored.tar"
+            write_tree_archive(
+                original,
+                [
+                    {"name": ".", "kind": "directory", "mode": 0o755, "uid": 0, "gid": 0},
+                    {"name": "private-missing-path-812", "payload": b"private-content-sentinel-873"},
+                    {"name": "private-type-path-914", "payload": b"type"},
+                    {"name": "private-mode-path-215", "payload": b"mode", "mode": 0o640},
+                    {"name": "private-owner-path-316", "payload": b"owner", "uid": 1001, "gid": 1002},
+                    {"name": "private-time-path-417", "payload": b"time", "mtime": 1_700_000_111},
+                    {"name": "private-size-path-518", "payload": b"old"},
+                    {"name": "private-hash-path-619", "payload": b"abc"},
+                    {"name": "private-link-path-720", "kind": "symlink", "target": "private-link-target-a-821"},
+                    {"name": "private-xattr-path-922", "payload": b"xattr", "pax_headers": {"SCHILY.xattr.user.label": "private-xattr-value-123"}},
+                    {"name": "private-acl-path-234", "payload": b"acl", "pax_headers": {"SCHILY.acl.access": "private-acl-value-345"}},
+                    {"name": "private-device-path-456", "kind": "character-device", "major": 3, "minor": 7},
+                ],
+                archive_format=tarfile.PAX_FORMAT,
+            )
+            write_tree_archive(
+                restored,
+                [
+                    {"name": "", "kind": "directory", "mode": 0o700, "uid": 0, "gid": 0},
+                    {"name": "private-extra-path-567", "payload": b"private-extra-content-678"},
+                    {"name": "private-type-path-914", "kind": "directory", "mode": 0o640},
+                    {"name": "private-mode-path-215", "payload": b"mode", "mode": 0o600},
+                    {"name": "private-owner-path-316", "payload": b"owner", "uid": 2001, "gid": 2002},
+                    {"name": "private-time-path-417", "payload": b"time", "mtime": 1_700_000_222},
+                    {"name": "private-size-path-518", "payload": b"larger"},
+                    {"name": "private-hash-path-619", "payload": b"xyz"},
+                    {"name": "private-link-path-720", "kind": "symlink", "target": "private-link-target-b-822"},
+                    {"name": "private-xattr-path-922", "payload": b"xattr", "pax_headers": {"SCHILY.xattr.user.label": "private-xattr-value-124"}},
+                    {"name": "private-acl-path-234", "payload": b"acl", "pax_headers": {"SCHILY.acl.access": "private-acl-value-346"}},
+                    {"name": "private-device-path-456", "kind": "character-device", "major": 3, "minor": 8},
+                ],
+                archive_format=tarfile.PAX_FORMAT,
+            )
+
+            result = compare_file_tree_archives(original, restored)
+
+        if result.returncode != 1:
+            self.fail("file-tree mismatch diagnostics must preserve nonzero mismatch status")
+        if result.stderr:
+            self.fail("file-tree mismatch diagnostics must not write unclassified stderr")
+        self.assertEqual(
+            parse_file_tree_diagnostic(result),
+            expected_file_tree_diagnostic(
+                missing=1,
+                extra=1,
+                type=1,
+                mode=2,
+                uid_gid=1,
+                mtime=1,
+                size_content=2,
+                link=1,
+                xattr_acl=2,
+                device=1,
+                root_entry=1,
+            ),
+        )
+        private_values = (
+            "private-missing-path-812",
+            "private-extra-path-567",
+            "private-type-path-914",
+            "private-mode-path-215",
+            "private-owner-path-316",
+            "private-time-path-417",
+            "private-size-path-518",
+            "private-hash-path-619",
+            "private-link-path-720",
+            "private-link-target-a-821",
+            "private-link-target-b-822",
+            "private-xattr-path-922",
+            "private-xattr-value-123",
+            "private-xattr-value-124",
+            "private-acl-path-234",
+            "private-acl-value-345",
+            "private-acl-value-346",
+            "private-device-path-456",
+            "private-content-sentinel-873",
+            "private-extra-content-678",
+        )
+        if any(value in result.stdout + result.stderr for value in private_values):
+            self.fail("file-tree mismatch diagnostics exposed private fixture material")
 
     def test_archive_member_paths_reject_absolute_and_parent_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -554,7 +693,7 @@ class BackupRestoreDrillContractTests(unittest.TestCase):
                     self.assertEqual(result.stdout, "")
                     self.assertEqual(result.stderr, "")
 
-    def test_changed_content_missing_entries_or_required_metadata_are_rejected_silently(self) -> None:
+    def test_changed_content_missing_entries_or_required_metadata_are_rejected_with_private_safe_counts(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp = Path(temp_dir)
             expected = temp / "expected.tar"
@@ -599,6 +738,23 @@ class BackupRestoreDrillContractTests(unittest.TestCase):
                     {"name": "shortcut", "kind": "symlink", "target": "different-target", "mode": 0o777},
                 ],
             }
+            category_by_mismatch = {
+                "changed content": "size_content",
+                "missing entry": "missing",
+                "mode": "mode",
+                "ownership": "uid_gid",
+                "group ownership": "uid_gid",
+                "modification time": "mtime",
+                "extended attribute": "xattr_acl",
+                "symlink target": "link",
+            }
+            private_values = (
+                "file.txt",
+                "shortcut",
+                "private-original-content",
+                "private-changed-content",
+                "different-target",
+            )
 
             for name, entries in mismatches.items():
                 with self.subTest(mismatch=name):
@@ -607,9 +763,12 @@ class BackupRestoreDrillContractTests(unittest.TestCase):
 
                     result = compare_file_tree_archives(expected, actual)
 
-                    self.assertNotEqual(result.returncode, 0)
-                    self.assertEqual(result.stdout, "")
-                    self.assertEqual(result.stderr, "")
+                    category = category_by_mismatch[name]
+                    self.assert_private_file_tree_mismatch(
+                        result,
+                        expected_file_tree_diagnostic(**{category: 1}),
+                        private_values,
+                    )
 
     def test_final_cleanup_attempts_main_project_even_if_restore_cleanup_fails(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")

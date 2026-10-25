@@ -16,6 +16,21 @@ import sys
 import tarfile
 from decimal import Decimal
 
+DIAGNOSTIC_CATEGORIES = (
+    "missing",
+    "extra",
+    "type",
+    "mode",
+    "uid_gid",
+    "mtime",
+    "size_content",
+    "link",
+    "xattr_acl",
+    "device",
+    "root_entry",
+)
+MAX_DIAGNOSTIC_COUNT = 999999
+
 
 def canonical_name(name):
     if name.startswith("/") or "\0" in name:
@@ -88,11 +103,82 @@ def manifest(path):
     return tree
 
 
+def increment(counts, category):
+    counts[category] = min(counts[category] + 1, MAX_DIAGNOSTIC_COUNT)
+
+
+def mismatch_counts(original, restored):
+    counts = {category: 0 for category in DIAGNOSTIC_CATEGORIES}
+    for name in original.keys() | restored.keys():
+        original_entry = original.get(name)
+        restored_entry = restored.get(name)
+        is_root = name == ""
+
+        if original_entry is None or restored_entry is None:
+            if is_root:
+                increment(counts, "root_entry")
+            else:
+                increment(counts, "extra" if original_entry is None else "missing")
+            continue
+
+        changed = False
+        if original_entry[0] != restored_entry[0]:
+            increment(counts, "type")
+            changed = True
+        else:
+            if original_entry[1] != restored_entry[1]:
+                increment(counts, "mode")
+                changed = True
+            if original_entry[2:4] != restored_entry[2:4]:
+                increment(counts, "uid_gid")
+                changed = True
+            if original_entry[4] != restored_entry[4]:
+                increment(counts, "xattr_acl")
+                changed = True
+
+            kind = original_entry[0]
+            if kind == "file":
+                if original_entry[6] != restored_entry[6]:
+                    increment(counts, "mtime")
+                    changed = True
+                if original_entry[5] != restored_entry[5] or original_entry[7] != restored_entry[7]:
+                    increment(counts, "size_content")
+                    changed = True
+            elif kind in ("symlink", "hardlink"):
+                if original_entry[5] != restored_entry[5]:
+                    increment(counts, "mtime")
+                    changed = True
+                if original_entry[6] != restored_entry[6]:
+                    increment(counts, "link")
+                    changed = True
+            elif kind in ("fifo", "character-device", "block-device"):
+                if original_entry[5] != restored_entry[5]:
+                    increment(counts, "mtime")
+                    changed = True
+                if kind in ("character-device", "block-device") and original_entry[6:8] != restored_entry[6:8]:
+                    increment(counts, "device")
+                    changed = True
+
+        if is_root and changed:
+            increment(counts, "root_entry")
+    return counts
+
+
+def print_mismatch_counts(counts):
+    summary = " ".join(f"{category}={counts[category]}" for category in DIAGNOSTIC_CATEGORIES)
+    sys.stdout.write("FILE_TREE_MISMATCH " + summary + "\n")
+
+
 try:
-    equivalent = manifest(sys.argv[1]) == manifest(sys.argv[2])
+    original = manifest(sys.argv[1])
+    restored = manifest(sys.argv[2])
+    if original == restored:
+        sys.exit(0)
+    counts = mismatch_counts(original, restored)
 except Exception:
     sys.exit(1)
-sys.exit(0 if equivalent else 1)
+print_mismatch_counts(counts)
+sys.exit(1)
 FILE_TREE_COMPARATOR_PY
 }
 
