@@ -125,6 +125,66 @@ PWA_DIAGNOSTIC_WORKER_SOURCES = {
     "http-cache",
     "network",
 }
+PWA_SERVICE_WORKER_DIAGNOSTIC_PHASES = {
+    "api_check",
+    "ready_wait",
+    "active_check",
+    "controller_wait",
+    "complete",
+    "webdriver_script",
+    "validation",
+}
+PWA_SERVICE_WORKER_DIAGNOSTIC_CATEGORIES = {
+    "none",
+    "api_unavailable",
+    "observer_unavailable",
+    "ready_timeout",
+    "ready_rejected",
+    "active_missing",
+    "controller_timeout",
+    "controller_missing",
+    "webdriver_timeout",
+    "webdriver_error",
+    "invalid_result",
+    "scope_mismatch",
+    "script_origin_mismatch",
+    "script_path_mismatch",
+}
+PWA_SERVICE_WORKER_REGISTRATION_OUTCOMES = {
+    "not_attempted",
+    "pending",
+    "resolved",
+    "rejected",
+}
+PWA_SERVICE_WORKER_STATES = {
+    "installing",
+    "installed",
+    "activating",
+    "activated",
+    "redundant",
+    "none",
+}
+PWA_SERVICE_WORKER_ERROR_NAMES = {
+    "AbortError",
+    "Error",
+    "InvalidStateError",
+    "NetworkError",
+    "NotAllowedError",
+    "SecurityError",
+    "TimeoutError",
+    "TypeError",
+    "unknown",
+    "JavascriptException",
+    "TimeoutException",
+    "WebDriverException",
+}
+PWA_SERVICE_WORKER_RESPONSE_MIME_TYPES = {
+    "application/ecmascript",
+    "application/javascript",
+    "application/x-javascript",
+    "text/ecmascript",
+    "text/javascript",
+}
 PWA_SUPPORTED_LOCALES = ("ja", "en", "ko")
 PWA_VIEWPORTS = (
     ("desktop", 1440, 960),
@@ -1611,35 +1671,530 @@ def verify_manifest(driver: webdriver.Chrome, base_url: str) -> dict[str, object
     return snapshot
 
 
-def wait_for_service_worker(driver: webdriver.Chrome) -> dict[str, object]:
-    result = driver.execute_async_script(
-        """
-        const done = arguments[arguments.length - 1];
-        (async () => {
-          if (!('serviceWorker' in navigator)) throw new Error('service workers unavailable');
-          const registration = await navigator.serviceWorker.ready;
-          if (!registration.active) throw new Error('no active service worker');
-          if (!navigator.serviceWorker.controller) {
-            await new Promise((resolve, reject) => {
-              const timeout = setTimeout(() => reject(new Error('controller timeout')), 12000);
-              navigator.serviceWorker.addEventListener('controllerchange', () => {
-                clearTimeout(timeout); resolve();
-              }, {once: true});
-            });
-          }
-          const controller = navigator.serviceWorker.controller;
-          if (!controller) throw new Error('page is not controlled');
-          return {
-            scope: registration.scope,
-            activeState: registration.active.state,
-            controllerScript: controller.scriptURL,
-          };
-        })().then(done).catch(error => done({error: String(error)}));
-        """
+def _safe_service_worker_choice(value: object, allowed: set[str]) -> str:
+    return value if isinstance(value, str) and value in allowed else "unknown"
+
+
+def safe_service_worker_registration_metadata(value: object) -> dict[str, object]:
+    """Keep registration diagnostics to fixed, bounded fields and allow-listed values."""
+    source = value if isinstance(value, dict) else {}
+    boolean_keys = (
+        "service_worker_supported",
+        "observer_installed",
+        "registration_attempted",
+        "ready_resolved",
+        "registration_found",
+        "controller_present",
+        "controller_change_observed",
+        "route_matches_expected",
+        "scope_matches_expected",
+        "script_origin_matches_expected",
+        "script_path_matches_expected",
+        "worker_from_service_worker",
+        "worker_from_disk_cache",
+        "worker_from_prefetch_cache",
     )
-    if not isinstance(result, dict) or result.get("error"):
-        raise AssertionError("service worker did not become active and control the page")
-    return result
+    safe: dict[str, object] = {
+        "phase": _safe_service_worker_choice(
+            source.get("phase"), PWA_SERVICE_WORKER_DIAGNOSTIC_PHASES
+        ),
+        "category": _safe_service_worker_choice(
+            source.get("category"), PWA_SERVICE_WORKER_DIAGNOSTIC_CATEGORIES
+        ),
+        "error_name": _safe_service_worker_choice(
+            source.get("error_name"), PWA_SERVICE_WORKER_ERROR_NAMES
+        ),
+        "registration_error_name": _safe_service_worker_choice(
+            source.get("registration_error_name"), PWA_SERVICE_WORKER_ERROR_NAMES
+        ),
+        "registration_outcome": _safe_service_worker_choice(
+            source.get("registration_outcome"), PWA_SERVICE_WORKER_REGISTRATION_OUTCOMES
+        ),
+        "active_state": _safe_service_worker_choice(
+            source.get("active_state"), PWA_SERVICE_WORKER_STATES
+        ),
+        "worker_response_status": _safe_http_status(source.get("worker_response_status")),
+        "worker_response_mime": _safe_service_worker_choice(
+            source.get("worker_response_mime"), PWA_SERVICE_WORKER_RESPONSE_MIME_TYPES
+        ),
+        "worker_source": _safe_service_worker_choice(
+            source.get("worker_source"), PWA_DIAGNOSTIC_WORKER_SOURCES
+        ),
+    }
+    for key in boolean_keys:
+        flag = source.get(key)
+        safe[key] = flag if type(flag) is bool else None
+
+    return safe
+
+
+def format_service_worker_registration_diagnostic(value: object) -> str:
+    """Format the registration snapshot without exposing browser-controlled strings."""
+    safe = safe_service_worker_registration_metadata(value)
+    status = safe.get("worker_response_status")
+    status_text = str(status) if isinstance(status, int) else "unavailable"
+    parts = [
+        f"phase={safe['phase']}",
+        f"category={safe['category']}",
+        f"error_name={safe['error_name']}",
+        f"registration_error_name={safe['registration_error_name']}",
+    ]
+    for key in (
+        "service_worker_supported",
+        "observer_installed",
+        "registration_attempted",
+        "registration_outcome",
+        "ready_resolved",
+        "registration_found",
+        "active_state",
+        "controller_present",
+        "controller_change_observed",
+        "route_matches_expected",
+        "scope_matches_expected",
+        "script_origin_matches_expected",
+        "script_path_matches_expected",
+    ):
+        value = safe.get(key)
+        parts.append(
+            f"{key}={_diagnostic_boolean(value) if type(value) is bool else value or 'unknown'}"
+        )
+    parts.extend(
+        (
+            f"worker_response_status={status_text}",
+            f"worker_response_mime={safe['worker_response_mime']}",
+            f"worker_from_service_worker={_diagnostic_boolean(safe['worker_from_service_worker'])}",
+            f"worker_from_disk_cache={_diagnostic_boolean(safe['worker_from_disk_cache'])}",
+            f"worker_from_prefetch_cache={_diagnostic_boolean(safe['worker_from_prefetch_cache'])}",
+            f"worker_source={safe['worker_source']}",
+        )
+    )
+
+    return "; " + "; ".join(parts)
+
+
+def _matches_expected_worker_script(value: object, shop_url: str, expected_worker_path: str) -> bool:
+    if not isinstance(value, str) or not same_origin(shop_url, value):
+        return False
+    try:
+        return urlparse(value).path == expected_worker_path
+    except (TypeError, ValueError):
+        return False
+
+
+def service_worker_response_metadata(
+    entries: object,
+    shop_url: str,
+    expected_worker_path: str,
+) -> dict[str, object]:
+    """Extract only response status, MIME category, and cache provenance for the worker script."""
+    metadata: dict[str, object] = {
+        "worker_response_status": None,
+        "worker_response_mime": "unknown",
+        "worker_from_service_worker": None,
+        "worker_from_disk_cache": None,
+        "worker_from_prefetch_cache": None,
+        "worker_source": "unknown",
+    }
+    request_ids: set[str] = set()
+    for event in chrome_performance_events(entries):
+        params = event.get("params")
+        if not isinstance(params, dict):
+            continue
+        method = event.get("method")
+        if method == "Network.requestWillBeSent":
+            request = params.get("request")
+            request_id = params.get("requestId")
+            if (
+                isinstance(request, dict)
+                and isinstance(request_id, str)
+                and _matches_expected_worker_script(
+                    request.get("url"), shop_url, expected_worker_path
+                )
+            ):
+                request_ids.add(request_id)
+        if method != "Network.responseReceived" or params.get("requestId") not in request_ids:
+            continue
+        response = params.get("response")
+        if not isinstance(response, dict) or not _matches_expected_worker_script(
+            response.get("url"), shop_url, expected_worker_path
+        ):
+            continue
+        mime_type = response.get("mimeType")
+        metadata["worker_response_status"] = _safe_http_status(response.get("status"))
+        metadata["worker_response_mime"] = _safe_service_worker_choice(
+            mime_type, PWA_SERVICE_WORKER_RESPONSE_MIME_TYPES
+        )
+        for source_key, target_key in (
+            ("fromServiceWorker", "worker_from_service_worker"),
+            ("fromDiskCache", "worker_from_disk_cache"),
+            ("fromPrefetchCache", "worker_from_prefetch_cache"),
+        ):
+            flag = response.get(source_key)
+            metadata[target_key] = flag if type(flag) is bool else None
+        worker_source = response.get("serviceWorkerResponseSource")
+        if isinstance(worker_source, str) and worker_source in PWA_DIAGNOSTIC_WORKER_SOURCES:
+            metadata["worker_source"] = worker_source
+        elif metadata["worker_from_disk_cache"] is True:
+            metadata["worker_source"] = "http-cache"
+        elif metadata["worker_from_service_worker"] is True:
+            metadata["worker_source"] = "cache-storage"
+        elif all(
+            metadata[key] is False
+            for key in (
+                "worker_from_service_worker",
+                "worker_from_disk_cache",
+                "worker_from_prefetch_cache",
+            )
+        ):
+            metadata["worker_source"] = "network"
+
+    return metadata
+
+
+def service_worker_registration_observer_script() -> str:
+    """Install a transparent test-only observer for the native register() promise."""
+    return """
+    (() => {
+      const safeErrorName = error => {
+        const names = new Set([
+          'AbortError', 'Error', 'InvalidStateError', 'NetworkError',
+          'NotAllowedError', 'SecurityError', 'TimeoutError', 'TypeError'
+        ]);
+        return names.has(error?.name) ? error.name : 'unknown';
+      };
+      const state = {
+        observer_installed: false,
+        registration_attempted: false,
+        registration_outcome: 'not_attempted',
+        registration_error_name: 'unknown'
+      };
+      window.__pwaRegistrationObservation = state;
+      try {
+        const serviceWorker = navigator.serviceWorker;
+        if (!serviceWorker || typeof serviceWorker.register !== 'function') return;
+        const originalRegister = serviceWorker.register;
+        serviceWorker.register = function (...args) {
+          state.registration_attempted = true;
+          state.registration_outcome = 'pending';
+          let promise;
+          try {
+            promise = originalRegister.apply(this, args);
+          } catch (error) {
+            state.registration_outcome = 'rejected';
+            state.registration_error_name = safeErrorName(error);
+            throw error;
+          }
+          Promise.resolve(promise).then(
+            () => { state.registration_outcome = 'resolved'; },
+            error => {
+              state.registration_outcome = 'rejected';
+              state.registration_error_name = safeErrorName(error);
+            }
+          );
+          return promise;
+        };
+        state.observer_installed = serviceWorker.register !== originalRegister;
+      } catch (_error) {
+        state.observer_installed = false;
+      }
+    })();
+    """
+
+
+def install_service_worker_registration_observer(driver: webdriver.Chrome) -> bool:
+    """Install test-only registration diagnostics before the storefront document loads."""
+    try:
+        driver.execute_cdp_cmd(
+            "Page.addScriptToEvaluateOnNewDocument",
+            {"source": service_worker_registration_observer_script()},
+        )
+        installed = True
+    except Exception:
+        installed = False
+    try:
+        setattr(driver, "_pwa_registration_observer_installed", installed)
+    except Exception:
+        pass
+
+    return installed
+
+
+def service_worker_registration_wait_script() -> str:
+    """Await ready and retain the existing 12-second controller wait with safe status fields."""
+    return """
+    const expectedOrigin = arguments[0];
+    const expectedScope = arguments[1];
+    const expectedWorkerPath = arguments[2];
+    const expectedRoute = arguments[3];
+    const done = arguments[arguments.length - 1];
+    const allowedErrorNames = new Set([
+      'AbortError', 'Error', 'InvalidStateError', 'NetworkError',
+      'NotAllowedError', 'SecurityError', 'TimeoutError', 'TypeError'
+    ]);
+    const safeErrorName = error => allowedErrorNames.has(error?.name) ? error.name : 'unknown';
+    const diagnostic = {
+      phase: 'api_check',
+      category: 'none',
+      error_name: 'unknown',
+      registration_error_name: 'unknown',
+      service_worker_supported: 'serviceWorker' in navigator,
+      observer_installed: false,
+      registration_attempted: false,
+      registration_outcome: 'not_attempted',
+      ready_resolved: false,
+      registration_found: false,
+      active_state: 'none',
+      controller_present: false,
+      controller_change_observed: false,
+      route_matches_expected: false,
+      scope_matches_expected: false,
+      script_origin_matches_expected: false,
+      script_path_matches_expected: false
+    };
+    let registration = null;
+    let serviceWorker = null;
+    let controllerChangeObserved = false;
+    let controllerChangeListener = null;
+    let controllerChangePromise = null;
+    let resolveControllerChange = null;
+    const registrationObservation = window.__pwaRegistrationObservation;
+
+    const timedError = phase => {
+      const error = new Error();
+      error.name = 'TimeoutError';
+      error.phase = phase;
+      return error;
+    };
+    const waitForControllerWithinDeadline = async promise => {
+      const controllerDeadline = Date.now() + 12000;
+      const remaining = Math.max(0, controllerDeadline - Date.now());
+      let timerId = 0;
+      const timeout = new Promise((resolve, reject) => {
+        timerId = setTimeout(() => reject(timedError('controller_wait')), remaining);
+      });
+      try {
+        return await Promise.race([Promise.resolve(promise), timeout]);
+      } finally {
+        clearTimeout(timerId);
+      }
+    };
+    const finish = () => {
+      const observer = registrationObservation && typeof registrationObservation === 'object'
+        ? registrationObservation
+        : {};
+      diagnostic.observer_installed = observer.observer_installed === true;
+      diagnostic.registration_attempted = observer.registration_attempted === true;
+      const outcome = observer.registration_outcome;
+      diagnostic.registration_outcome = ['not_attempted', 'pending', 'resolved', 'rejected'].includes(outcome)
+        ? outcome
+        : 'unknown';
+      const registrationErrorName = observer.registration_error_name;
+      diagnostic.registration_error_name = allowedErrorNames.has(registrationErrorName)
+        ? registrationErrorName
+        : 'unknown';
+      diagnostic.controller_change_observed = controllerChangeObserved;
+      if (registration) {
+        diagnostic.registration_found = true;
+        diagnostic.scope_matches_expected = registration.scope === expectedScope;
+        const active = registration.active;
+        const activeState = active?.state;
+        diagnostic.active_state = ['installing', 'installed', 'activating', 'activated', 'redundant'].includes(activeState)
+          ? activeState
+          : 'none';
+      }
+      const controller = serviceWorker?.controller;
+      diagnostic.controller_present = Boolean(controller);
+      if (controller && typeof controller.scriptURL === 'string') {
+        try {
+          const script = new URL(controller.scriptURL, location.href);
+          diagnostic.script_origin_matches_expected = script.origin === expectedOrigin;
+          diagnostic.script_path_matches_expected = script.pathname === expectedWorkerPath;
+        } catch (_error) {
+          diagnostic.script_origin_matches_expected = false;
+          diagnostic.script_path_matches_expected = false;
+        }
+      }
+      try {
+        const currentRoute = new URL(location.href);
+        const expected = new URL(expectedRoute, location.href);
+        diagnostic.route_matches_expected = currentRoute.origin === expected.origin
+          && currentRoute.pathname === expected.pathname
+          && currentRoute.search === expected.search;
+      } catch (_error) {
+        diagnostic.route_matches_expected = false;
+      }
+
+      return diagnostic;
+    };
+
+    (async () => {
+      if (!diagnostic.service_worker_supported) {
+        diagnostic.category = 'api_unavailable';
+        return;
+      }
+      serviceWorker = navigator.serviceWorker;
+      controllerChangeListener = () => {
+        controllerChangeObserved = true;
+        if (resolveControllerChange) resolveControllerChange();
+      };
+      controllerChangePromise = new Promise(resolve => { resolveControllerChange = resolve; });
+      serviceWorker.addEventListener('controllerchange', controllerChangeListener);
+      diagnostic.phase = 'ready_wait';
+      try {
+        registration = await serviceWorker.ready;
+      } catch (error) {
+        diagnostic.phase = 'ready_wait';
+        diagnostic.category = 'ready_rejected';
+        diagnostic.error_name = safeErrorName(error);
+        return;
+      }
+      diagnostic.ready_resolved = true;
+      diagnostic.registration_found = Boolean(registration);
+      diagnostic.phase = 'active_check';
+      if (!registration?.active) {
+        diagnostic.category = 'active_missing';
+        return;
+      }
+      diagnostic.active_state = ['installing', 'installed', 'activating', 'activated', 'redundant'].includes(registration.active.state)
+        ? registration.active.state
+        : 'none';
+      diagnostic.scope_matches_expected = registration.scope === expectedScope;
+
+      // Observe changes before rechecking controller to avoid missing a change in between.
+      if (!serviceWorker.controller) {
+        diagnostic.phase = 'controller_wait';
+        try {
+          // A change observed while awaiting `ready` can precede the missing-controller
+          // state, so wait for a subsequent change when the ready-time state is still empty.
+          if (controllerChangeObserved) {
+            controllerChangePromise = new Promise(resolve => { resolveControllerChange = resolve; });
+          }
+          await waitForControllerWithinDeadline(controllerChangePromise);
+        } catch (error) {
+          diagnostic.category = error?.phase === 'controller_wait'
+            ? 'controller_timeout'
+            : 'controller_missing';
+          diagnostic.error_name = safeErrorName(error);
+          return;
+        }
+      }
+      if (!serviceWorker.controller) {
+        diagnostic.phase = 'controller_wait';
+        diagnostic.category = 'controller_missing';
+        return;
+      }
+      diagnostic.phase = 'complete';
+    })().catch(error => {
+      diagnostic.category = 'ready_rejected';
+      diagnostic.error_name = safeErrorName(error);
+    }).finally(() => {
+      if (serviceWorker && controllerChangeListener) {
+        serviceWorker.removeEventListener('controllerchange', controllerChangeListener);
+      }
+      try {
+        done(finish());
+      } catch (_error) {
+        done({phase: 'webdriver_script', category: 'invalid_result', error_name: 'unknown'});
+      }
+    });
+    """
+
+
+def _expected_service_worker_paths(shop_url: str) -> tuple[str, str, str]:
+    parsed = urlparse(shop_url)
+    origin = urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
+    base_path = parsed.path.rstrip("/")
+    expected_scope_path = base_path + "/"
+    expected_scope = urljoin(shop_url.rstrip("/") + "/", expected_scope_path)
+    expected_worker_path = (base_path or "") + "/sw.js"
+
+    return origin, expected_scope, expected_worker_path
+
+
+def wait_for_service_worker(
+    driver: webdriver.Chrome,
+    shop_url: str,
+    expected_route_url: str,
+) -> dict[str, object]:
+    """Wait for the active worker and controller while retaining only safe diagnostics."""
+    expected_origin, expected_scope, expected_worker_path = _expected_service_worker_paths(shop_url)
+    raw_metadata: dict[str, object]
+    try:
+        result = driver.execute_async_script(
+            service_worker_registration_wait_script(),
+            expected_origin,
+            expected_scope,
+            expected_worker_path,
+            expected_route_url,
+        )
+        raw_metadata = result if isinstance(result, dict) else {
+            "phase": "webdriver_script",
+            "category": "invalid_result",
+            "error_name": "unknown",
+        }
+    except Exception as error:
+        error_name = type(error).__name__
+        category = (
+            "webdriver_timeout"
+            if error_name in {"TimeoutException", "ScriptTimeoutException"}
+            else "webdriver_error"
+        )
+        raw_metadata = {
+            "phase": "webdriver_script",
+            "category": category,
+            "error_name": error_name,
+        }
+
+    raw_metadata["observer_installed"] = getattr(
+        driver, "_pwa_registration_observer_installed", False
+    ) is True and raw_metadata.get("observer_installed") is True
+    try:
+        current_url = driver.current_url
+    except Exception:
+        current_url = None
+    raw_metadata["route_matches_expected"] = (
+        same_storefront_route(current_url, expected_route_url, shop_url)
+        if isinstance(current_url, str)
+        else False
+    )
+    try:
+        performance_entries = driver.get_log("performance")
+    except Exception:
+        performance_entries = []
+    raw_metadata.update(
+        service_worker_response_metadata(
+            performance_entries,
+            shop_url,
+            expected_worker_path,
+        )
+    )
+    metadata = safe_service_worker_registration_metadata(raw_metadata)
+    if metadata["category"] != "none":
+        raise PwaDiagnosticAssertionError(
+            "service worker did not become active and control the page",
+            "service_worker_registration",
+            metadata,
+        )
+
+    return metadata
+
+
+def require_service_worker_registration_match(
+    metadata: dict[str, object],
+    field: str,
+    category: str,
+    message: str,
+) -> None:
+    if metadata.get(field) is True:
+        return
+    failed_metadata = dict(metadata)
+    failed_metadata["phase"] = "validation"
+    failed_metadata["category"] = category
+    raise PwaDiagnosticAssertionError(
+        message,
+        "service_worker_registration",
+        safe_service_worker_registration_metadata(failed_metadata),
+    )
 
 
 def current_main_frame_id(driver: webdriver.Chrome) -> str | None:
@@ -2912,7 +3467,11 @@ def verify_logout_protection(
                 post_restore_trace = restored_trace
             if restored_response.get("status") != 302:
                 raise AssertionError("logged-out account did not redirect after service worker restore")
-            wait_for_service_worker(driver)
+            wait_for_service_worker(
+                driver,
+                shop_url,
+                expected_login_url or driver.current_url,
+            )
             service_worker_ready_after_reset = True
             validate_logged_out_navigation_trace(
                 post_restore_trace,
@@ -3042,6 +3601,7 @@ def run_viewport(
             "Network.setExtraHTTPHeaders",
             {"headers": {"Accept-Language": locale_profile["accept_language"]}},
         )
+        install_service_worker_registration_observer(driver)
         stage = "storefront_navigation"
         driver.get(base_url + "/")
         stage = "storefront_ready"
@@ -3054,15 +3614,25 @@ def run_viewport(
         manifest = verify_manifest(driver, base_url)
         driver.save_screenshot(str(artifact_dir / f"pwa-{label}-installability.png"))
         stage = "service_worker_registration"
-        registration = wait_for_service_worker(driver)
-        expected_scope = (urlparse(base_url).path.rstrip("/") or "") + "/"
-        if registration.get("scope") != urljoin(base_url + "/", expected_scope):
-            raise AssertionError("service worker registration escaped the storefront scope")
-        if not same_origin(base_url, str(registration.get("controllerScript", ""))):
-            raise AssertionError("service worker controller script left the isolated shop origin")
-        expected_worker_path = (urlparse(base_url).path.rstrip("/") or "") + "/sw.js"
-        if urlparse(str(registration.get("controllerScript", ""))).path != expected_worker_path:
-            raise AssertionError("service worker controller is not the storefront worker")
+        registration = wait_for_service_worker(driver, base_url, locale_home_url)
+        require_service_worker_registration_match(
+            registration,
+            "scope_matches_expected",
+            "scope_mismatch",
+            "service worker registration escaped the storefront scope",
+        )
+        require_service_worker_registration_match(
+            registration,
+            "script_origin_matches_expected",
+            "script_origin_mismatch",
+            "service worker controller script left the isolated shop origin",
+        )
+        require_service_worker_registration_match(
+            registration,
+            "script_path_matches_expected",
+            "script_path_mismatch",
+            "service worker controller is not the storefront worker",
+        )
         assert_empty_cache_storage(driver, "initial storefront")
 
         stage = "service_worker_update"
@@ -3080,7 +3650,7 @@ def run_viewport(
             raise AssertionError("service worker update check did not retain an activated worker")
         stage = "online_refresh"
         driver.refresh()
-        wait_for_service_worker(driver)
+        wait_for_service_worker(driver, base_url, locale_home_url)
         assert_empty_cache_storage(driver, "after online refresh")
 
         stage = "offline_fallback"
@@ -3308,6 +3878,8 @@ def run_viewport(
                     navigation_trace = metadata.get("navigation_trace")
                     if isinstance(navigation_trace, dict):
                         diagnostic += f"; navigation_trace={_format_navigation_trace(navigation_trace)}"
+                elif code == "service_worker_registration":
+                    diagnostic += format_service_worker_registration_diagnostic(metadata)
         if isinstance(error, ChromeBrowserCdpError):
             code = getattr(error, "diagnostic_code", "")
             cause = getattr(error, "cause_type", "")

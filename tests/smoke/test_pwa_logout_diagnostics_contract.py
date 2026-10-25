@@ -1124,7 +1124,7 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
             driver.events.append(f"navigation-{navigation_count}")
             return {"status": 302, "navigation_trace": valid_trace}
 
-        def wait_for_worker(_driver: object) -> dict[str, str]:
+        def wait_for_worker(_driver: object, *_args: object) -> dict[str, str]:
             driver.events.append("worker-ready")
             return {"activeState": "activated"}
 
