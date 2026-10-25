@@ -893,21 +893,74 @@ def emit_safe_click_blocker_summary(driver: webdriver.Chrome, element) -> None:
             """
             const element = arguments[0];
             const rect = element.getBoundingClientRect();
-            const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-            const safe = (value, limit) => String(value || '').replace(/[^a-zA-Z0-9_:-]/g, '').slice(0, limit);
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            const target = document.elementFromPoint(centerX, centerY);
+            const targetRect = target?.getBoundingClientRect();
             return target ? {
-              tag: safe(target.tagName, 24),
-              id: safe(target.id, 80),
-              class: safe(typeof target.className === 'string' ? target.className : '', 160)
-            } : {tag: '', id: '', class: ''};
+              tag: target.tagName || '',
+              class_tokens: [...target.classList].slice(0, 32),
+              target_found: true,
+              target_is_element_or_child: target === element || element.contains(target),
+              center_x: centerX,
+              center_y: centerY,
+              target_width: targetRect?.width || 0,
+              target_height: targetRect?.height || 0,
+              target_rect_count: target.getClientRects().length
+            } : {
+              tag: '', class_tokens: [], target_found: false,
+              target_is_element_or_child: false, center_x: centerX, center_y: centerY,
+              target_width: 0, target_height: 0, target_rect_count: 0
+            };
             """,
             element,
         )
         if not isinstance(blocker, dict):
-            blocker = {"tag": "", "id": "", "class": ""}
+            blocker = {}
     except Exception:
-        blocker = {"tag": "unavailable", "id": "", "class": ""}
-    blocker_json = json.dumps(blocker, ensure_ascii=True, sort_keys=True)
+        blocker = {"tag": "unavailable"}
+
+    allowed_tags = {
+        "a", "body", "button", "div", "form", "html", "i", "input", "li", "nav",
+        "p", "section", "span", "ul",
+    }
+    allowed_classes = {
+        "account-menu", "account-menu__link", "alert", "dropdown", "dropdown-menu",
+        "fade", "fixed-top", "header-block", "header-block__action-btn", "modal",
+        "modal-backdrop", "nav", "navbar", "offcanvas", "offcanvas-backdrop", "overlay",
+        "show", "sticky-top",
+    }
+
+    raw_tag = blocker.get("tag")
+    tag = raw_tag.lower() if isinstance(raw_tag, str) and raw_tag.lower() in allowed_tags else "other"
+    raw_classes = blocker.get("class_tokens")
+    class_tokens = (
+        list(dict.fromkeys(token for token in raw_classes if isinstance(token, str) and token in allowed_classes))[:8]
+        if isinstance(raw_classes, list)
+        else []
+    )
+
+    def bounded_geometry(value: object) -> int | None:
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value):
+            return None
+        return min(max(round(value), -5000), 5000)
+
+    safe_blocker = {
+        "tag": tag,
+        "id": "",
+        "class_tokens": class_tokens,
+        "target_found": blocker.get("target_found") is True,
+        "target_is_element_or_child": blocker.get("target_is_element_or_child") is True,
+        "center_x": bounded_geometry(blocker.get("center_x")),
+        "center_y": bounded_geometry(blocker.get("center_y")),
+        "target_width": bounded_geometry(blocker.get("target_width")),
+        "target_height": bounded_geometry(blocker.get("target_height")),
+        "target_rect_count": min(max(blocker.get("target_rect_count", 0), 0), 20)
+        if isinstance(blocker.get("target_rect_count"), int)
+        and not isinstance(blocker.get("target_rect_count"), bool)
+        else 0,
+    }
+    blocker_json = json.dumps(safe_blocker, ensure_ascii=True, sort_keys=True)
     print("ORDENOWA_CLICK_BLOCKER_SAFE_STATE=" + blocker_json, file=sys.stderr)
     annotation = blocker_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
     print("::error title=Browser click target blocked::" + annotation, file=sys.stderr)

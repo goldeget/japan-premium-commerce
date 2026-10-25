@@ -621,13 +621,58 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             "\n\ndef click_centered", 1
         )[0]
         self.assertIn("ORDENOWA_CLICK_BLOCKER_SAFE_STATE", summary)
-        self.assertIn("replace(/[^a-zA-Z0-9_:-]/g, '')", summary)
-        for limit in (
-            "tag: safe(target.tagName, 24)",
-            "id: safe(target.id, 80)",
-            "class: safe(typeof target.className === 'string' ? target.className : '', 160)",
-        ):
-            self.assertIn(limit, summary)
+        self.assertIn("raw_tag.lower() in allowed_tags", summary)
+        self.assertIn("token in allowed_classes", summary)
+        self.assertIn('"id": ""', summary)
+        self.assertNotIn("target.id", summary)
+        for field in ("center_x", "center_y", "target_width", "target_height", "target_rect_count"):
+            self.assertIn(field, summary)
+
+    def test_click_blocker_summary_drops_arbitrary_dom_identity_and_keeps_safe_facts(self) -> None:
+        helper = next(
+            node
+            for node in ast.parse(self.source).body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "emit_safe_click_blocker_summary"
+        )
+        class Browser:
+            def execute_script(self, _script: str, _element: object) -> dict[str, object]:
+                return {
+                    "tag": "DIV",
+                    "id": "qa-customer-jane@example.invalid",
+                    "class_tokens": ["modal-backdrop", "qa-customer-jane@example.invalid", "unknown"],
+                    "target_found": True,
+                    "target_is_element_or_child": False,
+                    "center_x": 423.4,
+                    "center_y": 311.7,
+                    "target_width": 390,
+                    "target_height": 844,
+                    "target_rect_count": 1,
+                }
+
+        import math
+
+        namespace = {"json": json, "math": math, "sys": sys}
+        exec(compile(ast.Module(body=[helper], type_ignores=[]), str(ACCOUNT_FLOW), "exec"), namespace)
+        output = StringIO()
+        with redirect_stderr(output):
+            namespace["emit_safe_click_blocker_summary"](Browser(), object())
+        emitted = output.getvalue()
+        marker = "ORDENOWA_CLICK_BLOCKER_SAFE_STATE="
+        payload = emitted.split(marker, 1)[1].splitlines()[0]
+        summary = json.loads(payload)
+
+        self.assertEqual(summary["tag"], "div")
+        self.assertEqual(summary["id"], "")
+        self.assertEqual(summary["class_tokens"], ["modal-backdrop"])
+        self.assertTrue(summary["target_found"])
+        self.assertFalse(summary["target_is_element_or_child"])
+        self.assertEqual(summary["center_x"], 423)
+        self.assertEqual(summary["center_y"], 312)
+        self.assertEqual(summary["target_width"], 390)
+        self.assertEqual(summary["target_height"], 844)
+        self.assertEqual(summary["target_rect_count"], 1)
+        self.assertNotIn("qa-customer", emitted)
 
     def test_logout_compares_the_network_destination_before_protected_route_checks(self) -> None:
         logout = self.source.split("def logout(", 1)[1].split("\n\ndef run_viewport", 1)[0]
