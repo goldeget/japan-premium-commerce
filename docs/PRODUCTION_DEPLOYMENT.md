@@ -24,7 +24,7 @@
 
 아래 명령은 환경 담당자가 승인한 호스트와 비밀 파일을 준비한 뒤 참고할 구성 템플릿이다. 이 저장소의 Compose는 컨테이너 포트 80의 HTTP만 제공하며 DNS, TLS 종료 프록시, 방화벽, 발신 메일 또는 롤백을 설정하지 않는다. `docker compose config --quiet`는 구성이 해석되는지만 확인하며 안전한 운영 구성이나 실제 배포를 증명하지 않는다.
 
-1. 승인된 불변 코드 SHA를 체크아웃하고 pinned Hummingbird submodule을 확인한다. 운영 릴리스 SHA와 업데이트·롤백 순서는 아직 승인·검증되지 않았다.
+1. 승인된 불변 코드 SHA를 체크아웃하고 `git submodule update --init --recursive`로 pinned Hummingbird submodule을 준비한 뒤 `.gitmodules`의 고정 SHA와 일치하는지 확인한다. 운영 릴리스 SHA와 업데이트·롤백 순서는 아직 승인·검증되지 않았다.
 2. 최초 설치 전에 최종 도메인, proxy 경로, 공개할 host bind/port, 영속 백업 정책을 결정한다. 기존 설치가 있으면 실제 Compose project name을 먼저 확인하고 이후 모든 명령에서 같은 값을 사용한다. 이름을 바꾸면 다른 named volume을 연결할 수 있다. 이 환경 문서는 기존 운영 volume이 있다고 가정하지 않는다.
 3. `.env.example`을 복사하지 말고 운영 비밀 저장소에서 전용 env 파일을 준비한다. 아래 placeholder를 실제 비밀값이 아닌 기존/승인된 project 이름과 비밀 파일 경로로 교체한 뒤에만 명령을 사용한다. 특히 project 이름은 named volume을 결정하므로 추정하지 않는다.
 
@@ -34,7 +34,7 @@
    docker compose -p "$PRODUCTION_PROJECT" --env-file "$PRODUCTION_ENV_FILE" config --quiet
    ```
 
-4. 환경·백업·롤백 승인 후에만 같은 project/env 인자로 database image를 pull하고 PrestaShop image를 빌드한 다음 서비스를 시작한다.
+4. 환경·백업·롤백 승인 후에만 같은 project/env 인자로 database image를 pull하고 PrestaShop image를 빌드한 다음 서비스를 시작한다. 다음 명령은 앞 단계와 같은 shell session에서 실행하거나 각 명령 전에 두 변수를 다시 지정한다.
 
    ```sh
    docker compose -p "$PRODUCTION_PROJECT" --env-file "$PRODUCTION_ENV_FILE" pull mariadb
