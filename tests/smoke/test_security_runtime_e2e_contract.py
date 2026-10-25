@@ -751,6 +751,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
 
         class Driver:
             reads = 0
+            empty_state_visible = True
 
             def find_element(self, by: str, selector: str) -> Element:
                 if selector == "body":
@@ -759,12 +760,12 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
 
             def find_elements(self, by: str, selector: str) -> list[Element]:
                 self.reads += 1
-                if self.reads == 1:
+                if self.reads == 1 and self.empty_state_visible:
                     raise StaleElementReferenceException()
                 elements = {
                     ".header-toolbar h1.title": [Element("주문")],
                     ".js-grid-panel .card-header-title": [Element("주문 (0)")],
-                    ".showcase-list-card": [Element()],
+                    ".showcase-list-card": [Element()] if self.empty_state_visible else [],
                     ".showcase-list-card__header": [Element("주문 관리")],
                     ".showcase-list-card__message": [Element("모든 주문과 주문 상태를 확인할 수 있습니다.")],
                 }
@@ -782,6 +783,11 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         driver = Driver()
         self.assertTrue(wait_for_label(driver))
         self.assertEqual(driver.reads, 6)
+
+        driver.reads = 0
+        driver.empty_state_visible = False
+        self.assertTrue(wait_for_label(driver))
+        self.assertEqual(driver.reads, 3)
 
     def test_read_only_fixture_opens_its_allowed_settings_tab_without_granting_write_roles(self):
         fixture = FIXTURE.read_text(encoding="utf-8")
