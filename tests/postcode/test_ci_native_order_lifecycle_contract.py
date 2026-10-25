@@ -348,6 +348,15 @@ class CiNativeOrderLifecycleContractTests(unittest.TestCase):
         self.assertIn("KURANEA_CI_UNPAID_ORDER_ID", fixture_step)
         self.assertIn("id: order_lifecycle", verify_step)
         self.assertIn("verify_ci_native_order_lifecycle.php", verify_step)
+        self.assertIn(
+            'if ! [[ "$UNPAID_ORDER_ID" =~ ^[0-9]+$ ]] || [ "$UNPAID_ORDER_ID" -lt 1 ] \\',
+            verify_step,
+            "the unpaid order ID guard must close its numeric comparison before continuing the OR chain",
+        )
+        self.assertIn(
+            '|| ! [[ "$PAID_LIKE_ORDER_ID" =~ ^[0-9]+$ ]] || [ "$PAID_LIKE_ORDER_ID" -lt 1 ]; then',
+            verify_step,
+        )
         self.assertIn('expected={"status":"passed"', verify_step)
         safe_verification_artifact = verify_step.index(
             '> "$QA_ARTIFACT_DIR/order-lifecycle-verification.json"'

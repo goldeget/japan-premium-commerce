@@ -1712,7 +1712,7 @@ jobs:
           PAID_LIKE_ORDER_ID: ${{ steps.order_lifecycle_fixture.outputs.paid_like_order_id }}
         run: |
           set -euo pipefail
-          if ! [[ "$UNPAID_ORDER_ID" =~ ^[0-9]+$ ]] || [ "$UNPAID_ORDER_ID" -lt 1 \
+          if ! [[ "$UNPAID_ORDER_ID" =~ ^[0-9]+$ ]] || [ "$UNPAID_ORDER_ID" -lt 1 ] \
             || ! [[ "$PAID_LIKE_ORDER_ID" =~ ^[0-9]+$ ]] || [ "$PAID_LIKE_ORDER_ID" -lt 1 ]; then
             echo '::error title=ORDENOWA native order lifecycle::Fixture outputs were missing or invalid.'
             exit 1
