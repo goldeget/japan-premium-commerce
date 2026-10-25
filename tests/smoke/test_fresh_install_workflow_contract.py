@@ -16,6 +16,97 @@ FRESH_INSTALL_SMOKE = ROOT / "tests" / "smoke" / "fresh_install.sh"
 
 
 class FreshInstallWorkflowContractTests(unittest.TestCase):
+    def test_tagged_push_runs_only_the_isolated_admin_security_check(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        job = workflow.split("  install:\n", 1)[1].split("    steps:\n", 1)[0]
+        self.assertIn(
+            "ORDENOWA_ADMIN_SECURITY_FOCUS: ${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, '[admin-security-focus]') }}",
+            job,
+        )
+
+        def step(name: str) -> str:
+            return workflow.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
+
+        focus_gated = (
+            "Verify fresh cache ownership in an isolated probe project",
+            "Verify the installed KURANEA catalog review module and persistent queue",
+            "Verify Japanese, English, and Korean native product draft validation in PHP",
+            "Verify native inactive Korean admin product create and edit persistence",
+            "Verify reviewed synthetic product is registered as an inactive native product",
+            "Import synthetic Tokyo postcode fixture for isolated checkout QA",
+            "Verify isolated CI Tokyo postcode lookup",
+            "Verify saved native CI Tokyo address",
+            "Verify synthetic Tokyo address in an unpaid native order and Back Office view",
+            "Start disposable Mailpit for customer password-reset email",
+            "Create isolated synthetic tax product and reconcile native unpaid order",
+            "Prepare isolated active product for storefront and free-shipping QA",
+            "Prepare isolated explicit exemption product fixture",
+            "Prepare isolated taxable variant fixture",
+            "Verify Korean admin shipping links resolve in Chromium",
+            "Verify official ORDENOWA brand upload and publish in Chromium",
+            "Verify the published ORDENOWA password-reset email logo in Chromium",
+            "Verify customer registration, email login, logout, password reset, and my page in Chromium",
+            "Verify Korean admin native product create and edit in Chromium",
+            "Verify real product detail and cart in Chromium (no payment)",
+            "Verify native variant selection and cart controls in Chromium",
+            "Verify native customer reset-token replay and expiry in Chromium",
+            "Verify Chromium PWA lifecycle and private-route cache protection",
+            "Prepare isolated free-shipping order and coupon fixtures",
+            "Grant isolated CI administrator the native AdminCarriers create permissions",
+            "Configure the free Japan carrier through Chromium AdminCarriers",
+            "Restart PrestaShop with the CI database volume intact",
+            "Read back the free Japan carrier after a fresh admin login",
+            "Enable run-scoped checkout only for the isolated order browser QA",
+            "Verify browser customer search, Japan checkout, and unpaid offline order",
+            "Diagnose Japanese order rewrite in the isolated database",
+            "Verify saved browser orders are unpaid and retain Japan addresses",
+            "Verify a separate admin session can view both browser orders",
+            "Verify zero shipping in Tokyo coupon and quantity checkout with Chromium",
+            "Verify zero shipping in Osaka mobile checkout with Chromium",
+            "Verify tax-included taxable Japan checkout with the free carrier",
+            "Verify explicit exemption free-shipping checkout with Chromium",
+            "Verify free-shipping orders and totals in the isolated database",
+            "Verify free-shipping orders in a separate admin browser session",
+            "Restore the fail-closed base checkout environment",
+            "Recheck storefront checkout stays gated after unpaid CI order QA",
+            "Prepare CI-only paid-like order for return verification",
+            "Verify native order cancellation, return, and credit-slip behavior",
+            "Verify run-scoped CI backup and isolated restore",
+            "Verify the fresh shop and restart persistence",
+            "Download and import official Japan Post KEN_ALL data",
+            "Verify official Japan Post import contains national address data",
+            "Verify browser QA screenshot coverage",
+        )
+        for name in focus_gated:
+            with self.subTest(step=name):
+                self.assertIn("env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'", step(name))
+
+        retained = (
+            "Start the empty-volume shop",
+            "Verify ORDENOWA business profile installation and admin access",
+            "Prepare Chromium browser smoke environment",
+            "Prepare isolated admin security and reset-token fixtures",
+            "Verify Back Office token and view-only authorization in Chromium",
+            "Restore CI administrator language after locale QA",
+            "Upload browser QA screenshots",
+            "Remove only this run's containers and volumes",
+        )
+        for name in retained:
+            with self.subTest(step=name):
+                self.assertNotIn("env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'", step(name))
+
+        self.assertIn(
+            "Verify focused admin security route screenshot",
+            workflow,
+        )
+        screenshot_step = step("Verify focused admin security route screenshot")
+        self.assertIn("env.ORDENOWA_ADMIN_SECURITY_FOCUS == 'true'", screenshot_step)
+        aggregate = step("Aggregate browser QA and postal verification failures")
+        self.assertIn('if [[ "$ORDENOWA_ADMIN_SECURITY_FOCUS" == true ]]; then', aggregate)
+        self.assertIn('"admin_security_browser_qa=$ADMIN_SECURITY_BROWSER_QA_OUTCOME"', aggregate)
+        self.assertIn('"admin_dashboard_route_screenshot=$ADMIN_DASHBOARD_ROUTE_SCREENSHOT_OUTCOME"', aggregate)
+        self.assertIn('"security_locale_restore=$SECURITY_LOCALE_RESTORE_OUTCOME"', aggregate)
+
     def test_security_fixture_passes_a_run_scoped_dashboard_employee_to_chromium(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         fixture_step = workflow.split(

@@ -10,7 +10,7 @@ import re
 import sys
 import unittest
 from unittest.mock import patch
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 from tests.e2e.admin_locale_diagnostics import (
     ORDER_LABEL_SOURCE_CATEGORIES,
@@ -139,6 +139,175 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertNotIn("private-route-token", serialized)
         self.assertNotIn("private-dashboard-token", serialized)
         self.assertNotIn("localhost", serialized)
+
+    def test_dashboard_route_diagnostic_reads_one_url_snapshot_and_masks_secrets(self):
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+        namespace: dict[str, object] = {
+            "parse_qs": parse_qs,
+            "unquote": unquote,
+            "urljoin": urljoin,
+            "urlparse": urlparse,
+            "re": re,
+            "BASE": "http://localhost:18080",
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
+            "By": type("By", (), {"CSS_SELECTOR": "css selector"}),
+            "webdriver": type("Webdriver", (), {"Chrome": object}),
+        }
+        load_function(ADMIN_FLOW, "_safe_admin_pathname", namespace)
+        load_function(ADMIN_FLOW, "_admin_controller_for_url", namespace)
+        load_function(ADMIN_FLOW, "_admin_dashboard_route_facts", namespace)
+        route_state = load_function(ADMIN_FLOW, "safe_admin_dashboard_route_state", namespace)
+        format_state = load_function(ADMIN_FLOW, "format_admin_dashboard_route_state", namespace)
+
+        class Link:
+            def __init__(self, href: str) -> None:
+                self.href = href
+
+            def get_attribute(self, name: str) -> str | None:
+                return self.href if name == "href" else None
+
+        class Driver:
+            current_url_reads = 0
+
+            @property
+            def current_url(self) -> str:
+                self.current_url_reads += 1
+                return (
+                    "http://localhost:18080/admin-kuranea/index.php/sell/dashboard/"
+                    "123e4567-e89b-12d3-a456-426614174000/?controller=AdminDashboard&token=private-current-token"
+                )
+
+            def execute_script(self, script: str) -> str:
+                return "complete"
+
+            def find_elements(self, by: str, selector: str) -> list[Link]:
+                if selector == "#login_form":
+                    return []
+                if selector == 'a[href*="controller=AdminDashboard"]':
+                    return [
+                        Link(
+                            "http://localhost:18080/admin-kuranea/index.php?"
+                            "controller=AdminDashboard&token=private-menu-token"
+                        )
+                    ]
+                return []
+
+        driver = Driver()
+        state = route_state(driver)
+        serialized = format_state(state)
+        module = ast.parse(source, filename=str(ADMIN_FLOW))
+        safe_pattern = next(
+            ast.literal_eval(node.value)
+            for node in module.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name)
+                and target.id == "SAFE_ADMIN_DASHBOARD_ROUTE_PATTERN"
+                for target in node.targets
+            )
+        )
+
+        self.assertEqual(driver.current_url_reads, 1)
+        self.assertEqual(
+            state["current_path"],
+            "/admin-kuranea/index.php/sell/dashboard/~/",
+        )
+        self.assertEqual(state["dashboard_link_path"], "/admin-kuranea/index.php")
+        self.assertTrue(state["current_same_origin"])
+        self.assertTrue(state["current_admin_path"])
+        self.assertTrue(state["controller_present"])
+        self.assertEqual(state["controller_name"], "AdminDashboard")
+        self.assertEqual(state["current_controller"], "other")
+        self.assertEqual(state["document_ready"], "complete")
+        self.assertFalse(state["login_form_visible"])
+        self.assertRegex(serialized, safe_pattern)
+        for secret_or_origin in (
+            "private-current-token",
+            "private-menu-token",
+            "localhost",
+            "?controller=",
+            "123e4567-e89b-12d3-a456-426614174000",
+        ):
+            with self.subTest(secret_or_origin=secret_or_origin):
+                self.assertNotIn(secret_or_origin, serialized)
+        self.assertIn("current_path=/admin-kuranea/index.php/sell/dashboard/~/;", serialized)
+
+    def test_dashboard_route_diagnostic_distinguishes_origin_admin_path_and_controller(self):
+        namespace: dict[str, object] = {
+            "parse_qs": parse_qs,
+            "unquote": unquote,
+            "urlparse": urlparse,
+            "re": re,
+            "BASE": "http://localhost:18080",
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
+        }
+        load_function(ADMIN_FLOW, "_safe_admin_pathname", namespace)
+        load_function(ADMIN_FLOW, "_admin_controller_for_url", namespace)
+        route_facts = load_function(ADMIN_FLOW, "_admin_dashboard_route_facts", namespace)
+
+        external = route_facts(
+            "http://outside.example/admin-kuranea/index.php?controller=SecretController&token=secret"
+        )
+        self.assertFalse(external["same_origin"])
+        self.assertTrue(external["inside_admin"])
+        self.assertTrue(external["controller_present"])
+        self.assertEqual(external["controller_name"], "other")
+        self.assertEqual(external["classification"], "other")
+
+        wrong_admin_path = route_facts(
+            "http://localhost:18080/admin-kuranea-evil/index.php?controller=AdminDashboard&token=secret"
+        )
+        self.assertTrue(wrong_admin_path["same_origin"])
+        self.assertFalse(wrong_admin_path["inside_admin"])
+        self.assertEqual(wrong_admin_path["classification"], "other")
+
+        missing_controller = route_facts(
+            "http://localhost:18080/admin-kuranea/sell/dashboard?token=secret"
+        )
+        self.assertFalse(missing_controller["controller_present"])
+        self.assertEqual(missing_controller["controller_name"], "none")
+        self.assertEqual(missing_controller["classification"], "none")
+
+    def test_dashboard_route_path_masks_short_opaque_ids_and_keeps_route_separators(self):
+        namespace: dict[str, object] = {"unquote": unquote, "urlparse": urlparse, "re": re}
+        safe_path = load_function(ADMIN_FLOW, "_safe_admin_pathname", namespace)
+
+        self.assertEqual(
+            safe_path("http://localhost:18080/admin-kuranea/index.php/sell/dashboard/ord-1234/"),
+            "/admin-kuranea/index.php/sell/dashboard/~/",
+        )
+
+    def test_dashboard_annotation_escapes_github_workflow_command_delimiters(self):
+        namespace: dict[str, object] = {}
+        escape = load_function(ADMIN_FLOW, "escape_workflow_command_data", namespace)
+        self.assertEqual(
+            escape("/admin/%0A::warning\r\nnext"),
+            "/admin/%250A::warning%0D%0Anext",
+        )
+
+    def test_dashboard_failure_captures_route_state_and_screenshot_before_assertion(self):
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+        run = source.split("def run()", 1)[1].split("\n\nif __name__", 1)[0]
+        dashboard_stage = run.split('stage = "view_only_employee_dashboard_route"', 1)[1].split(
+            'stage = "view_only_employee_dashboard_korean_locale"', 1
+        )[0]
+        handler = run.split("except Exception as error:", 1)[1].split("finally:", 1)[0]
+
+        self.assertLess(
+            dashboard_stage.index("safe_admin_dashboard_route_state(restricted_driver)"),
+            dashboard_stage.index('"admin-security-view-only-dashboard-route-state.png"'),
+        )
+        self.assertLess(
+            dashboard_stage.index('"admin-security-view-only-dashboard-route-state.png"'),
+            dashboard_stage.index('if dashboard_route_state["current_controller"] != "AdminDashboard"'),
+        )
+        self.assertIn("restricted_driver.save_screenshot(", dashboard_stage)
+        self.assertIn("admin_security_dashboard_route", handler)
+        self.assertIn("SAFE_ADMIN_DASHBOARD_ROUTE_PATTERN", handler)
+        self.assertIn("f\"dashboard_route={escape_workflow_command_data(diagnostic_dashboard_route)}\"", handler)
+        self.assertIn("escape_workflow_command_data(diagnostic_dashboard_route)", handler)
+        self.assertIn("ORDENOWA_ADMIN_DASHBOARD_ROUTE=", dashboard_stage)
+        self.assertEqual(run.count('emit_admin_post_login_state(restricted_driver, "view_only")'), 1)
 
     def test_admin_login_wait_retries_when_login_form_detaches_during_navigation(self):
         class StaleElementReferenceException(Exception):
@@ -834,7 +1003,8 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         run = source.split("def run()", 1)[1].split("\n\nif __name__", 1)[0]
         self.assertIn("login(restricted_driver, DASHBOARD_VIEW_ONLY_EMAIL)", run)
         self.assertIn('stage = "view_only_employee_dashboard_route"', run)
-        self.assertIn('_admin_controller_for_url(restricted_driver.current_url) != "AdminDashboard"', run)
+        self.assertIn('if dashboard_route_state["current_controller"] != "AdminDashboard"', run)
+        self.assertIn("safe_admin_dashboard_route_state(restricted_driver)", run)
         self.assertNotIn('a[href*="controller=AdminDashboard"]', run)
 
     def test_dashboard_controller_accepts_only_canonical_legacy_or_native_pretty_path(self):

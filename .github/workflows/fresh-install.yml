@@ -127,6 +127,7 @@ jobs:
       SHOP_PORT: 18080
       KURANEA_ISOLATED_CI: '1'
       KURANEA_ADMIN_LOCALE_DIAGNOSTICS: '1'
+      ORDENOWA_ADMIN_SECURITY_FOCUS: ${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, '[admin-security-focus]') }}
     steps:
       - name: Check out work and pinned submodules
         uses: actions/checkout@v4
@@ -187,6 +188,7 @@ jobs:
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" build --progress=plain prestashop
 
       - name: Verify fresh cache ownership in an isolated probe project
+        if: ${{ env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true' }}
         id: cache_probe
         shell: bash
         run: |
@@ -221,6 +223,7 @@ jobs:
           grep -q 'ORDENOWA bootstrap: storefront=ja, en/ko=enabled, admin=ko, theme=kuranea' <<< "$startup_logs"
 
       - name: Verify the installed KURANEA catalog review module and persistent queue
+        if: ${{ env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -236,6 +239,7 @@ jobs:
             runuser -g www-data -u www-data -- php /tmp/verify_catalog_installation.php
 
       - name: Verify Japanese, English, and Korean native product draft validation in PHP
+        if: ${{ env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -247,6 +251,7 @@ jobs:
             'require "/var/www/html/modules/kuraneacatalog/autoload.php"; require "/tmp/product_admin_draft.php"; echo "PASS: Japanese, English, and Korean product draft boundaries.\n";'
 
       - name: Verify native inactive Korean admin product create and edit persistence
+        if: ${{ env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -268,6 +273,7 @@ jobs:
             runuser -g www-data -u www-data -- php /tmp/verify_catalog_installation.php
 
       - name: Verify reviewed synthetic product is registered as an inactive native product
+        if: ${{ env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -284,6 +290,7 @@ jobs:
             php /tmp/verify_native_registration.php
 
       - name: Import synthetic Tokyo postcode fixture for isolated checkout QA
+        if: ${{ env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true' }}
         id: postcode_fixture
         continue-on-error: true
         shell: bash
@@ -366,7 +373,7 @@ jobs:
 
       - name: Verify isolated CI Tokyo postcode lookup
         id: postcode_lookup
-        if: always() && !cancelled() && steps.postcode_fixture.outcome == 'success'
+        if: always() && !cancelled() && steps.postcode_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         env:
           SHOP_BASE_URL: http://127.0.0.1:18080
@@ -411,7 +418,7 @@ jobs:
 
       - name: Verify saved native CI Tokyo address
         id: native_address_persistence
-        if: always() && !cancelled() && steps.postcode_fixture.outcome == 'success'
+        if: always() && !cancelled() && steps.postcode_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         run: |
@@ -426,7 +433,7 @@ jobs:
 
       - name: Verify synthetic Tokyo address in an unpaid native order and Back Office view
         id: native_order_persistence
-        if: always() && !cancelled() && steps.postcode_fixture.outcome == 'success'
+        if: always() && !cancelled() && steps.postcode_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         run: |
@@ -445,6 +452,7 @@ jobs:
             php /tmp/verify_native_order_persistence.php
 
       - name: Start disposable Mailpit for customer password-reset email
+        if: ${{ env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true' }}
         id: mailpit_setup
         shell: bash
         run: |
@@ -518,7 +526,7 @@ jobs:
 
       - name: Create isolated synthetic tax product and reconcile native unpaid order
         id: tax_fixture
-        if: always() && !cancelled() && steps.compose_up.outcome == 'success'
+        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         run: |
@@ -545,7 +553,7 @@ jobs:
 
       - name: Prepare isolated active product for storefront and free-shipping QA
         id: shipping_product_fixture
-        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && steps.tax_fixture.outcome == 'success'
+        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && steps.tax_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         run: |
@@ -587,7 +595,7 @@ jobs:
 
       - name: Prepare isolated explicit exemption product fixture
         id: exemption_product_fixture
-        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && steps.tax_fixture.outcome == 'success'
+        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && steps.tax_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         run: |
@@ -631,7 +639,7 @@ jobs:
 
       - name: Prepare isolated taxable variant fixture
         id: variant_fixture
-        if: always() && !cancelled() && steps.tax_fixture.outcome == 'success'
+        if: always() && !cancelled() && steps.tax_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         run: |
@@ -665,6 +673,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ordenowa-browser-qa"
 
       - name: Verify Korean admin shipping links resolve in Chromium
+        if: ${{ env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true' }}
         id: shipping_admin_browser_qa
         continue-on-error: true
         shell: bash
@@ -693,6 +702,7 @@ jobs:
           fi
 
       - name: Verify official ORDENOWA brand upload and publish in Chromium
+        if: ${{ env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true' }}
         id: brand_browser_qa
         continue-on-error: true
         shell: bash
@@ -750,7 +760,7 @@ jobs:
 
       - name: Verify the published ORDENOWA password-reset email logo in Chromium
         id: reset_email_brand_browser_qa
-        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && steps.mailpit_setup.outcome == 'success' && steps.chromium_setup.outcome == 'success'
+        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && steps.mailpit_setup.outcome == 'success' && steps.chromium_setup.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -824,6 +834,7 @@ jobs:
           fi
 
       - name: Verify customer registration, email login, logout, password reset, and my page in Chromium
+        if: ${{ env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true' }}
         id: account_browser_qa
         continue-on-error: true
         shell: bash
@@ -892,7 +903,7 @@ jobs:
 
       - name: Verify Korean admin native product create and edit in Chromium
         id: product_admin_browser_qa
-        if: always() && !cancelled() && steps.tax_fixture.outcome == 'success' && steps.chromium_setup.outcome == 'success'
+        if: always() && !cancelled() && steps.tax_fixture.outcome == 'success' && steps.chromium_setup.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -919,7 +930,7 @@ jobs:
 
       - name: Verify real product detail and cart in Chromium (no payment)
         id: storefront_browser_qa
-        if: always() && !cancelled() && steps.shipping_product_fixture.outcome == 'success' && steps.chromium_setup.outcome == 'success'
+        if: always() && !cancelled() && steps.shipping_product_fixture.outcome == 'success' && steps.chromium_setup.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -939,7 +950,7 @@ jobs:
 
       - name: Verify native variant selection and cart controls in Chromium
         id: cart_controls_browser_qa
-        if: always() && !cancelled() && steps.variant_fixture.outcome == 'success' && steps.chromium_setup.outcome == 'success'
+        if: always() && !cancelled() && steps.variant_fixture.outcome == 'success' && steps.chromium_setup.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1016,7 +1027,7 @@ jobs:
 
       - name: Verify native customer reset-token replay and expiry in Chromium
         id: reset_token_browser_qa
-        if: always() && !cancelled() && steps.security_fixture.outcome == 'success' && steps.mailpit_setup.outcome == 'success' && steps.chromium_setup.outcome == 'success'
+        if: always() && !cancelled() && steps.security_fixture.outcome == 'success' && steps.mailpit_setup.outcome == 'success' && steps.chromium_setup.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1030,7 +1041,7 @@ jobs:
 
       - name: Verify Chromium PWA lifecycle and private-route cache protection
         id: pwa_browser_qa
-        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && steps.chromium_setup.outcome == 'success'
+        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && steps.chromium_setup.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1086,7 +1097,7 @@ jobs:
 
       - name: Prepare isolated free-shipping order and coupon fixtures
         id: shipping_free_fixture
-        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && steps.chromium_setup.outcome == 'success' && steps.shipping_product_fixture.outcome == 'success'
+        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && steps.chromium_setup.outcome == 'success' && steps.shipping_product_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         run: |
@@ -1207,7 +1218,7 @@ jobs:
 
       - name: Grant isolated CI administrator the native AdminCarriers create permissions
         id: shipping_free_admin_access
-        if: steps.shipping_free_fixture.outcome == 'success'
+        if: steps.shipping_free_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1279,7 +1290,7 @@ jobs:
 
       - name: Configure the free Japan carrier through Chromium AdminCarriers
         id: shipping_free_admin_configure
-        if: steps.shipping_free_fixture.outcome == 'success' && steps.shipping_free_admin_access.outcome == 'success'
+        if: steps.shipping_free_fixture.outcome == 'success' && steps.shipping_free_admin_access.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1297,7 +1308,7 @@ jobs:
 
       - name: Restart PrestaShop with the CI database volume intact
         id: shipping_free_restart
-        if: steps.shipping_free_admin_configure.outcome == 'success'
+        if: steps.shipping_free_admin_configure.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         run: |
@@ -1308,7 +1319,7 @@ jobs:
 
       - name: Read back the free Japan carrier after a fresh admin login
         id: shipping_free_admin_readback
-        if: steps.shipping_free_restart.outcome == 'success'
+        if: steps.shipping_free_restart.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1326,7 +1337,7 @@ jobs:
 
       - name: Enable run-scoped checkout only for the isolated order browser QA
         id: checkout_override
-        if: always() && !cancelled() && steps.shipping_free_admin_readback.outcome == 'success'
+        if: always() && !cancelled() && steps.shipping_free_admin_readback.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         run: |
@@ -1339,7 +1350,7 @@ jobs:
 
       - name: Verify browser customer search, Japan checkout, and unpaid offline order
         id: checkout_customer_browser_qa
-        if: steps.postcode_lookup.outcome == 'success' && steps.checkout_override.outcome == 'success'
+        if: steps.postcode_lookup.outcome == 'success' && steps.checkout_override.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1363,7 +1374,7 @@ jobs:
             2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/ci-checkout-customer-e2e.log"
 
       - name: Diagnose Japanese order rewrite in the isolated database
-        if: always() && steps.checkout_override.outcome == 'success' && (steps.checkout_customer_browser_qa.outcome == 'failure' || steps.account_browser_qa.outcome == 'failure')
+        if: always() && steps.checkout_override.outcome == 'success' && (steps.checkout_customer_browser_qa.outcome == 'failure' || steps.account_browser_qa.outcome == 'failure') && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         run: |
@@ -1387,7 +1398,7 @@ jobs:
 
       - name: Verify saved browser orders are unpaid and retain Japan addresses
         id: checkout_order_persistence
-        if: steps.checkout_customer_browser_qa.outcome == 'success'
+        if: steps.checkout_customer_browser_qa.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         run: |
@@ -1428,7 +1439,7 @@ jobs:
 
       - name: Verify a separate admin session can view both browser orders
         id: checkout_admin_browser_qa
-        if: steps.checkout_customer_browser_qa.outcome == 'success' && steps.checkout_order_persistence.outcome == 'success'
+        if: steps.checkout_customer_browser_qa.outcome == 'success' && steps.checkout_order_persistence.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1449,7 +1460,7 @@ jobs:
 
       - name: Verify zero shipping in Tokyo coupon and quantity checkout with Chromium
         id: shipping_free_customer_browser_qa
-        if: steps.shipping_free_admin_readback.outcome == 'success' && steps.checkout_override.outcome == 'success' && steps.shipping_product_fixture.outcome == 'success'
+        if: steps.shipping_free_admin_readback.outcome == 'success' && steps.checkout_override.outcome == 'success' && steps.shipping_product_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1467,7 +1478,7 @@ jobs:
 
       - name: Verify zero shipping in Osaka mobile checkout with Chromium
         id: shipping_free_osaka_mobile_browser_qa
-        if: steps.shipping_free_admin_readback.outcome == 'success' && steps.checkout_override.outcome == 'success' && steps.shipping_product_fixture.outcome == 'success'
+        if: steps.shipping_free_admin_readback.outcome == 'success' && steps.checkout_override.outcome == 'success' && steps.shipping_product_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1485,7 +1496,7 @@ jobs:
 
       - name: Verify tax-included taxable Japan checkout with the free carrier
         id: shipping_free_taxable_browser_qa
-        if: always() && !cancelled() && steps.shipping_free_admin_readback.outcome == 'success' && steps.checkout_override.outcome == 'success' && steps.tax_fixture.outcome == 'success'
+        if: always() && !cancelled() && steps.shipping_free_admin_readback.outcome == 'success' && steps.checkout_override.outcome == 'success' && steps.tax_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1503,7 +1514,7 @@ jobs:
 
       - name: Verify explicit exemption free-shipping checkout with Chromium
         id: shipping_free_exemption_browser_qa
-        if: always() && !cancelled() && steps.shipping_free_admin_readback.outcome == 'success' && steps.checkout_override.outcome == 'success' && steps.exemption_product_fixture.outcome == 'success'
+        if: always() && !cancelled() && steps.shipping_free_admin_readback.outcome == 'success' && steps.checkout_override.outcome == 'success' && steps.exemption_product_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1523,7 +1534,7 @@ jobs:
 
       - name: Verify free-shipping orders and totals in the isolated database
         id: shipping_free_order_persistence
-        if: always() && !cancelled() && steps.shipping_free_customer_browser_qa.outcome == 'success' && steps.shipping_free_osaka_mobile_browser_qa.outcome == 'success' && steps.shipping_free_taxable_browser_qa.outcome == 'success' && steps.shipping_free_exemption_browser_qa.outcome == 'success'
+        if: always() && !cancelled() && steps.shipping_free_customer_browser_qa.outcome == 'success' && steps.shipping_free_osaka_mobile_browser_qa.outcome == 'success' && steps.shipping_free_taxable_browser_qa.outcome == 'success' && steps.shipping_free_exemption_browser_qa.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         run: |
@@ -1628,7 +1639,7 @@ jobs:
 
       - name: Verify free-shipping orders in a separate admin browser session
         id: shipping_free_admin_browser_qa
-        if: steps.shipping_free_order_persistence.outcome == 'success'
+        if: steps.shipping_free_order_persistence.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1646,7 +1657,7 @@ jobs:
 
       - name: Restore the fail-closed base checkout environment
         id: checkout_restore
-        if: always() && steps.checkout_override.outcome != 'skipped'
+        if: always() && steps.checkout_override.outcome != 'skipped' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -1655,7 +1666,7 @@ jobs:
 
       - name: Recheck storefront checkout stays gated after unpaid CI order QA
         id: checkout_gate_after_order
-        if: always() && (steps.checkout_override.outcome == 'success' || steps.checkout_override.outcome == 'failure') && steps.checkout_restore.outcome == 'success'
+        if: always() && (steps.checkout_override.outcome == 'success' || steps.checkout_override.outcome == 'failure') && steps.checkout_restore.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1672,7 +1683,7 @@ jobs:
 
       - name: Prepare CI-only paid-like order for return verification
         id: order_lifecycle_fixture
-        if: steps.checkout_order_persistence.outcome == 'success' && steps.checkout_gate_after_order.outcome == 'success'
+        if: steps.checkout_order_persistence.outcome == 'success' && steps.checkout_gate_after_order.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1726,7 +1737,7 @@ jobs:
 
       - name: Verify native order cancellation, return, and credit-slip behavior
         id: order_lifecycle
-        if: steps.order_lifecycle_fixture.outcome == 'success'
+        if: steps.order_lifecycle_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1779,7 +1790,7 @@ jobs:
 
       - name: Verify run-scoped CI backup and isolated restore
         id: backup_restore_drill
-        if: always() && !cancelled() && steps.checkout_restore.outcome == 'success'
+        if: always() && !cancelled() && steps.checkout_restore.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1800,8 +1811,31 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Verify focused admin security route screenshot
+        if: always() && env.ORDENOWA_ADMIN_SECURITY_FOCUS == 'true'
+        id: admin_dashboard_route_screenshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          screenshot="$RUNNER_TEMP/ordenowa-browser-qa/admin-security-view-only-dashboard-route-state.png"
+          if [[ ! -s "$screenshot" ]]; then
+            echo '::error title=ORDENOWA dashboard route evidence::The focused dashboard route screenshot is missing or empty.'
+            exit 1
+          fi
+          python3 - "$screenshot" <<'PYSCREEN'
+          from pathlib import Path
+          import struct, sys
+          data = Path(sys.argv[1]).read_bytes()
+          if len(data) < 24 or data[:8] != b'\x89PNG\r\n\x1a\n':
+              raise SystemExit('focused dashboard route evidence is not a PNG')
+          width, height = struct.unpack('>II', data[16:24])
+          if width <= 0 or height <= 0:
+              raise SystemExit('focused dashboard route screenshot has invalid dimensions')
+          print(f'PASS: focused dashboard route screenshot exists ({width}x{height}).')
+          PYSCREEN
+
       - name: Verify browser QA screenshot coverage
-        if: always()
+        if: always() && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         shell: bash
         env:
           SHIPPING_PRODUCT_FIXTURE_OUTCOME: ${{ steps.shipping_product_fixture.outcome }}
@@ -2162,7 +2196,7 @@ jobs:
 
       - name: Verify the fresh shop and restart persistence
         id: fresh_install_restart
-        if: always() && !cancelled() && steps.checkout_restore.outcome == 'success'
+        if: always() && !cancelled() && steps.checkout_restore.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         env:
           SHOP_BASE_URL: http://127.0.0.1:18080
@@ -2170,13 +2204,13 @@ jobs:
 
       - name: Download and import official Japan Post KEN_ALL data
         id: postal_import
-        if: always() && !cancelled() && steps.checkout_restore.outcome == 'success'
+        if: always() && !cancelled() && steps.checkout_restore.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         run: bash tests/smoke/run_postal_updater.sh "$CI_COMPOSE_PROJECT_NAME"
 
       - name: Verify official Japan Post import contains national address data
         id: postal_verify
-        if: always() && !cancelled() && steps.postal_import.outcome == 'success'
+        if: always() && !cancelled() && steps.postal_import.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         run: |
@@ -2192,6 +2226,7 @@ jobs:
       - name: Aggregate browser QA and postal verification failures
         if: always()
         env:
+          ORDENOWA_ADMIN_SECURITY_FOCUS: ${{ env.ORDENOWA_ADMIN_SECURITY_FOCUS }}
           SHIPPING_PRODUCT_FIXTURE_OUTCOME: ${{ steps.shipping_product_fixture.outcome }}
           EXEMPTION_PRODUCT_FIXTURE_OUTCOME: ${{ steps.exemption_product_fixture.outcome }}
           TAX_FIXTURE_OUTCOME: ${{ steps.tax_fixture.outcome }}
@@ -2199,6 +2234,7 @@ jobs:
           CART_CONTROLS_BROWSER_QA_OUTCOME: ${{ steps.cart_controls_browser_qa.outcome }}
           SECURITY_FIXTURE_OUTCOME: ${{ steps.security_fixture.outcome }}
           ADMIN_SECURITY_BROWSER_QA_OUTCOME: ${{ steps.admin_security_browser_qa.outcome }}
+          ADMIN_DASHBOARD_ROUTE_SCREENSHOT_OUTCOME: ${{ steps.admin_dashboard_route_screenshot.outcome }}
           RESET_TOKEN_BROWSER_QA_OUTCOME: ${{ steps.reset_token_browser_qa.outcome }}
           PWA_BROWSER_QA_OUTCOME: ${{ steps.pwa_browser_qa.outcome }}
           SHIPPING_FREE_FIXTURE_OUTCOME: ${{ steps.shipping_free_fixture.outcome }}
@@ -2239,6 +2275,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "$ORDENOWA_ADMIN_SECURITY_FOCUS" == true ]]; then
+            failed_steps=()
+            for entry in \
+              "security_fixture=$SECURITY_FIXTURE_OUTCOME" \
+              "admin_security_browser_qa=$ADMIN_SECURITY_BROWSER_QA_OUTCOME" \
+              "admin_dashboard_route_screenshot=$ADMIN_DASHBOARD_ROUTE_SCREENSHOT_OUTCOME"; do
+              if [[ "$entry" != *=success ]]; then
+                failed_steps+=("$entry")
+              fi
+            done
+            if [[ "$SECURITY_ADMIN_LOCALE_MUTATED" == 1 && "$SECURITY_LOCALE_RESTORE_OUTCOME" != success ]]; then
+              failed_steps+=("security_locale_restore=$SECURITY_LOCALE_RESTORE_OUTCOME")
+            fi
+            if ((${#failed_steps[@]})); then
+              printf '::error title=ORDENOW focused admin security QA::Failed steps: %s\n' "${failed_steps[*]}"
+              exit 1
+            fi
+            printf 'PASS: focused admin security route QA completed with captured path and screenshot.\n'
+            exit 0
+          fi
           failed_steps=()
           for entry in \
             "shipping_product_fixture=$SHIPPING_PRODUCT_FIXTURE_OUTCOME" \

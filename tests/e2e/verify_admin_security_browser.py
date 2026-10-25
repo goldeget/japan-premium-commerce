@@ -9,7 +9,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 from admin_locale_diagnostics import (
     SAFE_ADMIN_LOCALE_RESPONSE_PATTERN,
@@ -62,6 +62,20 @@ SAFE_ADMIN_SECURITY_RESPONSE_PATTERN = (
 SAFE_ADMIN_NAVIGATION_STATE_PATTERN = (
     r"login_form_visible=(?:true|false); current_controller=(?:AdminBusinessProfile|AdminDashboard|AdminOrders|AdminLogin|none|other); "
     r"business_profile_link_count=(?:0|[1-9][0-9]{0,3}); dashboard_link_count=(?:0|[1-9][0-9]{0,3})"
+)
+SAFE_ADMIN_DASHBOARD_ROUTE_PATTERN = (
+    r"current_path=/[A-Za-z0-9._~%+/-]{0,2048};"
+    r"current_same_origin=(?:true|false|unknown);current_admin_path=(?:true|false|unknown);"
+    r"controller_present=(?:true|false|unknown);"
+    r"controller_name=(?:AdminBusinessProfile|AdminDashboard|AdminOrders|AdminLogin|none|other);"
+    r"current_controller=(?:AdminBusinessProfile|AdminDashboard|AdminOrders|AdminLogin|none|other);"
+    r"document_ready=(?:loading|interactive|complete|unknown);"
+    r"login_form_visible=(?:true|false|unknown);"
+    r"dashboard_link_path=(?:none|/[A-Za-z0-9._~%+/-]{0,2048});"
+    r"dashboard_link_same_origin=(?:true|false|unknown);"
+    r"dashboard_link_admin_path=(?:true|false|unknown);"
+    r"dashboard_link_count=(?:0|[1-9][0-9]{0,3});"
+    r"screenshot_saved=(?:true|false)"
 )
 SAFE_ADMIN_ORDERS_STATE_PATTERN = (
     r"route=AdminOrders;orders_path=(?:orders_list|other|unknown);"
@@ -259,6 +273,211 @@ def _admin_controller_for_url(url: str) -> str:
     if controllers == ["AdminLogin"]:
         return "AdminLogin"
     return "none" if not controllers else "other"
+
+
+def _safe_admin_pathname(url: str) -> str:
+    """Keep route shape while masking identifiers and dropping URL query/fragment data."""
+    try:
+        path = urlparse(url).path or "/"
+    except (TypeError, ValueError):
+        return "/"
+    if not path.startswith("/"):
+        path = "/" + path
+
+    safe_segments = []
+    for segment in path.split("/"):
+        decoded = unquote(segment)
+        safe_identifier_characters = re.fullmatch(r"[A-Za-z0-9._~-]+", decoded) is not None
+        mixed_alphanumeric_identifier = (
+            len(decoded) >= 8
+            and safe_identifier_characters
+            and re.search(r"[A-Za-z]", decoded) is not None
+            and re.search(r"[0-9]", decoded) is not None
+        )
+        dynamic = (
+            bool(re.fullmatch(r"[0-9]+", decoded))
+            or bool(
+                re.fullmatch(
+                    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}",
+                    decoded,
+                )
+            )
+            or "@" in decoded
+            or mixed_alphanumeric_identifier
+            or (
+                len(decoded) >= 20
+                and safe_identifier_characters
+            )
+        )
+        if dynamic:
+            safe_segments.append("~")
+        else:
+            safe_segments.append(re.sub(r"[^A-Za-z0-9._~%+-]", "_", segment))
+
+    safe_path = "/".join(safe_segments)
+    if len(safe_path) > 2049:
+        safe_path = safe_path[:2049]
+        if path.endswith("/") and not safe_path.endswith("/"):
+            safe_path = safe_path.rsplit("/", 1)[0] + "/"
+    return safe_path
+
+
+def _admin_dashboard_route_facts(url: str) -> dict[str, object]:
+    try:
+        actual = urlparse(url)
+        expected = urlparse(BASE)
+        admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
+        same_origin = (actual.scheme, actual.hostname, actual.port) == (
+            expected.scheme,
+            expected.hostname,
+            expected.port,
+        )
+        inside_admin = actual.path == admin_path or actual.path.startswith(admin_path + "/")
+        query = parse_qs(actual.query, keep_blank_values=True)
+        controller_present = "controller" in query
+        controllers = query.get("controller", [])
+        if not controller_present:
+            controller_name = "none"
+        elif len(controllers) == 1 and controllers[0] in {
+            "AdminBusinessProfile",
+            "AdminDashboard",
+            "AdminOrders",
+            "AdminLogin",
+        }:
+            controller_name = controllers[0]
+        else:
+            controller_name = "other"
+        try:
+            classification = _admin_controller_for_url(url)
+        except (TypeError, ValueError):
+            classification = "other"
+    except (TypeError, ValueError):
+        same_origin = None
+        inside_admin = None
+        controller_present = None
+        controller_name = "other"
+        classification = "other"
+
+    return {
+        "path": _safe_admin_pathname(url),
+        "same_origin": same_origin,
+        "inside_admin": inside_admin,
+        "controller_present": controller_present,
+        "controller_name": controller_name,
+        "classification": classification,
+    }
+
+
+def safe_admin_dashboard_route_state(driver: webdriver.Chrome) -> dict[str, object]:
+    """Capture route facts from one URL snapshot without exposing query values or origin."""
+    try:
+        current_url = driver.current_url
+    except Exception:
+        current_url = ""
+    current = _admin_dashboard_route_facts(current_url)
+
+    try:
+        ready_state = driver.execute_script("return document.readyState")
+    except Exception:
+        ready_state = "unknown"
+    if ready_state not in {"loading", "interactive", "complete"}:
+        ready_state = "unknown"
+
+    try:
+        login_form_visible = any(
+            element.is_displayed()
+            for element in driver.find_elements(By.CSS_SELECTOR, "#login_form")
+        )
+    except Exception:
+        login_form_visible = None
+
+    dashboard_link_path = None
+    dashboard_link_same_origin = None
+    dashboard_link_admin_path = None
+    dashboard_link_count = 0
+    try:
+        dashboard_links = driver.find_elements(
+            By.CSS_SELECTOR,
+            'a[href*="controller=AdminDashboard"]',
+        )
+        dashboard_link_count = min(len(dashboard_links), 1000)
+        if dashboard_links:
+            href = dashboard_links[0].get_attribute("href") or ""
+            link_facts = _admin_dashboard_route_facts(urljoin(BASE + "/", href))
+            dashboard_link_path = link_facts["path"]
+            dashboard_link_same_origin = link_facts["same_origin"]
+            dashboard_link_admin_path = link_facts["inside_admin"]
+    except Exception:
+        pass
+
+    return {
+        "current_path": current["path"],
+        "current_same_origin": current["same_origin"],
+        "current_admin_path": current["inside_admin"],
+        "controller_present": current["controller_present"],
+        "controller_name": current["controller_name"],
+        "current_controller": current["classification"],
+        "document_ready": ready_state,
+        "login_form_visible": login_form_visible,
+        "dashboard_link_path": dashboard_link_path,
+        "dashboard_link_same_origin": dashboard_link_same_origin,
+        "dashboard_link_admin_path": dashboard_link_admin_path,
+        "dashboard_link_count": dashboard_link_count,
+        "screenshot_saved": False,
+    }
+
+
+def format_admin_dashboard_route_state(state: dict[str, object]) -> str:
+    """Serialize only the fixed safe route fields allowed in Actions annotations."""
+    def boolean(value: object) -> str:
+        return "true" if value is True else "false" if value is False else "unknown"
+
+    def safe_path(value: object) -> str:
+        if isinstance(value, str) and re.fullmatch(r"/[A-Za-z0-9._~%+/-]{0,2048}", value):
+            return value
+        return "/"
+
+    def safe_controller(value: object) -> str:
+        allowed = {
+            "AdminBusinessProfile",
+            "AdminDashboard",
+            "AdminOrders",
+            "AdminLogin",
+            "none",
+            "other",
+        }
+        return value if isinstance(value, str) and value in allowed else "other"
+
+    ready_state = state.get("document_ready")
+    if ready_state not in {"loading", "interactive", "complete", "unknown"}:
+        ready_state = "unknown"
+    link_path = state.get("dashboard_link_path")
+    safe_link_path = "none" if link_path is None else safe_path(link_path)
+    link_count = state.get("dashboard_link_count")
+    if not isinstance(link_count, int) or isinstance(link_count, bool) or not 0 <= link_count <= 1000:
+        link_count = 0
+
+    fields = (
+        f"current_path={safe_path(state.get('current_path'))}",
+        f"current_same_origin={boolean(state.get('current_same_origin'))}",
+        f"current_admin_path={boolean(state.get('current_admin_path'))}",
+        f"controller_present={boolean(state.get('controller_present'))}",
+        f"controller_name={safe_controller(state.get('controller_name'))}",
+        f"current_controller={safe_controller(state.get('current_controller'))}",
+        f"document_ready={ready_state}",
+        f"login_form_visible={boolean(state.get('login_form_visible'))}",
+        f"dashboard_link_path={safe_link_path}",
+        f"dashboard_link_same_origin={boolean(state.get('dashboard_link_same_origin'))}",
+        f"dashboard_link_admin_path={boolean(state.get('dashboard_link_admin_path'))}",
+        f"dashboard_link_count={link_count}",
+        f"screenshot_saved={boolean(state.get('screenshot_saved'))}",
+    )
+    return ";".join(fields)
+
+
+def escape_workflow_command_data(value: str) -> str:
+    """Escape GitHub workflow-command delimiters before adding untrusted path data."""
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 
 
 def is_admin_orders_list_url(url: str) -> bool:
@@ -1741,11 +1960,24 @@ def run() -> bool:
 
         stage = "view_only_dashboard_employee_login"
         login(restricted_driver, DASHBOARD_VIEW_ONLY_EMAIL)
-        stage = "view_only_employee_dashboard_post_login_state"
-        emit_admin_post_login_state(restricted_driver, "view_only")
         stage = "view_only_employee_dashboard_route"
-        if _admin_controller_for_url(restricted_driver.current_url) != "AdminDashboard":
-            raise AssertionError("the permitted view-only employee did not open its configured Dashboard tab")
+        dashboard_route_state = safe_admin_dashboard_route_state(restricted_driver)
+        try:
+            dashboard_route_state["screenshot_saved"] = bool(
+                restricted_driver.save_screenshot(
+                    str(DEST / "admin-security-view-only-dashboard-route-state.png")
+                )
+            )
+        except Exception:
+            dashboard_route_state["screenshot_saved"] = False
+        dashboard_route_diagnostic = format_admin_dashboard_route_state(dashboard_route_state)
+        print(f"ORDENOWA_ADMIN_DASHBOARD_ROUTE={dashboard_route_diagnostic}", file=sys.stderr)
+        if dashboard_route_state["current_controller"] != "AdminDashboard":
+            error = AssertionError(
+                "the permitted view-only employee did not open its configured Dashboard tab"
+            )
+            error.admin_security_dashboard_route = dashboard_route_diagnostic
+            raise error
         stage = "view_only_employee_dashboard_korean_locale"
         assert_korean_admin_locale(restricted_driver, "view-only dashboard")
         WebDriverWait(restricted_driver, 15).until(
@@ -1772,6 +2004,7 @@ def run() -> bool:
         diagnostic_locale_navigation = getattr(error, "admin_security_locale_navigation_diagnostics", None)
         diagnostic_orders_state = getattr(error, "admin_security_orders_state", None)
         diagnostic_orders_link_state = getattr(error, "admin_security_orders_link_state", None)
+        diagnostic_dashboard_route = getattr(error, "admin_security_dashboard_route", None)
         safe_fields = []
         safe_response = False
         if isinstance(diagnostic_locale_flags, str) and re.fullmatch(
@@ -1804,6 +2037,13 @@ def run() -> bool:
             diagnostic_navigation_state,
         ):
             safe_fields.append(f"navigation={diagnostic_navigation_state}")
+        if isinstance(diagnostic_dashboard_route, str) and re.fullmatch(
+            SAFE_ADMIN_DASHBOARD_ROUTE_PATTERN,
+            diagnostic_dashboard_route,
+        ):
+            safe_fields.append(
+                f"dashboard_route={escape_workflow_command_data(diagnostic_dashboard_route)}"
+            )
         if isinstance(diagnostic_orders_state, str) and re.fullmatch(
             SAFE_ADMIN_ORDERS_STATE_PATTERN,
             diagnostic_orders_state,
