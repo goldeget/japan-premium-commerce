@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 import os
 import re
 import sys
@@ -290,6 +291,162 @@ def current_profile_settings_url(driver: webdriver.Chrome) -> str:
     return current_url
 
 
+def _same_admin_locale_route(first_url: str, second_url: str) -> bool:
+    if (
+        _admin_controller_for_url(first_url) != "AdminBusinessProfile"
+        or _admin_controller_for_url(second_url) != "AdminBusinessProfile"
+    ):
+        return False
+    first = urlparse(first_url)
+    second = urlparse(second_url)
+    return (
+        (first.scheme, first.hostname, first.port, first.path)
+        == (second.scheme, second.hostname, second.port, second.path)
+    )
+
+
+def _diagnostic_bool(value: object) -> str:
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    return "unknown"
+
+
+def _diagnostic_status(value: object) -> str:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        numeric = int(value)
+        if numeric == value and 100 <= numeric <= 599:
+            return str(numeric)
+    return "unknown"
+
+
+def _safe_locale_document_state(driver: webdriver.Chrome) -> dict[str, str]:
+    try:
+        state = driver.execute_script(
+            """
+            const category = value => {
+              if (typeof value !== 'string' || value.trim() === '') return 'none';
+              return ['ko', 'ko-kr'].includes(value.trim().toLowerCase()) ? 'korean' : 'other';
+            };
+            const timing = performance.getEntriesByType('navigation')[0];
+            const responseStatus = timing && Number.isInteger(timing.responseStatus)
+              ? timing.responseStatus
+              : null;
+            return {
+              document_lang: category(document.documentElement?.getAttribute('lang') ?? null),
+              document_sw_controlled: Boolean(navigator.serviceWorker?.controller),
+              navigation_worker_used: timing ? timing.workerStart > 0 : null,
+              navigation_status: responseStatus
+            };
+            """
+        )
+    except Exception:
+        return {
+            "document_lang": "unavailable",
+            "document_sw_controlled": "unknown",
+            "navigation_worker_used": "unknown",
+            "navigation_status": "unknown",
+        }
+
+    if not isinstance(state, dict):
+        state = {}
+    language = state.get("document_lang")
+    if language not in {"korean", "other", "none"}:
+        language = "unavailable"
+    return {
+        "document_lang": language,
+        "document_sw_controlled": _diagnostic_bool(state.get("document_sw_controlled")),
+        "navigation_worker_used": _diagnostic_bool(state.get("navigation_worker_used")),
+        "navigation_status": _diagnostic_status(state.get("navigation_status")),
+    }
+
+
+def navigate_admin_locale_probe(driver: webdriver.Chrome, target_url: str) -> str:
+    """Capture bounded metadata for the exact business profile document navigation."""
+    if _admin_controller_for_url(target_url) != "AdminBusinessProfile":
+        return "unavailable:invalid_diagnostic"
+
+    header_name = "X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC"
+    diagnostic_header = "missing"
+    navigation_status = "unknown"
+    navigation_route_match = False
+    navigation_url_exact = False
+    navigation_from_service_worker = "unknown"
+    navigation_from_disk_cache = "unknown"
+    navigation_from_prefetch_cache = "unknown"
+
+    header_installed = False
+    try:
+        # Drain the login/settings request records before enabling the explicit
+        # response probe for this one AdminBusinessProfile navigation.
+        driver.get_log("performance")
+        driver.execute_cdp_cmd("Network.enable", {})
+        driver.execute_cdp_cmd("Network.setExtraHTTPHeaders", {"headers": {header_name: "1"}})
+        header_installed = True
+    except Exception:
+        # Still perform the real route navigation if Chrome diagnostics are unavailable.
+        pass
+
+    try:
+        driver.get(target_url)
+    finally:
+        if header_installed:
+            try:
+                driver.execute_cdp_cmd("Network.setExtraHTTPHeaders", {"headers": {}})
+            except Exception:
+                pass
+
+    try:
+        for entry in driver.get_log("performance"):
+            try:
+                message = json.loads(entry.get("message", "")).get("message", {})
+                if message.get("method") != "Network.responseReceived":
+                    continue
+                params = message.get("params", {})
+                if params.get("type") != "Document":
+                    continue
+                response = params.get("response", {})
+                response_url = response.get("url")
+                if not isinstance(response_url, str) or not _same_admin_locale_route(response_url, target_url):
+                    continue
+
+                # Keep only the last same-route Document response; raw CDP
+                # entries, URLs, request IDs, headers, and tokens stay in memory.
+                navigation_route_match = True
+                navigation_url_exact = response_url == target_url
+                navigation_status = _diagnostic_status(response.get("status"))
+                navigation_from_service_worker = _diagnostic_bool(response.get("fromServiceWorker"))
+                navigation_from_disk_cache = _diagnostic_bool(response.get("fromDiskCache"))
+                navigation_from_prefetch_cache = _diagnostic_bool(response.get("fromPrefetchCache"))
+                headers = response.get("headers", {})
+                if isinstance(headers, dict):
+                    for name, value in headers.items():
+                        if isinstance(name, str) and name.lower() == header_name.lower() and isinstance(value, str):
+                            diagnostic_header = value
+                            break
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                continue
+    except Exception:
+        # Instrumentation failure remains diagnostic-only; the unchanged Korean
+        # document assertion below still decides whether the check passes.
+        pass
+
+    dom_state = _safe_locale_document_state(driver)
+    metadata = (
+        f"navigation_status={navigation_status};"
+        f"navigation_route_match={_diagnostic_bool(navigation_route_match)};"
+        f"navigation_url_exact={_diagnostic_bool(navigation_url_exact)};"
+        f"navigation_from_service_worker={navigation_from_service_worker};"
+        f"navigation_from_disk_cache={navigation_from_disk_cache};"
+        f"navigation_from_prefetch_cache={navigation_from_prefetch_cache};"
+        f"document_lang={dom_state['document_lang']};"
+        f"document_sw_controlled={dom_state['document_sw_controlled']};"
+        f"navigation_worker_used={dom_state['navigation_worker_used']}"
+    )
+    return parse_admin_locale_response_diagnostic(f"{diagnostic_header};{metadata}")
+
+
 def generated_admin_controller_url(driver: webdriver.Chrome, controller: str) -> str:
     """Find a same-origin, employee-tokenized link for an installed custom controller."""
     for link in driver.find_elements(By.CSS_SELECTOR, 'a[href*="controller="]'):
@@ -313,12 +470,17 @@ def generated_admin_controller_url(driver: webdriver.Chrome, controller: str) ->
     raise AssertionError(f"the full administrator cannot reach the {controller} screen")
 
 
-def assert_korean_admin_locale(driver: webdriver.Chrome, route_label: str) -> None:
+def assert_korean_admin_locale(
+    driver: webdriver.Chrome,
+    route_label: str,
+    navigation_diagnostic: str | None = None,
+) -> None:
     document_locale = driver.find_element(By.TAG_NAME, "html").get_attribute("lang")
     if not isinstance(document_locale, str) or not is_korean_admin_language(document_locale):
         error = AssertionError(f"{route_label} did not force the Korean Back Office locale")
         error.admin_security_locale_flags = "korean=false"
         error.admin_security_locale_diagnostics = read_admin_locale_response_diagnostic(driver)
+        error.admin_security_locale_navigation_diagnostics = navigation_diagnostic
         raise error
 
 
@@ -333,22 +495,45 @@ def read_admin_locale_response_diagnostic(driver: webdriver.Chrome) -> str:
               credentials: "same-origin",
               redirect: "manual",
               headers: {"X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC": "1"}
-            }).then(response => {
+            }).then(async response => {
               const requestUrl = new URL(window.location.href);
               let sameRoute = false;
+              let urlExact = false;
               try {
                 const responseUrl = new URL(response.url);
                 sameRoute = responseUrl.origin === requestUrl.origin
                   && responseUrl.pathname === requestUrl.pathname
                   && requestUrl.searchParams.get("controller") === "AdminBusinessProfile"
                   && responseUrl.searchParams.get("controller") === "AdminBusinessProfile";
+                urlExact = response.url === window.location.href;
               } catch (_) {
                 // Keep URL details private; the safe boolean below records only the comparison.
               }
               const diagnosticHeader = response.type === "opaqueredirect"
                 ? "redirect=opaque"
                 : response.headers.get("X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC") || "missing";
-              done(`${diagnosticHeader};browser_status=${response.status};browser_type=${response.type};browser_redirected=${response.redirected};browser_same_route=${sameRoute}`);
+              let responseHtmlLang = "unavailable";
+              try {
+                const responseBody = await response.text();
+                const responseDocument = new DOMParser().parseFromString(responseBody, "text/html");
+                const responseLang = responseDocument.documentElement?.getAttribute("lang");
+                responseHtmlLang = typeof responseLang !== "string" || responseLang.trim() === ""
+                  ? "none"
+                  : ["ko", "ko-kr"].includes(responseLang.trim().toLowerCase()) ? "korean" : "other";
+              } catch (_) {
+                // Only the bounded category is returned; response content stays in memory.
+              }
+              const currentLang = document.documentElement?.getAttribute("lang");
+              const documentLang = typeof currentLang !== "string" || currentLang.trim() === ""
+                ? "none"
+                : ["ko", "ko-kr"].includes(currentLang.trim().toLowerCase()) ? "korean" : "other";
+              const navigation = performance.getEntriesByType("navigation")[0];
+              const navigationStatus = navigation && Number.isInteger(navigation.responseStatus)
+                ? navigation.responseStatus
+                : "unknown";
+              const controlled = Boolean(navigator.serviceWorker?.controller);
+              const workerUsed = navigation ? navigation.workerStart > 0 : "unknown";
+              done(`${diagnosticHeader};browser_status=${response.status};browser_type=${response.type};browser_redirected=${response.redirected};browser_same_route=${sameRoute};browser_url_exact=${urlExact};document_lang=${documentLang};response_html_lang=${responseHtmlLang};document_sw_controlled=${controlled};navigation_worker_used=${workerUsed};navigation_status=${navigationStatus}`);
             })
               .catch(error => done(`unavailable:${error.name}`));
             """
@@ -979,13 +1164,15 @@ def verify_security_attempt_without_mutation(
         raise
 
 
-def new_driver() -> webdriver.Chrome:
+def new_driver(enable_performance_logging: bool = False) -> webdriver.Chrome:
     options = Options()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1440,1000")
+    if enable_performance_logging:
+        options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
     return webdriver.Chrome(options=options)
 
 
@@ -1026,7 +1213,7 @@ def run() -> bool:
         validate_isolated_ci_project()
         validate_loopback_admin_targets()
         stage = "admin_browser_start"
-        admin_driver = new_driver()
+        admin_driver = new_driver(enable_performance_logging=True)
         stage = "admin_token_dom_fixture"
         verify_native_invalid_token_dom_fixture(admin_driver)
         verify_native_compromised_page_fixture(admin_driver)
@@ -1057,7 +1244,11 @@ def run() -> bool:
         )
         for controller, route_url, content_marker, screenshot in legacy_admin_screens:
             stage = f"admin_legacy_{controller.lower()}_route"
-            admin_driver.get(route_url or generated_admin_controller_url(admin_driver, controller))
+            navigation_diagnostic = None
+            if controller == "AdminBusinessProfile":
+                navigation_diagnostic = navigate_admin_locale_probe(admin_driver, route_url or "")
+            else:
+                admin_driver.get(route_url or generated_admin_controller_url(admin_driver, controller))
             WebDriverWait(admin_driver, 30).until(
                 lambda browser: parse_qs(urlparse(browser.current_url).query).get("controller") == [controller]
             )
@@ -1066,7 +1257,7 @@ def run() -> bool:
             if content_marker not in admin_driver.find_element(By.TAG_NAME, "body").text:
                 raise AssertionError(f"the {controller} route is missing its Korean screen marker")
             stage = f"admin_legacy_{controller.lower()}_korean_locale"
-            assert_korean_admin_locale(admin_driver, controller)
+            assert_korean_admin_locale(admin_driver, controller, navigation_diagnostic)
             admin_driver.save_screenshot(str(DEST / screenshot))
 
         stage = "view_only_employee_login"
@@ -1165,6 +1356,7 @@ def run() -> bool:
         diagnostic_navigation_state = getattr(error, "admin_security_navigation_state", None)
         diagnostic_locale_flags = getattr(error, "admin_security_locale_flags", None)
         diagnostic_locale_response = getattr(error, "admin_security_locale_diagnostics", None)
+        diagnostic_locale_navigation = getattr(error, "admin_security_locale_navigation_diagnostics", None)
         safe_fields = []
         safe_response = False
         if isinstance(diagnostic_locale_flags, str) and re.fullmatch(
@@ -1177,6 +1369,11 @@ def run() -> bool:
             diagnostic_locale_response,
         ):
             safe_fields.append(f"locale_response={diagnostic_locale_response}")
+        if isinstance(diagnostic_locale_navigation, str) and re.fullmatch(
+            SAFE_ADMIN_LOCALE_RESPONSE_PATTERN,
+            diagnostic_locale_navigation,
+        ):
+            safe_fields.append(f"locale_navigation={diagnostic_locale_navigation}")
         if isinstance(diagnostic_substage, str) and re.fullmatch(r"[a-z0-9_]+", diagnostic_substage):
             safe_fields.append(f"substage={diagnostic_substage}")
         if isinstance(diagnostic_request, str) and re.fullmatch(

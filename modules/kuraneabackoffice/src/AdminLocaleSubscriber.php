@@ -87,6 +87,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
             'lang_after' => 'not_checked',
             'rewritten' => '0',
             'response_listener' => '1',
+            'isolated_ci_gate' => $isolatedCiDiagnosticEnabled ? '1' : '0',
             'probe_header' => $gateFields['probe_header'],
             'probe_controller' => $gateFields['probe_controller'],
             'server_ci' => $gateFields['server_ci'],
@@ -151,7 +152,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
 
         $koreanLanguageAttribute = 'lang="' . self::KOREAN_LOCALE . '"';
         $htmlTagCount = 0;
-        if ($isolatedCiDiagnosticEnabled) {
+        if ($diagnosticProbeEnabled) {
             preg_match_all('/<html\b[^>]*>/i', $content, $originalHtmlTags);
             $diagnosticFields['html_tags'] = (string) min(9999, count($originalHtmlTags[0] ?? []));
             $diagnosticFields['lang_before'] = self::diagnosticLanguageCategory(
@@ -192,7 +193,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
             1,
             $htmlTagCount
         );
-        if ($isolatedCiDiagnosticEnabled) {
+        if ($diagnosticProbeEnabled) {
             $diagnosticFields['html_replacements'] = (string) $htmlTagCount;
         }
 
@@ -201,7 +202,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
             return;
         }
 
-        if ($isolatedCiDiagnosticEnabled) {
+        if ($diagnosticProbeEnabled) {
             $diagnosticFields['lang_after'] = self::diagnosticLanguageCategoryFromContent($localizedContent);
             $diagnosticFields['rewritten'] = '1';
         }

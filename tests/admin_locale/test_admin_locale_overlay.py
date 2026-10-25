@@ -252,7 +252,7 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         valid = (
             "stage=rewritten;main_request=1;module_active=1;admin_route=1;is_redirect=0;http_status=200;"
             "is_html=1;body_present=1;html_tags=1;html_replacements=1;lang_before=other;lang_after=korean;rewritten=1"
-            ";response_listener=1;probe_header=1;probe_controller=1;server_ci=1;server_actions=1;"
+            ";response_listener=1;isolated_ci_gate=1;probe_header=1;probe_controller=1;server_ci=1;server_actions=1;"
             "server_run_id_valid=1;server_run_attempt_valid=1;server_diagnostics=1;server_project_match=1;"
             "env_ci=1;env_actions=1;env_run_id_valid=1;env_run_attempt_valid=1;env_diagnostics=1;env_project_match=1"
         )
@@ -294,6 +294,36 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertNotIn("'run_id' => $runId", subscriber)
         self.assertNotIn("'project_name' =>", subscriber)
 
+    def test_admin_locale_probe_collects_render_metrics_when_request_server_gate_fails(self) -> None:
+        subscriber = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text(encoding="utf-8")
+        response_measurement = subscriber.split("$htmlTagCount = 0;", 1)[1].split(
+            "$localizedContent = preg_replace_callback", 1
+        )[0]
+        self.assertIn("if ($diagnosticProbeEnabled)", response_measurement)
+        self.assertNotIn("if ($isolatedCiDiagnosticEnabled)", response_measurement)
+
+    def test_admin_locale_browser_probe_captures_original_navigation_and_bounded_dom_categories(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_admin_security_browser.py").read_text(encoding="utf-8")
+        for marker in (
+            'options.set_capability("goog:loggingPrefs", {"performance": "ALL"})',
+            'driver.execute_cdp_cmd("Network.enable", {})',
+            'driver.execute_cdp_cmd("Network.setExtraHTTPHeaders",',
+            'message.get("method") != "Network.responseReceived"',
+            'params.get("type") != "Document"',
+            'response.get("fromServiceWorker")',
+            'response.get("fromDiskCache")',
+            'response.get("fromPrefetchCache")',
+            "navigation_url_exact=",
+            "navigation_route_match=",
+            "browser_url_exact=",
+            "document_lang=",
+            "response_html_lang=",
+            "document_sw_controlled=",
+            "navigation_worker_used=",
+        ):
+            with self.subTest(marker=marker):
+                self.assertTrue(marker in browser, marker)
+
     def test_admin_locale_diagnostic_response_requires_explicit_probe_header_and_controller(self) -> None:
         subscriber = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text(encoding="utf-8")
         normalized_subscriber = " ".join(subscriber.split())
@@ -313,21 +343,29 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
 
         parsed = parse_admin_locale_response_diagnostic(
             "missing;browser_status=200;browser_type=basic;"
-            "browser_redirected=false;browser_same_route=true"
+            "browser_redirected=false;browser_same_route=true;browser_url_exact=true;"
+            "document_lang=other;response_html_lang=korean;document_sw_controlled=false;"
+            "navigation_worker_used=false;navigation_status=200"
         )
         self.assertEqual(
             "unavailable:missing_header;browser_status=200;browser_type=basic;"
-            "browser_redirected=false;browser_same_route=true",
+            "browser_redirected=false;browser_same_route=true;browser_url_exact=true;"
+            "document_lang=other;response_html_lang=korean;document_sw_controlled=false;"
+            "navigation_worker_used=false;navigation_status=200",
             parsed,
         )
 
         invalid = parse_admin_locale_response_diagnostic(
             "secret-token=do-not-log;browser_status=https://private.invalid/path?token=secret;"
-            "browser_type=basic;browser_redirected=false;browser_same_route=true"
+            "browser_type=basic;browser_redirected=false;browser_same_route=true;browser_url_exact=true;"
+            "document_lang=other;response_html_lang=korean;document_sw_controlled=false;"
+            "navigation_worker_used=false;navigation_status=200"
         )
         self.assertEqual(
             "unavailable:invalid_diagnostic;browser_status=unknown;browser_type=basic;"
-            "browser_redirected=false;browser_same_route=true",
+            "browser_redirected=false;browser_same_route=true;browser_url_exact=true;"
+            "document_lang=other;response_html_lang=korean;document_sw_controlled=false;"
+            "navigation_worker_used=false;navigation_status=200",
             invalid,
         )
 
