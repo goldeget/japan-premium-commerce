@@ -484,9 +484,10 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertIn("Access::isGranted($ordersReadRole, (int) $profile->id)", access_setup)
         self.assertIn("$profileAccesses[$ordersTabId]['view'] ?? '0'", access_setup)
 
-    def test_view_only_employee_orders_link_must_be_the_exact_same_origin_list_route(self):
+    def test_view_only_employee_orders_link_accepts_only_same_origin_list_routes(self):
         namespace: dict[str, object] = {
             "urlparse": urlparse,
+            "parse_qs": parse_qs,
             "BASE": "http://localhost:18080",
             "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
             "webdriver": type("Webdriver", (), {"Chrome": object}),
@@ -496,6 +497,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "http://localhost:18080/admin-kuranea/sell/orders",
             "http://localhost:18080/admin-kuranea/sell/orders/",
             "http://localhost:18080/admin-kuranea/sell/orders?orderState=1",
+            "http://localhost:18080/admin-kuranea/index.php?controller=AdminOrders&token=fixture",
         ):
             with self.subTest(url=accepted):
                 self.assertTrue(is_orders_list(accepted))
@@ -504,6 +506,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "http://localhost:18080/admin-kuranea/sell/orders/42/view",
             "http://localhost:18080/admin-kuranea/sell/orders/42/status",
             "http://localhost:18080/admin-kuranea/sell/orders-evil",
+            "http://localhost:18080/admin-kuranea/index.php?controller=AdminOrders&action=add",
             "http://outside.example/admin-kuranea/sell/orders",
             "http://localhost:18081/admin-kuranea/sell/orders",
             "http://localhost:18080/admin-kuranea-evil/sell/orders",
@@ -516,8 +519,55 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         orders_stage = source.split('stage = "view_only_employee_orders_korean_locale"', 1)[1].split(
             'stage = "view_only_employee_settings_restore"', 1
         )[0]
+        self.assertIn('for link in restricted_driver.find_elements(By.CSS_SELECTOR, "a[href]")', orders_stage)
         self.assertIn("is_admin_orders_list_url(link.get_attribute(\"href\") or \"\")", orders_stage)
         self.assertNotIn("_admin_controller_for_url(link.get_attribute(\"href\") or \"\")", orders_stage)
+
+    def test_view_only_orders_link_failure_reports_only_bounded_route_counts(self):
+        namespace: dict[str, object] = {
+            "urlparse": urlparse,
+            "parse_qs": parse_qs,
+            "BASE": "http://localhost:18080",
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
+            "By": type("By", (), {"CSS_SELECTOR": "a[href]"}),
+            "webdriver": type("Webdriver", (), {"Chrome": object}),
+        }
+        load_function(ADMIN_FLOW, "is_admin_orders_list_url", namespace)
+        self.assertIn("def safe_admin_orders_link_state(", ADMIN_FLOW.read_text(encoding="utf-8"))
+        safe_link_state = load_function(ADMIN_FLOW, "safe_admin_orders_link_state", namespace)
+
+        class Link:
+            def __init__(self, href: str):
+                self.href = href
+
+            def get_attribute(self, name: str) -> str:
+                return self.href
+
+        class Driver:
+            def find_elements(self, by: str, selector: str) -> list[Link]:
+                self.selector = selector
+                return [
+                    Link("http://localhost:18080/admin-kuranea/sell/orders"),
+                    Link("http://localhost:18080/admin-kuranea/sell/orders/new"),
+                    Link("http://localhost:18080/admin-kuranea/index.php?controller=AdminOrders&token=fixture"),
+                    Link("http://localhost:18080/admin-kuranea/index.php?controller=AdminOrders&action=add&token=fixture"),
+                    Link("http://outside.example/admin-kuranea/sell/orders"),
+                ]
+
+        diagnostic = safe_link_state(Driver())
+        self.assertEqual(
+            diagnostic,
+            "orders_path_candidates=2;legacy_orders_candidates=2;eligible_list_links=2",
+        )
+        self.assertNotIn("fixture", diagnostic)
+        self.assertNotIn("outside.example", diagnostic)
+
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+        orders_stage = source.split('stage = "view_only_employee_orders_korean_locale"', 1)[1].split(
+            'stage = "view_only_employee_settings_restore"', 1
+        )[0]
+        self.assertIn("admin_security_orders_link_state", orders_stage)
+        self.assertIn("ORDENOWA_ADMIN_ORDERS_LINKS=", source)
 
     def test_view_only_orders_diagnostic_marks_collection_errors_unknown(self):
         source = ADMIN_FLOW.read_text(encoding="utf-8")

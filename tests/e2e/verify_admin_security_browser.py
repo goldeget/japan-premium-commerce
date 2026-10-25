@@ -74,6 +74,11 @@ SAFE_ADMIN_ORDERS_STATE_PATTERN = (
     r"alert_visible=(?:true|false|unknown);"
     r"body_has_korean_order_label=(?:true|false|unknown)"
 )
+SAFE_ADMIN_ORDERS_LINK_PATTERN = (
+    r"orders_path_candidates=(?:[0-9]{1,4}|unknown);"
+    r"legacy_orders_candidates=(?:[0-9]{1,4}|unknown);"
+    r"eligible_list_links=(?:[0-9]{1,4}|unknown)"
+)
 TOKEN_DOM_DETECTOR_JS = r"""
 function inspectInvalidTokenPage(body, responseUrl, targetUrl) {
   const responseDocument = new DOMParser().parseFromString(body, 'text/html');
@@ -240,16 +245,61 @@ def _admin_controller_for_url(url: str) -> str:
 
 def is_admin_orders_list_url(url: str) -> bool:
     """Accept only the same-origin AdminOrders list route, never its create/detail routes."""
-    actual = urlparse(url)
-    expected = urlparse(BASE)
-    admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
+    try:
+        actual = urlparse(url)
+        expected = urlparse(BASE)
+        admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
+        actual_origin = (actual.scheme, actual.hostname, actual.port)
+        expected_origin = (expected.scheme, expected.hostname, expected.port)
+    except ValueError:
+        return False
+    if actual.username is not None or actual.password is not None or actual_origin != expected_origin:
+        return False
+    if actual.path in {admin_path + "/sell/orders", admin_path + "/sell/orders/"}:
+        return True
+    query = parse_qs(actual.query, keep_blank_values=True)
     return (
-        actual.username is None
-        and actual.password is None
-        and (actual.scheme, actual.hostname, actual.port)
-        == (expected.scheme, expected.hostname, expected.port)
-        and actual.path in {admin_path + "/sell/orders", admin_path + "/sell/orders/"}
+        actual.path == admin_path + "/index.php"
+        and query.get("controller") == ["AdminOrders"]
+        and not query.get("action")
     )
+
+
+def safe_admin_orders_link_state(driver: webdriver.Chrome) -> str:
+    """Count only route categories; never expose tokenized or customer-specific hrefs."""
+    try:
+        admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
+        expected = urlparse(BASE)
+        expected_origin = (expected.scheme, expected.hostname, expected.port)
+        path_candidates = 0
+        legacy_candidates = 0
+        eligible_list_links = 0
+        for link in driver.find_elements(By.CSS_SELECTOR, "a[href]"):
+            href = link.get_attribute("href") or ""
+            try:
+                parsed = urlparse(href)
+                query = parse_qs(parsed.query, keep_blank_values=True)
+            except ValueError:
+                continue
+            try:
+                actual_origin = (parsed.scheme, parsed.hostname, parsed.port)
+            except ValueError:
+                continue
+            if actual_origin != expected_origin or not parsed.path.startswith(admin_path + "/"):
+                continue
+            if parsed.path.startswith(admin_path + "/sell/orders"):
+                path_candidates += 1
+            if parsed.path == admin_path + "/index.php" and query.get("controller") == ["AdminOrders"]:
+                legacy_candidates += 1
+            if is_admin_orders_list_url(href):
+                eligible_list_links += 1
+        return (
+            f"orders_path_candidates={min(path_candidates, 1000)};"
+            f"legacy_orders_candidates={min(legacy_candidates, 1000)};"
+            f"eligible_list_links={min(eligible_list_links, 1000)}"
+        )
+    except Exception:
+        return "orders_path_candidates=unknown;legacy_orders_candidates=unknown;eligible_list_links=unknown"
 
 
 def safe_admin_navigation_state(driver: webdriver.Chrome) -> dict[str, object]:
@@ -1469,11 +1519,13 @@ def run() -> bool:
         stage = "view_only_employee_orders_korean_locale"
         orders_links = [
             link
-            for link in restricted_driver.find_elements(By.CSS_SELECTOR, 'a[href*="/sell/orders"]')
+            for link in restricted_driver.find_elements(By.CSS_SELECTOR, "a[href]")
             if is_admin_orders_list_url(link.get_attribute("href") or "")
         ]
         if not orders_links:
-            raise AssertionError("the view-only employee cannot reach the permitted admin orders list")
+            error = AssertionError("the view-only employee cannot reach the permitted admin orders list")
+            error.admin_security_orders_link_state = safe_admin_orders_link_state(restricted_driver)
+            raise error
         restricted_driver.get(orders_links[0].get_attribute("href"))
         WebDriverWait(restricted_driver, 30).until(
             lambda browser: _admin_controller_for_url(browser.current_url) == "AdminOrders"
@@ -1542,6 +1594,7 @@ def run() -> bool:
         diagnostic_locale_response = getattr(error, "admin_security_locale_diagnostics", None)
         diagnostic_locale_navigation = getattr(error, "admin_security_locale_navigation_diagnostics", None)
         diagnostic_orders_state = getattr(error, "admin_security_orders_state", None)
+        diagnostic_orders_link_state = getattr(error, "admin_security_orders_link_state", None)
         safe_fields = []
         safe_response = False
         if isinstance(diagnostic_locale_flags, str) and re.fullmatch(
@@ -1579,6 +1632,11 @@ def run() -> bool:
             diagnostic_orders_state,
         ):
             safe_fields.append(f"orders_page={diagnostic_orders_state}")
+        if isinstance(diagnostic_orders_link_state, str) and re.fullmatch(
+            SAFE_ADMIN_ORDERS_LINK_PATTERN,
+            diagnostic_orders_link_state,
+        ):
+            safe_fields.append(f"orders_links={diagnostic_orders_link_state}")
         if isinstance(diagnostic_response, str) and (
             diagnostic_response == "not_evaluated"
             or re.fullmatch(r"classification_error:[A-Za-z][A-Za-z0-9]*", diagnostic_response)
@@ -1596,6 +1654,11 @@ def run() -> bool:
             diagnostic_orders_state,
         ):
             print(f"ORDENOWA_ADMIN_ORDERS_STATE={diagnostic_orders_state}", file=sys.stderr)
+        if isinstance(diagnostic_orders_link_state, str) and re.fullmatch(
+            SAFE_ADMIN_ORDERS_LINK_PATTERN,
+            diagnostic_orders_link_state,
+        ):
+            print(f"ORDENOWA_ADMIN_ORDERS_LINKS={diagnostic_orders_link_state}", file=sys.stderr)
         if safe_response:
             print(f"ORDENOWA_ADMIN_SECURITY_RESPONSE={diagnostic_response}", file=sys.stderr)
         print(
