@@ -101,6 +101,44 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
         ):
             self.assertIn(stage_call, transition_function)
 
+    def test_return_list_failure_separates_navigation_from_grid_wait(self) -> None:
+        for required in (
+            '"return_list_navigation"',
+            '"return_grid"',
+            'stage.begin("return_list_navigation")',
+            'stage.begin("return_grid")',
+            '"same_admin_origin"',
+            '"admin_path_matches"',
+            '"safe_page_class"',
+            '"document_ready_state"',
+            '"return_grid_present"',
+            "def collect_safe_page_diagnostics(",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, self.source)
+
+        list_flow = self.source.split("def find_existing_return(", 1)[1].split(
+            "def same_order_detail_link_matches(", 1
+        )[0]
+        self.assertLess(
+            list_flow.index('stage.begin("return_list_navigation")'),
+            list_flow.index("visit(driver, admin_root + RETURN_LIST_SUFFIX)"),
+        )
+        self.assertLess(
+            list_flow.index("stage.complete()"),
+            list_flow.index('stage.begin("return_grid")'),
+        )
+        self.assertLess(
+            list_flow.index('stage.begin("return_grid")'),
+            list_flow.index("EC.presence_of_element_located"),
+        )
+
+        origin_guard = self.source.split("def same_admin_origin(", 1)[1].split(
+            "def is_admin_path(", 1
+        )[0]
+        self.assertIn("candidate_hostname == expected_hostname", origin_guard)
+        self.assertIn("candidate_port == expected_port", origin_guard)
+
     def test_status_change_emails_are_confined_to_the_run_owned_mailpit(self) -> None:
         mailpit_setup = self.workflow.split("id: mailpit_setup", 1)[1].split("- name:", 1)[0]
         admin_step = self.workflow.split(
@@ -162,7 +200,8 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
         for required in (
             "SAFE_DIAGNOSTIC_STAGES = (",
             '"admin_login"',
-            '"return_list"',
+            '"return_list_navigation"',
+            '"return_grid"',
             '"target_rma"',
             '"edit_screen"',
             "EXCEPTION_CLASS_ALLOWLIST = (",
@@ -172,8 +211,12 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
             '"exception_class"',
             '"target_order_matches"',
             '"order_detail_link_matches"',
-            '"order_detail_link_matches"',
             '"target_rma_matches"',
+            '"same_admin_origin"',
+            '"admin_path_matches"',
+            '"safe_page_class"',
+            '"document_ready_state"',
+            '"return_grid_present"',
             '"login_form_visible"',
             '"selected_state"',
             '"save_success_visible"',

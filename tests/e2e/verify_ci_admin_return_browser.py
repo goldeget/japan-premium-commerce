@@ -43,7 +43,8 @@ SAFE_DIAGNOSTIC_STAGES = (
     "none",
     "target_setup",
     "admin_login",
-    "return_list",
+    "return_list_navigation",
+    "return_grid",
     "target_rma",
     "edit_screen",
     "transition_1_to_2_select",
@@ -56,6 +57,16 @@ SAFE_DIAGNOSTIC_STAGES = (
     "browser_shutdown",
 )
 SAFE_SELECTED_STATE_VALUES = ("1", "2", "unknown")
+SAFE_PAGE_CLASSES = (
+    "unknown",
+    "outside_admin",
+    "same_origin_non_admin",
+    "admin_login",
+    "admin_return_list",
+    "admin_return_edit",
+    "other_admin",
+)
+SAFE_DOCUMENT_READY_STATES = ("unknown", "loading", "interactive", "complete", "other")
 SAFE_FALLBACK_EXCEPTION_CLASS_NAME = "UnexpectedError"
 
 
@@ -81,6 +92,11 @@ class StageTracker:
     def __init__(self) -> None:
         self.current_stage = "target_setup"
         self.last_completed_stage = "none"
+        self.same_admin_origin = False
+        self.admin_path_matches = False
+        self.safe_page_class = "unknown"
+        self.document_ready_state = "unknown"
+        self.return_grid_present = False
         self.target_order_matches = False
         self.order_detail_link_matches = False
         self.target_rma_matches = False
@@ -201,9 +217,11 @@ def admin_login(driver: webdriver.Chrome, admin_root: str) -> None:
     )
 
 
-def is_admin_origin(url: str, admin_root: str) -> bool:
+def same_admin_origin(url: str, admin_root: str) -> bool:
     candidate = urlparse(url)
     expected = urlparse(admin_root)
+    candidate_hostname = (candidate.hostname or "").lower()
+    expected_hostname = (expected.hostname or "").lower()
     try:
         candidate_port = candidate.port or 80
         expected_port = expected.port or 80
@@ -211,11 +229,71 @@ def is_admin_origin(url: str, admin_root: str) -> bool:
         return False
     return (
         candidate.scheme == expected.scheme == "http"
-        and (candidate.hostname or "").lower() in LOCAL_HOSTS
-        and (expected.hostname or "").lower() in LOCAL_HOSTS
+        and candidate_hostname in LOCAL_HOSTS
+        and candidate_hostname == expected_hostname
         and candidate_port == expected_port
-        and candidate.path.startswith(expected.path.rstrip("/") + "/")
     )
+
+
+def is_admin_path(url: str, admin_root: str) -> bool:
+    candidate_path = urlparse(url).path
+    expected_path = urlparse(admin_root).path.rstrip("/")
+    return candidate_path == expected_path or candidate_path.startswith(expected_path + "/")
+
+
+def is_admin_origin(url: str, admin_root: str) -> bool:
+    return same_admin_origin(url, admin_root) and is_admin_path(url, admin_root)
+
+
+def safe_page_class(url: str, admin_root: str) -> str:
+    if not same_admin_origin(url, admin_root):
+        return "outside_admin"
+    if not is_admin_path(url, admin_root):
+        return "same_origin_non_admin"
+
+    candidate_path = urlparse(url).path.rstrip("/")
+    base_path = urlparse(admin_root).path.rstrip("/")
+    relative_path = candidate_path[len(base_path):]
+    if relative_path.endswith("/login"):
+        return "admin_login"
+    if relative_path.endswith(RETURN_LIST_SUFFIX.rstrip("/")):
+        return "admin_return_list"
+    if re.search(
+        r"/sell/customer-service/merchandise-return/[1-9][0-9]{0,11}/edit$",
+        relative_path,
+    ):
+        return "admin_return_edit"
+    return "other_admin"
+
+
+def collect_safe_page_diagnostics(
+    stage: StageTracker,
+    driver: webdriver.Chrome | None,
+    admin_root: str | None,
+) -> None:
+    stage.same_admin_origin = False
+    stage.admin_path_matches = False
+    stage.safe_page_class = "unknown"
+    stage.document_ready_state = "unknown"
+    stage.return_grid_present = False
+    if driver is None or admin_root is None:
+        return
+    try:
+        current_url = driver.current_url
+        stage.same_admin_origin = same_admin_origin(current_url, admin_root)
+        stage.admin_path_matches = is_admin_path(current_url, admin_root)
+        page_class = safe_page_class(current_url, admin_root)
+        stage.safe_page_class = page_class if page_class in SAFE_PAGE_CLASSES else "unknown"
+        ready_state = driver.execute_script("return document.readyState")
+        stage.document_ready_state = (
+            ready_state if ready_state in SAFE_DOCUMENT_READY_STATES[1:-1] else "other"
+        )
+        if stage.safe_page_class == "admin_return_list":
+            stage.return_grid_present = len(
+                driver.find_elements(By.ID, RETURN_GRID_ID)
+            ) == 1
+    except Exception:
+        pass
 
 
 def return_id_from_edit_url(href: str, admin_root: str) -> int | None:
@@ -238,11 +316,16 @@ def find_existing_return(
     expected_order_id: int,
     stage: StageTracker,
 ):
+    stage.begin("return_list_navigation")
     visit(driver, admin_root + RETURN_LIST_SUFFIX)
+    stage.complete()
+
+    stage.begin("return_grid")
     table = WebDriverWait(driver, 35).until(
         EC.presence_of_element_located((By.ID, RETURN_GRID_ID))
     )
-    stage.complete("return_list")
+    stage.return_grid_present = True
+    stage.complete()
     stage.begin("target_rma")
 
     matching_rows = []
@@ -461,6 +544,11 @@ def build_safe_diagnostics(
         "last_completed_stage": stage.last_completed_stage,
         "failure_stage": stage.current_stage,
         "exception_class": exception_class,
+        "same_admin_origin": stage.same_admin_origin,
+        "admin_path_matches": stage.admin_path_matches,
+        "safe_page_class": stage.safe_page_class,
+        "document_ready_state": stage.document_ready_state,
+        "return_grid_present": stage.return_grid_present,
         "target_order_matches": stage.target_order_matches,
         "order_detail_link_matches": stage.order_detail_link_matches,
         "target_rma_matches": stage.target_rma_matches,
@@ -515,6 +603,9 @@ def report_failure_diagnostics(diagnostics: dict[str, str | bool]) -> None:
         "exception={exception_class} order_match={target_order_matches} "
         "edit_order_link_match={order_detail_link_matches} "
         "rma_match={target_rma_matches} login_form={login_form_visible} "
+        "same_admin_origin={same_admin_origin} admin_path={admin_path_matches} "
+        "page_class={safe_page_class} ready_state={document_ready_state} "
+        "return_grid_present={return_grid_present} "
         "selected_state={selected_state} save_success={save_success_visible} "
         "status_control_screenshot={status_control_screenshot_captured}"
     ).format(**diagnostics)
@@ -540,6 +631,11 @@ def report_failure_diagnostics(diagnostics: dict[str, str | bool]) -> None:
             f"- Failure stage: `{diagnostics['failure_stage']}`\n"
             f"- Last completed stage: `{diagnostics['last_completed_stage']}`\n"
             f"- Exception class: `{diagnostics['exception_class']}`\n"
+            f"- Same admin origin: `{diagnostics['same_admin_origin']}`\n"
+            f"- Admin path matched: `{diagnostics['admin_path_matches']}`\n"
+            f"- Safe page class: `{diagnostics['safe_page_class']}`\n"
+            f"- Document ready state: `{diagnostics['document_ready_state']}`\n"
+            f"- Return grid present: `{diagnostics['return_grid_present']}`\n"
             f"- Target order matched: `{diagnostics['target_order_matches']}`\n"
             f"- Edit form order link matched: `{diagnostics['order_detail_link_matches']}`\n"
             f"- Target RMA matched: `{diagnostics['target_rma_matches']}`\n"
@@ -572,7 +668,7 @@ def run_admin_return_browser() -> int:
         stage.begin("admin_login")
         admin_login(driver, admin_root)
         stage.complete()
-        stage.begin("return_list")
+        stage.begin("return_list_navigation")
         return_id, edit_url = find_existing_return(
             driver,
             admin_root,
@@ -599,6 +695,7 @@ def run_admin_return_browser() -> int:
             expected_order_id,
             stage,
         )
+        collect_safe_page_diagnostics(stage, driver, admin_root)
         diagnostics = build_safe_diagnostics(
             stage,
             safe_exception_class_name(error),
@@ -614,6 +711,7 @@ def run_admin_return_browser() -> int:
             except Exception as error:
                 if outcome == 0:
                     stage.begin("browser_shutdown")
+                    collect_safe_page_diagnostics(stage, driver, admin_root)
                     diagnostics = build_safe_diagnostics(
                         stage,
                         safe_exception_class_name(error),

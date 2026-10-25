@@ -2081,17 +2081,24 @@ jobs:
           data = json.load(open(sys.argv[1], encoding='utf-8'))
           if set(data) != {
               'last_completed_stage', 'failure_stage', 'exception_class',
+              'same_admin_origin', 'admin_path_matches', 'safe_page_class',
+              'document_ready_state', 'return_grid_present',
               'target_order_matches', 'order_detail_link_matches', 'target_rma_matches', 'login_form_visible',
               'selected_state', 'save_success_visible', 'status_control_screenshot_captured',
           }:
               raise SystemExit('admin return diagnostic fields are not allowlisted')
           allowed_stages = {
-              'none', 'target_setup', 'admin_login', 'return_list', 'target_rma',
+              'none', 'target_setup', 'admin_login', 'return_list_navigation', 'return_grid', 'target_rma',
               'edit_screen', 'transition_1_to_2_select', 'transition_1_to_2_save',
               'transition_1_to_2_readback', 'transition_2_to_1_select',
               'transition_2_to_1_save', 'transition_2_to_1_readback', 'complete',
               'browser_shutdown',
           }
+          allowed_page_classes = {
+              'unknown', 'outside_admin', 'same_origin_non_admin', 'admin_login',
+              'admin_return_list', 'admin_return_edit', 'other_admin',
+          }
+          allowed_ready_states = {'unknown', 'loading', 'interactive', 'complete', 'other'}
           allowed_exceptions = {
               'TargetGuardError', 'TimeoutException', 'NoSuchElementException',
               'StaleElementReferenceException', 'ElementClickInterceptedException',
@@ -2102,7 +2109,12 @@ jobs:
               raise SystemExit('admin return diagnostic stage is not allowlisted')
           if data['exception_class'] not in allowed_exceptions:
               raise SystemExit('admin return exception class is not allowlisted')
+          if data['safe_page_class'] not in allowed_page_classes:
+              raise SystemExit('admin return page class is not allowlisted')
+          if data['document_ready_state'] not in allowed_ready_states:
+              raise SystemExit('admin return document ready state is not allowlisted')
           for key in (
+              'same_admin_origin', 'admin_path_matches', 'return_grid_present',
               'target_order_matches', 'order_detail_link_matches', 'target_rma_matches',
               'login_form_visible', 'save_success_visible',
           ):
