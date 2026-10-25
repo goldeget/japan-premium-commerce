@@ -57,7 +57,25 @@ class OrdersLocaleOverlayTests(unittest.TestCase):
             with self.subTest(domain=domain):
                 self.assertEqual(filename, mappings.get(domain), f"missing overlay mapping for {domain}")
 
-        self.assertIn("$this->translator->addResource('xlf', $translationFile, $locale, $domain)", source)
+        self.assertIn(
+            "$this->translator->addResource('xlf', $translationFile, $locale, $catalogueDomain)",
+            source,
+        )
+
+    def test_orders_overlay_domains_are_normalized_before_registration(self) -> None:
+        source = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "use PrestaShop\\PrestaShop\\Core\\Translation\\Storage\\Normalizer\\DomainNormalizer;",
+            source,
+        )
+        self.assertIn("$catalogueDomain = $domainNormalizer->normalize($domain);", source)
+        self.assertIn(
+            "$this->translator->addResource('xlf', $translationFile, $locale, $catalogueDomain)",
+            source,
+        )
+        self.assertIn("$overlayFiles[$catalogueDomain] = $translationFile;", source)
+        self.assertIn("$loader->load($translationFile, $locale, $catalogueDomain)", source)
 
     def test_orders_page_source_strings_have_korean_module_overlays(self) -> None:
         for domain, (filename, expected_translations) in OVERLAYS.items():

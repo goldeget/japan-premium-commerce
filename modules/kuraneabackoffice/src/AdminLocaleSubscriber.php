@@ -7,6 +7,7 @@ namespace Kuranea\Backoffice;
 use Kuranea\Backoffice\AdminDocumentLanguage;
 use PrestaShop\PrestaShop\Core\Context\LanguageContextBuilder;
 use PrestaShop\PrestaShop\Core\Language\LanguageRepositoryInterface;
+use PrestaShop\PrestaShop\Core\Translation\Storage\Normalizer\DomainNormalizer;
 use PrestaShopBundle\Translation\TranslatorLanguageLoader;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -305,6 +306,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
         }
 
         $overlayFiles = [];
+        $domainNormalizer = new DomainNormalizer();
         foreach ([
             'Admin.Actions' => 'AdminActions.ko-KR.xlf',
             'Admin.Global' => 'AdminGlobal.ko-KR.xlf',
@@ -315,8 +317,9 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
         ] as $domain => $filename) {
             $translationFile = $this->modulePath . '/translations/' . $locale . '/' . $filename;
             if (is_file($translationFile)) {
-                $this->translator->addResource('xlf', $translationFile, $locale, $domain);
-                $overlayFiles[$domain] = $translationFile;
+                $catalogueDomain = $domainNormalizer->normalize($domain);
+                $this->translator->addResource('xlf', $translationFile, $locale, $catalogueDomain);
+                $overlayFiles[$catalogueDomain] = $translationFile;
             }
         }
 
@@ -326,8 +329,8 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
         if (method_exists($this->translator, 'getCatalogue') && $overlayFiles !== []) {
             $catalogue = $this->translator->getCatalogue($locale);
             $loader = new XliffFileLoader();
-            foreach ($overlayFiles as $domain => $translationFile) {
-                $catalogue->addCatalogue($loader->load($translationFile, $locale, $domain));
+            foreach ($overlayFiles as $catalogueDomain => $translationFile) {
+                $catalogue->addCatalogue($loader->load($translationFile, $locale, $catalogueDomain));
             }
         }
     }
