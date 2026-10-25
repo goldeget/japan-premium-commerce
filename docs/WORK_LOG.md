@@ -1,5 +1,18 @@
 # ORDENOWA 작업 기록
 
+## 2026-10-25 — 관리자 RMA 진단 추가 및 집중 실행 차단 기록
+
+- 시작 상태: `work` 로컬과 `origin/work`는 `066582812796e437e11f471a98777786aec51152`로 일치했고, 진행 중 Actions는 없었다. 미커밋 사용자 파일과 `.superpowers/`/기존 `__pycache__`는 보존했다. `main` SHA `ee02a3657448d563508687614a246e05ac61eecd`는 변경하지 않았다.
+- 이전 집중 실행 #40213486739에서 관리자 로그인은 완료됐지만 결합 `return_list` 단계가 `TimeoutException`으로 실패했다. 안전 진단에는 `last_completed_stage=admin_login`, order/RMA/grid match false가 있었으나 실제 라우트·grid 여부는 구분하지 못했다.
+- 단계 추적을 `return_list_navigation`과 `return_grid`로 분리했다. 실패 시 동일 시점 `current_url`은 기록하지 않고 same-origin, admin-path, page-class, readyState, grid 존재만 allowlist한다. 모든 일반 예외는 허용된 Selenium/Python 예외명으로만 매핑한다. JSON artifact, Step Summary, annotation은 같은 안전 진단 필드를 사용한다. 캡처는 대상 합성 RMA와 주문을 확인한 편집 화면의 상태 선택 요소로 제한되며 전체 페이지 캡처는 추가하지 않았다. Workflow의 정확한 키·단계·enum 및 bool allowlist를 동기화했다. 테스트 계약은 navigation 완료와 grid 대기를 분리해 고정했다.
+- 회귀 보호: `same_admin_origin`은 localhost allowlist뿐 아니라 기대 host와 실제 host의 일치도 요구한다. 포커스 환경변수의 전체·집중 집계 fixture는 기존처럼 각각 명시적 값을 유지한다.
+- 로컬 preflight: workflow의 정확한 Step 8 명령은 `ORDENOWA_ADMIN_SECURITY_FOCUS=false`/`true` 각각 133/133 통과, Step 9 명령은 각각 43/43 통과했다. 두 모드 모두 SECURITY/RETURN/QA focus 변수를 명시했다. fresh-install YAML parse, verifier `py_compile`, `git diff --check`도 통과했다.
+- 코드 커밋 `[admin-return-focus] separate RMA list navigation and grid diagnostics` (`83d557e5d8c15df098f01d22cf58f4b4fb8e96ad`)를 `work`에 push하고 `git ls-remote`로 동일 SHA를 확인했다.
+- 자동 집중 Actions [#40214404446](https://github.com/goldeget/japan-premium-commerce/actions/runs/40214404446)은 이미지 build, 빈 설치, 합성 우편번호, 무료 운송사 setup, checkout browser 및 unpaid order persistence를 통과했다. Checkout restore Step 62도 성공했다. 이후 Step 63 `checkout_gate_after_order`의 실제 outcome은 failure였고 안전한 AssertionError 메시지는 `CI product detail page did not render`였다. `continue-on-error` 때문에 UI step conclusion은 success였으나 aggregate는 이를 failure로 집계했다.
+- 이 선행 gate 실패로 Step 64 paid-like fixture, Step 65 customer return, Step 66 admin RMA가 전부 skipped됐다. Step 71 screenshot coverage는 필수 admin RMA 로그 부재로 failure, Step 76 aggregate도 `checkout_gate_after_order=failure order_lifecycle_fixture=skipped order_return_browser=skipped order_return_admin_browser=skipped admin_return_evidence=failure`로 failure였다. Step 79 run-scoped cleanup은 success. 이 실행은 RMA 실패 원인이나 1→2 저장/재조회/2→1 복원을 확인하지 못했다.
+- #40214404446의 선행 Step63 failure는 RMA 결함으로 간주하거나 우회하지 않는다. 전체 QA 추가 실행은 진행하지 않았다. RMA 진단 변경은 저장됐지만 기능 버그가 해결된 것으로 판정하지 않는다. 현재 집중 실패의 선행 gate 원인을 근거와 함께 분리한 뒤 기존 focus 환경에서 RMA를 다시 검증해야 한다.
+- 운영 DB/named volume, 실결제/실거래, 배포를 사용하지 않았다. 테스트 이후 run 전용 container/volume 정리가 success였다. 문서 업데이트는 이 진단 상태와 Step 63 선행 차단을 정확히 기록한다.
+
 ## 2026-10-25 — Return submission 고정 및 전체 QA 결과
 
 - 기존 `work` 브랜치에서 계속 작업하고 `main` SHA `ee02a3657448d563508687614a246e05ac61eecd`는 변경하지 않았다. 최신 QA 대상 코드 SHA는 `c3897dfb1acbc704c1482d32cf2247dbc24ebf55`다.

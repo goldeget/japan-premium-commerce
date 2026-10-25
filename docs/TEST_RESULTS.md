@@ -1,23 +1,20 @@
 # ORDENOWA 테스트 결과
 
-## 2026-10-25 — Return browser diagnostics, scroll fix, and final QA result
+## 2026-10-25 — RMA 단계 진단 및 제한 집중 QA 결과
 
-Latest QA-tested code SHA is `c3897dfb1acbc704c1482d32cf2247dbc24ebf55`; `main` remains `ee02a3657448d563508687614a246e05ac61eecd`. Commits `ab6d3ff` and `46b823c` restrict customer/account click diagnostics to fixed tag/class allowlists and blank IDs. Commit `c3897df` scrolls the return submit button into view, waits for a clear center hit-test, preserves native Selenium click, and captures/rethrows interception or wait timeout.
+Latest diagnostic code SHA is `83d557e5d8c15df098f01d22cf58f4b4fb8e96ad`; `main` remains `ee02a3657448d563508687614a246e05ac61eecd`. This commit splits the admin return list navigation and grid waits, records only safe route classes/origin/path/ready-state booleans, validates the exact allowlisted diagnostic schema, and requires exact host equality for same-origin checks. It does not change application RMA state behavior.
 
 | 검사 | 결과 | 근거 |
 | --- | --- | --- |
-| Step 8 workflow preflight | PASS on preceding privacy patch | focus=false/true each 461 tests, 7 skipped. `c3897df` only changes the Step 9 return browser contract/flow, which is not in Step 8's command. |
-| Step 9 workflow preflight | PASS on `c3897df` | Exact workflow command with `ORDENOWA_ADMIN_SECURITY_FOCUS=false/true`: 130 tests each, 0 failures. |
-| Focused return contract | PASS on `c3897df` | 7 tests. The scroll/hit-test assertions were added first and failed before the flow change; the second failure-capture assertion also failed before timeout handling was added. |
-| Account privacy contract | PASS on `46b823c` | 50 tests. An injected synthetic email is absent from stderr diagnostic output. |
-| Python AST / diff check | PASS | Changed browser Python files parse; `git diff --check` clean. |
-| Independent review | PASS | No remaining PII diagnostic path; native click, rethrow, and one-row readback gates retained. Latest review also confirmed timeout captures then rethrows. |
-| Full isolated Actions | **FAIL** | [#40209847999](https://github.com/goldeget/japan-premium-commerce/actions/runs/40209847999), head `c3897df`. Actual outcomes: customer return browser `success`; admin return browser `failure`; order lifecycle `failure`. Aggregate annotation: `order_return_admin_browser=failure order_lifecycle=failure`. |
-| Previous full Actions | FAIL | [#40208183512](https://github.com/goldeget/japan-premium-commerce/actions/runs/40208183512), head `46b823c`. Customer submit failed while button was below viewport; safe state was `no_target`, rect y=1358 in a 701px viewport, center outside. That evidence led to the `c3897df` scroll fix. |
-| Other outcomes in #402098 | PASS | Admin security, account/reset, admin recovery, brand/email, product, PWA, free shipping/tax/order readback, backup/restore, restart, postal import/verify succeeded. Separate Dashboard screenshot outcome was `skipped`. |
-| Artifact/cleanup | PASS | Browser artifact [#402098 ID 12605811294](https://github.com/goldeget/japan-premium-commerce/actions/runs/40209847999/artifacts/12605811294), diagnostics artifact ID `12605901345`; screenshot upload/coverage, run-only cleanup, checkout post-step succeeded. Artifacts are retained in Actions; not downloaded or visually reviewed in this workspace. |
+| Step 8 workflow preflight | PASS | Exact Step 8 command: 133 tests passed with `ORDENOWA_ADMIN_SECURITY_FOCUS=false` and `true`; `ORDENOWA_ADMIN_RETURN_FOCUS` and `ORDENOWA_ADMIN_QA_FOCUS` were also explicitly pinned for each mode. |
+| Step 9 workflow preflight | PASS | Exact Step 9 command: 43 tests passed with focus variables explicitly set to false and true. |
+| Workflow YAML / Python / diff | PASS | Fresh-install workflow YAML parsed; RMA verifier compiled; `git diff --check` passed. |
+| Focused Actions after diagnostics | **FAIL before RMA** | [#40214404446](https://github.com/goldeget/japan-premium-commerce/actions/runs/40214404446), head `83d557e`. Step 52 checkout and Step 54 unpaid-order persistence succeeded; Step 62 checkout restore succeeded. Step 63 actual outcome was `failure` although its continue-on-error step conclusion was `success`; the safe exception text was `CI product detail page did not render` (`AssertionError`). Aggregate annotation: `checkout_gate_after_order=failure order_lifecycle_fixture=skipped order_return_browser=skipped order_return_admin_browser=skipped admin_return_evidence=failure`. Steps 64–66 did not run. Step 71 screenshot coverage and Step 76 aggregate failed; Step 79 run-only cleanup succeeded. |
+| Prior focused Actions | **FAIL at admin return list** | [#40213486739](https://github.com/goldeget/japan-premium-commerce/actions/runs/40213486739), head `0665828`. Safe diagnostics: `failure_stage=return_list`, `last_completed_stage=admin_login`, `exception_class=TimeoutException`; target order/RMA and grid evidence were unavailable because navigation/grid shared one stage. |
+| Latest full isolated Actions | **FAIL** | [#40209847999](https://github.com/goldeget/japan-premium-commerce/actions/runs/40209847999), head `c3897df`; customer return succeeded, admin return browser and lifecycle gate failed. This predates the diagnostic commit. No full QA was launched after #40214404446 because focused verification did not pass. |
+| Artifact / cleanup | Partial | #40214404446 completed run-owned cleanup. The admin RMA verifier was skipped, so no RMA screenshot/diagnostics were produced by that run. Step Summary/annotation contain the safe prerequisite failure and aggregate. |
 
-The admin-return script emitted only `FAIL: native admin return form did not preserve the run-scoped return`; its multiple assertions collapse to the same message. The lifecycle gate then failed at `admin return browser gate`. The exact failing assertion and whether it is application or test behavior remain undetermined. Do not claim full QA PASS. No further full run was launched after this result.
+The RMA application/test cause remains unconfirmed: #402134 could not distinguish route navigation from grid wait, and #402144 did not run the RMA steps. No state transition or restore was verified in this task. The currently observed Step 63 failure is a separate CI prerequisite failure; it was not treated as an RMA defect or silently bypassed. Do not claim focused or full QA PASS.
 
 ## 2026-10-25 — 대시보드 경로 수정 후 제한된 최종 전체 QA
 

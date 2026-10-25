@@ -1,8 +1,8 @@
 # ORDENOWA 개발 현황
 
-## 현재 출시 체크리스트 (2026-10-25 16:20 UTC)
+## 현재 출시 체크리스트 (2026-10-25 17:31 UTC)
 
-최신 전체 QA 대상 코드는 `c3897dfb1acbc704c1482d32cf2247dbc24ebf55`이며 run [#40209847999](https://github.com/goldeget/japan-premium-commerce/actions/runs/40209847999)은 **FAIL**이다. 같은 run에서 고객 반품 제출/readback은 성공했지만 관리자 RMA 저장과 종합 lifecycle gate가 실패했다. 별도 문서 갱신은 이 코드 검사 결과를 바꾸지 않는다. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다.
+최신 코드 변경은 `83d557e5d8c15df098f01d22cf58f4b4fb8e96ad`이며, 이는 관리자 RMA의 안전 단계 진단과 집중 실행 schema를 분리한 진단 변경이다. 최근 집중 실행 [#40214404446](https://github.com/goldeget/japan-premium-commerce/actions/runs/40214404446)은 **FAIL**이고 Step 63 checkout 재검증에서 멈춰 관리자 RMA Step 64–66은 실행되지 않았다. 앞선 집중 실행 [#40213486739](https://github.com/goldeget/japan-premium-commerce/actions/runs/40213486739)은 RMA 검사를 실행했지만 결합 `return_list` 대기에서 `TimeoutException`이 났으며 실제 경로는 기록되지 않았다. 최신 전체 QA [#40209847999](https://github.com/goldeget/japan-premium-commerce/actions/runs/40209847999)는 **FAIL**이다. 이번 집중 실행이 성공하지 않아 전체 QA를 다시 시작하지 않았다. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다.
 
 확정된 정책: 고객 언어는 일본어 기본, 영어·한국어 추가; 통화 JPY; 브랜드 ORDENOWA/オーデノワ/오데노와; 상품 표시는 세금 포함 최종가; 지원 일본 배송지역의 고객 배송비 ¥0; 결제 때 별도 배송비·추가 세금·플랫폼 수수료 ¥0. 과세 상품은 실제 분류대로 기록한다. 실제 배송지역·운송사·무료배송 비용 부담/계약은 미정이다.
 
@@ -14,7 +14,7 @@
 | 고객 계정 | 가입·로그인·로그아웃·재설정·토큰 보호 | 완료 (Mailpit 격리 QA 범위) | #402098 `ACCOUNT_BROWSER_QA_OUTCOME=success`, `RESET_TOKEN_BROWSER_QA_OUTCOME=success` | 운영 메일 설정에서 별도 확인 | SMTP sender/domain/test inbox 미정 |
 | 관리자 암호 복구 | 기존 암호 거부, 새 암호 Dashboard 로그인 | 완료 (Mailpit 격리 QA 범위) | #402098 `ADMIN_RECOVERY_BROWSER_OUTCOME=success` | 운영 SMTP에서 확인 | SMTP 제공자·발신 도메인 미정 |
 | 고객 반품 제출 | native form 제출 및 주문 추적 목록 readback | 완료 (합성 CI 주문) | #402098 `ORDER_RETURN_BROWSER_OUTCOME=success`; submit click 뒤 1개 요청을 읽음 | 실제 정책에 따른 고객 acceptance | 실제 취소/반품/환불 정책·담당자 미정 |
-| 관리자 RMA·취소/credit slip | RMA 상태 저장/복원, 합성 주문 lifecycle | **검증 실패** | #402098 admin return browser 실제 outcome `failure`; generic message `native admin return form did not preserve the run-scoped return`; lifecycle gate `failure`. Step conclusion 초록은 `continue-on-error`로 가려진 상태 | 실패 세부 단계가 없어 앱 결함과 테스트 분류를 구분할 증거가 부족함. 추측 수정/추가 full QA는 하지 않음 | 외부 입력은 없으나 새 safe stage diagnostics와 집중 검증이 필요 |
+| 관리자 RMA·취소/credit slip | RMA 상태 저장/복원, 합성 주문 lifecycle | **원인 미확정·검증 대기** | #402134의 실제 admin RMA outcome은 failure: `return_list`/`TimeoutException`, 직전 완료는 `admin_login`; URL·경로 진단이 없어 원인은 미확정. #402144의 Step 63 실제 outcome은 failure(continue-on-error 때문에 step conclusion은 success)이며 안전 로그는 `CI product detail page did not render`라고 기록했다. 이에 따라 Step 64–66은 skipped, Step 71 evidence와 Step 76 aggregate는 failure, Step 79 격리 정리는 success | Step 63 선행 gate 실패 원인을 별도 근거로 확인한 뒤에만 새 집중 실행을 수행하고, 그 다음 RMA의 분리된 navigation/grid 단계와 같은 RMA 1→2 저장·재조회·2→1 복원을 확인한다. 현재 RMA 코드 동작 결함은 확정되지 않았고 저장/복원도 아직 미검증 | 코드 검증에는 외부 입력 없음. 운영 판매자/상품/정책 자료는 별도 자료·환경 대기 |
 | 관리자 상품 등록/수정 | 상품 필드·이미지·옵션·재고 등록·수정 | 완료 (합성 격리 QA 범위) | #402098 `PRODUCT_ADMIN_BROWSER_QA_OUTCOME=success`; 실상품은 별도 | 실제 SKU acceptance | SKU·언어별 문안·가격·재고·옵션·이미지 권리·세금분류 미정 |
 | 검색/장바구니/가격/세금/무료배송/주문 | Tokyo/Osaka checkout, ¥0 shipping, 주문·관리자 금액 대조 | 완료 (합성 격리 QA 범위) | #402098 customer/admin checkout, taxable/exempt, coupon/quantity, order readback outcomes 성공 | 실제 제품·배송계약으로 인수 확인; 실결제는 미실행 | 배송지역·운송사·서비스/비용 계약 미정; 고객 요금 ¥0은 확정 |
 | CI 백업·복원·재시작·우편번호 | run 전용 DB/files/queue 복구, 재시작, import, 정리 | 완료 (합성 격리 QA 범위) | #402098 backup, restart, postal import/verify, screenshot coverage, cleanup success | 운영 restore drill은 별도 | 운영 저장소·암호화/보존·RPO/RTO·담당자/대상 미정 |
@@ -22,7 +22,7 @@
 | 판매자·상품·세무·배송·결제·법률 | 승인된 운영정보와 적법한 판매 절차 | 자료·환경 대기 | 사용자가 실제 값은 ‘미정’임을 확인; 합성 QA는 운영 준비가 아님 | 승인자료를 보안 경로로 반영 후 acceptance | 판매자·LOGISTEED 관계/권한, 고객센터, SKU/권리/세금, 운송·환불·결제, 약관/개인정보/특상법 문안 미정 |
 | 운영 인프라·메일·백업·실기기 | HTTPS 운영, 메일, release/rollback, restore, PWA 기기검증 | 자료·환경 대기 | 현재 QA는 run 전용 CI; production target 미제공 | 승인된 staging에서 배포/복원/기기 확인 | host/owner, domain/DNS/TLS, SMTP, registry/release owner/secrets 경로, production admin access owner, backup 책임자/저장소, iOS·Android 기기 미정 |
 
-**현재 판단:** 종합 QA는 실패했으므로 출시 준비 완료가 아니다. 특히 관리자 RMA 상태 저장은 원인을 특정하지 못해 미검증으로 남는다. 운영 판매자·상품·결제·배송·법률 자료와 운영환경·기기 접근도 미정이므로 정식 출시는 차단 상태다. 공개 LOGISTEED 정보는 `company_reference`에만 쓰고 실제 판매자나 고객센터 정보로 옮기지 않는다.
+**현재 판단:** 전체 QA는 실패했으며 최신 집중 QA도 선행 storefront gate에서 실패해 관리자 RMA를 검증하지 못했다. 따라서 출시 준비 완료가 아니다. RMA의 앱/테스트 원인은 아직 확정되지 않았다. 운영 판매자·상품·결제·배송·법률 자료와 운영환경·기기 접근도 미정이므로 정식 출시는 차단 상태다. 공개 LOGISTEED 정보는 `company_reference`에만 쓰고 실제 판매자나 고객센터 정보로 옮기지 않는다.
 
 ## 이번 고정 범위 결과 (2026-10-25 11:39 UTC)
 
