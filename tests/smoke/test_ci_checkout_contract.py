@@ -261,6 +261,7 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
                 with self.subTest(variable=variable, outcome=outcome):
                     case_environment = {
                         **os.environ,
+                        "ORDENOWA_ADMIN_SECURITY_FOCUS": "false",
                         **environment,
                         variable: outcome,
                         "SECURITY_ADMIN_LOCALE_MUTATED": "",

@@ -480,6 +480,19 @@ def escape_workflow_command_data(value: str) -> str:
     return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 
 
+def append_admin_dashboard_route_summary(diagnostic: str) -> bool:
+    """Append a validated, redacted route snapshot to this Actions step summary."""
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not summary_path or not re.fullmatch(SAFE_ADMIN_DASHBOARD_ROUTE_PATTERN, diagnostic):
+        return False
+    try:
+        with Path(summary_path).open("a", encoding="utf-8") as summary:
+            summary.write(f"### View-only Dashboard route diagnostic\n\n`{diagnostic}`\n\n")
+    except OSError:
+        return False
+    return True
+
+
 def is_admin_orders_list_url(url: str) -> bool:
     """Accept only the same-origin AdminOrders list route, never its create/detail routes."""
     try:
@@ -1972,6 +1985,10 @@ def run() -> bool:
             dashboard_route_state["screenshot_saved"] = False
         dashboard_route_diagnostic = format_admin_dashboard_route_state(dashboard_route_state)
         print(f"ORDENOWA_ADMIN_DASHBOARD_ROUTE={dashboard_route_diagnostic}", file=sys.stderr)
+        if not append_admin_dashboard_route_summary(dashboard_route_diagnostic):
+            error = AssertionError("the redacted Dashboard route diagnostic was not saved to the step summary")
+            error.admin_security_dashboard_route = dashboard_route_diagnostic
+            raise error
         if dashboard_route_state["current_controller"] != "AdminDashboard":
             error = AssertionError(
                 "the permitted view-only employee did not open its configured Dashboard tab"

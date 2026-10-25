@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
@@ -285,6 +286,47 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "/admin/%250A::warning%0D%0Anext",
         )
 
+    def test_dashboard_route_diagnostic_is_written_to_the_step_summary(self):
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+        module = ast.parse(source, filename=str(ADMIN_FLOW))
+        safe_pattern = next(
+            ast.literal_eval(node.value)
+            for node in module.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name)
+                and target.id == "SAFE_ADMIN_DASHBOARD_ROUTE_PATTERN"
+                for target in node.targets
+            )
+        )
+        namespace: dict[str, object] = {
+            "os": os,
+            "Path": Path,
+            "re": re,
+            "SAFE_ADMIN_DASHBOARD_ROUTE_PATTERN": safe_pattern,
+        }
+        append_summary = load_function(
+            ADMIN_FLOW,
+            "append_admin_dashboard_route_summary",
+            namespace,
+        )
+        diagnostic = (
+            "current_path=/admin-kuranea/index.php/sell/dashboard/~/;"
+            "current_same_origin=true;current_admin_path=true;controller_present=true;"
+            "controller_name=AdminDashboard;current_controller=other;document_ready=complete;"
+            "login_form_visible=false;dashboard_link_path=/admin-kuranea/index.php;"
+            "dashboard_link_same_origin=true;dashboard_link_admin_path=true;"
+            "dashboard_link_count=1;screenshot_saved=true"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            summary = Path(temporary) / "summary.md"
+            with patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": str(summary)}):
+                self.assertTrue(append_summary(diagnostic))
+                self.assertFalse(append_summary(f"{diagnostic};token=private-token"))
+            summary_text = summary.read_text(encoding="utf-8")
+            self.assertIn(diagnostic, summary_text)
+            self.assertNotIn("private-token", summary_text)
+
     def test_dashboard_failure_captures_route_state_and_screenshot_before_assertion(self):
         source = ADMIN_FLOW.read_text(encoding="utf-8")
         run = source.split("def run()", 1)[1].split("\n\nif __name__", 1)[0]
@@ -307,6 +349,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertIn("f\"dashboard_route={escape_workflow_command_data(diagnostic_dashboard_route)}\"", handler)
         self.assertIn("escape_workflow_command_data(diagnostic_dashboard_route)", handler)
         self.assertIn("ORDENOWA_ADMIN_DASHBOARD_ROUTE=", dashboard_stage)
+        self.assertIn("append_admin_dashboard_route_summary(dashboard_route_diagnostic)", dashboard_stage)
         self.assertEqual(run.count('emit_admin_post_login_state(restricted_driver, "view_only")'), 1)
 
     def test_admin_login_wait_retries_when_login_form_detaches_during_navigation(self):
