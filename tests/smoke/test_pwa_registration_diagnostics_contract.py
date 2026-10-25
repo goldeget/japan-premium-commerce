@@ -2,12 +2,59 @@
 from __future__ import annotations
 
 import inspect
+from contextlib import redirect_stderr
+import io
+from pathlib import Path
+from types import SimpleNamespace
 import unittest
+from unittest.mock import MagicMock, patch
 
 from tests.e2e import verify_pwa_browser as pwa_browser
 
 
 class PwaRegistrationDiagnosticsTests(unittest.TestCase):
+    def test_viewport_requires_initial_controller_before_locale_navigation(self) -> None:
+        for controller_ready in (True, False):
+            with self.subTest(controller_ready=controller_ready):
+                driver = MagicMock()
+                driver.current_url = "http://localhost:18080/"
+                driver.execute_async_script.return_value = {
+                    "phase": "complete" if controller_ready else "controller_wait",
+                    "category": "none" if controller_ready else "controller_timeout",
+                    "controller_present": controller_ready,
+                }
+                driver.get_log.return_value = []
+                driver._pwa_registration_observer_installed = True
+                wait = MagicMock()
+                wait.until.return_value = True
+
+                def navigate_locale(*_args: object) -> str:
+                    self.assertTrue(
+                        driver.execute_async_script.called,
+                        "locale navigation raced the initial worker installation",
+                    )
+                    self.assertTrue(controller_ready)
+                    raise RuntimeError("locale navigation reached after bootstrap")
+
+                with (
+                    patch.object(pwa_browser, "Options", return_value=MagicMock()),
+                    patch.object(pwa_browser, "webdriver", SimpleNamespace(Chrome=lambda **_kwargs: driver)),
+                    patch.object(pwa_browser, "WebDriverWait", return_value=wait),
+                    patch.object(pwa_browser, "install_service_worker_registration_observer"),
+                    patch.object(pwa_browser, "select_storefront_locale", side_effect=navigate_locale) as select_locale,
+                    redirect_stderr(io.StringIO()),
+                ):
+                    expected_error = RuntimeError if controller_ready else pwa_browser.PwaDiagnosticAssertionError
+                    with self.assertRaises(expected_error):
+                        pwa_browser.run_viewport(
+                            "http://localhost:18080", Path("/tmp"),
+                            390, 844, "mobile", "ja", "mobile-ja", 1,
+                        )
+                if controller_ready:
+                    self.assertEqual(1, select_locale.call_count)
+                else:
+                    self.assertFalse(select_locale.called)
+
     def test_registration_metadata_is_allowlisted_and_redacts_urls_and_messages(self) -> None:
         private_url = (
             "http://localhost:18080/sw.js?token=registration-secret"

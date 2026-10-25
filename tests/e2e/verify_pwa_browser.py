@@ -3608,6 +3608,10 @@ def run_viewport(
         WebDriverWait(driver, 40).until(
             lambda browser: browser.execute_script("return document.readyState") == "complete"
         )
+        # Let the first document be claimed before starting another navigation;
+        # activation during that navigation can leave its new document uncontrolled.
+        stage = "service_worker_bootstrap"
+        wait_for_service_worker(driver, base_url, driver.current_url)
         stage = "storefront_locale"
         locale_home_url = select_storefront_locale(driver, base_url, locale)
         stage = "manifest"

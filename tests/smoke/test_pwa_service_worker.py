@@ -1649,6 +1649,7 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
             "network_enable",
             "storefront_navigation",
             "storefront_ready",
+            "service_worker_bootstrap",
             "manifest",
             "service_worker_registration",
             "service_worker_update",
