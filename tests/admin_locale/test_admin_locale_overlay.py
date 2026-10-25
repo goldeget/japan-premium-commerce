@@ -94,7 +94,7 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertIn("LanguageContextBuilder", source)
         self.assertIn("setLanguageId", source)
         self.assertIn("getOneByLocaleOrIsoCode", source)
-        self.assertIn("PRIORITY = 14", source)
+        self.assertIn("PRIORITY = LanguageContextSubscriber::KERNEL_REQUEST_PRIORITY - 1", source)
 
     def test_all_legacy_module_admin_headers_use_korean_context_language(self) -> None:
         controller_paths = (

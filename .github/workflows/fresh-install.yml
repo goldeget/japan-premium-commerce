@@ -940,6 +940,11 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/ordenowa-browser-qa"
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/ordenowa-admin-locale-lifecycle.php' < tests/admin_locale/locale_lifecycle.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            runuser -g www-data -u www-data -- php /tmp/ordenowa-admin-locale-lifecycle.php \
+            /var/www/html/vendor/autoload.php /var/www/html
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             sh -c 'cat > /tmp/seed_security_fixtures.php' < tests/business_profile/seed_security_fixtures.php
           fixture_log="$RUNNER_TEMP/ordenowa-browser-qa/security-fixture.log"
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \

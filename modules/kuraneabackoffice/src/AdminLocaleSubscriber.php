@@ -8,6 +8,7 @@ use Kuranea\Backoffice\AdminDocumentLanguage;
 use PrestaShop\PrestaShop\Core\Context\LanguageContextBuilder;
 use PrestaShop\PrestaShop\Core\Language\LanguageRepositoryInterface;
 use PrestaShop\PrestaShop\Core\Translation\Storage\Normalizer\DomainNormalizer;
+use PrestaShopBundle\EventListener\Admin\Context\LanguageContextSubscriber;
 use PrestaShopBundle\Translation\TranslatorLanguageLoader;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -21,7 +22,8 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
 {
     private const MODULE_NAME = 'kuraneabackoffice';
     private const KOREAN_LOCALE = 'ko-KR';
-    public const PRIORITY = 14;
+    // Override the employee language before the legacy context is built at priority 0.
+    public const PRIORITY = LanguageContextSubscriber::KERNEL_REQUEST_PRIORITY - 1;
 
     /** @param string[] $activeModules */
     public function __construct(
