@@ -119,6 +119,16 @@ class CiNativeOrderLifecycleContractTests(unittest.TestCase):
                 self.assertIn(assignment, load_test_order)
                 self.assertLess(load_test_order.index(assignment), product_readback)
 
+    def test_transition_clears_prestashop_history_cache_before_paid_readback(self) -> None:
+        preparer = PREPARER.read_text(encoding="utf-8")
+        self.assertIn("Order::cleanHistoryCache();", preparer)
+        history_write = preparer.index("if (!$history->add())")
+        cache_clear = preparer.index("Order::cleanHistoryCache();", history_write)
+        paid_readback = preparer.index("$preparedOrder = new Order", cache_clear)
+
+        self.assertLess(history_write, cache_clear)
+        self.assertLess(cache_clear, paid_readback)
+
     def test_returns_configuration_is_run_scoped_and_restored_by_verifier_shutdown(self) -> None:
         if not PREPARER.is_file():
             self.fail("the CI-only native order lifecycle fixture preparer is missing")

@@ -203,6 +203,7 @@ $history->changeIdOrderState($deliveredStateId, $sourceOrder);
 if (!$history->add()) {
     throw new RuntimeException('PrestaShop could not persist the native delivered-state history entry.');
 }
+Order::cleanHistoryCache();
 $preparedOrder = new Order($sourceOrderId);
 $preparedState = new OrderState((int) $preparedOrder->current_state, (int) $preparedOrder->id_lang);
 if (!Validate::isLoadedObject($preparedOrder)
