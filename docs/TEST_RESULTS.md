@@ -1,25 +1,23 @@
 # ORDENOWA 테스트 결과
 
-## 2026-10-25 — PII-safe 브라우저 차단 진단 및 최신 격리 QA
+## 2026-10-25 — Return browser diagnostics, scroll fix, and final QA result
 
-코드 검증·원격 대상 SHA `46b823c2d38c121fa8c25bc4caf19faee7b33302`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다. 커밋 `ab6d3ff`는 반품 체크박스/제출 버튼의 ID/class 진단을 구조 allowlist로 제한하고 ID를 비운다. `46b823c`는 계정 signout blocker에도 같은 원칙을 적용하며 native click과 실패 조건을 유지한다.
-
-운영정책 입력으로 확인된 고객 언어(ja/en/ko), JPY, 상품 표시가격 최종가, 지원 일본지역 고객 배송비 ¥0, 결제 단계 추가 세금/배송비·플랫폼 수수료 ¥0을 유지한다. 해당 QA는 합성 상품과 격리 주문이다. 실제 과세/면세 분류, 배송지역·운송계약 및 판매자 부담은 운영자료를 기다린다.
+Latest QA-tested code SHA is `c3897dfb1acbc704c1482d32cf2247dbc24ebf55`; `main` remains `ee02a3657448d563508687614a246e05ac61eecd`. Commits `ab6d3ff` and `46b823c` restrict customer/account click diagnostics to fixed tag/class allowlists and blank IDs. Commit `c3897df` scrolls the return submit button into view, waits for a clear center hit-test, preserves native Selenium click, and captures/rethrows interception or wait timeout.
 
 | 검사 | 결과 | 근거 |
 | --- | --- | --- |
-| Step 8 workflow 사전 검사 (`ORDENOWA_ADMIN_SECURITY_FOCUS=false`) | PASS | 정확한 workflow 명령, 461 tests; 7 skipped; 실패 0 |
-| Step 8 workflow 사전 검사 (`ORDENOWA_ADMIN_SECURITY_FOCUS=true`) | PASS | 같은 명령, 461 tests; 7 skipped; 실패 0 |
-| Step 9 workflow 사전 검사 (`ORDENOWA_ADMIN_SECURITY_FOCUS=false`) | PASS | 정확한 workflow 명령, 130 tests; 실패 0 |
-| Step 9 workflow 사전 검사 (`ORDENOWA_ADMIN_SECURITY_FOCUS=true`) | PASS | 같은 명령, 130 tests; 실패 0 |
-| 고객 계정 focused contract | PASS | 50 tests; injected synthetic email이 stdout/stderr 진단에 나타나지 않고 상태·geometry는 보존 |
-| Python AST / diff check | PASS | 변경된 4개 Python 파일 parse; `git diff --check` |
-| 독립 코드 검토 | PASS | return/account diagnostics에서 customer text/URL/token/cookie 노출 경로를 찾지 못함; native clicks와 실패 gate 유지 |
-| 최신 전체 격리 Actions | 진행 중 | [#40208183512](https://github.com/goldeget/japan-premium-commerce/actions/runs/40208183512), code SHA `46b823c2d38c121fa8c25bc4caf19faee7b33302`; GitHub runner에서 Docker/DB/Chromium 사용 |
-| 직전 전체 Actions | FAIL | [#40205915764](https://github.com/goldeget/japan-premium-commerce/actions/runs/40205915764), SHA `3d620c8ff446fab7706dc87bad9eaa841efcbc36`; aggregate `order_return_browser=failure order_return_admin_browser=skipped order_lifecycle=failure`. Customer return native submit was intercepted; no root cause had yet been established. |
-| 직전 실행의 보존된 성공 범위 | PASS (직전 SHA에 한함) | Account, admin recovery, brand, product, PWA, free shipping/tax, Japan order persistence, isolated backup/restore, restart, postal import/verify succeeded. This is not a pass for SHA `46b823c`. |
+| Step 8 workflow preflight | PASS on preceding privacy patch | focus=false/true each 461 tests, 7 skipped. `c3897df` only changes the Step 9 return browser contract/flow, which is not in Step 8's command. |
+| Step 9 workflow preflight | PASS on `c3897df` | Exact workflow command with `ORDENOWA_ADMIN_SECURITY_FOCUS=false/true`: 130 tests each, 0 failures. |
+| Focused return contract | PASS on `c3897df` | 7 tests. The scroll/hit-test assertions were added first and failed before the flow change; the second failure-capture assertion also failed before timeout handling was added. |
+| Account privacy contract | PASS on `46b823c` | 50 tests. An injected synthetic email is absent from stderr diagnostic output. |
+| Python AST / diff check | PASS | Changed browser Python files parse; `git diff --check` clean. |
+| Independent review | PASS | No remaining PII diagnostic path; native click, rethrow, and one-row readback gates retained. Latest review also confirmed timeout captures then rethrows. |
+| Full isolated Actions | **FAIL** | [#40209847999](https://github.com/goldeget/japan-premium-commerce/actions/runs/40209847999), head `c3897df`. Actual outcomes: customer return browser `success`; admin return browser `failure`; order lifecycle `failure`. Aggregate annotation: `order_return_admin_browser=failure order_lifecycle=failure`. |
+| Previous full Actions | FAIL | [#40208183512](https://github.com/goldeget/japan-premium-commerce/actions/runs/40208183512), head `46b823c`. Customer submit failed while button was below viewport; safe state was `no_target`, rect y=1358 in a 701px viewport, center outside. That evidence led to the `c3897df` scroll fix. |
+| Other outcomes in #402098 | PASS | Admin security, account/reset, admin recovery, brand/email, product, PWA, free shipping/tax/order readback, backup/restore, restart, postal import/verify succeeded. Separate Dashboard screenshot outcome was `skipped`. |
+| Artifact/cleanup | PASS | Browser artifact [#402098 ID 12605811294](https://github.com/goldeget/japan-premium-commerce/actions/runs/40209847999/artifacts/12605811294), diagnostics artifact ID `12605901345`; screenshot upload/coverage, run-only cleanup, checkout post-step succeeded. Artifacts are retained in Actions; not downloaded or visually reviewed in this workspace. |
 
-Candidate #40208183512 is the push-triggered full QA; do not dispatch a duplicate. Its actual outcomes, failure annotations, aggregate, artifact coverage, and run-only cleanup must be checked before assigning the final result. The old browser screenshot artifact is [run #402059 artifact](https://github.com/goldeget/japan-premium-commerce/actions/runs/40205915764/artifacts/12604410224); the files were retained by Actions, but the workspace download endpoint previously returned 403, so they were not visually reviewed here.
+The admin-return script emitted only `FAIL: native admin return form did not preserve the run-scoped return`; its multiple assertions collapse to the same message. The lifecycle gate then failed at `admin return browser gate`. The exact failing assertion and whether it is application or test behavior remain undetermined. Do not claim full QA PASS. No further full run was launched after this result.
 
 ## 2026-10-25 — 대시보드 경로 수정 후 제한된 최종 전체 QA
 

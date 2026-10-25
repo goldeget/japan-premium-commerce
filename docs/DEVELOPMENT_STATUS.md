@@ -1,27 +1,28 @@
 # ORDENOWA 개발 현황
 
-## 현재 출시 체크리스트 (2026-10-25 15:43 UTC)
+## 현재 출시 체크리스트 (2026-10-25 16:20 UTC)
 
-`work` 로컬·원격 SHA는 `46b823c2d38c121fa8c25bc4caf19faee7b33302`다. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`이며 변경하지 않았다. 미커밋 문서와 미추적 파일은 보존 중이다. 최신 수정 커밋의 격리 전체 QA [#40208183512](https://github.com/goldeget/japan-premium-commerce/actions/runs/40208183512)은 실행 중이다. 직전 전체 QA [#40205915764](https://github.com/goldeget/japan-premium-commerce/actions/runs/40205915764)은 **FAIL**이며 현재 수정 전 기준이다.
+최신 전체 QA 대상 코드는 `c3897dfb1acbc704c1482d32cf2247dbc24ebf55`이며 run [#40209847999](https://github.com/goldeget/japan-premium-commerce/actions/runs/40209847999)은 **FAIL**이다. 같은 run에서 고객 반품 제출/readback은 성공했지만 관리자 RMA 저장과 종합 lifecycle gate가 실패했다. 별도 문서 갱신은 이 코드 검사 결과를 바꾸지 않는다. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다.
 
-확정된 제품 정책: 고객 언어는 일본어 기본, 영어·한국어 추가; 기본 통화 JPY; ORDENOWA/オーデノワ/오데노와 브랜드; 지원하는 일본 배송지역의 고객 배송비 ¥0, 결제 시 별도 배송비·세금 또는 플랫폼 추가 수수료 없음. 상품 표시는 최종 세금 포함 가격이며 과세 상품의 세금은 실제 분류대로 기록한다. 지원 도도부현, 실제 운송사, 무료배송 비용 부담 주체와 계약 조건은 미정이다.
+확정된 정책: 고객 언어는 일본어 기본, 영어·한국어 추가; 통화 JPY; 브랜드 ORDENOWA/オーデノワ/오데노와; 상품 표시는 세금 포함 최종가; 지원 일본 배송지역의 고객 배송비 ¥0; 결제 때 별도 배송비·추가 세금·플랫폼 수수료 ¥0. 과세 상품은 실제 분류대로 기록한다. 실제 배송지역·운송사·무료배송 비용 부담/계약은 미정이다.
 
 | 항목 | 완료 조건 | 현재 상태 | 근거 | 남은 작업 | 필요한 입력 |
 | --- | --- | --- | --- | --- | --- |
-| 보기 전용 관리자·대시보드 권한 | 실제 Dashboard 문서, 한국어 UI, 쓰기 차단, 외부/잘못된 경로 거부 | 완료 (격리 QA 범위) | #402059 `ADMIN_SECURITY_BROWSER_QA_OUTCOME=success`; 별도 Dashboard 캡처 단계는 `skipped` | 최신 수정 후보에서 영향 여부 확인 | 운영 직원 계정/도메인 정보는 별도 필요 |
-| 브랜드·SEO·PWA 기본 동작 | 공식 자산 게시·복원, 메일 로고, private cache와 PWA 확인 | 완료 (합성 격리 QA 범위) | #402059 brand, reset-email brand, PWA outcome은 모두 `success`; 로컬 asset 무결성 계약 통과 | 운영 도메인 metadata/시각 검수, iOS·Android 기기 확인 | staging/production 도메인과 기기 미정 |
-| SEO escaping/metadata | 사용자 입력 escaping 및 공개 metadata 확인 | 코드 수정 완료, 운영 호스트 검증 필요 | SEO escaping fix는 `work`에 있음; 실운영 hostname은 미제공 | staging hostname에서 title/description/OG 미리보기 확인 | staging/production 도메인 미정 |
-| 고객 계정 | 가입/로그인/로그아웃/비밀번호 재설정·토큰 보호 | 완료 (합성 격리 QA 범위) | #402059 `ACCOUNT_BROWSER_QA_OUTCOME=success`, `RESET_TOKEN_BROWSER_QA_OUTCOME=success`; 새 sanitizer는 Step 8 사전 검사 통과 | 새 전체 QA outcome 확인 | 운영 메일 발신자·도메인 미정 |
-| 관리자 직원 암호 복구 | native reset, 이전 암호 거부, 새 암호로 Dashboard 로그인 | 완료 (Mailpit 격리 QA 범위) | #402059 `ADMIN_RECOVERY_BROWSER_OUTCOME=success` | 운영 SMTP·도메인에서 별도 확인 | SMTP 제공자·발신 도메인 미정 |
-| 고객 반품·관리자 RMA | 고객 요청 저장, 관리자의 상태 변경·복원, 취소/credit-slip 기능 | 검증 필요 | #402059 `ORDER_RETURN_BROWSER_OUTCOME=failure`, admin return `skipped`, lifecycle `failure`; 고객 반품 제출 click interception에서 실패 | #402081에서 원인 구분 진단 재검증; 반환/환불 동작을 성공으로 취급하지 않음 | 실제 반품·취소·환불 정책과 담당자 미정 |
-| 관리자 상품 등록·편집 | 한국어 화면에서 실제 상품 필드/이미지/옵션/재고 저장 | 완료 (합성 격리 QA 범위) | #402059 `PRODUCT_ADMIN_BROWSER_QA_OUTCOME=success`; 실상품은 별도 자료 대기 | 출시 SKU로 acceptance 확인 | SKU·언어별 문안·가격·재고·옵션·이미지 사용권·세금분류 미정 |
-| 장바구니·가격·세금·무료배송·주문 | 일본 주소 checkout, ¥0 배송, 상품/주문/관리자 총액 일치 | 완료 (합성 격리 QA 범위) | #402059 Tokyo·Osaka, taxable/exempt, 쿠폰/수량, browser orders 및 admin readback outcome 성공 | 실제 SKU·배송계약으로 acceptance 확인; 운영 결제는 수행하지 않음 | 지원 도도부현, 운송사/서비스, 판매자 부담 비용·계약과 출고조건 미정; 고객 배송비 ¥0 정책은 확정 |
-| 백업·복원·재시작·우편번호 | 격리 DB/files/queue 복원·재시작 및 공식 우편 데이터 검증 | 완료 (합성 격리 QA 범위) | #402059 `BACKUP_RESTORE_DRILL`, restart, postal import/verify outcomes 성공 | 운영환경 복원 drill 별도 | 저장소·암호화·보존기간·RPO/RTO·담당자/대상 미정 |
-| 한국어 관리자 전체 범위 | 요구된 관리자 페이지·메시지의 완전한 현지화 | 검증 필요 | 주문/KPI 등 특정 화면 보완 기록은 있으나 전체 번역 coverage 근거 없음 | 남은 화면과 메시지 범위의 실제 inventory/확인 | 실제 운영 데이터/고객 안내 문안 미정 |
-| 판매자·상품·세무·배송·결제·정책 | 공개 운영 정보가 승인 원본과 일치하고 합법적 처리 | 자료·환경 대기 | 사용자가 실제 운영 값이 ‘미정’임을 확인; 합성 QA는 운영 준비가 아님 | 승인 자료를 보안 경로로 반영하고 acceptance QA | 판매자 법적 정보/LOGISTEED 관계 승인, 고객센터, SKU/권리/세금, 배송, 결제·환불, 약관·개인정보·특상법 문안 |
-| 운영 인프라·메일·백업·기기 | HTTPS 운영, 메일, 지속 backup/restore, release/rollback, iOS/Android 확인 | 자료·환경 대기 | 운영 target과 기기 접근 미제공; 현재 CI는 격리 프로젝트 | 승인된 staging에서 배포/복원/기기 검증 | 호스트·owner, domain/DNS/TLS, SMTP/test inbox, registry/release owner/secrets 경로, 승인된 운영 관리자 계정·권한 provisioning 책임자, backup 책임자/저장소, iOS·Android 기기 미정 |
+| 보기 전용 관리자·Dashboard | 실제 페이지·한국어 UI·쓰기 차단·경로 제한 | 완료 (격리 QA 범위) | #402098 `ADMIN_SECURITY_BROWSER_QA_OUTCOME=success`; 별도 Dashboard screenshot 단계는 `skipped` | 운영 host에서 재확인 | 운영 staff account/access owner 미정 |
+| 브랜드·PWA | 공식 자산 게시, email logo, private cache, PWA | 완료 (합성 격리 QA 범위) | #402098 brand/email/PWA outcomes 모두 `success`; screenshot coverage 통과 | 운영 domain·iOS/Android에서 시각 확인 | staging HTTPS·실기기 미정 |
+| SEO escaping/metadata | 입력 escape와 공개 metadata 표시 | 코드 수정 완료, 운영 host 검증 필요 | SEO escaping 수정은 `work`에 있음; run에는 실운영 hostname 없음 | staging에서 title/description/OG 확인 | staging/production domain 미정 |
+| 고객 계정 | 가입·로그인·로그아웃·재설정·토큰 보호 | 완료 (Mailpit 격리 QA 범위) | #402098 `ACCOUNT_BROWSER_QA_OUTCOME=success`, `RESET_TOKEN_BROWSER_QA_OUTCOME=success` | 운영 메일 설정에서 별도 확인 | SMTP sender/domain/test inbox 미정 |
+| 관리자 암호 복구 | 기존 암호 거부, 새 암호 Dashboard 로그인 | 완료 (Mailpit 격리 QA 범위) | #402098 `ADMIN_RECOVERY_BROWSER_OUTCOME=success` | 운영 SMTP에서 확인 | SMTP 제공자·발신 도메인 미정 |
+| 고객 반품 제출 | native form 제출 및 주문 추적 목록 readback | 완료 (합성 CI 주문) | #402098 `ORDER_RETURN_BROWSER_OUTCOME=success`; submit click 뒤 1개 요청을 읽음 | 실제 정책에 따른 고객 acceptance | 실제 취소/반품/환불 정책·담당자 미정 |
+| 관리자 RMA·취소/credit slip | RMA 상태 저장/복원, 합성 주문 lifecycle | **검증 실패** | #402098 admin return browser 실제 outcome `failure`; generic message `native admin return form did not preserve the run-scoped return`; lifecycle gate `failure`. Step conclusion 초록은 `continue-on-error`로 가려진 상태 | 실패 세부 단계가 없어 앱 결함과 테스트 분류를 구분할 증거가 부족함. 추측 수정/추가 full QA는 하지 않음 | 외부 입력은 없으나 새 safe stage diagnostics와 집중 검증이 필요 |
+| 관리자 상품 등록/수정 | 상품 필드·이미지·옵션·재고 등록·수정 | 완료 (합성 격리 QA 범위) | #402098 `PRODUCT_ADMIN_BROWSER_QA_OUTCOME=success`; 실상품은 별도 | 실제 SKU acceptance | SKU·언어별 문안·가격·재고·옵션·이미지 권리·세금분류 미정 |
+| 검색/장바구니/가격/세금/무료배송/주문 | Tokyo/Osaka checkout, ¥0 shipping, 주문·관리자 금액 대조 | 완료 (합성 격리 QA 범위) | #402098 customer/admin checkout, taxable/exempt, coupon/quantity, order readback outcomes 성공 | 실제 제품·배송계약으로 인수 확인; 실결제는 미실행 | 배송지역·운송사·서비스/비용 계약 미정; 고객 요금 ¥0은 확정 |
+| CI 백업·복원·재시작·우편번호 | run 전용 DB/files/queue 복구, 재시작, import, 정리 | 완료 (합성 격리 QA 범위) | #402098 backup, restart, postal import/verify, screenshot coverage, cleanup success | 운영 restore drill은 별도 | 운영 저장소·암호화/보존·RPO/RTO·담당자/대상 미정 |
+| 한국어 관리자 전체 범위 | 모든 승인 화면/오류/안내의 현지화 | 검증 필요 | 여러 주요 화면 보완은 있으나 전체 coverage inventory 없음 | 미검증 core/custom 화면 목록과 QA | 실제 고객 안내/법률 문안 미정 |
+| 판매자·상품·세무·배송·결제·법률 | 승인된 운영정보와 적법한 판매 절차 | 자료·환경 대기 | 사용자가 실제 값은 ‘미정’임을 확인; 합성 QA는 운영 준비가 아님 | 승인자료를 보안 경로로 반영 후 acceptance | 판매자·LOGISTEED 관계/권한, 고객센터, SKU/권리/세금, 운송·환불·결제, 약관/개인정보/특상법 문안 미정 |
+| 운영 인프라·메일·백업·실기기 | HTTPS 운영, 메일, release/rollback, restore, PWA 기기검증 | 자료·환경 대기 | 현재 QA는 run 전용 CI; production target 미제공 | 승인된 staging에서 배포/복원/기기 확인 | host/owner, domain/DNS/TLS, SMTP, registry/release owner/secrets 경로, production admin access owner, backup 책임자/저장소, iOS·Android 기기 미정 |
 
-**현재 판단:** 최신 코드의 전체 QA는 아직 진행 중이고 직전 전체 QA는 반품 검사 실패로 FAIL이다. 전체 QA가 성공하더라도 실제 판매자·상품·결제·배송·법률 자료, 운영환경, 기기 접근이 준비되기 전에는 정식 출시할 수 없다. LOGISTEED 공개 정보는 `company_reference`에만 쓰며, 실제 판매자나 ORDENOWA 운영·고객센터 정보로 전용하지 않는다.
+**현재 판단:** 종합 QA는 실패했으므로 출시 준비 완료가 아니다. 특히 관리자 RMA 상태 저장은 원인을 특정하지 못해 미검증으로 남는다. 운영 판매자·상품·결제·배송·법률 자료와 운영환경·기기 접근도 미정이므로 정식 출시는 차단 상태다. 공개 LOGISTEED 정보는 `company_reference`에만 쓰고 실제 판매자나 고객센터 정보로 옮기지 않는다.
 
 ## 이번 고정 범위 결과 (2026-10-25 11:39 UTC)
 
