@@ -251,6 +251,46 @@ class CiNativeOrderLifecycleContractTests(unittest.TestCase):
             with self.subTest(forbidden_value=forbidden_value):
                 self.assertNotIn(forbidden_value, safe_output)
 
+    def test_payment_diagnostic_correlates_association_rows_without_exposing_identifiers(self) -> None:
+        preparer = PREPARER.read_text(encoding="utf-8")
+        formatter = preparer.split(
+            "$formatPaymentLedgerBoundary = static function", 1
+        )[1].split("};", 1)[0]
+
+        for required in (
+            "association_query_available",
+            "association_payment_resolved_count",
+            "association_reference_match_count",
+            "association_matches_payment_collection_count",
+            "association_invoice_resolved_count",
+            "association_invoice_order_match_count",
+            "LEFT JOIN `",
+            "getResults()",
+            "$paymentCollectionRow->id;",
+            "setPageSize(9",
+            "min(9, max(0,",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, preparer)
+
+        self.assertIn("association_payment_resolved_count=", formatter)
+        self.assertIn("association_reference_match_count=", formatter)
+        self.assertIn("association_matches_payment_collection_count=", formatter)
+        self.assertIn("association_invoice_order_match_count=", formatter)
+        self.assertNotIn("$paymentCollectionRow->id_order_payment", preparer)
+        for private_value in (
+            "id_order_payment",
+            "id_order_invoice",
+            "$order->reference",
+            "resolved_order_reference",
+            "resolved_invoice_order_id",
+        ):
+            with self.subTest(private_value=private_value):
+                self.assertNotIn(private_value, formatter)
+
+        workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
+        self.assertIn("tests.postcode.test_ci_native_order_lifecycle_contract", workflow)
+
     def test_returns_configuration_is_run_scoped_and_restored_by_verifier_shutdown(self) -> None:
         if not PREPARER.is_file():
             self.fail("the CI-only native order lifecycle fixture preparer is missing")

@@ -69,8 +69,12 @@ $readPaymentLedgerBoundary = static function (Order $order): array {
     $invoiceCount = -1;
     $invoicePaymentAssociationCount = -1;
     $paymentCollectionCount = -1;
+    $paymentCollectionRowsAvailable = false;
+    $nativePaymentIds = [];
     $paymentQueryAvailable = false;
     $paymentRow = false;
+    $associationQueryAvailable = false;
+    $associationRows = [];
     try {
         $value = Db::getInstance()->getValue(
             'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'order_invoice` WHERE `id_order` = ' . (int) $order->id
@@ -92,7 +96,22 @@ $readPaymentLedgerBoundary = static function (Order $order): array {
         $invoicePaymentAssociationCount = -1;
     }
     try {
-        $paymentCollectionCount = min(9, max(0, $order->getOrderPaymentCollection()->count()));
+        $paymentCollection = $order->getOrderPaymentCollection();
+        $paymentCollection->setPageSize(9);
+        $paymentCollectionCount = min(9, max(0, $paymentCollection->count()));
+        $paymentCollectionRows = $paymentCollection->getResults();
+        if (is_array($paymentCollectionRows)) {
+            foreach ($paymentCollectionRows as $paymentCollectionRow) {
+                if (!($paymentCollectionRow instanceof OrderPayment)) {
+                    continue;
+                }
+                $paymentCollectionId = (int) $paymentCollectionRow->id;
+                if ($paymentCollectionId > 0) {
+                    $nativePaymentIds[$paymentCollectionId] = true;
+                }
+            }
+            $paymentCollectionRowsAvailable = true;
+        }
     } catch (Throwable $diagnosticException) {
         $paymentCollectionCount = -1;
     }
@@ -106,6 +125,52 @@ $readPaymentLedgerBoundary = static function (Order $order): array {
         $paymentQueryAvailable = true;
     } catch (Throwable $diagnosticException) {
         $paymentRow = false;
+    }
+    try {
+        $value = Db::getInstance()->executeS(
+            'SELECT oip.`id_order_payment`, oip.`id_order_invoice`,'
+            . ' op.`id_order_payment` AS `resolved_payment_id`, op.`order_reference` AS `resolved_order_reference`,'
+            . ' oi.`id_order_invoice` AS `resolved_invoice_id`, oi.`id_order` AS `resolved_invoice_order_id`'
+            . ' FROM `' . _DB_PREFIX_ . 'order_invoice_payment` oip'
+            . ' LEFT JOIN `' . _DB_PREFIX_ . 'order_payment` op'
+            . ' ON op.`id_order_payment` = oip.`id_order_payment`'
+            . ' LEFT JOIN `' . _DB_PREFIX_ . 'order_invoice` oi'
+            . ' ON oi.`id_order_invoice` = oip.`id_order_invoice`'
+            . ' WHERE oip.`id_order` = ' . (int) $order->id
+            . ' ORDER BY oip.`id_order_invoice`, oip.`id_order_payment` LIMIT 9'
+        );
+        if (is_array($value)) {
+            $associationRows = $value;
+            $associationQueryAvailable = true;
+        }
+    } catch (Throwable $diagnosticException) {
+        $associationRows = [];
+    }
+    $associationPaymentResolvedCount = 0;
+    $associationReferenceMatchCount = 0;
+    $associationPaymentCollectionMatchCount = 0;
+    $associationInvoiceResolvedCount = 0;
+    $associationInvoiceOrderMatchCount = 0;
+    foreach ($associationRows as $associationRow) {
+        $associationPaymentId = (int) ($associationRow['id_order_payment'] ?? 0);
+        $resolvedPaymentId = (int) ($associationRow['resolved_payment_id'] ?? 0);
+        if ($resolvedPaymentId > 0) {
+            ++$associationPaymentResolvedCount;
+            if ((string) ($associationRow['resolved_order_reference'] ?? '') === (string) $order->reference) {
+                ++$associationReferenceMatchCount;
+            }
+            if ($associationPaymentId > 0 && isset($nativePaymentIds[$associationPaymentId])) {
+                ++$associationPaymentCollectionMatchCount;
+            }
+        }
+
+        $resolvedInvoiceId = (int) ($associationRow['resolved_invoice_id'] ?? 0);
+        if ($resolvedInvoiceId > 0) {
+            ++$associationInvoiceResolvedCount;
+            if ((int) ($associationRow['resolved_invoice_order_id'] ?? 0) === (int) $order->id) {
+                ++$associationInvoiceOrderMatchCount;
+            }
+        }
     }
     $payment = false;
     try {
@@ -121,7 +186,14 @@ $readPaymentLedgerBoundary = static function (Order $order): array {
         'invoice_count' => $invoiceCount,
         'invoice_payment_association_count' => $invoicePaymentAssociationCount,
         'payment_collection_count' => $paymentCollectionCount,
+        'payment_collection_rows_available' => $paymentCollectionRowsAvailable,
         'payment_query_available' => $paymentQueryAvailable,
+        'association_query_available' => $associationQueryAvailable,
+        'association_payment_resolved_count' => min(9, max(0, $associationPaymentResolvedCount)),
+        'association_reference_match_count' => min(9, max(0, $associationReferenceMatchCount)),
+        'association_matches_payment_collection_count' => min(9, max(0, $associationPaymentCollectionMatchCount)),
+        'association_invoice_resolved_count' => min(9, max(0, $associationInvoiceResolvedCount)),
+        'association_invoice_order_match_count' => min(9, max(0, $associationInvoiceOrderMatchCount)),
         'payment_row_found' => is_array($paymentRow),
         'payment_loaded' => $paymentLoaded,
         'order_reference_matches' => $paymentLoaded
@@ -135,7 +207,7 @@ $formatPaymentLedgerBoundary = static function (string $prefix, array $boundary)
     $formatCount = static fn (int $count): string => $count < 0 ? 'unavailable' : (string) $count;
 
     return sprintf(
-        '%s_invoice_count=%s; %s_invoice_payment_association_count=%s; %s_payment_collection_count=%s; %s_payment_query_available=%d; %s_payment_row_found=%d; %s_payment_loaded=%d; %s_order_reference_matches=%d; %s_amount_positive=%d',
+        '%s_invoice_count=%s; %s_invoice_payment_association_count=%s; %s_payment_collection_count=%s; %s_payment_collection_rows_available=%d; %s_payment_query_available=%d; %s_association_query_available=%d; %s_association_payment_resolved_count=%s; %s_association_reference_match_count=%s; %s_association_matches_payment_collection_count=%s; %s_association_invoice_resolved_count=%s; %s_association_invoice_order_match_count=%s; %s_payment_row_found=%d; %s_payment_loaded=%d; %s_order_reference_matches=%d; %s_amount_positive=%d',
         $prefix,
         $formatCount((int) ($boundary['invoice_count'] ?? -1)),
         $prefix,
@@ -143,7 +215,21 @@ $formatPaymentLedgerBoundary = static function (string $prefix, array $boundary)
         $prefix,
         $formatCount((int) ($boundary['payment_collection_count'] ?? -1)),
         $prefix,
+        !empty($boundary['payment_collection_rows_available']) ? 1 : 0,
+        $prefix,
         !empty($boundary['payment_query_available']) ? 1 : 0,
+        $prefix,
+        !empty($boundary['association_query_available']) ? 1 : 0,
+        $prefix,
+        $formatCount((int) ($boundary['association_payment_resolved_count'] ?? -1)),
+        $prefix,
+        $formatCount((int) ($boundary['association_reference_match_count'] ?? -1)),
+        $prefix,
+        $formatCount((int) ($boundary['association_matches_payment_collection_count'] ?? -1)),
+        $prefix,
+        $formatCount((int) ($boundary['association_invoice_resolved_count'] ?? -1)),
+        $prefix,
+        $formatCount((int) ($boundary['association_invoice_order_match_count'] ?? -1)),
         $prefix,
         !empty($boundary['payment_row_found']) ? 1 : 0,
         $prefix,

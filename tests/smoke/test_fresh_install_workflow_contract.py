@@ -16,6 +16,10 @@ FRESH_INSTALL_SMOKE = ROOT / "tests" / "smoke" / "fresh_install.sh"
 
 
 class FreshInstallWorkflowContractTests(unittest.TestCase):
+    def test_native_order_lifecycle_contract_runs_in_fresh_install_preflight(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("tests.postcode.test_ci_native_order_lifecycle_contract", workflow)
+
     def test_pwa_registration_diagnostics_contract_triggers_and_runs_in_fresh_install_ci(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("  push:\n", workflow)
