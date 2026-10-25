@@ -112,11 +112,25 @@ try {
         Access::isGranted($dashboardReadRole, (int) $profile->id),
         'The isolated view-only profile does not have the expected Dashboard read permission.'
     );
+    $ordersTabId = (int) Tab::getIdFromClassName('AdminOrders');
+    $ordersReadRole = sprintf(
+        '%s%s_READ',
+        \PrestaShop\PrestaShop\Core\Security\Permission::PREFIX_TAB,
+        strtoupper('AdminOrders')
+    );
+    securityFixtureRequire(
+        Access::isGranted($ordersReadRole, (int) $profile->id),
+        'The isolated view-only profile does not have the expected Orders read permission.'
+    );
     Profile::resetCacheAccesses();
     $profileAccesses = Profile::getProfileAccesses((int) $profile->id);
     securityFixtureRequire(
         ($profileAccesses[$dashboardTabId]['view'] ?? '0') === '1',
         'The isolated view-only profile does not expose Dashboard in native tab navigation.'
+    );
+    securityFixtureRequire(
+        ($profileAccesses[$ordersTabId]['view'] ?? '0') === '1',
+        'The isolated view-only profile does not expose Orders in native tab navigation.'
     );
 
     $employee = new Employee();

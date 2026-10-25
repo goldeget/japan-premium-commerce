@@ -414,6 +414,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "webdriver": type("Webdriver", (), {"Chrome": object}),
         }
         load_function(ADMIN_FLOW, "_admin_controller_for_url", namespace)
+        load_function(ADMIN_FLOW, "_diagnostic_bool", namespace)
         safe_state = load_function(ADMIN_FLOW, "safe_admin_orders_state", namespace)
 
         class Element:
@@ -437,11 +438,16 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
                     return Element("Orders Customer private@example.invalid")
                 raise AssertionError(f"unexpected element selector: {selector}")
 
+            def execute_script(self, script: str) -> dict[str, object]:
+                return {"http_status": 200, "document_ready": "complete"}
+
             def find_elements(self, by: str, selector: str) -> list[Element]:
                 if selector == "#login_form":
                     return []
                 if selector == "main h1":
                     return [Element("Orders")]
+                if selector == "main, #content, #main, #main-content":
+                    return [Element()]
                 if selector == "main table, main [role='grid'], main .grid-table":
                     return [Element()]
                 if selector == "[role='alert'], .alert-danger":
@@ -451,18 +457,72 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         diagnostic = safe_state(Driver())
         self.assertEqual(
             diagnostic,
-            "route=AdminOrders;document_locale=korean;login_form_visible=false;"
-            "orders_heading=english;orders_grid_visible=true;alert_visible=false;"
+            "route=AdminOrders;orders_path=orders_list;http_status=200;document_ready=complete;"
+            "document_locale=korean;login_form_visible=false;admin_shell_visible=true;"
+            "body_text=present;orders_heading=english;orders_grid_visible=true;"
+            "permission_denied=false;english_order_label=true;alert_visible=false;"
             "body_has_korean_order_label=false",
         )
         pattern_assignment = next(
             node
             for node in ast.parse(source).body
             if isinstance(node, ast.Assign)
-            and any(isinstance(target, ast.Name) and target.id == "SAFE_ADMIN_ORDERS_STATE_PATTERN" for target in node.targets)
+            and any(
+                isinstance(target, ast.Name)
+                and target.id == "SAFE_ADMIN_ORDERS_STATE_PATTERN"
+                for target in node.targets
+            )
         )
         self.assertIsNotNone(re.fullmatch(ast.literal_eval(pattern_assignment.value), diagnostic))
         self.assertNotIn("private@example.invalid", diagnostic)
+
+    def test_view_only_fixture_reads_back_native_admin_orders_view_permission(self):
+        fixture = FIXTURE.read_text(encoding="utf-8")
+        access_setup = fixture.split("$access = new Access();", 1)[1].split("$employee = new Employee();", 1)[0]
+        self.assertIn("$ordersTabId = (int) Tab::getIdFromClassName('AdminOrders');", access_setup)
+        self.assertIn("$ordersReadRole = sprintf(", access_setup)
+        self.assertIn("Access::isGranted($ordersReadRole, (int) $profile->id)", access_setup)
+        self.assertIn("$profileAccesses[$ordersTabId]['view'] ?? '0'", access_setup)
+
+    def test_view_only_orders_diagnostic_marks_collection_errors_unknown(self):
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+        namespace: dict[str, object] = {
+            "parse_qs": parse_qs,
+            "urlparse": urlparse,
+            "re": re,
+            "BASE": "http://localhost:18080",
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
+            "By": type("By", (), {"CSS_SELECTOR": "css selector", "TAG_NAME": "tag name"}),
+            "is_korean_admin_language": lambda locale: locale.casefold() in {"ko", "ko-kr"},
+            "webdriver": type("Webdriver", (), {"Chrome": object}),
+        }
+        load_function(ADMIN_FLOW, "_admin_controller_for_url", namespace)
+        load_function(ADMIN_FLOW, "_diagnostic_bool", namespace)
+        safe_state = load_function(ADMIN_FLOW, "safe_admin_orders_state", namespace)
+
+        class Driver:
+            current_url = "http://localhost:18080/admin-kuranea/sell/orders"
+
+            def execute_script(self, script: str) -> None:
+                raise RuntimeError("browser instrumentation unavailable")
+
+        diagnostic = safe_state(Driver())
+        self.assertIn("http_status=unknown", diagnostic)
+        self.assertIn("document_ready=unknown", diagnostic)
+        self.assertIn("login_form_visible=unknown", diagnostic)
+        self.assertIn("body_text=unknown", diagnostic)
+        self.assertNotIn("body_text=empty", diagnostic)
+        pattern_assignment = next(
+            node
+            for node in ast.parse(source).body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name)
+                and target.id == "SAFE_ADMIN_ORDERS_STATE_PATTERN"
+                for target in node.targets
+            )
+        )
+        self.assertIsNotNone(re.fullmatch(ast.literal_eval(pattern_assignment.value), diagnostic))
 
     def test_view_only_orders_content_wait_retries_a_stale_dom_read(self):
         class StaleElementReferenceException(Exception):

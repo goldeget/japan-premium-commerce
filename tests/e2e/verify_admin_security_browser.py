@@ -62,10 +62,17 @@ SAFE_ADMIN_NAVIGATION_STATE_PATTERN = (
     r"business_profile_link_count=(?:0|[1-9][0-9]{0,3}); dashboard_link_count=(?:0|[1-9][0-9]{0,3})"
 )
 SAFE_ADMIN_ORDERS_STATE_PATTERN = (
-    r"route=AdminOrders;document_locale=(?:korean|other|missing);"
-    r"login_form_visible=(?:true|false);orders_heading=(?:korean|english|other|missing);"
-    r"orders_grid_visible=(?:true|false);alert_visible=(?:true|false);"
-    r"body_has_korean_order_label=(?:true|false)"
+    r"route=AdminOrders;orders_path=(?:orders_list|other|unknown);"
+    r"http_status=(?:[1-5][0-9]{2}|unknown);"
+    r"document_ready=(?:loading|interactive|complete|unknown);"
+    r"document_locale=(?:korean|other|missing|unknown);"
+    r"login_form_visible=(?:true|false|unknown);admin_shell_visible=(?:true|false|unknown);"
+    r"body_text=(?:empty|present|unknown);"
+    r"orders_heading=(?:korean|english|other|missing|unknown);"
+    r"orders_grid_visible=(?:true|false|unknown);"
+    r"permission_denied=(?:true|false|unknown);english_order_label=(?:true|false|unknown);"
+    r"alert_visible=(?:true|false|unknown);"
+    r"body_has_korean_order_label=(?:true|false|unknown)"
 )
 TOKEN_DOM_DETECTOR_JS = r"""
 function inspectInvalidTokenPage(body, responseUrl, targetUrl) {
@@ -512,6 +519,44 @@ def assert_korean_admin_locale(
 def safe_admin_orders_state(driver: webdriver.Chrome) -> str:
     """Classify only bounded, non-customer-specific signals from the orders page."""
     try:
+        actual_url = urlparse(driver.current_url)
+        admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
+        orders_path = (
+            "orders_list"
+            if actual_url.path in {admin_path + "/sell/orders", admin_path + "/sell/orders/"}
+            else "other"
+        )
+        performance_state = driver.execute_script(
+            """
+            const entry = performance.getEntriesByType('navigation')[0];
+            return {
+              http_status: entry && Number.isInteger(entry.responseStatus) ? entry.responseStatus : null,
+              document_ready: document.readyState
+            };
+            """
+        )
+        http_status_value = (
+            performance_state.get("http_status")
+            if isinstance(performance_state, dict)
+            else None
+        )
+        http_status = (
+            str(http_status_value)
+            if isinstance(http_status_value, int)
+            and not isinstance(http_status_value, bool)
+            and 100 <= http_status_value <= 599
+            else "unknown"
+        )
+        ready_state_value = (
+            performance_state.get("document_ready")
+            if isinstance(performance_state, dict)
+            else None
+        )
+        document_ready = (
+            ready_state_value
+            if ready_state_value in {"loading", "interactive", "complete"}
+            else "unknown"
+        )
         document_locale_value = driver.find_element(By.TAG_NAME, "html").get_attribute("lang")
         document_locale = "korean" if is_korean_admin_language(document_locale_value or "") else "other"
         login_form_visible = any(
@@ -520,6 +565,21 @@ def safe_admin_orders_state(driver: webdriver.Chrome) -> str:
         )
         body_text = driver.find_element(By.TAG_NAME, "body").text
         body_has_korean_order_label = "주문" in body_text
+        body_text_state = "present" if body_text.strip() else "empty"
+        lowered_body_text = body_text.casefold()
+        permission_denied = any(
+            marker in lowered_body_text
+            for marker in (
+                "access denied",
+                "not authorized",
+                "permission denied",
+                "you are not allowed",
+                "권한이 없습니다",
+                "접근 권한",
+                "접근할 수 없습니다",
+            )
+        )
+        english_order_label = bool(re.search(r"\border(s)?\b", body_text, re.IGNORECASE))
         heading_state = "missing"
         for heading in driver.find_elements(By.CSS_SELECTOR, "main h1"):
             if not heading.is_displayed():
@@ -532,6 +592,13 @@ def safe_admin_orders_state(driver: webdriver.Chrome) -> str:
             else:
                 heading_state = "other"
             break
+        admin_shell_visible = any(
+            element.is_displayed()
+            for element in driver.find_elements(
+                By.CSS_SELECTOR,
+                "main, #content, #main, #main-content",
+            )
+        )
         orders_grid_visible = any(
             element.is_displayed()
             for element in driver.find_elements(
@@ -545,19 +612,30 @@ def safe_admin_orders_state(driver: webdriver.Chrome) -> str:
         )
         document_locale_state = document_locale
     except Exception:
-        document_locale_state = "missing"
-        login_form_visible = False
-        heading_state = "missing"
-        orders_grid_visible = False
-        alert_visible = False
-        body_has_korean_order_label = False
+        orders_path = "unknown"
+        http_status = "unknown"
+        document_ready = "unknown"
+        document_locale_state = "unknown"
+        login_form_visible = "unknown"
+        admin_shell_visible = "unknown"
+        body_text_state = "unknown"
+        heading_state = "unknown"
+        orders_grid_visible = "unknown"
+        permission_denied = "unknown"
+        english_order_label = "unknown"
+        alert_visible = "unknown"
+        body_has_korean_order_label = "unknown"
 
     return (
-        f"route=AdminOrders;document_locale={document_locale_state};"
-        f"login_form_visible={str(login_form_visible).lower()};orders_heading={heading_state};"
-        f"orders_grid_visible={str(orders_grid_visible).lower()};"
-        f"alert_visible={str(alert_visible).lower()};"
-        f"body_has_korean_order_label={str(body_has_korean_order_label).lower()}"
+        f"route=AdminOrders;orders_path={orders_path};http_status={http_status};"
+        f"document_ready={document_ready};document_locale={document_locale_state};"
+        f"login_form_visible={_diagnostic_bool(login_form_visible)};"
+        f"admin_shell_visible={_diagnostic_bool(admin_shell_visible)};body_text={body_text_state};"
+        f"orders_heading={heading_state};orders_grid_visible={_diagnostic_bool(orders_grid_visible)};"
+        f"permission_denied={_diagnostic_bool(permission_denied)};"
+        f"english_order_label={_diagnostic_bool(english_order_label)};"
+        f"alert_visible={_diagnostic_bool(alert_visible)};"
+        f"body_has_korean_order_label={_diagnostic_bool(body_has_korean_order_label)}"
     )
 
 
