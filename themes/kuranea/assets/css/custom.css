@@ -840,6 +840,14 @@ body {
     backdrop-filter: blur(14px);
   }
 
+  body#checkout {
+    padding-bottom: 0;
+  }
+
+  body#checkout .kuranea-mobile-nav {
+    display: none;
+  }
+
   .kuranea-mobile-nav__item {
     display: flex;
     align-items: center;

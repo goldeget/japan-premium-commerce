@@ -2,6 +2,66 @@
 <xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
   <file source-language="en-US" target-language="ja-JP" datatype="plaintext" original="Shop.Theme.Kuranea">
     <body>
+      <trans-unit id="customer-personal-data">
+        <source>Personal data</source>
+        <target state="final">個人情報</target>
+      </trans-unit>
+      <trans-unit id="synthetic-check-payment-heading">
+        <source>Payment information</source>
+        <target state="final">お支払い情報</target>
+      </trans-unit>
+      <trans-unit id="synthetic-check-payment-name">
+        <source>Pay by Check</source>
+        <target state="final">小切手でのお支払い</target>
+      </trans-unit>
+      <trans-unit id="synthetic-check-payment-selected">
+        <source>You have chosen payment by check.</source>
+        <target state="final">小切手でのお支払いを選択されました。</target>
+      </trans-unit>
+      <trans-unit id="synthetic-check-payment-details">
+        <source>Your check must include following details:</source>
+        <target state="final">小切手には次の情報をご記入ください：</target>
+      </trans-unit>
+      <trans-unit id="synthetic-check-payment-amount">
+        <source>Payment amount</source>
+        <target state="final">お支払い金額</target>
+      </trans-unit>
+      <trans-unit id="synthetic-check-payment-payee">
+        <source>Payable to the order of</source>
+        <target state="final">小切手の宛名</target>
+      </trans-unit>
+      <trans-unit id="synthetic-check-payment-mail-to">
+        <source>Mail to</source>
+        <target state="final">送付先</target>
+      </trans-unit>
+      <trans-unit id="synthetic-check-payment-order-number">
+        <source>Do not forget to insert your order number #%d.</source>
+        <target state="final">注文番号 #%d を忘れずにご記入ください。</target>
+      </trans-unit>
+      <trans-unit id="synthetic-check-payment-order-reference">
+        <source>Do not forget to insert your order reference %s.</source>
+        <target state="final">注文番号 %s を忘れずにご記入ください。</target>
+      </trans-unit>
+      <trans-unit id="synthetic-check-payment-email-notice">
+        <source>An email has been sent to you with this information.</source>
+        <target state="final">この情報を記載したメールをお送りしました。</target>
+      </trans-unit>
+      <trans-unit id="synthetic-check-payment-shipment-notice">
+        <source>Your order will be sent as soon as we receive your payment.</source>
+        <target state="final">ご入金を確認後、商品を発送します。</target>
+      </trans-unit>
+      <trans-unit id="synthetic-check-payment-problem-notice">
+        <source>We have noticed that there is a problem with your order. If you think this is an error, you can contact our</source>
+        <target state="final">ご注文に問題が発生しました。誤りと思われる場合は、</target>
+      </trans-unit>
+      <trans-unit id="synthetic-check-payment-customer-service">
+        <source>customer service department.</source>
+        <target state="final">カスタマーサービスまでお問い合わせください。</target>
+      </trans-unit>
+      <trans-unit id="synthetic-check-payment-questions">
+        <source>For any questions or for further information, please contact our</source>
+        <target state="final">ご不明な点がございましたら、</target>
+      </trans-unit>
       <trans-unit id="thoughtful-life">
         <source>A thoughtful life, beautifully chosen.</source>
         <target state="final">丁寧に選ぶ、美しい暮らし。</target>

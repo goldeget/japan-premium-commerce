@@ -90,6 +90,9 @@ def validate_loopback_endpoints() -> None:
 KOREAN_EMAIL_ACCESSIBLE_NAME = re.compile(
     r"(?:이메일|전자\s*우편|메일\s*주소)", re.IGNORECASE
 )
+KOREAN_PASSWORD_ACCESSIBLE_NAME = re.compile(
+    r"(?:비밀번호|암호)", re.IGNORECASE
+)
 USER_ID_LOOKUP_ACCESSIBLE_NAME = re.compile(
     r"(?:아이디|사용자\s*id|user\s*id|username)", re.IGNORECASE
 )
@@ -600,6 +603,30 @@ def assert_korean_email_login_form(driver: webdriver.Chrome, state: dict[str, ob
     )
     state["email_label_assertion_passed"] = True
     state["email_label_url_metadata"] = safe_url_metadata(driver.current_url)
+    mark_stage("korean_password_field")
+    password_field = visible(driver, '#login-form input[type="password"]')
+    password_field_id = password_field.get_attribute("id") or ""
+    password_associated_label = next(
+        (
+            label
+            for label in driver.find_elements(By.CSS_SELECTOR, "#login-form label[for]")
+            if label.get_attribute("for") == password_field_id
+        ),
+        None,
+    )
+    password_aria_label = " ".join((password_field.get_attribute("aria-label") or "").split())
+    password_visible_label = (
+        " ".join((password_associated_label.text or "").split())
+        if password_associated_label is not None and password_associated_label.is_displayed()
+        else ""
+    )
+    password_accessible_name = password_aria_label or password_visible_label
+    if not KOREAN_PASSWORD_ACCESSIBLE_NAME.search(password_accessible_name):
+        raise AssertionError("Korean login password field has no accessible label that identifies the password")
+    state["password_label_document_language"] = safe_diagnostic_name(
+        (driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower()
+    )
+    state["password_label_assertion_passed"] = True
     mark_stage("korean_password_reset_link")
     reset_wait_started_at = time.monotonic()
     reset_wait_start_url = driver.current_url
@@ -1322,6 +1349,7 @@ KOREAN_LOGIN_STAGES = {
     "korean_login_page_navigation",
     "korean_login_form",
     "korean_email_field",
+    "korean_password_field",
     "korean_password_reset_link",
 }
 

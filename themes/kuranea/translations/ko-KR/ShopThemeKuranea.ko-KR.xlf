@@ -2,6 +2,10 @@
 <xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
   <file source-language="en-US" target-language="ko-KR" datatype="plaintext" original="Shop.Theme.Kuranea">
     <body>
+      <trans-unit id="customer-personal-data">
+        <source>Personal data</source>
+        <target state="final">개인정보</target>
+      </trans-unit>
       <trans-unit id="thoughtful-life">
         <source>A thoughtful life, beautifully chosen.</source>
         <target state="final">정성껏 고른 아름다운 일상.</target>

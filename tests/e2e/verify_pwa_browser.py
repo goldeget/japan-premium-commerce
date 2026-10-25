@@ -3559,6 +3559,21 @@ def verify_logout_protection(
     assert_empty_cache_storage(driver, "account route after browser back")
 
 
+def _assert_localized_privacy_link(driver: webdriver.Chrome, locale: str) -> None:
+    expected_labels = {
+        "ja": "個人情報",
+        "en": "Personal data",
+        "ko": "개인정보",
+    }
+    if locale not in expected_labels:
+        raise AssertionError("PWA account privacy link was checked with an unsupported locale")
+    link = wait_visible(driver, ".account-menu__link--psgdpr")
+    label_element = link.find_element(By.TAG_NAME, "span")
+    label = " ".join((label_element.text or "").split())
+    if label != expected_labels[locale]:
+        raise AssertionError(f"customer privacy link is not localized for {locale}")
+
+
 def run_viewport(
     base_url: str,
     artifact_dir: Path,
@@ -3718,6 +3733,7 @@ def run_viewport(
             navigate_private_document(driver, account_url, base_url, "authenticated account before logout")
             wait_visible(driver, "#identity_main_link")
             assert_document_locale(driver, locale, "authenticated account before logout")
+        _assert_localized_privacy_link(driver, locale)
         driver.save_screenshot(str(artifact_dir / f"pwa-{label}-account.png"))
         stage = "customer_logout"
         verify_logout_protection(

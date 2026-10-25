@@ -1,8 +1,8 @@
 # ORDENOWA 테스트 결과
 
-## 2026-10-25 — 관리자 RMA tokenless 경로 수정 및 전체 QA
+## 2026-10-25 — 기존 전체 QA 및 후속 AI 화면 검수
 
-검증 코드 SHA `bb26f06168e0a10a50607ce4e5171666656611b1` (`main` `ee02a3657448d563508687614a246e05ac61eecd`). 수정 커밋은 `[admin-return-focus] diagnose tokenized return navigation`이다. 집중 run [#40225474420](https://github.com/goldeget/japan-premium-commerce/actions/runs/40225474420)과 전체 run [#40226037762](https://github.com/goldeget/japan-premium-commerce/actions/runs/40226037762)이 모두 성공했다. 전체 Step 80 aggregate는 `PASS: isolated browser QA and official postcode verification completed.`를 기록했고 workflow conclusion도 `success`다.
+remote `work`는 `b94d1f0ba3418b5724f07735e7186c2adbcb6555`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`다. 마지막 browser/isolated QA 코드는 `bb26f06168e0a10a50607ce4e5171666656611b1` (`[admin-return-focus] diagnose tokenized return navigation`). 집중 run [#40225474420](https://github.com/goldeget/japan-premium-commerce/actions/runs/40225474420)과 전체 run [#40226037762](https://github.com/goldeget/japan-premium-commerce/actions/runs/40226037762)은 모두 성공했고 Step 80 aggregate는 `PASS: isolated browser QA and official postcode verification completed.`를 기록했다. Work-mode GPT는 전체 artifact [ID 12611855740](https://github.com/goldeget/japan-premium-commerce/actions/runs/40226037762/artifacts/12611855740)를 실제 열어 시각 검수했다. 그 검수에서 확인된 화면 문제에 대한 현재 local source changes는 아직 Actions에서 실행되지 않았다.
 
 | 검사 | 결과 | 근거 |
 | --- | --- | --- |
@@ -13,6 +13,8 @@
 | 전체 regression 범위 | PASS | #402260의 account, product, storefront/cart, PWA/private cache, free-shipping/tax/order, RMA/lifecycle, backup/restore, restart, Japan Post, screenshot coverage 관련 steps가 성공; Step 80 aggregate 성공. Step 74는 비집중 dashboard screenshot 단계라 skipped이며 aggregate 요구사항은 아니다. |
 | 기존 title/fon트 변경 | 보존 및 PASS | 상품 화면 Step 42 통과. Chromium font cache Steps 30–32 통과; full run은 archive cache를 복원했다. #40214404446의 실제 HTTP 상태는 여전히 미확인으로 남긴다. |
 | 캡처 산출물 | Actions에 저장 | `admin-return-security-compromised.png`, `admin-return-state-control.png`는 Step 73/75 coverage로 검증됐다. Artifact 다운로드 요청이 403을 반환해 파일을 로컬에서 열어보지는 못했다. |
+| Work-mode GPT의 기존 artifact 시각 검수 | 완료 (기존 코드 SHA) | 390×701 checkout 뒤로 버튼이 fixed nav에 가려짐, JA checkout 영어 혼합, KO password label의 `Sleutelwoord`, JA `GDPR - Personal data`를 확인. `Clothes`/`Art`는 기본 synthetic category 값, product breadcrumb의 DOM overflow는 미확정이다. 상세와 screenshot 이름은 [AI Browser QA handoff](AI_BROWSER_QA_HANDOFF.md)에 기록했다. |
+| targeted 수정 후 browser QA | 실행 대기 | 로컬 CSS/locale/template/E2E assertions를 추가하고 172개 영향 계약 검사와 마지막 9개 Korean login contracts가 통과했다. 현재 수정 SHA로 실행한 Actions 결과는 아직 없다. 변경 push 후 automatic isolated QA artifact로 layout, JA/KO labels, GDPR link를 검증하고 Work-mode GPT가 캡처를 재검수해야 한다. |
 
 운영 DB·named volume·운영 배포·실결제·실거래는 변경하지 않았다. 전체 QA는 격리 run 데이터와 합성 fixtures만 사용했다. 위 PASS는 기술/격리 QA 기준이며 실제 판매자, 실상품, 세무 분류, 운송사 계약, 결제/환불 절차나 운영 호스트의 준비 완료를 의미하지 않는다.
 

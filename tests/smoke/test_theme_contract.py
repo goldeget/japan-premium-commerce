@@ -5,6 +5,7 @@ import json
 import shutil
 import subprocess
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -114,6 +115,56 @@ class ThemeContractTests(unittest.TestCase):
             "padding-bottom: calc(4.6rem + env(safe-area-inset-bottom))" in css,
             "content clearance must include the device safe area",
         )
+        self.assertRegex(
+            css,
+            r"body#checkout\s+\.kuranea-mobile-nav\s*\{[^}]*display:\s*none",
+            "the fixed mobile nav must not cover checkout controls",
+        )
+
+    @staticmethod
+    def _translation_targets(locale: str, filename: str) -> dict[str, str]:
+        path = THEME / "translations" / locale / filename
+        root = ET.parse(path).getroot()
+        ns = {"x": "urn:oasis:names:tc:xliff:document:1.2"}
+        targets: dict[str, str] = {}
+        for unit in root.findall(".//x:trans-unit", ns):
+            source = unit.findtext("x:source", namespaces=ns)
+            target = unit.findtext("x:target", namespaces=ns)
+            if source and target:
+                targets[source] = target
+        return targets
+
+    def test_checkout_locales_cover_observed_japanese_and_korean_labels(self) -> None:
+        actions = self._translation_targets("ja-JP", "ShopThemeActions.ja-JP.xlf")
+        checkout = self._translation_targets("ja-JP", "ShopThemeCheckout.ja-JP.xlf")
+        forms = self._translation_targets("ko-KR", "ShopFormsLabels.ko-KR.xlf")
+
+        self.assertEqual(actions.get("Back to %step_title%"), "%step_title%に戻る")
+        self.assertEqual(actions.get("Continue to %step_title%"), "%step_title%へ進む")
+        self.assertEqual(checkout.get("Write a comment about this order"), "注文に関するコメント")
+        self.assertEqual(checkout.get("Place Order"), "注文を確定する")
+        self.assertEqual(forms.get("Password"), "비밀번호")
+
+    def test_customer_privacy_and_synthetic_check_copy_use_the_child_theme_locale(self) -> None:
+        gdpr = THEME / "modules" / "psgdpr" / "views" / "templates" / "front" / "customerAccount.tpl"
+        checkpayment = (
+            THEME / "modules" / "ps_checkpayment" / "views" / "templates" / "hook" / "payment_return.tpl"
+        )
+        self.assertTrue(gdpr.is_file(), "Japanese privacy link needs a child-theme template override")
+        self.assertTrue(checkpayment.is_file(), "synthetic check-payment confirmation needs child-theme locale copy")
+        self.assertIn("d='Shop.Theme.Kuranea'", gdpr.read_text(encoding="utf-8"))
+        self.assertIn("<span>{l s='Personal data'", gdpr.read_text(encoding="utf-8"))
+        payment = checkpayment.read_text(encoding="utf-8")
+        self.assertNotIn("d='Modules.Checkpayment.Shop'", payment)
+        self.assertIn("d='Shop.Theme.Kuranea'", payment)
+        translations = self._translation_targets("ja-JP", "ShopThemeKuranea.ja-JP.xlf")
+        self.assertEqual(translations.get("Personal data"), "個人情報")
+        self.assertEqual(translations.get("Pay by Check"), "小切手でのお支払い")
+        payment_option = self._translation_targets("ja-JP", "ModulesCheckpaymentAdmin.ja-JP.xlf")
+        self.assertEqual(payment_option.get("Pay by Check"), "小切手でのお支払い")
+        pwa_browser = (ROOT / "tests" / "e2e" / "verify_pwa_browser.py").read_text(encoding="utf-8")
+        self.assertIn("def _assert_localized_privacy_link", pwa_browser)
+        self.assertIn("_assert_localized_privacy_link(driver, locale)", pwa_browser)
 
     def test_mobile_navigation_color_overrides_footer_link_color(self) -> None:
         css = (THEME / "assets" / "css" / "custom.css").read_text(encoding="utf-8")

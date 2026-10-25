@@ -231,6 +231,7 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
                 "korean_login_page_navigation",
                 "korean_login_form",
                 "korean_email_field",
+                "korean_password_field",
                 "korean_password_reset_link",
             },
         }
@@ -567,6 +568,7 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
             'driver.get(login_url)',
             'visible(driver, "#login-form")',
             'visible(driver, \'#login-form input[type="email"]\')',
+            'visible(driver, \'#login-form input[type="password"]\')',
             'get_attribute("name") != "email"',
             'get_attribute("type") != "email"',
             'document_language.startswith("ko")',
@@ -574,6 +576,7 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
             'label.get_attribute("for") == email_field_id',
             "aria_label or visible_label",
             "KOREAN_EMAIL_ACCESSIBLE_NAME.search(email_accessible_name)",
+            "KOREAN_PASSWORD_ACCESSIBLE_NAME.search(password_accessible_name)",
             "USER_ID_LOOKUP_ACCESSIBLE_NAME.search(email_accessible_name)",
             "PASSWORD_RESET_ACCESSIBLE_NAME.search(password_reset_name)",
             "USER_ID_LOOKUP_ACCESSIBLE_NAME.search(password_reset_name)",
@@ -584,6 +587,11 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
         )[1].split(")", 1)[0]
         for korean_email_term in ("이메일", r"전자\s*우편", r"메일\s*주소"):
             self.assertIn(korean_email_term, accessible_name_pattern)
+        password_pattern = browser_flow.split(
+            "KOREAN_PASSWORD_ACCESSIBLE_NAME = re.compile(", 1
+        )[1].split(")", 1)[0]
+        self.assertIn("비밀번호", password_pattern)
+        self.assertIn("password_label_assertion_passed", browser_check)
         self.assertNotIn("e[", accessible_name_pattern.casefold())
         self.assertIn("korean-login-email", browser_flow)
 
@@ -613,6 +621,7 @@ class KoreanCustomerLoginContractTests(unittest.TestCase):
             "korean_login_page_navigation",
             "korean_login_form",
             "korean_email_field",
+            "korean_password_field",
             "korean_password_reset_link",
         ):
             self.assertIn(stage, browser_flow)

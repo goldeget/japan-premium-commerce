@@ -1,23 +1,26 @@
 # ORDENOWA 개발 현황
 
-## 현재 출시 체크리스트 (2026-10-25 19:45 UTC)
+## 현재 QA 및 출시 체크리스트 (2026-10-25 20:05 UTC)
 
-현재 검증된 `work` 코드 커밋은 **bb26f06168e0a10a50607ce4e5171666656611b1**이다. `main`은 **ee02a3657448d563508687614a246e05ac61eecd**로 변경하지 않았다. 관리자 RMA 토큰 이동 수정의 집중 Actions [#40225474420](https://github.com/goldeget/japan-premium-commerce/actions/runs/40225474420)과 전체 격리 QA [#40226037762](https://github.com/goldeget/japan-premium-commerce/actions/runs/40226037762)은 모두 성공했다. 전체 run의 Step 80 실제 aggregate와 workflow conclusion 모두 성공이다.
+현재 remote `work`는 `b94d1f0ba3418b5724f07735e7186c2adbcb6555`, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`다. 마지막 성공 코드 SHA `bb26f06168e0a10a50607ce4e5171666656611b1`의 집중 QA [#40225474420](https://github.com/goldeget/japan-premium-commerce/actions/runs/40225474420)과 전체 격리 QA [#40226037762](https://github.com/goldeget/japan-premium-commerce/actions/runs/40226037762)은 성공했다. Work-mode GPT가 전체 run artifact를 열어 화면을 검수했고, 이 근거에서 확인된 모바일 checkout 가림과 locale 누락을 수정 중이다. 현재 작업 트리에 변경이 있으나 새 코드 SHA의 Actions 실행은 아직 없다. 영향받은 정적/계약 검사 172개가 통과했고, 마지막 한국어 로그인 stage allowlist 변경 후 해당 9개도 다시 통과했다.
 
-| 항목 | 현재 상태 | 근거 / 범위 |
+| 영역 | 상태 | 근거 / 다음 담당 |
 | --- | --- | --- |
-| 상품 제목 `404` 오탐 | 완료 | 상품 식별과 실제 상품 화면을 확인하도록 수정했다. #402260 Step 42 통과. 과거 #40214404446의 최종 HTTP 상태는 미기록이라 계속 미확인으로 둔다. |
-| Chromium 폰트 캐시 | 완료 | #402254와 #402260 Steps 30–32에서 캐시 키, archive restore, Chromium 준비 통과. 폰트 재다운로드 지연은 재발하지 않았다. |
-| 관리자 RMA 이동과 상태 저장 | 완료 (격리 QA) | tokenless 하드코딩 경로에서 PrestaShop `security/compromised`의 정적 경로와 native DOM marker가 모두 일치하고 화면 표시가 확인됐다. 생성된 메뉴 링크는 같은 origin·관리자·반품 경로와 세션 token을 가졌고, 이를 다시 열자 정상 반품 목록이 나왔다. 테스트 이동이 token을 누락한 것이 원인이며 PrestaShop token 검사는 유지했다. |
-| 동일 RMA 1→2→1 | 완료 (run 전용 합성 데이터) | #402254 및 #402260 Step 70에서 상태 1→2 저장, 성공 알림, 새 문서 GET 재조회 `readback_state=2`; 이후 2→1 저장·새 GET `readback_state=1`; 원상 복원 true. |
-| 브랜드·계정·상품·주문·PWA·무료배송·백업 | 완료 (격리 QA 범위) | #402260 관련 browser, 주문/금액, restart, backup/restore, Japan Post, screenshot coverage steps와 Step 80 aggregate 성공. 합성 fixtures, Mailpit, run 전용 DB를 사용했고 실결제는 없었다. |
-| 운영 출시 준비 | 자료·환경 대기 | 실제 판매자/LOGISTEED 관계, 판매 SKU와 이미지 권리, 상품별 세무 정보, 배송 계약·지역, 결제 및 취소/환불 정책, 승인 법률 문안, 운영 domain/TLS/SMTP/secrets, 운영 백업·복원 책임, iOS/Android 실기기가 제공되지 않았다. |
+| 상품 제목 `404` 오탐 | 완료 | #402260 Step 42 통과. #40214404446의 실제 HTTP 응답 상태는 미기록이라 계속 미확인으로 둔다. |
+| RMA 세션 토큰 이동과 상태 | 완료 (격리 QA) | tokenless 경로에서 exact native `security/compromised` 화면 marker 확인; session token이 있는 앱 생성 메뉴 링크는 정상 목록으로 복귀. 같은 run-scoped RMA의 1→2 저장/재조회, 2→1 복원/재조회 성공. |
+| Chromium 폰트 캐시 | 완료 | #402254/#402260 Steps 30–32 캐시 복원과 브라우저 준비 성공. |
+| 계정/상품/배송/주문/PWA/복원 | 완료 (격리 자동 QA 범위) | #402260 관련 브라우저 steps와 Step 80 aggregate 성공. 세부 범위/한계는 [테스트 결과](TEST_RESULTS.md)에 기록했다. |
+| Work-mode AI 시각 QA | 기존 artifact 검수 완료; 수정 화면 재검증 대기 | #402260 artifact에서 mobile checkout nav가 390×701에서 뒤로 버튼을 가리는 것, JA checkout의 영어 혼합, KO login의 Dutch password label, JA GDPR link 영문 잔류를 확인했다. 현재 CSS/XLIFF/child-theme/E2E 수정은 정적 검사만 통과했고 browser 확인은 새 run 대기다. |
+| 레이아웃·언어 수정 | 코드 수정 완료, 격리 브라우저 검증 대기 | checkout에서는 fixed nav를 숨기고 현재 배송 step 버튼, JA CTA/comment, check-payment 옵션·확인 화면을 검증하도록 했다. JA/KO 비밀번호·개인정보 label도 locale화하고 브라우저 assertion을 추가했다. 새 source SHA의 Actions 결과 전까지 PASS로 처리하지 않는다. |
+| 남은 시각 후보 | 부분 관찰 / 결함 미확정 | `Clothes`/`Art`는 synthetic/default category data로 보여 실제 catalog 없이 임의 번역하지 않는다. 상품 breadcrumb의 잘림은 screenshot만으로 DOM overflow를 확인하지 못했다. |
+| 신규 코드 화면 검증 | 실행 대기 | 로컬 shop/staging 주소가 없고 Codex artifact direct download는 403이다. source 변경 push가 만든 격리 QA artifact로 Work-mode GPT가 변경 화면을 다시 검수한다. |
+| Codex 모바일 emulation | target 부재로 화면 QA 미실행 | Chromium 154/Playwright 1.62 및 mobile viewport profiles는 사용 가능하지만 shop URL이 없어 현재 source의 emulation capture는 만들지 않았다. |
+| 실기기 PWA/브라우저 | 미검증—기기 연결 필요 | 연결된 iOS/Android나 승인된 remote device farm이 현재 Codex 환경에 노출되지 않았다. 사용자의 수동 검수를 요구하지 않는다. |
+| 운영 출시 | 자료·환경 대기 | 실제 판매자·상품/권리·세무·배송·결제·환불·법률 문안·운영 호스트/메일/백업·담당자 값은 기존 자료의 `미정` 상태를 유지한다. 회사 참고정보와 ORDENOWA 브랜드, JPY/세금 포함 가격/무료배송 정책은 재요청하거나 바꾸지 않는다. |
 
-RMA 화면 캡처는 Actions artifact `ordenowa-storefront-browser-40225474420-1` 및 `ordenowa-storefront-browser-40226037762-1`에 포함된다. 실패 경고 요소 캡처 이름은 `admin-return-security-compromised.png`, 상태 control 캡처 이름은 `admin-return-state-control.png`이며 Step 73 업로드와 Step 75 coverage가 성공했다. 이 실행환경의 artifact 다운로드는 HTTP 403이라 파일을 로컬에서 시각 열람하지 못했다. 로그에는 native warning marker가 visible, 캡처 완료, coverage 성공이 남아 있다.
+새 수정 코드의 전체 Actions run이 생성되면 Work-mode GPT가 그 run artifact에서 변경된 화면을 다시 검사하도록 [handoff](AI_BROWSER_QA_HANDOFF.md)를 갱신한다. live browser가 필요한 미검증 항목은 [handoff 환경 조건](AI_BROWSER_QA_HANDOFF.md#live-브라우저-검증에-필요한-환경)에 필요한 승인 격리 환경만 명시했으며 hostname이나 계정을 만들어내지 않았다. 정식 운영 출시는 운영 자료·환경이 준비되기 전까지 완료로 표시하지 않는다.
 
-**개발 판단:** 이번 RMA 코드/CI 개발 범위는 완료했고 전체 격리 QA도 통과했다. 정식 운영 출시는 위 운영 자료·환경이 준비되기 전까지 가능하다고 판단하지 않는다. 실배포·실결제·실거래는 활성화하지 않았다.
-
-## 이번 고정 범위 결과 (2026-10-25 11:39 UTC)
+## 과거 고정 범위 결과 (2026-10-25 11:39 UTC; 위 현재 상태로 대체됨)
 
 최종 회귀 대상 코드 `work` SHA는 **74e64b966d5943a3d06cadd04fe6fc7b17669bfe**다. 격리 Actions [#40188721058](https://github.com/goldeget/japan-premium-commerce/actions/runs/40188721058)은 **FAIL**로 종료했고 Step69의 유일한 실제 실패는 `admin_security_browser_qa=failure`; Step72의 run 전용 리소스 정리는 성공했다. 이전 SHA `e356a8a01f9215f2a3dd32ab623a806bda5e398a` 실행 [#40187411910](https://github.com/goldeget/japan-premium-commerce/actions/runs/40187411910)도 같은 실패였다. `main` **ee02a3657448d563508687614a246e05ac61eecd**는 변경하지 않았다. 기준 성공 실행 [#40134196682](https://github.com/goldeget/japan-premium-commerce/actions/runs/40134196682)는 기존 기준점으로 보존한다.
 

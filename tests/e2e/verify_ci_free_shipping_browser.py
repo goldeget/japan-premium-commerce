@@ -1092,6 +1092,7 @@ def _place_unpaid_order_and_verify_confirmation(
     confirmation = driver.find_element(By.TAG_NAME, "body").text
     if "[CI ONLY]" not in confirmation:
         raise AssertionError("order confirmation does not contain the clearly marked CI-only product")
+    _assert_japanese_checkpayment_confirmation(driver)
 
     explicit_zero_rate_group_id = (
         int(expected_totals["tax_rules_group_id"])
@@ -1163,6 +1164,23 @@ def _place_unpaid_order_and_verify_confirmation(
         "order_confirmation_totals": observed,
     }
     return order, observed
+
+
+def _assert_japanese_checkpayment_confirmation(driver) -> None:
+    confirmation = driver.find_element(By.TAG_NAME, "body").text
+    required_copy = (
+        "お支払い情報",
+        "小切手でのお支払い",
+        "お支払い金額",
+        "送付先",
+        "注文番号",
+        "商品を発送します。",
+    )
+    missing = [copy for copy in required_copy if copy not in confirmation]
+    if missing:
+        raise AssertionError(
+            "Japanese CI payment confirmation is missing localized copy: " + ", ".join(missing)
+        )
 
 
 def _select_osaka_address(driver) -> None:
@@ -1240,6 +1258,9 @@ def _click_offline_payment(driver) -> None:
         By.CSS_SELECTOR,
         'input[name="payment-option"][data-module-name="ps_checkpayment"]',
     )
+    payment_label = offline.find_element(By.XPATH, "following-sibling::label")
+    if "小切手でのお支払い" not in (payment_label.text or ""):
+        raise AssertionError("Japanese checkout did not translate the synthetic check-payment option")
     if not offline.is_selected():
         checkout.click_at_center(driver, offline)
     checkout.wait_for_offline_payment_selection(driver)
@@ -1250,6 +1271,61 @@ def _click_offline_payment(driver) -> None:
                 checkbox.find_element(By.XPATH, "ancestor::form[1]"),
                 checkbox,
             )
+    place_order = _wait_visible(driver, "#payment-confirmation button")
+    if "注文を確定する" not in (place_order.text or ""):
+        raise AssertionError("Japanese checkout did not translate the place-order action")
+
+
+def _assert_mobile_checkout_controls_visible(driver) -> None:
+    state = driver.execute_script(
+        """
+        const button = document.querySelector('#checkout-delivery-step.step--current .js-back');
+        const nav = document.querySelector('.kuranea-mobile-nav');
+        const navStyle = nav ? window.getComputedStyle(nav) : null;
+        const navRect = nav ? nav.getBoundingClientRect() : null;
+        const navVisible = Boolean(nav && navStyle && navStyle.display !== 'none'
+          && navStyle.visibility !== 'hidden' && navRect.width > 0 && navRect.height > 0);
+        if (button) button.scrollIntoView({block: 'nearest', inline: 'nearest'});
+        const buttonRect = button ? button.getBoundingClientRect() : null;
+        const overlaps = Boolean(navVisible && buttonRect && navRect
+          && buttonRect.bottom > navRect.top && buttonRect.top < navRect.bottom
+          && buttonRect.right > navRect.left && buttonRect.left < navRect.right);
+        return {
+          checkoutPage: document.body.id === 'checkout',
+          buttonVisible: Boolean(button && buttonRect && buttonRect.width > 0 && buttonRect.height > 0),
+          buttonWithinViewport: Boolean(buttonRect && buttonRect.top >= 0
+            && buttonRect.bottom <= window.innerHeight),
+          navVisible,
+          overlapsMobileNavigation: overlaps,
+        };
+        """
+    )
+    if (
+        not isinstance(state, dict)
+        or state.get("checkoutPage") is not True
+        or state.get("buttonVisible") is not True
+        or state.get("buttonWithinViewport") is not True
+        or state.get("navVisible") is not False
+        or state.get("overlapsMobileNavigation") is not False
+    ):
+        summary = ", ".join(
+            f"{key}={state.get(key)!r}" for key in (
+                "checkoutPage",
+                "buttonVisible",
+                "buttonWithinViewport",
+                "navVisible",
+                "overlapsMobileNavigation",
+            )
+        ) if isinstance(state, dict) else "diagnostic_unavailable=true"
+        raise AssertionError(f"mobile checkout back control is covered by navigation or outside view: {summary}")
+
+
+def _assert_japanese_checkout_copy(driver) -> None:
+    body_copy = driver.find_element(By.TAG_NAME, "body").text
+    required_copy = ("住所に戻る", "お支払いへ進む", "注文に関するコメント")
+    missing = [copy for copy in required_copy if copy not in body_copy]
+    if missing:
+        raise AssertionError("Japanese checkout is missing localized copy: " + ", ".join(missing))
 
 
 def run_japan_customer_checkout() -> None:
@@ -1301,6 +1377,8 @@ def run_japan_customer_checkout() -> None:
             for key in mobile_totals
         }:
             raise AssertionError("mobile checkout totals differ from the verified desktop totals")
+        _assert_mobile_checkout_controls_visible(driver)
+        _assert_japanese_checkout_copy(driver)
         driver.save_screenshot(str(QA_DIR / "shipping-free-checkout-mobile.png"))
         driver.set_window_size(1440, 960)
 

@@ -24,6 +24,23 @@ TAXABLE_PRODUCT_FIXTURE = ROOT / "tests/catalog/verify_product_tax_price.php"
 
 
 class FreeShippingE2eContractTest(unittest.TestCase):
+    def test_mobile_checkout_capture_checks_fixed_navigation_and_japanese_copy(self) -> None:
+        source = BROWSER.read_text(encoding="utf-8")
+        self.assertIn("def _assert_mobile_checkout_controls_visible", source)
+        self.assertIn("_assert_mobile_checkout_controls_visible(driver)", source)
+        self.assertIn("def _assert_japanese_checkout_copy", source)
+        self.assertIn("_assert_japanese_checkout_copy(driver)", source)
+        for marker in (
+            "document.querySelector('.kuranea-mobile-nav')",
+            "document.querySelector('#checkout-delivery-step.step--current .js-back')",
+            '"overlapsMobileNavigation"',
+            '"住所に戻る"',
+            '"お支払いへ進む"',
+            '"注文に関するコメント"',
+            '"注文を確定する"',
+        ):
+            self.assertIn(marker, source)
+
     def test_explicit_exemption_registration_timeout_annotation_is_staged_and_redacted(self) -> None:
         checkout_source = ast.parse(CHECKOUT_BROWSER.read_text(encoding="utf-8"))
         sanitizer_nodes = [

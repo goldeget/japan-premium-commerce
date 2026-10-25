@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file source-language="en-US" target-language="ja-JP" datatype="plaintext" original="Shop.Theme.Actions">
+    <body>
+      <trans-unit id="checkout-back-to-step">
+        <source>Back to %step_title%</source>
+        <target state="final">%step_title%に戻る</target>
+      </trans-unit>
+      <trans-unit id="checkout-continue-to-step">
+        <source>Continue to %step_title%</source>
+        <target state="final">%step_title%へ進む</target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

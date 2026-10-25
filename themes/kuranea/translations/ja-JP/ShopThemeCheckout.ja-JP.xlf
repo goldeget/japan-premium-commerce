@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file source-language="en-US" target-language="ja-JP" datatype="plaintext" original="Shop.Theme.Checkout">
+    <body>
+      <trans-unit id="checkout-order-comment-label">
+        <source>Write a comment about this order</source>
+        <target state="final">注文に関するコメント</target>
+      </trans-unit>
+      <trans-unit id="checkout-order-comment-placeholder">
+        <source>Write your comment...</source>
+        <target state="final">コメントを入力してください…</target>
+      </trans-unit>
+      <trans-unit id="checkout-place-order">
+        <source>Place Order</source>
+        <target state="final">注文を確定する</target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

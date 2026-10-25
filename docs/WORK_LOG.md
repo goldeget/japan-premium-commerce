@@ -1,5 +1,23 @@
 # ORDENOWA 작업 기록
 
+## 2026-10-25 20:05 UTC — Work-mode GPT 화면 검수 반영 및 targeted UI 수정
+
+- 시작 시 remote `work`와 local HEAD는 `b94d1f0ba3418b5724f07735e7186c2adbcb6555`; remote `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다. 최신 Actions 조회에서 #40226037762 전체 run과 #40225474420 집중 run은 완료 SUCCESS였고 진행 중 run은 없었다. 이전 검증 코드 `bb26f06168e0a10a50607ce4e5171666656611b1` 이후 기존 remote 변경은 docs-only다.
+- Work-mode GPT가 artifact #40226037762 (ID `12611855740`)의 PNG를 실제로 열어 검수했다. `shipping-free-checkout-mobile.png` 390×701에서 fixed nav가 `Back to 住所` 버튼 하단을 가렸고 500×701 비교 화면은 정상으로 보였다. JA checkout에서 `Place Order`, 주문 comment와 `Back/Continue`가 영어·일본어 혼합이고 synthetic `ps_checkpayment` 확인 화면에 영어 안내가 남았다. `desktop-korean-login-email.png`의 password label은 `Sleutelwoord`; `pwa-mobile-ja-account.png`에는 영문 GDPR label이 남았다.
+- 사진에서 ORDENOWA logo/navy-blue 체계는 일관되고 JP/EN/KO glyph tofu는 관찰되지 않았다. `Clothes`/`Art`는 합성/default category data이므로 실제 taxonomy 입력 없이 번역 데이터를 추정하지 않았다. mobile product breadcrumb 잘림은 DOM overflow로 입증되지 않아 수정하지 않았다. 모바일 최종 total은 화면 아래에 있어 해당 캡처만으로 확인되지 않았고 desktop 합계 증거와 혼동하지 않는다.
+- 수정은 child theme mobile checkout에서 고정 nav를 숨기고, mobile checkout E2E에 활성 배송 step의 nav/button 교차·JA copy assertion을 추가했다. JA checkout Actions/Checkout와 `Modules.Checkpayment.Admin` option XLIFF, KO Forms label을 채우고, psgdpr/checkpayment confirmation child-theme templates를 project-owned locale domain으로 바꿨다. PWA account browser QA는 아이콘과 분리된 ja/en/ko 개인정보 label을 검사하고, 한국어 login QA는 별도 password label/stage를 검사한다. Hummingbird upstream submodule은 수정하지 않았다.
+- 관련 static/contract 검사 172개가 통과했고, 한국어 stage allowlist 변경 후 `test_korean_customer_login_contract` 9개를 다시 통과했다. Python AST/syntax와 `git diff --check`도 통과했다. 실제 새 PrestaShop/Chromium 결과는 아직 없다. 기존 성공 run은 근거로 보존하고 새 source push로 자동 실행될 isolated QA를 기다린 뒤 Work-mode GPT가 새 artifact를 재검수한다.
+- [handoff](AI_BROWSER_QA_HANDOFF.md), [개발 현황](DEVELOPMENT_STATUS.md), [테스트 결과](TEST_RESULTS.md)에 이전 screenshot 증거와 신규 검증 상태를 분리 기록했다. 운영 DB·named volume·운영 배포·실결제·실거래·새 유료 기기 서비스는 건드리지 않았다.
+
+## 2026-10-25 — Work-mode GPT 시각 QA handoff 및 기기 접근 점검
+
+- 시작 원격 `work` HEAD `b94d1f0ba3418b5724f07735e7186c2adbcb6555`, QA source SHA `bb26f06168e0a10a50607ce4e5171666656611b1`, `main` `ee02a3657448d563508687614a246e05ac61eecd`를 확인했다. `bb26f06` 이후 `b94d1f0`은 `DEVELOPMENT_STATUS.md`, `TEST_RESULTS.md`, `WORK_LOG.md` 문서 변경만 포함한다. #40225474420 집중 run과 #40226037762 전체 run의 성공 증거를 재사용했고, 문서 갱신 때문에 전체 QA를 다시 실행하지 않았다.
+- 전체 #40226037762 artifact metadata: `ordenowa-storefront-browser-40226037762-1` (ID `12611855740`, 21,326,811 bytes, 2026-11-24 19:42 UTC 만료). Step 73 업로드, Step 75 screenshot coverage, Step 80 aggregate는 성공했다. ZIP 다운로드는 이 환경에서 HTTP 403/전송 오류여서 스크린샷을 `view_image`로 열지 못했다.
+- 현재 환경에 browser-control tool 또는 연결 기기/farm은 없다. `adb`, `xcrun`, `simctl`, Appium, iOS device utility와 USB bus가 없다. `/usr/bin/chromium` 154.0.8037.57, Playwright 1.62.0과 mobile profiles는 존재하지만 shop target이 없어 product visual emulation은 미실행이다. `127.0.0.1:18080`에는 listening app/HTTP response가 없다.
+- workflow의 shop은 run 전용 runner loopback에서만 실행하고 Step 83 cleanup이 project/volumes를 삭제한다. 외부 staging URL/access window, durable synthetic fixture ID, Work GPT용 approved secret path가 없다. 기존 CI credential은 run 전용으로 생성·mask하며 현재 access에 재사용하지 않는다.
+- Work-mode GPT가 기존 artifact를 열어 시각 검수하고 캡처별 결과를 기록하도록 `docs/AI_BROWSER_QA_HANDOFF.md`를 만들었다. 그 문서에 Codex/Work 책임, screenshot target, 기존 자동 QA 재사용 범위, access blockers, live interactive QA에 필요한 승인 환경을 한 목록으로 정리했다. 사용자 수동 실기기 검수는 요구하지 않는다.
+- 개발 현황에는 자동 QA PASS, visual review pending, mobile emulation target unavailable, physical device `미검증—기기 연결 필요` 및 기존 `미정` 운영 입력을 분리 기록했다. 비밀값·새 host·테스트 계정을 만들지 않았고 유료 기기 서비스를 추가하지 않았다. 사용자 미추적 파일은 스테이징하지 않았다.
+
 ## 2026-10-25 — RMA tokenless 경고 확인, 수정, 집중·전체 QA 통과
 
 - 시작 기준 원격 `work`는 `0d9f5d4827010c05a1b4a45647015427f865a6b4`; 시작 시 로컬 변경과 미추적 계획/`__pycache__` 파일을 보존했다. 원격 `main` `ee02a3657448d563508687614a246e05ac61eecd`는 수정하지 않았다.
