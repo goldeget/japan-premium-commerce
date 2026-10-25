@@ -195,7 +195,12 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
         outcome_vars = re.findall(r"^          ([A-Z_]+): \$\{\{ steps\.([a-z_]+)\.outcome \}\}", aggregate, re.MULTILINE)
         step_to_var = {step_id: variable for variable, step_id in outcome_vars}
         self.assertTrue(set(NEW_STEP_IDS).issubset(step_to_var), set(NEW_STEP_IDS) - step_to_var.keys())
-        env = {**os.environ, **{variable: "success" for variable, _ in outcome_vars}, "SECURITY_ADMIN_LOCALE_MUTATED": "1"}
+        env = {
+            **os.environ,
+            **{variable: "success" for variable, _ in outcome_vars},
+            "ORDENOWA_ADMIN_SECURITY_FOCUS": "false",
+            "SECURITY_ADMIN_LOCALE_MUTATED": "1",
+        }
         command = shell_body(aggregate)
         self.assertEqual(subprocess.run(["bash", "-c", command], env=env, capture_output=True).returncode, 0)
         for step_id in NEW_STEP_IDS:
@@ -205,10 +210,43 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
                     self.assertNotEqual(result.returncode, 0, f"{step_id}={outcome} was ignored")
                     self.assertIn(outcome, result.stdout)
 
+    def test_focus_aggregate_requires_admin_browser_screenshot_and_locale_restore(self) -> None:
+        aggregate = step("Aggregate browser QA and postal verification failures")
+        outcome_vars = re.findall(r"^          ([A-Z_]+): \$\{\{ steps\.([a-z_]+)\.outcome \}\}", aggregate, re.MULTILINE)
+        env = {
+            **os.environ,
+            **{variable: "success" for variable, _ in outcome_vars},
+            "ORDENOWA_ADMIN_SECURITY_FOCUS": "true",
+            "SECURITY_ADMIN_LOCALE_MUTATED": "1",
+        }
+        command = shell_body(aggregate)
+        self.assertEqual(subprocess.run(["bash", "-c", command], env=env, capture_output=True).returncode, 0)
+
+        for step_id, variable in (
+            ("security_fixture", "SECURITY_FIXTURE_OUTCOME"),
+            ("admin_security_browser_qa", "ADMIN_SECURITY_BROWSER_QA_OUTCOME"),
+            ("admin_dashboard_route_screenshot", "ADMIN_DASHBOARD_ROUTE_SCREENSHOT_OUTCOME"),
+            ("security_locale_restore", "SECURITY_LOCALE_RESTORE_OUTCOME"),
+        ):
+            with self.subTest(step=step_id):
+                result = subprocess.run(
+                    ["bash", "-c", command],
+                    env={**env, variable: "failure"},
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(step_id, result.stdout)
+
     def test_locale_restore_skip_is_ignored_when_admin_language_was_not_changed(self) -> None:
         aggregate = step("Aggregate browser QA and postal verification failures")
         outcome_vars = re.findall(r"^          ([A-Z_]+): \$\{\{ steps\.([a-z_]+)\.outcome \}\}", aggregate, re.MULTILINE)
-        env = {**os.environ, **{variable: "success" for variable, _ in outcome_vars}, "SECURITY_ADMIN_LOCALE_MUTATED": ""}
+        env = {
+            **os.environ,
+            **{variable: "success" for variable, _ in outcome_vars},
+            "ORDENOWA_ADMIN_SECURITY_FOCUS": "false",
+            "SECURITY_ADMIN_LOCALE_MUTATED": "",
+        }
         env["SECURITY_LOCALE_RESTORE_OUTCOME"] = "skipped"
 
         result = subprocess.run(["bash", "-c", shell_body(aggregate)], env=env, capture_output=True, text=True)
