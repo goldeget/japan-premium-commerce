@@ -1,5 +1,34 @@
 # ORDENOWA AI Browser QA Handoff
 
+## 최신 수정 코드 검수 상태 (2026-10-25 21:20 UTC)
+
+- Current `work` SHA: `95af3a9104b6e3f7bfc861155bdc73db9a91ab98`; `main` unchanged at `ee02a3657448d563508687614a246e05ac61eecd`.
+- Prior full isolated run #40231567083 verified SHA `aed4a3c` successfully. Work-mode GPT opened its browser artifact [ID 12613108935](https://github.com/goldeget/japan-premium-commerce/actions/runs/40231567083/artifacts/12613108935): Japanese details copy, mobile checkout controls, and the Japanese account heading were confirmed fixed.
+- That review found policy condition content still English, default/synthetic `Clothes`/`Art` categories, a Korean `My Account` heading, and the long mobile breadcrumb. Code fixes for Korean account chrome and wrapping the final product breadcrumb item are in `95af3a9`.
+- Full isolated run [#40233614104](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104) verified source SHA `95af3a9104b6e3f7bfc861155bdc73db9a91ab98`: workflow and Step 80 aggregate succeeded. The aggregate recorded `STOREFRONT_BROWSER_QA_OUTCOME=success` and `PWA_BROWSER_QA_OUTCOME=success`; Step 42 product/cart, Step 49 PWA lifecycle/private-cache, Step 73 artifact upload, Step 75 screenshot coverage, and Step 83 isolated cleanup succeeded. New browser artifact: [ID 12613919270](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104/artifacts/12613919270), `ordenowa-storefront-browser-40233614104-1`.
+- Re-open the new artifact and inspect only the affected screens: `pwa-desktop-ko-account.png`, `mobile-product-detail-breadcrumb.png`, and `mobile-product-detail.png`. Record screenshots as visual evidence only; click/input behavior is assessed by the E2E steps. This Codex turn has not opened the new PNGs, so the updated visual review remains pending.
+- The checkout policy labels and helper copy are the dynamic `conditions_to_approve` content rendered by Hummingbird `payment.tpl`, not static theme translation strings. Do not invent approved legal Japanese; await seller-provided copy. `Clothes`/`Art` are catalog category data; do not assign taxonomy labels without an approved mapping.
+- The local Codex Chromium launcher failed during crashpad initialization, so no new local image was captured or visually passed. The current source has 121 focused Python tests passing; this is separate from the successful Actions/browser evidence above.
+
+## 전체 QA와 시각 검수 (직전 코드 SHA `aed4a3c`, 2026-10-25 20:50 UTC)
+
+- QA 대상 코드/현재 `work`: `aed4a3cc6e143258e9f493603dd226bfa41b34aa`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`이며 변경하지 않았다.
+- 전체 격리 Actions [#40231567083](https://github.com/goldeget/japan-premium-commerce/actions/runs/40231567083)은 workflow 성공, Step 80 aggregate `PASS: isolated browser QA and official postcode verification completed.`다. Step 49의 PWA matrix는 desktop/mobile × JA/EN/KO 여섯 경우가 각각 PASS이며 `PWA_BROWSER_QA_OUTCOME=success`다.
+- 최신 browser screenshot artifact: [ID 12613108935](https://github.com/goldeget/japan-premium-commerce/actions/runs/40231567083/artifacts/12613108935), `ordenowa-storefront-browser-40231567083-1`. 이 검수 요청은 Work-mode GPT가 artifact를 다운로드해 PNG를 실제 열어 보도록 한다. 이 Codex 세션은 PNG를 직접 열지 않았다.
+- Work-mode GPT는 변경 후 화면의 가시성·번역 상태만 확인하고 자동 E2E와 합쳐 클릭/입력 테스트라고 보고하지 않는다. 캡처는 합성 CI 상품/쿠폰/주문 화면이며 실제 판매 catalog나 운영 환경의 fidelity 증거가 아니다.
+
+| 화면/검수 대상 | 자동 확인과 변경 | Work-mode GPT가 확인할 점 |
+| --- | --- | --- |
+| `shipping-free-checkout-mobile.png` (390×701 및 500px 대응) | #402294의 후속 screenshot에서 390px 화면의 checkout buttons가 bottom nav 위에 완전히 보였다. #402315 checkout browser step도 success다. | 최신 캡처에서 뒤로/계속 버튼, 고정 nav, 하단 여백 및 document-level 가로 넘침을 다시 확인한다. |
+| `desktop-korean-login-email.png` | #402294의 screenshot에서 비밀번호가 `비밀번호`로 보였다. | 최신 캡처에서 한국어 label과 input 연결 상태를 확인한다. |
+| `checkout-desktop-offline-payment-review.png` | `Show details` 및 accessible cart-details label에 일본어 XLIFF를 추가하고 Step 60에서 검사한다. | `詳細を表示`와 `カートの詳細を表示`가 화면/접근성 이름에 보이는지 확인한다. `Security policy`, `Delivery policy`, `Return policy` 및 helper 문구는 승인된 일본어 판매 정책 없이는 임의로 번역하지 않는다. synthetic coupon 명칭은 테스트 데이터로 표시한다. |
+| `pwa-desktop-ja-account.png`, `pwa-mobile-ja-account.png` | JA sidebar title/aria-label과 GDPR link를 번역하고 PWA account 검사에서 보이는 link를 확인한다. Mobile에서 hidden sidebar copy는 대상이 아니다. | Desktop에서 sidebar `マイアカウント` 및 label을, mobile에서 표시되는 GDPR/privacy link를 확인한다. |
+| `desktop-home.png`, `brand-desktop-published.png` | `Clothes`/`Art`는 CI의 default/synthetic categories로 남아 있으며 taxonomy mapping을 만들지 않았다. | logo와 브랜드 표현을 확인한다. 합성 category 명칭을 실제 storefront용 확정 번역으로 판정하지 않는다. |
+| `mobile-product-detail.png` (390×701) | Hummingbird breadcrumb는 가로 스크롤 UI이며 기존 document overflow 검사가 통과했다. CSS는 변경하지 않았다. | breadcrumb가 잘려 보이면 screenshot만으로 overflow 결론을 내리지 말고 horizontal-scroll indication/interaction evidence가 있는지 분리 기록한다. |
+| ja/en/ko desktop/mobile PWA account 및 offline 캡처 | Step 49의 6개 PWA case와 private cache 검증 PASS. | 문자 깨짐, 잘림, button, scroll, error appearance를 화면별로 살핀다. 시각 검수는 테스트 상호작용 증거가 아니다. |
+
+**코드·격리 QA:** 완료. **수정 후 시각 QA:** 위 artifact의 Work-mode GPT 열람/검수 대기. **실기기 QA:** 연결 기기 없음, `미검증—기기 연결 필요`. **운영 출시:** 실제 판매자/상품/세금/배송/결제·환불/법률/호스트 자료 대기.
+
 ## 기준 코드와 기존 증거
 
 - 저장소: `goldeget/japan-premium-commerce`
@@ -8,7 +37,7 @@
 - 집중 QA [#40225474420](https://github.com/goldeget/japan-premium-commerce/actions/runs/40225474420)과 전체 격리 QA [#40226037762](https://github.com/goldeget/japan-premium-commerce/actions/runs/40226037762)은 성공했다. 전체 Step 80 aggregate와 workflow conclusion이 success다.
 - 전체 실행의 browser artifact: [ordenowa-storefront-browser-40226037762-1](https://github.com/goldeget/japan-premium-commerce/actions/runs/40226037762/artifacts/12611855740), ID `12611855740` (21,326,811 bytes). 메타데이터상 2026-11-24 19:42 UTC까지 보관된다.
 
-## Work-mode GPT의 기존 캡처 시각 검수
+## 최초 수정 전 캡처 시각 검수 (#402260 artifact)
 
 Work-mode GPT가 위 artifact를 다운로드해 실제 PNG를 열어 확인했다. 캡처는 QA source SHA `bb26f06168e0a10a50607ce4e5171666656611b1`의 합성 CI 환경 결과다. 이 검수는 코드 변경 전 화면의 시각 증거이며, 이후 수정의 통과 근거로 재사용하지 않는다.
 
@@ -40,7 +69,7 @@ Work-mode GPT가 위 artifact를 다운로드해 실제 PNG를 열어 확인했�
 - 연결된 iPhone/iPad/Android, USB device, iOS/Android simulator, Appium 또는 승인된 remote device farm이 노출되지 않았다. 실제 기기 검증은 **미검증—기기 연결 필요**다. Chromium emulation을 Safari/WebKit 또는 실기기 결과로 간주하지 않는다.
 - Codex 환경의 artifact ZIP 다운로드는 HTTP 403/전송 오류로 막혔지만 Work-mode GPT가 위 artifact를 열어 시각 검수를 마쳤다. 새 코드용 screenshot은 새 Actions artifact가 생성된 뒤 Work-mode GPT가 다시 확인해야 한다.
 
-## Work-mode GPT의 우선 작업
+## 이전 artifact의 최초 작업 목록 (최신 artifact는 위 검수 요청 참조)
 
 1. 새 수정 SHA에서 전체 run이 생성되면 그 실행의 artifact `ordenowa-storefront-browser-<run-id>-1`을 열어 아래 변경 화면을 다시 확인한다. 동일 screenshot을 고정된 기존 #402260 artifact에서 재검수하지 않는다.
 2. `shipping-free-checkout-mobile.png`와 500px 대응 checkout screenshot에서 현재 배송 단계 뒤로/계속 버튼과 nav의 교차, 화면 아래 여백, 가로 overflow를 확인한다. `checkout-mobile-offline-payment-review.png`에서 check-payment 옵션 label, `shipping-free-order-confirmation-desktop.png`에서 결제 확인 copy의 JA 통일을 확인한다.

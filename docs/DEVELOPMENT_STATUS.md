@@ -1,6 +1,25 @@
 # ORDENOWA 개발 현황
 
-## 현재 QA 및 출시 체크리스트 (2026-10-25 20:05 UTC)
+## 현재 QA 및 출시 체크리스트 (2026-10-25 21:20 UTC)
+
+원격 `work`와 최신 코드 HEAD는 `95af3a9104b6e3f7bfc861155bdc73db9a91ab98`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd` 그대로다. 최신 코드의 전체 격리 Actions [#40233614104](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104)은 workflow 성공이며 Step 80 실제 aggregate는 `PASS: isolated browser QA and official postcode verification completed.`다. Aggregate의 storefront/PWA browser outcomes도 각각 success이며 Step 42, 49, 73, 75, 83이 성공했다. 새 artifact [ID 12613919270](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104/artifacts/12613919270)의 수정 화면 시각 재검수는 아직 대기 중이다. 현재 코드의 로컬 영향 테스트 121개도 통과했다.
+
+| 영역 | 상태 | 근거 / 다음 담당 |
+| --- | --- | --- |
+| 모바일 PWA 계정 경로 검사 | 완료 (격리 자동 QA) | #402294 timeout은 모바일에서 숨겨진 sidebar의 중복 GDPR 링크를 첫 요소로 고른 테스트 결함이었다. 표시되는 일치 요소를 검사하도록 수정했고 #402315 Step 49의 JA/EN/KO desktop/mobile 6개가 각각 PASS했다. |
+| 일본어 checkout details 및 계정 sidebar | 완료 (격리 자동/화면 QA) | Work-mode GPT가 #402315에서 `詳細を表示`, 모바일 checkout 버튼, 일본어 `マイアカウント`를 확인했다. Step 60/49도 통과했다. |
+| 한국어 계정 sidebar 제목 | 자동 브라우저 검증 완료; 시각 재검수 대기 | #402315 캡처의 English `My Account`를 `내 계정`/`내 계정 메뉴` XLIFF로 수정했다. #402336 Step 49와 Step 80 aggregate에서 KO PWA browser outcome이 success다. 새 artifact의 시각 확인은 대기 중이다. |
+| 모바일 긴 상품 breadcrumb | 자동 브라우저 검증 완료; 시각 재검수 대기 | Hummingbird 기본 mobile rule은 한 줄 수평 스크롤과 숨긴 scrollbar다. 자식 테마에서 상품 페이지의 현재 crumb만 줄바꿈하게 하고 긴 합성 제목의 DOM overflow/title equality assertion 및 `mobile-product-detail-breadcrumb.png` 캡처를 추가했다. #402336 Step 42 및 aggregate에서 storefront outcome success다. 새 캡처의 시각 확인은 대기 중이다. |
+| checkout 정책 제목/보조문구 | 자료·정책 문안 대기 | checkout template은 조건 문구를 동적 `{$condition nofilter}` 데이터로 렌더한다. 승인된 일본어 판매 정책이 없으므로 값을 임의 번역하지 않는다. synthetic coupon 이름은 테스트 데이터다. |
+| `Clothes`/`Art` 카테고리 명 | 실제 카탈로그 분류 자료 대기 | 이 값은 테마 UI string이 아니라 PrestaShop default/synthetic category 데이터다. 승인된 일본어/한국어 분류명이 없어 mapping을 만들지 않는다. |
+| 최신 Work-mode 시각 QA | 새 artifact 검수 대기 | #402336 artifact `12613919270`의 한국어 계정 제목과 긴 breadcrumb 캡처를 확인한다. Codex의 system Chromium은 local capture 시 crashpad 초기화에 실패했으므로 이 환경에서 새 PNG를 열지 않았다. |
+| 계정/상품/배송/주문/RMA/PWA/복원/우편번호 | 완료 (현재 격리 코드 SHA 범위) | #402336 Step 80 aggregate 성공. CI browser screenshots는 합성 fixture에 한정된다. |
+| 실기기 PWA/브라우저 | 미검증—기기 연결 필요 | 연결된 iOS/Android 기기나 승인된 remote device farm이 없다. Chromium CI emulation을 실기기 PASS로 취급하지 않는다. |
+| 운영 출시 | 자료·환경 대기 | 실제 판매자·SKU/이미지 권리·세무·배송 계약·결제/환불·법률 문안·운영 host/domain/mail/backup과 책임자 자료는 기존 `미정` 상태다. 기존 회사 참고정보, 공식 브랜드, JPY·세금 포함 가격·무료배송 정책은 유지한다. |
+
+이전 전체 성공 실행은 그대로 보존한다. 자동 browser/aggregate PASS와 새 artifact에 대한 시각 검수는 별도 상태로 기록한다.
+
+## 이전 화면 검수 전 기준점 (2026-10-25 20:05 UTC; 후속 run #40231567083으로 superseded)
 
 현재 remote `work`는 `b94d1f0ba3418b5724f07735e7186c2adbcb6555`, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`다. 마지막 성공 코드 SHA `bb26f06168e0a10a50607ce4e5171666656611b1`의 집중 QA [#40225474420](https://github.com/goldeget/japan-premium-commerce/actions/runs/40225474420)과 전체 격리 QA [#40226037762](https://github.com/goldeget/japan-premium-commerce/actions/runs/40226037762)은 성공했다. Work-mode GPT가 전체 run artifact를 열어 화면을 검수했고, 이 근거에서 확인된 모바일 checkout 가림과 locale 누락을 수정 중이다. 현재 작업 트리에 변경이 있으나 새 코드 SHA의 Actions 실행은 아직 없다. 영향받은 정적/계약 검사 172개가 통과했고, 마지막 한국어 로그인 stage allowlist 변경 후 해당 9개도 다시 통과했다.
 

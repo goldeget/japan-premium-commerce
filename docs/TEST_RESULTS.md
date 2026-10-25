@@ -1,6 +1,42 @@
 # ORDENOWA 테스트 결과
 
-## 2026-10-25 — 기존 전체 QA 및 후속 AI 화면 검수
+## 2026-10-25 — 시각 QA 잔여 항목 수정 및 전체 격리 검증 완료
+
+현재 코드 SHA `95af3a9104b6e3f7bfc861155bdc73db9a91ab98`가 remote `work`다. 최신 전체 격리 Actions [#40233614104](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104)은 workflow 성공, Step 80 aggregate `PASS: isolated browser QA and official postcode verification completed.`로 종료했다. Aggregate에 기록된 `STOREFRONT_BROWSER_QA_OUTCOME=success`, `PWA_BROWSER_QA_OUTCOME=success`; Step 42 product/cart, Step 49 PWA, Step 73/75 screenshots, Step 83 run-only cleanup 모두 성공했다. 직전 성공 run #40231567083은 SHA `aed4a3cc6e143258e9f493603dd226bfa41b34aa`의 별도 기준점으로 보존한다.
+
+Work-mode GPT가 #402315 browser artifact [ID 12613108935](https://github.com/goldeget/japan-premium-commerce/actions/runs/40231567083/artifacts/12613108935)를 열어 다음을 확인했다: `詳細を表示`, 모바일 checkout button visibility, 일본어 `マイアカウント`는 수정됐다. 남은 영어 정책 문구, catalog category data, KO account heading, long-title breadcrumb를 별도로 분류했다. screenshot inspection은 클릭/입력 상호작용 검사가 아니다.
+
+| 항목 | 현재 결과 | 근거 |
+| --- | --- | --- |
+| checkout policy labels/helper copy | 자료 대기, 변경하지 않음 | Hummingbird checkout은 `conditions_to_approve` 값을 `{$condition nofilter}`로 출력한다. `Security policy`, `Delivery policy`, `Return policy`와 보조문구는 이 동적 승인 조건 콘텐츠이며 저장소의 정적 theme string이 아니다. 실제 판매자 승인 일본어 정책 문안 없이 법률성 문구를 만들지 않는다. English CI coupon label은 fixture 데이터다. |
+| `Clothes`/`Art` category names | 자료 대기, 변경하지 않음 | storefront catalog data이며 theme translation entry가 아니다. 승인된 taxonomy label이 없으므로 이름을 추정해 번역하지 않는다. |
+| Korean PWA account heading | 자동 브라우저 검증 PASS; 시각 재검수 대기 | `ShopThemeCustomeraccount.ko-KR.xlf`에 `내 계정`/`내 계정 메뉴`를 추가하고 desktop PWA assertion을 JA/KO로 확장했다. #402336 Step 49 outcome은 aggregate에서 success다. |
+| mobile long product breadcrumb | 자동 브라우저 검증 PASS; 시각 재검수 대기 | Hummingbird 모바일 기본은 `nowrap`, `overflow-x:scroll`, 숨긴 scrollbar다. 자식 테마에서 product page의 마지막 crumb에만 wrap을 추가했다. Step 42 E2E는 synthetic long title이 product heading과 일치하고 horizontal overflow가 없는지 검사하며 `mobile-product-detail-breadcrumb.png`를 캡처했다. |
+| local focused regression suite | PASS | `test_theme_contract`, `test_storefront_visual_residuals`, `test_pwa_service_worker`, `test_ci_checkout_contract`: 121개 통과. 수정 Python 파일 구문 검사와 `git diff --check` 통과. |
+| 최신 Actions | PASS | #40233614104, source SHA `95af3a9104b6e3f7bfc861155bdc73db9a91ab98`; Step 80 실제 aggregate PASS. |
+| 현재 환경에서 시각 capture | 미실행; 새 Actions artifact 보유 | Codex system Chromium이 crashpad 초기화에 실패하여 local capture를 생성하지 않았다. 새 격리 browser artifact [ID 12613919270](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104/artifacts/12613919270)은 업로드/coverage PASS이며 Work-mode 시각 검수가 남아 있다. |
+
+121개 local target tests도 fresh run에서 통과했다. 자동 브라우저 테스트와 screenshot 생성은 run-scoped 합성 fixture 및 격리 DB에서 이뤄졌다. 운영 DB, named volume, 실배포, 실결제, 실거래, 유료 서비스를 변경하지 않았다. 시각 검수와 실기기 검증은 자동 CI outcome과 구분한다.
+
+## 2026-10-25 — PWA 모바일 계정 검사 수정 및 전체 격리 QA (직전 코드 SHA)
+
+검증 코드 SHA `aed4a3cc6e143258e9f493603dd226bfa41b34aa`; remote `work`도 같은 SHA이며 `main`은 `ee02a3657448d563508687614a246e05ac61eecd`다. 전체 Actions [#40231567083](https://github.com/goldeget/japan-premium-commerce/actions/runs/40231567083)은 workflow `success`, Step 80 실제 aggregate `PASS: isolated browser QA and official postcode verification completed.`로 종료했다.
+
+| 검사 | 결과 | 근거 |
+| --- | --- | --- |
+| #402294 PWA timeout 원인 | 확인된 테스트 결함 | 모바일 account template에는 숨겨진 sidebar GDPR 링크와 표시되는 main account GDPR 링크가 둘 다 렌더링된다. Selenium의 첫-match visibility wait가 숨겨진 첫 요소만 기다려 `customer_account_route`에서 timeout하고, 진단 경로는 `/<other>`였다. 데스크톱 sidebar는 표시되므로 이전 성공 run의 desktop 및 mobile 결과와 차이가 났다. |
+| PWA 검사 수정 | PASS | helper가 GDPR anchor의 표시된 일치 요소들을 검사하고 JA 문구를 확인한다. 숨겨진 sidebar 제목/접근성 label은 desktop에서만 검사한다. 중복 숨김/표시 링크와 mobile skip을 재현하는 unit tests가 포함됐다. |
+| PWA 실제 격리 브라우저 | PASS | #402315 Step 49 로그에 `desktop-ja/en/ko`, `mobile-ja/en/ko`가 각각 PASS. 각 경우 secure-context installability, manifest icons, service-worker lifecycle, localized offline navigation, private cache 상태를 확인했다. `PWA_BROWSER_QA_OUTCOME=success`; private Cache-Control 검사와 Step 80 aggregate도 성공했다. |
+| 일본어 cart details / account sidebar | PASS (격리 자동 QA) | JA XLIFF에 `Show details`, `Show cart details`, `My Account`, `My account navigation sidebar`를 추가했고 browser/theme assertions를 둔다. #402315 Step 60 checkout 및 Step 49 PWA 성공. 새 캡처의 시각 검수는 아직 대기 중이다. |
+| 모바일 checkout/한국어 password 수정 | 자동 QA PASS; 최신 artifact 시각 확인 대기 | 이전 시각 후속 #402294 artifact에서 Work-mode GPT는 390×701의 checkout buttons가 nav 위로 완전히 보이며 KO password label이 `비밀번호`라고 확인했다. #402315에서는 재검수할 캡처를 생성했다. |
+| 로컬 영향 테스트 | PASS | `tests.smoke.test_theme_contract`, `test_free_shipping_e2e_contract`, `test_pwa_service_worker`, `test_pwa_logout_diagnostics_contract`, `test_private_customer_cache_routes_contract`: 159개 통과. |
+| 전체 격리 QA와 정리 | PASS | #402315 Step 75 screenshot coverage, Step 77 재시작/보존, Steps 78–79 공식 Japan Post 데이터, Step 80 aggregate, Step 83 run 전용 리소스 정리 모두 성공. |
+| 최신 캡처 artifact | 저장됨; 시각 검수 대기 | [browser artifact ID 12613108935](https://github.com/goldeget/japan-premium-commerce/actions/runs/40231567083/artifacts/12613108935), 이름 `ordenowa-storefront-browser-40231567083-1`. 이 Codex 세션에서는 ZIP/PNG를 열지 않았다. Work-mode GPT의 후속 시각 검수와 자동 동작 검증을 서로 구분한다. |
+| 미해결 화면 후보 | 부분 자료 대기 / 미확정 | `Security/Delivery/Return policy` 문구는 승인된 판매 정책 일본어가 없어 임의로 채우지 않는다. CI 쿠폰명과 `Clothes`/`Art`는 합성/default fixture 값이다. breadcrumb는 CSS 수평 스크롤 요소이며 기존 문서 overflow 검사는 통과해 실제 결함으로 확정하지 않았다. |
+
+모든 자동 검사는 run-scoped 합성 fixture와 격리 DB에서 실행됐다. 운영 DB, named volume, 실결제, 실거래, 실배포는 사용하지 않았다. 이 run은 기술/격리 QA 성공 근거이며 실판매 자료, iOS/Android 실기기, 운영 서버/도메인/메일 또는 법률·세무 승인 완료를 뜻하지 않는다.
+
+## 2026-10-25 — 기존 전체 QA 및 후속 AI 화면 검수 (이전 기준점; #402315 이전)
 
 remote `work`는 `b94d1f0ba3418b5724f07735e7186c2adbcb6555`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`다. 마지막 browser/isolated QA 코드는 `bb26f06168e0a10a50607ce4e5171666656611b1` (`[admin-return-focus] diagnose tokenized return navigation`). 집중 run [#40225474420](https://github.com/goldeget/japan-premium-commerce/actions/runs/40225474420)과 전체 run [#40226037762](https://github.com/goldeget/japan-premium-commerce/actions/runs/40226037762)은 모두 성공했고 Step 80 aggregate는 `PASS: isolated browser QA and official postcode verification completed.`를 기록했다. Work-mode GPT는 전체 artifact [ID 12611855740](https://github.com/goldeget/japan-premium-commerce/actions/runs/40226037762/artifacts/12611855740)를 실제 열어 시각 검수했다. 그 검수에서 확인된 화면 문제에 대한 현재 local source changes는 아직 Actions에서 실행되지 않았다.
 
