@@ -1,5 +1,25 @@
 # KURANEA 작업 기록
 
+## 2026-10-25 — 고정 범위 Dashboard 경로 수정 및 1회 최종 QA
+
+- 시작 원격 `work`/로컬 코드 기준은 `e356a8a01f9215f2a3dd32ab623a806bda5e398a`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다. 이전 전체 격리 QA [#40187411910](https://github.com/goldeget/japan-premium-commerce/actions/runs/40187411910)은 Step69에서 `admin_security_browser_qa=failure` 하나로 실패했고 Step72 cleanup은 통과했다. 그 실행에서 brand Step32/33은 성공했으므로 `admin_login_after_publish` 오류는 재처리하지 않았다.
+- Step39에서 관찰한 실제 상태는 로그인 폼 없음, Dashboard 링크 1개, 분류 결과 `current_controller=other`였다. 안전한 기존 로그가 token을 포함한 전체 URL을 기록하지 않았기 때문에 실제 경로 형태는 확인 불가였다.
+- TDD RED로 `/admin-kuranea/index.php/sell/dashboard?controller=AdminDashboard`가 이전 분류기에서 `other`가 되는 것을 재현했다. 같은 origin, controller 및 exact path 제한을 유지하며 이 index.php 접두 Symfony Dashboard 경로를 추가했다. 추가 하위 경로와 외부 origin 거부는 그대로 테스트했다. 보안 계약 36/36과 `git diff --check`가 통과했다.
+- 코드 커밋 `74e64b966d5943a3d06cadd04fe6fc7b17669bfe`를 `work`에 푸시했고 원격 SHA를 확인했다. 푸시 자동 실행인 전체 QA [#40188721058](https://github.com/goldeget/japan-premium-commerce/actions/runs/40188721058)이 이번 범위의 유일한 추가 실행이다.
+- 최종 실행은 FAIL: Step39 실제 outcome이 다시 `view_only_employee_dashboard_route`였고 `current_controller=other`; Step69 유일 실패는 `admin_security_browser_qa=failure`. 경로를 포함하지 않는 현재 증거로 추가 변경을 추측하지 않았다. 명시된 실행 한도에 따라 추가 전체 QA는 하지 않는다.
+- 같은 run에서 brand Step32/33, PWA Step41, 회원·상품·장바구니 Steps34–37, 주문 및 무료배송/금액 Steps48/50–57, lifecycle Steps51/61, 격리 backup/restore Step62, 캡처 coverage Step64, restart Step66, Japan Post Steps67–68은 실제 outcome success이며 Step72 run 전용 cleanup도 success다. PC·모바일 캡처 artifact는 ID `12597164472`에 보존했다. artifact는 다운로드하지 않았다.
+- 수정·문서는 운영 DB/named volume, 실결제, 운영 배포를 사용하지 않았다. 최종 코드 SHA와 실패 상태를 출시 현황·테스트 결과·이 작업 로그에 기록한다.
+
+## 2026-10-25 — AdminOrders Korean locale 원인 수정 및 출시 범위 재점검
+
+- 시작 시 원격 `work`는 `b5c20a2299984cded956ffbf3d86560b1f4e0f1f`, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다. `/tmp/ordenowa-release-closure` 격리 checkout에서 작업했고 원래 `/workspace`의 untracked 자료는 건드리지 않았다.
+- #40171264031의 Step39 실패를 route/auth와 UI translation으로 분리했다. `/sell/orders`는 HTTP200, `AdminOrders` route, login/permission error 없음이었다. 진단의 `main` selectors가 PS 9.2의 `#main-div`, toolbar `h1.title`, `.js-grid-panel`, `.grid-table` 구조와 맞지 않아 blank-shell 결과는 잘못된 진단이었다.
+- 실제 번역 공백은 source 도메인에서 확인했다. Orders grid/menu title은 `Admin.Navigation.Menu`; empty-state title/description은 `Admin.Orderscustomers.Feature`. 해당 Korean XLIFF 2개를 module subscriber에 등록했다. Browser assertion은 정확한 Korean page/grid title 및 empty-state copy를 확인하고 English `order(s)` 표기를 허용하지 않는다. Empty 및 populated branch 모두 local contract가 있다.
+- TDD focused contracts는 변경 전 overlay 누락 4건 RED, 수정 뒤 GREEN을 확인했다. 전체 focused batch는 124/124, Python AST/XLIFF XML 및 `git diff --check` PASS. PHP CLI는 로컬에 없어 PHP lint는 Actions에 위임했다.
+- Code review는 Critical/Important 없음, selector/domain/source strings를 적합하다고 판정했다. populated Orders page branch 추가 검토 후 코드 변경 없이 contract coverage gap을 닫았다.
+- `70c034255218f8b2cb9c388b143dc82bfe3cd5db`와 `c392db70400a4468b57da279eb024a12d8ab0d24`를 `work`에 push했고 `git ls-remote`로 최종 SHA를 확인했다. `main`은 변경되지 않았다. full isolated run [#40173333689](https://github.com/goldeget/japan-premium-commerce/actions/runs/40173333689)은 기록 시점에 진행 중이며 최종 결과를 아래 QA record에 추가해야 한다.
+- 기존 UI/flow 및 release blockers는 출시 상태표와 release audit에 근거해 분리한다. 합성 상품/세율·Mailpit·무결제 주문은 실제 운영 준비로 취급하지 않는다. 실제 운영 배포·실결제·실거래는 하지 않았다.
+
 ## 2026-10-24 — PWA 빈 체크아웃 실패 진단 및 출시 준비 점검
 
 - 작업 시작 시 `work`와 `origin/work`는 `44a88a07e0693ecf463764a357262f5d19455529`였고, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다. 미커밋 진단 변경을 보존한 채 진행했고 `main`에는 쓰지 않았다.

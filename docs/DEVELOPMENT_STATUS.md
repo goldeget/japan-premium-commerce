@@ -1,6 +1,84 @@
 # ORDENOWA 개발 현황
 
-## 최신 QA 및 출시 준비 상태 (2026-10-24)
+## 이번 고정 범위 결과 (2026-10-25 11:39 UTC)
+
+최종 회귀 대상 코드 `work` SHA는 **74e64b966d5943a3d06cadd04fe6fc7b17669bfe**다. 격리 Actions [#40188721058](https://github.com/goldeget/japan-premium-commerce/actions/runs/40188721058)은 **FAIL**로 종료했고 Step69의 유일한 실제 실패는 `admin_security_browser_qa=failure`; Step72의 run 전용 리소스 정리는 성공했다. 이전 SHA `e356a8a01f9215f2a3dd32ab623a806bda5e398a` 실행 [#40187411910](https://github.com/goldeget/japan-premium-commerce/actions/runs/40187411910)도 같은 실패였다. `main` **ee02a3657448d563508687614a246e05ac61eecd**는 변경하지 않았다. 기준 성공 실행 [#40134196682](https://github.com/goldeget/japan-premium-commerce/actions/runs/40134196682)는 기존 기준점으로 보존한다.
+
+| 항목 | 완료 조건 | 현재 상태 | 남은 작업 | 필요한 외부 자료 |
+| --- | --- | --- | --- | --- |
+| 보기 전용 직원 대시보드 경로 | 로그인 뒤 허용된 같은 origin의 Dashboard 화면과 한국어 날짜 UI를 브라우저에서 확인 | **코드 수정 필요** — Step39 실제 outcome이 두 연속 실행에서 실패. 로그는 `login_form_visible=false`, `dashboard_link_count=1`, `current_controller=other`를 기록한다. 커밋 `74e64b9`에서 `/admin-kuranea/index.php/sell/dashboard`를 정확히 허용하고 외부 origin·추가 하위 경로 거부를 유지했지만, 최종 실행에서도 실패했다. 실제 주소 경로는 안전 로그에 저장하지 않아 원인을 확정하지 못했다. | 현재 실패의 안전한 실제 경로 형태를 확보하고 분류기를 그 근거에 맞게 수정한 뒤 브라우저 검증. 이번 고정 범위의 추가 전체 QA 한도는 소진됨 | 없음 |
+| 브랜드 게시 후 재로그인 | 게시/복원 후 PC·모바일 로고 및 관리자 로그인 표시 확인 | **완료** — #401887 Step32 실제 brand outcome 및 Step33 이메일 로고 검사 통과; Step69에서 brand outcome success 확인 | 없음 | 공식 승인 브랜드 원본은 저장소에 보존됨 |
+| 회원·상품·PWA·배송·가격·주문 | 핵심 PC·모바일 브라우저 흐름, 저장된 주문/금액, 개인정보 캐시와 무료배송 확인 | **완료 (격리 QA)** — #401887 aggregate에서 대시보드 외 실패 없음. Step41, Steps52–57 통과 | 새 변경이 없으면 재검사하지 않음 | 실기기 PWA 설치만 iOS/Android 기기·운영 HTTPS 필요 |
+| 관리자 취소·반품 레코드 | 기본 관리자 화면에서 미결제 주문 취소 및 native 반품/credit slip 저장 상태 확인 | **완료 (격리 합성 주문)** — #401887 Steps51, 61 및 aggregate 통과. 반품/credit slip은 합성 paid-like CI fixture이며 현금 이동 없음 | 반품 승인/처리 UI와 실제 결제 환불은 미검증 | 판매자 취소·반품·환불 정책, 결제 제공자 계약/접근 |
+| 전체 한국어 관리자 범위 | 승인 요구 문서의 모든 코어/커스텀 화면·오류·보고서·메일 한국어 검증 | **검증 필요** — 일부 브랜드·상품·배송·주문·권한 화면만 확인. 전체 화면 inventory와 메시지 coverage는 미완료 | 기존 `docs/ADMIN_KOREAN_REQUIREMENTS.md` 범위의 미검증 화면 QA | 실제 법률·고객 안내 문안은 판매자 승인 자료 |
+| CI 백업·복원 | 격리 DB·파일·catalog queue 복원, 재시작 및 정리 | **완료 (격리 drill)** — #401887 Step62와 Step72 통과; 운영 복구로 확대 해석하지 않음 | 운영 복원은 실제 운영 target에서 별도로 검증해야 함 | 운영 백업 저장소·암호화·접근·보존기간·승인 RPO/RTO·복원 담당자/대상 |
+| 정식 출시 환경 | 실제 상품과 판매자 정보, 세금·배송·결제·법률 문구와 운영 접속 검증 | **자료·환경 대기** — 합성 상품·세율·Mailpit·미결제 CI 주문만 사용 | 입력 승인 후 환경별 deployment/rollback 및 외부 전송 인수 검사 | 판매자/법률 정보와 고객센터, 실제 SKU·가격·재고·이미지 권리, 세금·배송 계약/지역, 결제·환불 정책, 도메인/DNS/TLS/서버·비밀 및 담당자, SMTP, 운영 백업·복원, iOS/Android 기기 |
+
+아래의 이전 감사 표와 세부 화면 목록은 당시의 과거 스냅샷이다. 위 표가 현재 상태이며 과거 검증 근거는 보존한다.
+
+## 이전 종합 감사 스냅샷 (2026-10-25 08:21 UTC)
+
+현재 격리 전체 QA 대상 코드 SHA는 **b368a6b0a4c39985a13dcb0720683b0a0b5929f4**이며 `work`에 push했다. 최종 변경 목록은 backup/restore command fix `0392573e0e37008c524872d9f0d73679413aec71`, PWA bootstrap race fix `77e337e96b0bcd00e72dc0266b291e38dffdbda9`, AdminOrders Korean locale fix `b368a6b0a4c39985a13dcb0720683b0a0b5929f4`의 세 독립 커밋이다. `main` **ee02a3657448d563508687614a246e05ac61eecd**는 수정하지 않았다. 성공 기준점 `b99b61559978dd8b4c25819623669e0d92deb768`의 전체 QA [#40134196682](https://github.com/goldeget/japan-premium-commerce/actions/runs/40134196682)는 보존한다. #40173333689 (`c392db7`)은 `admin_security_browser_qa=failure backup_restore_drill=failure`로, #40174672771 (`b8eccca`)은 `admin_security_browser_qa=failure pwa_browser_qa=failure backup_restore_drill=failure`로 끝났으며 두 실행 모두 run 전용 정리는 통과했다. 현재 전체 격리 QA [#40176160072](https://github.com/goldeget/japan-premium-commerce/actions/runs/40176160072)은 `b368a6b`에서 실행 중이다. 최종 aggregate가 나오기 전까지 전체 QA를 통과로 기록하지 않는다.
+
+### 이번 수정 및 검증 범위
+
+- `SELL → AdminParentOrders → AdminOrders` 뷰 권한 경로는 #401712에서 수정되어 해당 Orders 목록 링크 탐색이 가능해졌다. #401712 Step 39에서 목록 URL은 HTTP 200, 로그인 폼·권한 거부는 없었다.
+- #401746의 실제 Orders 진단은 HTTP 200, 정상 `AdminOrders` route와 grid, `document_locale=korean`인데 toolbar/grid heading은 영어였다. 한국어 overlay 도메인 정규화는 필요했으나 충분하지 않았다. module listener priority 14가 core employee/context 초기화보다 먼저 실행되어 employee `en-US`가 이후 builder와 shared translator를 다시 덮었다. #401761에서는 module override를 core `LanguageContextSubscriber::KERNEL_REQUEST_PRIORITY - 1` (priority 5)에 두고 legacy context 생성(priority 0) 전에 적용하며, 실제 Symfony dispatcher·PrestaShop context builder/legacy context/translator를 이용한 5개 회귀 시나리오를 실행한다. 화면 결과는 Step39와 aggregate로 확인 대기다.
+- #401746 PWA failure는 `mobile-ja`에서 registration active/activated, expected scope, controller 없음과 `controller_timeout`이었다. Origin/path 진단은 controller가 있을 때만 계산되므로 그 실행의 `false` 기본값은 URL mismatch 증거가 아니다. Harness는 첫 `/` 문서가 완전히 로드된 직후 locale navigation을 시작해 `window.load`에서 시작하는 worker registration/activation과 경합할 수 있었다. 제어된 지연을 둔 최소 Chromium 재현에서 기존 순서는 같은 timeout을 내고, 초기 controller 대기 후에는 controller 및 expected URL 검사가 통과했다. 저장된 #401746 로그는 당시 요청별 interleaving을 담지 않아 이 재현은 확인된 메커니즘이지 과거 요청 순서의 직접 trace는 아니다. #401761은 initial control barrier와 기존 locale-page assertion을 함께 검증한다.
+- Backup/restore의 첫 MariaDB 생성 명령은 `docker compose -p … create --no-deps …`였다. 공식 Compose v2.38.2의 `create` 하위명령에는 `--no-deps`가 없으며 이 옵션은 다른 하위명령에 존재한다. #401733/#401746의 원문 stderr는 보존되지 않았지만 unsupported argument는 소스에서 확인했다. `--no-deps`만 제거하고 shell contract를 추가해 #401761 Step62에서 실제 격리 restore를 확인한다.
+- #401746 Step39, Step41, Step62의 실제 outcome은 모두 failure이며 Step69 집계는 `admin_security_browser_qa=failure pwa_browser_qa=failure backup_restore_drill=failure`였다. Step72 cleanup은 success였다. `#401761` 전 로컬 집중 검사 결과: admin-locale 37, PWA 106, backup/fresh-install contracts 68, security contract 36 Python tests pass; PHP lifecycle regression 5 scenarios, 두 PHP 파일 lint, shell syntax와 수정 파일 `git diff --check` pass. (과거 #401746의 화면 검사는 성공으로 기록하지 않는다.)
+- #401746 artifact 메타데이터는 browser `ordenowa-storefront-browser-40174672771-1` (ID `12592037915`, 16,532,674 bytes)와 diagnostics `fresh-install-diagnostics-40174672771-1` (ID `12591359845`, 5,086 bytes)다. #401761 결과와 PC/mobile 캡처 경로는 해당 run 종료 뒤 기록한다. Workflow는 실패 시에도 `if: always()` 업로드를 실행한다.
+
+### 기존 요구사항과 출시 상태
+
+| 항목 | 완료 조건 | 현재 상태 | 남은 작업 | 필요한 외부 자료 |
+| --- | --- | --- | --- | --- |
+| 관리자 상품 등록·수정 | 상품명·설명·이미지·옵션·재고를 네이티브 PrestaShop에 저장하고 고객 화면에서 확인 | **완료 (합성 기능 QA)** — #401712 Steps 17–19, 35; 화면 한국어 전체 인수는 별도 미완료 | full Korean UI/오류·알림 audit | 실제 SKU, 가격, 재고, 설명, 이미지 사용권 및 판매 승인 |
+| 관리자 계정 복구 | 한국어 관리자 로그인에서 비밀번호 복구를 요청하고 Mailpit 재설정 메일/링크로 복구 | **검증 필요** — customer account reset E2E는 있음; 그것만으로 Back Office employee recovery를 증명하지 않음 | core admin recovery form, Korean errors, token, Mailpit delivery를 격리 브라우저로 확인 | 운영 메일 전달성은 SMTP/발신도메인 승인 후 |
+| ORDENOWA 공식 이미지·게시 | 승인 원본 3종과 파생본 무결성; PC·모바일 헤더, 관리자 로그인, favicon, Apple Touch/PWA 아이콘, OG/SEO, 일반·재설정 이메일 로고의 업로드·미리보기·게시·복원 | **검증 필요** — #401746 Steps 11, 32, 33 개별 conclusion success였지만 전체 aggregate는 다른 세 실패로 fail. #401761 결과 대기 | 현재 run의 outcome, PC/mobile/email 캡처와 게시 후 readback 확인 | 출시 상품·회사 정보를 게시하려면 seller approval |
+| 한국어 관리자 운영 설정 | 회사 참고정보와 실제 판매사업자 정보 분리; 고객센터·은행 계좌 권한·배송/환불·약관/개인정보/특상법·SEO/PWA 값을 한국어 관리자에서 저장·재조회하고 고객 화면에 반영; brand draft→preview→publish→history→restore 흐름 확인 | **검증 필요** — #401746 Step32는 브랜드 upload/preview/publish/history/restore, Step25는 business profile 설치/접근을 확인했다. Step39에서는 read-only settings display까지 갔지만 Orders assertion 뒤 write-denial test는 실행되지 않았으며 bank permission browser coverage는 미검증. PHP module checks cover legal/payment linkage; SEO escaping은 source contract만 확인 | bank-account permission, customer support/refund/legal forms와 locale별 readback, SEO/PWA 관리자 제어의 browser inventory; #401761 outcome 대기 | 회사 참고정보와 별도인 실제 판매자 법적 정보·고객센터·은행 계좌 권한, 배송/환불/약관 문구와 최종 domain/SEO 공개값 승인 필요 |
+| 회원 계정·주문 내역 | 중복 가입/잘못된 비밀번호 거부, 이메일 로그인·로그아웃, 재설정 token 만료·재사용 거부, my page, 주소 생성/수정, 주문 내역 확인 | **검증 필요** — 별도 사용자 ID 찾기가 아니라 PrestaShop 이메일 로그인이다. #401746 Step34 회원 흐름과 Step40 reset-token replay/expiry는 각각 성공했지만 전체 aggregate는 다른 영역에서 fail; #401761 결과 대기 | aggregate 기준 가입·로그인·재설정·계정/주소/주문 동선 확인. 별도 사용자 ID 찾기 기능은 구현 요구로 두지 않음 | 운영 메일 발신은 승인된 SMTP/도메인 필요; 격리 reset은 Mailpit |
+| 주문 조회·상태·취소·반품 | 별도 관리자에서 주문 상태 변경·이력, 취소·반품·credit slip readback | **격리 기능 QA 완료 확인 대기** — #401746 Step61 개별 success였으며 취소·반품 fixture는 synthetic paid-like 상태; #401761 Step61 확인 예정 | 전체 aggregate와 Step61 결과 확인. 실제 결제 환불/송금은 CI에서 실행하지 않음 | 실제 fulfillment·취소·반품·환불 정책 및 결제 계약 |
+| Orders 화면 한국어 | 영어 설정의 읽기 전용 직원으로 실제 AdminOrders 목록·toolbar·grid 제목을 한국어로 렌더링 | **코드 수정 완료, 격리 확인 대기** — #401746은 HTTP 200/정상 grid인데 영어 headings. listener order를 고쳤고 actual context lifecycle test가 5/5 통과; #401761 Step39 결과 대기 | aggregate·screenshot 확인 | 자료 불필요 |
+| 관리자 전체 한국어 100% | 기존 PrestaShop 코어 전 화면과 승인된 관리자 흐름의 메뉴·필드·도움말·오류·메일·알림을 실제 화면에서 확인 | **검증 필요** — 16개 주요 동선과 선택된 overlay는 있지만 전체 core inventory, Korean pack source/version pinning, 모든 employee의 기본 언어 증거는 없음 | 로그인/복구, 모든 메뉴, 상품/분류/재고, 주문/고객/배송, 결제/세금/통화, 직원/권한, 모듈/테마, 회사/시스템, 백업/유지보수 문구 inventory와 browser evidence; 발견된 결함만 수정 | synthetic screen audit은 가능; 실제 업무 문구는 seller approval 필요 |
+| 회원·로그아웃·PWA 기본 동선 | 가입·로그인·재설정·로그아웃 후 인증 종료, 계정/주문 접근 보호와 private cache 부재를 PC·모바일 Chromium에서 확인 | **검증 필요** — #401746 Step34 성공, PWA Step41 실패 on mobile-JA; #401761에는 초기 worker control barrier를 넣었고 기존 logout/cache assertions 유지. 최종 결과 대기 | aggregate·Step41 확인; iOS/Android 설치·실기기 동작은 별도 | iOS/Android 실기기 접근 |
+| 고객 Web Push 알림 | 고객 동의·구독, 서버 발송, 주문/배송 알림, 한국어 관리자 제어를 검증 | **코드 수정 필요** — 현재 코드는 manifest/설치/offline/service worker만 제공; `PushManager`, 구독 endpoint, 발송기, `push` handler, 관리자 발송 UI 및 테스트가 없음 | 별도 승인된 구현 단위와 격리 전송 QA 필요; service worker/private-cache PASS를 push PASS로 보지 않음 | 운영 HTTPS 도메인 및 판매자 승인 알림 정책; 운영용 VAPID 발송 키/보유 책임 |
+| 한국어 운영 설명서·보고서·관리자 알림 | 기존 관리자 기능 설명, report 및 관리자 email/notification을 한국어로 확인 | **검증 필요** — `ORDENOWA_ADMIN_GUIDE_KO.md`는 기본 사용법을 담지만 완전한 업무 매뉴얼은 아님; report/관리자 mail/notification 범위 inventory와 QA 증거 없음 | 기존 화면과 템플릿을 목록화하고 격리 Mailpit/브라우저에서 한국어 문구 확인; 사용 설명서 보완 | 판매자별 운영 절차/수신자 정보는 승인 후 |
+| 관리자 감사 기록 | 권한이 필요한 주요 변경이 사용자·시각·변경내역과 함께 보존되고 한국어로 조회 | **검증 필요** — 사업자 설정의 버전 이력과 상품 검수 승인 메타데이터는 있음; 이것만으로 전체 관리자 action log 또는 거래원장은 증명하지 않음 | native PrestaShop log 및 커스텀 action/history 화면, 접근제어·보존·Korean UI를 확인 | 운영 로그 보존/접근 정책은 판매자 승인 후; synthetic 검증에는 자료 불필요 |
+| SEO·입력 보안 | 관리자가 ja/en/ko SEO 값을 저장하고 canonical/hreflang/OG/JSON-LD와 CSRF·세션·upload control을 실제 화면에서 검증 | **검증 필요** — output escaping은 `work`에 있고 SEO source contract 15/15 PASS; Draft PR #3의 유효 escaping은 이미 반영·확장됨. 이는 관리자 SEO 편집 흐름이나 rendered hostile-input 전체 증거는 아님 | SEO 관리 화면과 rendered metadata를 locale별 확인하고 발견된 결함만 수정; PR #3에서 가져올 고유 변경 없음 | 실제 domain/canonical 공개값은 운영 도메인 승인 후 |
+| 주문·가격·세금·무료배송 | 검색·장바구니·일본 주소·미결제 주문, 상품/주문/관리자 금액 일치, 지원 배송의 ¥0 비용 | **검증 필요** — #401746 Steps 48, 50, 52–57 개별 success였으나 전체 workflow fail; 합성 SKU·세율과 `ps_checkpayment` 무결제 주문. #401761 결과 대기. 이후 무료배송 정책이 유료 요율 검증을 대체함 | aggregate 확인. 미지원 지역/no-carrier/잘못된 요율 예외는 별도 미검증 | 실제 SKU별 적법한 세금 분류, carrier 계약과 지원 지역 |
+| CI backup/restore | run 전용 DB·webroot·catalog queue 복원, 데이터 비교·재시작·cleanup | **코드 수정 완료, 격리 검증 대기** — #401746 Step62 실패. Compose v2.38.2 `create`가 `--no-deps`를 지원하지 않는 점을 확인하고 flag 제거·회귀 contract 추가 | #401761 Step62 실제 `.outcome`, Step69 aggregate, Step72 cleanup 확인. CI drill은 운영 백업을 증명하지 않음 | 운영 백업 저장소/정책은 별도 자료 |
+| 운영 배포·복원 runbook | 승인된 운영값·호스트용 배포, HTTPS/mail acceptance, immutable rollback, durable backup/restore 안내 | **자료·환경 대기** — [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md)는 정확한 준비 템플릿이나 실행 가능한 운영 runbook/복원 검증은 아님 | 승인 이미지/registry로 deploy/rollback, 파일·DB·queue 일치 restore, HTTPS/mail acceptance 절차를 실제 입력에 맞춰 구체화 | 호스트/project, domain/DNS, TLS/proxy/firewall, secrets/SMTP, immutable image registry와 release owner, backup 대상/접근/암호화/보존/RPO/RTO/restore owner |
+| 실제 판매 운영 | 승인된 판매자·상품·세금·배송·결제·환불 및 고객지원 정보를 운영에 구성 | **자료·환경 대기** — CI는 합성 데이터·Mailpit·무결제 주문만 사용 | 운영 승인된 실제 자료로 설정하고 고객/관리자 화면 검증 | 판매자 법적 정보·권한·주소·고객센터, SKU/가격/이미지 권리, 상품별 세무, 배송 계약/범위, 결제 계정·실거래 승인, 이용약관·개인정보·배송/환불 정책 |
+
+`docs/ADMIN_KOREAN_REQUIREMENTS.md`는 기본 Back Office 화면 전체, 커스텀 기능, 한국어 설명서/보고서/알림과 16개 QA 흐름을 요구한다. 아래 16개 QA 흐름은 core 화면 전체 inventory를 대신하지 않는다. 현재 full run의 결과는 별도다.
+
+| # | 관리자 업무 흐름 | 구현·검증 근거 | 상태와 남은 일 | 필요한 입력 |
+| --- | --- | --- | --- | --- |
+| 1 | 관리자 로그인·계정 복구 | 신규 설치는 storefront 기본 언어를 일본어로, 초기 employee 언어를 한국어로 설정·검사한다 (`kuran-post-install.php`, `fresh_install.sh`). Back Office locale lifecycle 회귀 검사는 비로그인 관리자 로그인 화면도 포함한다. | 부분 검증 — 초기 직원 1명의 한국어와 비로그인 관리자 한국어 문맥은 확인; 모든 직원의 기본 언어 및 직원 비밀번호 복구는 미검증. 공식 한국어 언어팩 source/version과 전체 catalog coverage도 고정·감사되지 않음. | 격리 재설정은 Mailpit 사용 가능; 운영 발신성은 승인된 SMTP/도메인 필요 |
+| 2 | 대시보드 | PrestaShop core 및 한국어 날짜 UI가 있음. | #401746의 Orders 한국어 assertion이 먼저 실패해 대시보드 검증/캡처는 실행되지 않았다. #401761 재검사 대기. | 없음 |
+| 3 | 상품 등록 | native product manager, ja/en/ko text, image/options/stock/category create. | 합성 create QA 통과 — 전체 UI 문구·도움말·오류의 Korean 인수는 미검증. | SKU/가격/재고/설명/image rights |
+| 4 | 상품 편집 | 같은 native manager에서 기존 제품/이미지/옵션/재고 수정. | 합성 edit/readback QA 통과 — 전체 Korean 인수는 미검증. | 출시 상품 자료 |
+| 5 | 상품 수집 | Amazon JP/Rakuten parser, review queue 및 승인 controller. | 부분 구현 — fixture parser/queue/승인 기능은 있음. URL 일괄 제출, parsing 진행률, 반려 상태/동선은 구현·검증 근거를 찾지 못함. 실제 외부 fetch는 final directive상 필수 안정화 범위에서 제외. | 실판매 SKU·허가 source fetch는 이번 안정화 범위에서 실행하지 않음 |
+| 6 | 주문 조회 | native AdminOrders, 별도 관리자 상세/금액 확인; 한국어 메뉴/제목/grid overlay. | #401746 Step51 별도 관리자 주문 조회는 성공했으나 Step39는 문서 locale만 한국어이고 heading은 영어여서 실제 실패했다. #401761 재검사 대기. | 없음 |
+| 7 | 입금 상태 변경 | 은행 계좌/이체 설정 초안은 있으나 실제 수동 입금 확인/입금 ledger route 없음. Core order-state와 입금 확인은 다름. | 미구현 — `ps_checkpayment` 미결제 CI 주문은 입금 확인 검증이 아님. | 판매자 결제/입금 확인 정책 및 provider/계좌 |
+| 8 | 고객 상담/상담원 배정 | PrestaShop core customer functions는 있으나 custom 상담원 배정 화면/route와 Korean E2E 없음. | 미검증 / 커스텀 기능 미구현. | 운영 상담 프로세스/담당자 정책 |
+| 9 | 지갑 지급·차감 | module route/model/test 없음. | 미구현·이번 단계 개발 제외 — 신규 B2B/금전 시스템으로 확장하지 않음. | 별도 범위 결정 필요 |
+| 10 | 수익 정산 | module route/model/test 없음. | 미구현·이번 단계 개발 제외. | 별도 범위 결정 필요 |
+| 11 | 출금 신청 검토 | withdrawal/payout route와 transfer-state test 없음. | 미구현·이번 단계 개발 제외. | 별도 범위 결정 필요 |
+| 12 | 배송 처리 | native carrier setup/readback, checkout ¥0 및 order amount 대조. | 부분 완료 — 지원 carrier와 무료배송 확인은 있으나 주문별 운송장·출고·배송완료의 한국어 E2E 증거는 없다. | 실제 carrier 계약/운영 범위 |
+| 13 | 직원 권한 관리 | PrestaShop profiles 및 module ACL, run-scoped view-only employee fixture. | #401746 Step39는 한국어 Orders label 검사에서 실패했다. 다른 route 접근 거부도 aggregate 결과 확인이 필요하다. 전체 native 직원/역할 편집 UI 한국어 범위는 없다. | 실제 운영 역할/권한 정책 |
+| 14 | 회사정보 설정 | 한국어 business-profile form 및 brand draft→preview→publish→history→restore, email-logo output. | #401746 Step25 profile install/access, Steps32–33 brand/email flow는 개별 성공이지만 전체 aggregate는 다른 영역에서 실패했다. Value는 synthetic이며 승인된 회사정보가 아니다. #401761 재검사 대기. | 승인된 판매자·고객센터·정책 정보 |
+| 15 | 시스템 설정 | PrestaShop core + 선택된 브랜드/SEO/PWA/payment/shipping 설정 화면. | 일부 custom form/browser만 검증; native settings 화면 audit 없음. 전체 범위에는 system/parameters/modules/design/backup/maintenance가 포함됨. | 실제 domain/email/policy 값은 승인 자료 |
+| 16 | 오류·알림 메시지 | custom product/profile/catalog의 일부 한국어 validation/ACL/save messages. | 전체 core toast/error/email/report/push/notification Korean E2E 없음. | synthetic template audit 가능; 운영 수신자·정책은 판매자 승인 필요 |
+
+사용자가 신규 B2B 고도화 기능 개발을 제외했으므로 wallet/settlement/withdrawal은 계속 미구현·이번 범위 제외다. 기존 요건 문서에는 남은 요구사항으로 표시한다. CI 주문취소/credit slip은 실결제나 현금 환불 증거가 아니다.
+
+**정식 출시는 준비되지 않았다.** 실제 판매 자료와 운영 인프라·복구 절차가 없고, 전체 Back Office 한국어 인수 조건도 확인되지 않았다. #401761 전체 격리 QA가 실행 중이며, 미결 항목을 PASS로 기록하지 않는다.
+
+## PWA 성공 기준점 및 당시 출시 검토 스냅샷 (2026-10-24)
+
+이 절은 `b99b615`에서 성공한 기존 PWA 기준과 2026-10-24 당시 출시 검토를 보존한다. 현재 요구사항 상태는 이 문서 맨 위 표를 기준으로 한다.
 
 PWA trace correction commit: **b99b61559978dd8b4c25819623669e0d92deb768** (`work`)
 
@@ -16,20 +94,22 @@ PWA trace correction commit: **b99b61559978dd8b4c25819623669e0d92deb768** (`work
 
 ### 출시 준비 항목
 
+아래 표는 성공 기준점 실행 당시 기록이며, 2026-10-25의 최신 상태를 대신하지 않는다.
+
 | 항목 | 상태 | 근거 및 필요한 입력 |
 | --- | --- | --- |
 | 실제 판매 상품 등록 및 고객 화면 | BLOCKED | CI는 합성 상품으로 검색·장바구니를 확인했고 관리자는 별도 비활성 상품을 생성·수정했다. 출시할 SKU, 이미지 사용권, 상품 설명, 재고와 판매 승인 자료가 없다. |
 | 실제 가격·세금·배송 | BLOCKED | 출시 정책상 지원 지역 배송비 ¥0이다. CI의 합성 10%·명시적 0% 세금과 Tokyo/Osaka 주문은 실제 판매자 세무 판단, 상품별 세율, carrier 계약·계정·전 지역 운영 가능성을 입증하지 않는다. 판매자/세무 담당자의 상품 매핑과 배송 운영 설정이 필요하다. |
 | 주문 상태·취소·환불·반품 | INCOMPLETE | 브라우저 주문은 미결제 `ps_checkpayment`를 쓰고 저장 및 별도 관리자 조회를 확인했다. 실제 결제와 운영 fulfillment, 취소·환불·반품 절차는 검증하지 않았다. |
 | 운영 결제 설정 | BLOCKED | 기본 프로필은 `bank_accounts=[]`, 은행 이체 disabled, 결제 안내문 blank다. seller/provider 승인 및 실거래는 진행하지 않았으며, 출시 전에 승인된 결제 제공자 또는 검증된 계좌·안내문을 구성해야 한다. |
-| 한국어 관리자 전체 번역 | INCOMPLETE | 프로젝트 모듈과 선택된 상품/운영 흐름은 한국어로 확인했다. PrestaShop 전체 core, 모든 메뉴·주문·고객·설정 화면의 100% 한국어 coverage는 확인하지 않았다. |
+| 한국어 관리자 전체 번역 | INCOMPLETE | 프로젝트 모듈과 선택된 상품/운영 흐름의 일부를 확인했다. 기록된 화면 문자열 결함은 이미 overlay로 보완됐으나, 공식 Korean language pack 버전과 전체 PrestaShop core/메뉴/주문/고객/설정 화면의 100% coverage는 확인하지 않았다. 확인되지 않은 번역 결함을 추측해 완료로 기록하지 않는다. |
 | 운영 도메인·HTTPS·메일 발송 | BLOCKED | Compose와 CI는 localhost 및 disposable Mailpit을 사용한다. 운영 DNS/TLS와 발신자 설정, 외부 메일 전달성 증거가 없다. |
-| 백업·복원 절차 | BLOCKED | 운영 DB·파일 백업 runbook과 실제 복구 drill 근거가 없다. 브랜드 설정 이력 복원은 재해복구 검증을 대신하지 않는다. |
+| 백업·복원 절차 | CI 검증 중 / 운영 BLOCKED | CI 전용 DB·파일·queue backup/restore drill은 현재 SHA의 fresh-install run에서 확인 중이다. 운영 백업 위치·보존·암호화·접근·RPO/RTO·책임자와 운영 restore drill은 별도로 준비되지 않았다. |
 | iOS·Android PWA 설치 | INCOMPLETE | Chromium에서 manifest, service worker, PC·모바일 뷰를 확인했지만 iOS/Android 실기기 홈 화면 설치·업데이트·실행은 확인하지 않았다. |
-| PC·모바일 Chromium PWA 전체 흐름 | CI PASS | #40132927859의 EN desktop/mobile 빈 체크아웃 trace 실패는 최초 주문 URL 대신 최종 카트 URL을 trace 시작점으로 넘긴 테스트 harness 오류였다. `b99b615`가 두 URL을 분리했고, 후속 run #40134196682의 회원 로그아웃 Step 34와 PWA lifecycle/privacy-cache Step 41이 통과했다. 원래 증상인 HTTP 404는 후속 실행에서 재현되지 않았다. |
+| PC·모바일 Chromium PWA 전체 흐름 | 이전 checkpoint PASS | #40132927859의 EN desktop/mobile 빈 체크아웃 trace 실패는 최초 주문 URL 대신 최종 카트 URL을 trace 시작점으로 넘긴 테스트 harness 오류였다. `b99b615`의 #40134196682에서 회원 로그아웃 Step 34와 PWA lifecycle/privacy-cache Step 41이 통과했다. 원래 증상인 HTTP 404는 후속 실행에서 재현되지 않았다. 최신 SHA의 PWA 상태는 맨 위 범위 표를 본다. |
 | 판매자·고객센터·배송·환불·법률 정보 | BLOCKED | `ProfileDefaults.php`에서 LOGISTEED는 참고정보로 분리되어 있고 seller authorization은 `pending`; 판매자 법적 신원, 주소, 대표/연락처 및 운영 정책 입력이 비어 있다. 승인 정보 없이는 게시·운영을 진행할 수 없다. |
 
-**출시 불가.** 수정 SHA의 격리 full Actions는 PASS지만, 실제 판매자/상품/세금/배송/결제/지원 정보, 운영 인프라, 재해복구 및 실기기 검증이 남아 있다. 운영 배포·실결제·실거래는 하지 않았다.
+**당시 출시 불가 판단.** 현재 출시 판단은 맨 위 최신 범위 표를 본다. 실제 판매자/상품/세금/배송/결제/지원 정보와 운영 인프라, 재해복구 및 실기기 검증은 운영 출시 전 요구사항이다.
 
 ## 출시 가격 정책 QA 상태 (2026-10-23 23:06 UTC; 당시 실행 스냅샷)
 

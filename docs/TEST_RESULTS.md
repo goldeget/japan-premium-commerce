@@ -1,5 +1,49 @@
 # ORDENOWA 테스트 결과
 
+## 2026-10-25 — 대시보드 경로 수정 후 제한된 최종 전체 QA
+
+코드 검증 SHA `74e64b966d5943a3d06cadd04fe6fc7b17669bfe`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다. 전체 격리 Actions [#40188721058](https://github.com/goldeget/japan-premium-commerce/actions/runs/40188721058)은 **FAIL**이다. 사용자가 제한한 추가 전체 QA 1회를 사용했으며 추가 재실행하지 않는다.
+
+| 검사 | 결과 | 근거 |
+| --- | --- | --- |
+| 집중 재현 (TDD RED) | 재현 | 새 계약 테스트는 `/admin-kuranea/index.php/sell/dashboard?controller=AdminDashboard`를 이전 분류기가 `other`로 반환하는 것을 확인했다. |
+| 대시보드 분류기 수정 | 로컬 집중 검사 PASS, 브라우저 미해결 | 커밋 `74e64b9`는 정확한 `index.php/sell/dashboard` 경로를 추가로 허용하고, 추가 하위 경로 및 다른 origin 거부를 유지했다. `tests.smoke.test_security_runtime_e2e_contract` 36/36 통과. |
+| 최종 Dashboard 브라우저 outcome | FAIL | Step39 초록 `conclusion`은 `continue-on-error` 결과다. 실제 로그에는 `login_form_visible=false`, `dashboard_link_count=1`, `current_controller=other`, `stage=view_only_employee_dashboard_route`가 있고, Step69가 `admin_security_browser_qa=failure`로 aggregate했다. 전체 현재 URL 경로는 안전 로그에 기록되지 않아 추가 수정 근거가 부족하다. |
+| 브랜드 게시 후 로그인 및 이메일 로고 | PASS | Step32 실제 `BRAND_BROWSER_QA_OUTCOME=success`, Step33 통과. Step69에서도 `brand`와 `reset_email_brand` outcome이 success다. 과거 `admin_login_after_publish` TimeoutException은 재현되지 않았다. |
+| 회원·상품·PWA·주문·가격/무료배송 | PASS (격리 QA) | Step34–37, Step41, Steps52–57의 outcome은 성공. 합성 세금/상품, Mailpit, run 전용 미결제 주문만 사용했다. |
+| 취소·반품·credit slip | PASS (격리 합성 주문) | Steps51, 60–61을 포함한 `ORDER_LIFECYCLE_OUTCOME=success`. 취소는 미결제 주문이고 반품/credit slip은 합성 paid-like 레코드로 확인했으며 현금 환불은 하지 않았다. |
+| CI 복원·캡처·재시작·우편 데이터·cleanup | PASS | Steps62–68 및 Step72의 실제 outcome이 success. DB·PrestaShop 파일·catalog queue 격리 복원, 재시작, PC/모바일 캡처 coverage와 run 전용 정리를 확인했다. |
+| Step69 aggregate | FAIL (단일 항목) | 로그의 유일한 실패는 `admin_security_browser_qa=failure`. Step72 cleanup은 성공했다. 따라서 전체 QA는 PASS가 아니다. |
+| 브라우저 캡처 artifact | 보존됨 | `ordenowa-storefront-browser-40188721058-1`, ID `12597164472` (15,970,997 bytes); Step64 coverage 통과. [Actions artifacts](https://github.com/goldeget/japan-premium-commerce/actions/runs/40188721058/artifacts/12597164472). 직접 다운로드/시각 점검은 하지 않았다. 진단 artifact `fresh-install-diagnostics-40188721058-1`, ID `12597274231`. |
+| 운영 DB·실결제·실배포 | 실행하지 않음 | run-scoped CI database/volumes, 합성 fixtures, Mailpit 및 미결제 주문만 사용했다. |
+
+앞선 전체 QA [#40187411910](https://github.com/goldeget/japan-premium-commerce/actions/runs/40187411910)도 aggregate의 유일한 실패가 `admin_security_browser_qa=failure`였다. 그 실행과 이번 실행 모두 brand 게시·로그인 단계와 Step72 cleanup은 성공했다. 이전 기준 성공 [#40134196682](https://github.com/goldeget/japan-premium-commerce/actions/runs/40134196682)은 보존하되 이번 SHA의 실패를 대체하는 증거로 사용하지 않는다. 이번 작업 범위는 미완료 대시보드 경로 검사에서 종료한다.
+
+## Historical snapshot (2026-10-25 08:21 UTC; superseded)
+
+QA 대상 `work` SHA `b368a6b0a4c39985a13dcb0720683b0a0b5929f4`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다. 독립 수정 커밋은 backup/restore `0392573e0e37008c524872d9f0d73679413aec71`, PWA `77e337e96b0bcd00e72dc0266b291e38dffdbda9`, AdminOrders locale `b368a6b0a4c39985a13dcb0720683b0a0b5929f4`다. 전체 격리 Actions [#40176160072](https://github.com/goldeget/japan-premium-commerce/actions/runs/40176160072)은 이 SHA에서 실행 중이다.
+
+| 검사 | 결과 | 근거 |
+| --- | --- | --- |
+| 기준 성공 전체 QA #40134196682 | PASS (기준점) | SHA `b99b615`; aggregate와 cleanup 성공. 이를 이후 수정 QA의 대체 근거로 사용하지 않는다. |
+| 이전 전체 격리 QA #40173333689 | FAIL (aggregate) | `admin_security_browser_qa=failure backup_restore_drill=failure`; Step39 화면은 HTTP 200/정상 grid인데 영어 Orders heading이었고 Step62 최초 MariaDB restore 생성 실패. Step72 cleanup은 success. |
+| 최신 선행 전체 격리 QA #40174672771 | FAIL (aggregate) | SHA `b8eccca`; Step69는 `admin_security_browser_qa=failure pwa_browser_qa=failure backup_restore_drill=failure`. Step72 cleanup은 success. Step conclusion만으로 내부 outcome PASS를 주장하지 않는다. |
+| Orders 번역 실패 원인 | 확인됨 | `Admin.Navigation.Menu` 도메인 정규화는 필요했고 b8eccca에서 보완됐다. 그러나 module REQUEST priority 14는 core EmployeeContext priority 7 및 LanguageContext priority 6보다 먼저였다. 영어 view-only 직원의 language가 builder/translator를 이후 다시 덮었다. Response `html lang=ko`는 translator 상태를 증명하지 않았다. |
+| Orders locale 수정 | 로컬 격리 회귀 PASS, 브라우저 재검증 대기 | module listener를 `LanguageContextSubscriber::KERNEL_REQUEST_PRIORITY - 1` (5)로 옮겨 core 언어 설정 뒤, LegacyContext priority 0 전에 실행한다. 실제 Symfony dispatcher와 PrestaShop context/translator를 이용한 5개 시나리오가 pass했고 영어 직원 선호도는 유지됐다. `#401761` Step39가 HTTP/browser 결과를 확인한다. |
+| PWA controller 실패 원인 | 재현된 harness race, 전체 CI 재검증 대기 | 첫 `/` document ready 직후 locale navigation이 시작됐고 worker registration은 `window.load`에 시작된다. Controlled delay Chromium reproducer에서 navigation 중 activation 이후 document가 uncontrolled로 남으며 기존 검사에서 `controller_timeout`을 냈다. 수정은 locale 이동 전 root controller를 기다리고 이후 locale page의 기존 scope/origin/path 검사도 유지한다. 이전 run에 request-level trace가 없어 historical interleaving을 직접 증명하지는 못했다. |
+| Backup/restore 실패 원인 | Compose source로 확인, 격리 restore 재검증 대기 | Compose v2.38.2 `create`는 `--no-deps`를 지원하지 않는다. #401733/#401746 raw stderr는 보존되지 않아 당시 stderr는 알 수 없으나 명령 자체의 unsupported flag가 확인됐다. flag만 제거하고 실제 command contract를 추가했다. |
+| 로컬 집중 회귀 검사 | PASS | admin locale Python 37, PWA/logout 106, backup+fresh-install contracts 68, security browser/workflow contract 36. PHP lifecycle regression 5 scenarios와 두 PHP 파일 lint도 통과했다. |
+| 수정 후 전체 isolated Actions #40176160072 | 진행 중 | SHA `b368a6b`; image build를 지나 fresh cache probe가 시작됐다. 실제 Step39/41/62 결과, Step69 aggregate, Step72 cleanup은 아직 미완료. |
+| SEO Draft PR #3 | 변경 미적용 | PR #3은 2026-10-23 closed/unmerged draft, base는 work의 오래된 SHA이며 conflict 상태. 모든 유효 escaping은 current work에 이미 반영·확장됐고 unique useful changes 없음. SEO source contract 15/15 PASS; rendered hostile-input/browser scope는 이 source test만으로 증명하지 않음. |
+| Business-profile module workflow #40174672745 | PASS | SHA `b8eccca`; `module-tests` 성공, failure annotation 없음 (Node/Ubuntu migration notices만 informational). |
+| GitHub Actions 전체 격리 QA #40174672771 | 진행 중 | SHA `b8eccca`; install/image build, empty-volume bootstrap, product fixtures and Steps 31–39 have executed; Step41 PWA currently active. Step39/62 actual outcomes, Step69 aggregate and Step72 cleanup are not final yet. |
+| #401733 CI backup/restore failure detail | 원인 미확정 | Step62 visible conclusion was green because it is `continue-on-error`; its actual outcome is failure. Sanitized result: MariaDB `compose create --no-deps` exit 1, stdout had no diagnostic, stderr was unclassified, restore resources/services were absent. Raw stderr was intentionally not preserved, so no code change is justified by this evidence alone. |
+| #401733 browser artifacts | 보존됨 | `ordenowa-storefront-browser-40173333689-1` ID `12591571549` (16,660,764 bytes) and `fresh-install-diagnostics-40173333689-1` ID `12590948714` (5,111 bytes), metadata not expired; Step64 screenshot coverage passed. |
+| #401746 browser evidence | 보존됨 | `ordenowa-storefront-browser-40174672771-1` ID `12592037915` (16,532,674 bytes), `fresh-install-diagnostics-40174672771-1` ID `12591359845` (5,086 bytes); metadata was unexpired at inspection. PC/mobile artifact ZIP was not downloaded/visually inspected. |
+| 운영 데이터·배포·결제 | 실행하지 않음 | run 전용 CI DB/volume, synthetic fixture, Mailpit, 미결제 `ps_checkpayment`만 사용한다. |
+
+Step39의 최종 결과는 `.outcome`과 화면 진단을 확인하고, Step69 actual aggregate 및 Step72 정리 결과와 함께 판단한다. Actions 개별 step conclusion은 `continue-on-error` 단계의 내부 QA 결과를 대신하지 않는다.
+
 ## 2026-10-24 — PWA trace 원인 수정 및 전체 회귀 재실행
 
 코드 기준 `work`와 `origin/work` SHA **b99b61559978dd8b4c25819623669e0d92deb768**. `main`은 수정하지 않았다.
