@@ -21,6 +21,7 @@ COMPOSE = ROOT / "compose.yaml"
 CHECKOUT_FLOW = ROOT / "tests" / "e2e" / "verify_ci_checkout_admin_browser.py"
 CHECKOUT_ADMIN_ROUTES = ROOT / "tests" / "e2e" / "checkout_admin_routes.py"
 STOREFRONT_FLOW = ROOT / "tests" / "e2e" / "verify_storefront_browser.py"
+STOREFRONT_PRODUCT_CONTRACT = ROOT / "tests" / "e2e" / "storefront_product_contract.py"
 GATE = ROOT / "modules" / "kuraneabusinessprofile" / "src" / "Customer" / "CommerceGate.php"
 SHOP_MODULE = ROOT / "modules" / "kuraneabusinessprofile" / "kuraneabusinessprofile.php"
 
@@ -1137,6 +1138,100 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         self.assertIn('get_attribute("data-id-product")', cart_check)
         self.assertIn('cart_product_ids == [str(PRODUCT_ID)]', cart_check)
         self.assertIn('[CI ONLY]', cart_check)
+
+    def test_storefront_product_gate_does_not_reject_404_in_valid_run_title(self) -> None:
+        run_id = "40214404446"
+        product_title = f"[CI ONLY] ORDENOWA free shipping product {run_id}-1 — ORDENOWA"
+        self.assertIn("404", product_title)
+
+        # Reproduce the old title-only check locally: this valid fixture title
+        # makes the old assertion fail even though its product DOM can render.
+        with self.assertRaisesRegex(AssertionError, "synthetic product title"):
+            assert "404" not in product_title, "synthetic product title was rejected"
+
+        flow = STOREFRONT_FLOW.read_text(encoding="utf-8")
+        self.assertNotIn('assert_true("404" not in driver.title', flow)
+        self.assertIn("product_page_failure_reason(", flow)
+        self.assertIn('[data-ps-ref="product-container"]', flow)
+        self.assertIn("product_page_product_id", flow)
+        self.assertIn("page-content--not-found", flow)
+        self.assertIn("responseStatus", flow)
+
+    def test_storefront_product_evidence_accepts_404_title_and_rejects_error_documents(self) -> None:
+        self.assertTrue(STOREFRONT_PRODUCT_CONTRACT.is_file(), "product evidence contract helper is missing")
+        spec = spec_from_file_location("storefront_product_contract", STOREFRONT_PRODUCT_CONTRACT)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        helper = module_from_spec(spec)
+        spec.loader.exec_module(helper)
+
+        valid_product = {
+            "response_status": 200,
+            "body_id": "product",
+            "not_found_visible": False,
+            "product_container_count": 1,
+            "product_heading_count": 1,
+            "product_heading_visible": True,
+            "product_heading_text": "[CI ONLY] ORDENOWA free shipping product 40214404446-1",
+            "product_form_count": 1,
+            "product_id_value": "481",
+            "expected_product_id": 481,
+            "add_to_cart_visible": True,
+            "add_to_cart_enabled": True,
+        }
+        self.assertIsNone(helper.product_page_failure_reason(**valid_product))
+
+        unknown_status_product = {**valid_product, "response_status": None}
+        self.assertIsNone(helper.product_page_failure_reason(**unknown_status_product))
+
+        not_found_document = {
+            **valid_product,
+            "response_status": 404,
+            "body_id": "page-not-found",
+            "not_found_visible": True,
+            "product_container_count": 0,
+            "product_heading_text": "The page you are looking for is no longer available",
+            "product_form_count": 0,
+            "product_id_value": None,
+            "add_to_cart_visible": False,
+            "add_to_cart_enabled": False,
+        }
+        self.assertEqual(
+            helper.product_page_failure_reason(**not_found_document),
+            "document_response_not_successful",
+        )
+        self.assertEqual(
+            helper.product_page_failure_reason(**{**valid_product, "response_status": 404}),
+            "document_response_not_successful",
+        )
+        self.assertEqual(
+            helper.product_page_failure_reason(**{**valid_product, "response_status": None, "not_found_visible": True}),
+            "not_found_page",
+        )
+        self.assertEqual(
+            helper.product_page_failure_reason(**{**valid_product, "product_id_value": "482"}),
+            "product_identity_mismatch",
+        )
+        self.assertEqual(
+            helper.product_page_failure_reason(**{**valid_product, "product_container_count": 0}),
+            "product_container_invalid",
+        )
+        self.assertEqual(
+            helper.product_page_failure_reason(**{**valid_product, "product_heading_visible": False}),
+            "product_heading_invalid",
+        )
+        self.assertEqual(
+            helper.product_page_failure_reason(**{**valid_product, "body_id": "page-not-found"}),
+            "not_product_document",
+        )
+        self.assertEqual(
+            helper.product_page_failure_reason(**{**valid_product, "product_form_count": 0}),
+            "product_form_invalid",
+        )
+        self.assertEqual(
+            helper.product_page_failure_reason(**{**valid_product, "add_to_cart_enabled": False}),
+            "add_to_cart_unavailable",
+        )
 
     def test_checkout_registration_and_admin_routes_follow_rendered_prestashop_flow(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")

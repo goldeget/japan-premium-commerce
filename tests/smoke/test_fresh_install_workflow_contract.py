@@ -313,9 +313,33 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         setup = workflow.split("- name: Prepare Chromium browser smoke environment", 1)[1].split(
             "- name:", 1
         )[0]
+        package_key = workflow.split("- name: Resolve Chromium font package cache key", 1)[1].split(
+            "- name:", 1
+        )[0]
+        restore_cache = workflow.split("- name: Restore Chromium font package archives", 1)[1].split(
+            "- name:", 1
+        )[0]
+        save_status = workflow.split("- name: Check downloaded Chromium font package archives", 1)[1].split(
+            "- name:", 1
+        )[0]
+        save_cache = workflow.split("- name: Save Chromium font package archives", 1)[1].split(
+            "- name:", 1
+        )[0]
 
-        self.assertIn("sudo apt-get update", setup)
-        self.assertIn("sudo apt-get install -y fonts-noto-cjk", setup)
+        self.assertIn("sudo apt-get update", package_key)
+        self.assertIn("apt-cache policy fonts-noto-cjk", package_key)
+        self.assertIn("dpkg --print-architecture", package_key)
+        self.assertIn("VERSION_ID", package_key)
+        self.assertIn("actions/cache/restore@v4", restore_cache)
+        self.assertIn("ordenowa-cjk-apt-cache/archives/*.deb", restore_cache)
+        self.assertIn("actions/cache/save@v4", save_cache)
+        self.assertIn("ordenowa-cjk-apt-cache/archives/*.deb", save_cache)
+        self.assertIn("cacheable=true", save_status)
+        self.assertIn("cacheable=false", save_status)
+        self.assertIn("steps.cjk_font_archive_cache.outputs.cache-hit != 'true'", save_status)
+        self.assertIn("Dir::Cache::archives", setup)
+        self.assertIn("APT::Keep-Downloaded-Packages=true", setup)
+        self.assertIn("install -y fonts-noto-cjk", setup)
         self.assertIn("sudo fc-cache -f", setup)
         self.assertIn("fc-match -f '%{family[0]}' 'Noto Sans CJK JP'", setup)
         self.assertIn("fc-match -f '%{family[0]}' 'Noto Sans CJK KR'", setup)
@@ -323,9 +347,24 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             'if [[ "$jp_family" != "Noto Sans CJK JP" || "$kr_family" != "Noto Sans CJK KR" ]]; then',
             setup,
         )
-        self.assertLess(setup.index("sudo apt-get update"), setup.index("sudo apt-get install -y fonts-noto-cjk"))
         self.assertLess(
-            setup.index("sudo apt-get install -y fonts-noto-cjk"),
+            workflow.index("- name: Resolve Chromium font package cache key"),
+            workflow.index("- name: Restore Chromium font package archives"),
+        )
+        self.assertLess(
+            workflow.index("- name: Restore Chromium font package archives"),
+            workflow.index("- name: Prepare Chromium browser smoke environment"),
+        )
+        self.assertLess(
+            workflow.index("- name: Prepare Chromium browser smoke environment"),
+            workflow.index("- name: Check downloaded Chromium font package archives"),
+        )
+        self.assertLess(
+            workflow.index("- name: Check downloaded Chromium font package archives"),
+            workflow.index("- name: Save Chromium font package archives"),
+        )
+        self.assertLess(
+            setup.index("install -y fonts-noto-cjk"),
             setup.index("fc-match -f '%{family[0]}' 'Noto Sans CJK JP'"),
         )
 

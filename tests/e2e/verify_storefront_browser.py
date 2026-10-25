@@ -12,10 +12,10 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
+from storefront_product_contract import product_page_failure_reason
 
 BASE = os.environ["SHOP_BASE_URL"].rstrip("/")
 PRODUCT_ID = int(os.environ["CI_TEST_PRODUCT_ID"])
@@ -32,6 +32,16 @@ def visit(browser, path):
         lambda b: b.execute_script("return document.readyState") == "complete"
     )
     return browser
+
+def document_response_status(browser):
+    status = browser.execute_script(
+        """
+        const entries = performance.getEntriesByType('navigation');
+        const entry = entries.length ? entries[0] : null;
+        return entry && Number.isInteger(entry.responseStatus) ? entry.responseStatus : null;
+        """
+    )
+    return status if type(status) is int and 100 <= status <= 599 else None
 
 def run_viewport(width, height, label):
     options = Options()
@@ -51,8 +61,50 @@ def run_viewport(width, height, label):
         visit(driver, "/index.php?" + urlencode({
             "controller": "product", "id_product": PRODUCT_ID
         }))
-        WebDriverWait(driver, 25).until(lambda b: "[CI ONLY]" in b.find_element(By.TAG_NAME, "body").text)
-        assert_true("404" not in driver.title, "CI product detail page did not render.")
+        body = driver.find_element(By.TAG_NAME, "body")
+        containers = driver.find_elements(By.CSS_SELECTOR, '[data-ps-ref="product-container"]')
+        headings = driver.find_elements(By.CSS_SELECTOR, "h1.product__name")
+        visible_heading = next((heading for heading in headings if heading.is_displayed()), None)
+        product_forms = driver.find_elements(By.CSS_SELECTOR, "form#add-to-cart-or-refresh")
+        product_ids = driver.find_elements(
+            By.CSS_SELECTOR, "input#product_page_product_id[name='id_product']"
+        )
+        product_buttons = driver.find_elements(
+            By.CSS_SELECTOR, "button[data-button-action='add-to-cart'], .add-to-cart"
+        )
+        visible_product_button = any(button.is_displayed() for button in product_buttons)
+        active_product_button = next(
+            (button for button in product_buttons if button.is_displayed() and button.is_enabled()),
+            None,
+        )
+        response_status = document_response_status(driver)
+        print(
+            "Storefront product document response status: "
+            f"{response_status if response_status is not None else 'unknown'}"
+        )
+        product_failure = product_page_failure_reason(
+            response_status=response_status,
+            body_id=body.get_attribute("id") or "",
+            not_found_visible=any(
+                element.is_displayed()
+                for element in driver.find_elements(By.CSS_SELECTOR, ".page-content--not-found")
+            ),
+            product_container_count=len(containers),
+            product_heading_count=len(headings),
+            product_heading_visible=visible_heading is not None,
+            product_heading_text=visible_heading.text if visible_heading is not None else "",
+            product_form_count=len(product_forms),
+            product_id_value=(
+                product_ids[0].get_attribute("value") if len(product_ids) == 1 else None
+            ),
+            expected_product_id=PRODUCT_ID,
+            add_to_cart_visible=visible_product_button,
+            add_to_cart_enabled=active_product_button is not None,
+        )
+        assert_true(
+            product_failure is None,
+            f"CI product detail page did not render ({product_failure or 'unknown'}).",
+        )
         assert_true("JPY" in driver.page_source or "¥" in driver.page_source,
                     "JPY product price was not rendered on the product page.")
         product_covers = driver.find_elements(
@@ -93,7 +145,7 @@ def run_viewport(width, height, label):
                 "Global brand Open Graph image leaked onto a product page without a product cover.",
             )
         driver.save_screenshot(str(DEST / f"{label}-product-detail.png"))
-        buttons = driver.find_elements(By.CSS_SELECTOR, "button[data-button-action='add-to-cart'], .add-to-cart")
+        buttons = product_buttons
         assert_true(bool(buttons), "No add-to-cart control on active synthetic product.")
         button = next((b for b in buttons if b.is_displayed() and b.is_enabled()), None)
         assert_true(button is not None, "All add-to-cart controls are inactive.")
