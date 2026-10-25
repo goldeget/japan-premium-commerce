@@ -11,9 +11,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from selenium import webdriver
+from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import ElementClickInterceptedException
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.select import Select
 from selenium.webdriver.support.ui import WebDriverWait
@@ -124,6 +124,52 @@ def same_origin(base_url: str, target_url: str) -> bool:
     return (actual.scheme, actual.netloc) == (expected.scheme, expected.netloc)
 
 
+def capture_checkbox_click_blocker(driver: webdriver.Chrome, checkbox, artifact_dir: Path):
+    try:
+        topmost = driver.execute_script(
+            """
+            const element = arguments[0];
+            const rect = element.getBoundingClientRect();
+            const target = document.elementFromPoint(
+              rect.left + rect.width / 2,
+              rect.top + rect.height / 2
+            );
+            if (!target) return null;
+            return {
+              tag: target.tagName.toLowerCase(),
+              id: target.id,
+              class: typeof target.className === "string" ? target.className : ""
+            };
+            """,
+            checkbox,
+        )
+    except Exception:
+        topmost = None
+
+    limits = {"tag": 24, "id": 80, "class": 120}
+    safe_target = (
+        {
+            key: re.sub(r"[^A-Za-z0-9_.: -]", "", str(topmost.get(key, "")))[:limit]
+            for key, limit in limits.items()
+        }
+        if isinstance(topmost, dict)
+        else {"tag": "", "id": "", "class": ""}
+    )
+    diagnostic = json.dumps(safe_target, ensure_ascii=True, sort_keys=True)
+    print("ORDENOWA_RETURN_CLICK_BLOCKER_SAFE_STATE=" + diagnostic)
+    annotation = diagnostic.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print("::error title=Return checkbox pointer target::" + annotation)
+
+    screenshot_name = None
+    screenshot_path = artifact_dir / "customer-return-click-intercepted.png"
+    try:
+        if driver.save_screenshot(str(screenshot_path)):
+            screenshot_name = screenshot_path.name
+    except Exception:
+        pass
+    return safe_target, screenshot_name
+
+
 def main() -> int:
     artifact_dir = Path(os.environ.get("QA_ARTIFACT_DIR", "/tmp"))
     artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -229,10 +275,9 @@ def main() -> int:
         driver.execute_script(
             'arguments[0].scrollIntoView({block: "center", inline: "nearest"});', checkbox
         )
-        try:
-            checkbox.click()
-        except ElementClickInterceptedException:
-            topmost = driver.execute_script(
+
+        def checkbox_center_is_unobstructed(browser):
+            return browser.execute_script(
                 """
                 const element = arguments[0];
                 const rect = element.getBoundingClientRect();
@@ -240,23 +285,18 @@ def main() -> int:
                   rect.left + rect.width / 2,
                   rect.top + rect.height / 2
                 );
-                if (!target) return null;
-                return {
-                  tag: target.tagName.toLowerCase(),
-                  id: target.id,
-                  class: typeof target.className === "string" ? target.className : ""
-                };
+                return Boolean(target && (target === element || element.contains(target)));
                 """,
                 checkbox,
             )
-            if isinstance(topmost, dict):
-                click_intercept_target = {
-                    key: re.sub(r"[^A-Za-z0-9_.: -]", "", str(topmost.get(key, "")))[:160]
-                    for key in ("tag", "id", "class")
-                }
-            failure_screenshot = artifact_dir / "customer-return-click-intercepted.png"
-            if driver.save_screenshot(str(failure_screenshot)):
-                failure_screenshot_name = failure_screenshot.name
+
+        try:
+            WebDriverWait(driver, 3, poll_frequency=0.1).until(checkbox_center_is_unobstructed)
+            checkbox.click()
+        except (ElementClickInterceptedException, TimeoutException):
+            click_intercept_target, failure_screenshot_name = capture_checkbox_click_blocker(
+                driver, checkbox, artifact_dir
+            )
             raise
         return_form.find_element(By.NAME, "returnText").send_keys(RETURN_NOTE)
 

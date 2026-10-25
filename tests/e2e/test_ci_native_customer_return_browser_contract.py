@@ -80,16 +80,29 @@ class CiNativeCustomerReturnBrowserContractTests(unittest.TestCase):
 
         for required in (
             "ElementClickInterceptedException",
+            "TimeoutException",
+            "poll_frequency=0.1",
+            "def checkbox_center_is_unobstructed(browser)",
+            "WebDriverWait(driver, 3, poll_frequency=0.1).until(checkbox_center_is_unobstructed)",
+            "target === element || element.contains(target)",
             "document.elementFromPoint",
             'tag: target.tagName.toLowerCase()',
             "id: target.id",
             'class: typeof target.className === "string" ? target.className : ""',
+            'limits = {"tag": 24, "id": 80, "class": 120}',
+            '[:limit]',
+            "ORDENOWA_RETURN_CLICK_BLOCKER_SAFE_STATE=",
+            "::error title=Return checkbox pointer target::",
             'customer-return-click-intercepted.png',
             '"click_intercept_target": click_intercept_target',
             '"failure_screenshot": failure_screenshot',
         ):
             with self.subTest(required=required):
                 self.assertContract(self.source, required)
+
+        self.assertLess(self.source.index("WebDriverWait(driver, 3, poll_frequency=0.1)"),
+                        self.source.index("checkbox.click()"))
+        self.assertIn("except (ElementClickInterceptedException, TimeoutException):", self.source)
 
 
 if __name__ == "__main__":
