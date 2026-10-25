@@ -3567,11 +3567,35 @@ def _assert_localized_privacy_link(driver: webdriver.Chrome, locale: str) -> Non
     }
     if locale not in expected_labels:
         raise AssertionError("PWA account privacy link was checked with an unsupported locale")
-    link = wait_visible(driver, ".account-menu__link--psgdpr")
-    label_element = link.find_element(By.TAG_NAME, "span")
-    label = " ".join((label_element.text or "").split())
-    if label != expected_labels[locale]:
+    links = WebDriverWait(driver, 30).until(
+        lambda browser: [
+            link
+            for link in browser.find_elements(By.CSS_SELECTOR, ".account-menu__link--psgdpr")
+            if link.is_displayed()
+        ]
+        or False
+    )
+    labels = [
+        " ".join((link.find_element(By.TAG_NAME, "span").text or "").split())
+        for link in links
+    ]
+    if not labels or any(label != expected_labels[locale] for label in labels):
         raise AssertionError(f"customer privacy link is not localized for {locale}")
+
+
+def _assert_japanese_customer_account_chrome(
+    driver: webdriver.Chrome, locale: str, device: str
+) -> None:
+    if locale != "ja" or device != "desktop":
+        return
+    title = " ".join(
+        (driver.find_element(By.CSS_SELECTOR, ".account-menu__title").text or "").split()
+    )
+    navigation_label = driver.find_element(
+        By.CSS_SELECTOR, ".account-menu__nav"
+    ).get_attribute("aria-label")
+    if title != "マイアカウント" or navigation_label != "マイアカウントメニュー":
+        raise AssertionError("Japanese customer account sidebar is not localized")
 
 
 def run_viewport(
@@ -3730,10 +3754,17 @@ def run_viewport(
             wait_visible(driver, "#identity_main_link")
             assert_document_locale(driver, locale, "authenticated account before logout")
         else:
+            stage = "customer_account_navigation"
             navigate_private_document(driver, account_url, base_url, "authenticated account before logout")
+            stage = "customer_account_main_link"
             wait_visible(driver, "#identity_main_link")
+            stage = "customer_account_locale"
             assert_document_locale(driver, locale, "authenticated account before logout")
+        stage = "customer_account_account_chrome"
+        _assert_japanese_customer_account_chrome(driver, locale, device)
+        stage = "customer_account_privacy_link"
         _assert_localized_privacy_link(driver, locale)
+        stage = "customer_account_screenshot"
         driver.save_screenshot(str(artifact_dir / f"pwa-{label}-account.png"))
         stage = "customer_logout"
         verify_logout_protection(

@@ -145,6 +145,28 @@ class ThemeContractTests(unittest.TestCase):
         self.assertEqual(checkout.get("Place Order"), "注文を確定する")
         self.assertEqual(forms.get("Password"), "비밀번호")
 
+    def test_japanese_checkout_details_controls_include_visible_and_accessible_labels(self) -> None:
+        actions = self._translation_targets("ja-JP", "ShopThemeActions.ja-JP.xlf")
+
+        self.assertEqual(actions.get("Show details"), "詳細を表示")
+        self.assertEqual(actions.get("Show cart details"), "カートの詳細を表示")
+        browser = (ROOT / "tests" / "e2e" / "verify_ci_free_shipping_browser.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("def _assert_japanese_cart_details_copy", browser)
+        self.assertIn("_assert_japanese_cart_details_copy(driver)", browser)
+
+    def test_japanese_customer_account_sidebar_labels_are_localized_and_checked(self) -> None:
+        path = THEME / "translations" / "ja-JP" / "ShopThemeCustomeraccount.ja-JP.xlf"
+        self.assertTrue(path.is_file(), "Japanese account sidebar requires its theme translation catalog")
+        account = self._translation_targets("ja-JP", path.name)
+
+        self.assertEqual(account.get("My Account"), "マイアカウント")
+        self.assertEqual(account.get("My account navigation sidebar"), "マイアカウントメニュー")
+        browser = (ROOT / "tests" / "e2e" / "verify_pwa_browser.py").read_text(encoding="utf-8")
+        self.assertIn("def _assert_japanese_customer_account_chrome", browser)
+        self.assertIn("_assert_japanese_customer_account_chrome(driver, locale, device)", browser)
+
     def test_customer_privacy_and_synthetic_check_copy_use_the_child_theme_locale(self) -> None:
         gdpr = THEME / "modules" / "psgdpr" / "views" / "templates" / "front" / "customerAccount.tpl"
         checkpayment = (

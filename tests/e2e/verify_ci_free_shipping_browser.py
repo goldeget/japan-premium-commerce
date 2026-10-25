@@ -1328,6 +1328,17 @@ def _assert_japanese_checkout_copy(driver) -> None:
         raise AssertionError("Japanese checkout is missing localized copy: " + ", ".join(missing))
 
 
+def _assert_japanese_cart_details_copy(driver) -> None:
+    button = _wait_visible(
+        driver,
+        ".cart-summary__products-accordion .accordion-header button",
+    )
+    if " ".join((button.text or "").split()) != "詳細を表示":
+        raise AssertionError("Japanese checkout cart summary has an untranslated details action")
+    if button.get_attribute("aria-label") != "カートの詳細を表示":
+        raise AssertionError("Japanese checkout cart details action has an untranslated accessible label")
+
+
 def run_japan_customer_checkout() -> None:
     validate_isolated_ci_compose_project()
     validate_loopback_admin_targets()
@@ -1365,6 +1376,7 @@ def run_japan_customer_checkout() -> None:
             "quantity": 2,
             "coupon_condition": coupon["coupon_condition"],
         })
+        _assert_japanese_cart_details_copy(driver)
         driver.save_screenshot(str(QA_DIR / "shipping-free-checkout-desktop.png"))
         driver.set_window_size(390, 844)
         mobile_totals = _cart_snapshot(

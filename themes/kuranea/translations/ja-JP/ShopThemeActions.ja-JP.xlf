@@ -10,6 +10,14 @@
         <source>Continue to %step_title%</source>
         <target state="final">%step_title%へ進む</target>
       </trans-unit>
+      <trans-unit id="checkout-show-details">
+        <source>Show details</source>
+        <target state="final">詳細を表示</target>
+      </trans-unit>
+      <trans-unit id="checkout-show-cart-details">
+        <source>Show cart details</source>
+        <target state="final">カートの詳細を表示</target>
+      </trans-unit>
     </body>
   </file>
 </xliff>
