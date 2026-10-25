@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 CONTROLLER = ROOT / "modules" / "kuraneacatalog" / "controllers" / "admin" / "AdminKuraneaCatalogReviewController.php"
 PRODUCT_DRAFT = ROOT / "modules" / "kuraneacatalog" / "src" / "Domain" / "ProductAdminDraft.php"
+NATIVE_MANAGER = ROOT / "modules" / "kuraneacatalog" / "src" / "Integration" / "PrestaShopNativeProductManager.php"
 
 
 class CatalogImportAdminContractTests(unittest.TestCase):
@@ -51,6 +52,13 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         self.assertIn("count($entry->snapshot->options) > 1", self.draft_validation)
         self.assertIn("옵션 연결을 지원하지 않아 초안 등록이 차단됩니다", self.import_form)
         self.assertIn("조합별 가격이나 출처 재고는 가져오지 않습니다", self.import_form)
+
+    def test_imported_draft_readback_selects_native_combination_price(self) -> None:
+        manager = NATIVE_MANAGER.read_text(encoding="utf-8")
+        readback = manager.split("private function assertPersistedImportedDraftMatches(", 1)[1]
+        self.assertIn("SELECT pa.`id_product_attribute`, pa.`price`,", readback)
+        self.assertIn("$row['price'] ?? null", readback)
+        self.assertIn("$priceAdjustment !== 0.0", readback)
 
     def test_import_form_exposes_tax_classification_and_exemption_evidence(self) -> None:
         self.assertIn('name="tax_treatment"', self.tax_renderer)

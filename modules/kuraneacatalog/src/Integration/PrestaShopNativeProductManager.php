@@ -481,7 +481,7 @@ final class PrestaShopNativeProductManager
         }
 
         $optionRows = \Db::getInstance()->executeS('
-            SELECT pa.`id_product_attribute`, agl.`name` AS `group_name`, al.`name` AS `attribute_name`
+            SELECT pa.`id_product_attribute`, pa.`price`, agl.`name` AS `group_name`, al.`name` AS `attribute_name`
             FROM `' . _DB_PREFIX_ . 'product_attribute` pa
             LEFT JOIN `' . _DB_PREFIX_ . 'product_attribute_combination` pac
                 ON pac.`id_product_attribute` = pa.`id_product_attribute`
