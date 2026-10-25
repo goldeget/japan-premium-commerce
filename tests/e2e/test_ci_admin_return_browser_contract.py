@@ -55,7 +55,7 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
             "selected_state_after",
             "expected_order_id",
             "return_id",
-            "same_order_detail_url",
+            "same_order_detail_link_matches",
             "KURANEA-CI-",
         ):
             with self.subTest(required=required):
@@ -71,7 +71,7 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
             "save_and_verify_return_state_transition(",
             "Select(status_select).select_by_value(next_state_id)",
             "selected_state_after == next_state_id",
-            "current_return_form(browser, admin_root, return_id, order_id)",
+            "current_return_form(browser, admin_root, return_id, order_id, stage)",
         )
         missing_calls = [required for required in required_calls if required not in self.source]
         self.assertFalse(
@@ -82,7 +82,7 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
         transition_flow = self.source.split(
             "def verify_existing_synthetic_return(", 1
         )[1].split("def run_admin_return_browser(", 1)[0]
-        initial_state_check = 'if Select(status_select).first_selected_option.get_attribute("value")'
+        initial_state_check = 'initial_state = Select(status_select).first_selected_option.get_attribute("value")'
         transition_loop = "for previous_state_id, next_state_id in RMA_STATE_TRANSITION_PATH:"
         self.assertIn(initial_state_check, transition_flow)
         self.assertIn(transition_loop, transition_flow)
@@ -90,7 +90,16 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
             self.assertLess(transition_flow.index(initial_state_check), transition_flow.index(transition_loop))
         self.assertIn('table[data-role="order-return-products"]', transition_flow)
         self.assertIn("KURANEA-CI-", transition_flow)
-        self.assertIn("same_order_detail_url", transition_flow)
+        self.assertIn("same_order_detail_link_matches", transition_flow)
+        transition_function = self.source.split(
+            "def save_and_verify_return_state_transition(", 1
+        )[1].split("def verify_existing_synthetic_return(", 1)[0]
+        for stage_call in (
+            'stage.begin(f"{transition}_select")',
+            'stage.begin(f"{transition}_save")',
+            'stage.begin(f"{transition}_readback")',
+        ):
+            self.assertIn(stage_call, transition_function)
 
     def test_status_change_emails_are_confined_to_the_run_owned_mailpit(self) -> None:
         mailpit_setup = self.workflow.split("id: mailpit_setup", 1)[1].split("- name:", 1)[0]
@@ -126,7 +135,8 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
             "refund",
             "PaymentModule",
             "curl_exec",
-            "save_screenshot",
+            "driver.save_screenshot",
+            "driver.get_screenshot_as_file",
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, self.source)
@@ -148,7 +158,70 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
                         for argument in call.args),
                     "browser diagnostics must not interpolate credentials, emails, IDs, or URLs",
                 )
-        self.assertNotIn("GITHUB_STEP_SUMMARY", self.source)
+    def test_failure_diagnostics_are_allowlisted_and_reach_summary_and_annotation(self) -> None:
+        for required in (
+            "SAFE_DIAGNOSTIC_STAGES = (",
+            '"admin_login"',
+            '"return_list"',
+            '"target_rma"',
+            '"edit_screen"',
+            "EXCEPTION_CLASS_ALLOWLIST = (",
+            'SAFE_FALLBACK_EXCEPTION_CLASS_NAME = "UnexpectedError"',
+            '"last_completed_stage"',
+            '"failure_stage"',
+            '"exception_class"',
+            '"target_order_matches"',
+            '"order_detail_link_matches"',
+            '"order_detail_link_matches"',
+            '"target_rma_matches"',
+            '"login_form_visible"',
+            '"selected_state"',
+            '"save_success_visible"',
+            "def safe_exception_class_name(",
+            "def build_safe_diagnostics(",
+            "def report_failure_diagnostics(",
+            'os.environ.get("GITHUB_STEP_SUMMARY")',
+            '"::error title=ORDENOWA admin RMA browser::"',
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, self.source)
+
+        payload = self.source.split("def build_safe_diagnostics(", 1)[1].split(
+            "def capture_safe_status_screenshot(", 1
+        )[0]
+        for forbidden in (
+            "current_url",
+            "page_source",
+            "ADMIN_MAIL",
+            "ADMIN_PASSWD",
+            "exception_text",
+            "traceback",
+            "email",
+            "address",
+            "customer_name",
+            "return_id",
+            "order_id",
+            "token",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, payload)
+
+        runner = self.source.split("def run_admin_return_browser(", 1)[1].split(
+            "def main(", 1
+        )[0]
+        self.assertLess(runner.index("capture_safe_status_screenshot("), runner.index("driver.quit()"))
+        self.assertLess(runner.index("report_failure_diagnostics(diagnostics)"), runner.index("driver.quit()"))
+
+    def test_failure_screenshot_is_only_the_verified_status_control(self) -> None:
+        screenshot = self.source.split(
+            "def capture_safe_status_screenshot(", 1
+        )[1].split("def report_failure_diagnostics(", 1)[0]
+        self.assertIn("current_return_form(", screenshot)
+        self.assertIn("same_order_detail_link_matches(", screenshot)
+        self.assertIn("status_select.screenshot(", screenshot)
+        self.assertNotIn("driver.save_screenshot", screenshot)
+        self.assertNotIn("get_screenshot_as_file", screenshot)
+        self.assertNotIn("page_source", screenshot)
 
     def test_fresh_install_runs_native_admin_return_before_lifecycle_readback(self) -> None:
         self.assertIn("- name: Verify native admin return state form in Chromium", self.workflow)
@@ -180,6 +253,13 @@ class CiAdminReturnBrowserContractTests(unittest.TestCase):
         self.assertIn("order_return_admin_browser=$ORDER_RETURN_ADMIN_BROWSER_OUTCOME", aggregate)
         self.assertIn("ORDER_RETURN_ADMIN_BROWSER_OUTCOME: ${{ steps.order_return_admin_browser.outcome }}", aggregate)
         self.assertIn("tests.e2e.test_ci_admin_return_browser_contract", self.workflow)
+        coverage = self.workflow.split(
+            "- name: Verify browser QA screenshot coverage", 1
+        )[1].split("- name:", 1)[0]
+        self.assertIn('if [[ "$ORDENOWA_ADMIN_RETURN_FOCUS" == true ]]; then', coverage)
+        self.assertIn("admin-return-e2e.log", coverage)
+        self.assertIn("admin-return-diagnostics.json", coverage)
+        self.assertIn("admin-return-state-control.png", coverage)
 
 
 if __name__ == "__main__":

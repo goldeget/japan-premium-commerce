@@ -262,6 +262,8 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
                     case_environment = {
                         **os.environ,
                         "ORDENOWA_ADMIN_SECURITY_FOCUS": "false",
+                        "ORDENOWA_ADMIN_RETURN_FOCUS": "false",
+                        "ORDENOWA_ADMIN_QA_FOCUS": "false",
                         **environment,
                         variable: outcome,
                         "SECURITY_ADMIN_LOCALE_MUTATED": "",

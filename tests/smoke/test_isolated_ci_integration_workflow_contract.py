@@ -199,6 +199,8 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             **os.environ,
             **{variable: "success" for variable, _ in outcome_vars},
             "ORDENOWA_ADMIN_SECURITY_FOCUS": "false",
+            "ORDENOWA_ADMIN_RETURN_FOCUS": "false",
+            "ORDENOWA_ADMIN_QA_FOCUS": "false",
             "SECURITY_ADMIN_LOCALE_MUTATED": "1",
         }
         command = shell_body(aggregate)
@@ -217,6 +219,8 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             **os.environ,
             **{variable: "success" for variable, _ in outcome_vars},
             "ORDENOWA_ADMIN_SECURITY_FOCUS": "true",
+            "ORDENOWA_ADMIN_RETURN_FOCUS": "false",
+            "ORDENOWA_ADMIN_QA_FOCUS": "true",
             "SECURITY_ADMIN_LOCALE_MUTATED": "1",
         }
         command = shell_body(aggregate)
@@ -238,6 +242,37 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(step_id, result.stdout)
 
+    def test_admin_return_focus_aggregate_requires_every_dependency_and_evidence(self) -> None:
+        aggregate = step("Aggregate browser QA and postal verification failures")
+        outcome_vars = re.findall(r"^          ([A-Z_]+): \$\{\{ steps\.([a-z_]+)\.outcome \}\}", aggregate, re.MULTILINE)
+        env = {
+            **os.environ,
+            **{variable: "success" for variable, _ in outcome_vars},
+            "ORDENOWA_ADMIN_SECURITY_FOCUS": "false",
+            "ORDENOWA_ADMIN_RETURN_FOCUS": "true",
+            "ORDENOWA_ADMIN_QA_FOCUS": "true",
+        }
+        command = shell_body(aggregate)
+        self.assertEqual(
+            subprocess.run(["bash", "-c", command], env=env, capture_output=True).returncode,
+            0,
+        )
+
+        for step_id, variable in (
+            ("order_return_admin_browser", "ORDER_RETURN_ADMIN_BROWSER_OUTCOME"),
+            ("admin_return_evidence", "BROWSER_QA_EVIDENCE_OUTCOME"),
+            ("order_return_browser", "ORDER_RETURN_BROWSER_OUTCOME"),
+        ):
+            with self.subTest(step=step_id):
+                result = subprocess.run(
+                    ["bash", "-c", command],
+                    env={**env, variable: "failure"},
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(step_id, result.stdout)
+
     def test_locale_restore_skip_is_ignored_when_admin_language_was_not_changed(self) -> None:
         aggregate = step("Aggregate browser QA and postal verification failures")
         outcome_vars = re.findall(r"^          ([A-Z_]+): \$\{\{ steps\.([a-z_]+)\.outcome \}\}", aggregate, re.MULTILINE)
@@ -245,6 +280,8 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             **os.environ,
             **{variable: "success" for variable, _ in outcome_vars},
             "ORDENOWA_ADMIN_SECURITY_FOCUS": "false",
+            "ORDENOWA_ADMIN_RETURN_FOCUS": "false",
+            "ORDENOWA_ADMIN_QA_FOCUS": "false",
             "SECURITY_ADMIN_LOCALE_MUTATED": "",
         }
         env["SECURITY_LOCALE_RESTORE_OUTCOME"] = "skipped"
@@ -260,7 +297,13 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             artifact_dir = Path(temporary) / "ordenowa-browser-qa"
             artifact_dir.mkdir()
             (artifact_dir / "unrelated-failure.log").write_text("failed elsewhere\n", encoding="utf-8")
-            env = {**os.environ, **{variable: "failure" for variable in variables}, "RUNNER_TEMP": temporary, "CART_CONTROLS_BROWSER_QA_OUTCOME": "success"}
+            env = {
+                **os.environ,
+                **{variable: "failure" for variable in variables},
+                "ORDENOWA_ADMIN_RETURN_FOCUS": "false",
+                "RUNNER_TEMP": temporary,
+                "CART_CONTROLS_BROWSER_QA_OUTCOME": "success",
+            }
             result = subprocess.run(["bash", "-c", shell_body(coverage)], env=env, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0, "another failure hid the successful cart flow's missing evidence")
             self.assertIn("cart-controls-desktop-initial.png", result.stdout)

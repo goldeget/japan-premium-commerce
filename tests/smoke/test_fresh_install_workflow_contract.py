@@ -23,6 +23,14 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "ORDENOWA_ADMIN_SECURITY_FOCUS: ${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, '[admin-security-focus]') }}",
             job,
         )
+        self.assertIn(
+            "ORDENOWA_ADMIN_RETURN_FOCUS: ${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, '[admin-return-focus]') }}",
+            job,
+        )
+        self.assertIn(
+            "ORDENOWA_ADMIN_QA_FOCUS: ${{ github.event_name == 'push' && (startsWith(github.event.head_commit.message, '[admin-security-focus]') || startsWith(github.event.head_commit.message, '[admin-return-focus]')) }}",
+            job,
+        )
 
         def step(name: str) -> str:
             return workflow.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
@@ -81,7 +89,33 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         )
         for name in focus_gated:
             with self.subTest(step=name):
-                self.assertIn("env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'", step(name))
+                step_block = step(name)
+                if name in {
+                    "Import synthetic Tokyo postcode fixture for isolated checkout QA",
+                    "Verify isolated CI Tokyo postcode lookup",
+                    "Start disposable Mailpit for customer password-reset email",
+                    "Create isolated synthetic tax product and reconcile native unpaid order",
+                    "Prepare isolated active product for storefront and free-shipping QA",
+                    "Prepare isolated free-shipping order and coupon fixtures",
+                    "Grant isolated CI administrator the native AdminCarriers create permissions",
+                    "Configure the free Japan carrier through Chromium AdminCarriers",
+                    "Restart PrestaShop with the CI database volume intact",
+                    "Read back the free Japan carrier after a fresh admin login",
+                    "Enable run-scoped checkout only for the isolated order browser QA",
+                    "Verify browser customer search, Japan checkout, and unpaid offline order",
+                    "Verify saved browser orders are unpaid and retain Japan addresses",
+                    "Restore the fail-closed base checkout environment",
+                    "Recheck storefront checkout stays gated after unpaid CI order QA",
+                    "Prepare CI-only paid-like order for return verification",
+                    "Submit customer return request in Chromium",
+                    "Verify native admin return state form in Chromium",
+                }:
+                    self.assertIn(
+                        "env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_ADMIN_RETURN_FOCUS == 'true'",
+                        step_block,
+                    )
+                else:
+                    self.assertIn("env.ORDENOWA_ADMIN_QA_FOCUS != 'true'", step_block)
 
         retained = (
             "Start the empty-volume shop",
@@ -95,7 +129,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         )
         for name in retained:
             with self.subTest(step=name):
-                self.assertNotIn("env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'", step(name))
+                self.assertNotIn("env.ORDENOWA_ADMIN_QA_FOCUS != 'true'", step(name))
 
         self.assertIn(
             "Verify focused admin security route screenshot",
@@ -103,11 +137,20 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         )
         screenshot_step = step("Verify focused admin security route screenshot")
         self.assertIn("env.ORDENOWA_ADMIN_SECURITY_FOCUS == 'true'", screenshot_step)
+        self.assertIn("env.ORDENOWA_ADMIN_RETURN_FOCUS != 'true'", screenshot_step)
         aggregate = step("Aggregate browser QA and postal verification failures")
         self.assertIn('if [[ "$ORDENOWA_ADMIN_SECURITY_FOCUS" == true ]]; then', aggregate)
+        self.assertIn('if [[ "$ORDENOWA_ADMIN_RETURN_FOCUS" == true ]]; then', aggregate)
         self.assertIn('"admin_security_browser_qa=$ADMIN_SECURITY_BROWSER_QA_OUTCOME"', aggregate)
         self.assertIn('"admin_dashboard_route_screenshot=$ADMIN_DASHBOARD_ROUTE_SCREENSHOT_OUTCOME"', aggregate)
         self.assertIn('"security_locale_restore=$SECURITY_LOCALE_RESTORE_OUTCOME"', aggregate)
+        for required in (
+            '"order_return_admin_browser=$ORDER_RETURN_ADMIN_BROWSER_OUTCOME"',
+            '"admin_return_evidence=$BROWSER_QA_EVIDENCE_OUTCOME"',
+            "admin-return-diagnostics.json",
+            "admin-return-state-control.png",
+        ):
+            self.assertIn(required, workflow)
 
     def test_back_office_employee_recovery_uses_isolated_mailpit_fixture_and_aggregate(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -137,7 +180,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("steps.admin_recovery_fixture.outcome == 'success'", browser)
         self.assertIn("steps.mailpit_setup.outcome == 'success'", browser)
         self.assertIn("steps.chromium_setup.outcome == 'success'", browser)
-        self.assertIn("env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'", browser)
+        self.assertIn("env.ORDENOWA_ADMIN_QA_FOCUS != 'true'", browser)
         self.assertIn("tests/e2e/verify_ci_admin_password_reset_browser.py", browser)
         self.assertNotIn('tee "$QA_ARTIFACT_DIR/admin-password-reset-e2e.log"', browser)
         self.assertIn(
@@ -335,7 +378,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         )[1].split("- name:", 1)[0]
 
         self.assertIn("id: account_checkout_override", override)
-        self.assertIn("env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'", override)
+        self.assertIn("env.ORDENOWA_ADMIN_QA_FOCUS != 'true'", override)
         self.assertIn("GITHUB_RUN_ID: ${{ github.run_id }}", override)
         self.assertIn("GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}", override)
         self.assertIn('expected_project="kuranea-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"', override)
@@ -345,7 +388,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("id: account_browser_qa", account)
         self.assertIn("steps.account_checkout_override.outcome == 'success'", account)
         self.assertIn("id: account_checkout_restore", restore)
-        self.assertIn("env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'", restore)
+        self.assertIn("env.ORDENOWA_ADMIN_QA_FOCUS != 'true'", restore)
         self.assertIn("if: always() && steps.account_checkout_override.outcome != 'skipped'", restore)
         self.assertIn(
             'docker compose -p "$CI_COMPOSE_PROJECT_NAME" \\\n            up -d --no-deps --force-recreate --wait --wait-timeout 300 prestashop',
