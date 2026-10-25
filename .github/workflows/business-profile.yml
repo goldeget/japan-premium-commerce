@@ -6,12 +6,16 @@ on:
     paths:
       - '.github/workflows/business-profile.yml'
       - 'modules/kuraneabusinessprofile/**'
+      - 'modules/kuraneabackoffice/**'
       - 'tests/business_profile/**'
+      - 'tests/backoffice_locale/**'
   pull_request:
     paths:
       - '.github/workflows/business-profile.yml'
       - 'modules/kuraneabusinessprofile/**'
+      - 'modules/kuraneabackoffice/**'
       - 'tests/business_profile/**'
+      - 'tests/backoffice_locale/**'
   workflow_dispatch:
 
 permissions:
@@ -31,6 +35,9 @@ jobs:
           php-version: '8.3'
           extensions: gd, mbstring, fileinfo
           coverage: none
+
+      - name: Verify Korean locale targets the document root
+        run: php tests/backoffice_locale/document_root_language.php
 
       - name: Lint business profile PHP files
         shell: bash
