@@ -45,8 +45,11 @@ jobs:
         run: |
           set -uo pipefail
           test_log="$RUNNER_TEMP/catalog-parser-tests.log"
-          php tests/catalog/run.php >"$test_log" 2>&1
-          test_status=$?
+          if php tests/catalog/run.php >"$test_log" 2>&1; then
+            test_status=0
+          else
+            test_status=$?
+          fi
           if [ "$test_status" -ne 0 ]; then
             {
               echo '### Catalog parser test failure'
@@ -60,10 +63,11 @@ jobs:
             failure_line="${failure_line//$'\n'/'%0A'}"
             echo "::error title=Offline catalog parser tests::$failure_line"
             exit "$test_status"
+          else
+            cat "$test_log"
           fi
-          cat "$test_log"
 
       - name: Validate fresh-install workflow contract
         env:
           PYTHONDONTWRITEBYTECODE: '1'
-        run: python3 -m unittest tests.smoke.test_fresh_install_workflow_contract -v
+        run: python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_catalog_parser_workflow_contract -v
