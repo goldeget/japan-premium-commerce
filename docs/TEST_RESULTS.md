@@ -12,7 +12,7 @@
 | RMA 실패 단계 및 안전 증거 | **FAIL at `return_grid`** | Step70의 `last_completed_stage=return_list_navigation`, `failure_stage=return_grid`, `TimeoutException`; 요청 `/admin-kuranea/sell/customer-service/merchandise-return/`, 최종 안전 경로 `/admin-kuranea/<redacted>/<redacted>`, same-origin admin path=true, document status=200, readyState=complete, page class=`other_admin`, visible error=false, login form=false, grid=false. 따라서 예상 목록으로부터 다른 관리자 경로 형태로 이동했으나 실제 route text는 마스킹되어 앱 라우팅과 테스트 경로 중 원인은 확정되지 않았다. |
 | RMA 1→2 저장/재조회 및 2→1 복원 | **미실행** | Grid와 대상 RMA가 확인되지 않아 상태 선택·POST·fresh GET·원상복원 단계에 도달하지 않았다. |
 | 사전 검사 및 정리 | PASS | 로컬 targeted contracts 91개 통과; 이전에 확인한 Step8 462개 통과/7 skipped, Step9 137개 통과. Actions Steps 8–12 및 Step14 설치 성공, Step75 캡처 범위 검사와 Step83 run-only cleanup도 성공했다. |
-| 브라우저 준비 시간 | PASS (cache hit) | #402218 Step32 Chromium 환경 준비 13초. 앞선 cache miss #402195 Step32의 11분 10초는 폰트 다운로드/setup 시간이었으며 앱/RMA 진단 시간과 구분한다. |
+| 브라우저 준비 시간 | PASS (cache hit) | #402218 Step32 Chromium 환경 준비 13초. 앞선 cache miss #402144의 Noto CJK setup 약 23분, #402195 Step32 11분 10초는 폰트 다운로드/setup 시간이었으며 앱/RMA 진단 시간과 구분한다. |
 | 캡처·진단 산출물 | 보존됨, 시각 열람 미확인 | #402218 storefront browser artifact ID `12610240802`, safe diagnostics artifact ID `12609916454`; 두 아티팩트는 Actions에 저장됐고 이 환경의 artifact 다운로드는 403이었다. RMA 상태 폼 캡처는 RMA 편집 화면에 도달하지 않아 생성되지 않았다. 실패 핵심은 Step Summary 및 annotation에 남았다. |
 | 전체 회귀 QA | 실행 안 함 | 집중 aggregate가 실패했으므로 사용자 조건에 따라 전체 QA를 시작하지 않았다. 이전 full run #40209847999는 별도 과거 결과(FAIL)다. |
 

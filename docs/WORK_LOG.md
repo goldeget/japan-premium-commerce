@@ -9,7 +9,7 @@
 - 관리자 RMA Step70은 실제 process exit 1, aggregate Step80은 `order_return_admin_browser=failure`. 안전 진단은 `last_completed_stage=return_list_navigation`, `failure_stage=return_grid`, `TimeoutException`, requested pathname `/admin-kuranea/sell/customer-service/merchandise-return/`, observed pathname `/admin-kuranea/<redacted>/<redacted>`, same-admin-origin/path true, HTTP 200, `readyState=complete`, `page_class=other_admin`, visible error marker/login form/grid 모두 false다. 따라서 목록 navigation 완료 뒤 예상 그리드가 없는 다른 관리자 경로 형태가 관측됐다. 실제 route text는 마스킹되어 앱 리다이렉트 결함인지 테스트가 기대한 경로 결함인지 확정할 수 없으므로 경로를 추측해 수정하지 않았다.
 - 해당 실패로 대상 RMA·주문·편집 화면을 확인하지 못했다. 상태 1→2 POST/성공 알림/fresh GET 재조회 및 2→1 복원/fresh GET는 전혀 실행되지 않았다. RMA 화면 캡처도 생성하지 않았다. RMA 기능 PASS로 기록하지 않는다.
 - Step75 screenshot coverage 및 Step83 run 전용 정리는 success. storefront screenshot artifact `12610240802`와 안전 진단 artifact `12609916454`는 Actions에 저장됐다. 다운로드 요청은 403이었으므로 캡처 파일을 시각 열람하지 않았고 Step Summary/annotation에 남은 안전 진단을 사용했다.
-- 폰트 archive cache hit로 #402218 Step32 브라우저 환경 준비는 13초였다. 이전 cache miss #402195 Step32의 11분 10초는 fonts-noto-cjk 설치/다운로드 setup이며 앱 검증 시간과 구분한다.
+- 폰트 archive cache hit로 #402218 Step32 브라우저 환경 준비는 13초였다. 이전 run #402144의 Noto CJK setup 약 23분, #402195 Step32 11분 10초는 fonts-noto-cjk 설치/다운로드 setup이며 앱 검증 시간과 구분한다.
 - 집중 aggregate가 실패했으므로 이번 코드로 전체 회귀 QA를 실행하지 않았다. 원인을 확정한 최소 수정과 집중 재검증이 필요하며, 집중 검증 성공 후에만 전체 QA를 1회 실행한다. 운영 DB, named volume, 배포, 실결제·실거래는 사용하지 않았다.
 
 ## 2026-10-25 — 관리자 RMA 진단 추가 및 집중 실행 차단 기록
