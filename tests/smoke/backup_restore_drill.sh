@@ -1,37 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+source "$script_dir/backup_restore_diagnostics.sh"
 
 fail() {
   printf 'FAIL: isolated backup/restore drill: %s\n' "$1" >&2
   exit 1
-}
-
-# Docker stderr can contain image references, host paths, or injected values.
-# Reduce it to a fixed diagnostic category before adding any detail to CI logs.
-classify_compose_create_error() {
-  local stderr_path=$1
-  [[ -r "$stderr_path" ]] || { printf 'diagnostic_unavailable'; return 0; }
-
-  if grep -Eiq '(no space left on device|disk quota exceeded)' "$stderr_path"; then
-    printf 'storage_capacity'
-  elif grep -Eiq '(permission denied|cannot connect to.*docker daemon|error during connect|is the docker daemon running)' "$stderr_path"; then
-    printf 'docker_access'
-  elif grep -Eiq '(pull access denied|unauthorized|authentication required|denied: requested access|error getting credentials)' "$stderr_path"; then
-    printf 'image_access'
-  elif grep -Eiq '(manifest unknown|no such image|image[^[:cntrl:]]*not found)' "$stderr_path"; then
-    printf 'image_unavailable'
-  elif grep -Eiq '(invalid reference format|invalid tag)' "$stderr_path"; then
-    printf 'image_reference'
-  elif grep -Eiq '(failed to create network|network[^[:cntrl:]]*(already exists|not found))' "$stderr_path"; then
-    printf 'network_setup'
-  elif grep -Eiq '(failed to create volume|volume[^[:cntrl:]]*(already exists|in use))' "$stderr_path"; then
-    printf 'volume_setup'
-  elif grep -Eiq '(error response from daemon|failed to create|conflict)' "$stderr_path"; then
-    printf 'daemon_create'
-  else
-    printf 'unclassified'
-  fi
 }
 
 [[ "${GITHUB_ACTIONS:-}" == true ]] || fail 'GitHub Actions guard did not match.'
@@ -188,6 +163,21 @@ restored_database_dump="$snapshot_dir/restored-database.sql"
 restored_app_archive="$snapshot_dir/restored-prestashop-files.tar"
 restored_queue_archive="$snapshot_dir/restored-catalog-queue.tar"
 
+create_restore_service() {
+  local service=$1
+  local stdout_path="$snapshot_dir/compose-create-${service}.stdout"
+  local stderr_path="$snapshot_dir/compose-create-${service}.stderr"
+  local create_status
+
+  if docker compose -p "$restore_project" create --no-deps "$service" >"$stdout_path" 2>"$stderr_path"; then
+    return 0
+  else
+    create_status=$?
+  fi
+
+  fail "run-scoped restore container creation failed ($(format_compose_create_failure "$service" "$create_status" "$stdout_path" "$stderr_path"))."
+}
+
 # Validate the effective Compose volume mapping without printing the config,
 # which contains the run-scoped database and Back Office credentials.
 if ! docker compose -p "$restore_project" config --format json 2>"$stderr_file" \
@@ -254,9 +244,8 @@ fi
 # From here the trap may remove only this exact run-scoped restore project.
 restore_project_owned=1
 printf 'restore_project_owned=true\n' >> "$GITHUB_OUTPUT"
-if ! docker compose -p "$restore_project" create --no-deps mariadb prestashop >/dev/null 2>"$stderr_file"; then
-  fail "run-scoped restore containers could not be created (cause=$(classify_compose_create_error "$stderr_file"))."
-fi
+create_restore_service mariadb
+create_restore_service prestashop
 
 restore_db_container=$(docker compose -p "$restore_project" ps -a -q mariadb 2>/dev/null) \
   || fail 'restore database container is unavailable.'

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import re
 import subprocess
 import tempfile
 import unittest
@@ -11,6 +10,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tests" / "smoke" / "backup_restore_drill.sh"
+DIAGNOSTICS = ROOT / "tests" / "smoke" / "backup_restore_diagnostics.sh"
 
 
 class BackupRestoreDrillContractTests(unittest.TestCase):
@@ -98,52 +98,88 @@ class BackupRestoreDrillContractTests(unittest.TestCase):
         resource_lookup = source.split("docker_resource_exists() {", 1)[1].split("\n}", 1)[0]
         self.assertIn("ls --format '{{.Name}}'", resource_lookup)
         compose_config = source.index('docker compose -p "$restore_project" config --format json')
-        create = source.index('docker compose -p "$restore_project" create --no-deps mariadb prestashop')
+        create_mariadb = source.index("create_restore_service mariadb")
+        create_prestashop = source.index("create_restore_service prestashop")
         db_volume = source.index('assert_compose_volume "$restore_db_volume" mariadb_data "$restore_project"')
         app_volume = source.index('assert_compose_volume "$restore_app_volume" prestashop_html "$restore_project"')
         queue_volume = source.index('assert_compose_volume "$restore_queue_volume" catalog_review_data "$restore_project"')
         start_database = source.index('docker compose -p "$restore_project" up -d --wait --wait-timeout 300 mariadb')
         clear_target_files = source.index('find /var/www/html -mindepth 1 -maxdepth 1 -exec rm -rf')
 
-        self.assertLess(compose_config, create)
-        self.assertLess(create, db_volume)
+        self.assertLess(compose_config, create_mariadb)
+        self.assertLess(create_mariadb, create_prestashop)
+        self.assertLess(create_prestashop, db_volume)
         self.assertLess(db_volume, app_volume)
         self.assertLess(app_volume, queue_volume)
         self.assertLess(queue_volume, start_database)
         self.assertLess(start_database, clear_target_files)
 
-    def test_restore_create_error_is_classified_without_echoing_stderr(self) -> None:
-        source = SCRIPT.read_text(encoding="utf-8")
-        match = re.search(
-            r"(?ms)^classify_compose_create_error\(\) \{\n.*?^\}",
-            source,
-        )
-        self.assertIsNotNone(match, "restore container failure needs a safe error classifier")
-        if match is None:
-            return
-
-        classifier = match.group(0)
-        self.assertIn('cause=$(classify_compose_create_error "$stderr_file")', source)
-        cases = (
-            ("no space left on device; password=must-not-be-printed", "storage_capacity"),
-            ("permission denied while connecting to docker.sock", "docker_access"),
-            ("pull access denied for image", "image_access"),
-            ("unexpected private diagnostic text", "unclassified"),
-        )
+    def test_restore_create_error_reports_service_and_both_safe_stream_categories(self) -> None:
+        self.assertTrue(DIAGNOSTICS.is_file(), "restore container failure needs a dedicated safe classifier")
         with tempfile.TemporaryDirectory() as temp_dir:
-            stderr_path = Path(temp_dir) / "private.stderr"
-            for diagnostic, expected in cases:
-                with self.subTest(expected=expected):
-                    stderr_path.write_text(diagnostic, encoding="utf-8")
-                    result = subprocess.run(
-                        ["bash", "-c", classifier + '\nclassify_compose_create_error "$1"', "classifier-test", str(stderr_path)],
-                        text=True,
-                        capture_output=True,
-                        check=False,
-                    )
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertEqual(result.stdout.strip(), expected)
-                    self.assertNotIn("must-not-be-printed", result.stdout + result.stderr)
+            temp = Path(temp_dir)
+            stdout_path = temp / "compose-create.stdout"
+            stderr_path = temp / "compose-create.stderr"
+            stdout_path.write_text("no space left on device password=private-stdout", encoding="utf-8")
+            stderr_path.write_text(
+                "Error response from daemon: failed to create container token=private-stderr",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; format_compose_create_failure "$2" "$3" "$4" "$5"',
+                    "diagnostics-test",
+                    str(DIAGNOSTICS),
+                    "prestashop",
+                    "125",
+                    str(stdout_path),
+                    str(stderr_path),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            result.stdout.strip(),
+            "service=prestashop; exit=125; stdout=storage_capacity; stderr=daemon_create",
+        )
+        self.assertNotIn("private-stdout", result.stdout + result.stderr)
+        self.assertNotIn("private-stderr", result.stdout + result.stderr)
+
+    def test_classifier_keeps_unrelated_status_and_conflict_text_unclassified(self) -> None:
+        self.assertTrue(DIAGNOSTICS.is_file(), "restore container failure needs a dedicated safe classifier")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            stdout_path = temp / "compose-create.stdout"
+            stderr_path = temp / "compose-create.stderr"
+            stdout_path.write_text("unrelated application response code 429", encoding="utf-8")
+            stderr_path.write_text("generic conflict in unrelated diagnostic", encoding="utf-8")
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; format_compose_create_failure "$2" "$3" "$4" "$5"',
+                    "diagnostics-test",
+                    str(DIAGNOSTICS),
+                    "mariadb",
+                    "1",
+                    str(stdout_path),
+                    str(stderr_path),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            result.stdout.strip(),
+            "service=mariadb; exit=1; stdout=unclassified; stderr=unclassified",
+        )
 
     def test_restored_prestart_file_archives_are_compared_without_output(self) -> None:
         source = SCRIPT.read_text(encoding="utf-8")
@@ -178,6 +214,7 @@ class BackupRestoreDrillContractTests(unittest.TestCase):
         self.assertIn("backup-restore-drill.log", coverage)
         self.assertIn("steps.backup_restore_drill.outputs.restore_project_owned", cleanup)
         self.assertIn("tests/smoke/test_backup_restore_drill_contract.py", workflow)
+        self.assertIn("tests/smoke/backup_restore_diagnostics.sh", workflow)
         self.assertEqual(workflow.count("'tests/smoke/test_backup_restore_drill_contract.py'"), 2)
 
 
