@@ -887,21 +887,55 @@ def emit_korean_login_diagnostics(driver: webdriver.Chrome, state: dict[str, obj
     )
 
 
-def click_centered(driver: webdriver.Chrome, element) -> bool:
-    driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", element)
-    WebDriverWait(driver, 30).until(EC.element_to_be_clickable(element))
-    center_unobstructed = WebDriverWait(driver, 10).until(
-        lambda browser: browser.execute_script(
+def emit_safe_click_blocker_summary(driver: webdriver.Chrome, element) -> None:
+    try:
+        blocker = driver.execute_script(
             """
             const element = arguments[0];
             const rect = element.getBoundingClientRect();
             const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-            return Boolean(target && (target === element || element.contains(target)));
+            const safe = (value, limit) => String(value || '').replace(/[^a-zA-Z0-9_:-]/g, '').slice(0, limit);
+            return target ? {
+              tag: safe(target.tagName, 24),
+              id: safe(target.id, 80),
+              class: safe(typeof target.className === 'string' ? target.className : '', 160)
+            } : {tag: '', id: '', class: ''};
             """,
             element,
         )
-    )
-    element.click()
+        if not isinstance(blocker, dict):
+            blocker = {"tag": "", "id": "", "class": ""}
+    except Exception:
+        blocker = {"tag": "unavailable", "id": "", "class": ""}
+    blocker_json = json.dumps(blocker, ensure_ascii=True, sort_keys=True)
+    print("ORDENOWA_CLICK_BLOCKER_SAFE_STATE=" + blocker_json, file=sys.stderr)
+    annotation = blocker_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print("::error title=Browser click target blocked::" + annotation, file=sys.stderr)
+
+
+def click_centered(driver: webdriver.Chrome, element) -> bool:
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", element)
+    WebDriverWait(driver, 30).until(EC.element_to_be_clickable(element))
+    try:
+        center_unobstructed = WebDriverWait(driver, 10).until(
+            lambda browser: browser.execute_script(
+                """
+                const element = arguments[0];
+                const rect = element.getBoundingClientRect();
+                const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+                return Boolean(target && (target === element || element.contains(target)));
+                """,
+                element,
+            )
+        )
+    except TimeoutException:
+        emit_safe_click_blocker_summary(driver, element)
+        raise
+    try:
+        element.click()
+    except ElementClickInterceptedException:
+        emit_safe_click_blocker_summary(driver, element)
+        raise
     return bool(center_unobstructed)
 
 
@@ -3330,7 +3364,7 @@ def logout(
     try:
         clear_document_navigation_events(driver)
         mark_substage("click_signout")
-        link.click()
+        click_centered(driver, link)
         mark_substage("wait_logout_document")
         WebDriverWait(driver, 30).until(
             lambda browser: browser.execute_script("return document.readyState") == "complete"

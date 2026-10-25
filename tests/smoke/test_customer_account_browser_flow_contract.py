@@ -582,7 +582,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         account_route = logout.index("driver.get(account_url)")
         authenticated_page = logout.index('visible(driver, "#identity_main_link")')
         signout_lookup = logout.index("visible_signout_link(driver)")
-        click_signout = logout.index("link.click()")
+        click_signout = logout.index("click_centered(driver, link)")
         wait_signed_out = logout.index("wait_for_signed_out_state(driver)")
         reopen_account = logout.index("driver.get(account_url)", account_route + 1)
 
@@ -603,6 +603,32 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             helper,
         )
 
+    def test_native_account_page_logout_uses_centered_selenium_click(self) -> None:
+        logout = self.source.split("def logout(", 1)[1].split("\n\ndef run_viewport", 1)[0]
+        self.assertIn("click_centered(driver, link)", logout)
+
+    def test_centered_click_interception_emits_bounded_blocker_and_reraises(self) -> None:
+        click_helper = self.source.split("def click_centered(", 1)[1].split(
+            "\n\ndef wait_for_registration_success", 1
+        )[0]
+        self.assertIn("except ElementClickInterceptedException:", click_helper)
+        click_position = click_helper.index("element.click()")
+        intercepted_position = click_helper.index("except ElementClickInterceptedException:", click_position)
+        self.assertIn("emit_safe_click_blocker_summary(driver, element)", click_helper[intercepted_position:])
+        self.assertIn("raise", click_helper[intercepted_position:])
+
+        summary = self.source.split("def emit_safe_click_blocker_summary(", 1)[1].split(
+            "\n\ndef click_centered", 1
+        )[0]
+        self.assertIn("ORDENOWA_CLICK_BLOCKER_SAFE_STATE", summary)
+        self.assertIn("replace(/[^a-zA-Z0-9_:-]/g, '')", summary)
+        for limit in (
+            "tag: safe(target.tagName, 24)",
+            "id: safe(target.id, 80)",
+            "class: safe(typeof target.className === 'string' ? target.className : '', 160)",
+        ):
+            self.assertIn(limit, summary)
+
     def test_logout_compares_the_network_destination_before_protected_route_checks(self) -> None:
         logout = self.source.split("def logout(", 1)[1].split("\n\ndef run_viewport", 1)[0]
         self.assertIn(
@@ -620,7 +646,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             'driver.execute_cdp_cmd("Network.setBypassServiceWorker", {"bypass": True})'
         )
         clear_trace = logout.index("clear_document_navigation_events(driver)")
-        click_signout = logout.index("link.click()")
+        click_signout = logout.index("click_centered(driver, link)")
         capture_trace = logout.index("document_navigation_events(", click_signout)
         final_status = logout.index("status_code", capture_trace)
         login_route = logout.index("safe_generated_route_match(driver.current_url, login_url)")
@@ -833,7 +859,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             "logout calls must use the validated generated login URL",
         )
 
-        click_signout = logout.index("link.click()")
+        click_signout = logout.index("click_centered(driver, link)")
         wait_signed_out = logout.index("wait_for_signed_out_state(driver)")
         reopen_account = logout.index("driver.get(account_url)", wait_signed_out)
         login_route = logout.index("driver.get(login_url)", reopen_account)
@@ -1018,7 +1044,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             ('mark_substage("open_account")', "driver.get(account_url)"),
             ('mark_substage("wait_authenticated")', 'visible(driver, "#identity_main_link")'),
             ('mark_substage("resolve_signout_link")', "visible_signout_link(driver)"),
-            ('mark_substage("click_signout")', "link.click()"),
+            ('mark_substage("click_signout")', "click_centered(driver, link)"),
             ('mark_substage("wait_signed_out")', "wait_for_signed_out_state(driver)"),
             ('mark_substage("reopen_account")', "driver.get(account_url)"),
             ('mark_substage("verify_protected_route_signed_out")', "document.readyState"),
