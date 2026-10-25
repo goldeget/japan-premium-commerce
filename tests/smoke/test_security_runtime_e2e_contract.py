@@ -484,6 +484,41 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertIn("Access::isGranted($ordersReadRole, (int) $profile->id)", access_setup)
         self.assertIn("$profileAccesses[$ordersTabId]['view'] ?? '0'", access_setup)
 
+    def test_view_only_employee_orders_link_must_be_the_exact_same_origin_list_route(self):
+        namespace: dict[str, object] = {
+            "urlparse": urlparse,
+            "BASE": "http://localhost:18080",
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
+            "webdriver": type("Webdriver", (), {"Chrome": object}),
+        }
+        is_orders_list = load_function(ADMIN_FLOW, "is_admin_orders_list_url", namespace)
+        for accepted in (
+            "http://localhost:18080/admin-kuranea/sell/orders",
+            "http://localhost:18080/admin-kuranea/sell/orders/",
+            "http://localhost:18080/admin-kuranea/sell/orders?orderState=1",
+        ):
+            with self.subTest(url=accepted):
+                self.assertTrue(is_orders_list(accepted))
+        for rejected in (
+            "http://localhost:18080/admin-kuranea/sell/orders/new",
+            "http://localhost:18080/admin-kuranea/sell/orders/42/view",
+            "http://localhost:18080/admin-kuranea/sell/orders/42/status",
+            "http://localhost:18080/admin-kuranea/sell/orders-evil",
+            "http://outside.example/admin-kuranea/sell/orders",
+            "http://localhost:18081/admin-kuranea/sell/orders",
+            "http://localhost:18080/admin-kuranea-evil/sell/orders",
+            "http://employee@localhost:18080/admin-kuranea/sell/orders",
+        ):
+            with self.subTest(url=rejected):
+                self.assertFalse(is_orders_list(rejected))
+
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+        orders_stage = source.split('stage = "view_only_employee_orders_korean_locale"', 1)[1].split(
+            'stage = "view_only_employee_settings_restore"', 1
+        )[0]
+        self.assertIn("is_admin_orders_list_url(link.get_attribute(\"href\") or \"\")", orders_stage)
+        self.assertNotIn("_admin_controller_for_url(link.get_attribute(\"href\") or \"\")", orders_stage)
+
     def test_view_only_orders_diagnostic_marks_collection_errors_unknown(self):
         source = ADMIN_FLOW.read_text(encoding="utf-8")
         namespace: dict[str, object] = {

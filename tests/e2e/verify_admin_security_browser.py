@@ -238,6 +238,20 @@ def _admin_controller_for_url(url: str) -> str:
     return "none" if not controllers else "other"
 
 
+def is_admin_orders_list_url(url: str) -> bool:
+    """Accept only the same-origin AdminOrders list route, never its create/detail routes."""
+    actual = urlparse(url)
+    expected = urlparse(BASE)
+    admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
+    return (
+        actual.username is None
+        and actual.password is None
+        and (actual.scheme, actual.hostname, actual.port)
+        == (expected.scheme, expected.hostname, expected.port)
+        and actual.path in {admin_path + "/sell/orders", admin_path + "/sell/orders/"}
+    )
+
+
 def safe_admin_navigation_state(driver: webdriver.Chrome) -> dict[str, object]:
     """Expose only login visibility, allowlisted controller, and bounded menu counts."""
     login_form_visible = any(
@@ -1456,7 +1470,7 @@ def run() -> bool:
         orders_links = [
             link
             for link in restricted_driver.find_elements(By.CSS_SELECTOR, 'a[href*="/sell/orders"]')
-            if _admin_controller_for_url(link.get_attribute("href") or "") == "AdminOrders"
+            if is_admin_orders_list_url(link.get_attribute("href") or "")
         ]
         if not orders_links:
             raise AssertionError("the view-only employee cannot reach the permitted admin orders list")
