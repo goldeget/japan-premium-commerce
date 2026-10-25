@@ -36,7 +36,8 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
     {
         return [
             KernelEvents::REQUEST => ['onKernelRequest', self::PRIORITY],
-            KernelEvents::RESPONSE => ['onKernelResponse', 0],
+            // Run after Symfony's ResponseListener prepares default response headers.
+            KernelEvents::RESPONSE => ['onKernelResponse', -1],
         ];
     }
 
@@ -72,8 +73,9 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
             return;
         }
 
-        $contentType = strtolower((string) $response->headers->get('Content-Type', ''));
-        if (!str_contains($contentType, 'text/html')) {
+        $contentType = (string) $response->headers->get('Content-Type', '');
+        $mediaType = strtolower(trim(explode(';', $contentType, 2)[0]));
+        if ($mediaType !== 'text/html') {
             return;
         }
 

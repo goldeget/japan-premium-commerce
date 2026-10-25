@@ -144,10 +144,16 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         )[0]
 
         self.assertIn("KernelEvents::RESPONSE", subscribed_events)
+        self.assertRegex(
+            subscribed_events,
+            r"KernelEvents::RESPONSE\s*=>\s*\['onKernelResponse',\s*-\d+\]",
+            "the response listener must run after Symfony prepares the response headers",
+        )
+        self.assertIn("$mediaType !== 'text/html'", response_handler)
+        self.assertIn("explode(';', $contentType, 2)", response_handler)
         for marker in (
             "$event->isMainRequest()",
             "str_starts_with($route, 'admin_')",
-            "text/html",
             "self::KOREAN_LOCALE",
             "setContent(",
             "Content-Length",
