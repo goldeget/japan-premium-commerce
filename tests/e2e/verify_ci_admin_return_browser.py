@@ -22,6 +22,11 @@ RETURN_GRID_ID = "merchandise_return_grid_table"
 RETURN_STATE_SELECTOR = "[name$='[order_return_state]']"
 SAVE_AND_STAY_NAME = "submitAddorder_returnAndStay"
 WAITING_FOR_CONFIRMATION_STATE_ID = "1"
+WAITING_FOR_PACKAGE_STATE_ID = "2"
+RMA_STATE_TRANSITION_PATH = (
+    (WAITING_FOR_CONFIRMATION_STATE_ID, WAITING_FOR_PACKAGE_STATE_ID),
+    (WAITING_FOR_PACKAGE_STATE_ID, WAITING_FOR_CONFIRMATION_STATE_ID),
+)
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
@@ -224,6 +229,41 @@ def current_return_form(driver: webdriver.Chrome, admin_root: str, return_id: in
     return form, status_select
 
 
+def save_and_verify_return_state_transition(
+    driver: webdriver.Chrome,
+    admin_root: str,
+    return_id: int,
+    order_id: int,
+    previous_state_id: str,
+    next_state_id: str,
+) -> None:
+    form_state = WebDriverWait(driver, 35).until(
+        lambda browser: current_return_form(browser, admin_root, return_id, order_id)
+    )
+    form, status_select = form_state
+    selected_state_before = Select(status_select).first_selected_option.get_attribute("value")
+    if selected_state_before != previous_state_id:
+        raise TargetGuardError
+
+    Select(status_select).select_by_value(next_state_id)
+    form.find_element(By.NAME, SAVE_AND_STAY_NAME).click()
+
+    def target_state_saved(browser: webdriver.Chrome) -> bool:
+        updated = current_return_form(browser, admin_root, return_id, order_id)
+        if updated is None:
+            return False
+        updated_form, updated_status_select = updated
+        selected_state_after = Select(updated_status_select).first_selected_option.get_attribute("value")
+        success_notice = browser.find_elements(By.CSS_SELECTOR, 'div.alert.alert-success[role="alert"]')
+        return (
+            selected_state_after == next_state_id
+            and bool(success_notice)
+            and same_order_detail_url(admin_root, order_id, updated_form) is not None
+        )
+
+    WebDriverWait(driver, 35).until(target_state_saved)
+
+
 def verify_existing_synthetic_return(
     driver: webdriver.Chrome,
     admin_root: str,
@@ -252,28 +292,17 @@ def verify_existing_synthetic_return(
     if same_order_detail_url(admin_root, order_id, form) is None:
         raise TargetGuardError
 
-    selected_state_before = Select(status_select).first_selected_option.get_attribute("value")
-    if selected_state_before != WAITING_FOR_CONFIRMATION_STATE_ID:
-        raise TargetGuardError
-
-    # PrestaShop 9.2 only notifies on an actual state change; retaining the current state keeps
-    # this native form round-trip free of customer mail and other order side effects.
-    form.find_element(By.NAME, SAVE_AND_STAY_NAME).click()
-
-    def same_state_saved(browser: webdriver.Chrome) -> bool:
-        updated = current_return_form(browser, admin_root, return_id, order_id)
-        if updated is None:
-            return False
-        updated_form, updated_status_select = updated
-        selected_state_after = Select(updated_status_select).first_selected_option.get_attribute("value")
-        success_notice = browser.find_elements(By.CSS_SELECTOR, 'div.alert.alert-success[role="alert"]')
-        return (
-            selected_state_after == selected_state_before
-            and bool(success_notice)
-            and same_order_detail_url(admin_root, order_id, updated_form) is not None
+    # Each real transition sends one message through the run-owned Mailpit configured by CI.
+    # Move to the ordinary waiting-for-package state, then restore the fixture's original state.
+    for previous_state_id, next_state_id in RMA_STATE_TRANSITION_PATH:
+        save_and_verify_return_state_transition(
+            driver,
+            admin_root,
+            return_id,
+            order_id,
+            previous_state_id,
+            next_state_id,
         )
-
-    WebDriverWait(driver, 35).until(same_state_saved)
 
 
 def run_admin_return_browser() -> None:
@@ -303,7 +332,7 @@ def main() -> int:
         print("FAIL: native admin return form did not preserve the run-scoped return")
         return 1
 
-    print("PASS: native admin return form saved the existing run-scoped RMA without changing its state")
+    print("PASS: native admin return form moved the run-scoped RMA to waiting-for-package and restored it to pending")
     return 0
 
 

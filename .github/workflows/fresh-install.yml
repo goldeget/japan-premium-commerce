@@ -171,10 +171,10 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_docker_run_recovery -v
 
       - name: Verify fresh-install workflow contracts
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_backup_restore_drill_contract tests.smoke.test_deployment_config_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_customer_registration_privacy_gate_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_pwa_registration_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard tests.e2e.test_ci_admin_order_status_contract -v
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_backup_restore_drill_contract tests.smoke.test_deployment_config_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_customer_registration_privacy_gate_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_pwa_registration_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard tests.business_profile.test_admin_recovery_fixture_contract tests.e2e.test_ci_admin_password_reset_contract tests.e2e.test_ci_admin_order_status_contract -v
 
       - name: Verify isolated unpaid checkout contracts
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract tests.business_profile.test_shipping_admin_links_contract tests.business_profile.test_admin_profile_history_contract tests.admin_locale.test_admin_locale_overlay tests.admin_locale.test_admin_locale_response_diagnostic tests.admin_locale.test_orders_empty_state_asset tests.admin_locale.test_orders_locale_overlay tests.postcode.test_ci_native_order_lifecycle_contract tests.e2e.test_ci_admin_return_browser_contract tests.e2e.test_ci_native_customer_return_browser_contract -v
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract tests.business_profile.test_shipping_admin_links_contract tests.business_profile.test_admin_profile_history_contract tests.admin_locale.test_admin_locale_overlay tests.admin_locale.test_admin_locale_response_diagnostic tests.admin_locale.test_orders_empty_state_asset tests.admin_locale.test_orders_locale_overlay tests.postcode.test_ci_native_order_lifecycle_contract tests.e2e.test_ci_admin_return_browser_contract tests.e2e.test_ci_native_customer_return_browser_contract tests.e2e.test_ci_admin_password_reset_contract -v
 
       - name: Verify Korean native product manager contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_product_admin_contract -v
@@ -499,12 +499,24 @@ jobs:
           done
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop php -r '
             require "/var/www/html/config/config.inc.php";
-            Configuration::updateValue("PS_MAIL_METHOD", 2);
-            Configuration::updateValue("PS_MAIL_SERVER", "mailpit");
-            Configuration::updateValue("PS_MAIL_SMTP_PORT", 1025);
-            Configuration::updateValue("PS_MAIL_USER", "");
-            Configuration::updateValue("PS_MAIL_PASSWD", "");
-            Configuration::updateValue("PS_MAIL_SMTP_ENCRYPTION", "");
+            $expected = [
+                "PS_MAIL_METHOD" => 2,
+                "PS_MAIL_SERVER" => "mailpit",
+                "PS_MAIL_SMTP_PORT" => 1025,
+                "PS_MAIL_USER" => "",
+                "PS_MAIL_PASSWD" => "",
+                "PS_MAIL_SMTP_ENCRYPTION" => "",
+            ];
+            foreach ($expected as $key => $value) {
+                if (!Configuration::updateValue($key, $value)) {
+                    fwrite(STDERR, "PrestaShop could not save isolated Mailpit SMTP configuration.\n");
+                    exit(1);
+                }
+                if ((string) Configuration::get($key) !== (string) $value) {
+                    fwrite(STDERR, "PrestaShop did not retain isolated Mailpit SMTP configuration.\n");
+                    exit(1);
+                }
+            }
           '
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop php -r '
             $socket = @fsockopen("mailpit", 1025, $errorCode, $errorMessage, 5);
@@ -1055,6 +1067,50 @@ jobs:
               output.writelines(values)
           PY
 
+      - name: Prepare run-scoped Back Office password-reset employee
+        id: admin_recovery_fixture
+        if: always() && !cancelled() && steps.security_fixture.outcome == 'success' && steps.mailpit_setup.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/seed_admin_recovery_fixture.php' < tests/business_profile/seed_admin_recovery_fixture.php
+          fixture_log="$RUNNER_TEMP/ordenowa-browser-qa/admin-recovery-fixture.log"
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e CI=true -e GITHUB_ACTIONS=true -e KURANEA_ISOLATED_CI=1 \
+            -e ADMIN_MAIL=ci-ordenowa@example.invalid \
+            -e CI_COMPOSE_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            -e GITHUB_RUN_ID="$GITHUB_RUN_ID" -e GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            prestashop runuser -g www-data -u www-data -- \
+            php /tmp/seed_admin_recovery_fixture.php 2>&1 | tee "$fixture_log"
+          python3 - "$fixture_log" "$GITHUB_OUTPUT" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" <<'PY'
+          import json, re, sys
+          from pathlib import Path
+          marker = 'ORDENOWA_ADMIN_RECOVERY_FIXTURE='
+          rows = [
+              line[len(marker):]
+              for line in Path(sys.argv[1]).read_text(encoding='utf-8').splitlines()
+              if line.startswith(marker)
+          ]
+          if len(rows) != 1:
+              raise SystemExit('Back Office recovery fixture did not return exactly one result')
+          fixture = json.loads(rows[0])
+          if not isinstance(fixture, dict) or set(fixture) != {'employee_id', 'email'}:
+              raise SystemExit('Back Office recovery fixture returned unexpected fields')
+          run_id, attempt = map(re.escape, sys.argv[3:5])
+          email = fixture.get('email') if isinstance(fixture, dict) else None
+          employee_id = fixture.get('employee_id') if isinstance(fixture, dict) else None
+          if not isinstance(email, str) or not re.fullmatch(
+              rf'ordenowa-admin-recovery-{run_id}-{attempt}-[a-f0-9]+@example\.invalid', email
+          ):
+              raise SystemExit('Back Office recovery employee email was not run-scoped')
+          if not isinstance(employee_id, int) or employee_id < 2:
+              raise SystemExit('Back Office recovery employee did not use a separate CI employee ID')
+          with open(sys.argv[2], 'a', encoding='utf-8') as output:
+              output.write(f'email={email}\n')
+          PY
+
       - name: Verify Back Office token and view-only authorization in Chromium
         id: admin_security_browser_qa
         if: always() && !cancelled() && steps.security_fixture.outcome == 'success' && steps.chromium_setup.outcome == 'success'
@@ -1069,6 +1125,32 @@ jobs:
           set -euo pipefail
           "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" tests/e2e/verify_admin_security_browser.py \
             2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/admin-security-e2e.log"
+
+      - name: Verify Back Office employee password recovery via Mailpit in Chromium
+        id: admin_recovery_browser
+        if: always() && !cancelled() && steps.admin_recovery_fixture.outcome == 'success' && steps.mailpit_setup.outcome == 'success' && steps.chromium_setup.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          CI: 'true'
+          GITHUB_ACTIONS: 'true'
+          KURANEA_ISOLATED_CI: '1'
+          CI_COMPOSE_PROJECT_NAME: ${{ env.CI_COMPOSE_PROJECT_NAME }}
+          KURANEA_CI_PROJECT_NAME: ${{ env.CI_COMPOSE_PROJECT_NAME }}
+          SHOP_BASE_URL: http://localhost:18080
+          ADMIN_LOGIN_URL: http://localhost:18080/admin-kuranea
+          MAILPIT_API_URL: http://127.0.0.1:8025
+          ADMIN_MAIL: ci-ordenowa@example.invalid
+          ADMIN_PASSWD: ${{ env.ADMIN_PASSWD }}
+          ADMIN_RECOVERY_EMAIL: ${{ steps.admin_recovery_fixture.outputs.email }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+        run: |
+          set -euo pipefail
+          mkdir -p "$QA_ARTIFACT_DIR"
+          "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
+            tests/e2e/verify_ci_admin_password_reset_browser.py
 
       - name: Verify native customer reset-token replay and expiry in Chromium
         id: reset_token_browser_qa
@@ -1782,7 +1864,7 @@ jobs:
 
       - name: Submit customer return request in Chromium
         id: order_return_browser
-        if: steps.order_lifecycle_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
+        if: steps.order_lifecycle_fixture.outcome == 'success' && steps.mailpit_setup.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1803,7 +1885,7 @@ jobs:
 
       - name: Verify native admin return state form in Chromium
         id: order_return_admin_browser
-        if: steps.order_return_browser.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
+        if: steps.order_return_browser.outcome == 'success' && steps.mailpit_setup.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1969,6 +2051,8 @@ jobs:
           ORDER_RETURN_BROWSER_OUTCOME: ${{ steps.order_return_browser.outcome }}
           ORDER_RETURN_ADMIN_BROWSER_OUTCOME: ${{ steps.order_return_admin_browser.outcome }}
           ORDER_LIFECYCLE_OUTCOME: ${{ steps.order_lifecycle.outcome }}
+          ADMIN_RECOVERY_FIXTURE_OUTCOME: ${{ steps.admin_recovery_fixture.outcome }}
+          ADMIN_RECOVERY_BROWSER_OUTCOME: ${{ steps.admin_recovery_browser.outcome }}
           BACKUP_RESTORE_DRILL_OUTCOME: ${{ steps.backup_restore_drill.outcome }}
         run: |
           set -euo pipefail
@@ -2249,6 +2333,16 @@ jobs:
           if [[ "$ORDER_RETURN_ADMIN_BROWSER_OUTCOME" == success ]]; then
             required_artifacts+=(admin-return-e2e.log)
           fi
+          if [[ "$ADMIN_RECOVERY_FIXTURE_OUTCOME" == success ]]; then
+            required_artifacts+=(admin-recovery-fixture.log)
+          fi
+          if [[ "$ADMIN_RECOVERY_BROWSER_OUTCOME" == success ]]; then
+            required_artifacts+=(
+              admin-password-reset-e2e.log
+              admin-password-reset-request.png
+              admin-password-reset-login.png
+            )
+          fi
           if [[ "$BACKUP_RESTORE_DRILL_OUTCOME" == success ]]; then
             required_artifacts+=(backup-restore-drill.log)
           fi
@@ -2377,6 +2471,7 @@ jobs:
           ORDER_RETURN_BROWSER_OUTCOME: ${{ steps.order_return_browser.outcome }}
           ORDER_RETURN_ADMIN_BROWSER_OUTCOME: ${{ steps.order_return_admin_browser.outcome }}
           ORDER_LIFECYCLE_OUTCOME: ${{ steps.order_lifecycle.outcome }}
+          ADMIN_RECOVERY_BROWSER_OUTCOME: ${{ steps.admin_recovery_browser.outcome }}
           BACKUP_RESTORE_DRILL_OUTCOME: ${{ steps.backup_restore_drill.outcome }}
           SECURITY_LOCALE_RESTORE_OUTCOME: ${{ steps.security_locale_restore.outcome }}
           SECURITY_ADMIN_LOCALE_MUTATED: ${{ env.KURANEA_SECURITY_ADMIN_LOCALE_MUTATED }}
@@ -2449,6 +2544,7 @@ jobs:
             "order_lifecycle_fixture=$ORDER_LIFECYCLE_FIXTURE_OUTCOME" \
             "order_return_browser=$ORDER_RETURN_BROWSER_OUTCOME" \
             "order_return_admin_browser=$ORDER_RETURN_ADMIN_BROWSER_OUTCOME" \
+            "admin_recovery=$ADMIN_RECOVERY_BROWSER_OUTCOME" \
             "order_lifecycle=$ORDER_LIFECYCLE_OUTCOME" \
             "backup_restore_drill=$BACKUP_RESTORE_DRILL_OUTCOME" \
             "fresh_install_restart=$FRESH_INSTALL_RESTART_OUTCOME" \

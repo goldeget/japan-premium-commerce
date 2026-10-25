@@ -70,6 +70,31 @@ class BrowserQAArtifactsContractTests(unittest.TestCase):
             "- name: Upload browser QA screenshots", 1
         )[1].split("- name:", 1)[0])
 
+    def test_successful_back_office_recovery_requires_reset_screenshots_and_log(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        verification = workflow.split(
+            "- name: Verify browser QA screenshot coverage", 1
+        )[1].split("- name:", 1)[0]
+
+        self.assertIn(
+            "ADMIN_RECOVERY_BROWSER_OUTCOME: ${{ steps.admin_recovery_browser.outcome }}",
+            verification,
+        )
+        self.assertIn(
+            "ADMIN_RECOVERY_FIXTURE_OUTCOME: ${{ steps.admin_recovery_fixture.outcome }}",
+            verification,
+        )
+        self.assertIn('if [[ "$ADMIN_RECOVERY_FIXTURE_OUTCOME" == success ]]; then', verification)
+        self.assertIn("admin-recovery-fixture.log", verification)
+        self.assertIn('if [[ "$ADMIN_RECOVERY_BROWSER_OUTCOME" == success ]]; then', verification)
+        for artifact in (
+            "admin-password-reset-e2e.log",
+            "admin-password-reset-request.png",
+            "admin-password-reset-login.png",
+        ):
+            with self.subTest(artifact=artifact):
+                self.assertIn(artifact, verification)
+
     def test_pwa_success_requires_account_and_logout_captures_for_all_locale_viewport_cells(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         verification = workflow.split(

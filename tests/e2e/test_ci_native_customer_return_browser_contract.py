@@ -65,6 +65,32 @@ class CiNativeCustomerReturnBrowserContractTests(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertContract(step, required)
 
+    def test_order_detail_interactions_have_distinct_stages_and_pointer_diagnostics(self) -> None:
+        self.assertContract(self.source, 'stage = "return_quantity_select"')
+        self.assertContract(self.source, 'stage = "return_product_checkbox"')
+        quantity_stage = self.source.index('stage = "return_quantity_select"')
+        quantity_selection = self.source.index('Select(quantity).select_by_value("1")')
+        checkbox_stage = self.source.index('stage = "return_product_checkbox"')
+        centered_scroll = self.source.index('scrollIntoView({block: "center", inline: "nearest"})')
+        checkbox_click = self.source.index("checkbox.click()")
+        self.assertLess(quantity_stage, quantity_selection)
+        self.assertLess(quantity_selection, checkbox_stage)
+        self.assertLess(checkbox_stage, centered_scroll)
+        self.assertLess(centered_scroll, checkbox_click)
+
+        for required in (
+            "ElementClickInterceptedException",
+            "document.elementFromPoint",
+            'tag: target.tagName.toLowerCase()',
+            "id: target.id",
+            'class: typeof target.className === "string" ? target.className : ""',
+            'customer-return-click-intercepted.png',
+            '"click_intercept_target": click_intercept_target',
+            '"failure_screenshot": failure_screenshot',
+        ):
+            with self.subTest(required=required):
+                self.assertContract(self.source, required)
+
 
 if __name__ == "__main__":
     unittest.main()

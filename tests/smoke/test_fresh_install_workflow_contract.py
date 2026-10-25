@@ -45,10 +45,12 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "Verify Korean admin shipping links resolve in Chromium",
             "Verify official ORDENOWA brand upload and publish in Chromium",
             "Verify the published ORDENOWA password-reset email logo in Chromium",
+            "Prepare run-scoped Back Office password-reset employee",
             "Verify customer registration, email login, logout, password reset, and my page in Chromium",
             "Verify Korean admin native product create and edit in Chromium",
             "Verify real product detail and cart in Chromium (no payment)",
             "Verify native variant selection and cart controls in Chromium",
+            "Verify Back Office employee password recovery via Mailpit in Chromium",
             "Verify native customer reset-token replay and expiry in Chromium",
             "Verify Chromium PWA lifecycle and private-route cache protection",
             "Prepare isolated free-shipping order and coupon fixtures",
@@ -106,6 +108,51 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn('"admin_security_browser_qa=$ADMIN_SECURITY_BROWSER_QA_OUTCOME"', aggregate)
         self.assertIn('"admin_dashboard_route_screenshot=$ADMIN_DASHBOARD_ROUTE_SCREENSHOT_OUTCOME"', aggregate)
         self.assertIn('"security_locale_restore=$SECURITY_LOCALE_RESTORE_OUTCOME"', aggregate)
+
+    def test_back_office_employee_recovery_uses_isolated_mailpit_fixture_and_aggregate(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+
+        def step(name: str) -> str:
+            return workflow.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
+
+        fixture = step("Prepare run-scoped Back Office password-reset employee")
+        browser = step("Verify Back Office employee password recovery via Mailpit in Chromium")
+        aggregate = step("Aggregate browser QA and postal verification failures")
+
+        self.assertIn("seed_admin_recovery_fixture.php", fixture)
+        self.assertIn("$GITHUB_OUTPUT", fixture)
+        self.assertIn("email={email}", fixture)
+        self.assertIn("ADMIN_MAIL=ci-ordenowa@example.invalid", fixture)
+        self.assertIn("steps.admin_recovery_fixture.outputs.email", browser)
+        self.assertIn("ADMIN_RECOVERY_EMAIL", browser)
+        self.assertIn(
+            "ADMIN_RECOVERY_EMAIL: ${{ steps.admin_recovery_fixture.outputs.email }}",
+            browser,
+        )
+        self.assertIn("GITHUB_ACTIONS: 'true'", browser)
+        self.assertIn("CI_COMPOSE_PROJECT_NAME: ${{ env.CI_COMPOSE_PROJECT_NAME }}", browser)
+        self.assertIn("ADMIN_MAIL: ci-ordenowa@example.invalid", browser)
+        self.assertIn("ADMIN_PASSWD: ${{ env.ADMIN_PASSWD }}", browser)
+        self.assertIn("MAILPIT_API_URL", browser)
+        self.assertIn("steps.admin_recovery_fixture.outcome == 'success'", browser)
+        self.assertIn("steps.mailpit_setup.outcome == 'success'", browser)
+        self.assertIn("steps.chromium_setup.outcome == 'success'", browser)
+        self.assertIn("env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'", browser)
+        self.assertIn("tests/e2e/verify_ci_admin_password_reset_browser.py", browser)
+        self.assertNotIn('tee "$QA_ARTIFACT_DIR/admin-password-reset-e2e.log"', browser)
+        self.assertIn(
+            "ADMIN_RECOVERY_BROWSER_OUTCOME: ${{ steps.admin_recovery_browser.outcome }}",
+            aggregate,
+        )
+        self.assertIn('"admin_recovery=$ADMIN_RECOVERY_BROWSER_OUTCOME"', aggregate)
+
+    def test_native_return_browser_transitions_require_the_run_scoped_mailpit(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        customer = workflow.split("- name: Submit customer return request in Chromium", 1)[1].split("- name:", 1)[0]
+        admin = workflow.split("- name: Verify native admin return state form in Chromium", 1)[1].split("- name:", 1)[0]
+
+        self.assertIn("steps.mailpit_setup.outcome == 'success'", customer)
+        self.assertIn("steps.mailpit_setup.outcome == 'success'", admin)
 
     def test_security_fixture_passes_a_run_scoped_dashboard_employee_to_chromium(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -324,8 +371,8 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
         self.assertTrue("axllent/mailpit:v1.31.6" in workflow, "missing version-pinned disposable mail capture service")
-        self.assertTrue('Configuration::updateValue("PS_MAIL_SERVER", "mailpit")' in workflow, "PrestaShop SMTP is not pointed at the CI-only mail service")
-        self.assertTrue('Configuration::updateValue("PS_MAIL_SMTP_PORT", 1025)' in workflow, "PrestaShop SMTP port is not set for Mailpit")
+        self.assertTrue('"PS_MAIL_SERVER" => "mailpit"' in workflow, "PrestaShop SMTP is not pointed at the CI-only mail service")
+        self.assertTrue('"PS_MAIL_SMTP_PORT" => 1025' in workflow, "PrestaShop SMTP port is not set for Mailpit")
         self.assertTrue("tests/e2e/verify_customer_account_browser.py" in workflow, "customer account browser flow is not run")
         self.assertTrue("MAILPIT_API_URL: http://127.0.0.1:8025" in workflow, "browser test cannot read captured reset mail")
         self.assertTrue("customer-account-e2e.log" in workflow, "account browser execution log is not preserved")
@@ -370,6 +417,16 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("MAILPIT_OWNED: ${{ steps.mailpit_setup.outputs.mailpit_owned }}", cleanup)
         self.assertIn('elif ! docker rm -f "${BASH_REMATCH[1]}"', cleanup)
         self.assertNotIn('docker rm -f "${CI_COMPOSE_PROJECT_NAME}-mailpit" >/dev/null 2>&1 || true', cleanup)
+
+    def test_mailpit_setup_verifies_saved_smtp_configuration_before_allowing_mail_tests(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        setup = workflow.split("id: mailpit_setup", 1)[1].split("- name:", 1)[0]
+
+        self.assertIn("if (!Configuration::updateValue($key, $value))", setup)
+        self.assertIn("Configuration::get($key)", setup)
+        for key in ("PS_MAIL_METHOD", "PS_MAIL_SERVER", "PS_MAIL_SMTP_PORT"):
+            with self.subTest(key=key):
+                self.assertIn(key, setup)
 
     def test_customer_email_login_state_is_annotated_once_and_retained_in_step_summary(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")

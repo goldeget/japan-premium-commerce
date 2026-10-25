@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urljoin, urlparse
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import ElementClickInterceptedException
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.select import Select
 from selenium.webdriver.support.ui import WebDriverWait
@@ -73,6 +74,8 @@ def write_redacted_result(
     screenshot: str | None,
     stage: str,
     exception_type: str | None,
+    click_intercept_target: dict[str, str] | None,
+    failure_screenshot: str | None,
 ) -> None:
     result = {
         "status": status,
@@ -85,6 +88,8 @@ def write_redacted_result(
         "screenshot": screenshot,
         "stage": stage,
         "exception_type": exception_type,
+        "click_intercept_target": click_intercept_target,
+        "failure_screenshot": failure_screenshot,
     }
     output_path.write_text(
         json.dumps(result, ensure_ascii=True, sort_keys=True, indent=2) + "\n",
@@ -133,6 +138,8 @@ def main() -> int:
     return_list_verified = False
     return_rows = 0
     screenshot_name = None
+    click_intercept_target = None
+    failure_screenshot_name = None
 
     try:
         base_url = read_isolated_shop_url()
@@ -214,8 +221,43 @@ def main() -> int:
             raise AssertionError("the native return form did not identify its order-detail line")
         order_detail_id = detail_match.group(1)
         quantity = return_form.find_element(By.NAME, f"order_qte_input[{order_detail_id}]")
+        stage = "return_quantity_select"
         Select(quantity).select_by_value("1")
-        selected_products[0].click()
+
+        stage = "return_product_checkbox"
+        checkbox = selected_products[0]
+        driver.execute_script(
+            'arguments[0].scrollIntoView({block: "center", inline: "nearest"});', checkbox
+        )
+        try:
+            checkbox.click()
+        except ElementClickInterceptedException:
+            topmost = driver.execute_script(
+                """
+                const element = arguments[0];
+                const rect = element.getBoundingClientRect();
+                const target = document.elementFromPoint(
+                  rect.left + rect.width / 2,
+                  rect.top + rect.height / 2
+                );
+                if (!target) return null;
+                return {
+                  tag: target.tagName.toLowerCase(),
+                  id: target.id,
+                  class: typeof target.className === "string" ? target.className : ""
+                };
+                """,
+                checkbox,
+            )
+            if isinstance(topmost, dict):
+                click_intercept_target = {
+                    key: re.sub(r"[^A-Za-z0-9_.: -]", "", str(topmost.get(key, "")))[:160]
+                    for key in ("tag", "id", "class")
+                }
+            failure_screenshot = artifact_dir / "customer-return-click-intercepted.png"
+            if driver.save_screenshot(str(failure_screenshot)):
+                failure_screenshot_name = failure_screenshot.name
+            raise
         return_form.find_element(By.NAME, "returnText").send_keys(RETURN_NOTE)
 
         stage = "return_form_submit"
@@ -272,6 +314,8 @@ def main() -> int:
             screenshot=screenshot_name,
             stage=stage,
             exception_type=exception_type,
+            click_intercept_target=click_intercept_target,
+            failure_screenshot=failure_screenshot_name,
         )
 
     if status != "passed":
