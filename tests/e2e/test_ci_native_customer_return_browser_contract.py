@@ -104,6 +104,33 @@ class CiNativeCustomerReturnBrowserContractTests(unittest.TestCase):
                         self.source.index("checkbox.click()"))
         self.assertIn("except (ElementClickInterceptedException, TimeoutException):", self.source)
 
+    def test_submit_button_interception_emits_bounded_safe_diagnostics_before_quit(self) -> None:
+        self.assertContract(self.source, "def capture_submit_click_blocker(")
+        submit_block = self.source.split('stage = "return_form_submit"', 1)[1].split(
+            'stage = "return_list_readback"', 1
+        )[0]
+        self.assertIn("except ElementClickInterceptedException:", submit_block)
+        self.assertIn("capture_submit_click_blocker(driver, submit_button, artifact_dir)", submit_block)
+        self.assertIn("submit_button.click()", submit_block)
+        self.assertLess(submit_block.index("submit_button.click()"), submit_block.index("except ElementClickInterceptedException:"))
+        self.assertLess(submit_block.index("capture_submit_click_blocker("), submit_block.index("raise"))
+
+        for required in (
+            "document.elementFromPoint",
+            'tag: target.tagName.toLowerCase()',
+            "id: target.id",
+            'class: typeof target.className === "string" ? target.className : ""',
+            'limits = {"tag": 24, "id": 80, "class": 120}',
+            "ORDENOWA_RETURN_SUBMIT_BLOCKER_SAFE_STATE=",
+            "::error title=Return submit click target::",
+            'GITHUB_STEP_SUMMARY',
+            'customer-return-submit-click-intercepted.png',
+            '"submit_click_intercept_target": submit_click_intercept_target',
+            '"submit_failure_screenshot": submit_failure_screenshot',
+        ):
+            with self.subTest(required=required):
+                self.assertContract(self.source, required)
+
 
 if __name__ == "__main__":
     unittest.main()

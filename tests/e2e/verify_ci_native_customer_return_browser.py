@@ -76,6 +76,8 @@ def write_redacted_result(
     exception_type: str | None,
     click_intercept_target: dict[str, str] | None,
     failure_screenshot: str | None,
+    submit_click_intercept_target: dict[str, str] | None,
+    submit_failure_screenshot: str | None,
 ) -> None:
     result = {
         "status": status,
@@ -90,6 +92,8 @@ def write_redacted_result(
         "exception_type": exception_type,
         "click_intercept_target": click_intercept_target,
         "failure_screenshot": failure_screenshot,
+        "submit_click_intercept_target": submit_click_intercept_target,
+        "submit_failure_screenshot": submit_failure_screenshot,
     }
     output_path.write_text(
         json.dumps(result, ensure_ascii=True, sort_keys=True, indent=2) + "\n",
@@ -170,6 +174,60 @@ def capture_checkbox_click_blocker(driver: webdriver.Chrome, checkbox, artifact_
     return safe_target, screenshot_name
 
 
+def capture_submit_click_blocker(driver: webdriver.Chrome, submit_button, artifact_dir: Path):
+    try:
+        topmost = driver.execute_script(
+            """
+            const element = arguments[0];
+            const rect = element.getBoundingClientRect();
+            const target = document.elementFromPoint(
+              rect.left + rect.width / 2,
+              rect.top + rect.height / 2
+            );
+            if (!target) return null;
+            return {
+              tag: target.tagName.toLowerCase(),
+              id: target.id,
+              class: typeof target.className === "string" ? target.className : ""
+            };
+            """,
+            submit_button,
+        )
+    except Exception:
+        topmost = None
+
+    limits = {"tag": 24, "id": 80, "class": 120}
+    safe_target = (
+        {
+            key: re.sub(r"[^A-Za-z0-9_.: -]", "", str(topmost.get(key, "")))[:limit]
+            for key, limit in limits.items()
+        }
+        if isinstance(topmost, dict)
+        else {"tag": "", "id": "", "class": ""}
+    )
+    diagnostic = json.dumps(safe_target, ensure_ascii=True, sort_keys=True)
+    print("ORDENOWA_RETURN_SUBMIT_BLOCKER_SAFE_STATE=" + diagnostic)
+    annotation = diagnostic.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print("::error title=Return submit click target::" + annotation)
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
+    if summary_path:
+        try:
+            with open(summary_path, "a", encoding="utf-8") as summary:
+                summary.write("### Return submit click blocker\n\n")
+                summary.write(f"Safe topmost target: `{diagnostic}`\n")
+        except OSError:
+            pass
+
+    screenshot_name = None
+    screenshot_path = artifact_dir / "customer-return-submit-click-intercepted.png"
+    try:
+        if driver.save_screenshot(str(screenshot_path)):
+            screenshot_name = screenshot_path.name
+    except Exception:
+        pass
+    return safe_target, screenshot_name
+
+
 def main() -> int:
     artifact_dir = Path(os.environ.get("QA_ARTIFACT_DIR", "/tmp"))
     artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -186,6 +244,8 @@ def main() -> int:
     screenshot_name = None
     click_intercept_target = None
     failure_screenshot_name = None
+    submit_click_intercept_target = None
+    submit_failure_screenshot_name = None
 
     try:
         base_url = read_isolated_shop_url()
@@ -301,9 +361,14 @@ def main() -> int:
         return_form.find_element(By.NAME, "returnText").send_keys(RETURN_NOTE)
 
         stage = "return_form_submit"
-        return_form.find_element(
+        submit_button = return_form.find_element(
             By.CSS_SELECTOR, "button[name='submitReturnMerchandise']"
-        ).click()
+        )
+        try:
+            submit_button.click()
+        except ElementClickInterceptedException:
+            submit_click_intercept_target, submit_failure_screenshot_name = capture_submit_click_blocker(driver, submit_button, artifact_dir)
+            raise
         return_form_submitted = True
 
         stage = "return_list_readback"
@@ -356,6 +421,8 @@ def main() -> int:
             exception_type=exception_type,
             click_intercept_target=click_intercept_target,
             failure_screenshot=failure_screenshot_name,
+            submit_click_intercept_target=submit_click_intercept_target,
+            submit_failure_screenshot=submit_failure_screenshot_name,
         )
 
     if status != "passed":
