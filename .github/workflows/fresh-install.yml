@@ -2128,15 +2128,30 @@ jobs:
           if set(data) != {
               'last_completed_stage', 'failure_stage', 'exception_class',
               'same_admin_origin', 'admin_path_matches', 'safe_page_class',
-              'document_ready_state', 'requested_pathname', 'observed_pathname',
+              'document_ready_state', 'compromised_static_path_matches',
+              'compromised_page_marker_present', 'compromised_page_marker_visible',
+              'compromised_page_classification',
+              'compromised_page_screenshot_captured', 'compromised_page_screenshot_stage',
+              'requested_pathname', 'observed_pathname',
               'document_response_status', 'visible_error_marker', 'return_grid_present',
+              'return_menu_link_found', 'return_menu_link_same_origin',
+              'return_menu_link_admin_path', 'return_menu_link_return_path',
+              'return_menu_link_session_token_present', 'return_menu_link_visible',
+              'return_menu_navigation_method', 'tokenless_probe_pathname',
+              'tokenless_probe_document_response_status', 'tokenless_probe_same_admin_origin',
+              'tokenless_probe_admin_path_matches', 'tokenless_probe_compromised_static_path_matches',
+              'tokenless_probe_page_marker_present', 'tokenless_probe_page_marker_visible',
+              'tokenless_probe_classification',
+              'tokenless_probe_page_class',
+              'tokenized_menu_classification', 'tokenized_restore_classification', 'token_comparison',
               'target_order_matches', 'order_detail_link_matches', 'target_rma_matches', 'login_form_visible',
               'selected_state', 'save_success_visible', 'status_control_screenshot_captured',
               'initial_state', 'final_state', 'original_state_restored', 'transition_results',
           }:
               raise SystemExit('admin return diagnostic fields are not allowlisted')
           allowed_stages = {
-              'none', 'target_setup', 'admin_login', 'return_list_navigation', 'return_grid', 'target_rma',
+              'none', 'target_setup', 'admin_login', 'return_menu_link', 'return_list_navigation',
+              'return_tokenless_probe', 'return_tokenized_restore', 'return_grid', 'target_rma',
               'edit_screen', 'transition_1_to_2_select', 'transition_1_to_2_save',
               'transition_1_to_2_readback', 'transition_2_to_1_select',
               'transition_2_to_1_save', 'transition_2_to_1_readback', 'complete',
@@ -2144,11 +2159,27 @@ jobs:
           }
           allowed_page_classes = {
               'unknown', 'outside_admin', 'same_origin_non_admin', 'admin_login',
-              'admin_return_list', 'admin_return_edit', 'other_admin',
+              'admin_return_list', 'admin_return_edit', 'prestashop_security_compromised',
+              'security_path_without_marker', 'security_marker_off_path', 'other_admin',
+          }
+          allowed_compromised_classifications = {
+              'none', 'prestashop_security_compromised',
+              'security_path_without_marker', 'security_marker_off_path',
+          }
+          allowed_token_comparisons = {
+              'not_available', 'tokenless_compromised_tokenized_clear',
+              'tokenless_clear_tokenized_clear', 'tokenless_compromised_tokenized_compromised',
+              'tokenless_clear_tokenized_compromised',
+              'tokenless_login_tokenized_clear', 'tokenless_login_tokenized_compromised',
+              'tokenless_other_admin_tokenized_clear', 'tokenless_other_admin_tokenized_compromised',
+              'inconclusive',
           }
           allowed_ready_states = {'unknown', 'loading', 'interactive', 'complete', 'other'}
           allowed_exceptions = {
-              'TargetGuardError', 'TimeoutException', 'NoSuchElementException',
+              'TargetGuardError', 'PrestaShopSecurityCompromisedPageError',
+              'CompromisedPageSignalMismatchError',
+              'TokenRouteComparisonInconclusiveError',
+              'TimeoutException', 'NoSuchElementException',
               'StaleElementReferenceException', 'ElementClickInterceptedException',
               'ElementNotInteractableException', 'UnexpectedAlertPresentException',
               'WebDriverException', 'AssertionError', 'OSError', 'UnexpectedError',
@@ -2159,29 +2190,51 @@ jobs:
               raise SystemExit('admin return exception class is not allowlisted')
           if data['safe_page_class'] not in allowed_page_classes:
               raise SystemExit('admin return page class is not allowlisted')
+          if data['tokenless_probe_page_class'] not in allowed_page_classes:
+              raise SystemExit('admin return tokenless page class is not allowlisted')
+          if data['compromised_page_screenshot_stage'] not in allowed_stages:
+              raise SystemExit('admin return security screenshot stage is not allowlisted')
           if data['document_ready_state'] not in allowed_ready_states:
               raise SystemExit('admin return document ready state is not allowlisted')
+          for key in (
+              'compromised_page_classification', 'tokenless_probe_classification',
+              'tokenized_menu_classification', 'tokenized_restore_classification',
+          ):
+              if data[key] not in allowed_compromised_classifications:
+                  raise SystemExit('admin return compromised-page classification is not allowlisted')
+          if data['token_comparison'] not in allowed_token_comparisons:
+              raise SystemExit('admin return token comparison is not allowlisted')
+          if data['return_menu_navigation_method'] not in ('not_started', 'click', 'generated_href'):
+              raise SystemExit('admin return menu navigation method is not allowlisted')
           if not isinstance(data['visible_error_marker'], bool):
               raise SystemExit('admin return error marker is invalid')
           safe_path_pattern = r'/[A-Za-z0-9._~/<>{}-]{0,240}'
-          for key in ('requested_pathname', 'observed_pathname'):
+          for key in ('requested_pathname', 'observed_pathname', 'tokenless_probe_pathname'):
               value = data[key]
               if value not in ('unknown', 'outside_admin', 'same_origin_non_admin') and (
                   not isinstance(value, str) or re.fullmatch(safe_path_pattern, value) is None
               ):
                   raise SystemExit('admin return pathname is not safe')
-          if data['document_response_status'] != 'unknown' and data['document_response_status'] not in {
-              str(status) for status in range(100, 600)
-          }:
+          allowed_statuses = {str(status) for status in range(100, 600)} | {'unknown'}
+          if data['document_response_status'] not in allowed_statuses:
               raise SystemExit('admin return document response status is invalid')
+          if data['tokenless_probe_document_response_status'] not in allowed_statuses:
+              raise SystemExit('admin return tokenless probe response status is invalid')
           if data['initial_state'] not in ('1', '2', 'unknown') or data['final_state'] not in ('1', '2', 'unknown'):
               raise SystemExit('admin return lifecycle state is not allowlisted')
           if not isinstance(data['original_state_restored'], bool):
               raise SystemExit('admin return original-state marker is invalid')
           for key in (
               'same_admin_origin', 'admin_path_matches', 'visible_error_marker', 'return_grid_present',
+              'compromised_static_path_matches', 'compromised_page_marker_present',
+              'compromised_page_marker_visible',
+              'return_menu_link_found', 'return_menu_link_same_origin', 'return_menu_link_admin_path',
+              'return_menu_link_return_path', 'return_menu_link_session_token_present',
+              'return_menu_link_visible', 'tokenless_probe_same_admin_origin',
+              'tokenless_probe_admin_path_matches', 'tokenless_probe_compromised_static_path_matches',
+              'tokenless_probe_page_marker_present', 'tokenless_probe_page_marker_visible',
               'target_order_matches', 'order_detail_link_matches', 'target_rma_matches',
-              'login_form_visible', 'save_success_visible',
+              'login_form_visible', 'save_success_visible', 'compromised_page_screenshot_captured',
           ):
               if not isinstance(data[key], bool):
                   raise SystemExit('admin return diagnostic boolean is invalid')
@@ -2189,6 +2242,23 @@ jobs:
               raise SystemExit('admin return selected state is not allowlisted')
           if not isinstance(data['status_control_screenshot_captured'], bool):
               raise SystemExit('admin return screenshot marker is invalid')
+          native_compromised_page_visible = (
+              data['compromised_page_marker_visible']
+              and any(
+                  data[key] == 'prestashop_security_compromised'
+                  for key in (
+                      'compromised_page_classification', 'tokenized_menu_classification',
+                      'tokenized_restore_classification',
+                  )
+              )
+          ) or (
+              data['tokenless_probe_page_marker_visible']
+              and data['tokenless_probe_classification'] == 'prestashop_security_compromised'
+          )
+          if native_compromised_page_visible and not data['compromised_page_screenshot_captured']:
+              raise SystemExit('native compromised-page screenshot is required when the page is detected')
+          if data['compromised_page_screenshot_captured'] != (data['compromised_page_screenshot_stage'] != 'none'):
+              raise SystemExit('admin return security screenshot metadata is inconsistent')
           result_fields = {
               'transition', 'native_save_submitted', 'new_post_save_document_observed',
               'save_success_visible', 'fresh_get_completed', 'target_rma_matches',
@@ -2204,11 +2274,20 @@ jobs:
               for key in result_fields - {'transition', 'readback_state'}:
                   if not isinstance(result[key], bool):
                       raise SystemExit('admin return transition marker is invalid')
-          print('true' if data['status_control_screenshot_captured'] else 'false')
+          print(
+              ('true' if data['status_control_screenshot_captured'] else 'false')
+              + ','
+              + ('true' if data['compromised_page_screenshot_captured'] else 'false')
+          )
           PYDIAG
               )
+              IFS=, read -r screenshot_captured compromised_screenshot_captured <<<"$screenshot_captured"
               if [[ "$screenshot_captured" == true && ! -s "$artifact_dir/admin-return-state-control.png" ]]; then
                 echo '::error title=Admin return browser evidence::The verified state-control screenshot is missing.'
+                exit 1
+              fi
+              if [[ "$compromised_screenshot_captured" == true && ! -s "$artifact_dir/admin-return-security-compromised.png" ]]; then
+                echo '::error title=Admin return browser evidence::The native compromised-page screenshot is missing.'
                 exit 1
               fi
             fi
@@ -2490,6 +2569,9 @@ jobs:
           fi
           if [[ "$ORDER_RETURN_ADMIN_BROWSER_OUTCOME" == success ]]; then
             required_artifacts+=(admin-return-e2e.log)
+            if grep -q 'tokenless_class=prestashop_security_compromised.*tokenless_marker_visible=True' "$artifact_dir/admin-return-e2e.log"; then
+              required_artifacts+=(admin-return-security-compromised.png)
+            fi
           fi
           if [[ "$ADMIN_RECOVERY_FIXTURE_OUTCOME" == success ]]; then
             required_artifacts+=(admin-recovery-fixture.log)

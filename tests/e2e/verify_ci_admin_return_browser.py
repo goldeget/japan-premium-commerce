@@ -27,6 +27,14 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.select import Select
 from selenium.webdriver.support.ui import WebDriverWait
 
+from admin_return_navigation import (
+    SAFE_COMPROMISED_PAGE_CLASSIFICATIONS,
+    compromised_page_facts,
+    return_menu_link_facts,
+    return_list_path_matches,
+    security_page_failure_reason,
+    token_comparison_classification,
+)
 from safe_admin_browser_diagnostics import (
     safe_admin_pathname,
     safe_document_response_status,
@@ -35,6 +43,7 @@ from safe_admin_browser_diagnostics import (
 
 RETURN_LIST_SUFFIX = "/sell/customer-service/merchandise-return/"
 RETURN_GRID_ID = "merchandise_return_grid_table"
+SECURITY_COMPROMISED_PAGE_ID = "security-compromised-page"
 RETURN_STATE_SELECTOR = "[name$='[order_return_state]']"
 SAVE_AND_STAY_NAME = "submitAddorder_returnAndStay"
 WAITING_FOR_CONFIRMATION_STATE_ID = "1"
@@ -48,7 +57,10 @@ SAFE_DIAGNOSTIC_STAGES = (
     "none",
     "target_setup",
     "admin_login",
+    "return_menu_link",
     "return_list_navigation",
+    "return_tokenless_probe",
+    "return_tokenized_restore",
     "return_grid",
     "target_rma",
     "edit_screen",
@@ -69,18 +81,49 @@ SAFE_PAGE_CLASSES = (
     "admin_login",
     "admin_return_list",
     "admin_return_edit",
+    "prestashop_security_compromised",
+    "security_path_without_marker",
+    "security_marker_off_path",
     "other_admin",
 )
 SAFE_DOCUMENT_READY_STATES = ("unknown", "loading", "interactive", "complete", "other")
 SAFE_FALLBACK_EXCEPTION_CLASS_NAME = "UnexpectedError"
+SAFE_TOKEN_COMPARISONS = (
+    "not_available",
+    "tokenless_compromised_tokenized_clear",
+    "tokenless_clear_tokenized_clear",
+    "tokenless_compromised_tokenized_compromised",
+    "tokenless_clear_tokenized_compromised",
+    "tokenless_login_tokenized_clear",
+    "tokenless_login_tokenized_compromised",
+    "tokenless_other_admin_tokenized_clear",
+    "tokenless_other_admin_tokenized_compromised",
+    "inconclusive",
+)
+SAFE_RETURN_MENU_NAVIGATION_METHODS = ("not_started", "click", "generated_href")
 
 
 class TargetGuardError(Exception):
     """Raised when the browser target is not this run's disposable shop."""
 
 
+class PrestaShopSecurityCompromisedPageError(Exception):
+    """Raised when PrestaShop shows its native CSRF-compromised page."""
+
+
+class CompromisedPageSignalMismatchError(Exception):
+    """Raised when the native page marker and expected static route disagree."""
+
+
+class TokenRouteComparisonInconclusiveError(Exception):
+    """Raised when safe route evidence cannot resolve the tokenized comparison."""
+
+
 EXCEPTION_CLASS_ALLOWLIST = (
     (TargetGuardError, "TargetGuardError"),
+    (PrestaShopSecurityCompromisedPageError, "PrestaShopSecurityCompromisedPageError"),
+    (CompromisedPageSignalMismatchError, "CompromisedPageSignalMismatchError"),
+    (TokenRouteComparisonInconclusiveError, "TokenRouteComparisonInconclusiveError"),
     (TimeoutException, "TimeoutException"),
     (NoSuchElementException, "NoSuchElementException"),
     (StaleElementReferenceException, "StaleElementReferenceException"),
@@ -102,9 +145,34 @@ class StageTracker:
         self.safe_page_class = "unknown"
         self.document_ready_state = "unknown"
         self.visible_error_marker = False
+        self.compromised_static_path_matches = False
+        self.compromised_page_marker_present = False
+        self.compromised_page_marker_visible = False
+        self.compromised_page_classification = "none"
+        self.compromised_page_screenshot_captured = False
+        self.compromised_page_screenshot_stage = "none"
         self.requested_pathname = "unknown"
         self.observed_pathname = "unknown"
         self.document_response_status = "unknown"
+        self.return_menu_link_found = False
+        self.return_menu_link_same_origin = False
+        self.return_menu_link_admin_path = False
+        self.return_menu_link_return_path = False
+        self.return_menu_link_session_token_present = False
+        self.return_menu_link_visible = False
+        self.return_menu_navigation_method = "not_started"
+        self.tokenless_probe_pathname = "unknown"
+        self.tokenless_probe_document_response_status = "unknown"
+        self.tokenless_probe_same_admin_origin = False
+        self.tokenless_probe_admin_path_matches = False
+        self.tokenless_probe_compromised_static_path_matches = False
+        self.tokenless_probe_page_marker_present = False
+        self.tokenless_probe_page_marker_visible = False
+        self.tokenless_probe_classification = "none"
+        self.tokenless_probe_page_class = "unknown"
+        self.tokenized_menu_classification = "none"
+        self.tokenized_restore_classification = "none"
+        self.token_comparison = "not_available"
         self.return_grid_present = False
         self.target_order_matches = False
         self.order_detail_link_matches = False
@@ -258,25 +326,42 @@ def is_admin_origin(url: str, admin_root: str) -> bool:
     return same_admin_origin(url, admin_root) and is_admin_path(url, admin_root)
 
 
-def safe_page_class(url: str, admin_root: str) -> str:
+def safe_page_class(
+    url: str,
+    admin_root: str,
+    compromised_classification: str = "none",
+) -> str:
     if not same_admin_origin(url, admin_root):
         return "outside_admin"
     if not is_admin_path(url, admin_root):
         return "same_origin_non_admin"
+    if (
+        compromised_classification in SAFE_COMPROMISED_PAGE_CLASSIFICATIONS
+        and compromised_classification != "none"
+    ):
+        return compromised_classification
 
-    candidate_path = urlparse(url).path.rstrip("/")
+    candidate_path = urlparse(url).path
     base_path = urlparse(admin_root).path.rstrip("/")
     relative_path = candidate_path[len(base_path):]
-    if relative_path.endswith("/login"):
+    if relative_path in {"/login", "/login/"}:
         return "admin_login"
-    if relative_path.endswith(RETURN_LIST_SUFFIX.rstrip("/")):
+    if return_list_path_matches(candidate_path, admin_root):
         return "admin_return_list"
-    if re.search(
-        r"/sell/customer-service/merchandise-return/[1-9][0-9]{0,11}/edit$",
+    if re.fullmatch(
+        r"/sell/customer-service/merchandise-return/[1-9][0-9]{0,11}/edit/?",
         relative_path,
     ):
         return "admin_return_edit"
     return "other_admin"
+
+
+def reject_security_page_signal(classification: str) -> None:
+    failure_reason = security_page_failure_reason(classification)
+    if failure_reason == "native_compromised_page":
+        raise PrestaShopSecurityCompromisedPageError
+    if failure_reason == "security_signal_mismatch":
+        raise CompromisedPageSignalMismatchError
 
 
 def collect_safe_page_diagnostics(
@@ -289,6 +374,10 @@ def collect_safe_page_diagnostics(
     stage.safe_page_class = "unknown"
     stage.document_ready_state = "unknown"
     stage.visible_error_marker = False
+    stage.compromised_static_path_matches = False
+    stage.compromised_page_marker_present = False
+    stage.compromised_page_marker_visible = False
+    stage.compromised_page_classification = "none"
     stage.observed_pathname = "unknown"
     stage.document_response_status = "unknown"
     stage.return_grid_present = False
@@ -299,7 +388,23 @@ def collect_safe_page_diagnostics(
         stage.same_admin_origin = same_admin_origin(current_url, admin_root)
         stage.admin_path_matches = is_admin_path(current_url, admin_root)
         stage.observed_pathname = safe_admin_pathname(current_url, admin_root)
-        page_class = safe_page_class(current_url, admin_root)
+        compromised_page_elements = driver.find_elements(By.ID, SECURITY_COMPROMISED_PAGE_ID)
+        stage.compromised_page_marker_present = bool(compromised_page_elements)
+        stage.compromised_page_marker_visible = any(
+            element.is_displayed() for element in compromised_page_elements
+        )
+        compromised_facts = compromised_page_facts(
+            current_url,
+            admin_root,
+            stage.compromised_page_marker_present,
+        )
+        stage.compromised_static_path_matches = compromised_facts["static_path_matches"] is True
+        stage.compromised_page_classification = compromised_facts["classification"]
+        page_class = safe_page_class(
+            current_url,
+            admin_root,
+            stage.compromised_page_classification,
+        )
         stage.safe_page_class = page_class if page_class in SAFE_PAGE_CLASSES else "unknown"
     except Exception:
         return
@@ -352,6 +457,60 @@ def collect_safe_page_diagnostics(
             pass
 
 
+def generated_return_menu_link(
+    driver: webdriver.Chrome,
+    admin_root: str,
+    stage: StageTracker,
+):
+    route_candidates = []
+    valid_candidates = {}
+    for link in driver.find_elements(By.CSS_SELECTOR, "#nav-sidebar a[href]"):
+        href = link.get_attribute("href") or ""
+        facts = return_menu_link_facts(href, admin_root)
+        if not facts["return_path"]:
+            continue
+        route_candidates.append((link, href, facts))
+        if facts["valid"]:
+            previous = valid_candidates.get(href)
+            visible = link.is_displayed() and link.is_enabled()
+            if previous is None or (visible and not previous[1]):
+                valid_candidates[href] = (link, visible)
+
+    stage.return_menu_link_found = bool(route_candidates)
+    if route_candidates:
+        _, _, diagnostic_facts = max(
+            route_candidates,
+            key=lambda item: sum(
+                item[2][key]
+                for key in ("same_origin", "admin_path", "return_path", "session_token_present")
+            ),
+        )
+        stage.return_menu_link_same_origin = diagnostic_facts["same_origin"] is True
+        stage.return_menu_link_admin_path = diagnostic_facts["admin_path"] is True
+        stage.return_menu_link_return_path = diagnostic_facts["return_path"] is True
+        stage.return_menu_link_session_token_present = (
+            diagnostic_facts["session_token_present"] is True
+        )
+
+    if len(valid_candidates) != 1:
+        raise TargetGuardError
+    href, (link, visible) = next(iter(valid_candidates.items()))
+    stage.return_menu_link_visible = visible
+    return link, href
+
+
+def copy_tokenless_probe_diagnostics(stage: StageTracker) -> None:
+    stage.tokenless_probe_pathname = stage.observed_pathname
+    stage.tokenless_probe_document_response_status = stage.document_response_status
+    stage.tokenless_probe_same_admin_origin = stage.same_admin_origin
+    stage.tokenless_probe_admin_path_matches = stage.admin_path_matches
+    stage.tokenless_probe_compromised_static_path_matches = stage.compromised_static_path_matches
+    stage.tokenless_probe_page_marker_present = stage.compromised_page_marker_present
+    stage.tokenless_probe_page_marker_visible = stage.compromised_page_marker_visible
+    stage.tokenless_probe_classification = stage.compromised_page_classification
+    stage.tokenless_probe_page_class = stage.safe_page_class
+
+
 def return_id_from_edit_url(href: str, admin_root: str) -> int | None:
     absolute_url = urljoin(admin_root + "/", href)
     if not is_admin_origin(absolute_url, admin_root):
@@ -372,11 +531,71 @@ def find_existing_return(
     expected_order_id: int,
     stage: StageTracker,
 ):
-    requested_url = admin_root + RETURN_LIST_SUFFIX
+    stage.begin("return_menu_link")
+    menu_link, menu_url = generated_return_menu_link(driver, admin_root, stage)
+    stage.requested_pathname = safe_admin_pathname(menu_url, admin_root)
+    stage.complete()
+
     stage.begin("return_list_navigation")
-    stage.requested_pathname = safe_admin_pathname(requested_url, admin_root)
-    visit(driver, requested_url)
+    stage.requested_pathname = safe_admin_pathname(menu_url, admin_root)
+    if menu_link.is_displayed() and menu_link.is_enabled():
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", menu_link)
+        menu_link.click()
+        WebDriverWait(driver, 35).until(
+            lambda browser: browser.execute_script("return document.readyState") == "complete"
+        )
+        stage.return_menu_navigation_method = "click"
+    else:
+        # Match the existing Back Office route probe pattern: navigate to the
+        # exact validated href emitted by the menu, keeping its session token in memory.
+        visit(driver, menu_url)
+        stage.return_menu_navigation_method = "generated_href"
     collect_safe_page_diagnostics(stage, driver, admin_root)
+    capture_safe_compromised_page_screenshot(driver, admin_root, stage)
+    stage.tokenized_menu_classification = stage.compromised_page_classification
+    reject_security_page_signal(stage.compromised_page_classification)
+    if (
+        not stage.same_admin_origin
+        or not stage.admin_path_matches
+        or stage.safe_page_class != "admin_return_list"
+    ):
+        raise TargetGuardError
+    stage.complete()
+
+    stage.begin("return_tokenless_probe")
+    tokenless_url = admin_root + RETURN_LIST_SUFFIX
+    stage.requested_pathname = safe_admin_pathname(tokenless_url, admin_root)
+    visit(driver, tokenless_url)
+    collect_safe_page_diagnostics(stage, driver, admin_root)
+    capture_safe_compromised_page_screenshot(driver, admin_root, stage)
+    copy_tokenless_probe_diagnostics(stage)
+    if not stage.tokenless_probe_same_admin_origin or not stage.tokenless_probe_admin_path_matches:
+        raise TargetGuardError
+    if security_page_failure_reason(stage.tokenless_probe_classification) == "security_signal_mismatch":
+        raise CompromisedPageSignalMismatchError
+    stage.complete()
+
+    stage.begin("return_tokenized_restore")
+    stage.requested_pathname = safe_admin_pathname(menu_url, admin_root)
+    visit(driver, menu_url)
+    collect_safe_page_diagnostics(stage, driver, admin_root)
+    capture_safe_compromised_page_screenshot(driver, admin_root, stage)
+    stage.tokenized_restore_classification = stage.compromised_page_classification
+    stage.token_comparison = token_comparison_classification(
+        stage.tokenless_probe_classification,
+        stage.tokenized_restore_classification,
+        stage.tokenless_probe_page_class,
+        stage.safe_page_class,
+    )
+    reject_security_page_signal(stage.compromised_page_classification)
+    if stage.token_comparison == "inconclusive":
+        raise TokenRouteComparisonInconclusiveError
+    if (
+        not stage.same_admin_origin
+        or not stage.admin_path_matches
+        or stage.safe_page_class != "admin_return_list"
+    ):
+        raise TargetGuardError
     stage.complete()
 
     stage.begin("return_grid")
@@ -678,9 +897,34 @@ def build_safe_diagnostics(
         "safe_page_class": stage.safe_page_class,
         "document_ready_state": stage.document_ready_state,
         "visible_error_marker": stage.visible_error_marker,
+        "compromised_static_path_matches": stage.compromised_static_path_matches,
+        "compromised_page_marker_present": stage.compromised_page_marker_present,
+        "compromised_page_marker_visible": stage.compromised_page_marker_visible,
+        "compromised_page_classification": stage.compromised_page_classification,
+        "compromised_page_screenshot_captured": stage.compromised_page_screenshot_captured,
+        "compromised_page_screenshot_stage": stage.compromised_page_screenshot_stage,
         "requested_pathname": stage.requested_pathname,
         "observed_pathname": stage.observed_pathname,
         "document_response_status": stage.document_response_status,
+        "return_menu_link_found": stage.return_menu_link_found,
+        "return_menu_link_same_origin": stage.return_menu_link_same_origin,
+        "return_menu_link_admin_path": stage.return_menu_link_admin_path,
+        "return_menu_link_return_path": stage.return_menu_link_return_path,
+        "return_menu_link_session_token_present": stage.return_menu_link_session_token_present,
+        "return_menu_link_visible": stage.return_menu_link_visible,
+        "return_menu_navigation_method": stage.return_menu_navigation_method,
+        "tokenless_probe_pathname": stage.tokenless_probe_pathname,
+        "tokenless_probe_document_response_status": stage.tokenless_probe_document_response_status,
+        "tokenless_probe_same_admin_origin": stage.tokenless_probe_same_admin_origin,
+        "tokenless_probe_admin_path_matches": stage.tokenless_probe_admin_path_matches,
+        "tokenless_probe_compromised_static_path_matches": stage.tokenless_probe_compromised_static_path_matches,
+        "tokenless_probe_page_marker_present": stage.tokenless_probe_page_marker_present,
+        "tokenless_probe_page_marker_visible": stage.tokenless_probe_page_marker_visible,
+        "tokenless_probe_classification": stage.tokenless_probe_classification,
+        "tokenless_probe_page_class": stage.tokenless_probe_page_class,
+        "tokenized_menu_classification": stage.tokenized_menu_classification,
+        "tokenized_restore_classification": stage.tokenized_restore_classification,
+        "token_comparison": stage.token_comparison,
         "return_grid_present": stage.return_grid_present,
         "target_order_matches": stage.target_order_matches,
         "order_detail_link_matches": stage.order_detail_link_matches,
@@ -703,14 +947,17 @@ def capture_safe_status_screenshot(
     order_id: int | None,
     stage: StageTracker,
 ) -> bool:
-    stage.selected_state = "unknown"
-    stage.save_success_visible = False
-    stage.order_detail_link_matches = False
-    stage.target_rma_matches = False
     if driver is None or admin_root is None or return_id is None or order_id is None:
         return False
     try:
-        verified_form = current_return_form(driver, admin_root, return_id, order_id, stage)
+        screenshot_observation = StageTracker()
+        verified_form = current_return_form(
+            driver,
+            admin_root,
+            return_id,
+            order_id,
+            screenshot_observation,
+        )
         if verified_form is None:
             return False
         form, status_select = verified_form
@@ -719,17 +966,49 @@ def capture_safe_status_screenshot(
         selected_state = Select(status_select).first_selected_option.get_attribute("value")
         if selected_state not in SAFE_SELECTED_STATE_VALUES[:2] or not status_select.is_displayed():
             return False
-        stage.selected_state = selected_state_token(selected_state)
-        if stage.current_stage.endswith("_readback"):
-            stage.save_success_visible = bool(
-                driver.find_elements(By.CSS_SELECTOR, 'div.alert.alert-success[role="alert"]')
-            )
         artifact_directory = os.environ.get("QA_ARTIFACT_DIR")
         if not artifact_directory:
             return False
         screenshot_path = Path(artifact_directory) / "admin-return-state-control.png"
         screenshot_path.parent.mkdir(parents=True, exist_ok=True)
         return status_select.screenshot(str(screenshot_path)) is True and screenshot_path.is_file()
+    except Exception:
+        return False
+
+
+def capture_safe_compromised_page_screenshot(
+    driver: webdriver.Chrome | None,
+    admin_root: str | None,
+    stage: StageTracker,
+) -> bool:
+    if (
+        driver is None
+        or admin_root is None
+        or not stage.compromised_static_path_matches
+        or not stage.compromised_page_marker_present
+        or not stage.compromised_page_marker_visible
+        or stage.compromised_page_classification != "prestashop_security_compromised"
+    ):
+        return False
+    try:
+        current_url = driver.current_url
+        page_elements = driver.find_elements(By.ID, SECURITY_COMPROMISED_PAGE_ID)
+        marker_present = bool(page_elements)
+        visible_page_elements = [element for element in page_elements if element.is_displayed()]
+        current_facts = compromised_page_facts(current_url, admin_root, marker_present)
+        if current_facts["classification"] != "prestashop_security_compromised" or not visible_page_elements:
+            return False
+        page_element = visible_page_elements[0]
+        artifact_directory = os.environ.get("QA_ARTIFACT_DIR")
+        if not artifact_directory:
+            return False
+        screenshot_path = Path(artifact_directory) / "admin-return-security-compromised.png"
+        screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+        captured = page_element.screenshot(str(screenshot_path)) is True and screenshot_path.is_file()
+        if captured:
+            stage.compromised_page_screenshot_captured = True
+            stage.compromised_page_screenshot_stage = stage.current_stage
+        return captured
     except Exception:
         return False
 
@@ -760,8 +1039,33 @@ def report_failure_diagnostics(diagnostics: dict[str, object]) -> None:
         "same_admin_origin={same_admin_origin} admin_path={admin_path_matches} "
         "page_class={safe_page_class} ready_state={document_ready_state} "
         "visible_error_marker={visible_error_marker} "
+        "compromised_path_match={compromised_static_path_matches} "
+        "compromised_marker={compromised_page_marker_present} "
+        "compromised_marker_visible={compromised_page_marker_visible} "
+        "compromised_class={compromised_page_classification} "
+        "compromised_screenshot={compromised_page_screenshot_captured} "
+        "compromised_screenshot_stage={compromised_page_screenshot_stage} "
         "requested_path={requested_pathname} observed_path={observed_pathname} "
         "document_status={document_response_status} "
+        "return_menu_link_found={return_menu_link_found} "
+        "return_menu_same_origin={return_menu_link_same_origin} "
+        "return_menu_admin_path={return_menu_link_admin_path} "
+        "return_menu_return_path={return_menu_link_return_path} "
+        "return_menu_session_token_present={return_menu_link_session_token_present} "
+        "return_menu_link_visible={return_menu_link_visible} "
+        "return_menu_navigation={return_menu_navigation_method} "
+        "tokenless_probe_path={tokenless_probe_pathname} "
+        "tokenless_probe_status={tokenless_probe_document_response_status} "
+        "tokenless_probe_admin_origin={tokenless_probe_same_admin_origin} "
+        "tokenless_probe_admin_path={tokenless_probe_admin_path_matches} "
+        "tokenless_compromised_path={tokenless_probe_compromised_static_path_matches} "
+        "tokenless_compromised_marker={tokenless_probe_page_marker_present} "
+        "tokenless_marker_visible={tokenless_probe_page_marker_visible} "
+        "tokenless_class={tokenless_probe_classification} "
+        "tokenless_page_class={tokenless_probe_page_class} "
+        "tokenized_menu_class={tokenized_menu_classification} "
+        "tokenized_restore_class={tokenized_restore_classification} "
+        "token_comparison={token_comparison} "
         "return_grid_present={return_grid_present} "
         "selected_state={selected_state} save_success={save_success_visible} "
         "status_control_screenshot={status_control_screenshot_captured} "
@@ -798,9 +1102,20 @@ def report_failure_diagnostics(diagnostics: dict[str, object]) -> None:
             f"- Safe page class: `{diagnostics['safe_page_class']}`\n"
             f"- Document ready state: `{diagnostics['document_ready_state']}`\n"
             f"- Visible error marker: `{diagnostics['visible_error_marker']}`\n"
+            f"- Compromised static path matched: `{diagnostics['compromised_static_path_matches']}`\n"
+            f"- Compromised page marker present: `{diagnostics['compromised_page_marker_present']}`\n"
+            f"- Compromised page marker visible: `{diagnostics['compromised_page_marker_visible']}`\n"
+            f"- Compromised page classification: `{diagnostics['compromised_page_classification']}`\n"
+            f"- Compromised page screenshot: captured=`{diagnostics['compromised_page_screenshot_captured']}`, stage=`{diagnostics['compromised_page_screenshot_stage']}`\n"
             f"- Requested pathname: `{diagnostics['requested_pathname']}`\n"
             f"- Observed pathname: `{diagnostics['observed_pathname']}`\n"
             f"- Document response status: `{diagnostics['document_response_status']}`\n"
+            f"- Generated return menu link found: `{diagnostics['return_menu_link_found']}`\n"
+            f"- Generated return menu link checks: origin=`{diagnostics['return_menu_link_same_origin']}`, admin_path=`{diagnostics['return_menu_link_admin_path']}`, return_path=`{diagnostics['return_menu_link_return_path']}`, session_token_present=`{diagnostics['return_menu_link_session_token_present']}`, visible=`{diagnostics['return_menu_link_visible']}`\n"
+            f"- Generated menu navigation method: `{diagnostics['return_menu_navigation_method']}`\n"
+            f"- Tokenless probe: path=`{diagnostics['tokenless_probe_pathname']}`, status=`{diagnostics['tokenless_probe_document_response_status']}`, same_admin_origin=`{diagnostics['tokenless_probe_same_admin_origin']}`, admin_path=`{diagnostics['tokenless_probe_admin_path_matches']}`, compromised_path=`{diagnostics['tokenless_probe_compromised_static_path_matches']}`, marker=`{diagnostics['tokenless_probe_page_marker_present']}`, marker_visible=`{diagnostics['tokenless_probe_page_marker_visible']}`, class=`{diagnostics['tokenless_probe_classification']}`\n"
+            f"- Tokenless final page class: `{diagnostics['tokenless_probe_page_class']}`\n"
+            f"- Tokenized menu route class: `{diagnostics['tokenized_menu_classification']}`; restored class: `{diagnostics['tokenized_restore_classification']}`; comparison: `{diagnostics['token_comparison']}`\n"
             f"- Return grid present: `{diagnostics['return_grid_present']}`\n"
             f"- Target order matched: `{diagnostics['target_order_matches']}`\n"
             f"- Edit form order link matched: `{diagnostics['order_detail_link_matches']}`\n"
@@ -833,7 +1148,18 @@ def report_success_diagnostics(stage: StageTracker) -> None:
     sys.stdout.write(
         "PASS: native admin RMA state readback; "
         f"initial_state={stage.initial_state} final_state={stage.final_state} "
-        f"original_state_restored={stage.original_state_restored}\n"
+        f"original_state_restored={stage.original_state_restored} "
+        f"return_menu_origin={stage.return_menu_link_same_origin} "
+        f"return_menu_admin_path={stage.return_menu_link_admin_path} "
+        f"return_menu_path={stage.return_menu_link_return_path} "
+        f"return_menu_session_token_present={stage.return_menu_link_session_token_present} "
+        f"tokenless_class={stage.tokenless_probe_classification} "
+        f"tokenless_page_class={stage.tokenless_probe_page_class} "
+        f"tokenless_marker_visible={stage.tokenless_probe_page_marker_visible} "
+        f"tokenized_menu_class={stage.tokenized_menu_classification} "
+        f"token_comparison={stage.token_comparison} "
+        f"compromised_screenshot={stage.compromised_page_screenshot_captured} "
+        f"compromised_screenshot_stage={stage.compromised_page_screenshot_stage}\n"
     )
     for evidence_line in lines:
         sys.stdout.write("RMA transition evidence: " + evidence_line + "\n")
@@ -845,6 +1171,13 @@ def report_success_diagnostics(stage: StageTracker) -> None:
             f"- Initial state: `{stage.initial_state}`\n"
             f"- Final state: `{stage.final_state}`\n"
             f"- Original state restored: `{stage.original_state_restored}`\n"
+            f"- Compromised page screenshot: captured=`{stage.compromised_page_screenshot_captured}`, stage=`{stage.compromised_page_screenshot_stage}`\n"
+            f"- Generated return menu link checks: origin=`{stage.return_menu_link_same_origin}`, admin_path=`{stage.return_menu_link_admin_path}`, return_path=`{stage.return_menu_link_return_path}`, session_token_present=`{stage.return_menu_link_session_token_present}`\n"
+            f"- Tokenless probe classification: `{stage.tokenless_probe_classification}`\n"
+            f"- Tokenless marker visible: `{stage.tokenless_probe_page_marker_visible}`\n"
+            f"- Tokenless final page class: `{stage.tokenless_probe_page_class}`\n"
+            f"- Tokenized menu classification: `{stage.tokenized_menu_classification}`\n"
+            f"- Token comparison: `{stage.token_comparison}`\n"
             + "\n".join(f"- `{line}`" for line in lines)
             + "\n"
         )
@@ -895,6 +1228,8 @@ def run_admin_return_browser() -> int:
         )
         stage.complete("complete")
     except Exception as error:
+        collect_safe_page_diagnostics(stage, driver, admin_root)
+        capture_safe_compromised_page_screenshot(driver, admin_root, stage)
         screenshot_captured = capture_safe_status_screenshot(
             driver,
             admin_root,
@@ -902,7 +1237,6 @@ def run_admin_return_browser() -> int:
             expected_order_id,
             stage,
         )
-        collect_safe_page_diagnostics(stage, driver, admin_root)
         diagnostics = build_safe_diagnostics(
             stage,
             safe_exception_class_name(error),
@@ -919,6 +1253,7 @@ def run_admin_return_browser() -> int:
                 if outcome == 0:
                     stage.begin("browser_shutdown")
                     collect_safe_page_diagnostics(stage, driver, admin_root)
+                    capture_safe_compromised_page_screenshot(driver, admin_root, stage)
                     diagnostics = build_safe_diagnostics(
                         stage,
                         safe_exception_class_name(error),

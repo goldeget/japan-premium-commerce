@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 SAFE_ADMIN_ROUTE_SEGMENTS = frozenset(
     {
         "admin-kuranea", "index.php", "login", "logout", "sell", "dashboard",
+        "security", "compromised",
         "customer-service", "merchandise-return", "merchandise-returns",
         "orders", "order", "returns", "return", "customers", "customer",
         "catalog", "products", "product", "categories", "category",
