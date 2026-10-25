@@ -69,7 +69,10 @@ SAFE_ADMIN_ORDERS_STATE_PATTERN = (
     r"login_form_visible=(?:true|false|unknown);admin_shell_visible=(?:true|false|unknown);"
     r"body_text=(?:empty|present|unknown);"
     r"orders_heading=(?:korean|english|other|missing|unknown);"
+    r"orders_grid_heading=(?:korean|english|other|missing|unknown);"
     r"orders_grid_visible=(?:true|false|unknown);"
+    r"orders_empty_state_visible=(?:true|false|unknown);"
+    r"orders_empty_state_korean=(?:true|false|unknown);"
     r"permission_denied=(?:true|false|unknown);english_order_label=(?:true|false|unknown);"
     r"alert_visible=(?:true|false|unknown);"
     r"body_has_korean_order_label=(?:true|false|unknown)"
@@ -675,7 +678,7 @@ def safe_admin_orders_state(driver: webdriver.Chrome) -> str:
         )
         english_order_label = bool(re.search(r"\border(s)?\b", body_text, re.IGNORECASE))
         heading_state = "missing"
-        for heading in driver.find_elements(By.CSS_SELECTOR, "main h1"):
+        for heading in driver.find_elements(By.CSS_SELECTOR, ".header-toolbar h1.title"):
             if not heading.is_displayed():
                 continue
             heading_text = heading.text
@@ -686,18 +689,52 @@ def safe_admin_orders_state(driver: webdriver.Chrome) -> str:
             else:
                 heading_state = "other"
             break
+        grid_heading_state = "missing"
+        for heading in driver.find_elements(By.CSS_SELECTOR, ".js-grid-panel .card-header-title"):
+            if not heading.is_displayed():
+                continue
+            heading_text = heading.text
+            if "주문" in heading_text:
+                grid_heading_state = "korean"
+            elif re.search(r"\border(s)?\b", heading_text, re.IGNORECASE):
+                grid_heading_state = "english"
+            else:
+                grid_heading_state = "other"
+            break
         admin_shell_visible = any(
             element.is_displayed()
             for element in driver.find_elements(
                 By.CSS_SELECTOR,
-                "main, #content, #main, #main-content",
+                "#main-div, #main-div .content-div",
             )
         )
         orders_grid_visible = any(
             element.is_displayed()
             for element in driver.find_elements(
                 By.CSS_SELECTOR,
-                "main table, main [role='grid'], main .grid-table",
+                "#main-div table.js-grid-table",
+            )
+        )
+        orders_empty_state_visible = any(
+            element.is_displayed()
+            for element in driver.find_elements(By.CSS_SELECTOR, ".showcase-list-card")
+        )
+        empty_state_heading = " ".join(
+            element.text
+            for element in driver.find_elements(By.CSS_SELECTOR, ".showcase-list-card__header")
+            if element.is_displayed()
+        )
+        empty_state_message = " ".join(
+            element.text
+            for element in driver.find_elements(By.CSS_SELECTOR, ".showcase-list-card__message")
+            if element.is_displayed()
+        )
+        orders_empty_state_korean = (
+            not orders_empty_state_visible
+            or (
+                "주문 관리" in empty_state_heading
+                and "모든 주문" in empty_state_message
+                and "주문 상태" in empty_state_message
             )
         )
         alert_visible = any(
@@ -714,7 +751,10 @@ def safe_admin_orders_state(driver: webdriver.Chrome) -> str:
         admin_shell_visible = "unknown"
         body_text_state = "unknown"
         heading_state = "unknown"
+        grid_heading_state = "unknown"
         orders_grid_visible = "unknown"
+        orders_empty_state_visible = "unknown"
+        orders_empty_state_korean = "unknown"
         permission_denied = "unknown"
         english_order_label = "unknown"
         alert_visible = "unknown"
@@ -725,7 +765,10 @@ def safe_admin_orders_state(driver: webdriver.Chrome) -> str:
         f"document_ready={document_ready};document_locale={document_locale_state};"
         f"login_form_visible={_diagnostic_bool(login_form_visible)};"
         f"admin_shell_visible={_diagnostic_bool(admin_shell_visible)};body_text={body_text_state};"
-        f"orders_heading={heading_state};orders_grid_visible={_diagnostic_bool(orders_grid_visible)};"
+        f"orders_heading={heading_state};orders_grid_heading={grid_heading_state};"
+        f"orders_grid_visible={_diagnostic_bool(orders_grid_visible)};"
+        f"orders_empty_state_visible={_diagnostic_bool(orders_empty_state_visible)};"
+        f"orders_empty_state_korean={_diagnostic_bool(orders_empty_state_korean)};"
         f"permission_denied={_diagnostic_bool(permission_denied)};"
         f"english_order_label={_diagnostic_bool(english_order_label)};"
         f"alert_visible={_diagnostic_bool(alert_visible)};"
@@ -734,15 +777,47 @@ def safe_admin_orders_state(driver: webdriver.Chrome) -> str:
 
 
 def wait_for_korean_orders_label(driver: webdriver.Chrome) -> bool:
-    """Wait for the existing Korean content requirement instead of sampling before hydration."""
-    def has_korean_order_label(browser: webdriver.Chrome) -> bool:
+    """Wait for the visible Orders title and, when empty, its Korean empty-state copy."""
+    def visible_text(browser: webdriver.Chrome, selector: str) -> list[str]:
+        return [
+            element.text
+            for element in browser.find_elements(By.CSS_SELECTOR, selector)
+            if element.is_displayed()
+        ]
+
+    def has_korean_order_labels(browser: webdriver.Chrome) -> bool:
         try:
-            return "주문" in browser.find_element(By.TAG_NAME, "body").text
+            page_titles = visible_text(browser, ".header-toolbar h1.title")
+            grid_titles = visible_text(browser, ".js-grid-panel .card-header-title")
+            if not any("주문" in title for title in page_titles):
+                return False
+            if not any("주문" in title for title in grid_titles):
+                return False
+            body_text = browser.find_element(By.TAG_NAME, "body").text
+            if re.search(r"\border(s)?\b", body_text, re.IGNORECASE):
+                return False
+
+            empty_state_visible = any(
+                element.is_displayed()
+                for element in browser.find_elements(By.CSS_SELECTOR, ".showcase-list-card")
+            )
+            if not empty_state_visible:
+                return True
+
+            empty_titles = visible_text(browser, ".showcase-list-card__header")
+            empty_messages = visible_text(browser, ".showcase-list-card__message")
+            return (
+                any("주문 관리" in title for title in empty_titles)
+                and any(
+                    "모든 주문" in message and "주문 상태" in message
+                    for message in empty_messages
+                )
+            )
         except StaleElementReferenceException:
             return False
 
     try:
-        WebDriverWait(driver, 30).until(has_korean_order_label)
+        WebDriverWait(driver, 30).until(has_korean_order_labels)
     except TimeoutException:
         return False
     return True

@@ -394,7 +394,12 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertIn("wait_for_korean_orders_label", orders_stage)
         self.assertIn("safe_admin_orders_state(restricted_driver)", orders_stage)
         wait_for_label = source.split("def wait_for_korean_orders_label(", 1)[1].split("\ndef ", 1)[0]
-        self.assertIn('"주문" in browser.find_element(By.TAG_NAME, "body").text', wait_for_label)
+        self.assertIn('".header-toolbar h1.title"', wait_for_label)
+        self.assertIn('".js-grid-panel .card-header-title"', wait_for_label)
+        self.assertIn('".showcase-list-card__header"', wait_for_label)
+        self.assertIn('"주문 관리"', wait_for_label)
+        self.assertIn('"모든 주문"', wait_for_label)
+        self.assertIn('re.search(r"\\border(s)?\\b", body_text, re.IGNORECASE)', wait_for_label)
 
         handler = run.split("except Exception as error:", 1)[1].split("finally:", 1)[0]
         self.assertIn("admin_security_orders_state", handler)
@@ -435,7 +440,7 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
                 if selector == "html":
                     return Element(lang="ko-KR")
                 if selector == "body":
-                    return Element("Orders Customer private@example.invalid")
+                    return Element("주문 고객 private@example.invalid")
                 raise AssertionError(f"unexpected element selector: {selector}")
 
             def execute_script(self, script: str) -> dict[str, object]:
@@ -444,12 +449,20 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             def find_elements(self, by: str, selector: str) -> list[Element]:
                 if selector == "#login_form":
                     return []
-                if selector == "main h1":
-                    return [Element("Orders")]
-                if selector == "main, #content, #main, #main-content":
+                if selector == ".header-toolbar h1.title":
+                    return [Element("주문")]
+                if selector == ".js-grid-panel .card-header-title":
+                    return [Element("주문 (0)")]
+                if selector == "#main-div, #main-div .content-div":
                     return [Element()]
-                if selector == "main table, main [role='grid'], main .grid-table":
+                if selector == "#main-div table.js-grid-table":
                     return [Element()]
+                if selector == ".showcase-list-card":
+                    return [Element()]
+                if selector == ".showcase-list-card__header":
+                    return [Element("주문 관리")]
+                if selector == ".showcase-list-card__message":
+                    return [Element("이 페이지에서 모든 주문을 확인하고 주문 상태도 변경할 수 있습니다.")]
                 if selector == "[role='alert'], .alert-danger":
                     return []
                 return []
@@ -459,9 +472,10 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             diagnostic,
             "route=AdminOrders;orders_path=orders_list;http_status=200;document_ready=complete;"
             "document_locale=korean;login_form_visible=false;admin_shell_visible=true;"
-            "body_text=present;orders_heading=english;orders_grid_visible=true;"
-            "permission_denied=false;english_order_label=true;alert_visible=false;"
-            "body_has_korean_order_label=false",
+            "body_text=present;orders_heading=korean;orders_grid_heading=korean;orders_grid_visible=true;"
+            "orders_empty_state_visible=true;orders_empty_state_korean=true;"
+            "permission_denied=false;english_order_label=false;alert_visible=false;"
+            "body_has_korean_order_label=true",
         )
         pattern_assignment = next(
             node
@@ -475,6 +489,85 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         )
         self.assertIsNotNone(re.fullmatch(ast.literal_eval(pattern_assignment.value), diagnostic))
         self.assertNotIn("private@example.invalid", diagnostic)
+
+    def test_view_only_orders_diagnostic_matches_prestashop_92_markup(self):
+        source = ADMIN_FLOW.read_text(encoding="utf-8")
+        diagnostic_source = source.split("def safe_admin_orders_state(", 1)[1].split(
+            "\ndef wait_for_korean_orders_label(", 1
+        )[0]
+
+        self.assertIn('".header-toolbar h1.title"', diagnostic_source)
+        self.assertIn('"#main-div, #main-div .content-div"', diagnostic_source)
+        self.assertIn('"#main-div table.js-grid-table"', diagnostic_source)
+        self.assertNotIn('"main h1"', diagnostic_source)
+        self.assertNotIn('"main, #content, #main, #main-content"', diagnostic_source)
+        self.assertNotIn('"main table, main [role=\'grid\'], main .grid-table"', diagnostic_source)
+
+        namespace: dict[str, object] = {
+            "parse_qs": parse_qs,
+            "urlparse": urlparse,
+            "re": re,
+            "BASE": "http://localhost:18080",
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
+            "By": type("By", (), {"CSS_SELECTOR": "css selector", "TAG_NAME": "tag name"}),
+            "is_korean_admin_language": lambda locale: locale.casefold() in {"ko", "ko-kr"},
+            "webdriver": type("Webdriver", (), {"Chrome": object}),
+        }
+        load_function(ADMIN_FLOW, "_admin_controller_for_url", namespace)
+        load_function(ADMIN_FLOW, "_diagnostic_bool", namespace)
+        safe_state = load_function(ADMIN_FLOW, "safe_admin_orders_state", namespace)
+
+        class Element:
+            def __init__(self, text: str = "", lang: str | None = None) -> None:
+                self.text = text
+                self.lang = lang
+
+            def get_attribute(self, name: str) -> str | None:
+                return self.lang if name == "lang" else None
+
+            def is_displayed(self) -> bool:
+                return True
+
+        class Driver:
+            current_url = "http://localhost:18080/admin-kuranea/sell/orders"
+
+            def find_element(self, by: str, selector: str) -> Element:
+                if selector == "html":
+                    return Element(lang="ko-KR")
+                if selector == "body":
+                    return Element("주문")
+                raise AssertionError(f"unexpected element selector: {selector}")
+
+            def execute_script(self, script: str) -> dict[str, object]:
+                return {"http_status": 200, "document_ready": "complete"}
+
+            def find_elements(self, by: str, selector: str) -> list[Element]:
+                if selector == "#login_form":
+                    return []
+                if selector == ".header-toolbar h1.title":
+                    return [Element("주문")]
+                if selector == "#main-div, #main-div .content-div":
+                    return [Element()]
+                if selector == ".js-grid-panel .card-header-title":
+                    return [Element("주문 (0)")]
+                if selector == "#main-div table.js-grid-table":
+                    return [Element()]
+                if selector == ".showcase-list-card":
+                    return [Element()]
+                if selector == ".showcase-list-card__header":
+                    return [Element("주문 관리")]
+                if selector == ".showcase-list-card__message":
+                    return [Element("모든 주문과 주문 상태를 확인할 수 있습니다.")]
+                if selector == "[role='alert'], .alert-danger":
+                    return []
+                raise AssertionError(f"unexpected element selector: {selector}")
+
+        diagnostic = safe_state(Driver())
+        self.assertIn("orders_heading=korean", diagnostic)
+        self.assertIn("admin_shell_visible=true", diagnostic)
+        self.assertIn("orders_grid_visible=true", diagnostic)
+        self.assertIn("english_order_label=false", diagnostic)
+        self.assertIn("body_has_korean_order_label=true", diagnostic)
 
     def test_view_only_fixture_reads_back_native_admin_orders_view_permission(self):
         fixture = FIXTURE.read_text(encoding="utf-8")
@@ -650,28 +743,45 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
                 raise TimeoutException()
 
         class Element:
-            text = "주문 목록"
+            def __init__(self, text: str = "") -> None:
+                self.text = text
+
+            def is_displayed(self) -> bool:
+                return True
 
         class Driver:
             reads = 0
 
             def find_element(self, by: str, selector: str) -> Element:
+                if selector == "body":
+                    return Element("주문")
+                raise AssertionError(f"unexpected element selector: {selector}")
+
+            def find_elements(self, by: str, selector: str) -> list[Element]:
                 self.reads += 1
                 if self.reads == 1:
                     raise StaleElementReferenceException()
-                return Element()
+                elements = {
+                    ".header-toolbar h1.title": [Element("주문")],
+                    ".js-grid-panel .card-header-title": [Element("주문 (0)")],
+                    ".showcase-list-card": [Element()],
+                    ".showcase-list-card__header": [Element("주문 관리")],
+                    ".showcase-list-card__message": [Element("모든 주문과 주문 상태를 확인할 수 있습니다.")],
+                }
+                return elements.get(selector, [])
 
         namespace: dict[str, object] = {
             "WebDriverWait": Wait,
             "TimeoutException": TimeoutException,
             "StaleElementReferenceException": StaleElementReferenceException,
-            "By": type("By", (), {"TAG_NAME": "tag name"}),
+            "re": re,
+            "By": type("By", (), {"CSS_SELECTOR": "css selector", "TAG_NAME": "tag name"}),
             "webdriver": type("Webdriver", (), {"Chrome": object}),
         }
         wait_for_label = load_function(ADMIN_FLOW, "wait_for_korean_orders_label", namespace)
         driver = Driver()
         self.assertTrue(wait_for_label(driver))
-        self.assertEqual(driver.reads, 2)
+        self.assertEqual(driver.reads, 6)
 
     def test_read_only_fixture_opens_its_allowed_settings_tab_without_granting_write_roles(self):
         fixture = FIXTURE.read_text(encoding="utf-8")

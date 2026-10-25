@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="Admin.Orderscustomers.Feature.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="kuranea-orders-empty-state-title" approved="yes">
+        <source>Manage your orders</source>
+        <target state="final">주문 관리</target>
+      </trans-unit>
+      <trans-unit id="kuranea-orders-empty-state-description" approved="yes">
+        <source>Find all your orders on this page and access their main information in one click: check the cart total, the payment method, the shipping details, or if it comes from a new client. You can even update the status from the listing!</source>
+        <target state="final">이 페이지에서 모든 주문을 확인하고 주요 정보를 한 번에 볼 수 있습니다. 장바구니 합계, 결제 방법, 배송 정보, 신규 고객의 주문 여부를 확인하고 목록에서 주문 상태도 변경할 수 있습니다.</target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>
