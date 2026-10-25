@@ -448,8 +448,28 @@ def main() -> int:
             By.CSS_SELECTOR, "button[name='submitReturnMerchandise']"
         )
         try:
+            driver.execute_script(
+                'arguments[0].scrollIntoView({block: "center", inline: "nearest"});', submit_button
+            )
+
+            def submit_button_center_is_unobstructed(browser):
+                return browser.execute_script(
+                    """
+                    const element = arguments[0];
+                    const rect = element.getBoundingClientRect();
+                    const centerX = rect.left + rect.width / 2;
+                    const centerY = rect.top + rect.height / 2;
+                    if (centerX < 0 || centerY < 0
+                        || centerX >= window.innerWidth || centerY >= window.innerHeight) return false;
+                    const target = document.elementFromPoint(centerX, centerY);
+                    return Boolean(target && (target === element || element.contains(target)));
+                    """,
+                    submit_button,
+                )
+
+            WebDriverWait(driver, 3, poll_frequency=0.1).until(submit_button_center_is_unobstructed)
             submit_button.click()
-        except ElementClickInterceptedException:
+        except (ElementClickInterceptedException, TimeoutException):
             submit_click_diagnostic, submit_failure_screenshot_name = capture_submit_click_blocker(
                 driver, submit_button, artifact_dir
             )

@@ -113,10 +113,29 @@ class CiNativeCustomerReturnBrowserContractTests(unittest.TestCase):
         submit_block = self.source.split('stage = "return_form_submit"', 1)[1].split(
             'stage = "return_list_readback"', 1
         )[0]
-        self.assertIn("except ElementClickInterceptedException:", submit_block)
+        self.assertIn(
+            '\'arguments[0].scrollIntoView({block: "center", inline: "nearest"});\', submit_button',
+            submit_block,
+        )
+        self.assertIn("def submit_button_center_is_unobstructed(browser)", submit_block)
+        self.assertIn(
+            "WebDriverWait(driver, 3, poll_frequency=0.1).until(submit_button_center_is_unobstructed)",
+            submit_block,
+        )
+        self.assertIn("target === element || element.contains(target)", submit_block)
+        self.assertIn("except (ElementClickInterceptedException, TimeoutException):", submit_block)
         self.assertIn("capture_submit_click_blocker(", submit_block)
         self.assertIn("submit_button.click()", submit_block)
-        self.assertLess(submit_block.index("submit_button.click()"), submit_block.index("except ElementClickInterceptedException:"))
+        self.assertLess(submit_block.index("scrollIntoView"), submit_block.index("submit_button.click()"))
+        self.assertLess(submit_block.index("submit_button_center_is_unobstructed(browser)"), submit_block.index("submit_button.click()"))
+        self.assertLess(
+            submit_block.index("WebDriverWait(driver, 3, poll_frequency=0.1).until(submit_button_center_is_unobstructed)"),
+            submit_block.index("submit_button.click()"),
+        )
+        self.assertLess(
+            submit_block.index("submit_button.click()"),
+            submit_block.index("except (ElementClickInterceptedException, TimeoutException):"),
+        )
         self.assertLess(submit_block.index("capture_submit_click_blocker("), submit_block.index("raise"))
 
         for required in (
