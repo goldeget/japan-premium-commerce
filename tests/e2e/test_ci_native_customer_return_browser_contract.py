@@ -1,0 +1,70 @@
+from __future__ import annotations
+
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+FLOW = ROOT / "tests" / "e2e" / "verify_ci_native_customer_return_browser.py"
+
+
+class CiNativeCustomerReturnBrowserContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        if not FLOW.is_file():
+            raise AssertionError("the isolated native customer return browser flow is missing")
+        cls.source = FLOW.read_text(encoding="utf-8")
+
+    def assertContract(self, source: str, required: str) -> None:
+        if required not in source:
+            self.fail(f"missing required contract: {required}")
+
+    def test_customer_return_browser_requires_exact_isolated_actions_project(self) -> None:
+        for required in (
+            'os.environ.get("CI") != "true"',
+            'os.environ.get("GITHUB_ACTIONS") != "true"',
+            'os.environ.get("KURANEA_ISOLATED_CI") != "1"',
+            'run_id = os.environ.get("GITHUB_RUN_ID", "")',
+            'run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")',
+            'expected_project_name = f"kuranea-ci-{run_id}-{run_attempt}"',
+            'os.environ.get("KURANEA_CI_PROJECT_NAME") != expected_project_name',
+        ):
+            with self.subTest(required=required):
+                self.assertContract(self.source, required)
+
+    def test_customer_credentials_are_only_sent_to_loopback_http_shop(self) -> None:
+        for required in (
+            'parsed.scheme != "http"',
+            '(parsed.hostname or "").lower() not in {"localhost", "127.0.0.1", "::1"}',
+            "parsed.username is not None",
+            "parsed.password is not None",
+            "parsed.query",
+            "parsed.fragment",
+            "if port != 18080:",
+        ):
+            with self.subTest(required=required):
+                self.assertContract(self.source, required)
+
+        target_validation = self.source.index("base_url = read_isolated_shop_url()")
+        credential_load = self.source.index('email = str(checkout_artifact.get("email", ""))')
+        browser_start = self.source.index("stage = \"webdriver.startup\"")
+        self.assertLess(target_validation, credential_load)
+        self.assertLess(target_validation, browser_start)
+
+    def test_checkout_override_is_explicit_in_the_workflow(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
+        step = workflow.split("- name: Submit customer return request in Chromium", 1)[1].split(
+            "- name:", 1
+        )[0]
+        for required in (
+            "CI: 'true'",
+            "KURANEA_ISOLATED_CI: '1'",
+            "KURANEA_CI_PROJECT_NAME: ${{ env.CI_COMPOSE_PROJECT_NAME }}",
+            "SHOP_BASE_URL: http://localhost:18080",
+        ):
+            with self.subTest(required=required):
+                self.assertContract(step, required)
+
+
+if __name__ == "__main__":
+    unittest.main()

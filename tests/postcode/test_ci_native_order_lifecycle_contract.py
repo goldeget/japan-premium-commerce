@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 VERIFIER = ROOT / "tests" / "postcode" / "verify_ci_native_order_lifecycle.php"
 PREPARER = ROOT / "tests" / "postcode" / "prepare_ci_native_order_lifecycle.php"
+RETURN_BROWSER = ROOT / "tests" / "e2e" / "verify_ci_native_customer_return_browser.py"
 
 
 class CiNativeOrderLifecycleContractTests(unittest.TestCase):
@@ -56,14 +57,38 @@ class CiNativeOrderLifecycleContractTests(unittest.TestCase):
             "->isReturnable()",
             "->hasBeenPaid()",
             "->shipped",
-            "new OrderReturn()",
-            "addReturnDetail(",
+            "KURANEA_CI_RETURN_BROWSER_OUTCOME",
+            "KURANEA_CI_ADMIN_RETURN_BROWSER_OUTCOME",
+            "OrderReturn::getOrdersReturn(",
+            "OrderReturn::getOrdersReturnDetail(",
+            "$customerReturn->question",
+            "$customerReturn->state",
             "OrderReturnState",
             "OrderSlip::create(",
             "unsupported",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, self.source)
+        self.assertNotIn("$orderReturn->add()", self.source)
+        self.assertNotIn("addReturnDetail(", self.source)
+
+    def test_browser_failure_is_rejected_after_return_config_cleanup_is_registered(self) -> None:
+        shutdown_registration = self.source.index("register_shutdown_function(")
+        browser_gate = self.source.index("$returnBrowserOutcome !== 'success'")
+        self.assertLess(
+            shutdown_registration,
+            browser_gate,
+            "the verifier must register its PS_ORDER_RETURN restore before rejecting a failed browser step",
+        )
+        self.assertIn("$returnBrowserOutcome !== 'success'", self.source)
+
+        admin_browser_gate = self.source.index("$adminReturnBrowserOutcome !== 'success'")
+        self.assertLess(
+            shutdown_registration,
+            admin_browser_gate,
+            "the verifier must register configuration cleanup before rejecting a failed admin browser step",
+        )
+        self.assertIn("$adminReturnBrowserOutcome !== 'success'", self.source)
 
     def test_verifier_never_calls_a_payment_provider_or_remote_refund(self) -> None:
         forbidden = re.compile(
@@ -338,6 +363,7 @@ class CiNativeOrderLifecycleContractTests(unittest.TestCase):
     def test_workflow_requires_both_lifecycle_php_steps_and_safe_artifacts(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
         fixture_step = workflow.split("- name: Prepare CI-only paid-like order for return verification", 1)[1].split("- name:", 1)[0]
+        return_browser_step = workflow.split("- name: Submit customer return request in Chromium", 1)[1].split("- name:", 1)[0]
         verify_step = workflow.split("- name: Verify native order cancellation, return, and credit-slip behavior", 1)[1].split("- name:", 1)[0]
         coverage = workflow.split("- name: Verify browser QA screenshot coverage", 1)[1].split("- name:", 1)[0]
         aggregate = workflow.split("- name: Aggregate browser QA and postal verification failures", 1)[1]
@@ -346,8 +372,26 @@ class CiNativeOrderLifecycleContractTests(unittest.TestCase):
         self.assertIn("prepare_ci_native_order_lifecycle.php", fixture_step)
         self.assertIn("KURANEA_CI_PAID_LIKE_SOURCE_ORDER_ID", fixture_step)
         self.assertIn("KURANEA_CI_UNPAID_ORDER_ID", fixture_step)
+        self.assertIn("id: order_return_browser", return_browser_step)
+        self.assertIn("verify_ci_native_customer_return_browser.py", return_browser_step)
+        self.assertIn("customer-return-e2e.log", return_browser_step)
+        self.assertIn("continue-on-error: true", return_browser_step)
+        self.assertLess(
+            workflow.index("- name: Submit customer return request in Chromium"),
+            workflow.index("- name: Verify native order cancellation, return, and credit-slip behavior"),
+        )
         self.assertIn("id: order_lifecycle", verify_step)
         self.assertIn("verify_ci_native_order_lifecycle.php", verify_step)
+        self.assertIn("if: always() && !cancelled() && steps.order_lifecycle_fixture.outcome == 'success'", verify_step)
+        self.assertIn(
+            "KURANEA_CI_RETURN_BROWSER_OUTCOME: ${{ steps.order_return_browser.outcome }}",
+            verify_step,
+        )
+        self.assertIn(
+            '-e KURANEA_CI_RETURN_BROWSER_OUTCOME="$KURANEA_CI_RETURN_BROWSER_OUTCOME" \\',
+            verify_step,
+        )
+        self.assertNotIn("steps.order_return_browser.outcome == 'success'", verify_step.split("if:", 1)[1].split("shell:", 1)[0])
         self.assertIn(
             'if ! [[ "$UNPAID_ORDER_ID" =~ ^[0-9]+$ ]] || [ "$UNPAID_ORDER_ID" -lt 1 ] \\',
             verify_step,
@@ -369,14 +413,70 @@ class CiNativeOrderLifecycleContractTests(unittest.TestCase):
         )
         for artifact in (
             "order-lifecycle-preparation.json",
+            "customer-return-browser.json",
+            "customer-return-mobile.png",
+            "customer-return-e2e.log",
             "order-lifecycle-verification.json",
             "order-lifecycle-e2e.log",
         ):
             self.assertIn(artifact, coverage)
         self.assertIn("ORDER_LIFECYCLE_FIXTURE_OUTCOME: ${{ steps.order_lifecycle_fixture.outcome }}", aggregate)
+        self.assertIn("ORDER_RETURN_BROWSER_OUTCOME: ${{ steps.order_return_browser.outcome }}", aggregate)
         self.assertIn("ORDER_LIFECYCLE_OUTCOME: ${{ steps.order_lifecycle.outcome }}", aggregate)
         self.assertIn('"order_lifecycle_fixture=$ORDER_LIFECYCLE_FIXTURE_OUTCOME"', aggregate)
+        self.assertIn('"order_return_browser=$ORDER_RETURN_BROWSER_OUTCOME"', aggregate)
         self.assertIn('"order_lifecycle=$ORDER_LIFECYCLE_OUTCOME"', aggregate)
+
+    def test_customer_return_browser_uses_run_scoped_credentials_and_redacts_artifact(self) -> None:
+        if not RETURN_BROWSER.is_file():
+            self.fail("the CI-only native customer return browser flow is missing")
+        source = RETURN_BROWSER.read_text(encoding="utf-8")
+        required = (
+            "ci-checkout-mobile.json",
+            "GITHUB_RUN_ID",
+            "GITHUB_RUN_ATTEMPT",
+            "expected_email = f\"qa-ordenowa-checkout-{run_id}-{run_attempt}-mobile@example.invalid\"",
+            "ORDENOWA-CI-",
+            "input[name='email']",
+            "input[name='password']",
+            "#submit-login",
+            "a[data-link-action='view-order-details']",
+            "#order-return-form",
+            "ids_order_detail[",
+            "order_qte_input[",
+            "returnText",
+            "submitReturnMerchandise",
+            "customer-return-mobile.png",
+            "customer-return-browser.json",
+            "write_redacted_result(",
+        )
+        for required_value in required:
+            with self.subTest(required=required_value):
+                self.assertIn(required_value, source)
+
+        result_writer = source.split("def write_redacted_result(", 1)[1].split("\ndef ", 1)[0]
+        for forbidden in ("password", "email", "current_url", "token"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, result_writer.lower())
+        for forbidden in ("print(password", "print(email", "driver.current_url", "str(error)"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        self.assertIn('"provider_call": False', result_writer)
+        self.assertIn('"cash_refund": "not_requested"', result_writer)
+
+        return_template = (
+            ROOT / "themes" / "hummingbird" / "templates" / "customer" / "_partials" / "order-detail-return.tpl"
+        ).read_text(encoding="utf-8")
+        for native_form_field in (
+            'action="{$urls.pages.order_follow}"',
+            'name="ids_order_detail[{$product.id_order_detail}]"',
+            'name="order_qte_input[{$product.id_order_detail}]"',
+            'name="returnText"',
+            'name="id_order"',
+            'name="submitReturnMerchandise"',
+        ):
+            with self.subTest(native_form_field=native_form_field):
+                self.assertIn(native_form_field, return_template)
 
 
 if __name__ == "__main__":

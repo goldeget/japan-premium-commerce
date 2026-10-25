@@ -174,7 +174,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_backup_restore_drill_contract tests.smoke.test_deployment_config_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_customer_registration_privacy_gate_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_pwa_registration_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard tests.e2e.test_ci_admin_order_status_contract -v
 
       - name: Verify isolated unpaid checkout contracts
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract tests.business_profile.test_shipping_admin_links_contract tests.business_profile.test_admin_profile_history_contract tests.admin_locale.test_admin_locale_overlay tests.admin_locale.test_admin_locale_response_diagnostic tests.admin_locale.test_orders_empty_state_asset tests.admin_locale.test_orders_locale_overlay tests.postcode.test_ci_native_order_lifecycle_contract -v
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract tests.business_profile.test_shipping_admin_links_contract tests.business_profile.test_admin_profile_history_contract tests.admin_locale.test_admin_locale_overlay tests.admin_locale.test_admin_locale_response_diagnostic tests.admin_locale.test_orders_empty_state_asset tests.admin_locale.test_orders_locale_overlay tests.postcode.test_ci_native_order_lifecycle_contract tests.e2e.test_ci_admin_return_browser_contract tests.e2e.test_ci_native_customer_return_browser_contract -v
 
       - name: Verify Korean native product manager contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_product_admin_contract -v
@@ -1780,9 +1780,53 @@ jobs:
             | tee "$QA_ARTIFACT_DIR/order-lifecycle-e2e.log"
           rm -f -- "$fixture_stdout" "$RUNNER_TEMP/order-lifecycle-fixture.stderr"
 
+      - name: Submit customer return request in Chromium
+        id: order_return_browser
+        if: steps.order_lifecycle_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          CI: 'true'
+          KURANEA_ISOLATED_CI: '1'
+          KURANEA_CI_PROJECT_NAME: ${{ env.CI_COMPOSE_PROJECT_NAME }}
+          SHOP_BASE_URL: http://localhost:18080
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          PAID_LIKE_ORDER_ID: ${{ steps.order_lifecycle_fixture.outputs.paid_like_order_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$QA_ARTIFACT_DIR"
+          "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
+            tests/e2e/verify_ci_native_customer_return_browser.py \
+            2>&1 | tee "$QA_ARTIFACT_DIR/customer-return-e2e.log"
+
+      - name: Verify native admin return state form in Chromium
+        id: order_return_admin_browser
+        if: steps.order_return_browser.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          CI: 'true'
+          KURANEA_ISOLATED_CI: '1'
+          KURANEA_CI_PROJECT_NAME: ${{ env.CI_COMPOSE_PROJECT_NAME }}
+          SHOP_BASE_URL: http://localhost:18080
+          ADMIN_LOGIN_URL: http://localhost:18080/admin-kuranea
+          ADMIN_MAIL: ci-ordenowa@example.invalid
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          PAID_LIKE_ORDER_ID: ${{ steps.order_lifecycle_fixture.outputs.paid_like_order_id }}
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+        run: |
+          set -euo pipefail
+          mkdir -p "$QA_ARTIFACT_DIR"
+          "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
+            tests/e2e/verify_ci_admin_return_browser.py \
+            2>&1 | tee "$QA_ARTIFACT_DIR/admin-return-e2e.log"
+
       - name: Verify native order cancellation, return, and credit-slip behavior
         id: order_lifecycle
-        if: steps.order_lifecycle_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
+        if: always() && !cancelled() && steps.order_lifecycle_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_SECURITY_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -1791,6 +1835,8 @@ jobs:
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
           UNPAID_ORDER_ID: ${{ steps.order_lifecycle_fixture.outputs.unpaid_order_id }}
           PAID_LIKE_ORDER_ID: ${{ steps.order_lifecycle_fixture.outputs.paid_like_order_id }}
+          KURANEA_CI_RETURN_BROWSER_OUTCOME: ${{ steps.order_return_browser.outcome }}
+          KURANEA_CI_ADMIN_RETURN_BROWSER_OUTCOME: ${{ steps.order_return_admin_browser.outcome }}
         run: |
           set -euo pipefail
           if ! [[ "$UNPAID_ORDER_ID" =~ ^[0-9]+$ ]] || [ "$UNPAID_ORDER_ID" -lt 1 ] \
@@ -1809,6 +1855,8 @@ jobs:
             -e GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
             -e KURANEA_ISOLATED_CI=1 \
             -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            -e KURANEA_CI_RETURN_BROWSER_OUTCOME="$KURANEA_CI_RETURN_BROWSER_OUTCOME" \
+            -e KURANEA_CI_ADMIN_RETURN_BROWSER_OUTCOME="$KURANEA_CI_ADMIN_RETURN_BROWSER_OUTCOME" \
             -e KURANEA_CI_UNPAID_ORDER_ID="$UNPAID_ORDER_ID" \
             -e KURANEA_CI_PAID_LIKE_ORDER_ID="$PAID_LIKE_ORDER_ID" \
             prestashop runuser -g www-data -u www-data -- \
@@ -1918,6 +1966,8 @@ jobs:
           CHECKOUT_RESTORE_OUTCOME: ${{ steps.checkout_restore.outcome }}
           CHECKOUT_GATE_AFTER_ORDER_OUTCOME: ${{ steps.checkout_gate_after_order.outcome }}
           ORDER_LIFECYCLE_FIXTURE_OUTCOME: ${{ steps.order_lifecycle_fixture.outcome }}
+          ORDER_RETURN_BROWSER_OUTCOME: ${{ steps.order_return_browser.outcome }}
+          ORDER_RETURN_ADMIN_BROWSER_OUTCOME: ${{ steps.order_return_admin_browser.outcome }}
           ORDER_LIFECYCLE_OUTCOME: ${{ steps.order_lifecycle.outcome }}
           BACKUP_RESTORE_DRILL_OUTCOME: ${{ steps.backup_restore_drill.outcome }}
         run: |
@@ -2189,6 +2239,16 @@ jobs:
               mobile-blocked-checkout.png
             )
           fi
+          if [[ "$ORDER_RETURN_BROWSER_OUTCOME" == success ]]; then
+            required_artifacts+=(
+              customer-return-e2e.log
+              customer-return-browser.json
+              customer-return-mobile.png
+            )
+          fi
+          if [[ "$ORDER_RETURN_ADMIN_BROWSER_OUTCOME" == success ]]; then
+            required_artifacts+=(admin-return-e2e.log)
+          fi
           if [[ "$BACKUP_RESTORE_DRILL_OUTCOME" == success ]]; then
             required_artifacts+=(backup-restore-drill.log)
           fi
@@ -2314,6 +2374,8 @@ jobs:
           CHECKOUT_RESTORE_OUTCOME: ${{ steps.checkout_restore.outcome }}
           CHECKOUT_GATE_AFTER_ORDER_OUTCOME: ${{ steps.checkout_gate_after_order.outcome }}
           ORDER_LIFECYCLE_FIXTURE_OUTCOME: ${{ steps.order_lifecycle_fixture.outcome }}
+          ORDER_RETURN_BROWSER_OUTCOME: ${{ steps.order_return_browser.outcome }}
+          ORDER_RETURN_ADMIN_BROWSER_OUTCOME: ${{ steps.order_return_admin_browser.outcome }}
           ORDER_LIFECYCLE_OUTCOME: ${{ steps.order_lifecycle.outcome }}
           BACKUP_RESTORE_DRILL_OUTCOME: ${{ steps.backup_restore_drill.outcome }}
           SECURITY_LOCALE_RESTORE_OUTCOME: ${{ steps.security_locale_restore.outcome }}
@@ -2385,6 +2447,8 @@ jobs:
             "checkout_restore=$CHECKOUT_RESTORE_OUTCOME" \
             "checkout_gate_after_order=$CHECKOUT_GATE_AFTER_ORDER_OUTCOME" \
             "order_lifecycle_fixture=$ORDER_LIFECYCLE_FIXTURE_OUTCOME" \
+            "order_return_browser=$ORDER_RETURN_BROWSER_OUTCOME" \
+            "order_return_admin_browser=$ORDER_RETURN_ADMIN_BROWSER_OUTCOME" \
             "order_lifecycle=$ORDER_LIFECYCLE_OUTCOME" \
             "backup_restore_drill=$BACKUP_RESTORE_DRILL_OUTCOME" \
             "fresh_install_restart=$FRESH_INSTALL_RESTART_OUTCOME" \

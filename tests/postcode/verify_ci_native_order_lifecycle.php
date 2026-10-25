@@ -7,6 +7,8 @@ $runAttempt = trim((string) getenv('GITHUB_RUN_ATTEMPT'));
 $projectName = trim((string) getenv('KURANEA_CI_PROJECT_NAME'));
 $unpaidOrderIdValue = trim((string) getenv('KURANEA_CI_UNPAID_ORDER_ID'));
 $paidLikeOrderIdValue = trim((string) getenv('KURANEA_CI_PAID_LIKE_ORDER_ID'));
+$returnBrowserOutcome = trim((string) getenv('KURANEA_CI_RETURN_BROWSER_OUTCOME'));
+$adminReturnBrowserOutcome = trim((string) getenv('KURANEA_CI_ADMIN_RETURN_BROWSER_OUTCOME'));
 $unpaidOrderId = (int) $unpaidOrderIdValue;
 $paidLikeOrderId = (int) $paidLikeOrderIdValue;
 $expectedProjectName = 'kuranea-ci-' . $runId . '-' . $runAttempt;
@@ -124,6 +126,15 @@ if ($paidLikeOrderId > 0) {
     }
 }
 
+if ($paidLikeOrderId > 0 && $returnBrowserOutcome !== 'success') {
+    $stage = 'customer return browser gate';
+    throw new RuntimeException('The native customer return browser step did not complete successfully.');
+}
+if ($paidLikeOrderId > 0 && $adminReturnBrowserOutcome !== 'success') {
+    $stage = 'admin return browser gate';
+    throw new RuntimeException('The native admin return browser step did not complete successfully.');
+}
+
 $stage = 'run-scoped order preflight';
 $runScopedEmails = [
     sprintf('qa-ordenowa-checkout-%s-%s-desktop@example.invalid', $runId, $runAttempt),
@@ -185,6 +196,8 @@ $paidLikeOrder = null;
 $paidLikeCustomer = null;
 $paidLikeProducts = [];
 $initialReturnStateId = 0;
+$customerReturn = null;
+$returnQuestion = '[CI ONLY] Synthetic return request; no physical package or payment is involved.';
 if ($paidLikeOrderId < 1) {
     $unsupportedReason = 'no separate run-scoped paid-like order was supplied';
 } elseif (!(bool) Configuration::get('PS_ORDER_RETURN', null, null, (int) $shop->id)) {
@@ -216,8 +229,22 @@ if ($paidLikeOrderId < 1) {
         } else {
             $existingReturns = OrderReturn::getOrdersReturn((int) $paidLikeOrder->id_customer, (int) $paidLikeOrder->id, false);
             $existingSlips = OrderSlip::getOrdersSlip((int) $paidLikeOrder->id_customer, (int) $paidLikeOrder->id);
-            if (is_array($existingReturns) && $existingReturns !== []) {
-                throw new RuntimeException('The supplied paid-like order already has a native RMA record.');
+            if (!is_array($existingReturns) || count($existingReturns) !== 1) {
+                throw new RuntimeException('The customer return form did not create exactly one native RMA record for the paid-like order.');
+            }
+            $customerReturnRow = reset($existingReturns);
+            $customerReturnId = is_array($customerReturnRow)
+                ? (int) ($customerReturnRow['id_order_return'] ?? 0)
+                : 0;
+            $customerReturn = $customerReturnId > 0 ? new OrderReturn($customerReturnId) : false;
+            if (!($customerReturn instanceof OrderReturn)
+                || !Validate::isLoadedObject($customerReturn)
+                || (int) $customerReturn->id_order !== (int) $paidLikeOrder->id
+                || (int) $customerReturn->id_customer !== (int) $paidLikeCustomer->id
+                || (int) $customerReturn->state !== $initialReturnStateId
+                || (string) $customerReturn->question !== $returnQuestion
+            ) {
+                throw new RuntimeException('The native RMA record does not match the customer-submitted synthetic return request.');
             }
             if (is_array($existingSlips) && $existingSlips !== []) {
                 throw new RuntimeException('The supplied paid-like order already has a credit slip.');
@@ -262,7 +289,10 @@ $report = [
 ];
 
 if ($returnSupported && $paidLikeOrder instanceof Order && $paidLikeCustomer instanceof Customer) {
-    $stage = 'native return request';
+    $stage = 'customer-submitted native return readback';
+    if (!($customerReturn instanceof OrderReturn) || !Validate::isLoadedObject($customerReturn)) {
+        throw new RuntimeException('The customer-submitted native return could not be loaded for verification.');
+    }
     $orderDetailId = (int) array_key_first($paidLikeProducts);
     if ($orderDetailId < 1) {
         throw new RuntimeException('The paid-like order has no native order-detail line for its return fixture.');
@@ -274,23 +304,7 @@ if ($returnSupported && $paidLikeOrder instanceof Order && $paidLikeCustomer ins
     ) {
         throw new RuntimeException('The paid-like order product line is not valid for a native return request.');
     }
-    $orderDetailList = [$orderDetailId => $orderDetailId];
-    $productQuantityList = [$orderDetailId => 1];
-    $returnProbe = new OrderReturn();
-    $returnProbe->id_order = (int) $paidLikeOrder->id;
-    if (!$returnProbe->checkEnoughProduct($orderDetailList, $productQuantityList)) {
-        throw new RuntimeException('PrestaShop rejected the synthetic return quantity for the paid-like order.');
-    }
-    $orderReturn = new OrderReturn();
-    $orderReturn->id_customer = (int) $paidLikeCustomer->id;
-    $orderReturn->id_order = (int) $paidLikeOrder->id;
-    $orderReturn->state = (string) $initialReturnStateId;
-    $orderReturn->question = '[CI ONLY] Synthetic return request; no physical package or payment is involved.';
-    if (!$orderReturn->add()) {
-        throw new RuntimeException('PrestaShop could not persist the native synthetic return request.');
-    }
-    $orderReturn->addReturnDetail($orderDetailList, $productQuantityList);
-    $savedReturnDetails = OrderReturn::getOrdersReturnDetail((int) $orderReturn->id);
+    $savedReturnDetails = OrderReturn::getOrdersReturnDetail((int) $customerReturn->id);
     if (!is_array($savedReturnDetails)
         || count($savedReturnDetails) !== 1
         || (int) $savedReturnDetails[0]['id_order_detail'] !== $orderDetailId
@@ -300,7 +314,7 @@ if ($returnSupported && $paidLikeOrder instanceof Order && $paidLikeCustomer ins
         throw new RuntimeException('The native return request did not retain its synthetic product quantity.');
     }
     $report['return_request'] = 'passed';
-    $report['return_id'] = (int) $orderReturn->id;
+    $report['return_id'] = (int) $customerReturn->id;
 
     $stage = 'native credit slip';
     $paidBeforeSlip = (float) $paidLikeOrder->total_paid_real;
