@@ -1,5 +1,17 @@
 # ORDENOWA 작업 기록
 
+## 2026-10-25 — Step63 오탐 수정 확인 및 RMA 집중 실패 단계 확정
+
+- 작업 시작 때 `work` 로컬 `HEAD`와 `origin/work`는 `9c6c05346bad3afcaa1ac539308393061e44d35f`로 일치했다. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`. 기존 미추적 사용자 파일은 변경·삭제·스테이징하지 않았다.
+- `6020439ef085be775f2246fe2cb4f8d704902582`는 합성 상품명이 GitHub run ID를 포함해 `404` 숫자열을 가질 수 있는데도 `"404" not in driver.title`로 판정한 오탐을 수정했다. 검사에서 해당 run ID `40214404446`을 포함한 정상 제목을 로컬 재현하고 상품 ID·상세 화면 요소·가능한 최종 문서 응답 상태로 정상 상세와 오류 화면을 구분한다. 과거 #40214404446의 HTTP 상태는 수집되지 않아 unknown이다.
+- 로컬 계약 검사 91개가 통과했다. 사전 Step8 테스트 462개 통과/7 skipped, Step9 테스트 137개 통과 결과를 재사용했다. #40221893987의 Steps 8–12 및 14 설치가 성공했다.
+- 자동 집중 Actions [#40221893987](https://github.com/goldeget/japan-premium-commerce/actions/runs/40221893987), 코드 SHA `9c6c053`에서 Step67 상품/장바구니 검사는 desktop/mobile 모두 문서 상태 200 및 assertion success를 기록했다. Step68 합성 paid-like fixture와 Step69 고객 반품 제출도 success.
+- 관리자 RMA Step70은 실제 process exit 1, aggregate Step80은 `order_return_admin_browser=failure`. 안전 진단은 `last_completed_stage=return_list_navigation`, `failure_stage=return_grid`, `TimeoutException`, requested pathname `/admin-kuranea/sell/customer-service/merchandise-return/`, observed pathname `/admin-kuranea/<redacted>/<redacted>`, same-admin-origin/path true, HTTP 200, `readyState=complete`, `page_class=other_admin`, visible error marker/login form/grid 모두 false다. 따라서 목록 navigation 완료 뒤 예상 그리드가 없는 다른 관리자 경로 형태가 관측됐다. 실제 route text는 마스킹되어 앱 리다이렉트 결함인지 테스트가 기대한 경로 결함인지 확정할 수 없으므로 경로를 추측해 수정하지 않았다.
+- 해당 실패로 대상 RMA·주문·편집 화면을 확인하지 못했다. 상태 1→2 POST/성공 알림/fresh GET 재조회 및 2→1 복원/fresh GET는 전혀 실행되지 않았다. RMA 화면 캡처도 생성하지 않았다. RMA 기능 PASS로 기록하지 않는다.
+- Step75 screenshot coverage 및 Step83 run 전용 정리는 success. storefront screenshot artifact `12610240802`와 안전 진단 artifact `12609916454`는 Actions에 저장됐다. 다운로드 요청은 403이었으므로 캡처 파일을 시각 열람하지 않았고 Step Summary/annotation에 남은 안전 진단을 사용했다.
+- 폰트 archive cache hit로 #402218 Step32 브라우저 환경 준비는 13초였다. 이전 cache miss #402195 Step32의 11분 10초는 fonts-noto-cjk 설치/다운로드 setup이며 앱 검증 시간과 구분한다.
+- 집중 aggregate가 실패했으므로 이번 코드로 전체 회귀 QA를 실행하지 않았다. 원인을 확정한 최소 수정과 집중 재검증이 필요하며, 집중 검증 성공 후에만 전체 QA를 1회 실행한다. 운영 DB, named volume, 배포, 실결제·실거래는 사용하지 않았다.
+
 ## 2026-10-25 — 관리자 RMA 진단 추가 및 집중 실행 차단 기록
 
 - 시작 상태: `work` 로컬과 `origin/work`는 `066582812796e437e11f471a98777786aec51152`로 일치했고, 진행 중 Actions는 없었다. 미커밋 사용자 파일과 `.superpowers/`/기존 `__pycache__`는 보존했다. `main` SHA `ee02a3657448d563508687614a246e05ac61eecd`는 변경하지 않았다.

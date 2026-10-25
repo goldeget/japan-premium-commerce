@@ -1,5 +1,23 @@
 # ORDENOWA 테스트 결과
 
+## 2026-10-25 — Step 63 제목 오탐 수정 및 RMA 집중 진단
+
+코드 검증 SHA `9c6c05346bad3afcaa1ac539308393061e44d35f` (`main`은 `ee02a3657448d563508687614a246e05ac61eecd`). 전체 Actions [#40221893987](https://github.com/goldeget/japan-premium-commerce/actions/runs/40221893987)은 **FAIL**이며 Step 80 실제 aggregate의 유일한 실패는 `order_return_admin_browser=failure`다. Step 70의 화면상 초록 conclusion은 `continue-on-error`를 반영하므로 통과로 보지 않았다.
+
+| 검사 | 결과 | 근거 |
+| --- | --- | --- |
+| Step63 상품 제목 오탐 회귀 | PASS | `6020439`에서 상품 제목의 `404` 부분 문자열 판정을 제거했다. run ID `40214404446`이 들어간 합성 상품명을 로컬에서 재현하고, 대상 상품 식별·상품 화면 요소와 가능한 Document 상태를 확인해 정상 상세 화면과 실제 오류 화면을 분리한다. 이전 run #40214404446의 실제 HTTP 상태는 미기록이므로 unknown이다. |
+| 집중 실행 PC·모바일 상품/장바구니 | PASS | #402218 Step67은 데스크톱과 모바일 각각 `Storefront product document response status: 200` 및 home/product/cart/sale-gate/responsive assertions PASS를 기록했다. |
+| RMA 선행 및 집중 검사 | 일부 PASS, aggregate FAIL | #402218 Steps 56/58 checkout·주문 저장, 67 storefront gate, 68 CI-only fixture, 69 고객 반품은 success. Step70 실제 process는 exit 1; Step80 `order_return_admin_browser=failure`. |
+| RMA 실패 단계 및 안전 증거 | **FAIL at `return_grid`** | Step70의 `last_completed_stage=return_list_navigation`, `failure_stage=return_grid`, `TimeoutException`; 요청 `/admin-kuranea/sell/customer-service/merchandise-return/`, 최종 안전 경로 `/admin-kuranea/<redacted>/<redacted>`, same-origin admin path=true, document status=200, readyState=complete, page class=`other_admin`, visible error=false, login form=false, grid=false. 따라서 예상 목록으로부터 다른 관리자 경로 형태로 이동했으나 실제 route text는 마스킹되어 앱 라우팅과 테스트 경로 중 원인은 확정되지 않았다. |
+| RMA 1→2 저장/재조회 및 2→1 복원 | **미실행** | Grid와 대상 RMA가 확인되지 않아 상태 선택·POST·fresh GET·원상복원 단계에 도달하지 않았다. |
+| 사전 검사 및 정리 | PASS | 로컬 targeted contracts 91개 통과; 이전에 확인한 Step8 462개 통과/7 skipped, Step9 137개 통과. Actions Steps 8–12 및 Step14 설치 성공, Step75 캡처 범위 검사와 Step83 run-only cleanup도 성공했다. |
+| 브라우저 준비 시간 | PASS (cache hit) | #402218 Step32 Chromium 환경 준비 13초. 앞선 cache miss #402195 Step32의 11분 10초는 폰트 다운로드/setup 시간이었으며 앱/RMA 진단 시간과 구분한다. |
+| 캡처·진단 산출물 | 보존됨, 시각 열람 미확인 | #402218 storefront browser artifact ID `12610240802`, safe diagnostics artifact ID `12609916454`; 두 아티팩트는 Actions에 저장됐고 이 환경의 artifact 다운로드는 403이었다. RMA 상태 폼 캡처는 RMA 편집 화면에 도달하지 않아 생성되지 않았다. 실패 핵심은 Step Summary 및 annotation에 남았다. |
+| 전체 회귀 QA | 실행 안 함 | 집중 aggregate가 실패했으므로 사용자 조건에 따라 전체 QA를 시작하지 않았다. 이전 full run #40209847999는 별도 과거 결과(FAIL)다. |
+
+판정: 제목 오탐은 수정·PC/모바일 브라우저에서 통과했다. 관리자 RMA는 목록 경로 이동 뒤 예상 그리드가 없는 same-origin 200 문서에 도달한 것이 확인됐지만, 경로 마스킹 때문에 원인을 확정할 증거가 부족하다. 근거 없는 route 수정이나 상태 변경 테스트 통과 주장은 없다. 동일 RMA 상태 저장·재조회·복원과 전체 QA는 미검증이며 전체 QA PASS가 아니다.
+
 ## 2026-10-25 — RMA 단계 진단 및 제한 집중 QA 결과
 
 Latest diagnostic code SHA is `83d557e5d8c15df098f01d22cf58f4b4fb8e96ad`; `main` remains `ee02a3657448d563508687614a246e05ac61eecd`. This commit splits the admin return list navigation and grid waits, records only safe route classes/origin/path/ready-state booleans, validates the exact allowlisted diagnostic schema, and requires exact host equality for same-origin checks. It does not change application RMA state behavior.
