@@ -49,12 +49,12 @@ services:
       KURANEA_CATALOG_TEST_DEMO_APPROVAL: ${KURANEA_CATALOG_TEST_DEMO_APPROVAL:-0}
       # Checkout stays disabled in the base project. The isolated browser-order
       # workflow adds a run-scoped Compose override only for that QA step.
-      CI: "false"
-      GITHUB_ACTIONS: "false"
-      GITHUB_RUN_ID: ""
-      GITHUB_RUN_ATTEMPT: ""
-      KURANEA_ISOLATED_CI: "0"
-      KURANEA_CI_PROJECT_NAME: ""
+      CI: ${CI:-false}
+      GITHUB_ACTIONS: ${GITHUB_ACTIONS:-false}
+      GITHUB_RUN_ID: ${GITHUB_RUN_ID:-}
+      GITHUB_RUN_ATTEMPT: ${GITHUB_RUN_ATTEMPT:-}
+      KURANEA_ISOLATED_CI: ${KURANEA_ISOLATED_CI:-0}
+      KURANEA_CI_PROJECT_NAME: ${CI_COMPOSE_PROJECT_NAME:-}
       ADMIN_MAIL: ${ADMIN_MAIL:?Set ADMIN_MAIL in .env}
       ADMIN_PASSWD: ${ADMIN_PASSWD:?Set ADMIN_PASSWD in .env}
     volumes:

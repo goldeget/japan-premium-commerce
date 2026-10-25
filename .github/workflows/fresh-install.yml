@@ -939,6 +939,7 @@ jobs:
             -e ADMIN_MAIL=ci-ordenowa@example.invalid \
             prestashop runuser -g www-data -u www-data -- \
             php /tmp/seed_security_fixtures.php 2>&1 | tee "$fixture_log"
+          printf 'KURANEA_SECURITY_ADMIN_LOCALE_MUTATED=1\n' >> "$GITHUB_ENV"
           python3 - "$fixture_log" "$GITHUB_ENV" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" <<'PY'
           import json, re, sys
           from pathlib import Path
@@ -2108,6 +2109,31 @@ jobs:
           fi
           printf 'PASS: required evidence exists for every successful QA step; all available logs and captures are retained.\n'
 
+      - name: Restore CI administrator language after locale QA
+        id: security_locale_restore
+        if: always() && !cancelled() && env.KURANEA_SECURITY_ADMIN_LOCALE_MUTATED == '1'
+        continue-on-error: true
+        shell: bash
+        env:
+          ADMIN_MAIL: ci-ordenowa@example.invalid
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/restore_ci_admin_locale.php' \
+            < tests/business_profile/restore_ci_admin_locale.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e CI=true \
+            -e GITHUB_ACTIONS=true \
+            -e KURANEA_ISOLATED_CI=1 \
+            -e GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            -e GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            -e ADMIN_MAIL="$ADMIN_MAIL" \
+            prestashop runuser -g www-data -u www-data -- \
+            php /tmp/restore_ci_admin_locale.php
+
       - name: Verify the fresh shop and restart persistence
         id: fresh_install_restart
         if: always() && !cancelled() && steps.checkout_restore.outcome == 'success'
@@ -2179,6 +2205,8 @@ jobs:
           ORDER_LIFECYCLE_FIXTURE_OUTCOME: ${{ steps.order_lifecycle_fixture.outcome }}
           ORDER_LIFECYCLE_OUTCOME: ${{ steps.order_lifecycle.outcome }}
           BACKUP_RESTORE_DRILL_OUTCOME: ${{ steps.backup_restore_drill.outcome }}
+          SECURITY_LOCALE_RESTORE_OUTCOME: ${{ steps.security_locale_restore.outcome }}
+          SECURITY_ADMIN_LOCALE_MUTATED: ${{ env.KURANEA_SECURITY_ADMIN_LOCALE_MUTATED }}
           FRESH_INSTALL_RESTART_OUTCOME: ${{ steps.fresh_install_restart.outcome }}
           POSTAL_IMPORT_OUTCOME: ${{ steps.postal_import.outcome }}
           POSTAL_VERIFY_OUTCOME: ${{ steps.postal_verify.outcome }}
@@ -2233,6 +2261,9 @@ jobs:
               failed_steps+=("$entry")
             fi
           done
+          if [[ "$SECURITY_ADMIN_LOCALE_MUTATED" == 1 && "$SECURITY_LOCALE_RESTORE_OUTCOME" != success ]]; then
+            failed_steps+=("security_locale_restore=$SECURITY_LOCALE_RESTORE_OUTCOME")
+          fi
           if ((${#failed_steps[@]})); then
             printf '::error title=ORDENOWA isolated QA::Failed steps: %s\n' "${failed_steps[*]}"
             exit 1

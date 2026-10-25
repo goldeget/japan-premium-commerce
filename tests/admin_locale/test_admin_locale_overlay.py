@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import hashlib
+import re
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -133,6 +135,25 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertIn("$admin->id_lang = $englishLanguageId;", source)
         self.assertIn("$admin->update()", source)
 
+    def test_security_fixture_changes_only_the_primary_ci_admin_language(self) -> None:
+        fixture = ROOT / "tests" / "business_profile" / "seed_security_fixtures.php"
+        source = fixture.read_text(encoding="utf-8")
+        admin_load = source.index("getByEmail($adminEmail)")
+        primary_admin_guard = source.index("securityFixtureRequire((int) $admin->id === 1", admin_load)
+        language_change = source.index("$admin->id_lang = $englishLanguageId;")
+
+        self.assertLess(admin_load, primary_admin_guard)
+        self.assertLess(primary_admin_guard, language_change)
+
+    def test_fixture_cleanup_continues_if_primary_admin_language_restore_throws(self) -> None:
+        fixture = ROOT / "tests" / "business_profile" / "seed_security_fixtures.php"
+        source = fixture.read_text(encoding="utf-8")
+        catch_block = source.split("} catch (Throwable $exception) {", 1)[1]
+
+        self.assertIn("catch (Throwable $restoreException)", catch_block)
+        self.assertLess(catch_block.index("catch (Throwable $restoreException)"), catch_block.index("foreach ($customers as $customer)"))
+        self.assertIn("throw $exception;", catch_block)
+
     def test_admin_response_sets_korean_lang_on_legacy_symfony_shell(self) -> None:
         source = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text(encoding="utf-8")
         self.assertIn("public function onKernelResponse(ResponseEvent $event)", source)
@@ -160,6 +181,129 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, response_handler)
+
+    def test_legacy_shell_locale_failure_has_opt_in_safe_response_diagnostics(self) -> None:
+        subscriber = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text(encoding="utf-8")
+        browser = (ROOT / "tests" / "e2e" / "verify_admin_security_browser.py").read_text(encoding="utf-8")
+        compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC", subscriber)
+        self.assertIn("$request->headers->get('X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC') === '1'", subscriber)
+        self.assertIn("$request->query->get('controller') === 'AdminBusinessProfile'", subscriber)
+        self.assertIn("self::isIsolatedCiDiagnosticRequest($request)", subscriber)
+        for guard in (
+            "$request->server->get('CI') === 'true'",
+            "$request->server->get('GITHUB_ACTIONS') === 'true'",
+            "$request->server->get('KURANEA_ISOLATED_CI') === '1'",
+            "$request->server->get('KURANEA_CI_PROJECT_NAME') === $expectedProjectName",
+        ):
+            with self.subTest(guard=guard):
+                self.assertIn(guard, subscriber)
+        for environment in (
+            'CI: ${CI:-false}',
+            'GITHUB_ACTIONS: ${GITHUB_ACTIONS:-false}',
+            'GITHUB_RUN_ID: ${GITHUB_RUN_ID:-}',
+            'GITHUB_RUN_ATTEMPT: ${GITHUB_RUN_ATTEMPT:-}',
+            'KURANEA_ISOLATED_CI: ${KURANEA_ISOLATED_CI:-0}',
+            'KURANEA_CI_PROJECT_NAME: ${CI_COMPOSE_PROJECT_NAME:-}',
+        ):
+            with self.subTest(environment=environment):
+                self.assertIn(environment, compose)
+        for field in (
+            "module_active",
+            "admin_route",
+            "is_redirect",
+            "http_status",
+            "is_html",
+            "body_present",
+            "html_tags",
+            "html_replacements",
+            "lang_before",
+            "lang_after",
+            "rewritten",
+        ):
+            with self.subTest(field=field):
+                self.assertIn(field, subscriber)
+        self.assertIn("min(9999, count($originalHtmlTags[0] ?? []))", subscriber)
+        self.assertIn("X-ORDENOWA-ADMIN-LOCALE-DIAGNOSTIC", browser)
+        self.assertIn("admin_security_locale_diagnostics", browser)
+        self.assertIn("PREG_UNMATCHED_AS_NULL", subscriber)
+        self.assertIn('redirect: "manual"', browser)
+        self.assertIn('response.type === "opaqueredirect"', browser)
+        self.assertIn("SAFE_ADMIN_LOCALE_RESPONSE_PATTERN", browser)
+        self.assertIn(r"/\s+lang\s*=", subscriber)
+        self.assertNotIn(r"preg_match('/\blang\s*=", subscriber)
+
+    def test_admin_locale_annotation_accepts_opaque_redirect_and_allowlists_response_fields(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_admin_security_browser.py").read_text(encoding="utf-8")
+        module = ast.parse(browser)
+        assignment = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "SAFE_ADMIN_LOCALE_RESPONSE_PATTERN" for target in node.targets)
+        )
+        pattern = ast.literal_eval(assignment.value)
+        self.assertEqual(browser.count("SAFE_ADMIN_LOCALE_RESPONSE_PATTERN"), 3)
+        valid = (
+            "stage=rewritten;main_request=1;module_active=1;admin_route=1;is_redirect=0;http_status=200;"
+            "is_html=1;body_present=1;html_tags=1;html_replacements=1;lang_before=other;lang_after=korean;rewritten=1"
+        )
+
+        self.assertIsNotNone(re.fullmatch(pattern, valid))
+        self.assertIsNotNone(re.fullmatch(pattern, "redirect=opaque"))
+        self.assertIsNotNone(re.fullmatch(pattern, "unavailable:JavascriptException"))
+        self.assertIsNotNone(re.fullmatch(pattern, "unavailable:invalid_diagnostic"))
+        self.assertIsNone(re.fullmatch(pattern, valid.replace("main_request=1", "request_url=https://secret.invalid")))
+
+    def test_security_fixture_restores_primary_employee_language_before_restart_check(self) -> None:
+        restore_path = ROOT / "tests" / "business_profile" / "restore_ci_admin_locale.php"
+        self.assertTrue(restore_path.is_file(), "missing isolated employee-locale restoration fixture")
+        restore_source = restore_path.read_text(encoding="utf-8")
+        for required in (
+            "getenv('CI') !== 'true'",
+            "getenv('GITHUB_ACTIONS') !== 'true'",
+            "getenv('KURANEA_ISOLATED_CI') !== '1'",
+            "kuranea-ci-' . $runId . '-' . $runAttempt",
+            "ADMIN_MAIL",
+            "(int) $employee->id !== 1",
+            "Language::getIdByIso('ko', true)",
+            "$employee->update()",
+            "Validate::isLoadedObject($savedEmployee)",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, restore_source)
+
+        seed_source = (ROOT / "tests" / "business_profile" / "seed_security_fixtures.php").read_text(encoding="utf-8")
+        self.assertIn("$adminOriginalLanguageId = (int) $admin->id_lang;", seed_source)
+        self.assertIn("$admin->id_lang = $adminOriginalLanguageId;", seed_source)
+
+        workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
+        fixture_step = workflow.split("- name: Prepare isolated admin security and reset-token fixtures", 1)[1].split(
+            "- name:", 1
+        )[0]
+        self.assertNotIn("KURANEA_SECURITY_FIXTURE_ATTEMPTED", fixture_step)
+        seed_returned = fixture_step.index("php /tmp/seed_security_fixtures.php")
+        mutation_marker = fixture_step.index("KURANEA_SECURITY_ADMIN_LOCALE_MUTATED=1")
+        output_validation = fixture_step.index('python3 - "$fixture_log"')
+        self.assertLess(seed_returned, mutation_marker)
+        self.assertLess(mutation_marker, output_validation)
+        restore_step = workflow.split("- name: Restore CI administrator language after locale QA", 1)[1].split(
+            "- name:", 1
+        )[0]
+        self.assertIn("restore_ci_admin_locale.php", restore_step)
+        self.assertIn("env.KURANEA_SECURITY_ADMIN_LOCALE_MUTATED == '1'", restore_step)
+        self.assertLess(
+            workflow.index("- name: Verify browser QA screenshot coverage"),
+            workflow.index("- name: Restore CI administrator language after locale QA"),
+        )
+        self.assertLess(
+            workflow.index("- name: Restore CI administrator language after locale QA"),
+            workflow.index("- name: Verify the fresh shop and restart persistence"),
+        )
+        self.assertIn("SECURITY_LOCALE_RESTORE_OUTCOME: ${{ steps.security_locale_restore.outcome }}", workflow)
+        self.assertIn('SECURITY_ADMIN_LOCALE_MUTATED: ${{ env.KURANEA_SECURITY_ADMIN_LOCALE_MUTATED }}', workflow)
+        self.assertIn('if [[ "$SECURITY_ADMIN_LOCALE_MUTATED" == 1 && "$SECURITY_LOCALE_RESTORE_OUTCOME" != success ]]; then', workflow)
 
     def test_overlay_resources_use_prestashop_translator_loader(self) -> None:
         source_path = MODULE / "src" / "AdminLocaleSubscriber.php"

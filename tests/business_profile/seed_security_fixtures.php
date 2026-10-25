@@ -48,11 +48,15 @@ $emails = [
 
 $profile = null;
 $employee = null;
+$admin = null;
+$adminOriginalLanguageId = 0;
 $customers = [];
 
 try {
     $admin = new Employee();
     securityFixtureRequire($admin->getByEmail($adminEmail) !== false, 'The CI administrator employee could not be loaded.');
+    securityFixtureRequire((int) $admin->id === 1, 'The CI administrator email must resolve to the primary isolated employee.');
+    $adminOriginalLanguageId = (int) $admin->id_lang;
     $englishLanguageId = (int) Language::getIdByIso('en', true);
     securityFixtureRequire($englishLanguageId > 0, 'The isolated shop has no active English language for the locale test employee.');
     $admin->id_lang = $englishLanguageId;
@@ -138,6 +142,16 @@ try {
         JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_THROW_ON_ERROR
     ) . PHP_EOL;
 } catch (Throwable $exception) {
+    if ($admin instanceof Employee && $adminOriginalLanguageId > 0) {
+        try {
+            $admin->id_lang = $adminOriginalLanguageId;
+            if (!$admin->update()) {
+                throw new RuntimeException('The primary CI administrator language restore returned false.');
+            }
+        } catch (Throwable $restoreException) {
+            fwrite(STDERR, "ERROR: the primary CI administrator language could not be restored after fixture setup failure.\n");
+        }
+    }
     foreach ($customers as $customer) {
         if ($customer instanceof Customer && (int) $customer->id > 0) {
             $customer->delete();

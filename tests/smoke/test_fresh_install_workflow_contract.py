@@ -16,6 +16,19 @@ FRESH_INSTALL_SMOKE = ROOT / "tests" / "smoke" / "fresh_install.sh"
 
 
 class FreshInstallWorkflowContractTests(unittest.TestCase):
+    def test_security_admin_locale_restore_requires_mutation_marker_and_is_conditionally_aggregated(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        restore_step = workflow.split("- name: Restore CI administrator language after locale QA", 1)[1].split(
+            "- name:", 1
+        )[0]
+        aggregate = workflow.split("- name: Aggregate browser QA and postal verification failures", 1)[1].split(
+            "- name:", 1
+        )[0]
+
+        self.assertIn("env.KURANEA_SECURITY_ADMIN_LOCALE_MUTATED == '1'", restore_step)
+        self.assertIn('SECURITY_ADMIN_LOCALE_MUTATED: ${{ env.KURANEA_SECURITY_ADMIN_LOCALE_MUTATED }}', aggregate)
+        self.assertIn('if [[ "$SECURITY_ADMIN_LOCALE_MUTATED" == 1 && "$SECURITY_LOCALE_RESTORE_OUTCOME" != success ]]; then', aggregate)
+
     def test_synthetic_postcode_fixture_reports_the_failing_phase(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         fixture_step = workflow.split(
