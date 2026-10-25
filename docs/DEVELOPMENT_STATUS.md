@@ -1,5 +1,28 @@
 # ORDENOWA 개발 현황
 
+## 현재 출시 체크리스트 (2026-10-25 15:43 UTC)
+
+`work` 로컬·원격 SHA는 `46b823c2d38c121fa8c25bc4caf19faee7b33302`다. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`이며 변경하지 않았다. 미커밋 문서와 미추적 파일은 보존 중이다. 최신 수정 커밋의 격리 전체 QA [#40208183512](https://github.com/goldeget/japan-premium-commerce/actions/runs/40208183512)은 실행 중이다. 직전 전체 QA [#40205915764](https://github.com/goldeget/japan-premium-commerce/actions/runs/40205915764)은 **FAIL**이며 현재 수정 전 기준이다.
+
+확정된 제품 정책: 고객 언어는 일본어 기본, 영어·한국어 추가; 기본 통화 JPY; ORDENOWA/オーデノワ/오데노와 브랜드; 지원하는 일본 배송지역의 고객 배송비 ¥0, 결제 시 별도 배송비·세금 또는 플랫폼 추가 수수료 없음. 상품 표시는 최종 세금 포함 가격이며 과세 상품의 세금은 실제 분류대로 기록한다. 지원 도도부현, 실제 운송사, 무료배송 비용 부담 주체와 계약 조건은 미정이다.
+
+| 항목 | 완료 조건 | 현재 상태 | 근거 | 남은 작업 | 필요한 입력 |
+| --- | --- | --- | --- | --- | --- |
+| 보기 전용 관리자·대시보드 권한 | 실제 Dashboard 문서, 한국어 UI, 쓰기 차단, 외부/잘못된 경로 거부 | 완료 (격리 QA 범위) | #402059 `ADMIN_SECURITY_BROWSER_QA_OUTCOME=success`; 별도 Dashboard 캡처 단계는 `skipped` | 최신 수정 후보에서 영향 여부 확인 | 운영 직원 계정/도메인 정보는 별도 필요 |
+| 브랜드·SEO·PWA 기본 동작 | 공식 자산 게시·복원, 메일 로고, private cache와 PWA 확인 | 완료 (합성 격리 QA 범위) | #402059 brand, reset-email brand, PWA outcome은 모두 `success`; 로컬 asset 무결성 계약 통과 | 운영 도메인 metadata/시각 검수, iOS·Android 기기 확인 | staging/production 도메인과 기기 미정 |
+| SEO escaping/metadata | 사용자 입력 escaping 및 공개 metadata 확인 | 코드 수정 완료, 운영 호스트 검증 필요 | SEO escaping fix는 `work`에 있음; 실운영 hostname은 미제공 | staging hostname에서 title/description/OG 미리보기 확인 | staging/production 도메인 미정 |
+| 고객 계정 | 가입/로그인/로그아웃/비밀번호 재설정·토큰 보호 | 완료 (합성 격리 QA 범위) | #402059 `ACCOUNT_BROWSER_QA_OUTCOME=success`, `RESET_TOKEN_BROWSER_QA_OUTCOME=success`; 새 sanitizer는 Step 8 사전 검사 통과 | 새 전체 QA outcome 확인 | 운영 메일 발신자·도메인 미정 |
+| 관리자 직원 암호 복구 | native reset, 이전 암호 거부, 새 암호로 Dashboard 로그인 | 완료 (Mailpit 격리 QA 범위) | #402059 `ADMIN_RECOVERY_BROWSER_OUTCOME=success` | 운영 SMTP·도메인에서 별도 확인 | SMTP 제공자·발신 도메인 미정 |
+| 고객 반품·관리자 RMA | 고객 요청 저장, 관리자의 상태 변경·복원, 취소/credit-slip 기능 | 검증 필요 | #402059 `ORDER_RETURN_BROWSER_OUTCOME=failure`, admin return `skipped`, lifecycle `failure`; 고객 반품 제출 click interception에서 실패 | #402081에서 원인 구분 진단 재검증; 반환/환불 동작을 성공으로 취급하지 않음 | 실제 반품·취소·환불 정책과 담당자 미정 |
+| 관리자 상품 등록·편집 | 한국어 화면에서 실제 상품 필드/이미지/옵션/재고 저장 | 완료 (합성 격리 QA 범위) | #402059 `PRODUCT_ADMIN_BROWSER_QA_OUTCOME=success`; 실상품은 별도 자료 대기 | 출시 SKU로 acceptance 확인 | SKU·언어별 문안·가격·재고·옵션·이미지 사용권·세금분류 미정 |
+| 장바구니·가격·세금·무료배송·주문 | 일본 주소 checkout, ¥0 배송, 상품/주문/관리자 총액 일치 | 완료 (합성 격리 QA 범위) | #402059 Tokyo·Osaka, taxable/exempt, 쿠폰/수량, browser orders 및 admin readback outcome 성공 | 실제 SKU·배송계약으로 acceptance 확인; 운영 결제는 수행하지 않음 | 지원 도도부현, 운송사/서비스, 판매자 부담 비용·계약과 출고조건 미정; 고객 배송비 ¥0 정책은 확정 |
+| 백업·복원·재시작·우편번호 | 격리 DB/files/queue 복원·재시작 및 공식 우편 데이터 검증 | 완료 (합성 격리 QA 범위) | #402059 `BACKUP_RESTORE_DRILL`, restart, postal import/verify outcomes 성공 | 운영환경 복원 drill 별도 | 저장소·암호화·보존기간·RPO/RTO·담당자/대상 미정 |
+| 한국어 관리자 전체 범위 | 요구된 관리자 페이지·메시지의 완전한 현지화 | 검증 필요 | 주문/KPI 등 특정 화면 보완 기록은 있으나 전체 번역 coverage 근거 없음 | 남은 화면과 메시지 범위의 실제 inventory/확인 | 실제 운영 데이터/고객 안내 문안 미정 |
+| 판매자·상품·세무·배송·결제·정책 | 공개 운영 정보가 승인 원본과 일치하고 합법적 처리 | 자료·환경 대기 | 사용자가 실제 운영 값이 ‘미정’임을 확인; 합성 QA는 운영 준비가 아님 | 승인 자료를 보안 경로로 반영하고 acceptance QA | 판매자 법적 정보/LOGISTEED 관계 승인, 고객센터, SKU/권리/세금, 배송, 결제·환불, 약관·개인정보·특상법 문안 |
+| 운영 인프라·메일·백업·기기 | HTTPS 운영, 메일, 지속 backup/restore, release/rollback, iOS/Android 확인 | 자료·환경 대기 | 운영 target과 기기 접근 미제공; 현재 CI는 격리 프로젝트 | 승인된 staging에서 배포/복원/기기 검증 | 호스트·owner, domain/DNS/TLS, SMTP/test inbox, registry/release owner/secrets 경로, 승인된 운영 관리자 계정·권한 provisioning 책임자, backup 책임자/저장소, iOS·Android 기기 미정 |
+
+**현재 판단:** 최신 코드의 전체 QA는 아직 진행 중이고 직전 전체 QA는 반품 검사 실패로 FAIL이다. 전체 QA가 성공하더라도 실제 판매자·상품·결제·배송·법률 자료, 운영환경, 기기 접근이 준비되기 전에는 정식 출시할 수 없다. LOGISTEED 공개 정보는 `company_reference`에만 쓰며, 실제 판매자나 ORDENOWA 운영·고객센터 정보로 전용하지 않는다.
+
 ## 이번 고정 범위 결과 (2026-10-25 11:39 UTC)
 
 최종 회귀 대상 코드 `work` SHA는 **74e64b966d5943a3d06cadd04fe6fc7b17669bfe**다. 격리 Actions [#40188721058](https://github.com/goldeget/japan-premium-commerce/actions/runs/40188721058)은 **FAIL**로 종료했고 Step69의 유일한 실제 실패는 `admin_security_browser_qa=failure`; Step72의 run 전용 리소스 정리는 성공했다. 이전 SHA `e356a8a01f9215f2a3dd32ab623a806bda5e398a` 실행 [#40187411910](https://github.com/goldeget/japan-premium-commerce/actions/runs/40187411910)도 같은 실패였다. `main` **ee02a3657448d563508687614a246e05ac61eecd**는 변경하지 않았다. 기준 성공 실행 [#40134196682](https://github.com/goldeget/japan-premium-commerce/actions/runs/40134196682)는 기존 기준점으로 보존한다.

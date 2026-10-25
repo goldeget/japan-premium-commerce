@@ -1,4 +1,16 @@
-# KURANEA 작업 기록
+# ORDENOWA 작업 기록
+
+## 2026-10-25 — PII-safe browser blocker 진단 및 전체 QA
+
+- 작업은 기존 `work` 브랜치에서 이어갔다. 시작할 때 dirty 문서와 미추적 자료를 보존했고, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다. 현재 원격 `work`는 `46b823c2d38c121fa8c25bc4caf19faee7b33302`다.
+- 직전 전체 격리 run [#40205915764](https://github.com/goldeget/japan-premium-commerce/actions/runs/40205915764), SHA `3d620c8ff446fab7706dc87bad9eaa841efcbc36`는 **FAIL**: 실제 aggregate `order_return_browser=failure order_return_admin_browser=skipped order_lifecycle=failure`. 실제 native submit click이 차단됐다. 원인은 이 시점까지 확정되지 않았다. Account/logout, 관리자 recovery, dashboard security, 브랜드, 상품, PWA, 무료배송/과세, 주문 저장, 격리 backup/restore, 재시작과 우편번호 검증의 기록된 outcomes는 성공이다.
+- 반품 제출 차단 진단에 `no_target`·`script_error`·`unexpected_result` 상태와 제한 geometry를 추가해 다음 run에서 원인을 구별하도록 했다. 독립 검토에서 기존 문자필터는 `Jane Doe`나 이메일 일부를 남길 수 있다고 확인했다. `ab6d3ff`는 checkbox와 submit 진단 모두 tag/class allowlist와 빈 ID를 사용하게 했고 native click, 예외 재발생, 주문 readback gate는 그대로 뒀다.
+- 별도 account diagnostic audit에서 같은 종류의 누출을 찾았다. `46b823c`는 계정 click blocker에서 실제 ID를 수집/출력하지 않고, tag/class allowlist와 숫자 geometry/status만 유지한다. synthetic email로 동작 테스트를 추가했다. 계정 화면 캡처는 generated `example.invalid`/CI fixture를 담을 수 있으며 실제 고객자료가 아니다.
+- TDD/검증: return contract를 먼저 실패시킨 뒤 shared sanitizer 적용 후 통과; account contract는 합성 이메일을 stderr에서 거부함. Step 8 사전 검사 `ORDENOWA_ADMIN_SECURITY_FOCUS=false/true` 각각 461 tests, 7 skipped; Step 9 각각 130 tests, 모두 통과. Account focused contract 50 tests 통과. 4개 Python 파일 AST parse와 `git diff --check` 통과. 독립 코드 리뷰는 남은 PII 경로와 gate 변경을 찾지 못했다.
+- 코드 커밋은 `ab6d3ff test: redact return click blocker metadata`, `46b823c test: redact account click blocker metadata`. 이전 미푸시 진단 commit `06405da`와 함께 fast-forward push하여 remote `work`를 `46b823c2d38c121fa8c25bc4caf19faee7b33302`로 확인했다. 푸시 자동 실행 [#40208183512](https://github.com/goldeget/japan-premium-commerce/actions/runs/40208183512)은 이 기록 시점에 `Build the PrestaShop image` 단계에서 진행 중이며 중복 실행하지 않았다.
+- 이전 실패 run의 screenshot artifact는 [#402059 artifact ID 12604410224](https://github.com/goldeget/japan-premium-commerce/actions/runs/40205915764/artifacts/12604410224)에 남아 있다. artifact 본문 다운로드는 앞서 403으로 막혀 시각 검수를 하지 않았다. 최신 run 완료 후 그 실제 aggregate/outcomes, diagnostics/artifacts, cleanup을 확인하고 이 기록과 테스트 결과를 갱신한다.
+- 고객 기본 언어 ja/en/ko, JPY, 세금 포함 표시가격·결제 시 추가 세금 없음, 지원 일본 지역의 고객 배송비 ¥0, 플랫폼 수수료 ¥0은 확정 정책이다. 실제 지원지역, 운송사/계약과 무료배송 비용 부담, 상품별 세금 설정은 별도다.
+- 외부 운영 입력은 사용자 지시대로 `미정`이다: 실제 판매자/LOGISTEED 관계·담당자·고객센터, SKU/언어별 문안/가격/재고/이미지 사용권/상품 세금, 운송사·지원 배송범위·출고/반품 조건, 승인 결제·환불·약관 문안, staging/production host/domain/DNS/TLS/SMTP/registry/secret 경로, 운영 관리자 계정·권한 provisioning 책임자, 운영 backup/restore 목표와 책임자, iOS/Android 기기. 공개 LOGISTEED 정보는 `company_reference`에만 유지한다. Docker/DB/browser는 격리 GitHub Actions에서만 사용하며 운영 DB/named volume, 실배포, 실결제, 실거래와 유료 구매는 사용하지 않았다.
 
 ## 2026-10-25 — 고정 범위 Dashboard 경로 수정 및 1회 최종 QA
 
