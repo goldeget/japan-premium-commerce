@@ -279,6 +279,22 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertLess(product_admin_position, step_names.index(checkout_gate_step))
         self.assertLess(product_admin_position, step_names.index(order_step))
 
+    def test_ci_database_and_admin_credentials_are_generated_masked_and_not_embedded_in_steps(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        credential_step = workflow.split("- name: Prepare disposable test credentials", 1)[1].split("- name:", 1)[0]
+
+        self.assertEqual(credential_step.count("secrets.token_urlsafe(32)"), 3)
+        for name in ("DB_PASSWORD", "DB_ROOT_PASSWORD", "ADMIN_PASSWORD"):
+            with self.subTest(name=name):
+                self.assertIn(f'printf "::add-mask::%s\\n" "${name}"', credential_step)
+        for variable in ("MARIADB_PASSWORD", "MARIADB_ROOT_PASSWORD", "ADMIN_PASSWD"):
+            with self.subTest(variable=variable):
+                self.assertIn(f"{variable}=%s\\n", credential_step)
+
+        self.assertNotRegex(workflow, r"(?m)^\s+ADMIN_PASSWD:\s+[^$\s][^\n]*$")
+        self.assertNotRegex(workflow, r"(?m)^\s+MARIADB_(?:ROOT_)?PASSWORD=[^%$][^\n]*$")
+        self.assertNotRegex(workflow, r"MYSQL_PWD=\w+\s+mariadb")
+
     def test_official_brand_upload_preview_publish_and_browser_checks_run_in_isolated_ci(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         brand_flow_path = ROOT / "tests" / "e2e" / "verify_brand_admin_browser.py"
@@ -290,7 +306,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("ADMIN_MAIL: ci-ordenowa@example.invalid", brand_step)
         self.assertIn("ADMIN_MAIL=ci-ordenowa@example.invalid", workflow)
         self.assertNotIn("ci-kuranea@example.invalid", workflow)
-        self.assertIn("ADMIN_PASSWD: Ci-Only-Admin-Password-92!", workflow)
+        self.assertNotRegex(workflow, r"(?m)^\s+ADMIN_PASSWD:\s+[^$\s][^\n]*$")
         self.assertIn("ordenowa-brand-e2e.log", workflow)
         self.assertIn("brand-desktop-published.png", brand_flow)
         self.assertIn("brand-mobile-published.png", brand_flow)
