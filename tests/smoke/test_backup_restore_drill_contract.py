@@ -225,6 +225,24 @@ class BackupRestoreDrillContractTests(unittest.TestCase):
         self.assertLess(queue_volume, start_database)
         self.assertLess(start_database, clear_target_files)
 
+    def test_restored_catalog_queue_root_metadata_is_applied_before_readback(self) -> None:
+        source = SCRIPT.read_text(encoding="utf-8")
+        entrypoint = (ROOT / "docker" / "kuranea-entrypoint.sh").read_text(encoding="utf-8")
+        if "restore_catalog_queue_root_metadata() {" not in source:
+            self.fail("restore must define the queue-root metadata step")
+        helper = source.split("restore_catalog_queue_root_metadata() {", 1)[1].split("\n}", 1)[0]
+        queue_restore = source.index('if ! docker cp -a - "$restore_app_container:/var/lib/kuranea/catalog-review"')
+        apply_metadata = source.index("restore_catalog_queue_root_metadata\n", queue_restore)
+        queue_readback = source.index('if ! docker cp -a "$restore_app_container:/var/lib/kuranea/catalog-review/." -')
+
+        self.assertLess(queue_restore, apply_metadata)
+        self.assertLess(apply_metadata, queue_readback)
+        self.assertIn('run --rm --no-deps -T --user 0:0', helper)
+        self.assertIn("chown www-data:www-data /var/lib/kuranea/catalog-review", helper)
+        self.assertIn("chmod 0750 /var/lib/kuranea/catalog-review", helper)
+        self.assertIn('chown www-data:www-data "$catalog_queue_dir"', entrypoint)
+        self.assertIn('chmod 0750 "$catalog_queue_dir"', entrypoint)
+
     def test_restore_create_uses_supported_compose_238_arguments(self) -> None:
         source = SCRIPT.read_text(encoding="utf-8")
         helper = source.split("create_restore_service() {", 1)[1].split("\n}", 1)[0]

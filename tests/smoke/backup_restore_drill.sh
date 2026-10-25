@@ -351,6 +351,16 @@ create_restore_service() {
   fail "run-scoped restore container creation failed ($(format_compose_create_failure "$service" "$create_status" "$stdout_path" "$stderr_path" "$restore_project"))."
 }
 
+restore_catalog_queue_root_metadata() {
+  if ! docker compose -p "$restore_project" run --rm --no-deps -T --user 0:0 \
+    --entrypoint /bin/sh prestashop -ec '
+      chown www-data:www-data /var/lib/kuranea/catalog-review
+      chmod 0750 /var/lib/kuranea/catalog-review
+    ' >/dev/null 2>"$stderr_file"; then
+    fail 'restored catalog queue root metadata could not be applied.'
+  fi
+}
+
 # Validate the effective Compose volume mapping without printing the config,
 # which contains the run-scoped database and Back Office credentials.
 if ! docker compose -p "$restore_project" config --format json 2>"$stderr_file" \
@@ -464,6 +474,7 @@ fi
 if ! docker cp -a - "$restore_app_container:/var/lib/kuranea/catalog-review" <"$queue_archive" >/dev/null 2>"$stderr_file"; then
   fail 'catalog queue could not be restored.'
 fi
+restore_catalog_queue_root_metadata
 if ! docker cp -a "$restore_app_container:/var/www/html/." - >"$restored_app_archive" 2>"$stderr_file"; then
   fail 'restored PrestaShop files could not be read back.'
 fi
