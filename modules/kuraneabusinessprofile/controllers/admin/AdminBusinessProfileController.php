@@ -25,6 +25,18 @@ class AdminBusinessProfileController extends ModuleAdminController
         $this->meta_title = '쇼핑몰 운영 설정';
     }
 
+    public function initHeader()
+    {
+        $koreanLanguageId = (int) Language::getIdByIso('ko', true);
+        if ($koreanLanguageId > 0) {
+            // PrestaShop 9's legacy Back Office header reads its document
+            // language from Context::language while the header is initialized.
+            $this->context->language = new Language($koreanLanguageId);
+        }
+
+        parent::initHeader();
+    }
+
     public function initContent(): void
     {
         $this->viewAccess();

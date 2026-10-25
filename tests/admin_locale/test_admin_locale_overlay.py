@@ -95,6 +95,18 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertIn("getOneByLocaleOrIsoCode", source)
         self.assertIn("PRIORITY = 14", source)
 
+    def test_legacy_business_profile_header_uses_korean_context_language(self) -> None:
+        controller_path = ROOT / "modules" / "kuraneabusinessprofile" / "controllers" / "admin" / "AdminBusinessProfileController.php"
+        self.assertTrue(controller_path.is_file(), "missing legacy business-profile Back Office controller")
+        controller = controller_path.read_text(encoding="utf-8")
+        self.assertIn("public function initHeader()", controller)
+        init_header = controller.split("public function initHeader()", 1)[1].split("\n    public function initContent()", 1)[0]
+
+        language_assignment = "$this->context->language = new Language($koreanLanguageId);"
+        self.assertIn("Language::getIdByIso('ko', true)", init_header)
+        self.assertIn(language_assignment, init_header)
+        self.assertLess(init_header.index(language_assignment), init_header.index("parent::initHeader();"))
+
     def test_overlay_resources_use_prestashop_translator_loader(self) -> None:
         source_path = MODULE / "src" / "AdminLocaleSubscriber.php"
         services_path = MODULE / "config" / "services.yml"
