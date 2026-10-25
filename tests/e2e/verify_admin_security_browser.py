@@ -76,6 +76,10 @@ SAFE_ADMIN_ORDERS_STATE_PATTERN = (
 )
 SAFE_ADMIN_ORDERS_LINK_PATTERN = (
     r"orders_path_candidates=(?:[0-9]{1,4}|unknown);"
+    r"orders_root_candidates=(?:[0-9]{1,4}|unknown);"
+    r"orders_new_candidates=(?:[0-9]{1,4}|unknown);"
+    r"orders_item_candidates=(?:[0-9]{1,4}|unknown);"
+    r"orders_other_subroute_candidates=(?:[0-9]{1,4}|unknown);"
     r"legacy_orders_candidates=(?:[0-9]{1,4}|unknown);"
     r"eligible_list_links=(?:[0-9]{1,4}|unknown)"
 )
@@ -275,6 +279,10 @@ def safe_admin_orders_link_state(driver: webdriver.Chrome) -> str:
         expected = urlparse(BASE)
         expected_origin = (expected.scheme, expected.hostname, expected.port)
         path_candidates = 0
+        root_candidates = 0
+        new_candidates = 0
+        item_candidates = 0
+        other_subroute_candidates = 0
         legacy_candidates = 0
         eligible_list_links = 0
         for link in driver.find_elements(By.CSS_SELECTOR, "a[href]"):
@@ -290,19 +298,38 @@ def safe_admin_orders_link_state(driver: webdriver.Chrome) -> str:
                 continue
             if actual_origin != expected_origin or not parsed.path.startswith(admin_path + "/"):
                 continue
-            if parsed.path.startswith(admin_path + "/sell/orders"):
+            orders_root = admin_path + "/sell/orders"
+            if parsed.path == orders_root or parsed.path.startswith(orders_root + "/"):
                 path_candidates += 1
+                suffix = parsed.path[len(orders_root):].strip("/")
+                segments = [segment for segment in suffix.split("/") if segment]
+                if not segments:
+                    root_candidates += 1
+                elif segments == ["new"]:
+                    new_candidates += 1
+                elif segments[0].isascii() and segments[0].isdecimal():
+                    item_candidates += 1
+                else:
+                    other_subroute_candidates += 1
             if parsed.path == admin_path + "/index.php" and query.get("controller") == ["AdminOrders"]:
                 legacy_candidates += 1
             if is_admin_orders_list_url(href):
                 eligible_list_links += 1
         return (
             f"orders_path_candidates={min(path_candidates, 1000)};"
+            f"orders_root_candidates={min(root_candidates, 1000)};"
+            f"orders_new_candidates={min(new_candidates, 1000)};"
+            f"orders_item_candidates={min(item_candidates, 1000)};"
+            f"orders_other_subroute_candidates={min(other_subroute_candidates, 1000)};"
             f"legacy_orders_candidates={min(legacy_candidates, 1000)};"
             f"eligible_list_links={min(eligible_list_links, 1000)}"
         )
     except Exception:
-        return "orders_path_candidates=unknown;legacy_orders_candidates=unknown;eligible_list_links=unknown"
+        return (
+            "orders_path_candidates=unknown;orders_root_candidates=unknown;orders_new_candidates=unknown;"
+            "orders_item_candidates=unknown;orders_other_subroute_candidates=unknown;"
+            "legacy_orders_candidates=unknown;eligible_list_links=unknown"
+        )
 
 
 def safe_admin_navigation_state(driver: webdriver.Chrome) -> dict[str, object]:

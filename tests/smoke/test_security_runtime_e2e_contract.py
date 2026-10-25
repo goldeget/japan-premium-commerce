@@ -554,6 +554,8 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
                 return [
                     Link("http://localhost:18080/admin-kuranea/sell/orders"),
                     Link("http://localhost:18080/admin-kuranea/sell/orders/new"),
+                    Link("http://localhost:18080/admin-kuranea/sell/orders/42/view"),
+                    Link("http://localhost:18080/admin-kuranea/sell/orders/42/cancellation"),
                     Link("http://localhost:18080/admin-kuranea/index.php?controller=AdminOrders&token=fixture"),
                     Link("http://localhost:18080/admin-kuranea/index.php?controller=AdminOrders&action=add&token=fixture"),
                     Link("http://outside.example/admin-kuranea/sell/orders"),
@@ -562,7 +564,9 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         diagnostic = safe_link_state(Driver())
         self.assertEqual(
             diagnostic,
-            "orders_path_candidates=2;legacy_orders_candidates=2;eligible_list_links=2",
+            "orders_path_candidates=4;orders_root_candidates=1;orders_new_candidates=1;"
+            "orders_item_candidates=2;orders_other_subroute_candidates=0;"
+            "legacy_orders_candidates=2;eligible_list_links=2",
         )
         self.assertNotIn("fixture", diagnostic)
         self.assertNotIn("outside.example", diagnostic)
