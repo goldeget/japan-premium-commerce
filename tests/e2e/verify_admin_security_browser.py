@@ -263,6 +263,7 @@ def _admin_controller_for_url(url: str) -> str:
         return "AdminBusinessProfile"
     if controllers == ["AdminDashboard"]:
         dashboard_paths = {
+            admin_path + "/",
             admin_path + "/index.php",
             admin_path + "/index.php/sell/dashboard",
             admin_path + "/sell/dashboard",
