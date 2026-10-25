@@ -194,7 +194,7 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         for guard in (
             "$request->server->get('CI') === 'true'",
             "$request->server->get('GITHUB_ACTIONS') === 'true'",
-            "$request->server->get('KURANEA_ISOLATED_CI') === '1'",
+            "$request->server->get('KURANEA_ADMIN_LOCALE_DIAGNOSTICS') === '1'",
             "$request->server->get('KURANEA_CI_PROJECT_NAME') === $expectedProjectName",
         ):
             with self.subTest(guard=guard):
@@ -204,11 +204,14 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
             'GITHUB_ACTIONS: ${GITHUB_ACTIONS:-false}',
             'GITHUB_RUN_ID: ${GITHUB_RUN_ID:-}',
             'GITHUB_RUN_ATTEMPT: ${GITHUB_RUN_ATTEMPT:-}',
-            'KURANEA_ISOLATED_CI: ${KURANEA_ISOLATED_CI:-0}',
+            'KURANEA_ADMIN_LOCALE_DIAGNOSTICS: ${KURANEA_ADMIN_LOCALE_DIAGNOSTICS:-0}',
             'KURANEA_CI_PROJECT_NAME: ${CI_COMPOSE_PROJECT_NAME:-}',
         ):
             with self.subTest(environment=environment):
                 self.assertIn(environment, compose)
+        workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
+        self.assertIn("KURANEA_ADMIN_LOCALE_DIAGNOSTICS: '1'", workflow)
+        self.assertIn('KURANEA_ISOLATED_CI: "0"', compose)
         for field in (
             "module_active",
             "admin_route",

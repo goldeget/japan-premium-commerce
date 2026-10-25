@@ -230,7 +230,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
 
         return $request->server->get('CI') === 'true'
             && $request->server->get('GITHUB_ACTIONS') === 'true'
-            && $request->server->get('KURANEA_ISOLATED_CI') === '1'
+            && $request->server->get('KURANEA_ADMIN_LOCALE_DIAGNOSTICS') === '1'
             && $request->server->get('KURANEA_CI_PROJECT_NAME') === $expectedProjectName;
     }
 

@@ -87,13 +87,15 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             'GITHUB_ACTIONS: ${GITHUB_ACTIONS:-false}',
             'GITHUB_RUN_ID: ${GITHUB_RUN_ID:-}',
             'GITHUB_RUN_ATTEMPT: ${GITHUB_RUN_ATTEMPT:-}',
-            'KURANEA_ISOLATED_CI: ${KURANEA_ISOLATED_CI:-0}',
             'KURANEA_CI_PROJECT_NAME: ${CI_COMPOSE_PROJECT_NAME:-}',
+            'KURANEA_ADMIN_LOCALE_DIAGNOSTICS: ${KURANEA_ADMIN_LOCALE_DIAGNOSTICS:-0}',
         ):
             with self.subTest(default=default):
                 self.assertIn(default, compose)
+        self.assertIn('KURANEA_ISOLATED_CI: "0"', compose)
         self.assertIn('CI: "true"', overlay)
         self.assertIn('GITHUB_ACTIONS: "true"', overlay)
+        self.assertIn('KURANEA_ISOLATED_CI: "1"', overlay)
         self.assertIn("GITHUB_RUN_ID:", overlay)
         self.assertIn("GITHUB_RUN_ATTEMPT:", overlay)
         self.assertIn("KURANEA_CI_PROJECT_NAME:", overlay)
@@ -255,7 +257,7 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
 
         environment = {variable: "success" for variable in outcome_sources}
         for variable, (_, aggregate_name) in required_checkout.items():
-            for outcome in ("skipped", ""):
+            for outcome in ("failure", "skipped", ""):
                 with self.subTest(variable=variable, outcome=outcome):
                     case_environment = {
                         **os.environ,
