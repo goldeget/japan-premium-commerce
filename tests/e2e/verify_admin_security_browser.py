@@ -266,10 +266,28 @@ def _authenticated_admin_route_ready(driver: webdriver.Chrome) -> bool:
     except StaleElementReferenceException:
         # A successful login can replace the login form while this wait is polling.
         return False
-    return not login_form_visible and _admin_controller_for_url(driver.current_url) in {
-        "AdminBusinessProfile",
-        "AdminDashboard",
-    }
+    if login_form_visible:
+        return False
+
+    current = urlparse(driver.current_url)
+    expected = urlparse(BASE)
+    admin_path = urlparse(ADMIN_LOGIN).path.rstrip("/")
+    if (
+        (current.scheme, current.hostname, current.port)
+        != (expected.scheme, expected.hostname, expected.port)
+        or not (current.path == admin_path or current.path.startswith(admin_path + "/"))
+        or _admin_controller_for_url(driver.current_url) == "AdminLogin"
+    ):
+        return False
+
+    try:
+        navigation = safe_admin_navigation_state(driver)
+    except StaleElementReferenceException:
+        return False
+    return (
+        navigation["business_profile_link_count"] > 0
+        or navigation["dashboard_link_count"] > 0
+    )
 
 
 def current_profile_settings_url(driver: webdriver.Chrome) -> str:

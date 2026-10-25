@@ -145,6 +145,10 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
             "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
             "By": type("By", (), {"CSS_SELECTOR": "css selector"}),
             "StaleElementReferenceException": StaleElementReferenceException,
+            "safe_admin_navigation_state": lambda driver: {
+                "business_profile_link_count": 1,
+                "dashboard_link_count": 0,
+            },
             "webdriver": type("Webdriver", (), {"Chrome": object}),
         }
         load_function(ADMIN_FLOW, "_admin_controller_for_url", namespace)
@@ -176,6 +180,92 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         self.assertFalse(wait_for_authenticated_route(driver))
         self.assertTrue(wait_for_authenticated_route(driver))
         self.assertEqual(driver.login_form_checks, 2)
+
+    def test_admin_login_accepts_authenticated_back_office_menu_on_nondefault_controller(self):
+        class StaleElementReferenceException(Exception):
+            pass
+
+        namespace: dict[str, object] = {
+            "parse_qs": parse_qs,
+            "urlparse": urlparse,
+            "BASE": "http://localhost:18080",
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
+            "By": type("By", (), {"CSS_SELECTOR": "css selector"}),
+            "StaleElementReferenceException": StaleElementReferenceException,
+            "webdriver": type("Webdriver", (), {"Chrome": object}),
+        }
+        load_function(ADMIN_FLOW, "_admin_controller_for_url", namespace)
+        safe_admin_navigation_state = load_function(
+            ADMIN_FLOW,
+            "safe_admin_navigation_state",
+            namespace,
+        )
+        wait_for_authenticated_route = load_function(
+            ADMIN_FLOW,
+            "_authenticated_admin_route_ready",
+            namespace,
+        )
+
+        class Element:
+            def __init__(self, *, visible: bool = False, href: str | None = None) -> None:
+                self.visible = visible
+                self.href = href
+
+            def is_displayed(self) -> bool:
+                return self.visible
+
+            def get_attribute(self, name: str) -> str | None:
+                return self.href if name == "href" else None
+
+        class Driver:
+            current_url = (
+                "http://localhost:18080/admin-kuranea/index.php?"
+                "controller=AdminCatalog&token=private-session-token"
+            )
+            login_visible = False
+            links_visible = True
+
+            def find_elements(self, by: str, selector: str) -> list[Element]:
+                if selector == "#login_form":
+                    return [Element(visible=self.login_visible)]
+                if not self.links_visible:
+                    return []
+                if selector == 'a[href*="controller=AdminBusinessProfile"]':
+                    return [Element(href=(
+                        "http://localhost:18080/admin-kuranea/index.php?"
+                        "controller=AdminBusinessProfile&token=private-profile-token"
+                    ))]
+                if selector == 'a[href*="controller=AdminDashboard"]':
+                    return [Element(href=(
+                        "http://localhost:18080/admin-kuranea/index.php?"
+                        "controller=AdminDashboard&token=private-dashboard-token"
+                    ))]
+                return []
+
+        driver = Driver()
+        self.assertTrue(wait_for_authenticated_route(driver))
+        self.assertNotIn("private-session-token", str(safe_admin_navigation_state(driver)))
+        self.assertNotIn("private-profile-token", str(safe_admin_navigation_state(driver)))
+
+        driver.login_visible = True
+        self.assertFalse(wait_for_authenticated_route(driver))
+        driver.login_visible = False
+        driver.current_url = "https://outside.invalid/admin-kuranea/index.php?controller=AdminCatalog"
+        self.assertFalse(wait_for_authenticated_route(driver))
+        driver.current_url = "http://localhost:18080/front-office/catalog"
+        self.assertFalse(wait_for_authenticated_route(driver))
+        driver.current_url = (
+            "http://localhost:18080/admin-kuranea/index.php?"
+            "controller=AdminLogin&token=private-session-token"
+        )
+        driver.links_visible = True
+        self.assertFalse(wait_for_authenticated_route(driver))
+        driver.current_url = (
+            "http://localhost:18080/admin-kuranea/index.php?"
+            "controller=AdminCatalog&token=private-session-token"
+        )
+        driver.links_visible = False
+        self.assertFalse(wait_for_authenticated_route(driver))
 
     def test_admin_security_flow_covers_missing_invalid_and_view_only_requests(self):
         self.assertTrue(ADMIN_FLOW.is_file(), "the isolated admin security browser flow is missing")
