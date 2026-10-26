@@ -66,6 +66,14 @@ READBACK_CHECKS = {
     'image_identity', 'image_load', 'inactive_gate', 'unique_product_ids',
     'reimport_value_identity',
 }
+MANAGER_LIST_STATES = {'unknown', 'load_error', 'empty', 'loaded'}
+MANAGER_LIST_DIAGNOSTIC_FIELDS = {
+    'list_state', 'link_count', 'valid_id_count', 'valid_route_count', 'unique_id_count',
+    'expected_unique_id_count', 'expected_member_count', 'expected_product_link_count',
+    'expected_product_position', 'ids_unique', 'all_links_safe_routes',
+    'expected_count_matches', 'expected_members_present', 'expected_product_present',
+    'expected_id_set_matches', 'rendered_order_is_unique_descending',
+}
 STRING_ENUMS = {
     'stage': {
         'launch', 'login', 'review_menu_route', 'manager_menu_route', 'manager_navigation',
@@ -102,6 +110,7 @@ STRING_ENUMS = {
     'manager_link_path_class': {
         'admin_directory', 'admin_directory_slash', 'admin_index_php', 'other', 'unknown',
     },
+    'manager_products_load_state': MANAGER_LIST_STATES,
     'document_ready_state': {'loading', 'interactive', 'complete', 'unknown'},
     'last_completed_substage': CLICK_SUBSTAGES | {
         'not_started', 'batch_complete', 'reject_guard_readback', 'reject_status_readback',
@@ -120,9 +129,94 @@ DIAGNOSTIC_FIELDS = (
     | {'stage', 'last_completed_stage', 'last_completed_substage', 'click_diagnostics',
        'admin_controller', 'page_class', 'document_ready_state', 'current_substage',
        'manager_link_path_class', 'native_readback_check', 'native_readback_check_match',
+       'manager_products_load_state', 'manager_list_diagnostics',
        *OPTIONAL_INTEGER_FIELDS,
        'document_response_status', 'exception_class'}
 )
+
+
+def summarize_manager_product_ids(
+    *,
+    list_state: str,
+    link_count: int,
+    valid_route_count: int,
+    rendered_ids: list[int],
+    expected_ids: list[int],
+    expected_product_id: int,
+) -> dict[str, Any]:
+    """Summarize native manager links without emitting a product identifier."""
+    if list_state not in MANAGER_LIST_STATES:
+        raise ValueError('catalog manager product-list state is not allowlisted')
+    if type(link_count) is not int or not 0 <= link_count <= 50:
+        raise ValueError('catalog manager product-link count is invalid')
+    if type(valid_route_count) is not int or not 0 <= valid_route_count <= link_count:
+        raise ValueError('catalog manager product-link route count is invalid')
+    if type(expected_product_id) is not int or expected_product_id < 1:
+        raise ValueError('catalog manager expected product identity is invalid')
+    if not isinstance(rendered_ids, list) or not isinstance(expected_ids, list):
+        raise ValueError('catalog manager product identities are invalid')
+    if len(rendered_ids) > 50 or len(expected_ids) > 50:
+        raise ValueError('catalog manager product identity count exceeds the bound')
+    if any(type(value) is not int or value < 1 for value in rendered_ids + expected_ids):
+        raise ValueError('catalog manager product identities are invalid')
+
+    actual = set(rendered_ids)
+    expected = set(expected_ids)
+    expected_members = actual & expected
+    product_occurrences = rendered_ids.count(expected_product_id)
+    unique_ids = sorted(actual)
+    return {
+        'list_state': list_state,
+        'link_count': link_count,
+        'valid_id_count': len(rendered_ids),
+        'valid_route_count': valid_route_count,
+        'unique_id_count': len(unique_ids),
+        'expected_unique_id_count': len(expected),
+        'expected_member_count': len(expected_members),
+        'expected_product_link_count': product_occurrences,
+        'expected_product_position': rendered_ids.index(expected_product_id) + 1 if product_occurrences else 0,
+        'ids_unique': len(actual) == len(rendered_ids),
+        'all_links_safe_routes': valid_route_count == link_count,
+        'expected_count_matches': len(actual) == len(expected),
+        'expected_members_present': expected <= actual,
+        'expected_product_present': expected_product_id in actual,
+        'expected_id_set_matches': actual == expected,
+        'rendered_order_is_unique_descending': rendered_ids == sorted(actual, reverse=True),
+    }
+
+
+def _validate_manager_list_diagnostics(value: Any) -> None:
+    if value is None:
+        return
+    if not isinstance(value, dict) or set(value) != MANAGER_LIST_DIAGNOSTIC_FIELDS:
+        raise ValueError('catalog manager product-list diagnostics are not allowlisted')
+    if value['list_state'] not in MANAGER_LIST_STATES:
+        raise ValueError('catalog manager product-list state is invalid')
+    for name in (
+        'link_count', 'valid_id_count', 'valid_route_count', 'unique_id_count',
+        'expected_unique_id_count', 'expected_member_count', 'expected_product_link_count',
+        'expected_product_position',
+    ):
+        item = value[name]
+        if type(item) is not int or not 0 <= item <= 50:
+            raise ValueError('catalog manager product-list counter is invalid')
+    for name in (
+        'ids_unique', 'all_links_safe_routes', 'expected_count_matches',
+        'expected_members_present', 'expected_product_present', 'expected_id_set_matches',
+        'rendered_order_is_unique_descending',
+    ):
+        if type(value[name]) is not bool:
+            raise ValueError('catalog manager product-list predicate is invalid')
+    if value['valid_id_count'] > value['link_count']:
+        raise ValueError('catalog manager product-list counts are inconsistent')
+    if value['valid_route_count'] > value['link_count']:
+        raise ValueError('catalog manager product-list route counts are inconsistent')
+    if value['unique_id_count'] > value['valid_id_count']:
+        raise ValueError('catalog manager product-list unique count is inconsistent')
+    if value['expected_member_count'] > value['expected_unique_id_count']:
+        raise ValueError('catalog manager product-list member count is inconsistent')
+    if value['expected_product_present'] != (value['expected_product_link_count'] > 0):
+        raise ValueError('catalog manager expected product presence is inconsistent')
 
 
 def begin_native_readback_check(state: dict[str, Any], check: str) -> None:
@@ -253,6 +347,7 @@ def validate(data: Any) -> dict[str, Any]:
         raise ValueError('catalog import native readback match is invalid')
     if readback_check in {'not_started', 'unknown'} and readback_match is not None:
         raise ValueError('catalog import native readback state is inconsistent')
+    _validate_manager_list_diagnostics(data['manager_list_diagnostics'])
     _validate_click_diagnostics(data['click_diagnostics'])
     return data
 

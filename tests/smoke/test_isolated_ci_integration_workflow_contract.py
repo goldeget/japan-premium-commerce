@@ -358,6 +358,8 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
                 "manager_permission_denied_notice_visible": False,
                 "manager_inactive_notice_visible": False,
                 "manager_save_success_notice_visible": False,
+                "manager_products_load_state": "unknown",
+                "manager_list_diagnostics": None,
                 "option_guard_notice_visible": False,
                 "exception_class": "TimeoutException",
                 "failure_screenshot_captured": False,

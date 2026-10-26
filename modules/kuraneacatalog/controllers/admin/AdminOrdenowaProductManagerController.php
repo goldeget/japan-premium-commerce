@@ -220,14 +220,22 @@ class AdminOrdenowaProductManagerController extends ModuleAdminController
             . ($editing ? '상품 수정 저장' : '비활성 상품 등록') . '</button> '
             . ($editing ? '<a class="btn btn-default" href="' . $this->escape($action) . '">새 상품 등록</a>' : '')
             . '</div></form></section></div>';
-        $html .= '<div class="col-lg-4"><section class="panel"><h3>ORDENOWA 관리 상품</h3>';
-
+        $managerProductsLoadState = 'loaded';
         try {
             $products = $manager->managedProducts();
         } catch (Throwable) {
             $products = [];
+            $managerProductsLoadState = 'load_error';
         }
-        if ($products === []) {
+        if ($managerProductsLoadState !== 'load_error') {
+            $managerProductsLoadState = $products === [] ? 'empty' : 'loaded';
+        }
+        $html .= '<div class="col-lg-4"><section class="panel" data-ordenowa-managed-products-state="'
+            . $managerProductsLoadState . '"><h3>ORDENOWA 관리 상품</h3>';
+
+        if ($managerProductsLoadState === 'load_error') {
+            $html .= '<p class="alert alert-danger">관리 상품 목록을 불러오지 못했습니다. 쇼핑몰 설정과 권한을 확인해 주세요.</p>';
+        } elseif ($products === []) {
             $html .= '<p>등록한 상품이 없습니다.</p>';
         } else {
             $html .= '<ul class="list-unstyled">';

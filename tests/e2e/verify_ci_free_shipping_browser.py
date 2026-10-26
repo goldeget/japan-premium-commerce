@@ -45,6 +45,49 @@ PRODUCT_TAX_RULE_GROUP_ID = int(os.environ["CI_TEST_PRODUCT_TAX_GROUP"])
 CONFIG_PATH = QA_DIR / "shipping-free-carrier.json"
 ORDER_PATH = QA_DIR / "shipping-free-order.json"
 EXPECTED_SHOP_PORT = 18080
+TRACKING_BROWSER_CONTEXTS = {'admin', 'customer'}
+TRACKING_SUBSTAGES = {
+    'not_started', 'admin_target_route', 'admin_target_document_wait',
+    'admin_history_tab', 'admin_history_tab_target', 'admin_history_tab_panel',
+    'admin_history_tab_click', 'admin_history_tab_wait', 'admin_history_status_readback',
+    'admin_shipping_tab', 'admin_shipping_tab_target', 'admin_shipping_tab_panel',
+    'admin_shipping_tab_click', 'admin_shipping_tab_wait',
+    'admin_shipping_row_readback', 'admin_edit_link_readback', 'admin_modal_open',
+    'admin_modal_fields_readback', 'admin_tracking_submit', 'admin_post_save_document_wait',
+    'admin_post_save_shipping_tab', 'admin_post_save_row_readback', 'admin_fresh_get_setup',
+    'admin_fresh_get_document_wait', 'admin_fresh_history_readback', 'admin_fresh_shipping_tab',
+    'admin_tracking_fresh_readback', 'admin_tracking_capture', 'customer_login_navigation',
+    'customer_login_form', 'customer_login_submit', 'customer_login_success_wait',
+    'customer_password_clear', 'customer_history_navigation', 'customer_history_route',
+    'customer_history_rows_readback', 'customer_order_link_readback', 'customer_order_detail_click',
+    'customer_detail_document_wait', 'customer_detail_route_readback', 'customer_japanese_labels',
+    'customer_tracking_cell_readback', 'customer_tracking_link_check', 'customer_summary_capture',
+    'customer_tracking_scroll', 'customer_tracking_table_capture',
+}
+
+
+def _safe_tracking_pathname(driver) -> str:
+    """Return a query-free ASCII pathname with numeric resource IDs masked."""
+    try:
+        page_path = urlparse(driver.current_url).path
+        if not re.fullmatch(r"/[A-Za-z0-9._/-]*", page_path):
+            return 'unknown'
+        masked_path = re.sub(r"(?<=/)[0-9]+(?=/|$)", 'id', page_path)
+        return masked_path[:240]
+    except Exception:
+        return 'unknown'
+
+
+def _set_tracking_diagnostic(state, browser_context, substage, driver) -> None:
+    """Store fixed location enums, a safe pathname, and the active WebDriver in memory."""
+    if not isinstance(state, dict):
+        return
+    state['browser_context'] = (
+        browser_context if type(browser_context) is str and browser_context in TRACKING_BROWSER_CONTEXTS else 'unknown'
+    )
+    state['substage'] = substage if type(substage) is str and substage in TRACKING_SUBSTAGES else 'unknown'
+    state['_active_driver'] = driver
+    state['safe_pathname'] = _safe_tracking_pathname(driver)
 
 
 def validate_isolated_ci_compose_project() -> None:
@@ -1959,14 +2002,32 @@ def _observed_admin_order_document_get(driver, expected_order_id: int) -> bool:
     return False
 
 
-def _activate_admin_order_tab(driver, tab_selector: str, panel_selector: str) -> None:
+def _activate_admin_order_tab(
+    driver,
+    tab_selector: str,
+    panel_selector: str,
+    tracking_diagnostics: dict[str, object] | None = None,
+) -> None:
     """Open a native order tab and wait until its panel is the active visible pane."""
+    tab_kind = 'history' if tab_selector == '#historyTab' else 'shipping'
+    _set_tracking_diagnostic(
+        tracking_diagnostics, 'admin', f'admin_{tab_kind}_tab_target', driver
+    )
     tab = _wait_visible(driver, tab_selector)
+    _set_tracking_diagnostic(
+        tracking_diagnostics, 'admin', f'admin_{tab_kind}_tab_panel', driver
+    )
     panel = driver.find_element(By.CSS_SELECTOR, panel_selector)
     tab_classes = (tab.get_attribute("class") or "").split()
     panel_classes = (panel.get_attribute("class") or "").split()
     if "active" not in tab_classes or "active" not in panel_classes or not panel.is_displayed():
+        _set_tracking_diagnostic(
+            tracking_diagnostics, 'admin', f'admin_{tab_kind}_tab_click', driver
+        )
         checkout.click_at_center(driver, tab)
+    _set_tracking_diagnostic(
+        tracking_diagnostics, 'admin', f'admin_{tab_kind}_tab_wait', driver
+    )
     WebDriverWait(driver, 15).until(
         lambda browser: (
             "active" in (browser.find_element(By.CSS_SELECTOR, tab_selector).get_attribute("class") or "").split()
@@ -1981,8 +2042,10 @@ def _assign_tracking_number_through_admin_ui(
     order: dict[str, object],
     verified: dict[str, object],
     expected_totals: dict[str, int],
+    tracking_diagnostics: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Update one run-scoped synthetic order through PrestaShop's native AdminOrders form."""
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_target_route', driver)
     order_id = int(order.get("order_id", 0))
     carrier_id = int(order.get("carrier_id", 0))
     expected_email = checkout.checkout_registration_email("shipping-free", RUN_ID, RUN_ATTEMPT)
@@ -2008,12 +2071,20 @@ def _assign_tracking_number_through_admin_ui(
     ):
         raise AssertionError("tracking acceptance target is not the matching unpaid CI order with free shipping")
 
-    _activate_admin_order_tab(driver, "#historyTab", "#historyTabContent")
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_history_tab', driver)
+    _activate_admin_order_tab(
+        driver, "#historyTab", "#historyTabContent", tracking_diagnostics
+    )
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_history_status_readback', driver)
     status_before_tracking_update = _admin_order_state_id(driver)
     if status_before_tracking_update != int(verified["order_state_id"]):
         raise AssertionError("the admin order status does not match the unpaid native order readback")
 
-    _activate_admin_order_tab(driver, "#orderShippingTab", "#orderShippingTabContent")
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_shipping_tab', driver)
+    _activate_admin_order_tab(
+        driver, "#orderShippingTab", "#orderShippingTabContent", tracking_diagnostics
+    )
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_shipping_row_readback', driver)
     shipping_rows = [
         row
         for row in driver.find_elements(By.CSS_SELECTOR, "#shipping-grid-table tbody tr")
@@ -2036,6 +2107,7 @@ def _assign_tracking_number_through_admin_ui(
     if not re.fullmatch(r"[A-Za-z0-9-]{1,64}", tracking_number):
         raise AssertionError("the run-scoped synthetic tracking fixture is invalid")
 
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_edit_link_readback', driver)
     edit_link = _wait_visible(driver, "#shipping-grid-table tbody tr .js-update-shipping-btn")
     if (edit_link.get_attribute("data-carrier-id") or "") != str(carrier_id):
         raise AssertionError("the native tracking edit link points at a different carrier")
@@ -2043,7 +2115,9 @@ def _assign_tracking_number_through_admin_ui(
     if re.fullmatch(r"[0-9]+", order_carrier_id) is None or int(order_carrier_id) < 1:
         raise AssertionError("the native tracking edit link omitted its order-carrier identity")
 
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_modal_open', driver)
     checkout.click_at_center(driver, edit_link)
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_modal_fields_readback', driver)
     tracking_input = _wait_visible(driver, "#update_order_shipping_tracking_number")
     current_carrier_input = driver.find_element(By.CSS_SELECTOR, "#update_order_shipping_current_order_carrier_id")
     if current_carrier_input.get_attribute("value") != order_carrier_id:
@@ -2055,6 +2129,7 @@ def _assign_tracking_number_through_admin_ui(
     tracking_input.clear()
     tracking_input.send_keys(tracking_number)
     update_button = _wait_visible(driver, "#updateOrderShippingModal button[type='submit']")
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_tracking_submit', driver)
     checkout.click_at_center(driver, update_button)
 
     def matching_order_document(browser) -> bool:
@@ -2065,9 +2140,13 @@ def _assign_tracking_number_through_admin_ui(
             "legacy_order_detail",
         }
 
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_post_save_document_wait', driver)
     WebDriverWait(driver, 35).until(matching_order_document)
     admin_route_class_after_save = _classify_isolated_admin_order_detail_url(driver.current_url, order_id)
-    _activate_admin_order_tab(driver, "#orderShippingTab", "#orderShippingTabContent")
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_post_save_shipping_tab', driver)
+    _activate_admin_order_tab(
+        driver, "#orderShippingTab", "#orderShippingTabContent", tracking_diagnostics
+    )
 
     def tracking_saved(browser) -> bool:
         rows = [
@@ -2080,23 +2159,33 @@ def _assign_tracking_number_through_admin_ui(
             and rows[0].find_element(By.CSS_SELECTOR, ".carrier-tracking-number").text.strip() == tracking_number
         )
 
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_post_save_row_readback', driver)
     WebDriverWait(driver, 35).until(tracking_saved)
     # Reload the exact native order page so the assertion reads persisted state from a new document.
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_fresh_get_setup', driver)
     driver.execute_cdp_cmd("Network.enable", {})
     driver.get_log("performance")
     driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": True})
     driver.refresh()
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_fresh_get_document_wait', driver)
     WebDriverWait(driver, 35).until(matching_order_document)
     admin_fresh_get_method_get = _observed_admin_order_document_get(driver, order_id)
     if not admin_fresh_get_method_get:
         raise AssertionError("the fresh native order document did not produce a matching GET request")
     admin_route_class_after_fresh_get = _classify_isolated_admin_order_detail_url(driver.current_url, order_id)
-    _activate_admin_order_tab(driver, "#historyTab", "#historyTabContent")
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_fresh_history_readback', driver)
+    _activate_admin_order_tab(
+        driver, "#historyTab", "#historyTabContent", tracking_diagnostics
+    )
 
     status_after_tracking_update = _admin_order_state_id(driver)
     order_total_after = _parse_order_amount(driver, "#orderTotal")
 
-    _activate_admin_order_tab(driver, "#orderShippingTab", "#orderShippingTabContent")
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_fresh_shipping_tab', driver)
+    _activate_admin_order_tab(
+        driver, "#orderShippingTab", "#orderShippingTabContent", tracking_diagnostics
+    )
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_tracking_fresh_readback', driver)
     WebDriverWait(driver, 35).until(tracking_saved)
     shipping_total_element = _wait_present(driver, "#orderShippingTotal")
     shipping_total_text = (shipping_total_element.get_attribute("textContent") or "").strip()
@@ -2121,6 +2210,7 @@ def _assign_tracking_number_through_admin_ui(
     ):
         raise AssertionError("the native tracking update changed the unpaid status or free-shipping order totals")
 
+    _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_tracking_capture', driver)
     driver.save_screenshot(str(QA_DIR / "shipping-free-order-tracking-admin.png"))
     return {
         "order_id": order_id,
@@ -2246,12 +2336,17 @@ def _verify_customer_order_tracking_detail(
     order: dict[str, object],
     tracking_number: str,
     order_id: int,
+    tracking_diagnostics: dict[str, object] | None = None,
 ) -> str:
+    _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_history_navigation', driver)
     checkout.visit(driver, BASE + "/index.php?controller=history")
+    _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_history_route', driver)
     checkout.assert_canonical_ascii_friendly_route(driver, "history")
+    _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_history_rows_readback', driver)
     history_rows = WebDriverWait(driver, 30).until(
         lambda browser: browser.find_elements(By.CSS_SELECTOR, ".order-history__row")
     )
+    _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_order_link_readback', driver)
     matched_links = []
     for history_row in history_rows:
         reference_cells = history_row.find_elements(By.CSS_SELECTOR, ".order-history__cell--reference")
@@ -2265,16 +2360,21 @@ def _verify_customer_order_tracking_detail(
     if len(matched_links) != 1:
         raise AssertionError("customer order history did not expose one same-origin detail link for this order")
 
+    _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_order_detail_click', driver)
     checkout.click_at_center(driver, matched_links[0])
+    _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_detail_document_wait', driver)
     WebDriverWait(driver, 35).until(
         lambda browser: order.get("reference") in browser.find_element(By.TAG_NAME, "body").text
         and bool(browser.find_elements(By.CSS_SELECTOR, "#order_carriers_heading"))
     )
+    _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_detail_route_readback', driver)
     customer_route_class = _customer_order_detail_route_class(driver.current_url, order_id)
     if customer_route_class == "other_customer_route":
         raise AssertionError("customer order detail did not retain the matching native order identity")
+    _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_japanese_labels', driver)
     _assert_japanese_order_detail_copy(driver)
 
+    _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_tracking_cell_readback', driver)
     tracking_cells = [
         cell
         for cell in driver.find_elements(By.CSS_SELECTOR, ".order-carriers .grid-table__row .grid-table__cell")
@@ -2282,11 +2382,15 @@ def _verify_customer_order_tracking_detail(
     ]
     if len(tracking_cells) != 1:
         raise AssertionError("customer order detail did not display the saved tracking number for this order")
+    _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_tracking_link_check', driver)
     if tracking_cells[0].find_elements(By.CSS_SELECTOR, "a"):
         raise AssertionError("the CI-only carrier unexpectedly exposed an external tracking destination")
+    _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_summary_capture', driver)
     if not _save_customer_tracking_screenshot(driver, "shipping-free-order-tracking-customer.png"):
         raise AssertionError("customer tracking screenshot could not be saved with password fields cleared")
+    _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_tracking_scroll', driver)
     driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", tracking_cells[0])
+    _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_tracking_table_capture', driver)
     if not _save_customer_tracking_screenshot(driver, "shipping-free-order-tracking-customer-table.png"):
         raise AssertionError("customer tracking table screenshot could not be saved with password fields cleared")
     return customer_route_class
@@ -2296,6 +2400,7 @@ def _verify_customer_order_tracking(
     driver,
     order: dict[str, object],
     tracking_number: str,
+    tracking_diagnostics: dict[str, object] | None = None,
 ) -> str:
     """Login as the matching run-scoped customer and follow its native history link."""
     order_id = int(order.get("order_id", 0))
@@ -2304,22 +2409,31 @@ def _verify_customer_order_tracking(
         raise AssertionError("customer tracking readback did not receive the matching CI order identity")
 
     customer_password = f"ORDENOWA-CI-{RUN_ID}-{RUN_ATTEMPT}-Aa1!"
-    checkout.visit(driver, BASE + "/index.php?controller=authentication")
-    checkout.visible(driver, '#login-form input[name="email"]').send_keys(expected_email)
-    checkout.visible(driver, '#login-form input[name="password"]').send_keys(customer_password)
-    checkout.visible(driver, "#submit-login").click()
-    WebDriverWait(driver, 35).until(
-        lambda browser: any(
-            element.is_displayed()
-            for element in browser.find_elements(By.ID, "userMenuButton")
-        )
-    )
-    if not _clear_customer_password_fields(driver):
-        raise AssertionError("customer login succeeded but the synthetic password remained in the browser DOM")
+    _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_login_navigation', driver)
     try:
-        return _verify_customer_order_tracking_detail(driver, order, tracking_number, order_id)
+        checkout.visit(driver, BASE + "/index.php?controller=authentication")
+        _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_login_form', driver)
+        checkout.visible(driver, '#login-form input[name="email"]').send_keys(expected_email)
+        checkout.visible(driver, '#login-form input[name="password"]').send_keys(customer_password)
+        _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_login_submit', driver)
+        checkout.visible(driver, "#submit-login").click()
+        _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_login_success_wait', driver)
+        WebDriverWait(driver, 35).until(
+            lambda browser: any(
+                element.is_displayed()
+                for element in browser.find_elements(By.ID, "userMenuButton")
+            )
+        )
+        _set_tracking_diagnostic(tracking_diagnostics, 'customer', 'customer_password_clear', driver)
+        if not _clear_customer_password_fields(driver):
+            raise AssertionError("customer login succeeded but the synthetic password remained in the browser DOM")
+        return _verify_customer_order_tracking_detail(
+            driver, order, tracking_number, order_id, tracking_diagnostics
+        )
     except Exception:
         # This screenshot is permitted only after every password input was emptied and checked.
+        if isinstance(tracking_diagnostics, dict):
+            tracking_diagnostics['safe_pathname'] = _safe_tracking_pathname(driver)
         try:
             _save_customer_tracking_screenshot(driver, "shipping-free-order-tracking-customer-failure.png")
         except Exception:
@@ -2332,12 +2446,14 @@ def _verify_synthetic_order_tracking(
     order: dict[str, object],
     verified: dict[str, object],
     expected_totals: dict[str, int],
+    tracking_diagnostics: dict[str, object] | None = None,
 ) -> dict[str, object]:
     admin_readback = _assign_tracking_number_through_admin_ui(
         admin_driver,
         order,
         verified,
         expected_totals,
+        tracking_diagnostics,
     )
     customer_driver = checkout.webdriver.Chrome(options=checkout.browser_options(1440, 960))
     try:
@@ -2345,6 +2461,7 @@ def _verify_synthetic_order_tracking(
             customer_driver,
             order,
             str(admin_readback["tracking_number"]),
+            tracking_diagnostics,
         )
     finally:
         customer_driver.quit()
@@ -2406,6 +2523,11 @@ def run_free_carrier_admin_order_view() -> None:
     driver = checkout.webdriver.Chrome(options=checkout.browser_options(1440, 960))
     stage = "separate_administrator_login"
     tracking_target: tuple[str, dict[str, object], dict[str, object], dict[str, int]] | None = None
+    tracking_diagnostics: dict[str, object] = {
+        "browser_context": "admin",
+        "substage": "not_started",
+        "_active_driver": driver,
+    }
     try:
         checkout.admin_login(driver)
         for order_kind, order_path in order_paths:
@@ -2495,11 +2617,13 @@ def run_free_carrier_admin_order_view() -> None:
             raise AssertionError("the matching Tokyo CI order was not available for tracking acceptance")
         stage = "verify_tracking_order"
         tracking_detail_url, tracking_order, tracking_verified, tracking_expected = tracking_target
+        _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_target_route', driver)
         if not _matches_isolated_admin_order_detail_url(
             tracking_detail_url,
             int(tracking_order.get("order_id", 0)),
         ):
             raise AssertionError("the Tokyo tracking target is not a matching route inside the configured admin origin")
+        _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_target_document_wait', driver)
         checkout.visit(driver, tracking_detail_url)
         WebDriverWait(driver, 30).until(
             lambda browser: tracking_order["reference"] in browser.find_element(By.TAG_NAME, "body").text
@@ -2509,6 +2633,7 @@ def run_free_carrier_admin_order_view() -> None:
             tracking_order,
             tracking_verified,
             tracking_expected,
+            tracking_diagnostics,
         )
 
         driver.set_window_size(390, 844)
@@ -2520,11 +2645,12 @@ def run_free_carrier_admin_order_view() -> None:
             "no physical dispatch or carrier scan was performed."
         )
     except Exception as error:
-        try:
-            driver.save_screenshot(str(QA_DIR / "shipping-free-order-admin-failure.png"))
-        except Exception:
-            pass
-        _emit_failure(stage, error, driver)
+        if tracking_diagnostics.get('browser_context') != 'customer':
+            try:
+                driver.save_screenshot(str(QA_DIR / "shipping-free-order-admin-failure.png"))
+            except Exception:
+                pass
+        _emit_failure(stage, error, driver, tracking_diagnostics=tracking_diagnostics)
         raise SystemExit(f"free-carrier admin order browser failed at {stage}") from None
     finally:
         driver.quit()
@@ -2535,6 +2661,7 @@ def _emit_failure(
     error: Exception,
     driver=None,
     checkout_registration_state: dict[str, object] | None = None,
+    tracking_diagnostics: dict[str, object] | None = None,
 ) -> None:
     exception_type = type(error).__name__
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", exception_type):
@@ -2568,12 +2695,33 @@ def _emit_failure(
         # omit the route path and free-form assertion detail from this annotation.
         route_suffix = ""
         detail_suffix = ""
+    tracking_suffix = ""
+    if tracking_diagnostics is not None:
+        browser_context = tracking_diagnostics.get('browser_context')
+        if type(browser_context) is not str or browser_context not in TRACKING_BROWSER_CONTEXTS:
+            browser_context = 'unknown'
+        tracking_substage = tracking_diagnostics.get('substage')
+        if type(tracking_substage) is not str or tracking_substage not in TRACKING_SUBSTAGES:
+            tracking_substage = 'unknown'
+        active_driver = tracking_diagnostics.get('_active_driver')
+        active_path = _safe_tracking_pathname(active_driver) if active_driver is not None else 'unknown'
+        stored_path = tracking_diagnostics.get('safe_pathname')
+        if active_path != 'unknown':
+            safe_path = active_path
+        elif type(stored_path) is str and re.fullmatch(r"/[A-Za-z0-9._/-]*", stored_path):
+            safe_path = stored_path
+        else:
+            safe_path = 'unknown'
+        route_suffix = f"; path={safe_path}"
+        tracking_suffix = f"; browser_context={browser_context}; tracking_substage={tracking_substage}"
+        # Tracking-stage diagnostics are enums; avoid free-form exception details.
+        detail_suffix = ""
     print(
-        f"FAIL: free shipping browser QA at {safe_stage} ({exception_type}){route_suffix}{detail_suffix}{registration_suffix}",
+        f"FAIL: free shipping browser QA at {safe_stage} ({exception_type}){route_suffix}{detail_suffix}{registration_suffix}{tracking_suffix}",
         file=sys.stderr,
     )
     print(
-        f"::error title=ORDENOWA free shipping QA::{safe_stage} ({exception_type}){route_suffix}{detail_suffix}{registration_suffix}",
+        f"::error title=ORDENOWA free shipping QA::{safe_stage} ({exception_type}){route_suffix}{detail_suffix}{registration_suffix}{tracking_suffix}",
         file=sys.stderr,
     )
 

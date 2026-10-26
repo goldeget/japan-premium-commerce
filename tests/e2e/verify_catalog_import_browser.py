@@ -21,6 +21,7 @@ from catalog_import_diagnostics import (
     READBACK_CHECKS,
     begin_native_readback_check,
     finish_native_readback_check,
+    summarize_manager_product_ids,
 )
 from selenium import webdriver
 from selenium.common.exceptions import StaleElementReferenceException
@@ -1015,6 +1016,9 @@ def safe_catalog_import_browser_state(driver, state):
                     ? navigation.responseStatus : null;
                 const managerForm = Array.from(document.querySelectorAll('#content form')).find(
                     (form) => form.querySelector('[name="submitKuraneaProductSave"]')) || null;
+                const managerProductsPanel = document.querySelector('[data-ordenowa-managed-products-state]');
+                const managerProductsLoadState = managerProductsPanel
+                    ? managerProductsPanel.getAttribute('data-ordenowa-managed-products-state') : null;
                 const managerSaveButton = managerForm
                     ? managerForm.querySelector('[name="submitKuraneaProductSave"]') : null;
                 const managerIdField = managerForm
@@ -1084,6 +1088,8 @@ def safe_catalog_import_browser_state(driver, state):
                     manager_permission_denied_notice_visible: visibleAlerts.includes(managerPermissionDenied),
                     manager_inactive_notice_visible: visibleAlerts.includes(managerInactiveNotice),
                     manager_save_success_notice_visible: visibleAlerts.includes(managerSaveSuccessNotice),
+                    manager_products_load_state: ['load_error', 'empty', 'loaded'].includes(managerProductsLoadState)
+                        ? managerProductsLoadState : 'unknown',
                     option_guard_notice_visible: visibleAlerts.includes(optionGuardNotice)
                 };
             """, expected_product_id_text)
@@ -1110,6 +1116,12 @@ def safe_catalog_import_browser_state(driver, state):
         visible_alert_count = 0
     if type(response_status) is not int or not 100 <= response_status <= 599:
         response_status = None
+    manager_products_load_state = page.get('manager_products_load_state')
+    if manager_products_load_state not in {'unknown', 'load_error', 'empty', 'loaded'}:
+        manager_products_load_state = 'unknown'
+    manager_list_diagnostics = state.get('manager_list_diagnostics')
+    if not isinstance(manager_list_diagnostics, dict):
+        manager_list_diagnostics = None
 
     access_denied = bool(page.get('access_denied_notice_visible'))
     read_only = bool(page.get('read_only_notice_visible'))
@@ -1222,6 +1234,8 @@ def safe_catalog_import_browser_state(driver, state):
         'manager_permission_denied_notice_visible': manager_permission_denied,
         'manager_inactive_notice_visible': bool(page.get('manager_inactive_notice_visible')),
         'manager_save_success_notice_visible': bool(page.get('manager_save_success_notice_visible')),
+        'manager_products_load_state': manager_products_load_state,
+        'manager_list_diagnostics': manager_list_diagnostics,
     }
 
 
@@ -1446,17 +1460,39 @@ def safe_exception_class(error):
 
 
 def manager_ids(driver):
-    ids = []
-    for link in driver.find_elements(By.CSS_SELECTOR, 'li.well a[href*="id_product="]'):
-        raw = parse_qs(urlparse(link.get_attribute('href')).query).get('id_product', [''])[0]
-        if raw.isdecimal():
-            ids.append(int(raw))
+    _, ids, _ = manager_product_link_snapshot(driver)
     return sorted(set(ids))
+
+
+def manager_product_link_snapshot(driver):
+    """Read only bounded counts, route validity, and product IDs in memory."""
+    links = driver.find_elements(
+        By.CSS_SELECTOR,
+        '[data-ordenowa-managed-products-state] li.well a[href*="id_product="]',
+    )
+    rendered_ids = []
+    valid_route_count = 0
+    for link in links:
+        href = link.get_attribute('href') or ''
+        route = safe_manager_link_diagnostics(href)
+        if all((
+            route['manager_link_same_origin'], route['manager_link_path_matches'],
+            route['manager_link_controller_matches'], route['manager_link_product_id_valid'],
+        )):
+            valid_route_count += 1
+        try:
+            product_ids = parse_qs(urlparse(href).query, keep_blank_values=True).get('id_product', [])
+        except (TypeError, ValueError):
+            product_ids = []
+        if len(product_ids) == 1 and product_ids[0].isdecimal() and int(product_ids[0]) > 0:
+            rendered_ids.append(int(product_ids[0]))
+    return len(links), rendered_ids, valid_route_count
 
 
 def read_native(
     driver, product_id, expected_category_ids, state, *, phase='initial', expected_fields=None,
     expected_combination_quantities=None, expected_image_ids=None, expected_combination_field_names=None,
+    expected_manager_ids=None,
 ):
     phase_substages = {
         'initial': ('manager_navigation', 'native_editor_form_check', 'native_editor_id_presence', 'native_editor_readback'),
@@ -1490,6 +1526,7 @@ def read_native(
     state['manager_product_id_field_matches'] = id_field.get_attribute('value') == str(product_id)
     finish_native_readback_check(state, 'product_id', state['manager_product_id_field_matches'])
     manager_page = safe_catalog_import_browser_state(driver, state)
+    state['manager_products_load_state'] = manager_page['manager_products_load_state']
     begin_native_readback_check(state, 'manager_route')
     finish_native_readback_check(state, 'manager_route', all(manager_page[field] for field in (
         'manager_route_matches', 'manager_product_id_parameter_matches',
@@ -1569,7 +1606,18 @@ def read_native(
         state, 'inactive_gate', '비활성 · 비노출 · 주문 불가' in driver.find_element(By.TAG_NAME, 'body').text
     )
     begin_native_readback_check(state, 'unique_product_ids')
-    unique_product_ids = manager_ids(driver)
+    link_count, rendered_ids, valid_route_count = manager_product_link_snapshot(driver)
+    if expected_manager_ids is None:
+        expected_manager_ids = [product_id]
+    state['manager_list_diagnostics'] = summarize_manager_product_ids(
+        list_state=state.get('manager_products_load_state', 'unknown'),
+        link_count=link_count,
+        valid_route_count=valid_route_count,
+        rendered_ids=rendered_ids,
+        expected_ids=expected_manager_ids,
+        expected_product_id=product_id,
+    )
+    unique_product_ids = sorted(set(rendered_ids))
     finish_native_readback_check(
         state, 'unique_product_ids', product_id in unique_product_ids
     )
@@ -1708,6 +1756,7 @@ def edit_imported_draft(driver, manager_link, product_id, expected_category_ids,
         expected_combination_quantities=expected_combination_quantities,
         expected_image_ids=initial_readback['_image_ids'],
         expected_combination_field_names=initial_readback['_combination_field_names'],
+        expected_manager_ids=initial_readback['unique_product_ids'],
     )
     begin_native_readback_check(state, 'option_value')
     finish_native_readback_check(
@@ -1745,6 +1794,8 @@ def run():
         'native_readback_check_match': None,
         'click_diagnostics': None,
         'manager_link_diagnostics': None,
+        'manager_list_diagnostics': None,
+        'manager_products_load_state': 'unknown',
         'submit_attempted': False,
         'submit_returned': False,
     }
@@ -1936,7 +1987,10 @@ def run():
         state['native_product_id'] = product_id
         state['current_substage'] = 'manager_navigation'
         driver.get(product_link)
-        readback = read_native(driver, product_id, expected_category_ids, state)
+        readback = read_native(
+            driver, product_id, expected_category_ids, state,
+            expected_manager_ids=sorted(before_ids + [product_id]),
+        )
         begin_native_readback_check(state, 'unique_product_ids')
         finish_native_readback_check(
             state, 'unique_product_ids', readback['unique_product_ids'] == sorted(before_ids + [product_id])
@@ -1965,6 +2019,7 @@ def run():
             expected_combination_quantities=readback['combination_quantity_values'],
             expected_image_ids=readback['_image_ids'],
             expected_combination_field_names=readback['_combination_field_names'],
+            expected_manager_ids=readback['unique_product_ids'],
         )
         begin_native_readback_check(state, 'reimport_value_identity')
         finish_native_readback_check(state, 'reimport_value_identity', {

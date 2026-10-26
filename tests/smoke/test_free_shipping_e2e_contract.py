@@ -1200,6 +1200,131 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             self.assertIn(marker, order_verify)
         self.assertIn('verify_ci_free_shipping_browser.py admin', admin_step)
 
+    def test_tracking_failure_diagnostic_names_active_browser_and_allowlisted_substage(self) -> None:
+        source = ast.parse(BROWSER.read_text(encoding="utf-8"))
+        emitter_nodes = [
+            node for node in source.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_emit_failure"
+        ]
+        self.assertEqual(len(emitter_nodes), 1)
+        emitter_source = ast.get_source_segment(BROWSER.read_text(encoding="utf-8"), emitter_nodes[0]) or ""
+        for marker in (
+            "tracking_diagnostics",
+            "TRACKING_BROWSER_CONTEXTS",
+            "TRACKING_SUBSTAGES",
+            "browser_context=",
+            "tracking_substage=",
+            "safe_pathname",
+            "_active_driver",
+        ):
+            self.assertIn(marker, emitter_source)
+
+        stderr = io.StringIO()
+        TimeoutException = type("StaleElementReferenceException", (Exception,), {})
+        namespace = {
+            "re": re,
+            "sys": SimpleNamespace(stderr=stderr),
+            "urlparse": urlparse,
+            "TRACKING_BROWSER_CONTEXTS": {"admin", "customer"},
+            "TRACKING_SUBSTAGES": {"admin_tracking_row_readback", "customer_tracking_cell_readback"},
+            "_safe_tracking_pathname": lambda driver: "unknown",
+        }
+        exec(
+            compile(ast.Module(body=emitter_nodes, type_ignores=[]), str(BROWSER), "exec"),
+            namespace,
+        )
+        namespace["_emit_failure"](
+            "verify_tracking_order",
+            TimeoutException("email=private-email-sentinel token=private-token-sentinel"),
+            SimpleNamespace(current_url="http://localhost:18080/admin-kuranea/index.php/sell/orders/10/view"),
+            tracking_diagnostics={
+                "browser_context": "customer",
+                "substage": "customer_tracking_cell_readback",
+                "safe_pathname": "/index.php/customer/orders/id",
+                "_active_driver": SimpleNamespace(
+                    current_url=property(lambda _: (_ for _ in ()).throw(RuntimeError()))
+                ),
+            },
+        )
+        annotation = stderr.getvalue()
+        self.assertIn("browser_context=customer", annotation)
+        self.assertIn("tracking_substage=customer_tracking_cell_readback", annotation)
+        self.assertIn("path=/index.php/customer/orders/id", annotation)
+        self.assertNotIn("/admin-kuranea/", annotation)
+        self.assertNotIn("private-email-sentinel", annotation)
+        self.assertNotIn("private-token-sentinel", annotation)
+        self.assertNotIn("controller=order-detail", annotation)
+
+    def test_tracking_path_snapshot_masks_dynamic_ids_and_survives_closed_driver(self) -> None:
+        source = ast.parse(BROWSER.read_text(encoding="utf-8"))
+        pathname_nodes = [
+            node for node in source.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_safe_tracking_pathname"
+        ]
+        setter_nodes = [
+            node for node in source.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_set_tracking_diagnostic"
+        ]
+        self.assertEqual(len(pathname_nodes), 1)
+        self.assertEqual(len(setter_nodes), 1)
+        namespace = {
+            "re": re,
+            "urlparse": urlparse,
+            "TRACKING_BROWSER_CONTEXTS": {"admin", "customer"},
+            "TRACKING_SUBSTAGES": {"not_started", "admin_target_route"},
+        }
+        exec(
+            compile(ast.Module(body=pathname_nodes + setter_nodes, type_ignores=[]), str(BROWSER), "exec"),
+            namespace,
+        )
+        safe_path = namespace["_safe_tracking_pathname"](
+            SimpleNamespace(current_url="http://localhost:18080/admin/index.php/sell/orders/123/view?token=private")
+        )
+        self.assertEqual(safe_path, "/admin/index.php/sell/orders/id/view")
+        self.assertNotIn("123", safe_path)
+        self.assertNotIn("private", safe_path)
+
+        diagnostics = {}
+        namespace["_set_tracking_diagnostic"](
+            diagnostics,
+            "customer",
+            "admin_target_route",
+            SimpleNamespace(current_url="http://localhost:18080/index.php?email=private&token=secret"),
+        )
+        self.assertEqual(diagnostics["safe_pathname"], "/index.php")
+        self.assertEqual(diagnostics["browser_context"], "customer")
+        self.assertEqual(diagnostics["substage"], "admin_target_route")
+
+    def test_tracking_browser_boundaries_update_substage_without_reducing_assertions(self) -> None:
+        browser = BROWSER.read_text(encoding="utf-8")
+        for function_name, following_function, stages in (
+            (
+                "def _assign_tracking_number_through_admin_ui(",
+                "\ndef _customer_order_detail_link_matches(",
+                ("admin_history_tab", "admin_shipping_row_read", "admin_modal_open",
+                 "admin_tracking_submit", "admin_fresh_get_document_wait", "admin_tracking_fresh_readback"),
+            ),
+            (
+                "def _verify_customer_order_tracking_detail(",
+                "\ndef _verify_customer_order_tracking(",
+                ("customer_history_navigation", "customer_history_rows_readback",
+                 "customer_order_detail_click", "customer_detail_document_wait",
+                 "customer_japanese_labels", "customer_tracking_cell_readback",
+                 "customer_tracking_table_capture"),
+            ),
+        ):
+            section = browser.split(function_name, 1)[1].split(following_function, 1)[0]
+            for stage in stages:
+                with self.subTest(function=function_name, stage=stage):
+                    self.assertIn(stage, section)
+                    self.assertIn("_set_tracking_diagnostic(", section)
+
+        self.assertIn("tracking_diagnostics", browser.split(
+            "def run_free_carrier_admin_order_view(", 1
+        )[1].split("def _emit_failure(", 1)[0])
+        self.assertIn("tracking_diagnostics=tracking_diagnostics", browser)
+        self.assertIn("_save_customer_tracking_screenshot", browser)
+
     def test_tracking_persistence_readback_is_isolated_read_only_and_aggregated(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertTrue(TRACKING_VERIFY.is_file(), "Post-browser tracking persistence verifier is required")
@@ -1243,10 +1368,27 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertEqual(len(assignments), 1)
         source = ast.get_source_segment(BROWSER.read_text(encoding="utf-8"), assignments[0]) or ""
 
-        self.assertEqual(source.count('_activate_admin_order_tab(driver, "#historyTab", "#historyTabContent")'), 2)
-        self.assertEqual(source.count('_activate_admin_order_tab(driver, "#orderShippingTab", "#orderShippingTabContent")'), 3)
+        calls = [
+            node for node in ast.walk(assignments[0])
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_activate_admin_order_tab"
+        ]
+        history_calls = [
+            node for node in calls
+            if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value == "#historyTab"
+        ]
+        shipping_calls = [
+            node for node in calls
+            if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value == "#orderShippingTab"
+        ]
+        self.assertEqual(len(history_calls), 2)
+        self.assertEqual(len(shipping_calls), 3)
+        source_calls = [ast.get_source_segment(BROWSER.read_text(encoding="utf-8"), node) or "" for node in calls]
         self.assertLess(
-            source.index('_activate_admin_order_tab(driver, "#historyTab", "#historyTabContent")'),
+            source.index("_activate_admin_order_tab("),
             source.index("status_before_tracking_update = _admin_order_state_id(driver)"),
         )
         self.assertLess(
@@ -1255,11 +1397,17 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         )
         self.assertLess(
             source.index("driver.refresh()"),
-            source.index('_activate_admin_order_tab(driver, "#historyTab", "#historyTabContent")', source.index("driver.refresh()")),
+            source.index("_activate_admin_order_tab(", source.index("driver.refresh()")),
         )
+        self.assertTrue(all("tracking_diagnostics" in item for item in source_calls))
+        full_browser_source = BROWSER.read_text(encoding="utf-8")
+        refresh_line = full_browser_source.count("\n", 0, full_browser_source.index("driver.refresh()")) + 1
+        fresh_shipping_calls = [node for node in shipping_calls if node.lineno > refresh_line]
+        self.assertEqual(len(fresh_shipping_calls), 1)
+        fresh_shipping_source = ast.get_source_segment(full_browser_source, fresh_shipping_calls[0]) or ""
         self.assertLess(
             source.index("status_after_tracking_update = _admin_order_state_id(driver)"),
-            source.index('_activate_admin_order_tab(driver, "#orderShippingTab", "#orderShippingTabContent")', source.index("driver.refresh()")),
+            source.index(fresh_shipping_source, source.index("driver.refresh()")),
         )
         self.assertIn('get_attribute("textContent")', source)
         self.assertIn("_reconcile_admin_shipping_total(", source)
@@ -1285,11 +1433,15 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             safe_capture.index("driver.save_screenshot("),
         )
         self.assertLess(
-            customer_tracking.index("if not _clear_customer_password_fields(driver):"),
             customer_tracking.index("try:"),
+            customer_tracking.index("if not _clear_customer_password_fields(driver):"),
         )
         self.assertLess(
             customer_tracking.index("if not _clear_customer_password_fields(driver):"),
+            customer_tracking.index("return _verify_customer_order_tracking_detail("),
+        )
+        self.assertLess(
+            customer_tracking.index("except Exception:"),
             customer_tracking.index("shipping-free-order-tracking-customer-failure.png"),
         )
         self.assertIn(

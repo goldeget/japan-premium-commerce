@@ -279,13 +279,106 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         with self.assertRaises(ValueError):
             DIAGNOSTICS.begin_native_readback_check(state, 'price_jpy=6780')
 
+    def test_manager_list_diagnostic_separates_query_state_counts_order_and_membership(self):
+        summarize = DIAGNOSTICS.summarize_manager_product_ids
+        matched = summarize(
+            list_state='loaded',
+            link_count=3,
+            valid_route_count=3,
+            rendered_ids=[19, 12, 7],
+            expected_ids=[7, 12, 19],
+            expected_product_id=19,
+        )
+        self.assertEqual(matched, {
+            'list_state': 'loaded',
+            'link_count': 3,
+            'valid_id_count': 3,
+            'valid_route_count': 3,
+            'unique_id_count': 3,
+            'expected_unique_id_count': 3,
+            'expected_member_count': 3,
+            'expected_product_link_count': 1,
+            'expected_product_position': 1,
+            'ids_unique': True,
+            'all_links_safe_routes': True,
+            'expected_count_matches': True,
+            'expected_members_present': True,
+            'expected_product_present': True,
+            'expected_id_set_matches': True,
+            'rendered_order_is_unique_descending': True,
+        })
+        missing_member = summarize(
+            list_state='empty',
+            link_count=0,
+            valid_route_count=0,
+            rendered_ids=[],
+            expected_ids=[7, 12, 19],
+            expected_product_id=19,
+        )
+        self.assertEqual(missing_member['link_count'], 0)
+        self.assertEqual(missing_member['unique_id_count'], 0)
+        self.assertEqual(missing_member['expected_member_count'], 0)
+        self.assertFalse(missing_member['expected_count_matches'])
+        self.assertFalse(missing_member['expected_product_present'])
+        self.assertFalse(missing_member['expected_id_set_matches'])
+        self.assertNotIn('19', json.dumps(missing_member))
+
+        duplicate_member = summarize(
+            list_state='loaded',
+            link_count=3,
+            valid_route_count=3,
+            rendered_ids=[19, 12, 12],
+            expected_ids=[7, 12, 19],
+            expected_product_id=19,
+        )
+        self.assertEqual(duplicate_member['link_count'], 3)
+        self.assertEqual(duplicate_member['valid_id_count'], 3)
+        self.assertEqual(duplicate_member['unique_id_count'], 2)
+        self.assertFalse(duplicate_member['ids_unique'])
+        self.assertFalse(duplicate_member['expected_count_matches'])
+        self.assertTrue(duplicate_member['expected_product_present'])
+        self.assertFalse(duplicate_member['expected_id_set_matches'])
+
+    def test_manager_list_loader_state_is_exposed_without_swallowing_error_as_empty(self):
+        controller = self.read_required(
+            'modules/kuraneacatalog/controllers/admin/AdminOrdenowaProductManagerController.php'
+        )
+        for marker in (
+            '$managerProductsLoadState',
+            "'load_error'",
+            "'empty'",
+            "'loaded'",
+            'data-ordenowa-managed-products-state=',
+            'catch (Throwable)',
+        ):
+            self.assertIn(marker, controller)
+        self.assertIn("$managerProductsLoadState === 'load_error'", controller)
+        self.assertNotRegex(
+            controller,
+            r"catch \(Throwable\) \{\s*\$products = \[\];\s*\}",
+            'a failed manager query must not be indistinguishable from an empty result',
+        )
+
+    def test_native_manager_readback_emits_allowlisted_link_set_summary(self):
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        read_native = browser.split('def read_native(', 1)[1].split('\ndef manager_save_confirmation(', 1)[0]
+        for marker in (
+            'expected_manager_ids=None',
+            'manager_list_diagnostics',
+            'summarize_manager_product_ids(',
+            "state.get('manager_products_load_state'",
+            'expected_manager_ids=sorted(before_ids + [product_id])',
+        ):
+            self.assertIn(marker, browser)
+        self.assertIn("state['manager_list_diagnostics'] = summarize_manager_product_ids(", read_native)
+
     def test_native_manager_readback_guards_product_identity_and_edit_preservation(self):
         browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
         read_native = browser.split('def read_native(', 1)[1].split('\ndef manager_save_confirmation(', 1)[0]
         edit_flow = browser.split('def edit_imported_draft(', 1)[1].split('\ndef run(', 1)[0]
         self.assertLess(
             read_native.index("begin_native_readback_check(state, 'unique_product_ids')"),
-            read_native.index('unique_product_ids = manager_ids(driver)'),
+            read_native.index('link_count, rendered_ids, valid_route_count = manager_product_link_snapshot(driver)'),
         )
         for marker in (
             "begin_native_readback_check(state, 'option_value')",
@@ -437,7 +530,8 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertIn("form.find_elements(By.CSS_SELECTOR, 'input[name=\"category_ids[]\"]')", source)
         self.assertIn("driver.find_elements(By.CSS_SELECTOR, 'input[name=\"category_ids[]\"]')", source)
         self.assertIn("finish_native_readback_check(state, 'category_ids', category_ids == expected_category_ids)", source)
-        self.assertIn('read_native(driver, product_id, expected_category_ids, state)', source)
+        self.assertIn('read_native(\n            driver, product_id, expected_category_ids, state,', source)
+        self.assertIn('expected_manager_ids=sorted(before_ids + [product_id])', source)
 
     def test_browser_saves_same_imported_draft_then_proves_edit_survives_reimport(self):
         browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
@@ -693,6 +787,8 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'manager_editor_visible': False, 'manager_load_failure_notice_visible': False,
             'manager_permission_denied_notice_visible': False, 'manager_inactive_notice_visible': False,
             'manager_save_success_notice_visible': False,
+            'manager_products_load_state': 'unknown',
+            'manager_list_diagnostics': None,
             'option_guard_notice_visible': False,
             'failure_screenshot_captured': True,
         }
@@ -885,6 +981,8 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'manager_editor_visible': False, 'manager_load_failure_notice_visible': False,
             'manager_permission_denied_notice_visible': False, 'manager_inactive_notice_visible': False,
             'manager_save_success_notice_visible': False,
+            'manager_products_load_state': 'unknown',
+            'manager_list_diagnostics': None,
             'option_guard_notice_visible': False,
             'failure_screenshot_captured': False,
         }
