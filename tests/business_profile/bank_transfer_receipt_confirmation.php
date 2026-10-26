@@ -223,6 +223,7 @@ final class Order
     public string $reference;
     public string $total_paid_tax_incl;
     public string $total_paid_real;
+    public string $module;
     public int $current_state;
     public string $payment = 'Bank transfer';
     public bool $valid = false;
@@ -238,6 +239,7 @@ final class Order
         $this->reference = (string) ($row['reference'] ?? '');
         $this->total_paid_tax_incl = (string) ($row['total_paid_tax_incl'] ?? '0');
         $this->total_paid_real = (string) ($row['total_paid_real'] ?? '0');
+        $this->module = (string) ($row['module'] ?? '');
         $this->current_state = (int) ($row['current_state'] ?? 0);
     }
 
@@ -422,6 +424,7 @@ function makeReceiptFixtureOrder(int $orderId, int $shopId = 4, int $currencyId 
         'id_customer' => 100 + $orderId,
         'id_currency' => $currencyId,
         'currency_iso' => $currencyId === 1 ? 'JPY' : 'USD',
+        'module' => 'ps_checkpayment',
         'reference' => 'CIREF' . $orderId,
         'total_paid_tax_incl' => '1100.000000',
         'total_paid_real' => '0.000000',
@@ -628,6 +631,19 @@ assertReceiptThrows(
     static fn () => $confirmer->confirm(4, 87, '1100', 'ORDENOWA-CI-RECEIPT-987654321-87', true, 9, $confirmedAt, true),
     'A non-JPY native order must not be confirmed.'
 );
+
+$wrongPaymentMethodOrder = makeReceiptFixtureOrder(91);
+$wrongPaymentMethodOrder['module'] = 'ps_wirepayment';
+$database->orders[91] = $wrongPaymentMethodOrder;
+$instructions->instructions['4:91'] = new BankTransferInstruction(
+    4, 91, 'CIREF91', '1100.000000', 'JPY', 21, $accountId, 9, '2026-10-26 10:00:00'
+);
+assertReceiptThrows(
+    static fn () => $confirmer->confirm(4, 91, '1100', 'ORDENOWA-CI-RECEIPT-987654321-91', true, 9, $confirmedAt, true),
+    'A JPY order placed through a different payment module must not be confirmed as a bank transfer.'
+);
+assertReceiptSame(2, $database->orders[91]['current_state'], 'A different payment method must leave the order unpaid.');
+assertReceiptSame([], array_values(array_filter($database->payments, static fn (array $payment): bool => (int) $payment['id_order'] === 91)), 'A different payment method must not create a native payment.');
 
 assertReceiptTrue(JpyAmount::normalizePositive('1100.000000') === '1100', 'Zero precision padding must normalize without float conversion.');
 assertReceiptSame(null, JpyAmount::normalizePositive('1100.500000'), 'Fractional JPY must be rejected.');

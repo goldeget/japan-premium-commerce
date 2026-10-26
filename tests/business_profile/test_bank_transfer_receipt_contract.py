@@ -70,6 +70,16 @@ class BankTransferReceiptContractTests(unittest.TestCase):
         self.assertIn("JpyAmount::normalizePositive", confirmer)
         self.assertIn("다른 주문", confirmer)
 
+    def test_receipt_confirmation_rejects_orders_created_with_another_payment_method(self) -> None:
+        confirmer = (MODULE / "src/Infrastructure/BankTransferReceiptConfirmer.php").read_text(encoding="utf-8")
+        native_order_guard = confirmer.split("private function assertSameNativeOrder", 1)[1].split(
+            "private function assertUnpaidOrder", 1
+        )[0]
+        self.assertIn("(string) ($order->module ?? '') !== 'ps_checkpayment'", native_order_guard)
+        fixture = (ROOT / "tests/business_profile/bank_transfer_receipt_confirmation.php").read_text(encoding="utf-8")
+        self.assertIn("$wrongPaymentMethodOrder['module'] = 'ps_wirepayment'", fixture)
+        self.assertIn("A JPY order placed through a different payment module must not be confirmed as a bank transfer.", fixture)
+
     def test_retries_reuse_the_existing_payment_and_history_without_mutation(self) -> None:
         confirmer = (MODULE / "src/Infrastructure/BankTransferReceiptConfirmer.php").read_text(encoding="utf-8")
         self.assertIn("findForOrder", confirmer)

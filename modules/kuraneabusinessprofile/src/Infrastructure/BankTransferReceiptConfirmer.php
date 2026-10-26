@@ -244,6 +244,7 @@ final class BankTransferReceiptConfirmer
         if ($instruction->orderId !== (int) $order->id
             || $instruction->shopId !== (int) $order->id_shop
             || $instruction->orderReference !== (string) $order->reference
+            || (string) ($order->module ?? '') !== 'ps_checkpayment'
             || JpyAmount::normalizePositive($instruction->totalPaid) === null
             || JpyAmount::normalizePositive((string) $order->total_paid_tax_incl) !== JpyAmount::normalizePositive($instruction->totalPaid)
             || $instruction->currencyIso !== 'JPY'

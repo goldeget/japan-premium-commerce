@@ -59,6 +59,17 @@ class BankTransferInstructionsContractTests(unittest.TestCase):
         self.assertIn("total_paid_real", controller)
         self.assertIn("'JPY'", controller)
         self.assertIn("order->id_shop", controller)
+        issue = controller.split("private function processIssue", 1)[1].split("private function processConfirm", 1)[0]
+        self.assertIn("$order->module !== 'ps_checkpayment'", issue)
+        self.assertIn("입금 안내는 미결제 계좌이체 주문에만 발급할 수 있습니다.", issue)
+        self.assertLess(
+            issue.index("$order->module !== 'ps_checkpayment'"),
+            issue.index("new BankTransferInstructionIssuer"),
+            "a direct POST for another payment module must be rejected before issuing",
+        )
+        order_listing = controller.split("private function unpaidJpyOrders", 1)[1].split("private function renderOrders", 1)[0]
+        self.assertIn("o.`module`", order_listing)
+        self.assertIn("ps_checkpayment", order_listing)
         self.assertNotIn("PS_OS_PAYMENT", controller)
 
     def test_instruction_binding_is_immutable_order_keyed_and_separate_from_receipts(self) -> None:
@@ -87,6 +98,7 @@ class BankTransferInstructionsContractTests(unittest.TestCase):
         self.assertIn("->find($shopId, $instruction->profileVersionId)", module)
         self.assertNotIn("loadPublished($shopId)", module.split("private function renderIssuedTransferInstructions", 1)[1])
         self.assertIn("BankTransferInstructionPresenter::render", module)
+        self.assertIn("(string) ($order->module ?? '') !== 'ps_checkpayment'", module.split("private function renderIssuedTransferInstructions", 1)[1])
         self.assertIn("htmlspecialchars", presenter)
         self.assertIn("accountId", presenter)
         self.assertIn("$customer->id ?? 0) !== (int) $order->id_customer", module)

@@ -543,6 +543,7 @@ class Kuraneabusinessprofile extends Module
         if (!is_object($order)
             || !Validate::isLoadedObject($order)
             || (int) ($order->id_customer ?? 0) < 1
+            || (string) ($order->module ?? '') !== 'ps_checkpayment'
         ) {
             return '';
         }

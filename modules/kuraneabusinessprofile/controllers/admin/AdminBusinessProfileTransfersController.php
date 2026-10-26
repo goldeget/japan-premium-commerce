@@ -106,6 +106,10 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
             $this->fail('선택한 쇼핑몰의 주문을 찾을 수 없습니다.');
             return;
         }
+        if ((string) $order->module !== 'ps_checkpayment') {
+            $this->fail('입금 안내는 미결제 계좌이체 주문에만 발급할 수 있습니다.');
+            return;
+        }
 
         $currency = new Currency((int) $order->id_currency);
         $orderState = new OrderState((int) $order->current_state);
@@ -242,6 +246,7 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
             . ' INNER JOIN `' . _DB_PREFIX_ . 'order_state` os ON os.`id_order_state` = o.`current_state`'
             . ' INNER JOIN `' . _DB_PREFIX_ . 'currency` c ON c.`id_currency` = o.`id_currency`'
             . ' WHERE o.`id_shop` = ' . (int) $shopId
+            . ' AND o.`module` = \'ps_checkpayment\''
             . ' AND os.`paid` = 0 AND o.`total_paid_real` <= 0 AND c.`iso_code` = \'JPY\''
             . ' AND o.`current_state` != ' . (int) Configuration::get('PS_OS_CANCELED')
             . ' ORDER BY o.`id_order` DESC LIMIT 50'
