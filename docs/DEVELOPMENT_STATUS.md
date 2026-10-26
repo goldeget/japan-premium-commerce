@@ -2,7 +2,7 @@
 
 ## 현재 원격 코드 및 실행 상태 (2026-10-26 11:50 UTC)
 
-- local/`origin/work` HEAD는 문서 checkpoint `09a628198d700eb82dba392f75850a3be68ef66f`; 최근 검증 코드 SHA는 `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 보존했다. 기존 미추적 사용자 파일은 건드리지 않았다.
+- local/`origin/work` HEAD는 문서 checkpoint `f763e77af2d3fbaa810c2901048d270b366e6ba2`; 최근 검증 코드 SHA는 `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 보존했다. 기존 미추적 사용자 파일은 건드리지 않았다.
 - QA-CI-002는 `acbdc5e`에서 shipping-admin 계약의 추출기 기대를 `rg`에서 workflow의 `grep`으로 맞춰 해결했다. 단계·안전 상세 추출 및 실패 판정은 보존됐고 관련 계약과 전체 run Step 9가 통과했다.
 - PWA-002 합성 Web Push foundation은 `50d924f`에 있으며, 공급자 호출 없이 동의 UI·격리된 암호화 소유자별 저장·철회를 검증한다. 운영 송신과 동의 감사/보존 범위는 미완료다.
 - 선행 실행 [#40315042151](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315042151), source `eefb193`, Step 6 설치 순서 계약에서 `kuraneapush`를 포함한 실제 목록과 오래된 네 모듈 기대값이 달라 중단됐다. 후속 캡처/aggregate 실패는 브라우저가 실행되지 않아 생긴 파생 실패다.

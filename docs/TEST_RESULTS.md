@@ -2,7 +2,7 @@
 
 ## 현재 사전 검사와 실행 (2026-10-26 11:50 UTC)
 
-- 검증 대상 source `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`; `work` 및 원격 SHA가 일치하고 `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지된다.
+- 검증 대상 code source `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`; current local/remote `work` HEAD is docs checkpoint `f763e77af2d3fbaa810c2901048d270b366e6ba2`, and `main` remains `ee02a3657448d563508687614a246e05ac61eecd`.
 - `tests.smoke.test_admin_folder_install_order`와 PWA workflow contract를 포함한 좁은 검사 17개 PASS. Step 9 workflow에 수록된 checkout/Admin contract 147개를 `ORDENOWA_ADMIN_SECURITY_FOCUS=false`와 `true` 각각 실행해 모두 PASS. Cart/shipping/account/PWA/installer 영향 계약 86개 PASS, `git diff --check` PASS.
 - 격리 전체 실행 [#40315517530](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530)은 source `acbdc5e`에서 preflight, 이미지 빌드, 빈 볼륨 설치를 통과하고 completed **FAILURE**다. Actual aggregate 실패는 `pwa_browser_qa=failure pwa_push_qa=skipped`; Step 9는 성공했다. Desktop JA/EN logout click은 interception, mobile JA/EN/KO consent는 timeout이었고 desktop KO lifecycle은 통과했다.
 - 이전 run #40315042151은 obsolete module-list contract로 Step 6에서, #40315327770은 `rg`를 기대하는 stale shipping log contract로 Step 9에서 중단됐다. 두 run 모두 browser QA에 도달하지 않았다. 두 테스트 기대값을 각각 현재 installer/workflow와 일치시켰다.
