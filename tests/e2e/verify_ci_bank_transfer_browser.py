@@ -35,6 +35,10 @@ SAFE_SUBSTAGES = {
     "csrf_invalid_token_submit", "csrf_rejection_readback", "csrf_unissued_db_readback",
     "instruction_issue_navigation", "instruction_issue_order_row_readback", "instruction_issue_action_controls",
     "instruction_issue_submit", "instruction_issue_notice_readback", "instruction_issue_db_readback",
+    "instruction_issue_notice_unpaid_present_success", "instruction_issue_notice_unpaid_missing_success",
+    "instruction_issue_notice_unpaid_present_danger", "instruction_issue_notice_unpaid_missing_danger",
+    "instruction_issue_notice_unpaid_present_missing", "instruction_issue_notice_unpaid_missing_missing",
+    "instruction_issue_notice_unpaid_present_other", "instruction_issue_notice_unpaid_missing_other",
 }
 SAFE_EXCEPTION_TYPES = {
     "AssertionError", "TimeoutException", "ValueError", "RuntimeError", "OSError",
@@ -43,13 +47,19 @@ SAFE_EXCEPTION_TYPES = {
 }
 SAFE_RESULT_KEYS = {
     "status", "stage", "exception_type", "failure_substage", "fixture_bound", "instruction_issued",
+    "issue_persistence_diagnostic",
     "issue_left_order_unpaid", "instruction_immutable", "customer_instruction_visible",
     "order_identity_match", "order_product_line_match", "amount_match", "account_match", "foreign_customer_denied",
     "limited_staff_denied", "view_only_confirmation_denied", "issue_csrf_rejected", "csrf_rejected", "wrong_amount_rejected", "receipt_confirmed",
     "idempotent_replay", "customer_paid_state_changed", "instruction_hidden_after_payment",
     "native_readback",
 }
-RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {"status", "stage", "exception_type", "failure_substage"}
+SAFE_ISSUE_PERSISTENCE_DIAGNOSTICS = {
+    "not_run", "unpaid_instruction_absent", "unpaid_instruction_persisted", "unexpected_state", "unavailable",
+}
+RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {
+    "status", "stage", "exception_type", "failure_substage", "issue_persistence_diagnostic",
+}
 
 
 def assert_true(condition: object, message: str) -> None:
@@ -292,6 +302,35 @@ def verify_unpaid_native_order(ctx: dict[str, object], order: dict[str, object],
         )
 
 
+def diagnose_unpaid_issue_persistence(ctx: dict[str, object], order: dict[str, object]) -> str:
+    source_path = Path(__file__).resolve().parents[1] / "business_profile" / "verify_ci_bank_transfer_unpaid_order.php"
+    payload = docker_php_json(
+        ctx,
+        source_path,
+        "/tmp/verify_ci_bank_transfer_unpaid_order.php",
+        {
+            "KURANEA_CI_ORDER_ID": str(order["order_id"]),
+            "KURANEA_CI_ORDER_REFERENCE": str(order["reference"]),
+            "KURANEA_CI_PRODUCT_ID": str(order["product_id"]),
+            "KURANEA_CI_VIEWPORT": str(order["viewport"]),
+            "KURANEA_CI_TRANSFER_EXPECTATION": "diagnostic",
+        },
+    )
+    expected_keys = {
+        "status", "db_readback_available", "native_order_unpaid", "instruction_persisted", "instruction_matches_order",
+        "receipt_absent", "native_payment_absent",
+    }
+    if (set(payload) != expected_keys or payload.get("status") != "success"
+            or any(type(payload.get(key)) is not bool for key in expected_keys - {"status"})):
+        return "unexpected_state"
+    if payload["db_readback_available"] is not True:
+        return "unavailable"
+    if (payload["native_order_unpaid"] is not True or payload["receipt_absent"] is not True
+            or payload["native_payment_absent"] is not True or payload["instruction_matches_order"] is not True):
+        return "unexpected_state"
+    return "unpaid_instruction_persisted" if payload["instruction_persisted"] else "unpaid_instruction_absent"
+
+
 def limited_transfer_route(ctx: dict[str, object]) -> tuple[str, str]:
     source_path = Path(__file__).resolve().parents[1] / "business_profile" / "resolve_ci_limited_transfer_route.php"
     payload = docker_php_json(
@@ -418,6 +457,20 @@ def read_visible_notice_snapshot(driver: webdriver.Chrome) -> tuple[str, str]:
         return False
 
     return WebDriverWait(driver, 35).until(read_snapshot)
+
+
+def issue_notice_failure_substage(notice_text: str, notice_class: str) -> str:
+    unpaid_state = "unpaid_present" if "미결제" in notice_text else "unpaid_missing"
+    classes = set(notice_class.split())
+    if "alert-success" in classes:
+        class_state = "success"
+    elif "alert-danger" in classes:
+        class_state = "danger"
+    elif not classes:
+        class_state = "missing"
+    else:
+        class_state = "other"
+    return f"instruction_issue_notice_{unpaid_state}_{class_state}"
 
 
 def reject_issue_with_invalid_csrf(driver: webdriver.Chrome, row, admin_root: str, set_substage) -> None:
@@ -619,6 +672,7 @@ def write_result(path: Path, result: dict[str, object]) -> None:
             or result.get("status") not in ("success", "failure")
             or result.get("stage") not in SAFE_STAGES
             or result.get("failure_substage") not in SAFE_SUBSTAGES
+            or result.get("issue_persistence_diagnostic") not in SAFE_ISSUE_PERSISTENCE_DIAGNOSTICS
             or (result.get("exception_type") is not None and result.get("exception_type") not in SAFE_EXCEPTION_TYPES)
             or any(type(result.get(key)) is not bool for key in RESULT_BOOLEAN_KEYS)
             or (result.get("status") == "success" and (
@@ -662,6 +716,7 @@ def run() -> None:
     result: dict[str, object] = {
         "status": "failure", "stage": stage, "exception_type": None,
         "failure_substage": "none",
+        "issue_persistence_diagnostic": "not_run",
         "fixture_bound": False, "instruction_issued": False, "issue_left_order_unpaid": False,
         "instruction_immutable": False, "customer_instruction_visible": False,
         "order_identity_match": False, "order_product_line_match": False, "amount_match": False, "account_match": False,
@@ -730,6 +785,11 @@ def run() -> None:
         set_substage("instruction_issue_notice_readback")
         notice_text, notice_class = read_visible_notice_snapshot(admin)
         if ("미결제" not in notice_text or "alert-success" not in notice_class.split()):
+            set_substage(issue_notice_failure_substage(notice_text, notice_class))
+            try:
+                result["issue_persistence_diagnostic"] = diagnose_unpaid_issue_persistence(ctx, order)
+            except Exception:
+                result["issue_persistence_diagnostic"] = "unavailable"
             raise AssertionError("issuing bank instructions did not preserve the unpaid-order notice")
         result["instruction_issued"] = True
         result["issue_left_order_unpaid"] = True

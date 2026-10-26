@@ -35,7 +35,7 @@ ordenowaBankUnpaidRequire(
         && preg_match('/\A[1-9][0-9]{0,9}\z/D', $productIdText) === 1
         && $viewport === 'bank'
         && preg_match('/\A[A-Z0-9]{8,16}\z/D', $orderReference) === 1
-        && in_array($expectation, ['unissued', 'issued'], true),
+        && in_array($expectation, ['unissued', 'issued', 'diagnostic'], true),
     'Unpaid transfer readback requires its exact isolated run, checkout order, and expected state.'
 );
 
@@ -101,11 +101,57 @@ ordenowaBankUnpaidRequire(
         && JpyAmount::normalizePositive((string) $productLines[0]['total_price_tax_incl']) !== null,
     'The same isolated bank order must contain exactly its one run-scoped CI-only product line.'
 );
-ordenowaBankUnpaidRequire(
-    $database->execute(DatabaseSchema::createBankTransferInstructionTableSql($prefix))
-        && $database->execute(DatabaseSchema::createBankTransferReceiptLedgerTableSql($prefix)),
-    'The isolated bank-transfer tables could not be ensured for native readback.'
-);
+if ($expectation !== 'diagnostic') {
+    ordenowaBankUnpaidRequire(
+        $database->execute(DatabaseSchema::createBankTransferInstructionTableSql($prefix))
+            && $database->execute(DatabaseSchema::createBankTransferReceiptLedgerTableSql($prefix)),
+        'The isolated bank-transfer tables could not be ensured for native readback.'
+    );
+}
+
+if ($expectation === 'diagnostic') {
+    $instructionRows = $database->executeS(
+        'SELECT `id_shop`, `id_order`, `order_reference`, `total_paid`, `currency_iso`, `profile_version_id`, `bank_account_id`'
+        . ' FROM `' . $prefix . 'kuraneabusinessprofile_bank_transfer_instruction`'
+        . ' WHERE `id_shop` = ' . (int) $shopId . ' AND `id_order` = ' . (int) $orderId . ' LIMIT 2'
+    );
+    $receiptRows = $database->executeS(
+        'SELECT `id_order` FROM `' . $prefix . 'kuraneabusinessprofile_bank_transfer_receipt`'
+        . ' WHERE `id_shop` = ' . (int) $shopId . ' AND `id_order` = ' . (int) $orderId . ' LIMIT 2'
+    );
+    $paymentRows = $database->executeS(
+        'SELECT COUNT(*) AS `payment_count` FROM `' . $prefix . 'order_payment`'
+        . ' WHERE `order_reference` = "' . pSQL((string) $order->reference) . '"'
+    );
+    $readbackAvailable = is_array($instructionRows)
+        && is_array($receiptRows)
+        && is_array($paymentRows)
+        && count($paymentRows) === 1;
+    $instructionCount = is_array($instructionRows) ? count($instructionRows) : 2;
+    $instructionMatchesOrder = $instructionCount === 0;
+    if ($instructionCount === 1) {
+        $instruction = $instructionRows[0];
+        $instructionMatchesOrder = (int) $instruction['id_shop'] === $shopId
+            && (int) $instruction['id_order'] === $orderId
+            && (string) $instruction['order_reference'] === (string) $order->reference
+            && JpyAmount::normalizePositive((string) $instruction['total_paid']) === $amount
+            && (string) $instruction['currency_iso'] === 'JPY'
+            && (int) $instruction['profile_version_id'] > 0
+            && preg_match('/\\A[a-f0-9]{32}\\z/iD', (string) $instruction['bank_account_id']) === 1;
+    }
+
+    echo json_encode([
+        'status' => 'success',
+        'db_readback_available' => $readbackAvailable,
+        'native_order_unpaid' => true,
+        'instruction_persisted' => is_array($instructionRows) && count($instructionRows) > 0,
+        'instruction_matches_order' => $instructionMatchesOrder && $instructionCount <= 1,
+        'receipt_absent' => is_array($receiptRows) && count($receiptRows) === 0,
+        'native_payment_absent' => $readbackAvailable && (int) $paymentRows[0]['payment_count'] === 0,
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) . PHP_EOL;
+    exit;
+}
+
 $instruction = (new BankTransferInstructionRepository())->findForOrder($shopId, $orderId);
 $receipt = (new BankTransferReceiptRepository())->findForOrder($shopId, $orderId);
 $expectedInstructionCount = $expectation === 'issued' ? 1 : 0;

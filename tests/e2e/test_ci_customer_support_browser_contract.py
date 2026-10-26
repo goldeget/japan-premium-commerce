@@ -233,9 +233,30 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             "/contact?id_customer_thread=47&token=AbC123xYz890&token=otherToken123",
             "/contact?controller=authentication&id_customer_thread=47&token=AbC123xYz890",
             "//outside.example/contact?id_customer_thread=47&token=AbC123xYz890",
+            "/contact?id_customer_thread=47&token=AbC123xYz890&unexpected=private",
         ):
             with self.subTest(candidate=candidate):
                 self.assertFalse(module.validate_customer_thread_url(candidate, shop, 47))
+        self.assertTrue(module.validate_customer_thread_url(
+            "/?controller=contact&id_lang=1&id_customer_thread=47&token=AbC123xYz890", shop, 47,
+            locale="ja",
+        ))
+        canonical_thread_url = module.native_customer_thread_url(
+            "/?controller=contact&id_lang=1", shop, 47, "AbC123xYz890",
+            locale="ja", localized_rewrite=None,
+        )
+        self.assertEqual(
+            {"controller": ["contact"], "id_lang": ["1"],
+             "id_customer_thread": ["47"], "token": ["AbC123xYz890"]},
+            parse_qs(urlparse(canonical_thread_url).query),
+        )
+        self.assertEqual("/", urlparse(canonical_thread_url).path)
+        for route in ("https://outside.example/contact", "/private", "/index.php?controller=authentication"):
+            with self.subTest(route=route), self.assertRaisesRegex(ValueError, "contact route fixture"):
+                module.native_customer_thread_url(
+                    route if "://" in route else shop + route,
+                    shop, 47, "AbC123xYz890", locale="ja", localized_rewrite=None,
+                )
         self.assertEqual(
             ("modern_thread_view", 47),
             module.thread_route_identity(f"{admin}/sell/customer-service/customer-threads/47/view", admin),
@@ -384,6 +405,8 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 "contact_document_status": 200, "contact_same_origin": True,
                 "contact_native_route": True, "contact_form_count": 1,
                 "contact_form_visible": True,
+                "support_denial_status": 403, "support_denial_form_count": 0,
+                "support_denial_redirected": False, "support_denial_same_origin": True,
             }
             module.write_result(path, result)
             content = path.read_text(encoding="utf-8")
@@ -406,6 +429,10 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             "def contact_page_evidence(",
             "contact_document_status", "contact_same_origin", "contact_native_route",
             "contact_form_count", "contact_form_visible",
+            "support_denial_status", "support_denial_form_count", "support_denial_redirected",
+            "support_denial_same_origin", "foreign_invalid_token_probe",
+            "foreign_owned_thread_probe", "foreign_orderless_thread_probe",
+            "foreign_orderless_post_probe",
             "browser_substage={result['browser_substage']}", "SAFE_BROWSER_SUBSTAGES",
             "result.update(contact_page_evidence(",
             "locale=locale", "localized_rewrite=localized_rewrite",

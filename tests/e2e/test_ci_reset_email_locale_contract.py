@@ -361,14 +361,61 @@ class ResetEmailLocaleContract(unittest.TestCase):
         self.assertNotRegex(text_template, r'https?://')
         imports = post_install.index('$languageImporter->import($isoCode)')
         html_guard = post_install.index("$koPasswordQueryHtml = '/var/www/html/mails/ko/password_query.html'")
-        text_write = post_install.index('file_put_contents($koPasswordQueryTextTarget')
+        target_list = post_install.index('$koPasswordQueryTemplateDirectories = [')
+        text_write = post_install.index('file_put_contents($textPath, $koPasswordQueryText')
+        candidates = (
+            "'/var/www/html/themes/kuranea/mails/ko'",
+            "'/var/www/html/themes/hummingbird/mails/ko'",
+            "'/var/www/html/mails/ko'",
+        )
+        candidate_positions = [post_install.index(candidate, target_list) for candidate in candidates]
         self.assertLess(imports, html_guard)
-        self.assertLess(html_guard, text_write)
+        self.assertLess(html_guard, target_list)
+        self.assertEqual(candidate_positions, sorted(candidate_positions))
+        self.assertLess(candidate_positions[-1], text_write)
+        self.assertIn("$htmlPath = $directory . '/password_query.html'", post_install)
+        self.assertIn("$textPath = $directory . '/password_query.txt'", post_install)
+        self.assertNotIn("file_put_contents($htmlPath", post_install)
         self.assertIn("!is_file($koPasswordQueryHtml)", post_install)
-        self.assertNotIn("file_put_contents($koPasswordQueryHtml", post_install)
         self.assertIn("test -s /var/www/html/mails/ko/password_query.html", smoke)
         self.assertIn("grep -Fq '{url}' /var/www/html/mails/ko/password_query.txt", smoke)
         self.assertIn("grep -Fq '비밀번호' /var/www/html/mails/ko/password_query.txt", smoke)
+
+    def test_korean_text_only_precedence_candidate_gets_a_native_html_pair(self):
+        root = VERIFIER.parents[2]
+        post_install = (root / 'docker/kuran-post-install.php').read_text(encoding='utf-8')
+        compact = ' '.join(post_install.split())
+
+        # Mail::getTemplateBasePath may choose a directory containing only Text,
+        # so the active-theme candidate must become a pair before root lookup.
+        self.assertIn(
+            "if (!is_file($htmlPath) && !is_file($textPath)) { continue; }",
+            compact,
+        )
+        candidate_html = compact.index("$htmlPath = $directory . '/password_query.html'")
+        candidate_text = compact.index("$textPath = $directory . '/password_query.txt'")
+        empty_candidate_check = compact.index(
+            'if (!is_file($htmlPath) && !is_file($textPath)) { continue; }', candidate_text,
+        )
+        pair_missing_html = compact.index('if (!is_file($htmlPath) && (false === copy(', empty_candidate_check)
+        bundled_text_write = compact.index('file_put_contents($textPath, $koPasswordQueryText', pair_missing_html)
+        self.assertLess(candidate_html, candidate_text)
+        self.assertLess(candidate_text, empty_candidate_check)
+        self.assertLess(empty_candidate_check, pair_missing_html)
+        self.assertLess(pair_missing_html, bundled_text_write)
+        self.assertIn('copy($koPasswordQueryHtml, $htmlPath)', compact[pair_missing_html:bundled_text_write])
+        self.assertIn(
+            'file_get_contents($htmlPath) !== $koPasswordQueryHtmlContents',
+            compact[pair_missing_html:bundled_text_write],
+        )
+        self.assertIn(
+            "$koPasswordQueryHtmlContents = file_get_contents($koPasswordQueryHtml)",
+            compact[:pair_missing_html],
+        )
+        # Existing HTML is never rewritten; only a missing higher-priority HTML
+        # file is copied from the required generated root template.
+        self.assertNotIn('file_put_contents($htmlPath', compact)
+        self.assertIn('if (!is_file($htmlPath) && (false === copy(', compact)
 
     def test_native_locale_email_flow_is_run_and_aggregated_with_mailpit(self):
         workflow = WORKFLOW.read_text(encoding='utf-8')

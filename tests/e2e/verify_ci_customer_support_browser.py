@@ -24,7 +24,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
-from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
+from urllib.parse import parse_qs, parse_qsl, urlencode, urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
 try:
     from native_contact_route import contact_route_class, probe_contact_route, read_contact_route_fixture
@@ -70,11 +70,14 @@ SAFE_RESULT_KEYS = {
     "image_attachment_admin_readback", "image_attachment_foreign_denied", "disallowed_attachment_rejected",
     "foreign_valid_thread_denied", "foreign_orderless_post_denied", "orderless_thread_unchanged",
     "contact_document_status", "contact_same_origin", "contact_native_route",
-    "contact_form_count", "contact_form_visible", "browser_substage",
+    "contact_form_count", "contact_form_visible", "support_denial_status",
+    "support_denial_form_count", "support_denial_redirected", "support_denial_same_origin",
+    "browser_substage",
 }
 RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {
     "status", "stage", "exception_type", "mailpit_provider",
-    "contact_document_status", "contact_form_count", "browser_substage",
+    "contact_document_status", "contact_form_count", "support_denial_status",
+    "support_denial_form_count", "browser_substage",
 }
 SAFE_EXCEPTION_TYPES = {
     "AssertionError", "TimeoutException", "ValueError", "RuntimeError", "URLError", "OSError",
@@ -84,6 +87,8 @@ SAFE_BROWSER_SUBSTAGES = {
     "not_applicable", "contact_form_navigation", "order_select_lookup", "order_option_scan",
     "order_owner_assertion", "order_select_scroll", "order_select_hit_test",
     "order_select_native_option", "order_select_readback",
+    "foreign_invalid_token_probe", "foreign_owned_thread_probe", "foreign_orderless_thread_probe",
+    "foreign_orderless_post_probe",
     "contact_field_lookup", "contact_id_readback", "attachment_control_lookup", "attachment_send_keys",
     "accepted_attachment_fixture_validation", "accepted_attachment_file_readback", "message_field_lookup",
     "message_send_keys", "submit_control_lookup", "submit_control_scroll", "submit_control_hit_test",
@@ -313,26 +318,69 @@ def parse_thread_email_subject(subject: object) -> tuple[int, str] | None:
     return (int(match.group(1)), match.group(2)) if match else None
 
 
-def validate_customer_thread_url(candidate: str, shop_url: str, expected_thread_id: int) -> bool:
+def validate_customer_thread_url(
+    candidate: str, shop_url: str, expected_thread_id: int, *,
+    locale: str | None = None, localized_rewrite: str | None = None,
+) -> bool:
     try:
         destination = urljoin(shop_url.rstrip("/") + "/", candidate)
         parsed = urlparse(destination)
         expected = urlparse(shop_url)
         query = parse_qs(parsed.query, keep_blank_values=True)
+        route_query = [
+            (key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+            if key not in {"id_customer_thread", "token"}
+        ]
+        route = urlunparse(parsed._replace(query=urlencode(route_query)))
+        native_contact_route = contact_route_class(
+            route, shop_url, locale=locale, localized_rewrite=localized_rewrite
+        ) == "contact"
+        same_shop = (parsed.scheme, parsed.hostname, parsed.port) == (expected.scheme, expected.hostname, expected.port)
     except (TypeError, ValueError):
         return False
-    same_shop = (parsed.scheme, parsed.hostname, parsed.port) == (expected.scheme, expected.hostname, expected.port)
-    contact_route = (
-        parsed.path.rstrip("/") in {"/contact", "/index.php"}
-        and ("controller" not in query or query.get("controller") == ["contact"])
-    )
     return (
-        same_shop and contact_route
+        same_shop and native_contact_route
         and query.get("id_customer_thread") == [str(expected_thread_id)]
         and len(query.get("token", [])) == 1
         and re.fullmatch(r"[A-Za-z0-9]{12}", query["token"][0]) is not None
         and parsed.username is None and parsed.password is None and not parsed.fragment
     )
+
+
+def native_customer_thread_url(
+    contact_url: str, shop_url: str, thread_id: int, token: str, *,
+    locale: str, localized_rewrite: str | None,
+) -> str:
+    """Append native thread identity to the exact contact route read from the shop."""
+    try:
+        parsed = urlparse(urljoin(shop_url.rstrip("/") + "/", contact_url))
+        expected = urlparse(shop_url)
+        query = parse_qsl(parsed.query, keep_blank_values=True, strict_parsing=True)
+        keys = [key for key, _value in query]
+        base_route = urlunparse(parsed._replace(query=urlencode(query)))
+        same_shop = (parsed.scheme, parsed.hostname, parsed.port) == (expected.scheme, expected.hostname, expected.port)
+    except (TypeError, ValueError):
+        raise ValueError("native customer thread URL did not match the contact route fixture") from None
+    if (
+        not same_shop
+        or parsed.username is not None or parsed.password is not None or parsed.fragment
+        or len(keys) != len(set(keys))
+        or set(keys) & {"id_customer_thread", "token"}
+        or contact_route_class(
+            base_route, shop_url, locale=locale, localized_rewrite=localized_rewrite
+        ) != "contact"
+        or type(thread_id) is not int or thread_id < 1
+        or re.fullmatch(r"[A-Za-z0-9]{12}", token) is None
+    ):
+        raise ValueError("native customer thread URL did not match the contact route fixture")
+    candidate = urlunparse(parsed._replace(query=urlencode([
+        *query, ("id_customer_thread", str(thread_id)), ("token", token),
+    ])))
+    if not validate_customer_thread_url(
+        candidate, shop_url, thread_id, locale=locale, localized_rewrite=localized_rewrite
+    ):
+        raise ValueError("native customer thread URL did not retain the exact contact route")
+    return candidate
 
 
 def recipients(message: dict[str, Any]) -> set[str]:
@@ -673,26 +721,64 @@ def submit_contact_message(
         raise AssertionError("native contact form reported a failed inquiry submission")
 
 
-def assert_support_denied_response(result: Any) -> None:
-    if not isinstance(result, dict) or result.get("status") != 403 or result.get("formPresent") is not False:
+def assert_support_denied_response(response: Any, diagnostic_result: dict[str, Any] | None = None) -> None:
+    if not isinstance(response, dict):
+        raise AssertionError("cross-customer support request did not return bounded denial evidence")
+    status = response.get("status")
+    form_count = response.get("formCount")
+    redirected = response.get("redirected")
+    same_origin = response.get("sameOrigin")
+    if diagnostic_result is not None:
+        if type(status) is int and 100 <= status <= 599:
+            diagnostic_result["support_denial_status"] = status
+        if type(form_count) is int and form_count >= 0:
+            diagnostic_result["support_denial_form_count"] = form_count
+        if type(redirected) is bool:
+            diagnostic_result["support_denial_redirected"] = redirected
+        if type(same_origin) is bool:
+            diagnostic_result["support_denial_same_origin"] = same_origin
+    if (
+        type(status) is not int or status != 403
+        or type(form_count) is not int or form_count != 0
+        or redirected is not False or same_origin is not True
+    ):
         raise AssertionError("cross-customer support request was not denied before native form rendering")
 
 
-def assert_foreign_thread_denied(driver, href: str) -> None:
-    result = driver.execute_async_script("""
+def begin_support_denial_probe(diagnostic_result: dict[str, Any] | None, probe_substage: str) -> None:
+    mark_browser_substage(diagnostic_result, probe_substage)
+    if diagnostic_result is not None:
+        diagnostic_result["support_denial_status"] = None
+        diagnostic_result["support_denial_form_count"] = 0
+        diagnostic_result["support_denial_redirected"] = True
+        diagnostic_result["support_denial_same_origin"] = False
+
+
+def assert_foreign_thread_denied(
+    driver, href: str, *, diagnostic_result: dict[str, Any] | None = None,
+    probe_substage: str,
+) -> None:
+    begin_support_denial_probe(diagnostic_result, probe_substage)
+    response = driver.execute_async_script("""
       const [url, done] = arguments;
       fetch(url, {credentials: 'same-origin', redirect: 'follow'})
         .then(async response => {
           const document = new DOMParser().parseFromString(await response.text(), 'text/html');
-          done({status: response.status, formPresent: Boolean(document.querySelector('.contact-form'))});
+          done({status: response.status,
+            formCount: document.querySelectorAll('.contact-form').length,
+            redirected: response.redirected,
+            sameOrigin: new URL(response.url, location.href).origin === location.origin});
         }).catch(() => done({status: 0}));
     """, href)
-    assert_support_denied_response(result)
+    assert_support_denied_response(response, diagnostic_result)
 
 
-def assert_foreign_orderless_post_denied(driver, ctx: Context, marker: str) -> None:
+def assert_foreign_orderless_post_denied(
+    driver, ctx: Context, marker: str, *, diagnostic_result: dict[str, Any] | None = None,
+) -> None:
+    begin_support_denial_probe(diagnostic_result, "foreign_orderless_post_probe")
     form = contact_form(driver, ctx.contact_url)
-    result = driver.execute_async_script("""
+    response = driver.execute_async_script("""
       const [form, victimEmail, marker, done] = arguments;
       const data = new FormData(form);
       data.set('from', victimEmail);
@@ -703,10 +789,13 @@ def assert_foreign_orderless_post_denied(driver, ctx: Context, marker: str) -> N
       fetch(form.action, {method: 'POST', body: data, credentials: 'same-origin', redirect: 'follow'})
         .then(async response => {
           const document = new DOMParser().parseFromString(await response.text(), 'text/html');
-          done({status: response.status, formPresent: Boolean(document.querySelector('.contact-form'))});
+          done({status: response.status,
+            formCount: document.querySelectorAll('.contact-form').length,
+            redirected: response.redirected,
+            sameOrigin: new URL(response.url, location.href).origin === location.origin});
         }).catch(() => done({status: 0}));
     """, form, ctx.buyer["email"], marker)
-    assert_support_denied_response(result)
+    assert_support_denied_response(response, diagnostic_result)
 
 
 def generated_customer_threads_link(driver, admin_url: str) -> str:
@@ -1020,16 +1109,27 @@ def write_result(path: Path, result: dict[str, Any]) -> None:
             type(result.get("contact_document_status")) is not int
             or not 100 <= result["contact_document_status"] <= 599
         ))
+        or (result.get("support_denial_status") is not None and (
+            type(result.get("support_denial_status")) is not int
+            or not 100 <= result["support_denial_status"] <= 599
+        ))
         or type(result.get("contact_form_count")) is not int or result["contact_form_count"] < 0
+        or type(result.get("support_denial_form_count")) is not int or result["support_denial_form_count"] < 0
         or not isinstance(result.get("browser_substage"), str)
         or result["browser_substage"] not in SAFE_BROWSER_SUBSTAGES
         or result.get("mailpit_provider") != "isolated_only"
         or (result.get("exception_type") is not None and result.get("exception_type") not in SAFE_EXCEPTION_TYPES)
         or (result.get("status") == "success" and (
             result.get("exception_type") is not None
-            or any(result.get(key) is not True for key in RESULT_BOOLEAN_KEYS - {"paid", "payment_provider_called"})
+            or any(result.get(key) is not True for key in RESULT_BOOLEAN_KEYS - {
+                "paid", "payment_provider_called", "support_denial_redirected",
+            })
             or result.get("paid") is not False
             or result.get("payment_provider_called") is not False
+            or result.get("support_denial_status") != 403
+            or result.get("support_denial_form_count") != 0
+            or result.get("support_denial_redirected") is not False
+            or result.get("support_denial_same_origin") is not True
         ))
     ):
         raise ValueError("customer support diagnostics did not match the allowlisted result schema")
@@ -1056,6 +1156,8 @@ def run() -> None:
         "orderless_thread_unchanged": False, "contact_document_status": None,
         "contact_same_origin": False, "contact_native_route": False,
         "contact_form_count": 0, "contact_form_visible": False,
+        "support_denial_status": None, "support_denial_form_count": 0,
+        "support_denial_redirected": True, "support_denial_same_origin": False,
     }
     customer = admin = foreign = limited = None
     buyer_marker = f"[CI ONLY] ORDENOWA support inquiry {ctx.run_id}-{ctx.attempt}-{secrets.token_hex(5)}"
@@ -1127,11 +1229,15 @@ def run() -> None:
 
         stage = result["stage"] = "mailpit_confirmation"
         first_thread_id, thread_token, _confirmation = wait_for_thread_email(ctx.mailpit, ctx.buyer["email"], baseline_mail)
-        valid_customer_thread_url = urlunparse((
-            urlparse(ctx.shop).scheme, urlparse(ctx.shop).netloc, "/index.php", "",
-            urlencode({"controller": "contact", "id_customer_thread": first_thread_id, "token": thread_token}), "",
-        ))
-        if not validate_customer_thread_url(valid_customer_thread_url, ctx.shop, first_thread_id):
+        localized_rewrite = ctx.contact_route_metadata["localized_rewrite_by_iso"]["ja"]
+        valid_customer_thread_url = native_customer_thread_url(
+            ctx.contact_url, ctx.shop, first_thread_id, thread_token,
+            locale="ja", localized_rewrite=localized_rewrite,
+        )
+        if not validate_customer_thread_url(
+            valid_customer_thread_url, ctx.shop, first_thread_id,
+            locale="ja", localized_rewrite=localized_rewrite,
+        ):
             raise AssertionError("native customer confirmation did not produce a bounded thread URL")
 
         stage = result["stage"] = "orderless_inquiry"
@@ -1140,8 +1246,10 @@ def run() -> None:
         orderless_id, orderless_token, _orderless_confirmation = wait_for_thread_email(ctx.mailpit, ctx.buyer["email"], before_orderless)
         if orderless_id == first_thread_id:
             raise AssertionError("orderless fixture must use a distinct native inquiry")
-        orderless_url = urlunparse((urlparse(ctx.shop).scheme, urlparse(ctx.shop).netloc, "/index.php", "",
-            urlencode({"controller": "contact", "id_customer_thread": orderless_id, "token": orderless_token}), ""))
+        orderless_url = native_customer_thread_url(
+            ctx.contact_url, ctx.shop, orderless_id, orderless_token,
+            locale="ja", localized_rewrite=localized_rewrite,
+        )
         stage = result["stage"] = "foreign_customer_denial"
         foreign = new_driver()
         customer_login(foreign, ctx, ctx.foreign)
@@ -1149,18 +1257,27 @@ def run() -> None:
         if invalid_token == thread_token:
             replacement = "A" if thread_token[0] != "A" else "B"
             invalid_token = replacement + thread_token[1:]
-        invalid_url = urlunparse((
-            urlparse(ctx.shop).scheme, urlparse(ctx.shop).netloc, "/index.php", "",
-            urlencode({"controller": "contact", "id_customer_thread": first_thread_id, "token": invalid_token}), "",
-        ))
-        assert_foreign_thread_denied(foreign, invalid_url)
+        invalid_url = native_customer_thread_url(
+            ctx.contact_url, ctx.shop, first_thread_id, invalid_token,
+            locale="ja", localized_rewrite=localized_rewrite,
+        )
+        assert_foreign_thread_denied(
+            foreign, invalid_url, diagnostic_result=result,
+            probe_substage="foreign_invalid_token_probe",
+        )
         result["foreign_customer_denied"] = True
         stage = result["stage"] = "foreign_valid_thread"
-        assert_foreign_thread_denied(foreign, valid_customer_thread_url)
-        assert_foreign_thread_denied(foreign, orderless_url)
+        assert_foreign_thread_denied(
+            foreign, valid_customer_thread_url, diagnostic_result=result,
+            probe_substage="foreign_owned_thread_probe",
+        )
+        assert_foreign_thread_denied(
+            foreign, orderless_url, diagnostic_result=result,
+            probe_substage="foreign_orderless_thread_probe",
+        )
         result["foreign_valid_thread_denied"] = True
         stage = result["stage"] = "foreign_orderless_post"
-        assert_foreign_orderless_post_denied(foreign, ctx, attack_marker)
+        assert_foreign_orderless_post_denied(foreign, ctx, attack_marker, diagnostic_result=result)
         result["foreign_orderless_post_denied"] = True
         foreign.get(valid_customer_thread_url)
         foreign.save_screenshot(str(ctx.artifact_dir / "customer-support-foreign-denied.png"))
@@ -1368,6 +1485,10 @@ def run() -> None:
             f"FAIL: isolated customer support QA; stage={stage}; exception={result['exception_type']}; "
             f"browser_substage={result['browser_substage']}; "
             f"contact_status={contact_status}; "
+            f"support_denial_status={result['support_denial_status'] or 'unavailable'}; "
+            f"support_denial_form_count={result['support_denial_form_count']}; "
+            f"support_denial_redirected={str(result['support_denial_redirected']).lower()}; "
+            f"support_denial_same_origin={str(result['support_denial_same_origin']).lower()}; "
             f"same_origin={str(result['contact_same_origin']).lower()}; "
             f"native_route={str(result['contact_native_route']).lower()}; "
             f"form_count={result['contact_form_count']}; "

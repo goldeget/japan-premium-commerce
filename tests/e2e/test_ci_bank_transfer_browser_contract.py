@@ -1,4 +1,5 @@
 from pathlib import Path
+import ast
 import re
 import unittest
 
@@ -235,6 +236,93 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         notice_readback = issue_flow.index("notice_text, notice_class = read_visible_notice_snapshot(admin)")
         persistence_readback = issue_flow.index('verify_unpaid_native_order(ctx, order, "issued")')
         self.assertLess(notice_readback, persistence_readback)
+
+    def test_issue_notice_failure_diagnostics_are_bounded_and_keep_both_assertions(self) -> None:
+        helper = self.browser.split("def issue_notice_failure_substage", 1)[1].split(
+            "def reject_issue_with_invalid_csrf", 1
+        )[0]
+        self.require('"unpaid_present" if "미결제" in notice_text else "unpaid_missing"', helper)
+        self.require('"alert-success" in classes', helper)
+        self.require('"alert-danger" in classes', helper)
+        self.require('class_state = "missing"', helper)
+        self.require('class_state = "other"', helper)
+        self.require('return f"instruction_issue_notice_{unpaid_state}_{class_state}"', helper)
+        for forbidden in ("print(notice_text", "print(notice_class", "notice_text}", "notice_class}"):
+            self.assertNotIn(forbidden, helper)
+
+        issue_flow = self.browser.split('stage = result["stage"] = "instruction_issue"', 1)[1].split(
+            'stage = result["stage"] = "instruction_readback"', 1
+        )[0]
+        self.require('set_substage(issue_notice_failure_substage(notice_text, notice_class))', issue_flow)
+        self.require('"미결제" not in notice_text', issue_flow)
+        self.require('"alert-success" not in notice_class.split()', issue_flow)
+        self.require('diagnose_unpaid_issue_persistence(ctx, order)', issue_flow)
+        self.require('verify_unpaid_native_order(ctx, order, "issued")', issue_flow)
+
+        tree = ast.parse(self.browser)
+        function = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "issue_notice_failure_substage"
+        )
+        substage_assignment = next(
+            node for node in tree.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "SAFE_SUBSTAGES" for target in node.targets)
+        )
+        safe_substages = ast.literal_eval(substage_assignment.value)
+        namespace: dict[str, object] = {}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), str(BROWSER), "exec"), namespace)
+        classify = namespace["issue_notice_failure_substage"]
+        observed = {
+            classify("주문은 미결제 상태입니다.", "alert alert-success"),
+            classify("안내를 유지했습니다.", "alert alert-success"),
+            classify("주문은 미결제 상태입니다.", "alert alert-danger"),
+            classify("안내를 유지했습니다.", ""),
+            classify("안내를 유지했습니다.", "alert alert-info"),
+        }
+        self.assertEqual(observed, {
+            "instruction_issue_notice_unpaid_present_success",
+            "instruction_issue_notice_unpaid_missing_success",
+            "instruction_issue_notice_unpaid_present_danger",
+            "instruction_issue_notice_unpaid_missing_missing",
+            "instruction_issue_notice_unpaid_missing_other",
+        })
+        self.assertTrue(observed <= safe_substages)
+
+    def test_failed_issue_notice_reads_only_scoped_unpaid_persistence_flags(self) -> None:
+        diagnostic = self.browser.split("def diagnose_unpaid_issue_persistence", 1)[1].split(
+            "def limited_transfer_route", 1
+        )[0]
+        for marker in (
+            '"KURANEA_CI_TRANSFER_EXPECTATION": "diagnostic"',
+            '"db_readback_available", "native_order_unpaid", "instruction_persisted", "instruction_matches_order"',
+            '"receipt_absent", "native_payment_absent"',
+            'payload["db_readback_available"] is not True',
+            '"unpaid_instruction_persisted" if payload["instruction_persisted"] else "unpaid_instruction_absent"',
+        ):
+            self.require(marker, diagnostic)
+        self.assertNotIn("print(", diagnostic)
+        self.assertNotIn("write_text(", diagnostic)
+
+        php_branch = self.unpaid_readback.split("if ($expectation === 'diagnostic') {", 1)[1].split(
+            "\n\n$instruction = (new BankTransferInstructionRepository())", 1
+        )[0]
+        for marker in (
+            "executeS(", "'db_readback_available' => $readbackAvailable", "'native_order_unpaid' => true",
+            "'instruction_persisted' => is_array($instructionRows) && count($instructionRows) > 0",
+            "'instruction_matches_order' => $instructionMatchesOrder && $instructionCount <= 1",
+            "'receipt_absent' => is_array($receiptRows) && count($receiptRows) === 0",
+            "'native_payment_absent' => $readbackAvailable && (int) $paymentRows[0]['payment_count'] === 0",
+            "exit;",
+        ):
+            self.require(marker, php_branch)
+        self.assertNotRegex(php_branch, r"\$database->execute\s*\(")
+        self.assertNotRegex(php_branch, r"\b(?:INSERT|UPDATE|DELETE)\b")
+        for forbidden in ("'order_id' =>", "'order_reference' =>", "'total_paid' =>", "'bank_account_id' =>"):
+            self.assertNotIn(forbidden, php_branch)
+        self.require("if ($expectation !== 'diagnostic')", self.unpaid_readback)
+        self.require('"issue_persistence_diagnostic"', self.browser)
+        self.require('SAFE_ISSUE_PERSISTENCE_DIAGNOSTICS', self.browser)
 
     def test_artifact_coverage_requires_the_dedicated_bank_order_readback(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")

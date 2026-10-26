@@ -52,14 +52,23 @@ if (!$enId || !$koId) {
     throw new RuntimeException('English and Korean language packs must both be installed.');
 }
 
-// The isolated KO capture has a native reset link in HTML but none in Text.
-// Install this text override after language generation and retain the generated
-// HTML template; the native reset-mail verifier still validates both parts.
+// Mail::getTemplateBasePath checks the active theme, its parent, then /mails,
+// and a candidate can win when either MIME template exists. Make every existing
+// candidate a complete pair; add root HTML only to text-only candidates and
+// preserve every HTML template that is already present.
 $koPasswordQueryHtml = '/var/www/html/mails/ko/password_query.html';
 $koPasswordQueryTextSource = '/opt/kuranea/mails/ko/password_query.txt';
-$koPasswordQueryTextTarget = '/var/www/html/mails/ko/password_query.txt';
+$koPasswordQueryTemplateDirectories = [
+    '/var/www/html/themes/kuranea/mails/ko',
+    '/var/www/html/themes/hummingbird/mails/ko',
+    '/var/www/html/mails/ko',
+];
 if (!is_file($koPasswordQueryHtml) || !is_file($koPasswordQueryTextSource)) {
     throw new RuntimeException('Native Korean password reset mail templates are incomplete.');
+}
+$koPasswordQueryHtmlContents = file_get_contents($koPasswordQueryHtml);
+if (!is_string($koPasswordQueryHtmlContents) || $koPasswordQueryHtmlContents === '') {
+    throw new RuntimeException('The generated Korean password reset HTML template is empty or unreadable.');
 }
 $koPasswordQueryText = file_get_contents($koPasswordQueryTextSource);
 if (!is_string($koPasswordQueryText)
@@ -68,11 +77,31 @@ if (!is_string($koPasswordQueryText)
 ) {
     throw new RuntimeException('Bundled Korean password reset text template is invalid.');
 }
-if (false === file_put_contents($koPasswordQueryTextTarget, $koPasswordQueryText, LOCK_EX)
-    || file_get_contents($koPasswordQueryTextTarget) !== $koPasswordQueryText
-    || !is_file($koPasswordQueryHtml)
-) {
-    throw new RuntimeException('Could not install the Korean password reset text template.');
+$koPasswordQueryInstalledTargets = 0;
+foreach ($koPasswordQueryTemplateDirectories as $directory) {
+    $htmlPath = $directory . '/password_query.html';
+    $textPath = $directory . '/password_query.txt';
+    if (!is_file($htmlPath) && !is_file($textPath)) {
+        continue;
+    }
+
+    if (!is_file($htmlPath)
+        && (false === copy($koPasswordQueryHtml, $htmlPath)
+            || file_get_contents($htmlPath) !== $koPasswordQueryHtmlContents)
+    ) {
+        throw new RuntimeException('Could not pair the Korean password reset text template with native HTML.');
+    }
+
+    if (false === file_put_contents($textPath, $koPasswordQueryText, LOCK_EX)
+        || file_get_contents($textPath) !== $koPasswordQueryText
+        || !is_file($htmlPath)
+    ) {
+        throw new RuntimeException('Could not install the Korean password reset text template.');
+    }
+    ++$koPasswordQueryInstalledTargets;
+}
+if ($koPasswordQueryInstalledTargets < 1 || !is_file($koPasswordQueryHtml)) {
+    throw new RuntimeException('No generated Korean password reset HTML candidate was preserved.');
 }
 
 Configuration::updateGlobalValue('PS_SHOP_DEFAULT', 1);
