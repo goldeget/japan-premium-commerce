@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import textwrap
 import unittest
@@ -24,9 +25,66 @@ STOREFRONT_FLOW = ROOT / "tests" / "e2e" / "verify_storefront_browser.py"
 STOREFRONT_PRODUCT_CONTRACT = ROOT / "tests" / "e2e" / "storefront_product_contract.py"
 GATE = ROOT / "modules" / "kuraneabusinessprofile" / "src" / "Customer" / "CommerceGate.php"
 SHOP_MODULE = ROOT / "modules" / "kuraneabusinessprofile" / "kuraneabusinessprofile.php"
+ORDER_VERIFIER = ROOT / "tests" / "postcode" / "verify_ci_browser_checkout_order.php"
 
 
 class IsolatedCheckoutContractTests(unittest.TestCase):
+    def verified_order_output_function(self) -> re.Match[str]:
+        verifier = ORDER_VERIFIER.read_text(encoding="utf-8")
+        output_function = re.search(
+            r"(?ms)^function emit_verified_order_result\([^)]*\): void\s*\{.*?^\}",
+            verifier,
+        )
+        self.assertIsNotNone(
+            output_function,
+            "the verified-order output boundary must be independently testable",
+        )
+        return output_function
+
+    def test_verified_order_success_and_failure_diagnostics_stay_off_machine_stdout(self) -> None:
+        verifier = ORDER_VERIFIER.read_text(encoding="utf-8")
+        output_function = self.verified_order_output_function().group(0)
+        self.assertIn("emit_verified_order_result($verifiedOrder,", verifier)
+        self.assertIn("echo json_encode($verifiedOrder,", output_function)
+        self.assertIn("fwrite(STDERR, $successMessage", output_function)
+        self.assertNotIn("fwrite(STDOUT", output_function)
+        self.assertIn("fwrite(STDERR, '::error title=ORDENOWA browser order::'", verifier)
+        self.assertNotIn("fwrite(STDOUT, '::error title=ORDENOWA browser order::'", verifier)
+
+    def test_verified_order_stdout_parses_as_one_json_object_and_logs_pass_on_stderr(self) -> None:
+        output_function = self.verified_order_output_function()
+
+        php = shutil.which("php")
+        if php is None:
+            self.skipTest("PHP CLI is unavailable for the captured-output contract")
+
+        payload = {
+            "order_id": 42,
+            "reference": "ABCD1234",
+            "currency": "JPY",
+            "total_paid_real": 0,
+        }
+        php_script = output_function.group(0) + "\n" + "\n".join((
+            "$verifiedOrder = [",
+            "    'order_id' => 42,",
+            "    'reference' => 'ABCD1234',",
+            "    'currency' => 'JPY',",
+            "    'total_paid_real' => 0,",
+            "];",
+            "emit_verified_order_result($verifiedOrder, 'PASS: browser order persisted.');",
+        ))
+        completed = subprocess.run(
+            [php, "-r", php_script],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout), payload)
+        self.assertTrue(completed.stderr.startswith("PASS: browser order"))
+        self.assertNotIn("PASS:", completed.stdout)
+
     def test_checkout_bypass_is_limited_to_the_matching_disposable_github_project(self) -> None:
         gate = GATE.read_text(encoding="utf-8")
         module = SHOP_MODULE.read_text(encoding="utf-8")

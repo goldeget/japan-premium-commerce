@@ -25,6 +25,12 @@ if (getenv('CI') !== 'true'
 }
 
 $stage = 'PrestaShop bootstrap';
+function emit_verified_order_result(array $verifiedOrder, string $successMessage): void
+{
+    echo json_encode($verifiedOrder, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL;
+    fwrite(STDERR, $successMessage . PHP_EOL);
+}
+
 set_exception_handler(static function (Throwable $exception) use (&$stage): void {
     $message = preg_replace('/[\r\n]+/', ' ', $exception->getMessage()) ?? 'Unknown error';
     $diagnostic = sprintf(
@@ -36,7 +42,7 @@ set_exception_handler(static function (Throwable $exception) use (&$stage): void
     fwrite(STDERR, $diagnostic . PHP_EOL);
     if (getenv('GITHUB_ACTIONS') === 'true') {
         $annotation = str_replace(['%', "\r", "\n"], ['%25', '%0D', '%0A'], $diagnostic);
-        fwrite(STDOUT, '::error title=ORDENOWA browser order::' . $annotation . PHP_EOL);
+        fwrite(STDERR, '::error title=ORDENOWA browser order::' . $annotation . PHP_EOL);
     }
     exit(1);
 });
@@ -127,7 +133,7 @@ if (!Validate::isLoadedObject($address)
     throw new RuntimeException('The browser order must retain its selected Tokyo postcode and manually entered building address.');
 }
 
-echo json_encode([
+$verifiedOrder = [
     'order_id' => (int) $order->id,
     'reference' => (string) $order->reference,
     'email' => (string) $customer->email,
@@ -143,9 +149,9 @@ echo json_encode([
     'state_iso_code' => 'JP-13',
     'address1' => (string) $address->address1,
     'address2' => (string) $address->address2,
-], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL;
-fwrite(STDOUT, sprintf(
-    'PASS: browser %s order #%d/%s contains one searched product and is unpaid JPY ps_checkpayment with Tokyo address 100-0004.\n',
+];
+emit_verified_order_result($verifiedOrder, sprintf(
+    'PASS: browser %s order #%d/%s contains one searched product and is unpaid JPY ps_checkpayment with Tokyo address 100-0004.',
     $viewport,
     (int) $order->id,
     (string) $order->reference
