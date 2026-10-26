@@ -326,6 +326,70 @@ class CartControlsBrowserContractTests(unittest.TestCase):
         self.assertEqual(driver.checks, 2)
         self.assertTrue(element.clicked)
 
+    def run_add_button_wait(self, batches):
+        """Execute the real readiness block with deterministic DOM replacements."""
+        tree = ast.parse(self.source)
+        add = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                   and node.name == "add_product_from_detail")
+        start = next(i for i, node in enumerate(add.body)
+                     if ast.unparse(node) == "mark_substage('add_button_wait')")
+        end = next(i for i, node in enumerate(add.body)
+                   if ast.unparse(node) == "mark_substage('add_button_click')")
+        test = self
+
+        class Browser:
+            def find_elements(self, by, selector):
+                test.assertEqual((by, selector), (
+                    "css selector", 'button[data-ps-ref="add-to-cart"]',
+                ))
+                return next(batches)
+
+        class PollingWait:
+            def __init__(self, browser, timeout):
+                test.assertEqual(timeout, 20)
+                self.browser = browser
+
+            def until(self, predicate, message=""):
+                for _ in range(3):
+                    result = predicate(self.browser)
+                    if result:
+                        return result
+                raise TimeoutError(message)
+
+        namespace = {
+            "driver": Browser(),
+            "By": SimpleNamespace(CSS_SELECTOR="css selector"),
+            "WebDriverWait": PollingWait,
+            "StaleElementReferenceException": StaleButtonError,
+            "mark_substage": lambda _name: None,
+        }
+        module = ast.Module(body=add.body[start:end], type_ignores=[])
+        exec(compile(ast.fix_missing_locations(module), str(CART_CONTROLS_E2E), "exec"), namespace)
+        return namespace["button"]
+
+    def test_product_add_reacquires_button_after_stale_readiness_probe(self) -> None:
+        for stale_probe in ("is_displayed", "is_enabled"):
+            with self.subTest(stale_probe=stale_probe):
+                class ReplacedButton:
+                    def is_displayed(self):
+                        if stale_probe == "is_displayed":
+                            raise StaleButtonError("product refreshed")
+                        return True
+
+                    def is_enabled(self):
+                        raise StaleButtonError("product refreshed")
+
+                fresh = SimpleNamespace(is_displayed=lambda: True, is_enabled=lambda: True)
+                self.assertIs(
+                    self.run_add_button_wait(iter([[ReplacedButton()], [fresh]])), fresh,
+                )
+
+    def test_product_add_still_times_out_when_button_never_becomes_ready(self) -> None:
+        hidden = SimpleNamespace(is_displayed=lambda: False, is_enabled=lambda: True)
+        disabled = SimpleNamespace(is_displayed=lambda: True, is_enabled=lambda: False)
+        with self.assertRaisesRegex(TimeoutError, "no active add-to-cart button"):
+            self.run_add_button_wait(iter([[], [hidden], [disabled]]))
+
     def test_continue_shopping_waits_until_modal_show_transition_finishes(self) -> None:
         """Bootstrap ignores dismiss clicks between visible and shown.bs.modal."""
         tree = ast.parse(self.source)
@@ -396,6 +460,10 @@ class CartControlsBrowserContractTests(unittest.TestCase):
         exec(compile(ast.fix_missing_locations(module), str(CART_CONTROLS_E2E), "exec"), namespace)
         self.assertFalse(modal.displayed, "continue shopping must close the confirmed modal")
         self.assertIn("blockcart_close_wait", stages)
+
+
+class StaleButtonError(Exception):
+    """Stand-in for Selenium's detached element error without a browser install."""
 
 
 if __name__ == "__main__":

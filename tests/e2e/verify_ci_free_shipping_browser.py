@@ -45,6 +45,12 @@ PRODUCT_TAX_RULE_GROUP_ID = int(os.environ["CI_TEST_PRODUCT_TAX_GROUP"])
 CONFIG_PATH = QA_DIR / "shipping-free-carrier.json"
 ORDER_PATH = QA_DIR / "shipping-free-order.json"
 EXPECTED_SHOP_PORT = 18080
+CARRIER_READBACK_SUBSTAGES = {
+    'native_edit_navigation', 'name_field_visible', 'shipping_tab_visible',
+    'shipping_tab_active', 'free_toggle_readback', 'zone_control_readback',
+}
+
+
 TRACKING_BROWSER_CONTEXTS = {'admin', 'customer'}
 ADMIN_ORDER_DETAIL_ROUTE_CLASSES = {'modern_order_detail', 'legacy_order_detail'}
 ADMIN_DOCUMENT_WAIT_ROUTE_CLASSES = ADMIN_ORDER_DETAIL_ROUTE_CLASSES | {
@@ -253,11 +259,14 @@ def _select_japan_zone(driver, zone_id: int) -> str:
     return zone_name
 
 
-def _open_shipping_settings_tab(driver) -> None:
+def _open_shipping_settings_tab(driver, stage_callback=None) -> None:
+    mark_stage = stage_callback or (lambda _stage: None)
+    mark_stage("shipping_tab_visible")
     shipping_tab = _wait_visible(
         driver,
         'a[href="#carrier_shipping_settings-tab"]',
     )
+    mark_stage("shipping_tab_active")
     checkout.click_at_center(driver, shipping_tab)
 
 
@@ -324,7 +333,11 @@ def _fill_free_carrier_form(
             fields[0].send_keys(value)
 
 
-def _assert_free_carrier_form(driver, carrier: dict[str, object]) -> dict[str, object]:
+def _assert_free_carrier_form(
+    driver, carrier: dict[str, object], stage_callback=None,
+) -> dict[str, object]:
+    mark_stage = stage_callback or (lambda _stage: None)
+    mark_stage("name_field_visible")
     name = _wait_visible(driver, 'input[name="carrier[general_settings][name]"]')
     if name.get_attribute("value") != carrier["name"]:
         raise AssertionError("the saved free carrier name did not persist")
@@ -334,10 +347,12 @@ def _assert_free_carrier_form(driver, carrier: dict[str, object]) -> dict[str, o
 
     # PrestaShop opens carrier edit pages on the general tab. Activate shipping
     # settings before waiting for its zone selector or reading the free switch.
-    _open_shipping_settings_tab(driver)
+    _open_shipping_settings_tab(driver, stage_callback)
+    mark_stage("free_toggle_readback")
     if not _switch_is_selected(driver, "carrier[shipping_settings][is_free]", True):
         raise AssertionError("the saved carrier is not marked as free shipping in AdminCarriers")
 
+    mark_stage("zone_control_readback")
     zone_select = _wait_visible(driver, "#carrier_shipping_settings_zones")
     selected_zone_ids = [
         item.get_attribute("value")
@@ -401,9 +416,12 @@ def _carrier_edit_url(carriers_list_url: str, carrier_id: int) -> str:
     return carrier_action_url(carriers_list_url, "edit", carrier_id)
 
 
-def _visit_carrier_form(driver, url: str) -> None:
+def _visit_carrier_form(driver, url: str, stage_callback=None) -> None:
     """Wait for the carrier form itself instead of unrelated page-load readiness."""
+    mark_stage = stage_callback or (lambda _stage: None)
+    mark_stage("native_edit_navigation")
     driver.get(url)
+    mark_stage("name_field_visible")
     _wait_visible(driver, 'input[name="carrier[general_settings][name]"]')
 
 
@@ -494,8 +512,9 @@ def configure_free_carrier() -> None:
 
         # A fresh page load verifies that the browser form rereads the saved row.
         stage = "verify_admin_saved_carrier"
-        _visit_carrier_form(driver, _carrier_edit_url(carriers_list_url, carrier_id))
-        observed = _assert_free_carrier_form(driver, {"name": final_name})
+        readback_stage = stage_callback("verify_admin_saved_carrier")
+        _visit_carrier_form(driver, _carrier_edit_url(carriers_list_url, carrier_id), readback_stage)
+        observed = _assert_free_carrier_form(driver, {"name": final_name}, readback_stage)
         observed.update({"id": carrier_id, "draft_name": draft_name})
         CONFIG_PATH.write_text(
             json.dumps(observed, ensure_ascii=False, indent=2) + "\n",
@@ -511,7 +530,13 @@ def configure_free_carrier() -> None:
             driver.save_screenshot(str(QA_DIR / "shipping-free-carrier-configure-failure.png"))
         except Exception:
             pass
-        _emit_failure(stage, error, driver)
+        _emit_failure(
+            stage, error, driver,
+            carrier_diagnostics=(
+                {"expected_id": carrier_id, "expected_name": final_name}
+                if stage.startswith("verify_admin_saved_carrier.") else None
+            ),
+        )
         raise SystemExit(f"isolated free carrier setup failed at {stage}") from None
     finally:
         driver.quit()
@@ -2712,12 +2737,91 @@ def run_free_carrier_admin_order_view() -> None:
         driver.quit()
 
 
+def _carrier_readback_failure_facts(driver, expected: dict[str, object]) -> dict[str, object]:
+    """Read only fixed route, readiness, and form indicators; never serialize page values."""
+    facts: dict[str, object] = {
+        "route_class": "unknown", "ready_state": "unknown", "tab": "unknown",
+        "same_positive_carrier_id": False,
+    }
+    try:
+        current = urlparse(driver.current_url)
+        admin = urlparse(ADMIN_LOGIN)
+        admin_path = admin.path.rstrip("/")
+        if (current.scheme, current.netloc) != (admin.scheme, admin.netloc):
+            facts["route_class"] = "origin_mismatch"
+        elif not current.path.startswith(admin_path + "/"):
+            facts["route_class"] = "outside_admin"
+        elif carrier_id_from_edit_url(driver.current_url, admin_path) is not None:
+            facts["route_class"] = "carrier_edit"
+            observed_id = carrier_id_from_edit_url(driver.current_url, admin_path)
+            expected_id = expected.get("expected_id")
+            facts["same_positive_carrier_id"] = (
+                type(expected_id) is int and expected_id > 0 and observed_id == expected_id
+            )
+        else:
+            facts["route_class"] = "other_admin_route"
+    except Exception:
+        pass
+    try:
+        ready_state = driver.execute_script("return document.readyState")
+        if ready_state in ("loading", "interactive", "complete"):
+            facts["ready_state"] = ready_state
+    except Exception:
+        pass
+    for key, selector in (
+        ("name_field", 'input[name="carrier[general_settings][name]"]'),
+        ("shipping_tab", 'a[href="#carrier_shipping_settings-tab"]'),
+        ("free_toggle", 'input[name="carrier[shipping_settings][is_free]"]'),
+        ("zone_control", "#carrier_shipping_settings_zones"),
+    ):
+        state = {"read": False, "exists": False, "visible": False, "multiple": False}
+        try:
+            elements = driver.find_elements(By.CSS_SELECTOR, selector)
+            state.update(read=True, exists=bool(elements), multiple=len(elements) > 1)
+            state["visible"] = any(element.is_displayed() for element in elements)
+        except Exception:
+            state["read"] = False
+        facts[key] = state
+    try:
+        active_tabs = [
+            name for name in ("general", "shipping")
+            if driver.find_elements(By.CSS_SELECTOR, f"#carrier_{name}_settings-tab.active")
+        ]
+        facts["tab"] = active_tabs[0] if len(active_tabs) == 1 else "other"
+    except Exception:
+        pass
+    for key in ("name_readback", "active_readback", "free_readback", "japan_zone_readback"):
+        state = {"read": False, "matches_expected": False}
+        try:
+            if key == "name_readback":
+                names = driver.find_elements(By.CSS_SELECTOR, 'input[name="carrier[general_settings][name]"]')
+                matches = bool(names) and names[0].get_attribute("value") == expected.get("expected_name")
+            elif key == "japan_zone_readback":
+                zones = driver.find_elements(By.CSS_SELECTOR, "#carrier_shipping_settings_zones")
+                matches = bool(zones) and [
+                    option.get_attribute("value")
+                    for option in zones[0].find_elements(By.TAG_NAME, "option") if option.is_selected()
+                ] == [str(JAPAN_ZONE_ID)]
+            else:
+                field = (
+                    "carrier[general_settings][active]" if key == "active_readback"
+                    else "carrier[shipping_settings][is_free]"
+                )
+                matches = _switch_is_selected(driver, field, True)
+            state.update(read=True, matches_expected=bool(matches))
+        except Exception:
+            pass
+        facts[key] = state
+    return facts
+
+
 def _emit_failure(
     stage: str,
     error: Exception,
     driver=None,
     checkout_registration_state: dict[str, object] | None = None,
     tracking_diagnostics: dict[str, object] | None = None,
+    carrier_diagnostics: dict[str, object] | None = None,
 ) -> None:
     exception_type = type(error).__name__
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", exception_type):
@@ -2793,6 +2897,19 @@ def _emit_failure(
                     safe_predicate, sort_keys=True, separators=(',', ':')
                 )
         # Tracking-stage diagnostics are enums; avoid free-form exception details.
+        detail_suffix = ""
+    if carrier_diagnostics is not None:
+        substage = stage.removeprefix("verify_admin_saved_carrier.")
+        safe_stage = "verify_admin_saved_carrier." + (
+            substage if substage in CARRIER_READBACK_SUBSTAGES else "unknown"
+        )
+        if exception_type not in {
+            "TimeoutException", "AssertionError", "StaleElementReferenceException", "WebDriverException",
+        }:
+            exception_type = "Exception"
+        route_suffix = "; carrier_state=" + json.dumps(
+            _carrier_readback_failure_facts(driver, carrier_diagnostics), sort_keys=True, separators=(",", ":")
+        )
         detail_suffix = ""
     print(
         f"FAIL: free shipping browser QA at {safe_stage} ({exception_type}){route_suffix}{detail_suffix}{registration_suffix}{tracking_suffix}",

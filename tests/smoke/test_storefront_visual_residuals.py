@@ -35,14 +35,20 @@ class StorefrontVisualResidualTests(unittest.TestCase):
             translations.get("Manage your addresses for billing and delivery to streamline your future orders."),
             "청구 및 배송 주소를 관리하여 다음 주문을 더 간편하게 진행하세요.",
         )
-        self.assertEqual(
-            translations.get("Add a new address to your account."),
-            "계정에 새 주소를 등록할 수 있습니다.",
-        )
 
         browser = (ROOT / "tests" / "e2e" / "verify_pwa_browser.py").read_text(encoding="utf-8")
         self.assertIn("def _assert_customer_account_chrome", browser)
         self.assertIn("_assert_customer_account_chrome(driver, locale, device)", browser)
+
+    def test_korean_address_helper_fits_both_new_and_edit_forms(self) -> None:
+        translations = self._translation_targets(
+            THEME / "translations" / "ko-KR" / "ShopThemeCustomeraccount.ko-KR.xlf"
+        )
+        # Hummingbird shares this source between the new and edit address forms.
+        self.assertEqual(
+            translations.get("Add a new address to your account."),
+            "계정에 사용할 주소 정보를 입력해 주세요.",
+        )
 
     def test_mobile_product_breadcrumb_wraps_the_long_current_item(self) -> None:
         css = (THEME / "assets" / "css" / "custom.css").read_text(encoding="utf-8")

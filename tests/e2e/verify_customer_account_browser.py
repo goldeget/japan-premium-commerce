@@ -3267,7 +3267,7 @@ def emit_customer_address_edit_diagnostics(
 
 
 def assert_korean_customer_address_edit_copy(driver: webdriver.Chrome) -> None:
-    expected_copy = "계정에 새 주소를 등록할 수 있습니다."
+    expected_copy = "계정에 사용할 주소 정보를 입력해 주세요."
     document_language = (driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower()
     if not document_language.startswith("ko"):
         raise AssertionError("the customer address edit page did not preserve the Korean locale")

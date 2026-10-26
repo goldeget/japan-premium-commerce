@@ -16,7 +16,7 @@
       </trans-unit>
       <trans-unit id="customer-account-address-form-description">
         <source>Add a new address to your account.</source>
-        <target state="final">계정에 새 주소를 등록할 수 있습니다.</target>
+        <target state="final">계정에 사용할 주소 정보를 입력해 주세요.</target>
       </trans-unit>
     </body>
   </file>

@@ -505,7 +505,7 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             "def configure_free_carrier(", 1
         )[0]
         self.assertLess(
-            free_carrier_assertion.index("_open_shipping_settings_tab(driver)"),
+            free_carrier_assertion.index("_open_shipping_settings_tab(driver, stage_callback)"),
             free_carrier_assertion.index('"#carrier_shipping_settings_zones"'),
         )
         self.assertNotIn('ADMIN_LOGIN + "/index.php/improve/shipping/carriers/create"', browser)
@@ -538,6 +538,99 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertLess(tab_activation, zone_selection)
         self.assertLess(zone_selection, free_shipping)
         self.assertIn('mark_stage("open_shipping_settings_tab")', form_fill)
+
+    def test_saved_carrier_readback_stages_preserve_native_wait_and_click_order(self) -> None:
+        source = BROWSER.read_text(encoding="utf-8")
+        names = {"_visit_carrier_form", "_assert_free_carrier_form", "_open_shipping_settings_tab"}
+        nodes = [node for node in ast.parse(source).body if isinstance(node, ast.FunctionDef) and node.name in names]
+        events = []
+        option = SimpleNamespace(get_attribute=lambda key: "9", is_selected=lambda: True)
+        name = SimpleNamespace(get_attribute=lambda key: "private-name-sentinel")
+        zones = SimpleNamespace(find_elements=lambda *args: [option])
+        def wait_visible(driver, selector):
+            events.append(("wait", selector))
+            return zones if selector == "#carrier_shipping_settings_zones" else name
+        namespace = {
+            "_wait_visible": wait_visible,
+            "_switch_is_selected": lambda *args: True,
+            "checkout": SimpleNamespace(click_at_center=lambda *args: events.append(("click", "shipping"))),
+            "By": SimpleNamespace(CSS_SELECTOR="css", TAG_NAME="tag"),
+            "JAPAN_ZONE_ID": 9,
+        }
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), str(BROWSER), "exec"), namespace)
+        driver = SimpleNamespace(get=lambda url: events.append(("get", "native")), find_elements=lambda *args: [])
+        callback = lambda stage: events.append(("stage", stage))
+        namespace["_visit_carrier_form"](driver, "private-url-sentinel", callback)
+        observed = namespace["_assert_free_carrier_form"](driver, {"name": "private-name-sentinel"}, callback)
+        self.assertEqual([value for kind, value in events if kind == "stage"], [
+            "native_edit_navigation", "name_field_visible", "name_field_visible",
+            "shipping_tab_visible", "shipping_tab_active", "free_toggle_readback", "zone_control_readback",
+        ])
+        self.assertEqual([kind for kind, value in events if kind != "stage"], ["get", "wait", "wait", "wait", "click", "wait"])
+        self.assertEqual(observed["selected_zone_ids"], ["9"])
+        configure = source.split("def configure_free_carrier(", 1)[1].split("def _read_config(", 1)[0]
+        self.assertIn('readback_stage = stage_callback("verify_admin_saved_carrier")', configure)
+        self.assertIn('shipping-free-carrier-configure-failure.png', configure)
+        self.assertLess(configure.index('shipping-free-carrier-configure-failure.png'), configure.index('_emit_failure('))
+
+    def test_saved_carrier_failure_facts_are_allowlisted_and_redacted(self) -> None:
+        source = ast.parse(BROWSER.read_text(encoding="utf-8"))
+        nodes = [node for node in source.body if (
+            isinstance(node, ast.FunctionDef) and node.name in {"_carrier_readback_failure_facts", "_emit_failure"}
+        ) or (
+            isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "CARRIER_READBACK_SUBSTAGES" for target in node.targets)
+        )]
+        stderr = io.StringIO()
+        private_id = 987654321
+        option = SimpleNamespace(get_attribute=lambda key: "9", is_selected=lambda: True)
+        element = SimpleNamespace(is_displayed=lambda: True, get_attribute=lambda key: "private-name-sentinel", find_elements=lambda *args: [option])
+        def elements(by, selector):
+            if selector.endswith("-tab.active"):
+                return [element] if "shipping" in selector else []
+            return [element]
+        driver = SimpleNamespace(
+            current_url=f"http://localhost:18080/admin-kuranea/improve/shipping/carriers/{private_id}/edit?token=private-query-sentinel",
+            execute_script=lambda script: "complete",
+            find_elements=elements,
+        )
+        namespace = {
+            "json": json, "re": re, "sys": SimpleNamespace(stderr=stderr), "urlparse": urlparse,
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea", "JAPAN_ZONE_ID": 9,
+            "carrier_id_from_edit_url": lambda *args: private_id,
+            "_switch_is_selected": lambda *args: True,
+            "By": SimpleNamespace(CSS_SELECTOR="css", TAG_NAME="tag"),
+        }
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), str(BROWSER), "exec"), namespace)
+        expected = {"expected_id": private_id, "expected_name": "private-name-sentinel"}
+        namespace["_emit_failure"](
+            "verify_admin_saved_carrier.zone_control_readback", AssertionError("private-error-sentinel"),
+            driver, carrier_diagnostics=expected,
+        )
+        output = stderr.getvalue()
+        for secret in (str(private_id), "private-name-sentinel", "private-query-sentinel", "private-error-sentinel", "/admin-kuranea", "token=", "path="):
+            self.assertNotIn(secret, output)
+        facts = json.loads(output.split("; carrier_state=", 1)[1].splitlines()[0])
+        self.assertEqual(facts["route_class"], "carrier_edit")
+        self.assertEqual(facts["ready_state"], "complete")
+        self.assertEqual(facts["tab"], "shipping")
+        self.assertTrue(facts["same_positive_carrier_id"])
+        for key in ("name_readback", "active_readback", "free_readback", "japan_zone_readback"):
+            self.assertEqual(facts[key], {"read": True, "matches_expected": True})
+        self.assertEqual(facts["zone_control"], {"read": True, "exists": True, "visible": True, "multiple": False})
+        stderr.seek(0)
+        stderr.truncate()
+        driver.execute_script = lambda script: "private-ready-sentinel"
+        namespace["_emit_failure"](
+            "verify_admin_saved_carrier.private-stage-sentinel", type("PrivateErrorSentinel", (Exception,), {})("private-error-sentinel"),
+            driver, carrier_diagnostics={"expected_id": -1, "expected_name": "other"},
+        )
+        output = stderr.getvalue()
+        self.assertIn("verify_admin_saved_carrier.unknown (Exception)", output)
+        self.assertNotIn("sentinel", output)
+        facts = json.loads(output.split("; carrier_state=", 1)[1].splitlines()[0])
+        self.assertEqual(facts["ready_state"], "unknown")
+        self.assertFalse(facts["same_positive_carrier_id"])
+        self.assertFalse(facts["name_readback"]["matches_expected"])
 
     def test_carrier_save_wait_ignores_success_role_alert_until_edit_route_is_ready(self) -> None:
         browser = BROWSER.read_text(encoding="utf-8")

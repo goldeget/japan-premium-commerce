@@ -268,7 +268,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         )[1].split("def save_customer_address_edit", 1)[0]
         self.assertIn('get_attribute("lang")', copy_assertion)
         self.assertIn('document_language.startswith("ko")', copy_assertion)
-        self.assertIn("계정에 새 주소를 등록할 수 있습니다.", copy_assertion)
+        self.assertIn("계정에 사용할 주소 정보를 입력해 주세요.", copy_assertion)
         address_submit = self.blocks["customer_address_edit_submit"]
         self.assertIn("save_customer_address_edit", address_submit)
         self.assertIn("edited_address_line", address_submit)

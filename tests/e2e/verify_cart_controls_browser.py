@@ -388,17 +388,22 @@ def add_product_from_detail(
             str(DEST / f"cart-controls-{label}-{attempt}-variant-selected.png")
         )
     mark_substage("add_button_wait")
+
+    def active_add_button(browser):
+        for item in browser.find_elements(
+            By.CSS_SELECTOR, 'button[data-ps-ref="add-to-cart"]'
+        ):
+            try:
+                if item.is_displayed() and item.is_enabled():
+                    return item
+            except StaleElementReferenceException:
+                # Variant refresh can replace the button during this probe.
+                # Reacquire the current DOM elements on the next wait poll.
+                return False
+        return False
+
     button = WebDriverWait(driver, 20).until(
-        lambda browser: next(
-            (
-                item
-                for item in browser.find_elements(
-                    By.CSS_SELECTOR, 'button[data-ps-ref="add-to-cart"]'
-                )
-                if item.is_displayed() and item.is_enabled()
-            ),
-            False,
-        ),
+        active_add_button,
         message="the isolated CI test product has no active add-to-cart button",
     )
     mark_substage("add_button_click")
