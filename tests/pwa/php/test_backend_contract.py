@@ -15,6 +15,13 @@ class BackendContract(unittest.TestCase):
         self.assertTrue(file.is_file(), f'missing backend contract: {path}')
         return file.read_text()
 
+    def test_php_behavior_runner_uses_a_legal_optional_notice_default(self):
+        runner = (ROOT / 'tests/pwa/php/run.php').read_text(encoding='utf-8')
+        call = runner.split('$call=fn(', 1)[1].split('=> $api->handle', 1)[0]
+        self.assertIn('$currentNotice=null', call)
+        self.assertIn('$currentNotice ?? $notice', runner)
+        self.assertNotIn('$currentNotice=$notice', call)
+
     def test_crypto_has_authenticated_owner_binding(self):
         source = self.source('src/Infrastructure/SubscriptionCipher.php')
         for value in ['aes-256-gcm', 'random_bytes(12)', 'hash_hkdf', 'hash_hmac', 'ORDENOWA_PUSH_STORAGE_KEY', 'hash_equals']:

@@ -33,6 +33,15 @@ class PushWorkflowContractTests(unittest.TestCase):
         self.assertIn("require __DIR__ . '/order_history_producer.php';", (ROOT / 'tests/pwa/php/run.php').read_text())
         self.assertIn("require __DIR__ . '/support_message_producer.php';", (ROOT / 'tests/pwa/php/run.php').read_text())
 
+    def test_ci_lints_copied_php_behavior_fixtures_before_running_them(self):
+        workflow = (ROOT / '.github/workflows/fresh-install.yml').read_text()
+        step = workflow.split('id: pwa_push_qa', 1)[1].split('      - name:', 1)[0]
+        self.assertIn('find /tmp/ordenowa-push-contracts/tests/pwa/php', step)
+        lint = step.index('find /tmp/ordenowa-push-contracts/tests/pwa/php')
+        execute = step.index('php /tmp/ordenowa-push-contracts/tests/pwa/php/run.php')
+        self.assertLess(lint, execute)
+        self.assertIn('xargs -0 -n 1 php -l', step[lint:execute])
+
     def test_ci_executes_isolated_mariadb_outbox_fixture(self):
         workflow = (ROOT / '.github/workflows/fresh-install.yml').read_text()
         step = workflow.split('id: pwa_push_qa', 1)[1].split('      - name:', 1)[0]

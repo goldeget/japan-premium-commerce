@@ -93,7 +93,7 @@ $store = new MemoryStore();
 $api = new SubscriptionApi($store, $cipher);
 $notice = 'Synthetic copy';
 $body=['action'=>'subscribe','token'=>'purpose','consent'=>true,'locale'=>'en','notice_version'=>ConsentNoticeVersion::forNotice($notice, 'en'),'subscription'=>$subscription];
-$call=fn($action,$payload,$shop=1,$customer=10,$ready=true,$method='POST',$origin='https://shop.example',$authenticated=true,$currentNotice=$notice,$trustedLocale='en') => $api->handle($method,$action,$payload,$authenticated,$shop,$customer,$origin,'https://shop.example/','purpose',$ready,$currentNotice,$trustedLocale);
+$call=fn($action,$payload,$shop=1,$customer=10,$ready=true,$method='POST',$origin='https://shop.example',$authenticated=true,$currentNotice=null,$trustedLocale='en') => $api->handle($method,$action,$payload,$authenticated,$shop,$customer,$origin,'https://shop.example/','purpose',$ready,$currentNotice ?? $notice,$trustedLocale);
 check($call('subscribe',$body)[0]===200,'subscribe');
 check($call('subscribe',$body)[0]===200 && count($store->rows)===1,'idempotent subscribe');
 check($store->rows['1:'.$digest][3]==='en' && $store->rows['1:'.$digest][4]===$body['notice_version'] && $store->rows['1:'.$digest][5]!==null,'explicit consent evidence stored');

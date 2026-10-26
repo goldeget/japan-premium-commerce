@@ -1739,6 +1739,8 @@ jobs:
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             sh -c 'cat > /tmp/ordenowa-push-contracts/tests/pwa/php/support_message_producer.php' < tests/pwa/php/support_message_producer.php
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            bash -o pipefail -ec 'find /tmp/ordenowa-push-contracts/tests/pwa/php -type f -name "*.php" -print0 | xargs -0 -n 1 php -l'
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             php /tmp/ordenowa-push-contracts/tests/pwa/php/run.php
           push_override_attempted=0
           restore_push_defaults() {
