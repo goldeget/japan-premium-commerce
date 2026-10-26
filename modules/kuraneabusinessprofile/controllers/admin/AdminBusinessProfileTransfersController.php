@@ -247,7 +247,7 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
             . ' INNER JOIN `' . _DB_PREFIX_ . 'currency` c ON c.`id_currency` = o.`id_currency`'
             . ' WHERE o.`id_shop` = ' . (int) $shopId
             . ' AND o.`module` = \'ps_checkpayment\''
-            . ' AND os.`paid` = 0 AND o.`total_paid_real` <= 0 AND c.`iso_code` = \'JPY\''
+            . ' AND os.`paid` = 0 AND o.`total_paid_real` <= 0 AND o.`total_paid_tax_incl` > 0 AND c.`iso_code` = \'JPY\''
             . ' AND o.`current_state` != ' . (int) Configuration::get('PS_OS_CANCELED')
             . ' ORDER BY o.`id_order` DESC LIMIT 50'
         );

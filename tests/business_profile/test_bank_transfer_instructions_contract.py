@@ -70,6 +70,7 @@ class BankTransferInstructionsContractTests(unittest.TestCase):
         order_listing = controller.split("private function unpaidJpyOrders", 1)[1].split("private function renderOrders", 1)[0]
         self.assertIn("o.`module`", order_listing)
         self.assertIn("ps_checkpayment", order_listing)
+        self.assertIn("o.`total_paid_tax_incl` > 0", order_listing)
         self.assertNotIn("PS_OS_PAYMENT", controller)
 
     def test_instruction_binding_is_immutable_order_keyed_and_separate_from_receipts(self) -> None:
