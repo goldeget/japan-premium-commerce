@@ -26,7 +26,7 @@ assertCatalogTrue(str_contains($moduleEntry, 'removeTab') && str_contains($modul
 assertCatalogTrue(str_contains($controller, 'ProductApprovalService') && str_contains($controller, '->pending()'), 'The admin controller should use the persistent queue and approval service.');
 assertCatalogTrue(
     str_contains($controller, 'return $this->viewAccess();')
-        && str_contains($controller, "return $this->canView() && $this->access('edit') && $this->access('add');")
+        && str_contains($controller, 'return $this->canView() && $this->access(\'edit\') && $this->access(\'add\');')
         && str_contains($controller, 'context->employee->id'),
     'Viewing and approval should use PrestaShop Back Office access APIs and an authenticated employee identity.'
 );

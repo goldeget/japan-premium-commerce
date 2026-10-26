@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import struct
 import sys
 import tempfile
@@ -80,6 +81,7 @@ def article(driver, source_url):
 def submit_batch(driver, review_url, urls, state, prefix='batch'):
     state['submit_attempted'] = False
     state['submit_returned'] = False
+    state['submitted_url_count'] = 0
     state['stage'] = f'{prefix}_review_navigation'
     driver.get(review_url)
     state['last_completed_stage'] = state['stage']
@@ -94,6 +96,7 @@ def submit_batch(driver, review_url, urls, state, prefix='batch'):
     state['submit_attempted'] = True
     submit_button.click()
     state['submit_returned'] = True
+    state['submitted_url_count'] = min(len(urls), 10)
     state['last_completed_stage'] = state['stage']
     state['stage'] = f'{prefix}_completion_wait'
     WebDriverWait(driver, 60).until(lambda d: d.find_elements(
@@ -140,10 +143,18 @@ def safe_catalog_import_browser_state(driver, state):
         'login_form_visible': False,
         'product_url_field_visible': False,
         'submit_control_visible': False,
+        'batch_progress_container_visible': False,
         'progress_visible': False,
         'progress_value': None,
         'progress_max': None,
         'row_count': 0,
+        'token_rejected_notice_visible': False,
+        'mutation_access_denied_notice_visible': False,
+        'empty_url_notice_visible': False,
+        'batch_save_failure_notice_visible': False,
+        'batch_created_notice_visible': False,
+        'visible_alert_count': 0,
+        'document_response_status': None,
         'read_only_notice_visible': False,
         'access_denied_notice_visible': False,
         'queue_unavailable_notice_visible': False,
@@ -169,16 +180,37 @@ def safe_catalog_import_browser_state(driver, state):
                     .map((element) => element.innerText.trim());
                 const progress = document.querySelector('#catalog-import-progress progress');
                 const rows = document.querySelectorAll('#catalog-import-progress tbody tr');
-                const numberOrNull = (value) => /^\\d{1,6}$/.test(value || '') ? Number(value) : null;
+                const navigation = performance.getEntriesByType('navigation')[0];
+                const responseStatus = navigation && Number.isInteger(navigation.responseStatus)
+                    && navigation.responseStatus >= 100 && navigation.responseStatus <= 599
+                    ? navigation.responseStatus : null;
+                const recognizedAlert = (text) => text === '관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.'
+                    || text === '상품 수집·검수·등록 권한이 없습니다.'
+                    || text === '상품 URL을 한 줄에 하나씩 입력해 주세요.'
+                    || text === '상품 URL 일괄 등록을 저장하지 못했습니다. URL과 저장 공간을 확인해 주세요.'
+                    || text === '상품 수집 작업은 편집·등록 권한이 있는 직원만 수행할 수 있습니다.'
+                    || text === '상품 검수 대기열을 조회할 권한이 없습니다.'
+                    || text === '검수 대기열을 불러오지 못했습니다. 저장소 설정을 확인해 주세요.'
+                    || /^(?:[1-9]|10)개 고유 상품 URL을 수집 대기열에 추가했습니다[.]$/.test(text);
+                const numberOrNull = (value) => /^[0-9]{1,6}$/.test(value || '') ? Number(value) : null;
                 return {
                     document_ready_state: document.readyState,
                     login_form_visible: visible('#login_form'),
                     product_url_field_visible: visible('#product_urls'),
                     submit_control_visible: visible('[name="submitKuraneaCatalogImportBatch"]'),
+                    batch_progress_container_visible: visible('#catalog-import-progress'),
                     progress_visible: visible('#catalog-import-progress progress'),
                     progress_value: progress ? numberOrNull(progress.getAttribute('value')) : null,
                     progress_max: progress ? numberOrNull(progress.getAttribute('max')) : null,
                     row_count: Math.min(rows.length, 1000),
+                    token_rejected_notice_visible: visibleAlerts.includes('관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.'),
+                    mutation_access_denied_notice_visible: visibleAlerts.includes('상품 수집·검수·등록 권한이 없습니다.'),
+                    empty_url_notice_visible: visibleAlerts.includes('상품 URL을 한 줄에 하나씩 입력해 주세요.'),
+                    batch_save_failure_notice_visible: visibleAlerts.includes('상품 URL 일괄 등록을 저장하지 못했습니다. URL과 저장 공간을 확인해 주세요.'),
+                    batch_created_notice_visible: visibleAlerts.some((text) => /^(?:[1-9]|10)개 고유 상품 URL을 수집 대기열에 추가했습니다[.]$/.test(text)),
+                    unclassified_alert_visible: visibleAlerts.some((text) => !recognizedAlert(text)),
+                    visible_alert_count: Math.min(visibleAlerts.length, 20),
+                    document_response_status: responseStatus,
                     read_only_notice_visible: visibleAlerts.includes('상품 수집 작업은 편집·등록 권한이 있는 직원만 수행할 수 있습니다.'),
                     access_denied_notice_visible: visibleAlerts.includes('상품 검수 대기열을 조회할 권한이 없습니다.'),
                     queue_unavailable_notice_visible: visibleAlerts.includes('검수 대기열을 불러오지 못했습니다. 저장소 설정을 확인해 주세요.')
@@ -195,22 +227,43 @@ def safe_catalog_import_browser_state(driver, state):
     progress_value = page.get('progress_value')
     progress_max = page.get('progress_max')
     row_count = page.get('row_count')
+    visible_alert_count = page.get('visible_alert_count')
+    response_status = page.get('document_response_status')
     if type(progress_value) is not int or not 0 <= progress_value <= 1_000_000:
         progress_value = None
     if type(progress_max) is not int or not 0 <= progress_max <= 1_000_000:
         progress_max = None
     if type(row_count) is not int or not 0 <= row_count <= 1000:
         row_count = 0
+    if type(visible_alert_count) is not int or not 0 <= visible_alert_count <= 20:
+        visible_alert_count = 0
+    if type(response_status) is not int or not 100 <= response_status <= 599:
+        response_status = None
 
     access_denied = bool(page.get('access_denied_notice_visible'))
     read_only = bool(page.get('read_only_notice_visible'))
     queue_unavailable = bool(page.get('queue_unavailable_notice_visible'))
+    token_rejected = bool(page.get('token_rejected_notice_visible'))
+    mutation_access_denied = bool(page.get('mutation_access_denied_notice_visible'))
+    batch_save_failed = bool(page.get('batch_save_failure_notice_visible'))
+    batch_created = bool(page.get('batch_created_notice_visible'))
+    unclassified_alert = bool(page.get('unclassified_alert_visible'))
     if access_denied:
         page_class = 'controller_access_denied'
     elif read_only:
         page_class = 'batch_capability_denied'
     elif queue_unavailable:
         page_class = 'queue_unavailable'
+    elif token_rejected:
+        page_class = 'mutation_token_rejected'
+    elif mutation_access_denied:
+        page_class = 'mutation_capability_denied'
+    elif batch_save_failed:
+        page_class = 'batch_save_error'
+    elif batch_created and not bool(page.get('batch_progress_container_visible')):
+        page_class = 'batch_created_without_progress'
+    elif unclassified_alert:
+        page_class = 'unclassified_alert'
     elif bool(page.get('login_form_visible')):
         page_class = 'login_form'
     elif bool(page.get('product_url_field_visible')):
@@ -233,31 +286,121 @@ def safe_catalog_import_browser_state(driver, state):
         'submit_control_visible': bool(page.get('submit_control_visible')),
         'submit_attempted': state.get('submit_attempted') is True,
         'submit_returned': state.get('submit_returned') is True,
+        'submitted_url_count': state.get('submitted_url_count') if type(state.get('submitted_url_count')) is int else 0,
+        'batch_progress_container_visible': bool(page.get('batch_progress_container_visible')),
         'progress_visible': bool(page.get('progress_visible')),
         'progress_value': progress_value,
         'progress_max': progress_max,
         'row_count': row_count,
+        'token_rejected_notice_visible': token_rejected,
+        'mutation_access_denied_notice_visible': mutation_access_denied,
+        'empty_url_notice_visible': bool(page.get('empty_url_notice_visible')),
+        'batch_save_failure_notice_visible': batch_save_failed,
+        'batch_created_notice_visible': batch_created,
+        'unclassified_alert_visible': unclassified_alert,
+        'visible_alert_count': visible_alert_count,
+        'document_response_status': response_status,
         'read_only_notice_visible': read_only,
         'access_denied_notice_visible': access_denied,
         'queue_unavailable_notice_visible': queue_unavailable,
     }
 
 
-def save_safe_failure_screenshot(driver, path):
-    """Capture only a fixed, visible status alert; skip pages with dynamic content."""
+def save_safe_failure_screenshot(driver, path, stage):
+    """Capture synthetic batch progress, a fixed alert, or a scrubbed import form crop."""
+    safe_route = False
+    form = None
+    try:
+        parsed = urlparse(driver.current_url)
+        expected = urlparse(ADMIN_LOGIN)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        admin_path = ADMIN_PATH.rstrip('/')
+        same_origin = (parsed.scheme.lower(), parsed.netloc.lower()) == (
+            expected.scheme.lower(), expected.netloc.lower()
+        )
+        admin_path_matches = parsed.path == admin_path or parsed.path.startswith(admin_path + '/')
+        safe_route = same_origin and admin_path_matches and query.get('controller') == ['AdminKuraneaCatalogReview']
+
+        if safe_route and stage in {'batch_completion_wait', 'reimport_completion_wait'}:
+            progress_panel = driver.find_element(By.ID, 'catalog-import-progress')
+            if progress_panel.is_displayed():
+                unsafe_elements = progress_panel.find_elements(
+                    By.CSS_SELECTOR, 'a, img, select, iframe, canvas, svg, video, object, [contenteditable="true"]'
+                )
+                fields = progress_panel.find_elements(By.CSS_SELECTOR, 'input, textarea')
+                fields_are_safe = all(field.get_attribute('name') in {'token', 'catalog_batch_id'} for field in fields)
+                if not unsafe_elements and fields_are_safe:
+                    driver.execute_script("""
+                        for (const field of arguments[0].querySelectorAll('input, textarea')) {
+                            field.value = '';
+                            field.textContent = '';
+                            field.removeAttribute('value');
+                        }
+                        for (const form of arguments[0].querySelectorAll('form')) {
+                            form.style.visibility = 'hidden';
+                        }
+                    """, progress_panel)
+                    scrubbed = driver.execute_script("""
+                        const fields = Array.from(arguments[0].querySelectorAll('input, textarea'));
+                        const forms = Array.from(arguments[0].querySelectorAll('form'));
+                        return fields.every((field) => field.value === '' && !field.hasAttribute('value'))
+                            && forms.every((form) => getComputedStyle(form).visibility === 'hidden');
+                    """, progress_panel)
+                    if scrubbed is True:
+                        return bool(progress_panel.screenshot(str(path)))
+    except Exception:
+        pass
+
     safe_messages = {
+        '관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.',
+        '상품 수집·검수·등록 권한이 없습니다.',
+        '상품 URL을 한 줄에 하나씩 입력해 주세요.',
+        '상품 URL 일괄 등록을 저장하지 못했습니다. URL과 저장 공간을 확인해 주세요.',
         '상품 수집 작업은 편집·등록 권한이 있는 직원만 수행할 수 있습니다.',
         '상품 검수 대기열을 조회할 권한이 없습니다.',
         '검수 대기열을 불러오지 못했습니다. 저장소 설정을 확인해 주세요.',
     }
-    for alert in driver.find_elements(By.CSS_SELECTOR, '.alert'):
+    if safe_route:
+        for alert in driver.find_elements(By.CSS_SELECTOR, '.alert'):
+            try:
+                alert_text = alert.text.strip()
+                safe_batch_created_notice = re.fullmatch(
+                    r'(?:[1-9]|10)개 고유 상품 URL을 수집 대기열에 추가했습니다\.', alert_text
+                ) is not None
+                if alert.is_displayed() and (alert_text in safe_messages or safe_batch_created_notice):
+                    dynamic_children = alert.find_elements(By.CSS_SELECTOR, 'a, input, textarea, table, img')
+                    if not dynamic_children:
+                        return bool(alert.screenshot(str(path)))
+            except Exception:
+                continue
+
+    if safe_route:
         try:
-            if alert.is_displayed() and alert.text.strip() in safe_messages:
-                dynamic_children = alert.find_elements(By.CSS_SELECTOR, 'a, input, textarea, table, img')
-                if not dynamic_children:
-                    return bool(alert.screenshot(str(path)))
+            url_field = driver.find_element(By.ID, 'product_urls')
+            form = url_field.find_element(By.XPATH, './ancestor::form')
+            if form.is_displayed():
+                fields = form.find_elements(By.CSS_SELECTOR, 'input, textarea')
+                fields_are_safe = all(field.get_attribute('name') in {'token', 'product_urls'} for field in fields)
+                dynamic_elements = form.find_elements(
+                    By.CSS_SELECTOR, 'a, table, img, select, iframe, canvas, svg, video, object, [contenteditable="true"]'
+                )
+                if not fields_are_safe or dynamic_elements:
+                    return False
+                driver.execute_script("""
+                    for (const field of arguments[0].querySelectorAll('input, textarea')) {
+                        field.value = '';
+                        field.textContent = '';
+                        field.removeAttribute('value');
+                    }
+                """, form)
+                cleared = driver.execute_script("""
+                    return Array.from(arguments[0].querySelectorAll('input, textarea'))
+                        .every((field) => field.value === '' && !field.hasAttribute('value'));
+                """, form)
+                if cleared is True:
+                    return bool(form.screenshot(str(path)))
         except Exception:
-            continue
+            pass
     return False
 
 
@@ -413,7 +556,7 @@ def run():
         if driver is not None:
             try:
                 diagnostics['failure_screenshot_captured'] = save_safe_failure_screenshot(
-                    driver, DEST / 'catalog-import-failure.png'
+                    driver, DEST / 'catalog-import-failure.png', state.get('stage', 'unknown')
                 )
             except Exception:
                 diagnostics['failure_screenshot_captured'] = False

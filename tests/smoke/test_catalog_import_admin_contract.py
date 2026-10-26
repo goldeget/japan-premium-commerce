@@ -127,6 +127,10 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         probe = (ROOT / "tests" / "catalog" / "read_catalog_import_admin_access.php").read_text(encoding="utf-8")
         for marker in (
             "getenv('ADMIN_MAIL')",
+            "->getByEmail($email)",
+            "employee_email_matches",
+            "employee_active",
+            "strtolower(trim((string) $employeeRecord->email)) === strtolower($email)",
             "AdminKuraneaCatalogReview",
             "employee_found",
             "profile_is_superadmin",
@@ -137,6 +141,10 @@ class CatalogImportAdminContractTests(unittest.TestCase):
             "create_granted",
             "update_granted",
             "ORDENOWA_CATALOG_ADMIN_ACCESS=",
+            "authorization_ready",
+            "$employeeFound\n        && $employeeEmailMatches\n        && $employeeActive\n        && $profileId > 0\n        && $tabFound",
+            "'authorization_ready' => $authorizationReady",
+            r"WHERE slug = \'",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, probe)
@@ -148,7 +156,7 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         self.assertIn("id: catalog_import_admin_access_readback", workflow)
         self.assertIn("read_catalog_import_admin_access.php", workflow)
         self.assertIn("catalog-import-admin-access.log", workflow)
-        self.assertIn("if (($result['readback_available'] ?? false) !== true)", probe)
+        self.assertIn("if (($result['authorization_ready'] ?? false) !== true)", probe)
         fixture_at = workflow.index("id: catalog_import_fixture")
         readback_at = workflow.index("id: catalog_import_admin_access_readback")
         browser_at = workflow.index("id: catalog_import_browser_qa")

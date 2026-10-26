@@ -1144,12 +1144,73 @@ jobs:
             > "$QA_ARTIFACT_DIR/catalog-import-admin-access.log" 2> /dev/null
           readback_status=$?
           set -e
-          cat "$QA_ARTIFACT_DIR/catalog-import-admin-access.log"
-          access_line=$(rg '^ORDENOWA_CATALOG_ADMIN_ACCESS=' "$QA_ARTIFACT_DIR/catalog-import-admin-access.log" | tail -n 1 || true)
+          if access_line=$(python3 - "$QA_ARTIFACT_DIR/catalog-import-admin-access.log" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          marker = 'ORDENOWA_CATALOG_ADMIN_ACCESS='
+          try:
+              rows = [line for line in Path(sys.argv[1]).read_text(encoding='utf-8').splitlines() if line.startswith(marker)]
+              if not rows:
+                  print('')
+                  raise SystemExit(0)
+              data = json.loads(rows[-1][len(marker):])
+              if not isinstance(data, dict):
+                  raise ValueError()
+              booleans = {
+                  'readback_available', 'authorization_ready', 'employee_found',
+                  'employee_email_matches', 'employee_active', 'profile_is_superadmin',
+                  'tab_found', 'tab_class_matches', 'tab_active', 'read_granted',
+                  'create_granted', 'update_granted',
+              }
+              if data.get('readback_available') is True:
+                  expected = booleans | {'permissions'}
+                  if set(data) != expected or any(type(data[key]) is not bool for key in booleans):
+                      raise ValueError()
+                  if not isinstance(data['permissions'], dict) or set(data['permissions']) != {'read', 'create', 'update'}:
+                      raise ValueError()
+                  for role in data['permissions'].values():
+                      if not isinstance(role, dict) or set(role) != {'role_defined', 'profile_row', 'granted'}:
+                          raise ValueError()
+                      if any(type(value) is not bool for value in role.values()):
+                          raise ValueError()
+              elif data.get('readback_available') is False:
+                  if set(data) != {'readback_available', 'authorization_ready', 'failure_stage', 'exception_class'}:
+                      raise ValueError()
+                  if data['readback_available'] is not False or data['authorization_ready'] is not False:
+                      raise ValueError()
+                  if data['failure_stage'] not in {
+                      'config_load', 'fixture_employee_selector', 'employee_profile_lookup',
+                      'tab_lookup', 'permission_role_readback', 'result_encoding', 'unknown',
+                  }:
+                      raise ValueError()
+                  if data['exception_class'] not in {
+                      'Error', 'Exception', 'PDOException', 'PrestaShopException', 'RuntimeException',
+                  }:
+                      raise ValueError()
+              else:
+                  raise ValueError()
+              print(marker + json.dumps(data, sort_keys=True, separators=(',', ':')))
+          except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError, KeyError):
+              print('')
+          PY
+          ); then
+            :
+          else
+            access_line=''
+          fi
+          if [[ -z "$access_line" && "$readback_status" -eq 0 ]]; then
+            readback_status=2
+          fi
+          if [[ "$access_line" != *'"authorization_ready":true'* ]]; then
+            readback_status=2
+          fi
           if [[ -n "$access_line" ]]; then
             printf '%s\n' "$access_line" >> "$GITHUB_STEP_SUMMARY"
           else
-            printf 'ORDENOWA_CATALOG_ADMIN_ACCESS={"readback_available":false,"failure_stage":"unknown"}\n' >> "$GITHUB_STEP_SUMMARY"
+            access_line='ORDENOWA_CATALOG_ADMIN_ACCESS={"readback_available":false,"authorization_ready":false,"failure_stage":"unknown","exception_class":"Exception"}'
+            printf '%s\n' "$access_line" >> "$GITHUB_STEP_SUMMARY"
           fi
           if [[ "$readback_status" -ne 0 ]]; then
             printf '::error title=ORDENOWA catalog admin access readback::%s\n' "${access_line:-ORDENOWA_CATALOG_ADMIN_ACCESS readback unavailable}"
@@ -1177,9 +1238,12 @@ jobs:
           browser_status="${pipeline_status[0]:-1}"
           tee_status="${pipeline_status[1]:-1}"
           if [[ "$browser_status" -ne 0 ]]; then
-            diagnostic_line=$(rg '^ORDENOWA_CATALOG_IMPORT_SAFE_DIAGNOSTICS=' "$log_file" | tail -n 1 || true)
-            if [[ -z "$diagnostic_line" ]]; then
-              diagnostic_line='ORDENOWA_CATALOG_IMPORT_SAFE_DIAGNOSTICS={"diagnostics":"unavailable"}'
+            diagnostic_file="$QA_ARTIFACT_DIR/catalog-import-failure-diagnostics.json"
+            diagnostic_line='ORDENOWA_CATALOG_IMPORT_SAFE_DIAGNOSTICS={"diagnostics":"unavailable"}'
+            if [[ -s "$diagnostic_file" ]]; then
+              if diagnostic_json=$(python3 tests/e2e/catalog_import_diagnostics.py --json "$diagnostic_file"); then
+                diagnostic_line="ORDENOWA_CATALOG_IMPORT_SAFE_DIAGNOSTICS=$diagnostic_json"
+              fi
             fi
             printf 'ORDENOWA catalog import browser QA failed: %s\n' "$diagnostic_line" >> "$GITHUB_STEP_SUMMARY"
             annotation=${diagnostic_line//'%'/'%25'}
@@ -2597,52 +2661,7 @@ jobs:
               echo '::error title=ORDENOWA catalog import browser evidence::The sanitized failure diagnostic file is missing.'
               exit 1
             fi
-            python3 - "$diagnostic_file" "$screenshot_file" <<'PY'
-          import json
-          import sys
-          from pathlib import Path
-
-          data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-          required = {
-              "stage", "last_completed_stage", "same_admin_origin", "admin_path_matches",
-              "controller_parameter_present", "controller_allowed", "admin_controller", "page_class",
-              "document_ready_state", "login_form_visible", "product_url_field_visible",
-              "submit_control_visible", "submit_attempted", "submit_returned", "progress_visible",
-              "progress_value", "progress_max", "row_count", "read_only_notice_visible",
-              "access_denied_notice_visible", "queue_unavailable_notice_visible", "exception_class",
-              "failure_screenshot_captured",
-          }
-          if not isinstance(data, dict) or set(data) != required:
-              raise SystemExit("catalog import failure diagnostic fields are not allowlisted")
-          for key in required - {"stage", "last_completed_stage", "admin_controller", "page_class", "document_ready_state", "exception_class", "progress_value", "progress_max", "row_count"}:
-              if not isinstance(data[key], bool):
-                  raise SystemExit("catalog import failure diagnostic boolean is invalid")
-          stages = {
-              "launch", "login", "review_menu_route", "manager_menu_route", "manager_navigation",
-              "batch_review_navigation", "batch_url_field", "batch_submit_control", "batch_submit_click",
-              "batch_completion_wait", "batch_progress_readback", "reject_rakuten", "approve_amazon",
-              "native_readback", "reimport_review_navigation", "reimport_url_field", "reimport_submit_control",
-              "reimport_submit_click", "reimport_completion_wait", "reimport_progress_readback", "reimport", "unknown",
-          }
-          if data["stage"] not in stages or data["last_completed_stage"] not in stages | {"not_started"}:
-              raise SystemExit("catalog import failure stage is not allowlisted")
-          enums = {
-              "admin_controller": {"AdminKuraneaCatalogReview", "AdminOrdenowaProductManager", "other_admin", "unknown"},
-              "page_class": {"controller_access_denied", "batch_capability_denied", "queue_unavailable", "login_form", "catalog_import_form", "other_admin"},
-              "document_ready_state": {"loading", "interactive", "complete", "unknown"},
-              "exception_class": {"AssertionError", "ElementClickInterceptedException", "ElementNotInteractableException", "NoSuchElementException", "OSError", "RuntimeError", "StaleElementReferenceException", "TimeoutException", "ValueError", "WebDriverException", "Exception"},
-          }
-          for key, allowed in enums.items():
-              if data[key] not in allowed:
-                  raise SystemExit("catalog import failure diagnostic enum is not allowlisted")
-          for key, maximum in (("progress_value", 1000000), ("progress_max", 1000000), ("row_count", 1000)):
-              value = data[key]
-              if value is not None and (type(value) is not int or not 0 <= value <= maximum):
-                  raise SystemExit("catalog import failure diagnostic counter is invalid")
-          if data["failure_screenshot_captured"] and not Path(sys.argv[2]).is_file():
-              raise SystemExit("catalog import safe failure screenshot is missing")
-          print("PASS: catalog import failure diagnostics use an allowlisted safe schema.")
-          PY
+            python3 tests/e2e/catalog_import_diagnostics.py --validate "$diagnostic_file" "$screenshot_file"
             required_artifacts+=(catalog-import-e2e.log catalog-import-failure-diagnostics.json)
             if [[ -s "$screenshot_file" ]]; then
               required_artifacts+=(catalog-import-failure.png)

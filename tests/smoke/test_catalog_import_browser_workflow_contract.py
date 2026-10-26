@@ -1,9 +1,18 @@
 """Keep import browser QA confined to its disposable synthetic CI project."""
 import ast
+import importlib.util
+import json
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
+DIAGNOSTICS_PATH = ROOT / 'tests/e2e/catalog_import_diagnostics.py'
+DIAGNOSTICS_SPEC = importlib.util.spec_from_file_location('catalog_import_diagnostics', DIAGNOSTICS_PATH)
+DIAGNOSTICS = importlib.util.module_from_spec(DIAGNOSTICS_SPEC)
+DIAGNOSTICS_SPEC.loader.exec_module(DIAGNOSTICS)
 
 
 class CatalogImportBrowserWorkflowContract(unittest.TestCase):
@@ -115,9 +124,18 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'submit_control_visible',
             'submit_returned',
             'progress_visible',
+            'batch_progress_container_visible',
             'progress_value',
             'progress_max',
             'row_count',
+            'token_rejected_notice_visible',
+            'mutation_access_denied_notice_visible',
+            'empty_url_notice_visible',
+            'batch_save_failure_notice_visible',
+            'batch_created_notice_visible',
+            'unclassified_alert_visible',
+            'visible_alert_count',
+            'document_response_status',
             'read_only_notice_visible',
             'access_denied_notice_visible',
             'failure_screenshot_captured',
@@ -131,17 +149,85 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertNotIn('page_source', browser)
 
         workflow = self.read_required('.github/workflows/fresh-install.yml')
+        access_step = workflow.split('id: catalog_import_admin_access_readback', 1)[1].split('\n      - name:', 1)[0]
+        self.assertIn('if [[ -z "$access_line" && "$readback_status" -eq 0 ]]', access_step)
+        self.assertIn('if [[ "$access_line" != *\'"authorization_ready":true\'* ]]', access_step)
+        self.assertNotIn('cat "$QA_ARTIFACT_DIR/catalog-import-admin-access.log"', access_step)
         browser_step = workflow.split('id: catalog_import_browser_qa', 1)[1].split('\n      - name:', 1)[0]
         self.assertIn('pipeline_status=("${PIPESTATUS[@]}")', browser_step)
         self.assertIn('browser_status="${pipeline_status[0]:-1}"', browser_step)
         self.assertIn('GITHUB_STEP_SUMMARY', browser_step)
         self.assertIn('::error title=ORDENOWA catalog import browser QA::', browser_step)
-        self.assertIn("rg '^ORDENOWA_CATALOG_IMPORT_SAFE_DIAGNOSTICS='", browser_step)
+        self.assertIn('diagnostic_file="$QA_ARTIFACT_DIR/catalog-import-failure-diagnostics.json"', browser_step)
+        self.assertIn('tests/e2e/catalog_import_diagnostics.py --json "$diagnostic_file"', browser_step)
+        self.assertNotIn("rg '^ORDENOWA_CATALOG_IMPORT_SAFE_DIAGNOSTICS='", browser_step)
+        self.assertNotIn('rg ', browser_step)
         self.assertNotIn('cat "$log_file"', browser_step)
         self.assertIn('catalog-import-e2e.log', browser_step)
         self.assertIn('catalog-import-failure-diagnostics.json', workflow)
-        self.assertIn('failure_screenshot_captured', workflow)
-        self.assertIn('catalog import failure diagnostic fields are not allowlisted', workflow)
+        self.assertIn('tests/e2e/catalog_import_diagnostics.py --validate', workflow)
+
+        readback_step = workflow.split('id: catalog_import_admin_access_readback', 1)[1].split('\n      - name:', 1)[0]
+        self.assertIn('access_line=$(python3 -', readback_step)
+        self.assertNotIn('rg ', readback_step)
+        self.assertIn('\"authorization_ready\":false,\"failure_stage\":\"unknown\",\"exception_class\":\"Exception\"', readback_step)
+
+        self.assertIn("ancestor::form", browser)
+        self.assertIn("a, table, img, select, iframe, canvas, svg", browser)
+        self.assertIn("field.value = ''", browser)
+        self.assertIn("field.removeAttribute('value')", browser)
+        self.assertIn("progress_panel.screenshot(str(path))", browser)
+        self.assertIn('form.screenshot(str(path))', browser)
+        self.assertLess(browser.index('progress_panel.screenshot(str(path))'), browser.index('alert.screenshot(str(path))'))
+        self.assertLess(browser.index('alert.screenshot(str(path))'), browser.index('form.screenshot(str(path))'))
+        self.assertIn("state.get('stage', 'unknown')", browser)
+
+    def test_failure_diagnostic_validator_rejects_unlisted_or_malformed_data_before_emission(self):
+        valid = {
+            'stage': 'batch_completion_wait', 'last_completed_stage': 'batch_submit_click',
+            'same_admin_origin': True, 'admin_path_matches': True,
+            'controller_parameter_present': True, 'controller_allowed': True,
+            'admin_controller': 'AdminKuraneaCatalogReview', 'page_class': 'unclassified_alert',
+            'document_ready_state': 'complete', 'login_form_visible': False,
+            'product_url_field_visible': True, 'submit_control_visible': True,
+            'submit_attempted': True, 'submit_returned': True, 'submitted_url_count': 3,
+            'batch_progress_container_visible': False, 'progress_visible': False,
+            'progress_value': None, 'progress_max': None, 'row_count': 0,
+            'token_rejected_notice_visible': False, 'mutation_access_denied_notice_visible': False,
+            'empty_url_notice_visible': False, 'batch_save_failure_notice_visible': False,
+            'batch_created_notice_visible': False, 'unclassified_alert_visible': True,
+            'visible_alert_count': 1, 'document_response_status': 200,
+            'read_only_notice_visible': False, 'access_denied_notice_visible': False,
+            'queue_unavailable_notice_visible': False, 'exception_class': 'TimeoutException',
+            'failure_screenshot_captured': False,
+        }
+        DIAGNOSTICS.validate(valid)
+        with self.assertRaises(ValueError):
+            DIAGNOSTICS.validate({**valid, 'unexpected': 'could contain a secret'})
+        with self.assertRaises(ValueError):
+            DIAGNOSTICS.validate({**valid, 'stage': 'https://private.invalid/?token=secret'})
+        with self.assertRaises(ValueError):
+            DIAGNOSTICS.validate({**valid, 'visible_alert_count': True})
+        with self.assertRaises(ValueError):
+            DIAGNOSTICS.validate({**valid, 'stage': ['not', 'a', 'stage']})
+
+        with tempfile.TemporaryDirectory() as temporary:
+            diagnostic = Path(temporary) / 'unsafe.json'
+            diagnostic.write_text(json.dumps({**valid, 'unexpected': 'private-value'}), encoding='utf-8')
+            result = subprocess.run(
+                [sys.executable, str(DIAGNOSTICS_PATH), '--json', str(diagnostic)],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn('private-value', result.stdout + result.stderr)
+
+            diagnostic.write_text(json.dumps({**valid, 'stage': 'batch_completion_wait'}), encoding='utf-8')
+            result = subprocess.run(
+                [sys.executable, str(DIAGNOSTICS_PATH), '--validate', str(diagnostic)],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('screenshot was not captured', result.stdout)
 
     def test_retry_controls_stop_after_the_fixed_attempt_limit(self):
         controller = (ROOT / 'modules/kuraneacatalog/controllers/admin/AdminKuraneaCatalogReviewController.php').read_text()
