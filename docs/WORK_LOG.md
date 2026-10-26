@@ -1,5 +1,12 @@
 # ORDENOWA 작업 기록
 
+## 2026-10-26 — 주소 문구 검증 완료 및 전체 QA 결과
+
+- 최신 source/work `a890c83f04b81240b07a338f9ed734f0a25caf78`, `main` `ee02a3657448d563508687614a246e05ac61eecd` 보존. Full isolated QA #40310232196 completed FAILURE. Account/address browser outcome success; aggregate의 실제 실패는 mobile cart `product_add_add_button_wait` StaleElementReferenceException 및 free carrier admin `verify_admin_saved_carrier` TimeoutException이다. downstream shipping checks는 skipped다.
+- artifact 12644494181에서 mobile address edit form 390×701을 직접 열어 새 한국어 helper `계정에 새 주소를 등록할 수 있습니다.`를 확인했다. 같은 run에서 주소 same-ID 저장/fresh GET/refresh acceptance도 통과했다. 이전 address Timeout의 정확한 원인은 재현되지 않아 미확정으로 둔다.
+- matrix에는 QA-REG-001로 두 실제 실패를 분리 기록하고 주소/카탈로그/운송장 완료 근거를 유지했다. 기존 #403006 catalog same-ID reimport 및 tracking success를 최신 실패로 덮어쓰지 않는다.
+- PWA-002의 설계/계획 초안은 별도 `kuraneapush` 모듈, 명시 동의, encrypted owner-scoped subscription, localized allowlisted synthetic worker events에 한정했다. Provider-backed delivery, approved legal/retention copy, support producer, physical devices remain unverified/blocked. Builder review를 반영하고 실제 provider에 연결하지 않는 browser/Node test boundary를 분명히 한다.
+
 ## 2026-10-26 — 모바일 주소 수정 재검증과 workflow focus 경계 보완
 
 - 최신 원격 `work`와 local HEAD는 `c045d21313af925072d55629f74ec5272d16dbc1`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다. 시작 당시 진행 중인 Actions는 없었고, 사용자 미추적 파일은 보존했다.

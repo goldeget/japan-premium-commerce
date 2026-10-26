@@ -1,5 +1,14 @@
 # ORDENOWA 테스트 결과
 
+## 2026-10-26 — 주소 번역 런타임 확인 및 전체 QA 결과
+
+- 대상 `work` SHA `a890c83f04b81240b07a338f9ed734f0a25caf78`; `main`은 변경하지 않았다. 전체 isolated Actions [#40310232196](https://github.com/goldeget/japan-premium-commerce/actions/runs/40310232196)은 completed **FAILURE**이며 실제 aggregate 실패는 `cart_controls_browser_qa=failure`와 `shipping_free_admin_configure=failure`다. 주소 browser outcome은 `ACCOUNT_BROWSER_QA_OUTCOME=success`; 전체 실행은 PASS가 아니다.
+- Cart 실패는 mobile `product_add_add_button_wait` / `StaleElementReferenceException`이다. Free carrier 설정 실패는 `verify_admin_saved_carrier` / `TimeoutException`이며 실패 당시 controller path class는 admin carrier edit다. 의존 후속 shipping checks는 skipped라 추가 독립 결함으로 세지 않는다.
+- Account outcome은 desktop/mobile 회원가입·중복 방지·로그인/로그아웃·메일 reset 및 주소 생성/동일 주소 편집·저장·fresh readback/refresh 확인을 통과했다. 과거 #40300616469의 address Timeout은 이번 run에서 재현되지 않아 기존 원인을 확정하지 않는다.
+- Browser artifact [12644494181](https://github.com/goldeget/japan-premium-commerce/actions/runs/40310232196/artifacts/12644494181)에서 `mobile-customer-address-edit-form.png` (390×701)를 열어 정적 안내 `계정에 새 주소를 등록할 수 있습니다.`의 한국어 표시를 확인했다. 계정 흐름의 캡처/자동 assertion 근거이며 실기기 또는 전체 고객 화면의 시각 PASS가 아니다. `mobile-customer-address-edited-after-refresh.png`도 artifact에 포함된다.
+- Focus run #40307437142 / artifact 12642513725의 account success와 목록 안내 검수는 이전 코드 범위로 유지한다. 최신 form 문구 검증은 #40310232196 source SHA에서 확인했다.
+- 이후 전체 QA는 PWA 변경 후 필요한 코드 검증과 새 수정이 있을 때 사용한다. 같은 a890c83을 근거 없이 재실행하지 않는다.
+
 ## 2026-10-26 — 모바일 주소 편집 focused QA 통과 및 회귀 준비
 
 - 시작 기준 work/origin은 `c045d21313af925072d55629f74ec5272d16dbc1`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`다. 중간에 추가된 workflow 조건 수정은 아직 commit되지 않았으며 기존 변경·미추적 파일은 보존한다.

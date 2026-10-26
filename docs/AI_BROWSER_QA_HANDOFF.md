@@ -1,5 +1,13 @@
 # ORDENOWA AI Browser QA Handoff
 
+## 최신 모바일 주소 화면 및 다음 재검수 (2026-10-26)
+
+- Tested source/work SHA: `a890c83f04b81240b07a338f9ed734f0a25caf78`; `main` SHA remains `ee02a3657448d563508687614a246e05ac61eecd`.
+- Full isolated run [#40310232196](https://github.com/goldeget/japan-premium-commerce/actions/runs/40310232196) is **FAILURE**. Its actual aggregate failures are `cart_controls_browser_qa=failure` and `shipping_free_admin_configure=failure`; customer account outcome, including address edit, is success. The full run is not a global PASS.
+- Browser artifact [12644494181](https://github.com/goldeget/japan-premium-commerce/actions/runs/40310232196/artifacts/12644494181) contains `mobile-customer-address-edit-form.png` (390×701), `mobile-customer-address-edited-after-refresh.png` (390×701), and desktop counterparts. Codex opened the mobile edit-form capture and confirmed that the helper below `주소 업데이트` now reads `계정에 새 주소를 등록할 수 있습니다.`. The after-refresh capture corresponds to same-address persistence verified by the browser flow, but the capture itself is not click testing.
+- Work-mode follow-up is limited to independent visual review of those two updated mobile captures and the matching desktop captures if needed. Record the exact tested source SHA and artifact. Do not call this a whole-site or physical-device visual PASS.
+- In the same run, separately noted failures were mobile `product_add_add_button_wait` (`StaleElementReferenceException`) and `verify_admin_saved_carrier` (`TimeoutException`). Downstream shipping checks were skipped. Do not present skipped outcomes as separate product failures or claim full QA success.
+
 ## 모바일 주소 수정 후속 시각 검수 (2026-10-26)
 
 - Source/work SHA: `c045d21313af925072d55629f74ec5272d16dbc1`; focused Actions [#40307437142](https://github.com/goldeget/japan-premium-commerce/actions/runs/40307437142) SUCCESS; browser artifact [12642513725](https://github.com/goldeget/japan-premium-commerce/actions/runs/40307437142/artifacts/12642513725).
