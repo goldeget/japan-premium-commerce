@@ -12,7 +12,7 @@ class Kuraneabackoffice extends Module
     {
         $this->name = 'kuraneabackoffice';
         $this->tab = 'administration';
-        $this->version = '1.0.3';
+        $this->version = '1.0.4';
         $this->author = 'ORDENOWA';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -30,7 +30,41 @@ class Kuraneabackoffice extends Module
             'displayAdminLogin',
             'displayAdminEndContent',
             'actionAdminControllerSetMedia',
-        ]) && $this->installSupportAssignments() && $this->installEmployeeProfileAudit();
+        ]) && $this->installSupportAssignments() && $this->installEmployeeProfileAudit() && $this->installSupportContactPrivacy();
+    }
+
+    public function installSupportContactPrivacy(): bool
+    {
+        return $this->registerHook('actionFrontControllerInitAfter');
+    }
+
+    public function hookActionFrontControllerInitAfter(array $params = []): void
+    {
+        $controller = $params['controller'] ?? $this->context->controller;
+        if ((string) ($controller->php_self ?? '') !== 'contact') {
+            return;
+        }
+        require_once __DIR__ . '/vendor/autoload.php';
+        try {
+            $allowed = \Kuranea\Backoffice\Support\SupportContactAccessGuard::allows(
+                $this->context, $_GET, $_POST, Tools::isSubmit('submitMessage')
+            );
+        } catch (Throwable) {
+            $allowed = false;
+        }
+        if ($allowed) {
+            return;
+        }
+        http_response_code(403);
+        header('Content-Type: text/plain; charset=utf-8');
+        header('Cache-Control: private, no-store, max-age=0', true);
+        $locale = (string) ($this->context->language->iso_code ?? 'ja');
+        echo match ($locale) {
+            'ko' => '이 문의를 이용하려면 해당 고객 계정으로 로그인해 주세요.',
+            'en' => 'Please sign in with the customer account that owns this inquiry.',
+            default => 'このお問い合わせの顧客アカウントでログインしてください。',
+        };
+        exit;
     }
 
     /** Additive install/upgrade entry point for the shop-scoped support assignment store. */

@@ -54,7 +54,8 @@ SAFE_STAGES = {
     "private_forward_note", "close_thread", "reopen_thread", "admin_public_reply",
     "mailpit_public_reply", "customer_followup", "thread_fresh_readback", "assignment_lookup",
     "assignment_create", "assignment_reassign", "assignment_history_readback",
-    "limited_staff_denial", "assignment_limited_denial", "rejected_attachment", "image_attachment_readback", "complete",
+    "limited_staff_denial", "assignment_limited_denial", "rejected_attachment", "image_attachment_readback", "orderless_inquiry", "foreign_valid_thread",
+    "foreign_orderless_post", "orderless_readback", "complete",
 }
 SAFE_RESULT_KEYS = {
     "status", "stage", "exception_type", "customer_submitted", "order_association_verified",
@@ -63,6 +64,7 @@ SAFE_RESULT_KEYS = {
     "mailpit_provider", "paid", "payment_provider_called", "assignment_created",
     "assignment_reassigned", "assignment_actor_history", "assignment_limited_employee_denied",
     "image_attachment_admin_readback", "image_attachment_foreign_denied", "disallowed_attachment_rejected",
+    "foreign_valid_thread_denied", "foreign_orderless_post_denied", "orderless_thread_unchanged",
 }
 RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {"status", "stage", "exception_type", "mailpit_provider"}
 SAFE_EXCEPTION_TYPES = {
@@ -474,7 +476,7 @@ def contact_form(driver, url: str):
 
 def submit_contact_message(
     driver, ctx: Context, order: dict[str, Any], marker: str, attachment_path: Path | None,
-    thread_url: str | None = None, *, expected_rejection: bool = False,
+    thread_url: str | None = None, *, expected_rejection: bool = False, order_linked: bool = True,
 ) -> None:
     form = contact_form(driver, thread_url or (ctx.shop + "/index.php?controller=contact"))
     order_selects = form.find_elements(By.CSS_SELECTOR, "select#contact-us-id-order-select[name='id_order']")
@@ -482,9 +484,12 @@ def submit_contact_message(
         raise AssertionError("native contact form did not expose the customer's order selection")
     order_select = Select(order_selects[0])
     matching_options = [option for option in order_select.options if option.get_attribute("value") == str(order["order_id"])]
-    if len(matching_options) != 1 or order["reference"] not in matching_options[0].text:
-        raise AssertionError("native contact form did not offer the exact customer-owned order")
-    order_select.select_by_value(str(order["order_id"]))
+    if order_linked:
+        if len(matching_options) != 1 or order["reference"] not in matching_options[0].text:
+            raise AssertionError("native contact form did not offer the exact customer-owned order")
+        order_select.select_by_value(str(order["order_id"]))
+    else:
+        order_select.select_by_value("")
 
     contact_fields = form.find_elements(By.NAME, "id_contact")
     if len(contact_fields) != 1:
@@ -520,6 +525,42 @@ def submit_contact_message(
         raise AssertionError("native contact form reported a failed inquiry submission")
 
 
+def assert_support_denied_response(result: Any) -> None:
+    if not isinstance(result, dict) or result.get("status") != 403 or result.get("formPresent") is not False:
+        raise AssertionError("cross-customer support request was not denied before native form rendering")
+
+
+def assert_foreign_thread_denied(driver, href: str) -> None:
+    result = driver.execute_async_script("""
+      const [url, done] = arguments;
+      fetch(url, {credentials: 'same-origin', redirect: 'follow'})
+        .then(async response => {
+          const document = new DOMParser().parseFromString(await response.text(), 'text/html');
+          done({status: response.status, formPresent: Boolean(document.querySelector('.contact-form'))});
+        }).catch(() => done({status: 0}));
+    """, href)
+    assert_support_denied_response(result)
+
+
+def assert_foreign_orderless_post_denied(driver, ctx: Context, marker: str) -> None:
+    form = contact_form(driver, ctx.shop + "/index.php?controller=contact")
+    result = driver.execute_async_script("""
+      const [form, victimEmail, marker, done] = arguments;
+      const data = new FormData(form);
+      data.set('from', victimEmail);
+      data.set('id_order', '0');
+      data.set('message', marker);
+      data.set('submitMessage', '1');
+      // Preserve the sender session's native CSRF field and cookies.
+      fetch(form.action, {method: 'POST', body: data, credentials: 'same-origin', redirect: 'follow'})
+        .then(async response => {
+          const document = new DOMParser().parseFromString(await response.text(), 'text/html');
+          done({status: response.status, formPresent: Boolean(document.querySelector('.contact-form'))});
+        }).catch(() => done({status: 0}));
+    """, form, ctx.buyer["email"], marker)
+    assert_support_denied_response(result)
+
+
 def generated_customer_threads_link(driver, admin_url: str) -> str:
     candidates = []
     for link in driver.find_elements(By.CSS_SELECTOR, "a[href]"):
@@ -549,7 +590,7 @@ def admin_login(driver, ctx: Context, email: str) -> None:
         raise AssertionError("Back Office password remained in the browser DOM")
 
 
-def view_link_from_index(driver, ctx: Context, buyer: dict[str, Any]) -> tuple[str, int]:
+def view_link_from_index(driver, ctx: Context, buyer: dict[str, Any], expected_thread_id: int | None = None) -> tuple[str, int]:
     WebDriverWait(driver, 40).until(lambda browser: bool(browser.find_elements(By.CSS_SELECTOR, "table tbody tr")))
     links: set[str] = set()
     for row in driver.find_elements(By.CSS_SELECTOR, "table tbody tr"):
@@ -562,7 +603,7 @@ def view_link_from_index(driver, ctx: Context, buyer: dict[str, Any]) -> tuple[s
         for link in row.find_elements(By.CSS_SELECTOR, "a[href]"):
             href = link.get_attribute("href") or ""
             identity = thread_route_identity(href, ctx.admin)
-            if identity is not None:
+            if identity is not None and (expected_thread_id is None or identity[1] == expected_thread_id):
                 links.add(href)
     if len(links) != 1:
         raise AssertionError("native Customer service list did not identify one thread for the submitted order")
@@ -855,6 +896,8 @@ def run() -> None:
         "assignment_limited_employee_denied": False,
         "image_attachment_admin_readback": False, "image_attachment_foreign_denied": False,
         "disallowed_attachment_rejected": False,
+        "foreign_valid_thread_denied": False, "foreign_orderless_post_denied": False,
+        "orderless_thread_unchanged": False,
     }
     customer = admin = foreign = limited = None
     buyer_marker = f"[CI ONLY] ORDENOWA support inquiry {ctx.run_id}-{ctx.attempt}-{secrets.token_hex(5)}"
@@ -864,6 +907,8 @@ def run() -> None:
     attachment_marker = f"ORDENOWA_SUPPORT_ATTACHMENT_{ctx.run_id}_{ctx.attempt}_{secrets.token_hex(5)}"
     image_marker = f"ORDENOWA_SUPPORT_IMAGE_{ctx.run_id}_{ctx.attempt}_{secrets.token_hex(5)}"
     rejected_marker = f"[CI ONLY] ORDENOWA rejected upload {ctx.run_id}-{ctx.attempt}-{secrets.token_hex(5)}"
+    orderless_marker = f"[CI ONLY] ORDENOWA orderless inquiry {ctx.run_id}-{ctx.attempt}-{secrets.token_hex(5)}"
+    attack_marker = f"[CI ONLY] ORDENOWA denied foreign reply {ctx.run_id}-{ctx.attempt}-{secrets.token_hex(5)}"
     image_bytes = synthetic_support_png(image_marker)
     attachment_file = image_file = rejected_file = None
     download_dir = None
@@ -903,6 +948,14 @@ def run() -> None:
         if not validate_customer_thread_url(valid_customer_thread_url, ctx.shop, first_thread_id):
             raise AssertionError("native customer confirmation did not produce a bounded thread URL")
 
+        stage = result["stage"] = "orderless_inquiry"
+        before_orderless = mail_ids(ctx.mailpit)
+        submit_contact_message(customer, ctx, ctx.buyer, orderless_marker, None, order_linked=False)
+        orderless_id, orderless_token, _orderless_confirmation = wait_for_thread_email(ctx.mailpit, ctx.buyer["email"], before_orderless)
+        if orderless_id == first_thread_id:
+            raise AssertionError("orderless fixture must use a distinct native inquiry")
+        orderless_url = urlunparse((urlparse(ctx.shop).scheme, urlparse(ctx.shop).netloc, "/index.php", "",
+            urlencode({"controller": "contact", "id_customer_thread": orderless_id, "token": orderless_token}), ""))
         stage = result["stage"] = "foreign_customer_denial"
         foreign = new_driver()
         customer_login(foreign, ctx, ctx.foreign)
@@ -914,12 +967,16 @@ def run() -> None:
             urlparse(ctx.shop).scheme, urlparse(ctx.shop).netloc, "/index.php", "",
             urlencode({"controller": "contact", "id_customer_thread": first_thread_id, "token": invalid_token}), "",
         ))
-        foreign_form = contact_form(foreign, invalid_url)
-        foreign_text = foreign.find_element(By.TAG_NAME, "body").text
-        foreign_order_options = [option.get_attribute("value") for option in foreign_form.find_elements(By.CSS_SELECTOR, "select#contact-us-id-order-select option")]
-        if buyer_marker in foreign_text or str(ctx.buyer["order_id"]) in foreign_order_options:
-            raise AssertionError("foreign customer could see another customer's support thread or order")
+        assert_foreign_thread_denied(foreign, invalid_url)
         result["foreign_customer_denied"] = True
+        stage = result["stage"] = "foreign_valid_thread"
+        assert_foreign_thread_denied(foreign, valid_customer_thread_url)
+        assert_foreign_thread_denied(foreign, orderless_url)
+        result["foreign_valid_thread_denied"] = True
+        stage = result["stage"] = "foreign_orderless_post"
+        assert_foreign_orderless_post_denied(foreign, ctx, attack_marker)
+        result["foreign_orderless_post_denied"] = True
+        foreign.get(valid_customer_thread_url)
         foreign.save_screenshot(str(ctx.artifact_dir / "customer-support-foreign-denied.png"))
 
         stage = result["stage"] = "admin_login"
@@ -929,7 +986,7 @@ def run() -> None:
         index_link = generated_customer_threads_link(admin, ctx.admin)
         stage = result["stage"] = "admin_thread_lookup"
         visit(admin, index_link)
-        thread_view_url, thread_id = view_link_from_index(admin, ctx, ctx.buyer)
+        thread_view_url, thread_id = view_link_from_index(admin, ctx, ctx.buyer, first_thread_id)
         if thread_id != first_thread_id:
             raise AssertionError("native customer service page did not open the confirmation's same thread")
         visit(admin, thread_view_url)
@@ -941,6 +998,15 @@ def run() -> None:
         result["order_association_verified"] = True
         admin.save_screenshot(str(ctx.artifact_dir / "customer-support-admin-thread.png"))
 
+        stage = result["stage"] = "orderless_readback"
+        visit(admin, index_link)
+        orderless_view_url, _ = view_link_from_index(admin, ctx, ctx.buyer, orderless_id)
+        visit(admin, orderless_view_url)
+        orderless_body = visible(admin, "[data-role='messages-thread']").text
+        if orderless_marker not in orderless_body or attack_marker in orderless_body:
+            raise AssertionError("a foreign sender changed the native orderless inquiry")
+        result["orderless_thread_unchanged"] = True
+        visit(admin, thread_view_url)
         stage = result["stage"] = "attachment_readback"
         attachment_url = find_attachment_link(admin, ctx.admin, buyer_marker)
         open_native_attachment(admin, attachment_url, attachment_marker, download_dir)
@@ -1115,7 +1181,7 @@ def run() -> None:
             write_result(target, result)
         except Exception:
             pass
-        raise
+        raise RuntimeError("isolated customer support browser acceptance failed") from None
     finally:
         for fixture_file in (attachment_file, image_file, rejected_file):
             if fixture_file is not None:

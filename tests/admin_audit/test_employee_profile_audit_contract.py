@@ -10,6 +10,15 @@ MODULE = ROOT / "modules" / "kuraneabackoffice"
 
 
 class EmployeeProfileAuditContractTests(unittest.TestCase):
+    def test_module_admin_controller_fixture_matches_prestashop_92_init_header_signature(self) -> None:
+        fixture = (ROOT / "tests" / "admin_audit" / "employee_profile_audit.php").read_text(encoding="utf-8")
+        parent = fixture.split("class ModuleAdminController\n{", 1)[1].split("\n}\n\nfinal class Hook", 1)[0]
+
+        # In pinned PrestaShop 9.2.0, ModuleAdminControllerCore inherits
+        # AdminControllerCore::initHeader(), which has no declared return type.
+        self.assertRegex(parent, re.compile(r"public function initHeader\(\)\s*\{"))
+        self.assertNotRegex(parent, re.compile(r"public function initHeader\(\)\s*:\s*void"))
+
     def test_schema_is_shop_scoped_and_contains_only_profile_transition_identifiers(self) -> None:
         schema_path = MODULE / "src" / "Infrastructure" / "EmployeeProfileAuditSchema.php"
         self.assertTrue(schema_path.is_file(), "missing employee profile audit schema")
@@ -73,7 +82,7 @@ class EmployeeProfileAuditContractTests(unittest.TestCase):
 
     def test_module_installs_additive_audit_schema_tab_and_employee_hooks(self) -> None:
         module = (MODULE / "kuraneabackoffice.php").read_text(encoding="utf-8")
-        self.assertIn("$this->version = '1.0.3';", module)
+        self.assertIn("$this->version = '1.0.4';", module)
         self.assertIn("installEmployeeProfileAudit", module)
         self.assertIn("installEmployeeProfileAuditTab", module)
         self.assertIn("AdminKuraneaEmployeeProfileAudit", module)

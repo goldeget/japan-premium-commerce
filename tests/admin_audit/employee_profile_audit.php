@@ -234,7 +234,7 @@ class ModuleAdminController
         return $this->nativeView;
     }
 
-    public function initHeader(): void
+    public function initHeader()
     {
     }
 

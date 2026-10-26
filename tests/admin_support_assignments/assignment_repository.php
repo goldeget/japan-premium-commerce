@@ -258,5 +258,6 @@ foreach ([SupportAssignmentSchema::currentTableSql('ps_'), SupportAssignmentSche
 supportAssignmentAssertThrows(static fn () => SupportAssignmentSchema::currentTableSql('x`; DROP TABLE ps_customer'), 'An unsafe table prefix must be rejected.');
 
 require_once __DIR__ . '/support_status_rendering.php';
+require_once __DIR__ . '/contact_privacy_guard.php';
 
 echo "PASS: shop-scoped support assignment, reassignment, idempotence, invalid targets, rollback, paginated older-inquiry access, and additive schema\n";

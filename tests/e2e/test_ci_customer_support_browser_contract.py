@@ -267,6 +267,8 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 "assignment_limited_employee_denied": True,
                 "image_attachment_admin_readback": True, "image_attachment_foreign_denied": True,
                 "disallowed_attachment_rejected": True,
+                "foreign_valid_thread_denied": True, "foreign_orderless_post_denied": True,
+                "orderless_thread_unchanged": True,
             }
             module.write_result(path, result)
             content = path.read_text(encoding="utf-8")
