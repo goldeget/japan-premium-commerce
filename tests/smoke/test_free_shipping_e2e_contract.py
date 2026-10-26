@@ -1170,7 +1170,8 @@ class FreeShippingE2eContractTest(unittest.TestCase):
                 self.assertIn(marker, browser)
 
         self.assertIn("verify_tracking_order", browser)
-        self.assertIn("_classify_isolated_admin_order_detail_url(browser.current_url, order_id)", browser)
+        self.assertIn("_classify_isolated_admin_order_detail_url(browser.current_url, expected_order_id)", browser)
+        self.assertIn("_matching_admin_order_document(", browser)
         self.assertIn("tracking_detail_url,\n            int(tracking_order.get(\"order_id\", 0)),", browser)
         for marker in (
             '"admin_fresh_document_readback": True',
@@ -1182,6 +1183,8 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             '"admin_origin_matches": True',
             '"customer_origin_matches": True',
             '"admin_fresh_get_method_get":',
+            '"admin_post_save_document_wait": post_save_document_wait',
+            '"admin_fresh_get_document_wait": fresh_get_document_wait',
             '"admin_and_customer_tracking_number_matches": True',
             '"unpaid_status_preserved": True',
             '"free_shipping_preserved": True',
@@ -1222,11 +1225,19 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         stderr = io.StringIO()
         TimeoutException = type("StaleElementReferenceException", (Exception,), {})
         namespace = {
+            "json": json,
             "re": re,
             "sys": SimpleNamespace(stderr=stderr),
             "urlparse": urlparse,
             "TRACKING_BROWSER_CONTEXTS": {"admin", "customer"},
-            "TRACKING_SUBSTAGES": {"admin_tracking_row_readback", "customer_tracking_cell_readback"},
+            "TRACKING_SUBSTAGES": {
+                "admin_tracking_row_readback", "customer_tracking_cell_readback",
+                "admin_post_save_document_wait", "admin_fresh_get_document_wait",
+            },
+            "ADMIN_DOCUMENT_WAIT_ROUTE_CLASSES": {
+                "modern_order_detail", "legacy_order_detail", "other_admin_route",
+            },
+            "ADMIN_DOCUMENT_WAIT_BODY_STATES": {"not_read", "read", "stale"},
             "_safe_tracking_pathname": lambda driver: "unknown",
         }
         exec(
@@ -1254,6 +1265,32 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertNotIn("private-email-sentinel", annotation)
         self.assertNotIn("private-token-sentinel", annotation)
         self.assertNotIn("controller=order-detail", annotation)
+
+        stderr.seek(0)
+        stderr.truncate(0)
+        namespace["_emit_failure"](
+            "verify_tracking_order",
+            TimeoutException("untrusted reference=must-not-be-written"),
+            None,
+            tracking_diagnostics={
+                "browser_context": "admin",
+                "substage": "admin_post_save_document_wait",
+                "safe_pathname": "/admin-kuranea/index.php/sell/orders/id/view",
+                "document_wait_predicate": {
+                    "attempt_count": 3,
+                    "route_class": "modern_order_detail",
+                    "body_text_read": "stale",
+                    "body_reference_matches": False,
+                    "stale_seen": True,
+                    "order_reference": "must-not-be-written",
+                },
+            },
+        )
+        annotation = stderr.getvalue()
+        self.assertIn('document_wait={"attempt_count":3,"body_reference_matches":false', annotation)
+        self.assertIn('"body_text_read":"stale"', annotation)
+        self.assertIn('"stale_seen":true', annotation)
+        self.assertNotIn("must-not-be-written", annotation)
 
     def test_tracking_path_snapshot_masks_dynamic_ids_and_survives_closed_driver(self) -> None:
         source = ast.parse(BROWSER.read_text(encoding="utf-8"))
@@ -1412,6 +1449,87 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         self.assertIn('get_attribute("textContent")', source)
         self.assertIn("_reconcile_admin_shipping_total(", source)
         self.assertIn('"shipping-free-order-tracking-admin.png"', source)
+
+    def test_post_save_admin_document_wait_retries_only_stale_body_reads(self) -> None:
+        browser_tree = ast.parse(BROWSER.read_text(encoding="utf-8"))
+        helpers = [
+            node for node in browser_tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_matching_admin_order_document"
+        ]
+        self.assertEqual(len(helpers), 1)
+
+        stale_exception = type("StaleElementReferenceException", (Exception,), {})
+        helper_namespace = {
+            "By": SimpleNamespace(TAG_NAME="tag name"),
+            "StaleElementReferenceException": stale_exception,
+            "ADMIN_ORDER_DETAIL_ROUTE_CLASSES": {"modern_order_detail", "legacy_order_detail"},
+            "ADMIN_DOCUMENT_WAIT_ROUTE_CLASSES": {
+                "modern_order_detail", "legacy_order_detail", "other_admin_route",
+            },
+            "_classify_isolated_admin_order_detail_url": (
+                lambda href, expected_id: (
+                    "modern_order_detail" if href.endswith("/orders/id/view") else "other_admin_route"
+                )
+            ),
+        }
+        exec(
+            compile(ast.Module(body=helpers, type_ignores=[]), str(BROWSER), "exec"),
+            helper_namespace,
+        )
+
+        class Body:
+            def __init__(self, value: str | None = None, stale: bool = False):
+                self.value = value
+                self.stale = stale
+
+            @property
+            def text(self) -> str:
+                if self.stale:
+                    raise stale_exception("synthetic transient detach")
+                return self.value or ""
+
+        class Browser:
+            current_url = "http://localhost:18080/admin-kuranea/index.php/sell/orders/id/view"
+
+            def __init__(self, bodies: list[Body]):
+                self.bodies = iter(bodies)
+
+            def find_element(self, by: str, selector: str) -> Body:
+                self.assert_selector = (by, selector)
+                return next(self.bodies)
+
+        predicate = helper_namespace["_matching_admin_order_document"]
+        retry_state: dict[str, object] = {}
+        browser = Browser([Body(stale=True), Body("reference-ci-only")])
+        self.assertFalse(predicate(browser, "reference-ci-only", 10, retry_state))
+        self.assertEqual(retry_state["body_text_read"], "stale")
+        self.assertIs(retry_state["stale_seen"], True)
+        self.assertTrue(predicate(browser, "reference-ci-only", 10, retry_state))
+        self.assertEqual(retry_state["body_text_read"], "read")
+        self.assertIs(retry_state["body_reference_matches"], True)
+
+        persistent_stale_state: dict[str, object] = {}
+        persistent_stale = Browser([Body(stale=True), Body(stale=True), Body(stale=True)])
+        for _ in range(3):
+            self.assertFalse(predicate(persistent_stale, "reference-ci-only", 10, persistent_stale_state))
+        self.assertIs(persistent_stale_state["stale_seen"], True)
+        self.assertIs(persistent_stale_state["body_reference_matches"], False)
+
+        wrong_route = Browser([Body("reference-ci-only")])
+        wrong_route.current_url = "http://localhost:18080/admin-kuranea/index.php/sell/orders"
+        self.assertFalse(predicate(wrong_route, "reference-ci-only", 10, {}))
+
+        wrong_reference = Browser([Body("another-ci-only-reference")])
+        self.assertFalse(predicate(wrong_reference, "reference-ci-only", 10, {}))
+
+        admin_source = ast.get_source_segment(BROWSER.read_text(encoding="utf-8"), next(
+            node for node in browser_tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_assign_tracking_number_through_admin_ui"
+        )) or ""
+        self.assertIn("_matching_admin_order_document(", admin_source)
+        self.assertIn("WebDriverWait(driver, 35).until(matching_order_document)", admin_source)
+        self.assertIn("document_wait_predicate", admin_source)
 
     def test_customer_tracking_failure_screenshot_requires_password_clear(self) -> None:
         browser = BROWSER.read_text(encoding="utf-8")

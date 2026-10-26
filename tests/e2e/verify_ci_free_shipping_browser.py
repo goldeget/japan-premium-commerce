@@ -46,6 +46,11 @@ CONFIG_PATH = QA_DIR / "shipping-free-carrier.json"
 ORDER_PATH = QA_DIR / "shipping-free-order.json"
 EXPECTED_SHOP_PORT = 18080
 TRACKING_BROWSER_CONTEXTS = {'admin', 'customer'}
+ADMIN_ORDER_DETAIL_ROUTE_CLASSES = {'modern_order_detail', 'legacy_order_detail'}
+ADMIN_DOCUMENT_WAIT_ROUTE_CLASSES = ADMIN_ORDER_DETAIL_ROUTE_CLASSES | {
+    'origin_mismatch', 'admin_folder_mismatch', 'other_admin_route', 'invalid_url', 'unknown',
+}
+ADMIN_DOCUMENT_WAIT_BODY_STATES = {'not_read', 'read', 'stale'}
 TRACKING_SUBSTAGES = {
     'not_started', 'admin_target_route', 'admin_target_document_wait',
     'admin_history_tab', 'admin_history_tab_target', 'admin_history_tab_panel',
@@ -1979,6 +1984,33 @@ def _matches_isolated_admin_order_detail_url(href: str, expected_order_id: int) 
     }
 
 
+def _matching_admin_order_document(browser, expected_reference: str, expected_order_id: int, diagnostics: dict) -> bool:
+    """Poll only through a transient stale body read; require the exact order and admin route."""
+    attempt_count = diagnostics.get('attempt_count', 0)
+    if type(attempt_count) is not int or attempt_count < 0:
+        attempt_count = 0
+    diagnostics['attempt_count'] = min(attempt_count + 1, 9999)
+    diagnostics['stale_seen'] = diagnostics.get('stale_seen') is True
+
+    route_class = _classify_isolated_admin_order_detail_url(browser.current_url, expected_order_id)
+    diagnostics['route_class'] = (
+        route_class if route_class in ADMIN_DOCUMENT_WAIT_ROUTE_CLASSES else 'unknown'
+    )
+    diagnostics['body_text_read'] = 'not_read'
+    diagnostics['body_reference_matches'] = False
+    try:
+        body_text = browser.find_element(By.TAG_NAME, 'body').text
+    except StaleElementReferenceException:
+        diagnostics['body_text_read'] = 'stale'
+        diagnostics['stale_seen'] = True
+        return False
+
+    body_reference_matches = expected_reference in body_text
+    diagnostics['body_text_read'] = 'read'
+    diagnostics['body_reference_matches'] = body_reference_matches
+    return body_reference_matches and route_class in ADMIN_ORDER_DETAIL_ROUTE_CLASSES
+
+
 def _observed_admin_order_document_get(driver, expected_order_id: int) -> bool:
     """Confirm a document GET for this order without retaining or emitting its URL."""
     for entry in driver.get_log("performance"):
@@ -2132,16 +2164,24 @@ def _assign_tracking_number_through_admin_ui(
     _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_tracking_submit', driver)
     checkout.click_at_center(driver, update_button)
 
+    document_wait_state = {
+        'attempt_count': 0,
+        'route_class': 'unknown',
+        'body_text_read': 'not_read',
+        'body_reference_matches': False,
+        'stale_seen': False,
+    }
+    if isinstance(tracking_diagnostics, dict):
+        tracking_diagnostics['document_wait_predicate'] = document_wait_state
+
     def matching_order_document(browser) -> bool:
-        if order.get("reference") not in browser.find_element(By.TAG_NAME, "body").text:
-            return False
-        return _classify_isolated_admin_order_detail_url(browser.current_url, order_id) in {
-            "modern_order_detail",
-            "legacy_order_detail",
-        }
+        return _matching_admin_order_document(
+            browser, str(order.get("reference", "")), order_id, document_wait_state
+        )
 
     _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_post_save_document_wait', driver)
     WebDriverWait(driver, 35).until(matching_order_document)
+    post_save_document_wait = dict(document_wait_state)
     admin_route_class_after_save = _classify_isolated_admin_order_detail_url(driver.current_url, order_id)
     _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_post_save_shipping_tab', driver)
     _activate_admin_order_tab(
@@ -2167,8 +2207,18 @@ def _assign_tracking_number_through_admin_ui(
     driver.get_log("performance")
     driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": True})
     driver.refresh()
+    document_wait_state = {
+        'attempt_count': 0,
+        'route_class': 'unknown',
+        'body_text_read': 'not_read',
+        'body_reference_matches': False,
+        'stale_seen': False,
+    }
+    if isinstance(tracking_diagnostics, dict):
+        tracking_diagnostics['document_wait_predicate'] = document_wait_state
     _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_fresh_get_document_wait', driver)
     WebDriverWait(driver, 35).until(matching_order_document)
+    fresh_get_document_wait = dict(document_wait_state)
     admin_fresh_get_method_get = _observed_admin_order_document_get(driver, order_id)
     if not admin_fresh_get_method_get:
         raise AssertionError("the fresh native order document did not produce a matching GET request")
@@ -2226,6 +2276,8 @@ def _assign_tracking_number_through_admin_ui(
         "admin_post_save_order_id_matches": True,
         "admin_fresh_get_order_id_matches": True,
         "admin_fresh_get_method_get": admin_fresh_get_method_get,
+        "admin_post_save_document_wait": post_save_document_wait,
+        "admin_fresh_get_document_wait": fresh_get_document_wait,
         "admin_fresh_get_method_get": admin_fresh_get_method_get,
         "admin_order_state_id_before": status_before_tracking_update,
         "admin_order_state_id_after": status_after_tracking_update,
@@ -2714,6 +2766,28 @@ def _emit_failure(
             safe_path = 'unknown'
         route_suffix = f"; path={safe_path}"
         tracking_suffix = f"; browser_context={browser_context}; tracking_substage={tracking_substage}"
+        if tracking_substage in {"admin_post_save_document_wait", "admin_fresh_get_document_wait"}:
+            predicate = tracking_diagnostics.get('document_wait_predicate')
+            if isinstance(predicate, dict):
+                attempt_count = predicate.get('attempt_count')
+                if type(attempt_count) is not int or attempt_count < 0:
+                    attempt_count = 0
+                route_class = predicate.get('route_class')
+                if type(route_class) is not str or route_class not in ADMIN_DOCUMENT_WAIT_ROUTE_CLASSES:
+                    route_class = 'unknown'
+                body_text_read = predicate.get('body_text_read')
+                if type(body_text_read) is not str or body_text_read not in ADMIN_DOCUMENT_WAIT_BODY_STATES:
+                    body_text_read = 'not_read'
+                safe_predicate = {
+                    'attempt_count': min(attempt_count, 9999),
+                    'body_reference_matches': predicate.get('body_reference_matches') is True,
+                    'body_text_read': body_text_read,
+                    'route_class': route_class,
+                    'stale_seen': predicate.get('stale_seen') is True,
+                }
+                tracking_suffix += '; document_wait=' + json.dumps(
+                    safe_predicate, sort_keys=True, separators=(',', ':')
+                )
         # Tracking-stage diagnostics are enums; avoid free-form exception details.
         detail_suffix = ""
     print(
