@@ -1,5 +1,14 @@
 # ORDENOWA 테스트 결과
 
+## 2026-10-26 — 동일 imported draft 편집·재조회·재수집 검사 추가
+
+- 코드 SHA d49fa7d2e5b7714fee8f31bdd1558f54bdb2a6d7를 work에 push했고 origin/work와 일치함을 확인했다. main은 변경하지 않았다.
+- 기존 성공 기준점은 e1cd6d0 / 전체 격리 Actions #40272141646 SUCCESS다. 새 run [#40275686536](https://github.com/goldeget/japan-premium-commerce/actions/runs/40275686536)은 d49fa7d에서 시작되어 현재 진행 중이며 결과를 아직 주장하지 않는다.
+- 추가된 browser acceptance는 승인 상품의 동일 ID를 유지한 채 EN/KO 텍스트·설명, JPY sale price, 두 조합의 자체 재고를 변경하고 native save를 click한 뒤 정확한 성공 알림을 확인한다. 검증된 manager link로 fresh GET을 열어 필드와 이미지/옵션 identity를 읽고, 동일 source reimport 후 동일 product ID와 수정값 보존을 다시 확인한다.
+- 예상 persistence contract는 base stock 0, combination stocks [5,5], image 1개, combination 2개, 같은 reference 1개, product/shop 모두 inactive·hidden·unavailable-for-order다. 이는 코드 assertion이지 아직 #402756 결과가 아니다.
+- 관련 집중 contract/Python/YAML 검증과 독립 정적 리뷰는 이전 작업 기록에 있으며, PHP/PrestaShop/Chromium runtime은 GitHub Actions에 맡긴다. artifact와 실제 workflow outcome/aggregate는 run 종료 후 갱신한다.
+
+
 ## 2026-10-26 — catalog 승인 후 manager 경로 수정 및 전체 격리 QA
 
 - 수정 코드 `e1cd6d0c9d58ee2db64462387fef305c2ab0e757`를 `work`에 push했고 remote SHA를 재확인했다. `main`은 변경하지 않았다.
@@ -8,7 +17,7 @@
 - 회귀 검사는 기존 bare admin 경로 외에 slash/index.php 형식을 허용하고 잘못된 경로를 거부하는 것을 확인한다. 이 회귀 검사는 구현 전에 trailing slash 및 `index.php` 사례에서 실패했고 수정 후 통과했다.
 - 영향 검사: `test_catalog_import_browser_workflow_contract`, `test_catalog_import_admin_contract`, `test_isolated_ci_integration_workflow_contract` 합계 55개 PASS. 수정 Python 파일 `py_compile` 및 `git diff --check`도 통과했다. 독립 read-only 리뷰는 경로 경계와 진단 schema에서 추가 문제를 찾지 못했다.
 - 전체 격리 Actions [#40272141646](https://github.com/goldeget/japan-premium-commerce/actions/runs/40272141646), source SHA `e1cd6d0c9d58ee2db64462387fef305c2ab0e757`: workflow conclusion SUCCESS. Step 46 browser flow가 `PASS: synthetic batch, rejection, reviewed draft, local image and same-product reimport readback.`를 출력했고, Step 87 aggregate는 완료했으며 기록된 `CATALOG_IMPORT_BROWSER_QA_OUTCOME=success`로 전체 aggregate PASS를 확인했다.
-- 같은 브라우저가 manager editor 화면에서 승인된 native product ID의 언어·가격·카테고리·이미지·옵션/조합 재고 필드를 읽어 확인하고, 같은 상품 ID로 reimport 후 같은 값을 다시 비교한다. manager editor의 별도 저장 버튼 동작은 이 catalog flow에서 실행하지 않았다. workflow의 read-only DB 결과는 비활성/비노출/주문불가, 이미지 1, 조합 2, 동일 reference 1을 확인했다. `catalog-import-readback.json`과 `catalog-import-persistence.json` 및 화면 캡처는 [artifact 12628194683](https://github.com/goldeget/japan-premium-commerce/actions/runs/40272141646/artifacts/12628194683)에 있다.
+- 같은 브라우저가 manager editor 화면에서 승인된 native product ID의 언어·가격·카테고리·이미지·옵션/조합 재고 필드를 읽어 확인하고, 같은 상품 ID로 reimport 후 같은 값을 다시 비교했다. 해당 e1cd6d0 flow에는 manager editor의 별도 저장 버튼 동작이 없었다. workflow의 read-only DB 결과는 비활성/비노출/주문불가, 이미지 1, 조합 2, 동일 reference 1을 확인했다. 독립 QA는 artifact 12628194683의 draft/reimport PNG를 실제 열어 표시 이름·가격·비활성 상태·성공 화면만 확인했으며, 재고 숫자 화면 검수는 하지 않았다. catalog-import-readback.json과 catalog-import-persistence.json은 이 artifact에 있다.
 - 이 세션은 해당 artifact ZIP 다운로드에서 403을 받아 이미지를 직접 열지 않았다. artifact 생성 및 coverage PASS는 시각 검수를 뜻하지 않는다. 실제 상품 페이지 수집, 실제 상품/이미지 사용권, 판매 게시, 외부 거래는 확인되지 않았다.
 
 ## 2026-10-25 — 시각 QA 잔여 항목 수정 및 전체 격리 검증 완료

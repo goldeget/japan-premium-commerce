@@ -439,3 +439,12 @@
 - 새 parser run [39760154509](https://github.com/goldeget/japan-premium-commerce/actions/runs/39760154509)은 성공했다. 이는 PHP lint 및 synthetic Amazon Japan/Rakuten parser 검증이다. 실제 외부 상품 수집과 PrestaShop 네이티브 상품 등록은 0건/미검증이다.
 - fresh-install run [39759208769](https://github.com/goldeget/japan-premium-commerce/actions/runs/39759208769)은 image build, isolated cache probe, 빈 볼륨 상점 시작, catalog 모듈 설치 및 PrestaShop 재시작 후 별도 queue 보존까지 통과했다. 공식 Japan Post archive download가 `curl_exit=22 http_status=503 effective_host=www.post.japanpost.jp`로 실패해 lookup/address/order/admin/restart 후속 검사는 건너뛰었다. 후속 run [39760154414](https://github.com/goldeget/japan-premium-commerce/actions/runs/39760154414)도 같은 HTTP 503으로 실패했으며 updater의 기존 `curl --retry 3 --retry-delay 2` 이후에도 지속됐다. 주소/주문 E2E는 여전히 검증되지 않았다.
 - 최신 로컬 확인: business-profile Python 계약 10/10, admin-locale 13/13, fresh-install workflow 계약 12/12, `git diff --check`, `bash -n docker/kuranea-entrypoint.sh`, Compose 및 두 workflow YAML parse 통과. 호스트 PHP CLI가 없어 로컬 PHP 직접 실행은 하지 않았다. 로컬 운영 DB/컨테이너 변경과 브라우저 캡처는 없고 기존 KURANEA/ORDENOWA 자산 상태를 바꾸지 않았다.
+
+
+## 2026-10-26 — imported draft manager edit/save/readback coverage
+
+- Starting point: work HEAD and origin/work were confirmed at d49fa7d2e5b7714fee8f31bdd1558f54bdb2a6d7; main remains ee02a3657448d563508687614a246e05ac61eecd. Existing user files were preserved.
+- Added an isolated browser flow for the exact approved imported product: edit EN/KO text, sale price and both option stocks; native save click; exact success notice; fresh GET via the previously validated same-origin manager link; compare saved values and retained image/category/tax/option identities; reimport the same source and assert the same product ID, unchanged product set and preserved manager edits.
+- The product remains behind the existing inactive/hidden/non-orderable gate; the price-hidden manager guard is preserved. No storefront publication, production DB, deployment or real transaction was performed. This does not close GAP-002.
+- Focused catalog/admin/workflow contract tests, Python syntax, workflow YAML and diff checks had passed before commit; independent read-only review found no blocking identity or gate issue. Local PHP CLI is unavailable, so PrestaShop runtime assertions await Actions.
+- Commit d49fa7d2e5b7714fee8f31bdd1558f54bdb2a6d7 was pushed; git ls-remote confirmed origin/work at the same SHA and main unchanged. Full isolated run #40275686536 was last observed at 05:53 UTC on Step 56 (Chromium PWA/cache QA); do not record its browser or aggregate result until completed.

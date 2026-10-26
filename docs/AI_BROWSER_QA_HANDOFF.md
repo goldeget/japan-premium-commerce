@@ -1,10 +1,18 @@
 # ORDENOWA AI Browser QA Handoff
 
-## 최신 합성 catalog 관리자 브라우저 증거 (2026-10-26 05:20 UTC)
+## 최신 pending manager edit 화면 (2026-10-26 05:45 UTC)
+
+- Source: work SHA d49fa7d2e5b7714fee8f31bdd1558f54bdb2a6d7. Isolated full run [#40275686536](https://github.com/goldeget/japan-premium-commerce/actions/runs/40275686536) is in progress; artifact ID is not available yet.
+- 기존 e1cd6d0 / #40272141646 / artifact 12628194683는 batch/rejection/options/draft/reimport의 합성 증거이며, 독립 검수에서 draft/reimport 캡처를 실제 열어 확인했다. 이 기준점에는 manager edit save click이 없었다.
+- 새 flow는 승인 draft의 EN/KO 텍스트, 자체 판매가, 두 옵션 재고를 저장하고 fresh GET, 동일 source 재수집 후 같은 ID·수정 필드·이미지/옵션 identity·inactive flags를 검사한다. Step 46 log/JSON은 browser·DB assertion 근거이고, 캡처는 화면만 증명한다.
+- 새 artifact가 생기면 catalog-import-manager-edited.png를 우선 열어 저장 후 값과 비활성 안내를 확인한다. 이 화면은 synthetic product이며 screenshot-only visual evidence다. 실제 source 수집, same-product storefront publication, 운영 SKU fidelity 또는 실기기 PASS로 확대하지 않는다.
+
+
+## 직전 완료 합성 catalog 관리자 브라우저 증거 (2026-10-26 05:20 UTC)
 
 - 대상 코드 SHA: `e1cd6d0c9d58ee2db64462387fef305c2ab0e757` (`work`); 전체 격리 run [#40272141646](https://github.com/goldeget/japan-premium-commerce/actions/runs/40272141646) SUCCESS. Step 46은 batch, 옵션 거부/반려, Amazon 단일 옵션 승인, 동일 native 상품 관리자 readback 및 reimport/readback을 PASS했고, Step 87 aggregate도 성공했다.
 - Artifact: [`ordenowa-storefront-browser-40272141646-1` / ID 12628194683](https://github.com/goldeget/japan-premium-commerce/actions/runs/40272141646/artifacts/12628194683). Codex artifact download가 403으로 실패했으므로 이 세션에서는 PNG를 열지 않았다. 업로드/coverage 성공을 visual review PASS로 보지 않는다.
-- Work-mode GPT visual review 대상: `catalog-import-batch.png`, `catalog-import-blocked-options.png`, `catalog-import-blocked-submit.png`, `catalog-import-rejected.png`, `catalog-import-review-options.png`, `catalog-import-draft.png`, `catalog-import-reimport.png`. 특히 승인된 synthetic item의 manager editor에서 정보가 보이는지, 비활성/비노출 보호 안내가 유지되는지, 승인 후 복귀·재수집 캡처가 일관되는지만 화면 근거로 기록한다. 캡처는 상호작용 증거가 아니며 review approval click/save와 manager field readback은 자동 Step 46 로그가 증명한다. 이 flow에서는 manager editor의 별도 저장 버튼을 누르지 않았다.
+- 독립 Work-mode GPT가 catalog-import-draft.png와 catalog-import-reimport.png를 실제 열어 합성 JA/EN/KO 텍스트, JPY 표시가격, 비활성 안내와 성공 재수집 화면을 시각 확인했다. 재고 숫자·이미지 세부 영역은 화면 아래여서 시각 확인 범위가 아니며, 관련 자동 DOM/DB readback과 구분한다. 다른 캡처의 upload/coverage 성공은 각 화면을 열어 확인했다는 뜻이 아니다. e1cd6d0 flow에는 manager editor의 별도 저장 버튼 동작이 없었고, 이 공백은 d49fa7d E2E에서 추가했다.
 - JSON evidence: `catalog-import-readback.json`은 same-product approval/readback/reimport 비교, `catalog-import-persistence.json`은 그 ID의 native flags/image/combination/reference DB readback이다. 자동 결과는 inactive, invisible, unavailable-for-order, image 1, combinations 2, same reference 1이다. 운영 게시/고객 노출은 하지 않았다.
 - 이 run은 exact synthetic Amazon/Rakuten fixtures다. 실제 marketplace page compatibility, live fetch, image rights, real SKU, production merchant state를 입증하지 않는다. 실제 기기 QA도 이 Chromium artifact로 PASS 처리하지 않는다.
 
@@ -14,7 +22,7 @@
 - Prior full isolated run #40231567083 verified SHA `aed4a3c` successfully. Work-mode GPT opened its browser artifact [ID 12613108935](https://github.com/goldeget/japan-premium-commerce/actions/runs/40231567083/artifacts/12613108935): Japanese details copy, mobile checkout controls, and the Japanese account heading were confirmed fixed.
 - That review found policy condition content still English, default/synthetic `Clothes`/`Art` categories, a Korean `My Account` heading, and the long mobile breadcrumb. Code fixes for Korean account chrome and wrapping the final product breadcrumb item are in `95af3a9`.
 - Full isolated run [#40233614104](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104) verified source SHA `95af3a9104b6e3f7bfc861155bdc73db9a91ab98`: workflow and Step 80 aggregate succeeded. The aggregate recorded `STOREFRONT_BROWSER_QA_OUTCOME=success` and `PWA_BROWSER_QA_OUTCOME=success`; Step 42 product/cart, Step 49 PWA lifecycle/private-cache, Step 73 artifact upload, Step 75 screenshot coverage, and Step 83 isolated cleanup succeeded. New browser artifact: [ID 12613919270](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104/artifacts/12613919270), `ordenowa-storefront-browser-40233614104-1`.
-- Re-open the new artifact and inspect only the affected screens: `pwa-desktop-ko-account.png`, `mobile-product-detail-breadcrumb.png`, and `mobile-product-detail.png`. Record screenshots as visual evidence only; click/input behavior is assessed by the E2E steps. This Codex turn has not opened the new PNGs, so the updated visual review remains pending.
+- Independent QA opened pwa-desktop-ko-account.png and mobile-product-detail-breadcrumb.png from artifact 12613919270 and confirmed the Korean account title and long breadcrumb wrapping for those two captured screens only. This is not whole-page or physical-device verification. Inspect the pending manager-edit screenshot from run #40275686536 separately.
 - The checkout policy labels and helper copy are the dynamic `conditions_to_approve` content rendered by Hummingbird `payment.tpl`, not static theme translation strings. Do not invent approved legal Japanese; await seller-provided copy. `Clothes`/`Art` are catalog category data; do not assign taxonomy labels without an approved mapping.
 - The local Codex Chromium launcher failed during crashpad initialization, so no new local image was captured or visually passed. The current source has 121 focused Python tests passing; this is separate from the successful Actions/browser evidence above.
 
@@ -35,7 +43,7 @@
 | `mobile-product-detail.png` (390×701) | Hummingbird breadcrumb는 가로 스크롤 UI이며 기존 document overflow 검사가 통과했다. CSS는 변경하지 않았다. | breadcrumb가 잘려 보이면 screenshot만으로 overflow 결론을 내리지 말고 horizontal-scroll indication/interaction evidence가 있는지 분리 기록한다. |
 | ja/en/ko desktop/mobile PWA account 및 offline 캡처 | Step 49의 6개 PWA case와 private cache 검증 PASS. | 문자 깨짐, 잘림, button, scroll, error appearance를 화면별로 살핀다. 시각 검수는 테스트 상호작용 증거가 아니다. |
 
-**코드·격리 QA:** 완료. **수정 후 시각 QA:** 위 artifact의 Work-mode GPT 열람/검수 대기. **실기기 QA:** 연결 기기 없음, `미검증—기기 연결 필요`. **운영 출시:** 실제 판매자/상품/세금/배송/결제·환불/법률/호스트 자료 대기.
+**코드·격리 QA:** e1cd6d0/#40272141646 기준 완료; d49fa7d manager edit flow의 runtime 결과 대기. **시각 QA:** #402336 artifact 12613919270의 한국어 계정 제목과 모바일 breadcrumb 두 화면은 독립 검수자가 실제 열어 확인했고, #402721 artifact 12628194683의 draft/reimport 두 화면도 독립 확인했다. 이번 run의 manager-edit 캡처는 아직 확인 대기다. **실기기 QA:** 연결 기기 없음, 미검증—기기 연결 필요. **운영 출시:** 실제 판매자/상품/세금/배송/결제·환불/법률/호스트 자료 대기.
 
 ## 기준 코드와 기존 증거
 
