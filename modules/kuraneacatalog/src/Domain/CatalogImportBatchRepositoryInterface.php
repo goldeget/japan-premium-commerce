@@ -8,10 +8,15 @@ use DateTimeImmutable;
 
 interface CatalogImportBatchRepositoryInterface
 {
+    public const MAX_RECENT_LIMIT = 50;
+
     /** @param list<string> $urls */
     public function create(array $urls, ?DateTimeImmutable $createdAt = null): CatalogImportBatch;
 
     public function find(string $batchId): ?CatalogImportBatch;
+
+    /** @return list<CatalogImportBatch> */
+    public function recent(int $limit = 20): array;
 
     /** Advance exactly one queued entry to processing and issue its attempt generation. */
     public function markProcessing(

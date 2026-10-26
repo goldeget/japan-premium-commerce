@@ -8,6 +8,8 @@ use DateTimeImmutable;
 
 interface ProductReviewQueueRepositoryInterface
 {
+    public const MAX_RECENT_LIMIT = 50;
+
     public function enqueue(
         NormalizedProductSnapshot $snapshot,
         ?DateTimeImmutable $queuedAt = null
@@ -59,4 +61,7 @@ interface ProductReviewQueueRepositoryInterface
 
     /** @return list<ProductReviewQueueEntry> */
     public function pending(): array;
+
+    /** @return list<ProductReviewQueueEntry> terminal approval/rejection decisions, newest first */
+    public function recentReviewed(int $limit = 20): array;
 }

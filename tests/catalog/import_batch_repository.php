@@ -165,6 +165,28 @@ if (!mkdir($privateDirectory, 0700, true) || !mkdir($shopRoot, 0700, true)) {
 
 try {
     $repository = new JsonFileCatalogImportBatchRepository($privateDirectory, $shopRoot);
+    $olderBatch = $repository->create(
+        ['https://www.amazon.co.jp/dp/B0KURANEA6'],
+        new DateTimeImmutable('2026-10-20T10:00:00+00:00')
+    );
+    $newerBatch = $repository->create(
+        ['https://www.amazon.co.jp/dp/B0KURANEA7'],
+        new DateTimeImmutable('2026-10-21T10:00:00+00:00')
+    );
+    $repository->markProcessing($newerBatch->id, $newerBatch->items[0]->id);
+    $historyBeforeRead = file_get_contents($privateDirectory . '/catalog-import-batches.json');
+    $historyRows = (new JsonFileCatalogImportBatchRepository($privateDirectory, $shopRoot))->recent(1);
+    catalogImportAssertSame(1, count($historyRows), 'Recent batch history should respect its requested limit after repository reconstruction.');
+    catalogImportAssertSame($newerBatch->id, $historyRows[0]->id, 'Recent batch history should sort by creation time descending.');
+    catalogImportAssertSame('processing', $historyRows[0]->items[0]->status, 'Recent history should expose the persisted current batch state.');
+    $historyRows = $repository->recent(2);
+    catalogImportAssertSame([$newerBatch->id, $olderBatch->id], array_map(static fn (CatalogImportBatch $batch): string => $batch->id, $historyRows),
+        'Recent batch history should be newest-first and include older batches up to the limit.');
+    catalogImportAssertSame($historyBeforeRead, file_get_contents($privateDirectory . '/catalog-import-batches.json'),
+        'Reading recent batch history must not mutate stored batches.');
+    catalogImportAssertThrows(static fn () => $repository->recent(0), 'Recent batch history must reject a zero limit.');
+    catalogImportAssertThrows(static fn () => $repository->recent(51), 'Recent batch history must reject a limit above the hard cap.');
+
     $stored = $repository->create([
         'https://www.amazon.co.jp/dp/B0KURANEA1?token=private-amazon-token',
         'https://item.rakuten.co.jp/fixture-shop/synthetic-case-b/?token=private-rakuten-token',

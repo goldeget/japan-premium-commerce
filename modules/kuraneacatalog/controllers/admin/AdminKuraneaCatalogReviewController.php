@@ -25,6 +25,7 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
     private string $feedback = '';
     private bool $feedbackIsError = false;
     private ?CatalogImportBatch $activeBatch = null;
+    private bool $activeBatchCanAutoAdvance = false;
     private ?ProductReviewQueueEntry $reviewedEntry = null;
 
     public function __construct()
@@ -74,6 +75,7 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
             $this->content .= $this->renderImportForm();
             $this->activeBatch ??= $this->loadRequestedBatch($batchRepository);
             $this->content .= $this->renderBatch($batchRepository);
+            $this->content .= $this->renderCatalogImportHistory($batchRepository, $queue);
             $this->content .= $this->renderQueue($pending, new PrestaShopNativeProductManager());
         } catch (Throwable) {
             http_response_code(503);
@@ -103,6 +105,7 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
             $urls = array_values(array_filter(array_map('trim', preg_split('/\R/u', $raw) ?: []), static fn (string $url): bool => $url !== ''));
             try {
                 $this->activeBatch = $batches->create($urls);
+                $this->activeBatchCanAutoAdvance = true;
                 $this->succeed(sprintf('%d개 고유 상품 URL을 수집 대기열에 추가했습니다.', count($this->activeBatch->items)));
             } catch (\InvalidArgumentException) {
                 $this->fail('상품 URL을 등록할 수 없습니다. Amazon Japan 또는 Rakuten의 지원 상품 주소를 1~10개 입력해 주세요.');
@@ -120,6 +123,7 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
             $batchId = trim((string) Tools::getValue('catalog_batch_id', ''));
             try {
                 $this->activeBatch = $this->catalogImportService($queue, $batches)->processNext($batchId);
+                $this->activeBatchCanAutoAdvance = true;
                 $counts = $this->activeBatch->counts();
                 $this->succeed(sprintf(
                     '수집 진행: 성공 %d건, 실패 %d건, 대기 %d건입니다.',
@@ -160,6 +164,7 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
                     return;
                 }
                 $this->activeBatch = $service->retryFailedItems($batchId);
+                $this->activeBatchCanAutoAdvance = true;
                 $this->succeed('실패한 상품만 재시도 대기열에 넣었습니다. 성공 항목은 유지했습니다.');
             } catch (Throwable) {
                 $this->fail('실패 항목을 재시도 대기열에 넣지 못했습니다. 배치 상태를 확인해 주세요.');
@@ -734,7 +739,8 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
         $counts = $this->activeBatch->counts();
         $completed = $counts['succeeded'] + $counts['failed'];
         $total = count($this->activeBatch->items);
-        $autoAdvance = $counts['queued'] > 0 && $this->canApprove();
+        $canProcessNext = $counts['queued'] > 0 && $this->canApprove();
+        $autoAdvance = $this->activeBatchCanAutoAdvance && $canProcessNext;
         $hasRetryableItems = false;
         foreach ($this->activeBatch->items as $item) {
             if ($item->status === CatalogImportBatchItem::STATUS_FAILED
@@ -761,12 +767,14 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
             $html .= '</td></tr>';
         }
         $html .= '</tbody></table>';
-        if ($autoAdvance) {
+        if ($canProcessNext) {
             $html .= '<form id="catalog-import-next" method="post" action="' . $this->escape($action) . '">'
                 . '<input type="hidden" name="token" value="' . $this->escape($token) . '">'
                 . '<input type="hidden" name="catalog_batch_id" value="' . $this->escape($this->activeBatch->id) . '">'
-                . '<button class="btn btn-primary" type="submit" name="submitKuraneaCatalogImportNext" value="1">다음 상품 수집</button></form>'
-                . '<script>window.setTimeout(function(){var f=document.getElementById("catalog-import-next");var button=f?f.querySelector(\'button[name="submitKuraneaCatalogImportNext"]\'):null;if(f&&button){f.requestSubmit(button);}},150);</script>';
+                . '<button class="btn btn-primary" type="submit" name="submitKuraneaCatalogImportNext" value="1">다음 상품 수집</button></form>';
+            if ($autoAdvance) {
+                $html .= '<script>window.setTimeout(function(){var f=document.getElementById("catalog-import-next");var button=f?f.querySelector(\'button[name="submitKuraneaCatalogImportNext"]\'):null;if(f&&button){f.requestSubmit(button);}},150);</script>';
+            }
         }
         if ($hasRetryableItems && $this->canApprove()) {
             $html .= '<form method="post" action="' . $this->escape($action) . '">'
@@ -988,6 +996,80 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
         $html .= '<button class="btn btn-primary" type="submit" name="submitKuraneaCatalogImportedDraft" value="1">최신 출처 검수 · 기존 초안 유지</button></form>';
 
         return $html;
+    }
+
+    private function renderCatalogImportHistory(
+        \Kuranea\Catalog\Domain\CatalogImportBatchRepositoryInterface $batches,
+        \Kuranea\Catalog\Domain\ProductReviewQueueRepositoryInterface $queue
+    ): string {
+        $recentBatches = $batches->recent(10);
+        $recentReviews = $queue->recentReviewed(10);
+        if ($recentBatches === [] && $recentReviews === []) {
+            return '';
+        }
+
+        $html = '<section class="panel" id="catalog-import-history"><h3>최근 상품 수집 및 검수 이력</h3>'
+            . '<h4>최근 상품 수집</h4>';
+        if ($recentBatches === []) {
+            $html .= '<p>저장된 상품 수집 이력이 없습니다.</p>';
+        } else {
+            $html .= '<table class="table"><thead><tr><th>생성 시각</th><th>진행</th><th>결과</th><th>조회</th></tr></thead><tbody>';
+            foreach ($recentBatches as $batch) {
+                $batchUrl = $this->catalogBatchUrl($batch->id);
+                if ($batchUrl === '') {
+                    continue;
+                }
+                $counts = $batch->counts();
+                $total = count($batch->items);
+                $completed = $counts['succeeded'] + $counts['failed'];
+                $html .= '<tr><td>' . $this->escape($batch->createdAt->format('Y-m-d H:i:s T')) . '</td>'
+                    . '<td>' . $completed . '/' . $total . '</td><td>성공 ' . $counts['succeeded'] . '건 · 실패 '
+                    . $counts['failed'] . '건 · 대기 ' . $counts['queued'] . '건 · 처리 중 ' . $counts['processing'] . '건</td>'
+                    . '<td><a href="' . $this->escape($batchUrl) . '">수집 결과 다시 보기</a></td></tr>';
+            }
+            $html .= '</tbody></table>';
+        }
+
+        $html .= '<h4>최근 검수 처리</h4>';
+        if ($recentReviews === []) {
+            $html .= '<p>저장된 승인·반려 이력이 없습니다.</p>';
+        } else {
+            $html .= '<table class="table"><thead><tr><th>처리 시각</th><th>상품</th><th>상태</th><th>관리자</th></tr></thead><tbody>';
+            foreach ($recentReviews as $entry) {
+                $approved = $entry->status === ProductReviewQueueEntry::STATUS_APPROVED;
+                $decisionAt = $approved ? $entry->approvedAt : $entry->rejectedAt;
+                $reviewer = $approved ? $entry->approvedBy : $entry->rejectedBy;
+                $status = $approved ? '승인 완료' : '반려 완료';
+                $productId = $approved ? (int) ($entry->nativeProductId ?? 0) : 0;
+                $productName = $this->escape($entry->snapshot->name);
+                if ($productId > 0) {
+                    $productName = '<a href="' . $this->escape($this->productManagerUrl($productId)) . '">'
+                        . $productName . ' · 상품 ID ' . $productId . '</a>';
+                }
+                $html .= '<tr><td>' . $this->escape($decisionAt?->format('Y-m-d H:i:s T') ?? '미기재') . '</td>'
+                    . '<td>' . $productName . '<br><small>' . $this->escape($this->sourceLabel($entry->snapshot->source))
+                    . ' · 출처 상품 ID ' . $this->escape($entry->snapshot->sourceProductId) . '</small></td>'
+                    . '<td>' . $status;
+                if (!$approved) {
+                    $html .= '<br><small>반려 사유: ' . $this->escape((string) $entry->rejectionReason) . '</small>';
+                }
+                $html .= '</td><td>' . $this->escape((string) $reviewer) . '</td></tr>';
+            }
+            $html .= '</tbody></table>';
+        }
+
+        return $html . '</section>';
+    }
+
+    private function catalogBatchUrl(string $batchId): string
+    {
+        if (preg_match('/\A[a-f0-9]{32}\z/', $batchId) !== 1) {
+            return '';
+        }
+        $url = (string) $this->context->link->getAdminLink('AdminKuraneaCatalogReview');
+        $separator = str_contains($url, '?') ? '&' : '?';
+
+        return $url . $separator . 'catalog_batch_id=' . rawurlencode($batchId);
     }
 
     private function renderReviewedStatus(): string

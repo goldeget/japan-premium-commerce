@@ -72,6 +72,11 @@ assertCatalogRejectionSame('employee:42', $rejected->rejectedBy, 'The rejection 
 assertCatalogRejectionSame($reason, $rejected->rejectionReason, 'The rejection should retain the trimmed reason.');
 assertCatalogRejectionSame('UTC', $rejected->rejectedAt?->getTimezone()->getName(), 'The rejection timestamp should be stored in UTC.');
 assertCatalogRejectionSame($snapshot->contentHash, $rejected->snapshot->contentHash, 'Rejection should preserve the snapshot content hash.');
+$recentMemoryDecisions = $queue->recentReviewed();
+assertCatalogRejectionSame([$snapshot->deduplicationKey], array_map(
+    static fn (ProductReviewQueueEntry $entry): string => $entry->idempotencyKey,
+    $recentMemoryDecisions
+), 'The in-memory review queue should expose terminal decisions through the same bounded history API.');
 $expectedSnapshot = $pending->snapshot->toArray();
 $expectedSnapshot['approvalStatus'] = 'rejected';
 assertCatalogRejectionSame($expectedSnapshot, $rejected->snapshot->toArray(), 'Rejection should preserve every source snapshot field.');
@@ -116,6 +121,10 @@ $approved = $approvedQueue->approveIfPending(
     $reviewedAt
 );
 assertCatalogRejectionTrue($approved !== null, 'The approval boundary fixture should reach approved state.');
+assertCatalogRejectionSame([$snapshot->deduplicationKey], array_map(
+    static fn (ProductReviewQueueEntry $entry): string => $entry->idempotencyKey,
+    $approvedQueue->recentReviewed()
+), 'The in-memory review queue history should include a persisted approval.');
 assertCatalogRejectionSame(null, $approvedQueue->rejectIfPending(
     $snapshot->deduplicationKey,
     $snapshot->contentHash,
@@ -168,6 +177,45 @@ try {
     assertCatalogRejectionSame($reason, $restoredRejection?->rejectionReason, 'Rejection reason should survive a JSON repository reload.');
     assertCatalogRejectionSame($reviewedAt->format('Y-m-d\TH:i:sP'), $restoredRejection?->rejectedAt?->format('Y-m-d\TH:i:sP'), 'UTC rejection time should survive a JSON repository reload.');
     assertCatalogRejectionSame($snapshot->contentHash, $restoredRejection?->snapshot->contentHash, 'The source content hash should survive a JSON repository reload.');
+
+    $approvedHistorySnapshot = (new AmazonJapanHtmlParser())->parse(
+        $fixtureHtml,
+        'https://www.amazon.co.jp/dp/B0KURANEA2',
+        $fetchedAt->modify('+1 minute')
+    );
+    $pendingHistorySnapshot = (new AmazonJapanHtmlParser())->parse(
+        $fixtureHtml,
+        'https://www.amazon.co.jp/dp/B0KURANEA3',
+        $fetchedAt->modify('+2 minutes')
+    );
+    $historyApprovalTime = $reviewedAt->modify('+1 hour');
+    $historyPending = $persistentQueue->enqueue($approvedHistorySnapshot, $fetchedAt->modify('+1 minute'));
+    $historyApproval = $persistentQueue->approveIfPending(
+        $historyPending->idempotencyKey,
+        $historyPending->snapshot->contentHash,
+        8202,
+        'employee:43',
+        $historyApprovalTime
+    );
+    assertCatalogRejectionTrue($historyApproval !== null, 'History fixture approval should persist before a fresh repository read.');
+    $persistentQueue->enqueue($pendingHistorySnapshot, $fetchedAt->modify('+2 minutes'));
+
+    $historyBeforeRead = file_get_contents($queuePath);
+    $reviewHistory = (new JsonFileProductReviewQueueRepository($queuePath))->recentReviewed(2);
+    assertCatalogRejectionSame(
+        [$historyPending->idempotencyKey, $snapshot->deduplicationKey],
+        array_map(static fn (ProductReviewQueueEntry $entry): string => $entry->idempotencyKey, $reviewHistory),
+        'Fresh review history should return approved and rejected decisions newest-first, excluding pending entries.'
+    );
+    assertCatalogRejectionSame(ProductReviewQueueEntry::STATUS_APPROVED, $reviewHistory[0]->status, 'Review history should retain the approved state.');
+    assertCatalogRejectionSame(ProductReviewQueueEntry::STATUS_REJECTED, $reviewHistory[1]->status, 'Review history should retain the rejected state.');
+    assertCatalogRejectionSame([$historyPending->idempotencyKey], array_map(
+        static fn (ProductReviewQueueEntry $entry): string => $entry->idempotencyKey,
+        $reopenedQueue->recentReviewed(1)
+    ), 'The history limit should be enforced after reopening the repository.');
+    assertCatalogRejectionSame($historyBeforeRead, file_get_contents($queuePath), 'Reading review history must not mutate persisted decisions.');
+    assertCatalogRejectionThrows(InvalidArgumentException::class, static fn () => $persistentQueue->recentReviewed(0), 'Review history must reject a zero limit.');
+    assertCatalogRejectionThrows(InvalidArgumentException::class, static fn () => $persistentQueue->recentReviewed(51), 'Review history must reject a limit above the hard cap.');
 
     $legacyQueuePath = $queueDirectory . '/legacy-queue.json';
     $legacyEntry = $pending->toArray();

@@ -348,6 +348,64 @@ try {
     assertCatalogAdminTrue(in_array('product.add', CatalogNativeRegistrarLockTestState::$events, true), 'A confirmed request should delegate to the native registrar adapter.');
     assertCatalogAdminTrue(str_contains($approvedPostController->content, 'TEST/DEMO 상품 ID 1234'), 'The screen should show the TEST/DEMO approval result.');
 
+    $historyBatch = \Kuranea\Catalog\Infrastructure\Persistence\CatalogImportBatchRepositoryFactory::fromEnvironment(_PS_ROOT_DIR_)->create(
+        ['https://www.amazon.co.jp/dp/B0KURANEA6?private=must-not-render'],
+        new DateTimeImmutable('2026-10-24T12:00:00+00:00')
+    );
+    $historyRejectedSnapshot = (new \Kuranea\Catalog\Parsing\AmazonJapanHtmlParser())->parse(
+        $fixtureHtml,
+        'https://www.amazon.co.jp/dp/B0KURANEA7',
+        new DateTimeImmutable('2026-10-24T12:01:00+00:00')
+    );
+    $historyRejectedEntry = $catalogAdminQueue->enqueue($historyRejectedSnapshot);
+    $catalogAdminQueue->rejectIfPending(
+        $historyRejectedEntry->idempotencyKey,
+        $historyRejectedEntry->snapshot->contentHash,
+        'employee:42',
+        new DateTimeImmutable('2026-10-24T12:02:00+00:00'),
+        '합성 <script>검수</script> 반려 사유'
+    );
+
+    $_SERVER['REQUEST_METHOD'] = 'GET';
+    Tools::$submitted = false;
+    Tools::$values = [];
+    $batchFilePath = $catalogAdminStorage . '/catalog-import-batches.json';
+    $reviewFilePath = $catalogAdminStorage . '/review-queue.json';
+    $batchesBeforeFreshGet = file_get_contents($batchFilePath);
+    $reviewsBeforeFreshGet = file_get_contents($reviewFilePath);
+    $historyController = new AdminKuraneaCatalogReviewController();
+    $historyController->initContent();
+    assertCatalogAdminTrue(str_contains($historyController->content, 'id="catalog-import-history"'), 'A fresh GET should render bounded catalog batch and review history.');
+    assertCatalogAdminTrue(str_contains($historyController->content, '최근 상품 수집'), 'Batch history should have a Korean heading.');
+    assertCatalogAdminTrue(str_contains($historyController->content, '최근 검수 처리'), 'Review history should have a Korean heading.');
+    assertCatalogAdminTrue(str_contains($historyController->content, '승인 완료') && str_contains($historyController->content, '반려 완료'), 'Fresh review history should rediscover both terminal decisions.');
+    assertCatalogAdminTrue(str_contains($historyController->content, '합성 &lt;script&gt;검수&lt;/script&gt; 반려 사유'), 'Fresh review history should rediscover the escaped rejection reason.');
+    assertCatalogAdminTrue(!str_contains($historyController->content, '<script>검수</script>'), 'History must escape staff-supplied rejection text.');
+    assertCatalogAdminTrue(str_contains($historyController->content, 'catalog_batch_id=' . $historyBatch->id), 'The batch history link should reopen a batch using its validated identity.');
+    assertCatalogAdminTrue(!str_contains($historyController->content, 'https://www.amazon.co.jp/dp/B0KURANEA6'), 'History must not render submitted product URLs.');
+    assertCatalogAdminSame($batchesBeforeFreshGet, file_get_contents($batchFilePath), 'Reading fresh history must not mutate batch storage.');
+    assertCatalogAdminSame($reviewsBeforeFreshGet, file_get_contents($reviewFilePath), 'Reading fresh history must not mutate review decisions.');
+
+    Tools::$values = ['catalog_batch_id' => $historyBatch->id];
+    $reopenedBatchController = new AdminKuraneaCatalogReviewController();
+    $reopenedBatchController->initContent();
+    assertCatalogAdminTrue(str_contains($reopenedBatchController->content, 'data-batch-id="' . $historyBatch->id . '"'), 'A batch history link should reopen its persisted progress.');
+    assertCatalogAdminTrue(str_contains($reopenedBatchController->content, 'id="catalog-import-next"'), 'An authorized employee should be able to continue a reopened batch with an explicit action.');
+    assertCatalogAdminTrue(!str_contains($reopenedBatchController->content, 'f.requestSubmit(button)'), 'Reopening batch history on GET must not auto-submit queued work.');
+    assertCatalogAdminSame($batchesBeforeFreshGet, file_get_contents($batchFilePath), 'Reopening batch history on GET must not mutate batch state.');
+
+    $historyReadOnlyController = new AdminKuraneaCatalogReviewController();
+    $historyReadOnlyController->tabAccess = ['view' => 1, 'edit' => 0, 'add' => 0];
+    $historyReadOnlyController->initContent();
+    assertCatalogAdminTrue(str_contains($historyReadOnlyController->content, 'id="catalog-import-history"'), 'A view-only employee should be able to inspect read-only history.');
+    assertCatalogAdminTrue(!str_contains($historyReadOnlyController->content, 'id="product_urls"'), 'Read-only history must not grant catalog mutation controls.');
+    assertCatalogAdminTrue(!str_contains($historyReadOnlyController->content, 'id="catalog-import-next"'), 'Read-only history must not expose progress mutation controls.');
+
+    $historyNoViewController = new AdminKuraneaCatalogReviewController();
+    $historyNoViewController->tabAccess = ['view' => 0, 'edit' => 1, 'add' => 1];
+    $historyNoViewController->initContent();
+    assertCatalogAdminTrue(!str_contains($historyNoViewController->content, 'id="catalog-import-history"'), 'An employee without view permission must not receive import or decision history.');
+
     CatalogAdminTestCsrfTokenManager::$acceptedRequestToken = $formCsrfToken;
     CatalogAdminTestSymfonyContainer::$available = false;
     Tools::$values['idempotency_key'] = $catalogAdminEntry->idempotencyKey;

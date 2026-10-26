@@ -73,6 +73,25 @@ final class JsonFileCatalogImportBatchRepository implements CatalogImportBatchRe
         return $this->access(static fn (array &$batches): array => [$batches[$batchId] ?? null, false]);
     }
 
+    /** @return list<CatalogImportBatch> */
+    public function recent(int $limit = 20): array
+    {
+        if ($limit < 1 || $limit > CatalogImportBatchRepositoryInterface::MAX_RECENT_LIMIT) {
+            throw new \InvalidArgumentException('Recent catalog batch limit is outside the supported range.');
+        }
+
+        return $this->access(static function (array &$batches) use ($limit): array {
+            $recent = array_values($batches);
+            usort($recent, static function (CatalogImportBatch $left, CatalogImportBatch $right): int {
+                $createdOrder = $right->createdAt <=> $left->createdAt;
+
+                return $createdOrder !== 0 ? $createdOrder : strcmp($left->id, $right->id);
+            });
+
+            return [array_slice($recent, 0, $limit), false];
+        });
+    }
+
     public function markProcessing(
         string $batchId,
         string $itemId,

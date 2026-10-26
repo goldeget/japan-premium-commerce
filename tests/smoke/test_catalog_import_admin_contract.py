@@ -124,6 +124,29 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         self.assertNotIn("<form", status_renderer)
         self.assertIn("$this->escape((string) $entry->rejectionReason)", status_renderer)
 
+    def test_persisted_import_and_decision_history_is_bounded_and_read_only(self) -> None:
+        batch_interface = (ROOT / "modules" / "kuraneacatalog" / "src" / "Domain" / "CatalogImportBatchRepositoryInterface.php").read_text(encoding="utf-8")
+        queue_interface = (ROOT / "modules" / "kuraneacatalog" / "src" / "Domain" / "ProductReviewQueueRepositoryInterface.php").read_text(encoding="utf-8")
+        batch_repository = (ROOT / "modules" / "kuraneacatalog" / "src" / "Infrastructure" / "Persistence" / "JsonFileCatalogImportBatchRepository.php").read_text(encoding="utf-8")
+        persistent_queue = (ROOT / "modules" / "kuraneacatalog" / "src" / "Infrastructure" / "Persistence" / "JsonFileProductReviewQueueRepository.php").read_text(encoding="utf-8")
+        in_memory_queue = (ROOT / "modules" / "kuraneacatalog" / "src" / "Domain" / "ProductReviewQueue.php").read_text(encoding="utf-8")
+        history_renderer = self.controller.split("private function renderCatalogImportHistory(", 1)[1].split(
+            "private function renderReviewedStatus(", 1
+        )[0]
+
+        self.assertIn("public function recent(int $limit = 20): array", batch_interface)
+        self.assertIn("public function recentReviewed(int $limit = 20): array", queue_interface)
+        self.assertIn("recent(int $limit = 20): array", batch_repository)
+        self.assertIn("recentReviewed(int $limit = 20): array", persistent_queue)
+        self.assertIn("recentReviewed(int $limit = 20): array", in_memory_queue)
+        self.assertIn("$batches->recent(", history_renderer)
+        self.assertIn("$queue->recentReviewed(", history_renderer)
+        self.assertIn('id="catalog-import-history"', history_renderer)
+        self.assertIn("catalogBatchUrl(", history_renderer)
+        self.assertNotIn("canonicalUrl", history_renderer)
+        self.assertIn("$this->activeBatchCanAutoAdvance", self.batch_renderer)
+        self.assertIn("$this->canView()", self.controller)
+
     def test_import_mutations_keep_admin_token_and_capability_checks(self) -> None:
         validation = self.controller.split("private function validateImportMutation(): bool", 1)[1].split(
             "private function catalogImportService(", 1

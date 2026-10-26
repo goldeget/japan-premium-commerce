@@ -140,4 +140,33 @@ final class ProductReviewQueue implements ProductReviewQueueRepositoryInterface
             static fn (ProductReviewQueueEntry $entry): bool => $entry->status === ProductReviewQueueEntry::STATUS_PENDING
         ));
     }
+
+    /** @return list<ProductReviewQueueEntry> */
+    public function recentReviewed(int $limit = 20): array
+    {
+        if ($limit < 1 || $limit > ProductReviewQueueRepositoryInterface::MAX_RECENT_LIMIT) {
+            throw new \InvalidArgumentException('Recent catalog review limit is outside the supported range.');
+        }
+
+        $reviewed = array_values(array_filter(
+            $this->entries,
+            static fn (ProductReviewQueueEntry $entry): bool => in_array(
+                $entry->status,
+                [ProductReviewQueueEntry::STATUS_APPROVED, ProductReviewQueueEntry::STATUS_REJECTED],
+                true
+            )
+        ));
+        usort($reviewed, static function (ProductReviewQueueEntry $left, ProductReviewQueueEntry $right): int {
+            $leftAt = $left->status === ProductReviewQueueEntry::STATUS_APPROVED ? $left->approvedAt : $left->rejectedAt;
+            $rightAt = $right->status === ProductReviewQueueEntry::STATUS_APPROVED ? $right->approvedAt : $right->rejectedAt;
+            if ($leftAt === null || $rightAt === null) {
+                throw new \LogicException('A terminal catalog review decision is missing its timestamp.');
+            }
+            $decisionOrder = $rightAt <=> $leftAt;
+
+            return $decisionOrder !== 0 ? $decisionOrder : strcmp($left->idempotencyKey, $right->idempotencyKey);
+        });
+
+        return array_slice($reviewed, 0, $limit);
+    }
 }
