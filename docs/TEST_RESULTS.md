@@ -1,12 +1,12 @@
 # ORDENOWA 테스트 결과
 
-## 2026-10-26 — 동일 imported draft 편집·재조회·재수집 검사 추가
+## 2026-10-26 — imported draft 저장 확인의 DOM stale 경쟁 수정
 
-- code SHA d49fa7d2e5b7714fee8f31bdd1558f54bdb2a6d7를 먼저 work에 push했고 origin/work와 일치함을 확인했다. 이후 docs-only status updates를 push했으며 앱/테스트 코드는 바꾸지 않았다. main은 변경하지 않았다.
-- 기존 성공 기준점은 e1cd6d0 / 전체 격리 Actions #40272141646 SUCCESS다. 별도 parser run #40275686540은 d49fa7d source에서 PHP lint, synthetic parser와 65개 contract를 SUCCESS로 마쳤다. 새 run [#40275686536](https://github.com/goldeget/japan-premium-commerce/actions/runs/40275686536)은 d49fa7d에서 시작되어 현재 진행 중이며 결과를 아직 주장하지 않는다.
-- 추가된 browser acceptance는 승인 상품의 동일 ID를 유지한 채 EN/KO 텍스트·설명, JPY sale price, 두 조합의 자체 재고를 변경하고 native save를 click한 뒤 정확한 성공 알림을 확인한다. 검증된 manager link로 fresh GET을 열어 필드와 이미지/옵션 identity를 읽고, 동일 source reimport 후 동일 product ID와 수정값 보존을 다시 확인한다.
-- 예상 persistence contract는 base stock 0, combination stocks [5,5], image 1개, combination 2개, 같은 reference 1개, product/shop 모두 inactive·hidden·unavailable-for-order다. 이는 코드 assertion이지 아직 #402756 결과가 아니다.
-- 관련 집중 contract/Python/YAML 검증과 독립 정적 리뷰는 이전 작업 기록에 있으며, PHP/PrestaShop/Chromium runtime은 GitHub Actions에 맡긴다. artifact와 실제 workflow outcome/aggregate는 run 종료 후 갱신한다.
+- 시작 원격은 `422f73120aeeb33327c342a1b6994897036dbd6f`였고 work만 수정했다. `d49fa7d2e5b7714fee8f31bdd1558f54bdb2a6d7`의 전체 QA [#40275686536](https://github.com/goldeget/japan-premium-commerce/actions/runs/40275686536)은 `catalog_import_browser_qa=failure` 하나로 종료됐다. 안전 진단은 `manager_edit_save_confirmation`, `StaleElementReferenceException`, save click 반환, HTTP 200, 동일 hidden product ID를 보였다. 저장 성공/실패 및 fresh readback은 입증되지 않았다.
+- 독립 검수 artifact [12630308572](https://github.com/goldeget/japan-premium-commerce/actions/runs/40275686536/artifacts/12630308572)의 failure crop은 보호 안내만 보였다. 편집값, 저장 알림, 실패 element가 없어 화면으로는 원인을 더 좁힐 수 없었다. 앱 저장 결함으로 단정하지 않는다.
+- 관리자 컨트롤러가 no-image edit에 내는 정확한 success notice와 브라우저 기대 문자열은 일치한다. 테스트가 `.alert-success`를 여러 Selenium WebElement 호출로 읽어 DOM 갱신 경합 시 stale 참조가 전파될 수 있었다. `tests/e2e/verify_catalog_import_browser.py`는 이제 표시 중인 alert와 exact full notice를 한 번의 synchronous DOM snapshot에서 비교하고 bool만 돌려준다. 동일한 기대 문구, native click, fresh GET 및 edited value/image/option assertions는 유지한다. 안전 진단에는 success notice의 존재만 boolean으로 추가했다.
+- TDD regression contract는 수정 전 함수 부재로 실패했고 수정 후 정확 텍스트/한 번의 DOM snapshot 조건을 검사한다. 관련 browser/workflow contract 38/38, `py_compile`, `git diff --check` 통과. 독립 정적 리뷰에서 blocker는 없었다.
+- 수정 commit `e085be59a0f9f061769fe7ab3cb79e025042b960`를 work에 push했고 `git ls-remote`로 동일 원격 SHA를 확인했다. 전체 격리 QA [#40277922728](https://github.com/goldeget/japan-premium-commerce/actions/runs/40277922728)은 e085be5에서 실행 중이며 마지막 관측은 Step 14 `Start the empty-volume shop`다. 저장→fresh GET→same-source reimport 및 aggregate outcome은 대기 중이며 성공으로 보고하지 않는다.
 
 
 ## 2026-10-26 — catalog 승인 후 manager 경로 수정 및 전체 격리 QA
