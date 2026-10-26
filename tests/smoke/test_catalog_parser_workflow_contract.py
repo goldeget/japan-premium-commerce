@@ -15,7 +15,7 @@ class CatalogParserWorkflowContract(unittest.TestCase):
         self.assertIn('if php tests/catalog/run.php >"$test_log" 2>&1; then', step)
         self.assertIn('test_status=$?', step)
         self.assertIn('tail -n 80 "$test_log"', step)
-        self.assertIn("grep -m1 '^PHP Fatal error: Uncaught ' \"$test_log\"", step)
+        self.assertIn("grep -m1 -E 'Uncaught|Fatal error' \"$test_log\"", step)
         self.assertIn("s/; expected .*//; s/ in .*//", step)
         self.assertIn('Offline catalog tests failed; see the bounded step summary.', step)
         self.assertNotIn('tail -n 1 "$test_log"', step)
