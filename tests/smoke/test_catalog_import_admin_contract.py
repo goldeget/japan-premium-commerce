@@ -180,6 +180,20 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         self.assertIn("$this->isValidImportMutationToken()", approval)
         self.assertNotIn("getAdminTokenLite", approval)
 
+    def test_missing_csrf_service_negative_fixture_executes_a_real_approval_post(self) -> None:
+        harness = (ROOT / "tests" / "catalog" / "admin_review_controller.php").read_text(encoding="utf-8")
+        missing_service_case = harness.split("CatalogAdminTestSymfonyContainer::$available = false;", 1)[1].split(
+            "CatalogAdminTestSymfonyContainer::$available = true;", 1
+        )[0]
+        self.assertIn("$_SERVER['REQUEST_METHOD'] = 'POST';", missing_service_case)
+        self.assertIn("Tools::$submitted = true;", missing_service_case)
+        self.assertIn("Tools::$submittedAction = 'submitKuraneaCatalogApprove';", missing_service_case)
+        self.assertIn("'token' => $formCsrfToken", missing_service_case)
+        self.assertIn("$missingCsrfServiceController->initContent();", missing_service_case)
+        self.assertIn("A missing PrestaShop CSRF service must fail closed.", missing_service_case)
+        self.assertIn("A missing CSRF service must not invoke native product registration.", missing_service_case)
+        self.assertIn("'pending', $catalogAdminQueue->find($catalogAdminEntry->idempotencyKey)?->status", missing_service_case)
+
     def test_review_capabilities_use_prestashop_lazy_access_api(self) -> None:
         view = self.controller.split("private function canView(): bool", 1)[1].split(
             "private function canApprove(): bool", 1
