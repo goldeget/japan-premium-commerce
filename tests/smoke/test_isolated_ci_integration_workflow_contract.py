@@ -305,6 +305,8 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             import_diagnostics = {
                 "stage": "batch_url_field",
                 "last_completed_stage": "login",
+                "last_completed_substage": "not_started",
+                "click_diagnostics": None,
                 "same_admin_origin": True,
                 "admin_path_matches": True,
                 "controller_parameter_present": True,
