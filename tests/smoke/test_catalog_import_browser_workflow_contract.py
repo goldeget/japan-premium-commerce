@@ -200,6 +200,10 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'def capture_safe_manager_readback_crop(',
             'def validated_product_id_from_manager_link(',
             "query.get('controller') == ['AdminOrdenowaProductManager']",
+            'safe_manager_link_diagnostics',
+            'manager_link_path_class',
+            'manager_link_controller_matches',
+            "state['manager_link_diagnostics'] = safe_manager_link_diagnostics(product_link)",
             'state.get(\'native_product_id\')',
             "'catalog-import-failure.png'",
         ):
@@ -291,35 +295,68 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertIn('click.get(\'returned\') is True', save)
         self.assertIn('pre-submit screenshot would not be', save)
 
-    def test_approved_product_link_is_same_origin_manager_route_with_one_id(self):
+    def test_approved_product_link_accepts_only_native_admin_entrypoint_routes(self):
         browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
         tree = ast.parse(browser)
-        function = next(
+        functions = [
             node for node in tree.body
-            if isinstance(node, ast.FunctionDef) and node.name == 'validated_product_id_from_manager_link'
-        )
+            if isinstance(node, ast.FunctionDef)
+            and node.name in {
+                'manager_admin_path_class', 'safe_manager_link_diagnostics',
+                'validated_product_id_from_manager_link',
+            }
+        ]
         namespace = {
             'urlparse': urlparse,
             'parse_qs': parse_qs,
-            'ADMIN_LOGIN': 'https://shop.example.test/admin/index.php',
-            'ADMIN_PATH': '/admin/index.php',
+            'ADMIN_LOGIN': 'https://shop.example.test/admin',
+            'ADMIN_PATH': '/admin',
         }
-        exec(compile(ast.Module(body=[function], type_ignores=[]), '<route-helper-test>', 'exec'), namespace)
+        exec(compile(ast.Module(body=functions, type_ignores=[]), '<route-helper-test>', 'exec'), namespace)
         validated = namespace['validated_product_id_from_manager_link']
-        self.assertEqual(
-            validated('https://shop.example.test/admin/index.php?controller=AdminOrdenowaProductManager&id_product=42'),
-            42,
-        )
+        path_class = namespace['manager_admin_path_class']
+        diagnostics = namespace['safe_manager_link_diagnostics']
+        self.assertEqual(path_class('/admin'), 'admin_directory')
+        self.assertEqual(path_class('/admin/'), 'admin_directory_slash')
+        self.assertEqual(path_class('/admin/index.php'), 'admin_index_php')
+        self.assertEqual(path_class('/admin/index.php/other'), 'other')
+        for path in ('/admin', '/admin/', '/admin/index.php'):
+            with self.subTest(path=path):
+                href = (
+                    f'https://shop.example.test{path}?controller=AdminOrdenowaProductManager'
+                    '&id_product=42&token=synthetic-session-token'
+                )
+                self.assertEqual(
+                    validated(href),
+                    42,
+                )
+                self.assertTrue(diagnostics(href)['manager_link_path_matches'])
         for invalid in (
             'https://outside.example/admin/index.php?controller=AdminOrdenowaProductManager&id_product=42',
             'https://shop.example.test/admin/index.php?controller=AdminKuraneaCatalogReview&id_product=42',
+            'https://shop.example.test/admin/other?controller=AdminOrdenowaProductManager&id_product=42',
             'https://shop.example.test/admin/index.php/other?controller=AdminOrdenowaProductManager&id_product=42',
+            'https://shop.example.test/admin/index.php;other?controller=AdminOrdenowaProductManager&id_product=42',
+            'https://shop.example.test/admin2/index.php?controller=AdminOrdenowaProductManager&id_product=42',
             'https://shop.example.test/admin/index.php?controller=AdminOrdenowaProductManager&id_product=42&id_product=43',
             'https://shop.example.test/admin/index.php?controller=AdminOrdenowaProductManager&id_product=0',
         ):
             with self.subTest(invalid=invalid):
                 with self.assertRaises(AssertionError):
                     validated(invalid)
+        invalid_path_diagnostics = diagnostics(
+            'https://shop.example.test/admin/index.php/other?'
+            'controller=AdminOrdenowaProductManager&id_product=42'
+        )
+        self.assertEqual(invalid_path_diagnostics['manager_link_path_class'], 'other')
+        self.assertFalse(invalid_path_diagnostics['manager_link_path_matches'])
+        self.assertEqual(
+            diagnostics(
+                'https://shop.example.test/admin/index.php;other?'
+                'controller=AdminOrdenowaProductManager&id_product=42'
+            )['manager_link_path_class'],
+            'other',
+        )
 
     def test_browser_requires_one_loaded_native_product_image(self):
         source = self.read_required('tests/e2e/verify_catalog_import_browser.py')
@@ -514,6 +551,10 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'queue_unavailable_notice_visible': False, 'exception_class': 'ElementClickInterceptedException',
             'manager_route_matches': False, 'manager_product_id_parameter_present': False,
             'manager_product_id_parameter_matches': False, 'manager_id_field_present': False,
+            'manager_link_same_origin': False, 'manager_link_path_class': 'unknown',
+            'manager_link_path_matches': False, 'manager_link_controller_parameter_present': False,
+            'manager_link_controller_matches': False, 'manager_link_product_id_parameter_present': False,
+            'manager_link_product_id_valid': False,
             'manager_id_field_hidden': False, 'manager_product_id_field_matches': False,
             'manager_editor_visible': False, 'manager_load_failure_notice_visible': False,
             'manager_permission_denied_notice_visible': False, 'manager_inactive_notice_visible': False,
@@ -596,6 +637,13 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
                 'manager_product_id_parameter_present': True,
                 'manager_product_id_parameter_matches': True,
                 'manager_id_field_present': False,
+                'manager_link_same_origin': False,
+                'manager_link_path_class': 'unknown',
+                'manager_link_path_matches': False,
+                'manager_link_controller_parameter_present': False,
+                'manager_link_controller_matches': False,
+                'manager_link_product_id_parameter_present': False,
+                'manager_link_product_id_valid': False,
                 'manager_id_field_hidden': False,
                 'manager_product_id_field_matches': False,
                 'manager_editor_visible': False,
@@ -637,6 +685,10 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'queue_unavailable_notice_visible': False, 'exception_class': 'TimeoutException',
             'manager_route_matches': False, 'manager_product_id_parameter_present': False,
             'manager_product_id_parameter_matches': False, 'manager_id_field_present': False,
+            'manager_link_same_origin': False, 'manager_link_path_class': 'unknown',
+            'manager_link_path_matches': False, 'manager_link_controller_parameter_present': False,
+            'manager_link_controller_matches': False, 'manager_link_product_id_parameter_present': False,
+            'manager_link_product_id_valid': False,
             'manager_id_field_hidden': False, 'manager_product_id_field_matches': False,
             'manager_editor_visible': False, 'manager_load_failure_notice_visible': False,
             'manager_permission_denied_notice_visible': False, 'manager_inactive_notice_visible': False,

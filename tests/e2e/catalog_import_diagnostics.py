@@ -20,6 +20,9 @@ BOOLEAN_FIELDS = {
     'unclassified_alert_visible', 'read_only_notice_visible', 'access_denied_notice_visible',
     'queue_unavailable_notice_visible', 'manager_route_matches',
     'manager_product_id_parameter_present', 'manager_product_id_parameter_matches',
+    'manager_link_same_origin', 'manager_link_path_matches',
+    'manager_link_controller_parameter_present', 'manager_link_controller_matches',
+    'manager_link_product_id_parameter_present', 'manager_link_product_id_valid',
     'manager_id_field_present', 'manager_id_field_hidden', 'manager_product_id_field_matches',
     'manager_editor_visible', 'manager_load_failure_notice_visible',
     'manager_permission_denied_notice_visible', 'manager_inactive_notice_visible',
@@ -84,6 +87,9 @@ STRING_ENUMS = {
         'reimport_navigation', 'reimport_editor_id_presence', 'reimport_editor_form_check',
         'reimport_editor_readback', 'reject_guard_readback', 'reject_status_readback', 'unknown',
     },
+    'manager_link_path_class': {
+        'admin_directory', 'admin_directory_slash', 'admin_index_php', 'other', 'unknown',
+    },
     'document_ready_state': {'loading', 'interactive', 'complete', 'unknown'},
     'last_completed_substage': CLICK_SUBSTAGES | {
         'not_started', 'batch_complete', 'reject_guard_readback', 'reject_status_readback', 'unknown',
@@ -99,7 +105,8 @@ DIAGNOSTIC_FIELDS = (
     | set(INTEGER_LIMITS)
     | {'stage', 'last_completed_stage', 'last_completed_substage', 'click_diagnostics',
        'admin_controller', 'page_class', 'document_ready_state', 'current_substage',
-       *OPTIONAL_INTEGER_FIELDS, 'document_response_status', 'exception_class'}
+       'manager_link_path_class', *OPTIONAL_INTEGER_FIELDS,
+       'document_response_status', 'exception_class'}
 )
 
 

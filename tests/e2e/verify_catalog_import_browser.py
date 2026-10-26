@@ -74,6 +74,9 @@ ALLOWED_OCCLUDER_CATEGORIES = {
     'none', 'label', 'modal', 'modal_backdrop', 'alert', 'fixed_header',
     'fixed_navigation', 'other', 'unknown',
 }
+ALLOWED_MANAGER_LINK_PATH_CLASSES = {
+    'admin_directory', 'admin_directory_slash', 'admin_index_php', 'other', 'unknown',
+}
 
 
 def tiny_png(path: Path) -> None:
@@ -96,22 +99,66 @@ def route_link(driver, controller):
     return False
 
 
-def validated_product_id_from_manager_link(href):
-    """Accept only one same-origin manager route with one positive product key."""
-    parsed = urlparse(href)
-    expected = urlparse(ADMIN_LOGIN)
-    query = parse_qs(parsed.query, keep_blank_values=True)
+def manager_admin_path_class(path):
+    """Classify only the admin directory and the two native legacy entry paths."""
     admin_path = ADMIN_PATH.rstrip('/')
-    same_origin = (parsed.scheme.lower(), parsed.netloc.lower()) == (
-        expected.scheme.lower(), expected.netloc.lower()
-    )
-    admin_path_matches = parsed.path == admin_path
+    if admin_path.endswith('/index.php'):
+        admin_path = admin_path[:-len('/index.php')]
+    if not admin_path or not isinstance(path, str):
+        return 'unknown'
+    if path == admin_path:
+        return 'admin_directory'
+    if path == admin_path + '/':
+        return 'admin_directory_slash'
+    if path == admin_path + '/index.php':
+        return 'admin_index_php'
+    return 'other'
+
+
+def safe_manager_link_diagnostics(href):
+    """Describe the approved link using only allowlisted booleans and a path class."""
+    expected = urlparse(ADMIN_LOGIN)
+    try:
+        parsed = urlparse(href if isinstance(href, str) else '')
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        same_origin = (parsed.scheme.lower(), parsed.netloc.lower()) == (
+            expected.scheme.lower(), expected.netloc.lower()
+        )
+        path_class = manager_admin_path_class(parsed.path)
+        if parsed.params:
+            path_class = 'other'
+    except (TypeError, ValueError):
+        query = {}
+        same_origin = False
+        path_class = 'unknown'
+    controller_values = query.get('controller', [])
     product_ids = query.get('id_product', [])
-    if (not same_origin or not admin_path_matches
-            or query.get('controller') != ['AdminOrdenowaProductManager']
-            or len(product_ids) != 1 or not product_ids[0].isdecimal()
-            or int(product_ids[0]) <= 0):
+    product_id_valid = (
+        len(product_ids) == 1 and product_ids[0].isdecimal() and int(product_ids[0]) > 0
+    )
+    return {
+        'manager_link_same_origin': same_origin,
+        'manager_link_path_class': path_class,
+        'manager_link_path_matches': path_class in {
+            'admin_directory', 'admin_directory_slash', 'admin_index_php',
+        },
+        'manager_link_controller_parameter_present': 'controller' in query,
+        'manager_link_controller_matches': controller_values == ['AdminOrdenowaProductManager'],
+        'manager_link_product_id_parameter_present': 'id_product' in query,
+        'manager_link_product_id_valid': product_id_valid,
+    }
+
+
+def validated_product_id_from_manager_link(href):
+    """Accept only a same-origin native admin entry route with one positive product key."""
+    diagnostics = safe_manager_link_diagnostics(href)
+    if not all((
+        diagnostics['manager_link_same_origin'], diagnostics['manager_link_path_matches'],
+        diagnostics['manager_link_controller_matches'], diagnostics['manager_link_product_id_valid'],
+    )):
         raise AssertionError('approved product manager link did not match the isolated shop route')
+    query = parse_qs(urlparse(href).query, keep_blank_values=True)
+    product_ids = query['id_product']
     return int(product_ids[0])
 
 
@@ -828,6 +875,12 @@ def safe_catalog_import_browser_state(driver, state):
     current_origin = (parsed.scheme.lower(), parsed.netloc.lower())
     expected_origin = (expected.scheme.lower(), expected.netloc.lower())
     query = parse_qs(parsed.query, keep_blank_values=True)
+    link_diagnostics = state.get('manager_link_diagnostics')
+    if not isinstance(link_diagnostics, dict):
+        link_diagnostics = {}
+    manager_link_path_class = link_diagnostics.get('manager_link_path_class')
+    if manager_link_path_class not in ALLOWED_MANAGER_LINK_PATH_CLASSES:
+        manager_link_path_class = 'unknown'
     controller_parameter_present = 'controller' in query
     controller_value = query.get('controller', [''])[0]
     controller_allowed = controller_value in ALLOWED_CONTROLLERS
@@ -838,7 +891,10 @@ def safe_catalog_import_browser_state(driver, state):
     admin_path_matches = parsed.path == expected_admin_path or parsed.path.startswith(expected_admin_path + '/')
     manager_route_matches = (
         current_origin == expected_origin
-        and parsed.path == expected_admin_path
+        and not parsed.params
+        and manager_admin_path_class(parsed.path) in {
+            'admin_directory', 'admin_directory_slash', 'admin_index_php',
+        }
         and query.get('controller') == ['AdminOrdenowaProductManager']
     )
     expected_product_id = state.get('native_product_id')
@@ -1078,6 +1134,19 @@ def safe_catalog_import_browser_state(driver, state):
         'manager_route_matches': manager_route_matches,
         'manager_product_id_parameter_present': manager_product_id_parameter_present,
         'manager_product_id_parameter_matches': manager_product_id_parameter_matches,
+        'manager_link_same_origin': link_diagnostics.get('manager_link_same_origin') is True,
+        'manager_link_path_class': manager_link_path_class,
+        'manager_link_path_matches': link_diagnostics.get('manager_link_path_matches') is True,
+        'manager_link_controller_parameter_present': (
+            link_diagnostics.get('manager_link_controller_parameter_present') is True
+        ),
+        'manager_link_controller_matches': (
+            link_diagnostics.get('manager_link_controller_matches') is True
+        ),
+        'manager_link_product_id_parameter_present': (
+            link_diagnostics.get('manager_link_product_id_parameter_present') is True
+        ),
+        'manager_link_product_id_valid': link_diagnostics.get('manager_link_product_id_valid') is True,
         'manager_id_field_present': bool(page.get('manager_id_field_present')),
         'manager_id_field_hidden': bool(page.get('manager_id_field_hidden')),
         'manager_product_id_field_matches': bool(page.get('manager_product_id_field_matches')),
@@ -1100,11 +1169,12 @@ def capture_safe_manager_readback_crop(driver, path, state):
         parsed = urlparse(driver.current_url)
         expected = urlparse(ADMIN_LOGIN)
         query = parse_qs(parsed.query, keep_blank_values=True)
-        admin_path = ADMIN_PATH.rstrip('/')
         same_origin = (parsed.scheme.lower(), parsed.netloc.lower()) == (
             expected.scheme.lower(), expected.netloc.lower()
         )
-        admin_path_matches = parsed.path == admin_path
+        admin_path_matches = not parsed.params and manager_admin_path_class(parsed.path) in {
+            'admin_directory', 'admin_directory_slash', 'admin_index_php',
+        }
         if (not same_origin or not admin_path_matches
                 or query.get('controller') != ['AdminOrdenowaProductManager']
                 or query.get('id_product') != [str(expected_id)]):
@@ -1358,6 +1428,11 @@ def read_native(driver, product_id, expected_category_ids, state):
                 'controller': manager_page['admin_controller'],
                 'route_matches': manager_page['manager_route_matches'],
                 'query_id_matches': manager_page['manager_product_id_parameter_matches'],
+                'approved_link_same_origin': manager_page['manager_link_same_origin'],
+                'approved_link_path_class': manager_page['manager_link_path_class'],
+                'approved_link_path_matches': manager_page['manager_link_path_matches'],
+                'approved_link_controller_matches': manager_page['manager_link_controller_matches'],
+                'approved_link_product_id_valid': manager_page['manager_link_product_id_valid'],
                 'id_field_present': manager_page['manager_id_field_present'],
                 'id_field_hidden': manager_page['manager_id_field_hidden'],
                 'id_field_matches': manager_page['manager_product_id_field_matches'],
@@ -1380,6 +1455,7 @@ def run():
         'last_completed_substage': 'not_started',
         'current_substage': 'not_started',
         'click_diagnostics': None,
+        'manager_link_diagnostics': None,
         'submit_attempted': False,
         'submit_returned': False,
     }
@@ -1564,6 +1640,7 @@ def run():
         product_link = approved.find_element(By.CSS_SELECTOR, 'a[href*="id_product="]').get_attribute('href')
         state['stage'] = 'native_readback'
         state['current_substage'] = 'approved_product_link'
+        state['manager_link_diagnostics'] = safe_manager_link_diagnostics(product_link)
         product_id = validated_product_id_from_manager_link(product_link)
         state['current_substage'] = 'approved_product_link'
         state['native_product_id'] = product_id
