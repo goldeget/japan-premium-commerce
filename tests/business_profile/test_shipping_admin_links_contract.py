@@ -193,7 +193,7 @@ class ShippingAdminLinksContractTests(unittest.TestCase):
         self.assertIn("ORDENOWA_SHIPPING_ADMIN_DETAIL=", browser)
 
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("detail_line=$(rg '^ORDENOWA_SHIPPING_ADMIN_DETAIL='", workflow)
+        self.assertIn("detail_line=$(grep '^ORDENOWA_SHIPPING_ADMIN_DETAIL='", workflow)
 
 
 if __name__ == "__main__":
