@@ -56,7 +56,7 @@ class AdminFolderInstallOrderTests(unittest.TestCase):
         module_install_call = hook.find("php /usr/local/bin/kuran-install-modules.php")
         self.assertGreaterEqual(module_install_call, 0)
         self.assertNotIn(".kuranea-bootstrap-v2", hook.split("php /usr/local/bin/kuran-install-modules.php", 1)[0])
-        module_install_loop = installer.index("foreach (['kuraneapostcode', 'kuraneabackoffice', 'kuraneabusinessprofile', 'kuraneacatalog']")
+        module_install_loop = installer.index("foreach (['kuraneapostcode', 'kuraneabackoffice', 'kuraneabusinessprofile', 'kuraneacatalog', 'kuraneapush']")
         route_migration = installer.index("$routeMigrationKey = 'ORDENOWA_ASCII_ROUTE_MIGRATION_V2'")
         self.assertGreater(route_migration, module_install_loop, "migrate after bundled modules finish installing")
         self.assertIn("$legacyRouteMigrationKey = 'ORDENOWA_ASCII_ROUTE_MIGRATION_V1'", installer)
