@@ -200,7 +200,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_docker_run_recovery -v
 
       - name: Verify fresh-install workflow contracts
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_storefront_accessibility_contract tests.smoke.test_ci_diagnostics_script tests.smoke.test_catalog_import_browser_workflow_contract tests.smoke.test_catalog_import_admin_contract tests.smoke.test_catalog_fetcher_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_backup_restore_drill_contract tests.smoke.test_deployment_config_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_customer_registration_privacy_gate_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_checkout_reassurance_contract tests.smoke.test_ci_storefront_category_locales_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_kuraneapush_workflow_contract tests.pwa.php.test_backend_contract tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_pwa_registration_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard tests.business_profile.test_admin_recovery_fixture_contract tests.business_profile.test_bank_transfer_instructions_contract tests.business_profile.test_bank_transfer_receipt_contract tests.e2e.test_ci_bank_transfer_browser_contract tests.e2e.test_ci_admin_password_reset_contract tests.e2e.test_ci_admin_order_status_contract tests.e2e.test_ci_customer_support_browser_contract tests.e2e.test_ci_storefront_search_browser_contract tests.e2e.test_ci_reset_email_locale_contract tests.e2e.test_ci_product_seo_browser_contract tests.e2e.test_ci_product_seo_schema_contract -v
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_storefront_accessibility_contract tests.smoke.test_ci_diagnostics_script tests.smoke.test_catalog_import_browser_workflow_contract tests.smoke.test_catalog_import_admin_contract tests.smoke.test_catalog_fetcher_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_backup_restore_drill_contract tests.smoke.test_deployment_config_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_customer_registration_privacy_gate_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_checkout_reassurance_contract tests.smoke.test_ci_storefront_category_locales_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_kuraneapush_workflow_contract tests.pwa.php.test_backend_contract tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_pwa_registration_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard tests.business_profile.test_admin_recovery_fixture_contract tests.business_profile.test_bank_transfer_instructions_contract tests.business_profile.test_bank_transfer_receipt_contract tests.e2e.test_ci_bank_transfer_browser_contract tests.e2e.test_ci_admin_password_reset_contract tests.e2e.test_ci_admin_order_status_contract tests.e2e.test_ci_customer_support_browser_contract tests.e2e.test_ci_storefront_search_browser_contract tests.e2e.test_ci_reset_email_locale_contract tests.e2e.test_ci_product_seo_browser_contract tests.e2e.test_ci_product_seo_schema_contract tests.e2e.test_native_contact_route_contract -v
 
       - name: Verify isolated unpaid checkout contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract tests.business_profile.test_shipping_admin_links_contract tests.business_profile.test_admin_profile_history_contract tests.admin_locale.test_admin_locale_overlay tests.admin_locale.test_admin_locale_response_diagnostic tests.admin_locale.test_orders_empty_state_asset tests.admin_locale.test_orders_locale_overlay tests.postcode.test_ci_native_order_lifecycle_contract tests.e2e.test_ci_admin_return_browser_contract tests.e2e.test_ci_native_customer_return_browser_contract tests.e2e.test_ci_admin_password_reset_contract -v
@@ -1488,7 +1488,7 @@ jobs:
           KURANEA_ISOLATED_CI: '1'
           CI_COMPOSE_PROJECT_NAME: ${{ env.CI_COMPOSE_PROJECT_NAME }}
           KURANEA_CI_PROJECT_NAME: ${{ env.CI_COMPOSE_PROJECT_NAME }}
-          SHOP_BASE_URL: http://127.0.0.1:18080
+          SHOP_BASE_URL: http://localhost:18080
           CI_TEST_PRODUCT_ID: ${{ env.CI_TEST_PRODUCT_ID }}
           QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
           GITHUB_RUN_ID: ${{ github.run_id }}
@@ -1646,13 +1646,59 @@ jobs:
           "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" tests/e2e/verify_customer_reset_token_browser.py \
             2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/reset-token-e2e.log"
 
+      - name: Read isolated native contact route
+        id: native_contact_route_fixture
+        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          CI: 'true'
+          GITHUB_ACTIONS: 'true'
+          KURANEA_ISOLATED_CI: '1'
+          CI_COMPOSE_PROJECT_NAME: ${{ env.CI_COMPOSE_PROJECT_NAME }}
+          KURANEA_CI_PROJECT_NAME: ${{ env.CI_COMPOSE_PROJECT_NAME }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          SHOP_BASE_URL: http://localhost:18080
+          CONTACT_ROUTE_FIXTURE: ${{ runner.temp }}/ordenowa-contact-route.json
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+        run: |
+          set -euo pipefail
+          mkdir -p "$QA_ARTIFACT_DIR"
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/read_native_contact_route.php' \
+            < tests/business_profile/read_native_contact_route.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e CI=true -e GITHUB_ACTIONS=true -e KURANEA_ISOLATED_CI=1 \
+            -e CI_COMPOSE_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            -e GITHUB_RUN_ID="$GITHUB_RUN_ID" -e GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            prestashop runuser -g www-data -u www-data -- php /tmp/read_native_contact_route.php \
+            > "$CONTACT_ROUTE_FIXTURE"
+          PYTHONPATH=tests/e2e CONTACT_ROUTE_FIXTURE="$CONTACT_ROUTE_FIXTURE" SHOP_BASE_URL="$SHOP_BASE_URL" \
+            python3 - <<'PY' | tee "$QA_ARTIFACT_DIR/native-contact-route-e2e.log"
+          import os
+          from native_contact_route import read_contact_route_fixture, contact_route_class
+          fixture = read_contact_route_fixture(os.environ['CONTACT_ROUTE_FIXTURE'], os.environ['SHOP_BASE_URL'])
+          route_classes = '/'.join(contact_route_class(fixture['urls_by_iso'][locale], os.environ['SHOP_BASE_URL'])
+                                   for locale in ('ja', 'en', 'ko'))
+          rewrites = '/'.join(locale for locale in ('ja', 'en', 'ko') if fixture['localized_rewrites'][locale]) or 'none'
+          print('PASS: isolated contact route metadata readback; '
+                f"meta_present={str(fixture['contact_meta_present']).lower()} "
+                f"rewrite_enabled={str(fixture['rewriting_enabled']).lower()} "
+                f"canonical_mode={fixture['canonical_redirect_mode']} "
+                f"contactform_enabled={str(fixture['contactform_enabled']).lower()} "
+                f"localized_rewrites={rewrites} route_classes={route_classes}")
+          PY
+
       - name: Verify Chromium PWA lifecycle and private-route cache protection
         id: pwa_browser_qa
-        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && steps.chromium_setup.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
+        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && steps.chromium_setup.outcome == 'success' && steps.native_contact_route_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
           SHOP_BASE_URL: http://localhost:18080
+          CONTACT_ROUTE_FIXTURE: ${{ runner.temp }}/ordenowa-contact-route.json
           QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
@@ -2173,7 +2219,7 @@ jobs:
 
       - name: Verify native customer support lifecycle in Chromium
         id: customer_support_browser_qa
-        if: always() && !cancelled() && steps.customer_support_fixture.outcome == 'success' && steps.security_fixture.outcome == 'success' && steps.checkout_customer_browser_qa.outcome == 'success' && steps.checkout_order_persistence.outcome == 'success' && steps.mailpit_setup.outcome == 'success' && steps.chromium_setup.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
+        if: always() && !cancelled() && steps.native_contact_route_fixture.outcome == 'success' && steps.customer_support_fixture.outcome == 'success' && steps.security_fixture.outcome == 'success' && steps.checkout_customer_browser_qa.outcome == 'success' && steps.checkout_order_persistence.outcome == 'success' && steps.mailpit_setup.outcome == 'success' && steps.chromium_setup.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -2183,6 +2229,7 @@ jobs:
           CI_COMPOSE_PROJECT_NAME: ${{ env.CI_COMPOSE_PROJECT_NAME }}
           KURANEA_CI_PROJECT_NAME: ${{ env.CI_COMPOSE_PROJECT_NAME }}
           SHOP_BASE_URL: http://localhost:18080
+          CONTACT_ROUTE_FIXTURE: ${{ runner.temp }}/ordenowa-contact-route.json
           ADMIN_LOGIN_URL: http://localhost:18080/admin-kuranea
           MAILPIT_API_URL: http://127.0.0.1:8025
           ADMIN_MAIL: ci-ordenowa@example.invalid
@@ -2908,6 +2955,7 @@ jobs:
           ADMIN_SECURITY_BROWSER_QA_OUTCOME: ${{ steps.admin_security_browser_qa.outcome }}
           RESET_TOKEN_BROWSER_QA_OUTCOME: ${{ steps.reset_token_browser_qa.outcome }}
           PWA_BROWSER_QA_OUTCOME: ${{ steps.pwa_browser_qa.outcome }}
+          NATIVE_CONTACT_ROUTE_FIXTURE_OUTCOME: ${{ steps.native_contact_route_fixture.outcome }}
           PWA_PUSH_QA_OUTCOME: ${{ steps.pwa_push_qa.outcome }}
           SHIPPING_FREE_FIXTURE_OUTCOME: ${{ steps.shipping_free_fixture.outcome }}
           SHIPPING_FREE_ADMIN_ACCESS_OUTCOME: ${{ steps.shipping_free_admin_access.outcome }}
@@ -3189,6 +3237,9 @@ jobs:
           fi
           if [[ "$STOREFRONT_SEO_BROWSER_QA_OUTCOME" == success || "$STOREFRONT_SEO_BROWSER_QA_OUTCOME" == failure ]]; then
             required_artifacts+=(product-seo-e2e.log product-seo-result.json product-seo-desktop.png)
+          fi
+          if [[ "$NATIVE_CONTACT_ROUTE_FIXTURE_OUTCOME" == success ]]; then
+            required_artifacts+=(native-contact-route-e2e.log)
           fi
           if [[ "$EXEMPTION_PRODUCT_FIXTURE_OUTCOME" == success ]]; then
             required_artifacts+=(
@@ -3691,6 +3742,7 @@ jobs:
           ADMIN_DASHBOARD_ROUTE_SCREENSHOT_OUTCOME: ${{ steps.admin_dashboard_route_screenshot.outcome }}
           RESET_TOKEN_BROWSER_QA_OUTCOME: ${{ steps.reset_token_browser_qa.outcome }}
           PWA_BROWSER_QA_OUTCOME: ${{ steps.pwa_browser_qa.outcome }}
+          NATIVE_CONTACT_ROUTE_FIXTURE_OUTCOME: ${{ steps.native_contact_route_fixture.outcome }}
           PWA_PUSH_QA_OUTCOME: ${{ steps.pwa_push_qa.outcome }}
           SHIPPING_FREE_FIXTURE_OUTCOME: ${{ steps.shipping_free_fixture.outcome }}
           SHIPPING_FREE_ADMIN_ACCESS_OUTCOME: ${{ steps.shipping_free_admin_access.outcome }}
@@ -3836,6 +3888,7 @@ jobs:
             "cart_controls_browser_qa=$CART_CONTROLS_BROWSER_QA_OUTCOME" \
             "storefront_search=$STOREFRONT_SEARCH_BROWSER_QA_OUTCOME" \
             "storefront_product_seo=$STOREFRONT_SEO_BROWSER_QA_OUTCOME" \
+            "native_contact_route_fixture=$NATIVE_CONTACT_ROUTE_FIXTURE_OUTCOME" \
             "security_fixture=$SECURITY_FIXTURE_OUTCOME" \
             "admin_security_browser_qa=$ADMIN_SECURITY_BROWSER_QA_OUTCOME" \
             "reset_token_browser_qa=$RESET_TOKEN_BROWSER_QA_OUTCOME" \

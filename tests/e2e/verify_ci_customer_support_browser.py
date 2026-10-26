@@ -26,6 +26,10 @@ from typing import Any
 from urllib.error import URLError
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
+try:
+    from native_contact_route import contact_route_class, probe_contact_route, read_contact_route_fixture
+except ModuleNotFoundError:
+    from tests.e2e.native_contact_route import contact_route_class, probe_contact_route, read_contact_route_fixture
 
 try:
     from selenium import webdriver
@@ -84,6 +88,8 @@ class Context:
     attempt: str
     project: str
     shop: str
+    contact_url: str
+    contact_route_metadata: dict[str, Any]
     admin: str
     mailpit: str
     artifact_dir: Path
@@ -181,6 +187,10 @@ def load_context(environ: dict[str, str] | None = None) -> Context:
     ):
         raise ValueError("customer support browser QA requires its exact disposable Actions project")
     shop = validate_loopback_url(values.get("SHOP_BASE_URL", ""), EXPECTED_SHOP_PORT, "SHOP_BASE_URL")
+    route_fixture_path = values.get("CONTACT_ROUTE_FIXTURE", "")
+    if not route_fixture_path:
+        raise ValueError("customer support browser QA requires the read-only native contact route fixture")
+    route_fixture = read_contact_route_fixture(route_fixture_path, shop)
     mailpit = validate_loopback_url(values.get("MAILPIT_API_URL", ""), EXPECTED_MAILPIT_PORT, "MAILPIT_API_URL")
     admin = validate_admin_url(values.get("ADMIN_LOGIN_URL", ""), shop)
     artifact_text = values.get("QA_ARTIFACT_DIR", "")
@@ -209,7 +219,16 @@ def load_context(environ: dict[str, str] | None = None) -> Context:
     if buyer["order_id"] == foreign["order_id"] or buyer["email"] == foreign["email"]:
         raise ValueError("support ownership fixtures must identify two distinct native customers and orders")
     return Context(
-        run_id=run_id, attempt=attempt, project=project, shop=shop, admin=admin,
+        run_id=run_id, attempt=attempt, project=project, shop=shop,
+        contact_url=route_fixture["urls_by_iso"]["ja"],
+        contact_route_metadata={
+            "contact_meta_present": route_fixture["contact_meta_present"],
+            "rewriting_enabled": route_fixture["rewriting_enabled"],
+            "canonical_redirect_mode": route_fixture["canonical_redirect_mode"],
+            "contactform_enabled": route_fixture["contactform_enabled"],
+            "localized_rewrites": route_fixture["localized_rewrites"],
+        },
+        admin=admin,
         mailpit=mailpit, artifact_dir=artifact_dir, admin_email=admin_email,
         admin_password=password, view_only_email=view_email,
         customer_password=f"ORDENOWA-CI-{run_id}-{attempt}-Aa1!", buyer=buyer, foreign=foreign,
@@ -231,13 +250,8 @@ def contact_page_evidence(driver, shop_url: str) -> dict[str, Any]:
     """)
     if type(response_status) is not int or not 100 <= response_status <= 599:
         response_status = None
-    current = urlparse(driver.current_url)
     origin_matches = same_origin(driver.current_url, shop_url)
-    query = parse_qs(current.query, keep_blank_values=True)
-    native_route = origin_matches and (
-        (current.path.rstrip('/') == '/index.php' and query.get('controller') == ['contact'])
-        or current.path.rstrip('/') == '/contact'
-    )
+    native_route = origin_matches and contact_route_class(driver.current_url, shop_url) == "contact"
     forms = driver.find_elements(By.CSS_SELECTOR, '.contact-form form')
     return {
         'contact_document_status': response_status,
@@ -509,7 +523,7 @@ def submit_contact_message(
     driver, ctx: Context, order: dict[str, Any], marker: str, attachment_path: Path | None,
     thread_url: str | None = None, *, expected_rejection: bool = False, order_linked: bool = True,
 ) -> None:
-    form = contact_form(driver, thread_url or (ctx.shop + "/index.php?controller=contact"))
+    form = contact_form(driver, thread_url or ctx.contact_url)
     order_selects = form.find_elements(By.CSS_SELECTOR, "select#contact-us-id-order-select[name='id_order']")
     if not order_selects:
         raise AssertionError("native contact form did not expose the customer's order selection")
@@ -574,7 +588,7 @@ def assert_foreign_thread_denied(driver, href: str) -> None:
 
 
 def assert_foreign_orderless_post_denied(driver, ctx: Context, marker: str) -> None:
-    form = contact_form(driver, ctx.shop + "/index.php?controller=contact")
+    form = contact_form(driver, ctx.contact_url)
     result = driver.execute_async_script("""
       const [form, victimEmail, marker, done] = arguments;
       const data = new FormData(form);
@@ -956,7 +970,23 @@ def run() -> None:
         customer_login(customer, ctx, ctx.buyer)
 
         stage = result["stage"] = "contact_form"
-        customer.get(ctx.shop + "/index.php?controller=contact")
+        query_route = ctx.shop + "/index.php?controller=contact"
+        query_probe = probe_contact_route(customer, query_route, ctx.shop)
+        generated_probe = probe_contact_route(customer, ctx.contact_url, ctx.shop)
+        metadata = ctx.contact_route_metadata
+        print(
+            "CONTACT_ROUTE_DIAGNOSTIC "
+            f"meta_present={str(metadata['contact_meta_present']).lower()} "
+            f"rewrite_enabled={str(metadata['rewriting_enabled']).lower()} "
+            f"canonical_mode={metadata['canonical_redirect_mode']} "
+            f"contactform_enabled={str(metadata['contactform_enabled']).lower()} "
+            f"localized_rewrites={'/'.join(locale for locale, present in metadata['localized_rewrites'].items() if present) or 'none'} "
+            f"query_status={query_probe['status'] or 'unavailable'} "
+            f"query_page={query_probe['page_class']} query_form_count={query_probe['form_count']} "
+            f"generated_status={generated_probe['status'] or 'unavailable'} "
+            f"generated_page={generated_probe['page_class']} generated_form_count={generated_probe['form_count']}"
+        )
+        customer.get(ctx.contact_url)
         result.update(contact_page_evidence(customer, ctx.shop))
         visible(customer, ".contact-form form")
         baseline_mail = mail_ids(ctx.mailpit)

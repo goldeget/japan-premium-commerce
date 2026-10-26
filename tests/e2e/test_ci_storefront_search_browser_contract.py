@@ -2,15 +2,37 @@
 
 from pathlib import Path
 import ast
+import importlib.util
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tests/e2e/verify_ci_storefront_search_browser.py"
+ROUTE_HELPER = ROOT / "tests/e2e/storefront_search_route.py"
 WORKFLOW = ROOT / ".github/workflows/fresh-install.yml"
 
 
 class StorefrontSearchBrowserContractTests(unittest.TestCase):
+    def test_native_search_route_accepts_template_controller_and_rejects_ambiguous_routes(self):
+        spec = importlib.util.spec_from_file_location("storefront_search_route", ROUTE_HELPER)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        route = module.is_native_search_route
+        self.assertTrue(route("http://localhost:18080/index.php", ["search"]))
+        self.assertTrue(route("http://localhost:18080/search", []))
+        self.assertTrue(route("http://localhost:18080/index.php?controller=search", []))
+        for action, values in (
+            ("http://localhost:18080/index.php", []),
+            ("http://localhost:18080/index.php", ["contact"]),
+            ("http://localhost:18080/index.php", ["search", "search"]),
+            ("http://localhost:18080/index.php?controller=contact", ["search"]),
+            ("http://localhost:18080/index.php?controller=search&controller=search", []),
+        ):
+            with self.subTest(action=action, values=values):
+                self.assertFalse(route(action, values))
+
     def test_browser_checks_exact_partial_missing_and_product_identity(self):
         self.assertTrue(SCRIPT.is_file(), "Japanese storefront search browser verifier is missing")
         source = SCRIPT.read_text(encoding="utf-8")
@@ -65,7 +87,8 @@ class StorefrontSearchBrowserContractTests(unittest.TestCase):
 
     def test_selectors_are_grounded_in_child_and_parent_theme_templates(self):
         searchbar = (ROOT / "themes/kuranea/modules/ps_searchbar/ps_searchbar.tpl").read_text()
-        for required in ('id="ps_searchbar_input"', 'name="s"', 'role="search"', 'id="searchCanvas"'):
+        for required in ('id="ps_searchbar_input"', 'name="s"', 'role="search"', 'id="searchCanvas"',
+                         '<input type="hidden" name="controller" value="search">'):
             self.assertIn(required, searchbar)
         miniature = (ROOT / "themes/hummingbird/templates/catalog/_partials/miniatures/product.tpl").read_text()
         for required in ('data-id-product="{$product.id_product}"', '{$componentName}__title', '{$product.url}'):

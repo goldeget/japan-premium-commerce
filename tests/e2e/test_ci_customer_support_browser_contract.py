@@ -305,6 +305,21 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             with self.subTest(safe_field=safe_field):
                 self.assertIn(safe_field, browser)
 
+    def test_contact_uses_shop_generated_locale_routes_and_probes_legacy_query_route(self):
+        browser = SCRIPT.read_text(encoding="utf-8")
+        route_helper = (ROOT / "tests/e2e/native_contact_route.py").read_text(encoding="utf-8")
+        for required in (
+            "CONTACT_ROUTE_FIXTURE", "contact_url=route_fixture[\"urls_by_iso\"][\"ja\"]",
+            "probe_contact_route(customer, query_route, ctx.shop)",
+            "probe_contact_route(customer, ctx.contact_url, ctx.shop)",
+            "CONTACT_ROUTE_DIAGNOSTIC", "contact_route_class(driver.current_url, shop_url)",
+            "private_no_store", "credentials: 'same-origin'", "cache: 'no-store'",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, browser + route_helper)
+        self.assertIn("getPageLink('contact', null, $idLang)", (ROOT / "tests/business_profile/read_native_contact_route.php").read_text())
+        self.assertIn("Module::isEnabled('contactform')", (ROOT / "tests/business_profile/read_native_contact_route.php").read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

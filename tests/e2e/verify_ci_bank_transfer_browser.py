@@ -26,20 +26,27 @@ SAFE_STAGES = {
     "csrf_rejected", "wrong_amount_rejected", "limited_staff_denial", "customer_paid_readback",
     "receipt_replay", "native_readback", "complete",
 }
+SAFE_SUBSTAGES = {
+    "none", "native_unpaid_order_readback", "transfer_link_scan", "orders_toggle_scan",
+    "orders_menu_expand", "orders_menu_link_wait", "expanded_transfer_link_readback",
+    "unique_transfer_link", "menu_link_token", "transfer_route_navigation",
+    "transfer_order_row_readback", "csrf_form_shape", "csrf_control_validation",
+    "csrf_invalid_token_submit", "csrf_rejection_readback", "csrf_unissued_db_readback",
+}
 SAFE_EXCEPTION_TYPES = {
     "AssertionError", "TimeoutException", "ValueError", "RuntimeError", "OSError",
     "WebDriverException", "StaleElementReferenceException", "ElementClickInterceptedException",
     "NoSuchElementException", "OtherError",
 }
 SAFE_RESULT_KEYS = {
-    "status", "stage", "exception_type", "fixture_bound", "instruction_issued",
+    "status", "stage", "exception_type", "failure_substage", "fixture_bound", "instruction_issued",
     "issue_left_order_unpaid", "instruction_immutable", "customer_instruction_visible",
     "order_identity_match", "order_product_line_match", "amount_match", "account_match", "foreign_customer_denied",
     "limited_staff_denied", "view_only_confirmation_denied", "issue_csrf_rejected", "csrf_rejected", "wrong_amount_rejected", "receipt_confirmed",
     "idempotent_replay", "customer_paid_state_changed", "instruction_hidden_after_payment",
     "native_readback",
 }
-RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {"status", "stage", "exception_type"}
+RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {"status", "stage", "exception_type", "failure_substage"}
 
 
 def assert_true(condition: object, message: str) -> None:
@@ -393,18 +400,22 @@ def read_visible_notice(driver: webdriver.Chrome):
     ), None))
 
 
-def reject_issue_with_invalid_csrf(driver: webdriver.Chrome, row, admin_root: str) -> None:
+def reject_issue_with_invalid_csrf(driver: webdriver.Chrome, row, admin_root: str, set_substage) -> None:
+    set_substage("csrf_form_shape")
     forms = row.find_elements(By.CSS_SELECTOR, "form")
     if len(forms) != 1:
         raise AssertionError("the unpaid order did not expose one instruction form for the CSRF rejection check")
     form = forms[0]
+    set_substage("csrf_control_validation")
     tokens = form.find_elements(By.CSS_SELECTOR, 'input[name="token"]')
     buttons = form.find_elements(By.CSS_SELECTOR, 'button[name="submitOrdenowaIssueTransfer"]')
     action = form.get_attribute("action") or ""
     if len(tokens) != 1 or len(buttons) != 1 or not safe_admin_path(action, admin_root):
         raise AssertionError("the native instruction form omitted its same-admin token or submit control")
+    set_substage("csrf_invalid_token_submit")
     driver.execute_script("arguments[0].value = 'invalid';", tokens[0])
     buttons[0].click()
+    set_substage("csrf_rejection_readback")
     notice = read_visible_notice(driver)
     if ("관리자 보안 토큰이 올바르지 않습니다." not in notice.text
             or "alert-danger" not in (notice.get_attribute("class") or "")):
@@ -587,6 +598,7 @@ def write_result(path: Path, result: dict[str, object]) -> None:
     if (set(result) != SAFE_RESULT_KEYS
             or result.get("status") not in ("success", "failure")
             or result.get("stage") not in SAFE_STAGES
+            or result.get("failure_substage") not in SAFE_SUBSTAGES
             or (result.get("exception_type") is not None and result.get("exception_type") not in SAFE_EXCEPTION_TYPES)
             or any(type(result.get(key)) is not bool for key in RESULT_BOOLEAN_KEYS)
             or (result.get("status") == "success" and (
@@ -629,6 +641,7 @@ def run() -> None:
     stage = "context"
     result: dict[str, object] = {
         "status": "failure", "stage": stage, "exception_type": None,
+        "failure_substage": "none",
         "fixture_bound": False, "instruction_issued": False, "issue_left_order_unpaid": False,
         "instruction_immutable": False, "customer_instruction_visible": False,
         "order_identity_match": False, "order_product_line_match": False, "amount_match": False, "account_match": False,
@@ -646,6 +659,8 @@ def run() -> None:
 
     def set_substage(name: str) -> None:
         nonlocal substage
+        if name not in SAFE_SUBSTAGES - {"none"}:
+            raise ValueError("bank-transfer substage is outside the safe diagnostic allowlist")
         substage = name
 
     try:
@@ -673,8 +688,11 @@ def run() -> None:
         row = order_row(admin, order)
 
         stage = result["stage"] = "csrf_rejected"
-        reject_issue_with_invalid_csrf(admin, row, str(ctx["admin"]))
+        reject_issue_with_invalid_csrf(admin, row, str(ctx["admin"]), set_substage)
+        substage = "csrf_unissued_db_readback"
+        result["failure_substage"] = substage
         verify_unpaid_native_order(ctx, order, "unissued")
+        result["failure_substage"] = "none"
         result["issue_csrf_rejected"] = True
 
         stage = result["stage"] = "instruction_issue"
@@ -859,6 +877,7 @@ def run() -> None:
         error_type = type(error).__name__
         result["exception_type"] = error_type if error_type in SAFE_EXCEPTION_TYPES else "OtherError"
         result["stage"] = stage if stage in SAFE_STAGES else "context"
+        result["failure_substage"] = substage if substage in SAFE_SUBSTAGES else "none"
         print(
             f"FAIL: isolated bank-transfer browser QA; stage={result['stage']}; "
             f"substage={substage}; exception={result['exception_type']}",

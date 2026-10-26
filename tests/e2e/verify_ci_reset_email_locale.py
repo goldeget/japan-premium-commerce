@@ -37,6 +37,21 @@ SAFE_EXCEPTION_TYPES = {
     'ElementNotInteractableException', 'StaleElementReferenceException',
     'NoSuchElementException', 'OtherError',
 }
+SAFE_MESSAGE_CHECKS = {
+    'none', 'parts_missing', 'locale_marker_missing', 'credential_disclosure',
+    'generic_bank_details', 'reset_credentials_invalid', 'reset_link_origin_mismatch',
+    'reset_link_path_mismatch', 'parts_credentials_mismatch', 'reset_link_missing',
+}
+
+
+class MessageValidationError(AssertionError):
+    """A reset email failed one named predicate without retaining message data."""
+
+    def __init__(self, check: str) -> None:
+        if check not in SAFE_MESSAGE_CHECKS - {'none'}:
+            raise ValueError('unknown reset message check')
+        self.check = check
+        super().__init__('native reset message check failed')
 
 
 def write_diagnostics(result: dict) -> None:
@@ -52,6 +67,7 @@ def write_diagnostics(result: dict) -> None:
         return
     if (set(result) != {
             'status', 'language', 'stage', 'exception_type', 'response_status',
+            'message_check',
             'same_origin', 'native_route', 'language_matches', 'email_field_present',
             'submit_control_present', 'submit_center_in_viewport',
             'submit_center_unobstructed', 'success_alert_present', 'reset_fields_present',
@@ -59,6 +75,7 @@ def write_diagnostics(result: dict) -> None:
             or result['status'] not in {'success', 'failure'}
             or result['language'] not in (*LANGUAGES, 'none')
             or result['stage'] not in SAFE_STAGES
+            or result['message_check'] not in SAFE_MESSAGE_CHECKS
             or (result['exception_type'] is not None and result['exception_type'] not in SAFE_EXCEPTION_TYPES)
             or (result['response_status'] is not None and (
                 type(result['response_status']) is not int or not 100 <= result['response_status'] <= 599
@@ -127,18 +144,18 @@ class Links(HTMLParser):
 def assert_message(message: dict, language: str, base: str, reset_path: str, forbidden: list[str]) -> str:
     html, text = message.get('HTML'), message.get('Text')
     if not isinstance(html, str) or not isinstance(text, str) or not html or not text:
-        raise AssertionError('native reset email requires HTML and text')
+        raise MessageValidationError('parts_missing')
     parser = Links()
     parser.feed(html)
     for visible in (' '.join(parser.text_fragments), text):
         without_urls = re.sub(r'https?://[^\s<>]+', '', visible)
         if MARKERS[language] not in without_urls.casefold():
-            raise AssertionError('reset email language mismatch')
+            raise MessageValidationError('locale_marker_missing')
     for body in (html, text):
         if any(value and value in body for value in forbidden):
-            raise AssertionError('credential disclosure in reset email')
+            raise MessageValidationError('credential_disclosure')
         if re.search(r'account\s*(?:number|no\b)|口座番号|계좌\s*번호', body, re.I):
-            raise AssertionError('generic bank account disclosure in reset email')
+            raise MessageValidationError('generic_bank_details')
     verified_url = None
     verified_credentials = None
     credential_keys = {'token', 'reset_token', 'id_customer'}
@@ -152,20 +169,20 @@ def assert_message(message: dict, language: str, base: str, reset_path: str, for
             if ('token' not in query or not ({'reset_token', 'id_customer'} & query.keys())
                     or any(len(query[key]) != 1 or not query[key][0].strip()
                            for key in credential_keys & query.keys())):
-                raise AssertionError('reset email credentials are missing or ambiguous')
+                raise MessageValidationError('reset_credentials_invalid')
             destination = urljoin(base + '/', candidate)
             if not same_origin(destination, base):
-                raise AssertionError('reset email link left isolated shop origin')
+                raise MessageValidationError('reset_link_origin_mismatch')
             if unquote(urlparse(destination).path) != unquote(reset_path):
-                raise AssertionError('reset email link does not use native recovery path')
+                raise MessageValidationError('reset_link_path_mismatch')
             credentials = tuple((key, query[key][0]) for key in sorted(credential_keys & query.keys()))
             if verified_credentials is not None and credentials != verified_credentials:
-                raise AssertionError('reset email parts identify different recovery credentials')
+                raise MessageValidationError('parts_credentials_mismatch')
             verified_credentials = credentials
             verified_url = verified_url or destination
             reset_links.append(destination)
         if not reset_links:
-            raise AssertionError('native reset link missing from email part')
+            raise MessageValidationError('reset_link_missing')
     return verified_url
 
 
@@ -277,6 +294,7 @@ def run() -> bool:
     stage, language = 'context', 'none'
     diagnostic = {
         'status': 'failure', 'language': 'none', 'stage': 'context', 'exception_type': None,
+        'message_check': 'none',
         'response_status': None, 'same_origin': False, 'native_route': False,
         'language_matches': False, 'email_field_present': False,
         'submit_control_present': False, 'submit_center_in_viewport': False,
@@ -293,6 +311,7 @@ def run() -> bool:
         for language in LANGUAGES:
             stage = 'seed'
             diagnostic.update(language=language, stage=stage, response_status=None,
+                              message_check='none',
                               same_origin=False, native_route=False, language_matches=False,
                               email_field_present=False, submit_control_present=False,
                               submit_center_in_viewport=False, submit_center_unobstructed=False,
@@ -371,12 +390,15 @@ def run() -> bool:
         return True
     except Exception as error:
         diagnostic['exception_type'] = type(error).__name__ if type(error).__name__ in SAFE_EXCEPTION_TYPES else 'OtherError'
+        if isinstance(error, MessageValidationError):
+            diagnostic['message_check'] = error.check
         response_status = diagnostic['response_status']
         if type(response_status) is not int or not 100 <= response_status <= 599:
             response_status = 'unavailable'
         print(
             f'FAIL: isolated native reset email locale={language} stage={stage} '
             f'exception={diagnostic["exception_type"]}; response_status={response_status}; '
+            f'message_check={diagnostic["message_check"]}; '
             f'same_origin={str(diagnostic["same_origin"]).lower()}; '
             f'native_route={str(diagnostic["native_route"]).lower()}; '
             f'language_matches={str(diagnostic["language_matches"]).lower()}; '

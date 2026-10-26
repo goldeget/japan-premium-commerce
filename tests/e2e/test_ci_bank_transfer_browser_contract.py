@@ -151,6 +151,12 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         for expected in (
             "SAFE_RESULT_KEYS",
             "SAFE_EXCEPTION_TYPES",
+            "SAFE_SUBSTAGES",
+            '"csrf_form_shape"',
+            '"csrf_control_validation"',
+            '"csrf_invalid_token_submit"',
+            '"csrf_rejection_readback"',
+            '"csrf_unissued_db_readback"',
             "write_result",
             "bank-transfer-browser-result.json",
             "bank-transfer-customer-instructions-mobile.png",
@@ -163,6 +169,7 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         public_keys = result_keys.group(1)
         for forbidden in ("email", "account_number", "token", "password", "statement_reference", "url"):
             self.assertNotIn(forbidden, public_keys)
+        self.require('"failure_substage"', public_keys)
         self.assertNotIn("bank_statement_reference", self.paid_readback)
 
     def test_artifact_coverage_requires_the_dedicated_bank_order_readback(self) -> None:

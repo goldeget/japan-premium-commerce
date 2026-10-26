@@ -23,6 +23,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
 from storefront_product_contract import product_page_failure_reason
+from storefront_search_route import is_native_search_route
 from verify_cart_controls_browser import (
     BASE, DEST, PRODUCT_ID, click_at_center, visible,
     validate_isolated_ci_compose_project, validate_loopback_shop,
@@ -113,11 +114,12 @@ def search(driver, query: str, mobile: bool, result: dict) -> None:
     )
     assert_true(diagnostics["form_action_same_origin"], "Search navigation must remain on the isolated shop origin")
     action_parts = urlparse(action)
-    action_query = parse_qs(action_parts.query)
-    diagnostics["form_action_native_search"] = (
-        action_query.get('controller') == ['search']
-        or (action_parts.path.rstrip('/').endswith('/search') and not action_query.get('controller'))
-    )
+    controller_fields = [
+        item for item in form.find_elements(By.CSS_SELECTOR, 'input[type="hidden"][name="controller"]')
+        if item.is_enabled()
+    ]
+    controller_values = [item.get_attribute('value') or '' for item in controller_fields]
+    diagnostics["form_action_native_search"] = is_native_search_route(action, controller_values)
     result["substage"] = "search_form_route"
     assert_true(diagnostics["form_action_native_search"], "Search form does not target the native search route")
     old_document = driver.find_element(By.TAG_NAME, 'html')

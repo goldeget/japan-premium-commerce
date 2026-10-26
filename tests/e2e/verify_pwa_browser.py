@@ -20,6 +20,10 @@ from urllib.parse import (
     urlparse,
     urlunparse,
 )
+try:
+    from native_contact_route import probe_contact_route, read_contact_route_fixture
+except ModuleNotFoundError:
+    from tests.e2e.native_contact_route import probe_contact_route, read_contact_route_fixture
 
 try:
     from selenium import webdriver
@@ -3481,7 +3485,6 @@ def verify_logged_out_private_routes(
         ("history", "history", 302),
         ("order_detail", "order-detail", 302),
         ("guest_tracking", "guest-tracking", None),
-        ("contact_form", "contact", 200),
     )
     base = shop_url.rstrip("/") + "/"
     for route_stage, controller_name, expected_status in route_cases:
@@ -3514,14 +3517,47 @@ def verify_logged_out_private_routes(
                 )
             set_substage("require_guest_tracking_form")
             wait_visible(driver, "#guestOrderTrackingForm")
-        elif route_stage == "contact_form":
-            if observed.get("status") != 200:
-                raise AssertionError("logged-out contact form did not render")
-            set_substage("require_contact_form")
-            wait_visible(driver, ".contact-form form")
         else:
             set_substage(f"require_{route_stage}_login_form")
             wait_visible(driver, "#login-form input[name='email']")
+
+    locale_value = driver.find_element("tag name", "html").get_attribute("lang") or ""
+    locale = locale_value.lower().split("-")[0]
+    fixture_path = os.environ.get("CONTACT_ROUTE_FIXTURE", "")
+    route_fixture = read_contact_route_fixture(fixture_path, shop_url)
+    contact_url = route_fixture["urls_by_iso"][locale]
+    query_url = urljoin(base, "index.php?controller=contact")
+    query_probe = probe_contact_route(driver, query_url, shop_url)
+    generated_probe = probe_contact_route(driver, contact_url, shop_url)
+    print(
+        "PWA_CONTACT_ROUTE_DIAGNOSTIC "
+        f"locale={locale} meta_present={str(route_fixture['contact_meta_present']).lower()} "
+        f"rewrite_enabled={str(route_fixture['rewriting_enabled']).lower()} "
+        f"canonical_mode={route_fixture['canonical_redirect_mode']} "
+        f"contactform_enabled={str(route_fixture['contactform_enabled']).lower()} "
+        f"localized_rewrite={str(route_fixture['localized_rewrites'][locale]).lower()} "
+        f"query_status={query_probe['status'] or 'unavailable'} query_page={query_probe['page_class']} "
+        f"query_form_count={query_probe['form_count']} generated_status={generated_probe['status'] or 'unavailable'} "
+        f"generated_page={generated_probe['page_class']} generated_form_count={generated_probe['form_count']}"
+    )
+    set_substage("request_contact_form")
+    observed = navigate_private_document(
+        driver,
+        contact_url,
+        shop_url,
+        "logged-out contact form",
+        set_substage=lambda name: set_substage(f"request_contact_form_{name}"),
+        cache_policy_final_document=True,
+    )
+    set_substage("require_contact_form_status")
+    if observed.get("status") != 200:
+        raise PwaDiagnosticAssertionError(
+            "logged-out contact form did not return the expected status",
+            "public_route_status_mismatch",
+            safe_logged_out_route_status_metadata(driver, shop_url, "contact_form", 200, observed),
+        )
+    set_substage("require_contact_form")
+    wait_visible(driver, ".contact-form form")
 
 
 def safe_selected_signout_metadata(signout: object, shop_url: str) -> dict[str, object]:

@@ -3,9 +3,26 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from tests.e2e import verify_pwa_browser as pwa_browser
+
+
+CONTACT_ROUTE_FIXTURE = {
+    "contact_meta_present": True, "rewriting_enabled": True, "canonical_redirect_mode": 1,
+    "contactform_enabled": True, "localized_rewrites": {"ja": True, "en": True, "ko": True},
+    "urls_by_iso": {"ja": "http://localhost:18080/contact-us",
+                    "en": "http://localhost:18080/en/contact-us",
+                    "ko": "http://localhost:18080/ko/contact-us"},
+}
+
+
+def fake_contact_probe(_driver: object, url: str, _shop: str) -> dict[str, object]:
+    status = 404 if "controller=contact" in url else 200
+    return {"status": status, "same_origin": True, "route_class": "contact",
+            "form_count": 0 if status == 404 else 1,
+            "page_class": "not_found" if status == 404 else "contact", "private_no_store": True}
 
 
 class PwaLogoutDiagnosticsTests(unittest.TestCase):
@@ -403,6 +420,9 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         class Driver:
             current_url = secret_url
 
+            def find_element(self, *_args: object) -> object:
+                return SimpleNamespace(get_attribute=lambda _name: "ja-JP")
+
             def execute_script(self, script: str) -> dict[str, object]:
                 self.assertNotIn("textContent", script)
                 self.assertNotIn("innerHTML", script)
@@ -441,7 +461,9 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
             }
 
         substages: list[str] = []
-        with patch.object(pwa_browser, "navigate_private_document", side_effect=navigate), \
+        with patch.object(pwa_browser, "read_contact_route_fixture", return_value=CONTACT_ROUTE_FIXTURE), \
+             patch.object(pwa_browser, "probe_contact_route", side_effect=fake_contact_probe), \
+             patch.object(pwa_browser, "navigate_private_document", side_effect=navigate), \
              patch.object(pwa_browser, "wait_visible", return_value=object()) as wait_visible:
             with self.assertRaises(pwa_browser.PwaDiagnosticAssertionError) as raised:
                 pwa_browser.verify_logged_out_private_routes(
@@ -475,6 +497,9 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         class Driver:
             current_url = "http://localhost:18080/index.php?controller=contact"
 
+            def find_element(self, *_args: object) -> object:
+                return SimpleNamespace(get_attribute=lambda _name: "ja-JP")
+
         statuses = {
             "logged-out addresses": 302,
             "logged-out history": 302,
@@ -486,7 +511,9 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         def navigate(_driver: object, _requested: str, _shop: str, route: str, **_kwargs: object) -> dict[str, object]:
             return {"status": statuses[route], "from_service_worker": False, "from_disk_cache": False}
 
-        with patch.object(pwa_browser, "navigate_private_document", side_effect=navigate), \
+        with patch.object(pwa_browser, "read_contact_route_fixture", return_value=CONTACT_ROUTE_FIXTURE), \
+             patch.object(pwa_browser, "probe_contact_route", side_effect=fake_contact_probe), \
+             patch.object(pwa_browser, "navigate_private_document", side_effect=navigate), \
              patch.object(pwa_browser, "wait_visible", return_value=object()) as wait_visible:
             pwa_browser.verify_logged_out_private_routes(
                 Driver(), "http://localhost:18080", lambda _stage: None
@@ -497,6 +524,9 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
     def test_contact_http_200_without_a_form_still_fails_at_form_wait(self) -> None:
         class Driver:
             current_url = "http://localhost:18080/index.php?controller=contact"
+
+            def find_element(self, *_args: object) -> object:
+                return SimpleNamespace(get_attribute=lambda _name: "ja-JP")
 
         statuses = {
             "logged-out addresses": 302,
@@ -515,7 +545,9 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
             return object()
 
         substages: list[str] = []
-        with patch.object(pwa_browser, "navigate_private_document", side_effect=navigate), \
+        with patch.object(pwa_browser, "read_contact_route_fixture", return_value=CONTACT_ROUTE_FIXTURE), \
+             patch.object(pwa_browser, "probe_contact_route", side_effect=fake_contact_probe), \
+             patch.object(pwa_browser, "navigate_private_document", side_effect=navigate), \
              patch.object(pwa_browser, "wait_visible", side_effect=wait_for_selector):
             with self.assertRaises(pwa_browser.TimeoutException):
                 pwa_browser.verify_logged_out_private_routes(
@@ -556,6 +588,9 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         class Driver:
             current_url = secret_url
 
+            def find_element(self, *_args: object) -> object:
+                return SimpleNamespace(get_attribute=lambda _name: "ja-JP")
+
             def execute_script(self, script: str) -> dict[str, object]:
                 self.assertNotIn("textContent", script)
                 self.assertNotIn("innerHTML", script)
@@ -592,7 +627,9 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
             }
 
         substages: list[str] = []
-        with patch.object(pwa_browser, "navigate_private_document", side_effect=navigate), \
+        with patch.object(pwa_browser, "read_contact_route_fixture", return_value=CONTACT_ROUTE_FIXTURE), \
+             patch.object(pwa_browser, "probe_contact_route", side_effect=fake_contact_probe), \
+             patch.object(pwa_browser, "navigate_private_document", side_effect=navigate), \
              patch.object(pwa_browser, "wait_visible", return_value=object()) as wait_visible:
             with self.assertRaises(pwa_browser.PwaDiagnosticAssertionError) as raised:
                 pwa_browser.verify_logged_out_private_routes(

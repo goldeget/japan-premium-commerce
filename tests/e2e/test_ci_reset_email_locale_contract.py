@@ -45,17 +45,19 @@ class ResetEmailLocaleContract(unittest.TestCase):
         module = self.module()
         for language in ('ja', 'en', 'ko'):
             module.assert_message(self.message(language), language, 'http://127.0.0.1:18080', '/reset', [])
-            with self.assertRaises(AssertionError):
+            with self.assertRaises(module.MessageValidationError) as caught:
                 module.assert_message(self.message('en' if language != 'en' else 'ko'), language,
                                       'http://127.0.0.1:18080', '/reset', [])
-        with self.assertRaises(AssertionError):
+            self.assertEqual('locale_marker_missing', caught.exception.check)
+        with self.assertRaises(module.MessageValidationError):
             module.assert_message(self.message('ja', url='http://127.0.0.1:18080/password?token=x&reset_token=y'),
                                   'en', 'http://127.0.0.1:18080', '/password', [])
         for url in ('https://evil.invalid/reset?token=x&reset_token=y',
                     'http://user:secret@127.0.0.1:18080/reset?token=x&reset_token=y',
                     'http://127.0.0.1:18080/other?token=x&reset_token=y'):
-            with self.assertRaises(AssertionError):
+            with self.assertRaises(module.MessageValidationError) as caught:
                 module.assert_message(self.message(url=url), 'en', 'http://127.0.0.1:18080', '/reset', [])
+            self.assertIn(caught.exception.check, {'reset_link_origin_mismatch', 'reset_link_path_mismatch'})
 
     def test_credentials_and_generic_bank_details_fail_without_logging_payload(self):
         module = self.module()
@@ -64,8 +66,10 @@ class ResetEmailLocaleContract(unittest.TestCase):
             message['Text'] += ' ' + secret
             output = io.StringIO()
             with contextlib.redirect_stderr(output), contextlib.redirect_stdout(output):
-                with self.assertRaises(AssertionError) as caught:
+                with self.assertRaises(module.MessageValidationError) as caught:
                     module.assert_message(message, 'en', 'http://127.0.0.1:18080', '/reset', ['synthetic-password'])
+            expected = 'credential_disclosure' if secret == 'synthetic-password' else 'generic_bank_details'
+            self.assertEqual(expected, caught.exception.check)
             self.assertNotIn(secret, str(caught.exception))
             self.assertEqual('', output.getvalue())
 
@@ -73,16 +77,27 @@ class ResetEmailLocaleContract(unittest.TestCase):
         module = self.module()
         message = self.message()
         message['Text'] = message['Text'].replace('synthetic-reset', 'different-reset')
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(module.MessageValidationError) as caught:
             module.assert_message(message, 'en', 'http://127.0.0.1:18080', '/reset', [])
+        self.assertEqual('parts_credentials_mismatch', caught.exception.check)
 
     def test_reset_credentials_must_be_nonempty_and_unambiguous(self):
         module = self.module()
         for query in ('token=&reset_token=x', 'token=x&reset_token=',
                       'token=x&token=y&reset_token=z', 'token=x&reset_token=z&id_customer='):
-            with self.subTest(query=query), self.assertRaises(AssertionError):
+            with self.subTest(query=query), self.assertRaises(module.MessageValidationError) as caught:
                 module.assert_message(self.message(url='http://127.0.0.1:18080/reset?' + query),
                                       'en', 'http://127.0.0.1:18080', '/reset', [])
+            self.assertEqual('reset_credentials_invalid', caught.exception.check)
+
+    def test_message_failure_reason_is_closed_and_does_not_contain_message_data(self):
+        module = self.module()
+        secret = 'synthetic-reset-secret@example.invalid'
+        url = 'https://outside.invalid/reset?token=' + secret + '&reset_token=another'
+        with self.assertRaises(module.MessageValidationError) as caught:
+            module.assert_message(self.message('ja', url=url), 'ja', 'http://127.0.0.1:18080', '/reset', [])
+        self.assertEqual('reset_link_origin_mismatch', caught.exception.check)
+        self.assertNotIn(secret, str(caught.exception))
 
     def test_verified_email_link_is_returned_for_native_browser_navigation(self):
         module = self.module()
@@ -118,7 +133,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
         self.assertEqual(
             output.getvalue(),
             'FAIL: isolated native reset email locale=none stage=context exception=RuntimeError; '
-            'response_status=unavailable; same_origin=false; native_route=false; language_matches=false; '
+            'response_status=unavailable; message_check=none; same_origin=false; native_route=false; language_matches=false; '
             'email_field=false; submit_control=false; submit_center_in_viewport=false; '
             'submit_center_unobstructed=false; success_alert=false; reset_fields=false\n',
         )
@@ -130,6 +145,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
             result = {
                 "status": "failure", "language": "ja", "stage": "native_request_email_field",
                 "exception_type": "TimeoutException", "response_status": 404,
+                "message_check": "none",
                 "same_origin": True, "native_route": True, "language_matches": False,
                 "email_field_present": False, "submit_control_present": False,
                 "submit_center_in_viewport": False, "submit_center_unobstructed": False,
@@ -143,6 +159,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 self.assertIn('"response_status": 404', contents)
                 for sensitive in ("token", "password", "email@example", "http://", "current_url"):
                     self.assertNotIn(sensitive, contents)
+                self.assertIn('"message_check": "none"', contents)
                 module.write_diagnostics(dict(result, token="never-write"))
                 self.assertEqual(path.read_text(encoding="utf-8"), contents)
 
