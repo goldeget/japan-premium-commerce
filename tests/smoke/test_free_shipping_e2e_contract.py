@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import unittest
 import ast
+import importlib.util
 import io
 import json
 import re
 from pathlib import Path
 from types import SimpleNamespace
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -16,6 +17,7 @@ WORKFLOW = ROOT / ".github/workflows/fresh-install.yml"
 BROWSER = ROOT / "tests/e2e/verify_ci_free_shipping_browser.py"
 CHECKOUT_BROWSER = ROOT / "tests/e2e/verify_ci_checkout_admin_browser.py"
 ORDER_VERIFY = ROOT / "tests/postcode/verify_ci_free_shipping_order.php"
+TRACKING_VERIFY = ROOT / "tests/postcode/verify_ci_free_shipping_tracking.php"
 COUPON_FIXTURE = ROOT / "tests/postcode/seed_ci_shipping_coupon.php"
 CARRIER_ACCESS_FIXTURE = ROOT / "tests/postcode/prepare_ci_carrier_admin_access.php"
 JAPAN_ZONE_FIXTURE = ROOT / "tests/postcode/prepare_ci_japan_shipping_zone.php"
@@ -986,8 +988,257 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             "shipping-free-order-admin-osaka-desktop.png",
             "shipping-free-order-admin-taxable-desktop.png",
             "shipping-free-order-admin-mobile.png",
+            "shipping-free-order-tracking-verified.json",
+            "shipping-free-order-tracking-admin.png",
+            "shipping-free-order-tracking-customer.png",
         ):
             self.assertIn(artifact, artifact_gate)
+
+    def test_tracking_acceptance_uses_native_admin_update_and_same_customer_order(self) -> None:
+        browser = BROWSER.read_text(encoding="utf-8")
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        order_verify = ORDER_VERIFY.read_text(encoding="utf-8")
+        admin_step = workflow.split(
+            "- name: Verify free-shipping orders in a separate admin browser session", 1
+        )[1].split("- name:", 1)[0]
+
+        for marker in (
+            "def _assign_tracking_number_through_admin_ui",
+            "def _matches_isolated_admin_order_detail_url",
+            ".js-update-shipping-btn",
+            "#update_order_shipping_tracking_number",
+            "#update_order_shipping_current_order_carrier_id",
+            "#updateOrderShippingModal",
+            ".carrier-tracking-number",
+            "def _verify_customer_order_tracking",
+            'checkout.checkout_registration_email("shipping-free", RUN_ID, RUN_ATTEMPT)',
+            "data-link-action='view-order-details'",
+            ".order-carriers",
+            "#order_carriers_heading",
+            "status_before_tracking_update",
+            "total_paid_real",
+            "shipping_tax_incl",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, browser)
+
+        self.assertIn("verify_tracking_order", browser)
+        self.assertIn("_classify_isolated_admin_order_detail_url(browser.current_url, order_id)", browser)
+        self.assertIn("tracking_detail_url,\n            int(tracking_order.get(\"order_id\", 0)),", browser)
+        for marker in (
+            '"admin_fresh_document_readback": True',
+            '"customer_same_order_detail_readback": True',
+            '"admin_route_class_after_save":',
+            '"admin_route_class_after_fresh_get":',
+            '"customer_detail_route_class":',
+            '"order_carrier_id":',
+            '"admin_origin_matches": True',
+            '"customer_origin_matches": True',
+            '"admin_fresh_get_method_get":',
+            '"admin_and_customer_tracking_number_matches": True',
+            '"unpaid_status_preserved": True',
+            '"free_shipping_preserved": True',
+            '"physical_dispatch_performed": False',
+            '"carrier_scan_performed": False',
+            '"shipping-free-order-tracking-verified.json"',
+        ):
+            self.assertIn(marker, browser)
+        self.assertNotIn("UPDATE `ps_order_carrier`", browser)
+        self.assertNotIn("Db.getInstance().update", browser)
+        for marker in (
+            "'order_state_id' => (int) $order->current_state",
+            "'order_state_paid' => (bool) $state->paid",
+            "'carrier_url_configured' => !empty($carrier->url)",
+        ):
+            self.assertIn(marker, order_verify)
+        self.assertIn('verify_ci_free_shipping_browser.py admin', admin_step)
+
+    def test_tracking_persistence_readback_is_isolated_read_only_and_aggregated(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertTrue(TRACKING_VERIFY.is_file(), "Post-browser tracking persistence verifier is required")
+        tracking_verify = TRACKING_VERIFY.read_text(encoding="utf-8")
+        self.assertIn("- name: Verify native persistence of synthetic order tracking", workflow)
+        self.assertIn("id: shipping_free_tracking_persistence", workflow)
+        self.assertIn("steps.shipping_free_admin_browser_qa.outcome == 'success'", workflow)
+        self.assertIn("php /tmp/verify_ci_free_shipping_tracking.php", workflow)
+        self.assertIn("shipping-free-order-tracking-persistence-verified.json", workflow)
+        self.assertIn("SHIPPING_FREE_TRACKING_PERSISTENCE_OUTCOME", workflow)
+        self.assertIn('"shipping_free_tracking_persistence=$SHIPPING_FREE_TRACKING_PERSISTENCE_OUTCOME"', workflow)
+        coverage = workflow.split("- name: Verify browser QA screenshot coverage\n", 1)[1].split("- name:", 1)[0]
+        self.assertIn(
+            "SHIPPING_FREE_TRACKING_PERSISTENCE_OUTCOME: ${{ steps.shipping_free_tracking_persistence.outcome }}",
+            coverage,
+        )
+        self.assertIn("new Order($orderId)", tracking_verify)
+        self.assertIn("new OrderCarrier($orderCarrierId)", tracking_verify)
+        self.assertIn("tracking_number", tracking_verify)
+        self.assertIn("total_paid_real", tracking_verify)
+        self.assertIn("total_shipping_tax_incl", tracking_verify)
+        self.assertIn("order_state_paid", tracking_verify)
+        self.assertIn("read_only_database_readback", tracking_verify)
+        self.assertIn("same_order_and_tracking_persisted", tracking_verify)
+        self.assertIn("admin_fresh_get_method_get", tracking_verify)
+        self.assertIn("'carrier_tracking_destination_configured' => !empty($carrier->url)", tracking_verify)
+        self.assertIn("carrier_tracking_destination_configured", workflow)
+        self.assertIn('result.get("carrier_tracking_destination_configured") is False', workflow)
+        self.assertNotIn("'carrier_url_configured' =>", tracking_verify)
+        self.assertNotRegex(tracking_verify, r"\b(?:INSERT|UPDATE|DELETE|REPLACE)\b")
+        self.assertIn("'order_carrier_id' =>", tracking_verify)
+
+    def test_tracking_admin_readbacks_open_the_native_tabs_at_each_document_checkpoint(self) -> None:
+        browser_tree = ast.parse(BROWSER.read_text(encoding="utf-8"))
+        assignments = [
+            node
+            for node in browser_tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_assign_tracking_number_through_admin_ui"
+        ]
+        self.assertEqual(len(assignments), 1)
+        source = ast.get_source_segment(BROWSER.read_text(encoding="utf-8"), assignments[0]) or ""
+
+        self.assertEqual(source.count('_activate_admin_order_tab(driver, "#historyTab", "#historyTabContent")'), 2)
+        self.assertEqual(source.count('_activate_admin_order_tab(driver, "#orderShippingTab", "#orderShippingTabContent")'), 3)
+        self.assertLess(
+            source.index('_activate_admin_order_tab(driver, "#historyTab", "#historyTabContent")'),
+            source.index("status_before_tracking_update = _admin_order_state_id(driver)"),
+        )
+        self.assertLess(
+            source.index("checkout.click_at_center(driver, update_button)"),
+            source.index("WebDriverWait(driver, 35).until(matching_order_document)"),
+        )
+        self.assertLess(
+            source.index("driver.refresh()"),
+            source.index('_activate_admin_order_tab(driver, "#historyTab", "#historyTabContent")', source.index("driver.refresh()")),
+        )
+        self.assertLess(
+            source.index("status_after_tracking_update = _admin_order_state_id(driver)"),
+            source.index('_activate_admin_order_tab(driver, "#orderShippingTab", "#orderShippingTabContent")', source.index("driver.refresh()")),
+        )
+        self.assertIn('get_attribute("textContent")', source)
+        self.assertIn("_reconcile_admin_shipping_total(", source)
+        self.assertIn('"shipping-free-order-tracking-admin.png"', source)
+
+    def test_customer_tracking_failure_screenshot_requires_password_clear(self) -> None:
+        browser = BROWSER.read_text(encoding="utf-8")
+        customer_tracking = browser.split("def _verify_customer_order_tracking(\n", 1)[1].split(
+            "def _verify_synthetic_order_tracking(\n", 1
+        )[0]
+        wrapper = browser.split("def _verify_synthetic_order_tracking(\n", 1)[1].split(
+            "def run_free_carrier_admin_order_view()", 1
+        )[0]
+
+        self.assertIn("def _clear_customer_password_fields(driver) -> bool:", browser)
+        self.assertIn("field.value = '';", browser)
+        self.assertIn("return fields.every((field) => field.value === '');", browser)
+        safe_capture = browser.split("def _save_customer_tracking_screenshot(driver, filename: str) -> bool:", 1)[1].split(
+            "def _verify_customer_order_tracking_detail(", 1
+        )[0]
+        self.assertLess(
+            safe_capture.index("if not _clear_customer_password_fields(driver):"),
+            safe_capture.index("driver.save_screenshot("),
+        )
+        self.assertLess(
+            customer_tracking.index("if not _clear_customer_password_fields(driver):"),
+            customer_tracking.index("try:"),
+        )
+        self.assertLess(
+            customer_tracking.index("if not _clear_customer_password_fields(driver):"),
+            customer_tracking.index("shipping-free-order-tracking-customer-failure.png"),
+        )
+        self.assertIn(
+            '_save_customer_tracking_screenshot(driver, "shipping-free-order-tracking-customer-failure.png")',
+            customer_tracking,
+        )
+        self.assertNotIn("shipping-free-order-tracking-customer-failure.png", wrapper)
+
+    def test_admin_tracking_detail_urls_require_configured_origin_folder_and_order_route(self) -> None:
+        browser_tree = ast.parse(BROWSER.read_text(encoding="utf-8"))
+        matchers = [
+            node
+            for node in browser_tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name in {
+                "_classify_isolated_admin_order_detail_url",
+                "_matches_isolated_admin_order_detail_url",
+            }
+        ]
+        self.assertEqual(
+            {node.name for node in matchers},
+            {"_classify_isolated_admin_order_detail_url", "_matches_isolated_admin_order_detail_url"},
+        )
+
+        route_spec = importlib.util.spec_from_file_location(
+            "checkout_admin_routes_for_contract",
+            ROOT / "tests/e2e/checkout_admin_routes.py",
+        )
+        self.assertIsNotNone(route_spec)
+        self.assertIsNotNone(route_spec.loader)
+        routes = importlib.util.module_from_spec(route_spec)
+        route_spec.loader.exec_module(routes)
+        namespace: dict[str, object] = {
+            "urlparse": urlparse,
+            "ADMIN_LOGIN": "http://localhost:18080/admin-kuranea",
+            "checkout": routes,
+        }
+        exec(compile(ast.Module(body=matchers, type_ignores=[]), str(BROWSER), "exec"), namespace)
+        matches = namespace["_matches_isolated_admin_order_detail_url"]
+
+        self.assertTrue(
+            matches("http://localhost:18080/admin-kuranea/sell/orders/42/view", 42)
+        )
+        self.assertTrue(
+            matches(
+                "http://localhost:18080/admin-kuranea/index.php?controller=AdminOrders&id_order=42&action=vieworder&_token=secret",
+                42,
+            )
+        )
+        for href in (
+            "http://attacker.example/admin-kuranea/sell/orders/42/view",
+            "http://localhost:18081/admin-kuranea/sell/orders/42/view",
+            "http://user@localhost:18080/admin-kuranea/sell/orders/42/view",
+            "http://localhost:18080/admin-kuranea/sell/orders/42/view#fragment",
+            "http://localhost:18080/admin-kuranea-evil/sell/orders/42/view",
+            "http://localhost:18080/admin-kuranea/sell/orders/43/view",
+            "http://localhost:18080/admin-kuranea/index.php?controller=AdminOrders&id_order=42&id_order=42&action=vieworder",
+        ):
+            with self.subTest(href=href):
+                self.assertFalse(matches(href, 42))
+
+    def test_customer_tracking_order_link_requires_same_origin_and_exact_order(self) -> None:
+        browser_tree = ast.parse(BROWSER.read_text(encoding="utf-8"))
+        link_matchers = [
+            node
+            for node in browser_tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_customer_order_detail_link_matches"
+        ]
+        self.assertEqual(len(link_matchers), 1)
+        namespace: dict[str, object] = {
+            "urlparse": urlparse,
+            "parse_qs": parse_qs,
+            "BASE": "http://localhost:18080",
+        }
+        exec(
+            compile(ast.Module(body=link_matchers, type_ignores=[]), str(BROWSER), "exec"),
+            namespace,
+        )
+        matches = namespace["_customer_order_detail_link_matches"]
+        self.assertTrue(
+            matches(
+                "http://localhost:18080/index.php?controller=order-detail&id_order=42&id_order_return=0",
+                42,
+            )
+        )
+        self.assertTrue(matches("http://localhost:18080/ja/order-detail?id_order=42", 42))
+        for href in (
+            "http://localhost:18080/index.php?controller=order-detail&id_order=43",
+            "http://localhost:18080/index.php?controller=history&id_order=42",
+            "http://localhost:18080/order-detail?controller=history&id_order=42",
+            "http://attacker.example/index.php?controller=order-detail&id_order=42",
+            "http://localhost:18080/index.php?controller=order-detail&id_order=42&id_order=42",
+        ):
+            with self.subTest(href=href):
+                self.assertFalse(matches(href, 42))
 
     def test_japan_zone_fixture_is_disposable_and_contains_japan_only(self) -> None:
         self.assertTrue(JAPAN_ZONE_FIXTURE.is_file(), "Japan-only shipping zone fixture must be implemented")

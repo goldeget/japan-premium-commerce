@@ -2125,6 +2125,169 @@ jobs:
             tests/e2e/verify_ci_free_shipping_browser.py admin \
             2>&1 | tee "$RUNNER_TEMP/ordenowa-browser-qa/shipping-free-admin-order-e2e.log"
 
+      - name: Verify native persistence of synthetic order tracking
+        id: shipping_free_tracking_persistence
+        if: steps.shipping_free_admin_browser_qa.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/ordenowa-browser-qa"
+          browser_result="$artifact_dir/shipping-free-order-tracking-verified.json"
+          projected_input="$RUNNER_TEMP/ordenowa-tracking-readback-input.json"
+          persistence_result="$artifact_dir/shipping-free-order-tracking-persistence-verified.json"
+          persistence_log="$artifact_dir/shipping-free-order-tracking-persistence.log"
+          if [ ! -s "$browser_result" ]; then
+            echo '::error title=ORDENOWA tracking persistence::The successful browser step did not produce its result JSON.'
+            exit 1
+          fi
+          python3 - "$browser_result" "$projected_input" <<'PY'
+          import json
+          import re
+          import sys
+
+          source_path, output_path = sys.argv[1:]
+          with open(source_path, encoding="utf-8") as stream:
+              payload = json.load(stream)
+          integer_keys = (
+              "order_id", "carrier_id", "order_carrier_id", "admin_order_total",
+              "admin_order_state_id_before", "admin_order_state_id_after",
+          )
+          bool_true_keys = (
+              "synthetic_ci_only", "admin_origin_matches", "admin_folder_matches",
+              "admin_order_id_matches", "admin_post_save_order_id_matches",
+              "admin_fresh_get_order_id_matches", "admin_fresh_get_method_get", "customer_origin_matches",
+              "customer_order_id_matches", "admin_and_customer_order_ids_match",
+              "admin_and_customer_tracking_number_matches",
+              "admin_fresh_document_readback", "customer_same_order_detail_readback",
+              "admin_order_state_preserved", "free_shipping_preserved",
+          )
+          admin_classes = {"modern_order_detail", "legacy_order_detail"}
+          customer_classes = {"order_detail_controller", "friendly_order_detail"}
+          reference = payload.get("order_reference")
+          tracking = payload.get("tracking_number")
+          valid = (
+              isinstance(payload, dict)
+              and all(type(payload.get(key)) is int and payload[key] >= 0 for key in integer_keys)
+              and all(payload.get(key) is True for key in bool_true_keys)
+              and payload.get("order_id", 0) > 0
+              and payload.get("carrier_id", 0) > 0
+              and payload.get("order_carrier_id", 0) > 0
+              and payload.get("admin_order_state_id_before") == payload.get("admin_order_state_id_after")
+              and payload.get("admin_order_total", 0) > 0
+              and payload.get("admin_shipping_total") == 0
+              and payload.get("order_state_paid") is False
+              and payload.get("total_paid_real") == 0
+              and payload.get("shipping_total") == 0
+              and payload.get("physical_dispatch_performed") is False
+              and payload.get("carrier_scan_performed") is False
+              and payload.get("admin_route_class_before_update") in admin_classes
+              and payload.get("admin_route_class_after_save") in admin_classes
+              and payload.get("admin_route_class_after_fresh_get") in admin_classes
+              and payload.get("customer_detail_route_class") in customer_classes
+              and isinstance(reference, str) and re.fullmatch(r"[A-Z0-9]{8,16}", reference)
+              and isinstance(tracking, str)
+              and re.fullmatch(r"ORDENOWA-CI-TRACK-[0-9]{1,20}-[0-9]{1,4}", tracking)
+          )
+          if not valid:
+              raise SystemExit("The browser tracking result failed its allowlisted readback schema.")
+          keys = (
+              "synthetic_ci_only", "order_id", "order_reference", "carrier_id", "order_carrier_id",
+              "tracking_number", "admin_order_total", "admin_order_state_id_before",
+              "admin_order_state_id_after", "admin_route_class_before_update",
+              "admin_route_class_after_save", "admin_route_class_after_fresh_get",
+              "customer_detail_route_class", "admin_origin_matches", "admin_folder_matches",
+              "admin_order_id_matches", "admin_post_save_order_id_matches",
+              "admin_fresh_get_order_id_matches", "admin_fresh_get_method_get", "customer_origin_matches",
+              "customer_order_id_matches", "admin_and_customer_order_ids_match",
+              "admin_and_customer_tracking_number_matches",
+              "admin_fresh_document_readback", "customer_same_order_detail_readback",
+              "admin_order_state_preserved", "admin_shipping_total", "order_state_paid",
+              "total_paid_real", "shipping_total", "free_shipping_preserved",
+              "physical_dispatch_performed", "carrier_scan_performed",
+          )
+          projected = {key: payload[key] for key in keys}
+          with open(output_path, "w", encoding="utf-8") as stream:
+              json.dump(projected, stream, ensure_ascii=True, sort_keys=True)
+              stream.write("\n")
+          PY
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/verify_ci_free_shipping_tracking.php' \
+            < tests/postcode/verify_ci_free_shipping_tracking.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/ci-shipping-free-order-tracking.json' < "$projected_input"
+          if ! docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e CI=true \
+            -e GITHUB_ACTIONS=true \
+            -e GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            -e GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            -e KURANEA_ISOLATED_CI=1 \
+            -e KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \
+            -e KURANEA_CI_TRACKING_INPUT_PATH=/tmp/ci-shipping-free-order-tracking.json \
+            prestashop runuser -g www-data -u www-data -- \
+            php /tmp/verify_ci_free_shipping_tracking.php \
+            > "$persistence_result" 2> "$persistence_log"; then
+            cat "$persistence_log" >&2
+            exit 1
+          fi
+          cat "$persistence_log"
+          python3 - "$projected_input" "$persistence_result" <<'PY'
+          import json
+          import sys
+
+          input_path, result_path = sys.argv[1:]
+          with open(input_path, encoding="utf-8") as stream:
+              source = json.load(stream)
+          with open(result_path, encoding="utf-8") as stream:
+              result = json.load(stream)
+          expected_true = (
+              "synthetic_ci_only", "read_only_database_readback", "native_order_loaded",
+              "native_order_carrier_loaded", "order_reference_matches",
+              "order_carrier_order_id_matches", "tracking_number_matches_browser",
+              "admin_origin_matches", "admin_folder_matches", "admin_order_id_matches",
+              "admin_post_save_order_id_matches", "admin_fresh_get_order_id_matches",
+              "admin_fresh_get_method_get",
+              "customer_origin_matches", "customer_order_id_matches",
+              "admin_and_customer_order_ids_match", "admin_and_customer_tracking_number_matches",
+              "admin_fresh_document_readback", "customer_same_order_detail_readback",
+              "admin_order_state_preserved", "same_order_and_tracking_persisted",
+          )
+          safe_route_classes = {
+              "admin_route_class_before_update": {"modern_order_detail", "legacy_order_detail"},
+              "admin_route_class_after_save": {"modern_order_detail", "legacy_order_detail"},
+              "admin_route_class_after_fresh_get": {"modern_order_detail", "legacy_order_detail"},
+              "customer_detail_route_class": {"order_detail_controller", "friendly_order_detail"},
+          }
+          valid = (
+              isinstance(source, dict)
+              and isinstance(result, dict)
+              and all(result.get(key) is True for key in expected_true)
+              and all(result.get(key) in allowed for key, allowed in safe_route_classes.items())
+              and type(result.get("order_id")) is int
+              and result["order_id"] == source["order_id"]
+              and type(result.get("order_carrier_id")) is int
+              and result["order_carrier_id"] == source["order_carrier_id"]
+              and type(result.get("carrier_id")) is int
+              and result["carrier_id"] == source["carrier_id"]
+              and result.get("tracking_number") == source["tracking_number"]
+              and result.get("order_state_id") == source["admin_order_state_id_after"]
+              and result.get("admin_fresh_get_method_get") is True
+              and result.get("order_state_paid") is False
+              and result.get("total_paid_real") == 0
+              and result.get("total_shipping_tax_excl") == 0
+              and result.get("total_shipping_tax_incl") == 0
+              and result.get("total_paid_tax_incl") == source["admin_order_total"]
+              and result.get("currency") == "JPY"
+              and result.get("payment_module") == "ps_checkpayment"
+              and result.get("carrier_tracking_destination_configured") is False
+              and result.get("physical_dispatch_performed") is False
+              and result.get("carrier_scan_performed") is False
+              and not any("url" in key.casefold() or "token" in key.casefold() for key in result)
+          )
+          if not valid:
+              raise SystemExit("The native tracking readback JSON failed its same-order safe schema.")
+          PY
+
       - name: Restore the fail-closed base checkout environment
         id: checkout_restore
         if: always() && steps.checkout_override.outcome != 'skipped' && (env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_ADMIN_RETURN_FOCUS == 'true')
@@ -2378,6 +2541,7 @@ jobs:
           SHIPPING_FREE_EXEMPTION_BROWSER_QA_OUTCOME: ${{ steps.shipping_free_exemption_browser_qa.outcome }}
           SHIPPING_FREE_ORDER_PERSISTENCE_OUTCOME: ${{ steps.shipping_free_order_persistence.outcome }}
           SHIPPING_FREE_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.shipping_free_admin_browser_qa.outcome }}
+          SHIPPING_FREE_TRACKING_PERSISTENCE_OUTCOME: ${{ steps.shipping_free_tracking_persistence.outcome }}
           BRAND_BROWSER_QA_OUTCOME: ${{ steps.brand_browser_qa.outcome }}
           SHIPPING_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.shipping_admin_browser_qa.outcome }}
           RESET_EMAIL_BRAND_BROWSER_QA_OUTCOME: ${{ steps.reset_email_brand_browser_qa.outcome }}
@@ -2900,6 +3064,15 @@ jobs:
               shipping-free-order-admin-osaka-desktop.png
               shipping-free-order-admin-taxable-desktop.png
               shipping-free-order-admin-exemption-desktop.png
+              shipping-free-order-tracking-verified.json
+              shipping-free-order-tracking-admin.png
+              shipping-free-order-tracking-customer.png
+            )
+          fi
+          if [[ "$SHIPPING_FREE_TRACKING_PERSISTENCE_OUTCOME" == success ]]; then
+            required_artifacts+=(
+              shipping-free-order-tracking-persistence-verified.json
+              shipping-free-order-tracking-persistence.log
             )
           fi
           if [[ "$CHECKOUT_GATE_AFTER_ORDER_OUTCOME" == success ]]; then
@@ -3043,6 +3216,7 @@ jobs:
           SHIPPING_FREE_EXEMPTION_BROWSER_QA_OUTCOME: ${{ steps.shipping_free_exemption_browser_qa.outcome }}
           SHIPPING_FREE_ORDER_PERSISTENCE_OUTCOME: ${{ steps.shipping_free_order_persistence.outcome }}
           SHIPPING_FREE_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.shipping_free_admin_browser_qa.outcome }}
+          SHIPPING_FREE_TRACKING_PERSISTENCE_OUTCOME: ${{ steps.shipping_free_tracking_persistence.outcome }}
           POSTCODE_FIXTURE_OUTCOME: ${{ steps.postcode_fixture.outcome }}
           POSTCODE_LOOKUP_OUTCOME: ${{ steps.postcode_lookup.outcome }}
           NATIVE_ADDRESS_PERSISTENCE_OUTCOME: ${{ steps.native_address_persistence.outcome }}
@@ -3197,6 +3371,10 @@ jobs:
               failed_steps+=("$entry")
             fi
           done
+          if [[ "$SHIPPING_FREE_ADMIN_BROWSER_QA_OUTCOME" == success \
+            && "$SHIPPING_FREE_TRACKING_PERSISTENCE_OUTCOME" != success ]]; then
+            failed_steps+=("shipping_free_tracking_persistence=$SHIPPING_FREE_TRACKING_PERSISTENCE_OUTCOME")
+          fi
           if [[ "$SECURITY_ADMIN_LOCALE_MUTATED" == 1 && "$SECURITY_LOCALE_RESTORE_OUTCOME" != success ]]; then
             failed_steps+=("security_locale_restore=$SECURITY_LOCALE_RESTORE_OUTCOME")
           fi

@@ -374,6 +374,16 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, "another failure hid the successful cart flow's missing evidence")
             self.assertIn("cart-controls-desktop-initial.png", result.stdout)
 
+    def test_tracking_persistence_outcome_is_bound_into_screenshot_coverage(self) -> None:
+        coverage = step("Verify browser QA screenshot coverage")
+        self.assertIn(
+            "SHIPPING_FREE_TRACKING_PERSISTENCE_OUTCOME: ${{ steps.shipping_free_tracking_persistence.outcome }}",
+            coverage,
+        )
+        self.assertIn('if [[ "$SHIPPING_FREE_TRACKING_PERSISTENCE_OUTCOME" == success ]]; then', coverage)
+        self.assertIn("shipping-free-order-tracking-persistence-verified.json", coverage)
+        self.assertIn("shipping-free-order-tracking-persistence.log", coverage)
+
     def test_taxable_order_is_verified_with_its_own_fixture_identity(self) -> None:
         persistence = step("Verify free-shipping orders and totals in the isolated database")
         self.assertIn("steps.shipping_free_taxable_browser_qa.outcome == 'success'", persistence)
