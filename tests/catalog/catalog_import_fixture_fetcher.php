@@ -15,7 +15,7 @@ final class ORDENOWACatalogImportFixtureFetcher implements ProductPageFetcherInt
         $canonical = ProductUrlPolicy::canonicalize($url);
         $path = (string) parse_url($canonical['url'], PHP_URL_PATH);
         if ($canonical['provider'] === 'amazon_jp' && $path === '/dp/B0KURANEA1') {
-            $file = '/tmp/ordenowa-ci-catalog-import-amazon.synthetic.html';
+            $file = '/tmp/ordenowa-ci-catalog-import-amazon-review.single-option.synthetic.html';
         } elseif ($canonical['provider'] === 'rakuten_ichiba'
             && $canonical['url'] === 'https://item.rakuten.co.jp/fixture-shop/synthetic-case-b/') {
             $file = '/tmp/ordenowa-ci-catalog-import-rakuten.synthetic.html';

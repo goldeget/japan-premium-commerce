@@ -1131,6 +1131,9 @@ jobs:
             sh -c 'cat > /tmp/ordenowa-ci-catalog-import-amazon.synthetic.html' \
             < tests/catalog/fixtures/amazon-jp-product.synthetic.html
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/ordenowa-ci-catalog-import-amazon-review.single-option.synthetic.html' \
+            < tests/catalog/fixtures/amazon-jp-review-single-option.synthetic.html
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             sh -c 'cat > /tmp/ordenowa-ci-catalog-import-rakuten.synthetic.html' \
             < tests/catalog/fixtures/rakuten-product.synthetic.html
 

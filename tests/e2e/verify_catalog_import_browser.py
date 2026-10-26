@@ -860,7 +860,10 @@ def run():
         if not expected_category_ids:
             raise AssertionError('The synthetic import fixture requires at least one selected category.')
 
+        options_field = form.find_element(By.NAME, 'options')
+        assert options_field.get_attribute('value') == 'サイズ:M|L'
         options_confirmation = form.find_element(By.NAME, 'confirm_options_supported')
+        assert options_confirmation.is_displayed() and options_confirmation.is_enabled()
         if not options_confirmation.is_selected():
             click_with_safe_diagnostics(
                 driver, options_confirmation, state,
@@ -868,6 +871,7 @@ def run():
             )
         else:
             state['last_completed_substage'] = 'approve_options_confirmation'
+        assert options_confirmation.is_selected()
         with tempfile.TemporaryDirectory(prefix='ordenowa-import-') as temp:
             image = Path(temp) / 'original-synthetic.png'
             tiny_png(image)

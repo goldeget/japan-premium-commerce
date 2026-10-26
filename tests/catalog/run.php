@@ -64,6 +64,14 @@ assertCatalogSame('合成メイン画像', $amazon->images[0]->altText, 'ImageOb
 assertCatalogSame('amazon_jp', $amazon->images[0]->source, 'Image source should be traceable to the provider.');
 assertCatalogSame('藍色', $amazon->options[0]->values[0], 'Product option values should be retained.');
 assertCatalogSame(['M', 'L'], $amazon->options[1]->values, 'Repeated property names should combine their values.');
+$amazonReviewFixture = $amazonParser->parse(
+    fixture('amazon-jp-review-single-option.synthetic.html'),
+    $amazonUrl,
+    $fetchedAt
+);
+assertCatalogSame(1, count($amazonReviewFixture->options), 'The browser approval fixture should expose one supported option group.');
+assertCatalogSame('サイズ', $amazonReviewFixture->options[0]->name, 'The approval option group should retain its source label.');
+assertCatalogSame(['M', 'L'], $amazonReviewFixture->options[0]->values, 'The approval option values should remain distinct and ordered.');
 assertCatalogSame('pending', $amazon->approvalStatus, 'Parsed products should require manual review.');
 assertCatalogSame('2026-10-22T12:30:00+00:00', $amazon->fetchedAt->format(DateTimeInterface::ATOM), 'Fetch time should be recorded.');
 assertCatalogTrue((bool) preg_match('/\A[a-f0-9]{64}\z/', $amazon->contentHash), 'Normalized content should have a SHA-256 update fingerprint.');

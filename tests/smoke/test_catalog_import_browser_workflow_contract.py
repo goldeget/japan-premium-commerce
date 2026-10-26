@@ -3,6 +3,7 @@ import ast
 import importlib.util
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -60,6 +61,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertIn('kuranea-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}', fixture)
         self.assertIn('catalog_import_fixture_fetcher.php', fixture)
         self.assertIn('amazon-jp-product.synthetic.html', fixture)
+        self.assertIn('amazon-jp-review-single-option.synthetic.html', fixture)
         self.assertIn('rakuten-product.synthetic.html', fixture)
 
     def test_native_persistence_checks_real_flags_and_duplicate_identity(self):
@@ -91,6 +93,34 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertNotIn('page_source', source)
         self.assertNotIn('print(error)', source)
         self.assertNotIn('requests.', source)
+
+    def test_approved_browser_fixture_has_one_supported_option_group(self):
+        fixture_path = ROOT / 'tests/catalog/fixtures/amazon-jp-review-single-option.synthetic.html'
+        self.assertTrue(fixture_path.is_file(), 'The browser approval fixture must remain local and synthetic.')
+        fixture = fixture_path.read_text(encoding='utf-8')
+        match = re.search(r'<script type="application/ld\+json">\s*(.*?)\s*</script>', fixture, re.DOTALL)
+        self.assertIsNotNone(match, 'The browser fixture must expose structured product data to the parser.')
+        payload = json.loads(match.group(1))
+        products = payload.get('@graph', [])
+        self.assertEqual(len(products), 1)
+        properties = products[0].get('additionalProperty', [])
+        self.assertEqual(
+            [(item['name'], item['value']) for item in properties],
+            [('サイズ', 'M'), ('サイズ', 'L')],
+            'The approval flow needs one real option group with two distinct synthetic values.',
+        )
+
+        fetcher = self.read_required('tests/catalog/catalog_import_fixture_fetcher.php')
+        self.assertIn('/tmp/ordenowa-ci-catalog-import-amazon-review.single-option.synthetic.html', fetcher)
+        workflow = self.read_required('.github/workflows/fresh-install.yml')
+        fixture_step = workflow.split('id: catalog_import_fixture', 1)[1].split('\n      - name:', 1)[0]
+        self.assertIn('ordenowa-ci-catalog-import-amazon-review.single-option.synthetic.html', fixture_step)
+        self.assertIn('tests/catalog/fixtures/amazon-jp-review-single-option.synthetic.html', fixture_step)
+
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        self.assertIn("options_field.get_attribute('value') == 'サイズ:M|L'", browser)
+        self.assertIn('assert options_confirmation.is_displayed() and options_confirmation.is_enabled()', browser)
+        self.assertIn('assert options_confirmation.is_selected()', browser)
 
     def test_browser_requires_one_loaded_native_product_image(self):
         source = self.read_required('tests/e2e/verify_catalog_import_browser.py')
