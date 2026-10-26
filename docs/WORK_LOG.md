@@ -1,11 +1,22 @@
 # ORDENOWA 작업 기록
 
+## 2026-10-26 — cart/carrier 검증 보완 및 PWA foundation checkpoint
+
+- 시작 원격 `work` SHA `a890c83f04b81240b07a338f9ed734f0a25caf78`, `main` `ee02a3657448d563508687614a246e05ac61eecd`; 원격 조회에서 진행 중 Actions는 없었다. 로컬 `work`에는 먼저 문서 checkpoint `fa2574e`, 이어 두 변경 commit `ec7ef6b`와 `50d924f`가 있다. 아직 push하지 않았고 사용자 미추적 파일은 stage하지 않았다.
+- QA finding: #40310232196 source a890c83의 actual aggregate 실패는 mobile cart add-button readiness `StaleElementReferenceException`과 `shipping_free_admin_configure` saved carrier `TimeoutException` 두 개다. Customer account/address outcome은 success; downstream shipping skips는 독립 실패가 아니다. 기존 주소 timeout은 재현되지 않아 원인 미확정으로 유지한다.
+- Cart polling은 매회 버튼을 새로 찾고 visibility/enabled read에서 발생한 stale exception만 다시 대기한다. 20초 wait·native click·상품/옵션/수량 assertions는 그대로다. Carrier readback에는 허용 stage와 redacted same-ID/name/free/zone/readiness facts를 추가했다. 새 run 전에는 실제 timeout predicate를 해결했다고 주장하지 않는다.
+- CI failure extraction 3구간은 ripgrep 의존성을 제거했고 PATH에 `rg`가 없는 test subprocess가 원래 exit 7, summary 및 carrier annotation을 보존하는지 확인한다.
+- 주소 edit helper는 add/edit 양쪽에 자연스러운 중립 copy `계정에 사용할 주소 정보를 입력해 주세요.`로 바꿨다. 이전 artifact에서 한국어를 보인다는 이유만으로 edit-context QA 완료로 두지 않는다.
+- PWA-002 code commit `50d924f`는 별도 `kuraneapush` module, explicit consent/owner-scoped encrypted API, Korean admin config, provider를 호출하지 않는 synthetic API/worker checks를 추가했다. Review는 source 수준 blocker를 찾지 않았지만 production privacy audit에는 consent version/hash, accepted timestamp, retention/erase policy가 빠져 있다. Push sender, VAPID key, approved consent text, support producer는 scope/readiness 대기다.
+- 로컬 검증: Step 8 578 OK (7 PHP CLI skips); focus false/true Step 9 각 36 OK; cart/shipping/account contracts 117 OK; PWA/worker/backend contracts 84 OK; Node 12 OK. GitHub Actions가 PHP lint/behavior, PrestaShop/MariaDB install, Chromium/PWA render/runtime과 전체 aggregate를 검증해야 한다. 이 시점에는 Actions run/artifact가 없다.
+- 다음 handoff는 푸시 후 새 source SHA/aggregate를 확인하고 `shipping-free-carrier-configure-failure.png`, cart failure/ready evidence, `mobile-customer-address-edit-form.png`, six locale/device PWA push consent screenshots와 two-owner synthetic screenshots를 독립 시각 검수한다. Artifact가 만들어지기 전 파일명은 의도된 evidence coverage이며 존재/검증 주장으로 쓰지 않는다.
+
 ## 2026-10-26 — 주소 문구 검증 완료 및 전체 QA 결과
 
 - 최신 source/work `a890c83f04b81240b07a338f9ed734f0a25caf78`, `main` `ee02a3657448d563508687614a246e05ac61eecd` 보존. Full isolated QA #40310232196 completed FAILURE. Account/address browser outcome success; aggregate의 실제 실패는 mobile cart `product_add_add_button_wait` StaleElementReferenceException 및 free carrier admin `verify_admin_saved_carrier` TimeoutException이다. downstream shipping checks는 skipped다.
 - artifact 12644494181에서 mobile address edit form 390×701을 직접 열어 새 한국어 helper `계정에 새 주소를 등록할 수 있습니다.`를 확인했다. 같은 run에서 주소 same-ID 저장/fresh GET/refresh acceptance도 통과했다. 이전 address Timeout의 정확한 원인은 재현되지 않아 미확정으로 둔다.
 - matrix에는 QA-REG-001로 두 실제 실패를 분리 기록하고 주소/카탈로그/운송장 완료 근거를 유지했다. 기존 #403006 catalog same-ID reimport 및 tracking success를 최신 실패로 덮어쓰지 않는다.
-- PWA-002의 설계/계획 초안은 별도 `kuraneapush` 모듈, 명시 동의, encrypted owner-scoped subscription, localized allowlisted synthetic worker events에 한정했다. Provider-backed delivery, approved legal/retention copy, support producer, physical devices remain unverified/blocked. Builder review를 반영하고 실제 provider에 연결하지 않는 browser/Node test boundary를 분명히 한다.
+- PWA-002의 설계/계획은 별도 `kuraneapush` 모듈과 격리 synthetic boundary에 한정한다. 이후 `50d924f`에서 코드/CI 구현을 추가했으며 PHP/MariaDB/Chromium runtime은 아직 Actions 검증 대기다. Provider-backed delivery, approved legal/retention copy, support producer, physical devices remain unverified/blocked.
 
 ## 2026-10-26 — 모바일 주소 수정 재검증과 workflow focus 경계 보완
 

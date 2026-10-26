@@ -1,5 +1,16 @@
 # ORDENOWA 테스트 결과
 
+## 2026-10-26 — 카트/배송 진단과 PWA foundation의 로컬 검사 (Actions 대기)
+
+- 로컬 `work` code SHA `50d924fdf6923a551c49c0cee65fb5b428765bb1`; 원격 `origin/work`는 push 전 `a890c83f04b81240b07a338f9ed734f0a25caf78`. `main`은 변경하지 않았다. 변경은 `ec7ef6b` 카트/배송/한국어 주소 문구 보완과 `50d924f` PWA synthetic foundation 두 commit으로 분리됐다. 아직 새 Docker/DB/Chromium Actions runtime은 없다.
+- Workflow Step 8의 현재 명령은 **578 tests OK (7 skipped)**. Skip 7개는 PHP CLI 부재로 실행할 수 없는 PHP-only account-address source contracts다. Step 9의 `test_ci_checkout_contract`는 parent `ORDENOWA_ADMIN_SECURITY_FOCUS=false` 및 `true` 각각 **36 tests OK**다.
+- 영향 계약: cart/shipping/account/residual **117 tests OK**; PWA worker/module/backend workflow contracts **84 tests OK**. Node account client **12 tests OK**. PWA Python source contract **4 tests OK**. Worker negative Cache-Control checks intentionally print their rejected-case messages while the suite result remains OK. `git diff --check`, Python/YAML/embedded JS/Bash syntax checks pass.
+- Cart fix retries only a stale element in the existing ready-button probe; carrier checks retain the original waits and assertions and add safe substage diagnostics. No browser runtime has confirmed the stale recovery or carrier save/readback on this SHA. The previous `shipping_free_admin_configure` timeout remains unclassified until new Actions evidence.
+- Korean address edit helper now uses `계정에 사용할 주소 정보를 입력해 주세요.`. Older artifact 12644494181 shows the previous Korean but edit-inappropriate copy; the new text needs a fresh source capture before visual completion.
+- PWA-002 code is synthetic/no-provider only. PHP behavior and MariaDB repository tests are wired to Actions; PHP is unavailable locally. Source review found consent notice version/hash and acceptance timestamp/audit are not stored; keep this as a production privacy/readiness gap. Never record the local checks as full CI or browser PASS.
+
+## 2026-10-26 — 주소 번역 런타임 확인 및 전체 QA 결과
+
 ## 2026-10-26 — 주소 번역 런타임 확인 및 전체 QA 결과
 
 - 대상 `work` SHA `a890c83f04b81240b07a338f9ed734f0a25caf78`; `main`은 변경하지 않았다. 전체 isolated Actions [#40310232196](https://github.com/goldeget/japan-premium-commerce/actions/runs/40310232196)은 completed **FAILURE**이며 실제 aggregate 실패는 `cart_controls_browser_qa=failure`와 `shipping_free_admin_configure=failure`다. 주소 browser outcome은 `ACCOUNT_BROWSER_QA_OUTCOME=success`; 전체 실행은 PASS가 아니다.
