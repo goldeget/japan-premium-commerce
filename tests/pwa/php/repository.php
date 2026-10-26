@@ -84,7 +84,12 @@ check(end($db->queryCache)===false, 'fresh delivery lookup bypasses query cache 
 check(str_contains($db->queries[0], 'WHERE id_shop=3 AND id_customer=44')
     && str_contains($db->queries[0], 'consent_notice_version IS NOT NULL')
     && str_contains($db->queries[0], 'consent_accepted_at IS NOT NULL')
-    && str_contains($db->queries[0], 'LIMIT 100'), 'delivery target query is owner scoped, consent gated and bounded');
+    && str_contains($db->queries[0], 'LIMIT 101'), 'delivery target query is owner scoped, consent gated and includes an overflow sentinel');
+$db->queries=[];
+$db->reads=[array_fill(0, 101, ['id_subscription'=>1])];
+$overflowTargets=$repository->deliveryTargetsForOwner(3,44);
+check(count($overflowTargets)===101 && str_contains($db->queries[0], 'LIMIT 101'),
+    'the repository preserves the sentinel row so the service can fail closed on recipient overflow');
 $cachedDb = new RecordingPushDb();
 $cachedDb->simulateQueryCache = true;
 $cachedRepository = new SubscriptionRepository($cachedDb, 'cache_');

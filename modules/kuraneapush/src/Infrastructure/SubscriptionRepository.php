@@ -64,7 +64,7 @@ final class SubscriptionRepository implements SubscriptionStore, PushDeliverySto
         $sql = 'SELECT id_subscription,id_shop,id_customer,endpoint_digest,encrypted_subscription,consent_notice_version,consent_locale,consent_accepted_at FROM '
             . $this->table . $this->owner($shop, $customer)
             . ' AND consent_notice_version IS NOT NULL AND consent_locale IS NOT NULL AND consent_accepted_at IS NOT NULL'
-            . ' ORDER BY id_subscription ASC LIMIT ' . PushDeliveryStore::MAX_DELIVERY_TARGETS;
+            . ' ORDER BY id_subscription ASC LIMIT ' . (PushDeliveryStore::MAX_DELIVERY_TARGETS + 1);
         // Outbox attempts must observe current consent after a separate request revokes or renews it.
         $rows = $this->db->executeS($sql, true, false);
         if (!is_array($rows)) {

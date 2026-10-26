@@ -51,6 +51,11 @@ class BackendContract(unittest.TestCase):
             'public function removeDeliveryTargetForOwner(', 1
         )[0]
         self.assertIn(', true, false);', delivery_lookup)
+        self.assertIn(
+            'LIMIT \' . (PushDeliveryStore::MAX_DELIVERY_TARGETS + 1)',
+            delivery_lookup,
+            'delivery lookup must fetch one sentinel row to detect recipient overflow',
+        )
 
     def test_admin_access_and_lifecycle(self):
         source = self.source('controllers/admin/AdminKuraneaPushController.php')

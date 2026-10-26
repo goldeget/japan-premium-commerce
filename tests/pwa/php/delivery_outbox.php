@@ -104,5 +104,13 @@ assertOutbox($service->retry(1,10,'event-disabled')['status']==='busy','concurre
 $k='1:10:event-disabled';$outbox->events[$k]['recipients'][0]['outcome']='sending';$outbox->events[$k]['recipients'][0]['attempts']=1;
 $before=count($provider->calls);$result=$service->retry(1,10,'event-disabled');
 assertOutbox($result['interrupted']===1&&count($provider->calls)===$before,'uncertain interrupted send is not blindly resent');
+$overflowTargets=new FixtureTargets();
+$overflowTargets->rows=array_fill(0, PushDeliveryStore::MAX_DELIVERY_TARGETS + 1, []);
+$overflowOutbox=new FixtureOutbox();
+$overflowProvider=new FixtureProvider();
+$overflowService=new PushOutboxService($overflowOutbox,$overflowTargets,$cipher,$overflowProvider);
+$overflowResult=$overflowService->receive(1,10,'event-overflow',$payload);
+assertOutbox($overflowResult['status']==='storage_unavailable' && $overflowOutbox->events===[] && $overflowProvider->calls===[],
+    'recipient overflow is detected before receipt creation or a provider attempt');
 require __DIR__ . '/outbox_repository.php';
 echo "PASS: push outbox receipts, outcomes, explicit retry, success dedupe, consent withdrawal and owner isolation\n";

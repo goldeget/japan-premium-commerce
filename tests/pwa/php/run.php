@@ -16,6 +16,7 @@ use Kuranea\Push\Domain\SubscriptionApi;
 use Kuranea\Push\Domain\ConsentNoticeVersion;
 use Kuranea\Push\Infrastructure\SubscriptionCipher;
 use Kuranea\Push\Domain\DeliveryPayload;
+use Kuranea\Push\Domain\PushDeliveryProvider;
 use Kuranea\Push\Domain\PushDeliveryResult;
 use Kuranea\Push\Domain\PushDeliveryStore;
 use Kuranea\Push\Domain\PushDeliveryService;
@@ -224,6 +225,20 @@ try {
         && $summary->retryableFailure===1 && $summary->ineligible===2, 'owner delivery distinguishes success, gone, retryable and ineligible rows');
     check(count($deliveryStore->requests)===1 && $deliveryStore->requests[0]===[1,10], 'delivery query is scoped to exactly the requested shop and customer');
     check($deliveryStore->removed===[[1,10,$goneDigest]], 'permanently gone endpoint removal is owner scoped and exact');
+
+    $overflowStore=new MemoryPushDeliveryStore();
+    $overflowStore->rows=array_fill(0, PushDeliveryStore::MAX_DELIVERY_TARGETS + 1, []);
+    $overflowProvider=new class implements PushDeliveryProvider {
+        public int $sendCount=0;
+        public function available(): bool { return true; }
+        public function send(array $subscription, DeliveryPayload $payload): PushDeliveryResult {
+            $this->sendCount++;
+            return new PushDeliveryResult(PushDeliveryResult::DELIVERED);
+        }
+    };
+    $overflowSummary=(new PushDeliveryService($overflowStore,$deliveryCipher,$overflowProvider))->deliverToOwner(1,10,$payload);
+    check($overflowSummary->status==='storage_unavailable' && $overflowProvider->sendCount===0,
+        'more than the supported recipient limit fails closed before any delivery');
 
     $invalidStore=new MemoryPushDeliveryStore();
     $invalidStore->rows=[['id_shop'=>1,'id_customer'=>10,'endpoint_digest'=>str_repeat('0',64),
