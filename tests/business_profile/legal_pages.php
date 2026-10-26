@@ -30,7 +30,7 @@ $profile['bank_accounts'] = [
     [
         'id' => str_repeat('a', 32),
         'bank_name' => 'TEST BANK', 'branch_name' => 'TOKYO', 'account_type' => 'ordinary',
-        'account_number' => '12345678', 'account_holder' => 'TEST HOLDER', 'active' => true,
+        'account_number' => '99887766', 'account_holder' => 'TEST HOLDER', 'active' => true,
     ],
     [
         'bank_name' => 'INACTIVE BANK', 'branch_name' => 'TOKYO', 'account_type' => 'ordinary',
@@ -54,13 +54,13 @@ foreach ([
 
 $open = \Kuranea\BusinessProfile\Customer\PublishedLegalPageBuilder::build($profile, true);
 foreach ([
-    'TEST COMPANY PROFILE', 'TEST SELLER LEGAL', 'TEST SELLER ADDRESS', 'TEST RESPONSIBLE PERSON',
+    'TEST COMPANY PROFILE', 'TEST SELLER LEGAL', '1234567890123', 'TEST SELLER ADDRESS', 'TEST RESPONSIBLE PERSON',
     'TEST CUSTOMER PHONE', 'TEST HOURS', 'TEST PAYMENT', 'TEST SHIPPING', 'TEST REFUND',
     'TEST TERMS', 'TEST PRIVACY', 'TEST SPECIFIED ACT',
 ] as $expected) {
     assertBusinessProfileTrue(str_contains($open, $expected), 'Authorized Japanese legal output must include ' . $expected . '.');
 }
-assertBusinessProfileTrue(!str_contains($open, 'TEST BANK') && !str_contains($open, '12345678'), 'Public legal pages must not reveal bank details before order-specific staff issuance.');
+assertBusinessProfileTrue(!str_contains($open, 'TEST BANK') && !str_contains($open, '99887766'), 'Public legal pages must not reveal bank details before order-specific staff issuance.');
 assertBusinessProfileTrue(!str_contains($open, 'INACTIVE BANK') && !str_contains($open, '87654321'), 'Inactive bank accounts must not be published.');
 assertBusinessProfileTrue(!str_contains($open, 'DO NOT PUBLISH COMPANY REFERENCE'), 'Company reference data must not be presented as the selling entity.');
 
