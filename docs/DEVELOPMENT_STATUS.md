@@ -1,6 +1,19 @@
 # ORDENOWA 개발 현황
 
-## 최신 코드 및 전체 격리 QA 상태 (2026-10-26 07:42 UTC)
+## 최신 코드 및 격리 QA 상태 (2026-10-26 09:49 UTC)
+
+`work`와 `origin/work`는 `0b68e96f1a38a36feb3732b2d3a26c06afd40c1a`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다.
+
+- `0da85d3`는 manager 상품 ID baseline을 unsupported URL 검사 전에 읽도록 순서를 바로잡았다. 해당 검사 함수는 review 화면으로 이동하므로 이전 순서에서는 manager ID 집합을 review 페이지에서 읽었다. 합성 상품 조회 실패나 중복 생성의 증거가 아니었다.
+- `985e1cd`는 운송장 저장 직후 문서 대기에서 `<body>.text`를 읽는 중 생기는 `StaleElementReferenceException`만 일시적인 대기 결과로 처리한다. 정확한 주문 참조와 허용된 동일 관리자 주문 경로가 모두 맞아야 통과하며 35초 제한, 운송장 행 재조회, cache-disabled 새 GET, 고객의 같은 주문 조회와 네이티브 DB 검증은 유지한다.
+- `0b68e96`는 주문 참조가 비어 있거나 문자열이 아닌 경우 대기 predicate가 통과하지 않도록 한다. 주문 ID나 주문 참조를 출력하지 않는다.
+- 최종 코드 SHA의 전체 격리 QA [#40300616469](https://github.com/goldeget/japan-premium-commerce/actions/runs/40300616469)는 **FAILURE**다. Step 88 실제 aggregate의 유일한 실패는 `account=failure`; 안전 주석은 모바일 `customer_address_edit`의 `TimeoutException`, `control_name=none`, `control_type=none`이다. 이 단계는 이번 catalog/shipping 수정 범위 밖이며 원인은 확정하지 않았다. 따라서 전체 QA PASS나 출시 가능으로 기록하지 않는다.
+- 같은 aggregate에서 `CATALOG_IMPORT_BROWSER_QA_OUTCOME=success`, `SHIPPING_FREE_ADMIN_BROWSER_QA_OUTCOME=success`, `SHIPPING_FREE_TRACKING_PERSISTENCE_OUTCOME=success`였다. Step 73이 실행되어 관리자 브라우저 outcome도 실제 success였다. 합성 catalog 승인·manager readback, 운송장 저장·새 GET·같은 고객 주문 조회 결과를 이 범위에서 유지한다. 운송장 실제 출고·carrier scan·외부 tracking URL은 검증하지 않았다.
+- 독립 QA는 이전 전체 성공 SHA `985e1cd` / [#40298163222](https://github.com/goldeget/japan-premium-commerce/actions/runs/40298163222) artifact [12639887664](https://github.com/goldeget/japan-premium-commerce/actions/runs/40298163222/artifacts/12639887664)를 열어 관리자·고객 운송장 행과 일본어 주문 라벨을 확인했다. 이 캡처는 합성 주문이며 stale retry 분기가 실제로 실행됐다는 증거는 아니다. 최종 SHA run의 browser artifact [12641465628](https://github.com/goldeget/japan-premium-commerce/actions/runs/40300616469/artifacts/12641465628)와 diagnostics [12639904863](https://github.com/goldeget/japan-premium-commerce/actions/runs/40300616469/artifacts/12639904863)는 보존돼 있으나 이 환경에서 새 이미지를 직접 열어 확인했다고 주장하지 않는다.
+- 검증: final-code `fresh-install.yml` Step 8은 CI에서 통과했다. 최종 코드의 정확한 Step 8 로컬 명령은 546 tests PASS (7 skipped), free-shipping contract file은 47/47 PASS; Python compile 및 `git diff --check`도 통과했다. 해당 로컬 결과는 Actions runtime/전체 aggregate를 대체하지 않는다.
+- 별도 release blockers는 유지한다: 실제 판매자·상품/SKU 및 이미지 사용권·SKU 세금 분류, 운송사/출고·반품 운영, 결제·환불 및 승인 문안, production domain/TLS/SMTP/secrets, 운영 backup 정책·저장소·담당자, iOS/Android 실기기 접근이 자료·환경 대기다. 관리자 전체 한국어 inventory도 미완료다. 실기기·실판매·운영환경 PASS로 추정하지 않는다.
+
+## 이전 최신 상태 (2026-10-26 07:42 UTC)
 
 현재 `work`의 코드 checkpoint는 `791f2d31456abd4cfa4dd98447ba1838a41073b0`; 원격 `origin/work`는 push 전 `f4c75b89f4c89edbe1fb97ba097cbd061dc30259`다. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 보존했다. `20f3708`은 catalog native readback의 실패 predicate를 enum과 boolean만으로 기록하고, `791f2d3`은 일본어 주문 상세 JA label을 child theme에서 번역한다.
 

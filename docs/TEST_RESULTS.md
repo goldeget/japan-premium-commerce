@@ -1,5 +1,16 @@
 # ORDENOWA 테스트 결과
 
+## 2026-10-26 — catalog baseline 및 운송장 문서 대기 회귀 검증
+
+- Final `work` SHA `0b68e96f1a38a36feb3732b2d3a26c06afd40c1a`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 보존했다.
+- #40294965246의 catalog 실패는 unsupported-URL 검사 함수가 브라우저를 review 화면으로 이동한 다음, 검증기가 그 화면에서 manager ID baseline을 읽어 생긴 harness 순서 오류였다. `0da85d3`는 manager 화면에서 baseline을 읽은 뒤 unsupported URL 이동을 수행한다. #402949 aggregate의 유일한 실패였던 shipping 단계는 별도로 `admin_post_save_document_wait`의 stale body-text read로 확인됐다.
+- `985e1cd`는 동일 주문 참조와 정확한 관리자 주문 경로를 요구하는 기존 predicate에서 stale body text 예외만 해당 polling predicate 안에서 false로 처리한다. 제출 재시도나 JS 강제 클릭은 하지 않으며 같은 35초 대기, 저장 후 운송장 행, cache-disabled fresh GET, 고객 같은 주문, unpaid/free-shipping 보존 및 DB readback 검사는 그대로다. `0b68e96`는 누락/비문자열 주문 참조를 거부하도록 fail-closed 보강했다.
+- 최종 SHA `0b68e96`의 전체 Actions [#40300616469](https://github.com/goldeget/japan-premium-commerce/actions/runs/40300616469)는 Step 88 aggregate **FAILURE**다. 실제 유일 실패 `account=failure`; annotation: mobile `customer_address_edit`, `TimeoutException`, control name/type 없음. 이 새 account failure는 이번 변경 범위에 포함하지 않았으며 원인을 추정하지 않는다.
+- 같은 aggregate에서 `catalog_import_browser_qa=success`, `shipping_free_admin_browser_qa=success`, `shipping_free_tracking_persistence=success`가 확인됐다. Step 73이 실제 수행돼 Step 72 관리자 outcome도 success다. Step 80 isolated backup/restore, Step 85 restart persistence, Steps 86–87 Japan Post import/verification, Steps 89–91 diagnostics/upload/cleanup도 성공했다. Overall workflow는 account 실패 때문에 success가 아니다.
+- 전체 성공 직전 baseline은 SHA `985e1cd` / [#40298163222](https://github.com/goldeget/japan-premium-commerce/actions/runs/40298163222)로, actual Step 88 aggregate PASS 및 catalog/shipping/tracking outcomes success다. 독립 검수는 artifact [12639887664](https://github.com/goldeget/japan-premium-commerce/actions/runs/40298163222/artifacts/12639887664)의 일본어 주문 상세와 관리자·고객 운송장 화면을 확인했다. 그 성공 JSON은 stale retry가 실제 실행됐다는 사실까지 증명하지 않는다.
+- 최종 SHA artifact: browser screenshots [12641465628](https://github.com/goldeget/japan-premium-commerce/actions/runs/40300616469/artifacts/12641465628), diagnostics [12639904863](https://github.com/goldeget/japan-premium-commerce/actions/runs/40300616469/artifacts/12639904863). Codex에서는 이 이미지들의 새 시각 검수를 완료했다고 주장하지 않는다.
+- 최종 코드의 local Step 8 exact command: 546 tests PASS, 7 skipped; free-shipping E2E contract suite 47/47 PASS; `py_compile`와 `git diff --check` PASS. 이것은 final SHA의 전체 Actions aggregate FAILURE를 바꾸지 않는다.
+
 ## 2026-10-26 — native readback predicate 진단과 일본어 주문 추적 라벨
 
 - Validated local work code SHA `791f2d31456abd4cfa4dd98447ba1838a41073b0` adds `20f3708` diagnostic instrumentation and `791f2d3` Japanese order-detail translations; origin/work remains f4c75b8 until push. `main` is unchanged.
