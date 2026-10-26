@@ -1,6 +1,7 @@
 """Exercise CI outcome aggregation and evidence requirements without Docker."""
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import re
@@ -297,6 +298,39 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             artifact_dir = Path(temporary) / "ordenowa-browser-qa"
             artifact_dir.mkdir()
             (artifact_dir / "unrelated-failure.log").write_text("failed elsewhere\n", encoding="utf-8")
+            (artifact_dir / "catalog-import-e2e.log").write_text(
+                "ORDENOWA_CATALOG_IMPORT stage=batch_url_field; last_completed_stage=login; exception_class=TimeoutException\n",
+                encoding="utf-8",
+            )
+            import_diagnostics = {
+                "stage": "batch_url_field",
+                "last_completed_stage": "login",
+                "same_admin_origin": True,
+                "admin_path_matches": True,
+                "controller_parameter_present": True,
+                "controller_allowed": True,
+                "admin_controller": "AdminKuraneaCatalogReview",
+                "page_class": "catalog_import_form",
+                "document_ready_state": "complete",
+                "login_form_visible": False,
+                "product_url_field_visible": False,
+                "submit_control_visible": False,
+                "submit_attempted": False,
+                "submit_returned": False,
+                "progress_visible": False,
+                "progress_value": None,
+                "progress_max": None,
+                "row_count": 0,
+                "read_only_notice_visible": False,
+                "access_denied_notice_visible": False,
+                "queue_unavailable_notice_visible": False,
+                "exception_class": "TimeoutException",
+                "failure_screenshot_captured": False,
+            }
+            (artifact_dir / "catalog-import-failure-diagnostics.json").write_text(
+                json.dumps(import_diagnostics, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
             env = {
                 **os.environ,
                 **{variable: "failure" for variable in variables},
