@@ -32,7 +32,9 @@ final class VersionedProfileRepository implements ProfileVersionRepositoryInterf
     public function install(): bool
     {
         return $this->database->execute(DatabaseSchema::createVersionTableSql($this->prefix))
-            && $this->database->execute(DatabaseSchema::createStateTableSql($this->prefix));
+            && $this->database->execute(DatabaseSchema::createStateTableSql($this->prefix))
+            && $this->database->execute(DatabaseSchema::createBankTransferInstructionTableSql($this->prefix))
+            && $this->database->execute(DatabaseSchema::createBankTransferReceiptLedgerTableSql($this->prefix));
     }
 
     public function insertVersion(int $shopId, array $profile, int $employeeId, ?int $parentVersionId): ProfileVersion

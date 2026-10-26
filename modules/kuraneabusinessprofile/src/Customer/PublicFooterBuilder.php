@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Kuranea\BusinessProfile\Customer;
 
 use Kuranea\BusinessProfile\Domain\ProfileDefaults;
-use Kuranea\BusinessProfile\Domain\BankTransferPayment;
 
 final class PublicFooterBuilder
 {
@@ -28,14 +27,6 @@ final class PublicFooterBuilder
             'terms' => '利用規約',
             'privacy' => 'プライバシーポリシー',
             'specified_commercial_act' => '特定商取引法に基づく表記',
-            'bank' => '銀行振込先',
-            'branch' => '支店',
-            'account_type' => '口座種別',
-            'account_number' => '口座番号',
-            'account_holder' => '口座名義',
-            'ordinary' => '普通',
-            'current' => '当座',
-            'savings' => '貯蓄',
         ],
         'en-US' => [
             'company' => 'Company information',
@@ -54,14 +45,6 @@ final class PublicFooterBuilder
             'terms' => 'Terms of service',
             'privacy' => 'Privacy policy',
             'specified_commercial_act' => 'Specified Commercial Transactions Act',
-            'bank' => 'Bank transfer account',
-            'branch' => 'Branch',
-            'account_type' => 'Account type',
-            'account_number' => 'Account number',
-            'account_holder' => 'Account holder',
-            'ordinary' => 'Ordinary',
-            'current' => 'Current',
-            'savings' => 'Savings',
         ],
         'ko-KR' => [
             'company' => '회사 정보',
@@ -80,14 +63,6 @@ final class PublicFooterBuilder
             'terms' => '이용약관',
             'privacy' => '개인정보 처리방침',
             'specified_commercial_act' => '특정상거래법 표시',
-            'bank' => '은행 계좌 안내',
-            'branch' => '지점',
-            'account_type' => '계좌 종류',
-            'account_number' => '계좌번호',
-            'account_holder' => '예금주',
-            'ordinary' => '보통',
-            'current' => '당좌',
-            'savings' => '저축',
         ],
     ];
 
@@ -144,49 +119,7 @@ final class PublicFooterBuilder
             $html .= self::section(self::label($locale, $key), $content);
         }
 
-        $bankAccounts = self::activeBankAccounts($profile);
-        if ($bankAccounts !== []) {
-            $html .= '<section class="ordenowa-public-bank"><h3>' . self::escape(self::label($locale, 'bank')) . '</h3><ul>';
-            foreach ($bankAccounts as $account) {
-                $type = (string) ($account['account_type'] ?? '');
-                $html .= '<li>' . self::escape((string) ($account['bank_name'] ?? ''))
-                    . ' · ' . self::escape(self::label($locale, 'branch')) . ': ' . self::escape((string) ($account['branch_name'] ?? ''))
-                    . ' · ' . self::escape(self::label($locale, 'account_type')) . ': ' . self::escape(self::label($locale, $type))
-                    . ' · ' . self::escape(self::label($locale, 'account_number')) . ': ' . self::escape((string) ($account['account_number'] ?? ''))
-                    . ' · ' . self::escape(self::label($locale, 'account_holder')) . ': ' . self::escape((string) ($account['account_holder'] ?? ''))
-                    . '</li>';
-            }
-            $html .= '</ul></section>';
-        }
-
         return $html;
-    }
-
-    /** @param array<string, mixed> $profile */
-    public static function bankDetailsText(array $profile, string $locale): string
-    {
-        $lines = [];
-        foreach (self::activeBankAccounts($profile) as $account) {
-            $lines[] = implode(' / ', array_filter([
-                (string) ($account['bank_name'] ?? ''),
-                (string) ($account['branch_name'] ?? ''),
-                self::label($locale, (string) ($account['account_type'] ?? '')),
-                (string) ($account['account_number'] ?? ''),
-                (string) ($account['account_holder'] ?? ''),
-            ]));
-        }
-
-        return implode("\n", $lines);
-    }
-
-    /** @param array<string, mixed> $profile
-     *  @return list<array<string, mixed>>
-     */
-    private static function activeBankAccounts(array $profile): array
-    {
-        $account = BankTransferPayment::selectedActiveAccount($profile);
-
-        return $account === null ? [] : [$account];
     }
 
     /** @param array<string, mixed> $profile */

@@ -16,7 +16,7 @@ if (getenv('CI') !== 'true'
     || preg_match('/\A[0-9]+\z/D', $runId) !== 1
     || preg_match('/\A[0-9]+\z/D', $runAttempt) !== 1
     || $projectName !== $expectedProjectName
-    || !in_array($viewport, ['desktop', 'mobile'], true)
+    || !in_array($viewport, ['desktop', 'mobile', 'bank'], true)
     || $orderId < 1
     || $productId < 1
 ) {

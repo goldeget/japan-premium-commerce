@@ -1,0 +1,125 @@
+from pathlib import Path
+import unittest
+
+
+ROOT = Path(__file__).resolve().parents[2]
+MODULE = ROOT / "modules" / "kuraneabusinessprofile"
+
+
+class BankTransferReceiptContractTests(unittest.TestCase):
+    def test_confirmation_uses_a_separate_edit_permission_and_csrf_post(self) -> None:
+        policy = (MODULE / "src/Admin/AdminAccessPolicy.php").read_text(encoding="utf-8")
+        controller = (MODULE / "controllers/admin/AdminBusinessProfileTransfersController.php").read_text(encoding="utf-8")
+        self.assertIn("canConfirmBankTransferReceipt", policy)
+        self.assertIn("self::granted($tabAccess, 'edit')", policy)
+        self.assertIn("submitOrdenowaConfirmBankTransfer", controller)
+        self.assertIn("AdminAccessPolicy::canConfirmBankTransferReceipt", controller)
+        self.assertIn("$_SERVER['REQUEST_METHOD']", controller)
+        self.assertIn("hash_equals", controller)
+        self.assertIn("$_POST['verified_transfer']", controller)
+        installation = (ROOT / "tests/business_profile/verify_installation.php").read_text(encoding="utf-8")
+        self.assertIn("ADMINBUSINESSPROFILETRANSFERS_UPDATE", installation)
+
+    def test_confirmation_uses_native_payment_and_history_in_a_transaction(self) -> None:
+        confirmer = (MODULE / "src/Infrastructure/BankTransferReceiptConfirmer.php").read_text(encoding="utf-8")
+        for required in (
+            "START TRANSACTION",
+            "FOR UPDATE",
+            "addOrderPayment(",
+            "changeIdOrderState(",
+            "->add()",
+            "COMMIT",
+            "ROLLBACK",
+            "id_order_payment",
+            "id_order_history",
+            "total_paid_real",
+            "current_state",
+        ):
+            self.assertIn(required, confirmer)
+        self.assertNotIn("addWithemail", confirmer)
+        self.assertNotIn("Mail::Send", confirmer)
+
+    def test_receipt_ledger_stores_only_a_reference_digest_and_native_ids(self) -> None:
+        schema = (MODULE / "src/Infrastructure/DatabaseSchema.php").read_text(encoding="utf-8")
+        repository = (MODULE / "src/Infrastructure/BankTransferReceiptRepository.php").read_text(encoding="utf-8")
+        confirmer = (MODULE / "src/Infrastructure/BankTransferReceiptConfirmer.php").read_text(encoding="utf-8")
+        self.assertIn("receipt_reference_sha256", schema)
+        self.assertIn("id_order_payment", schema)
+        self.assertIn("id_order_history", schema)
+        self.assertIn("bank_account_id", schema)
+        receipt_table = schema.split("function createBankTransferReceiptLedgerTableSql", 1)[1].split("private function assertPrefix", 1)[0]
+        self.assertNotIn("bank_statement_reference", receipt_table)
+        self.assertIn("hash('sha256'", confirmer)
+        self.assertNotIn("bank_statement_reference", repository)
+        self.assertIn("UNIQUE KEY `one_confirmation_per_order`", receipt_table)
+        self.assertIn("UNIQUE KEY `one_use_per_bank_reference`", receipt_table)
+        self.assertIn("findByStatementReference", repository)
+
+    def test_receipt_confirmation_is_exact_and_synthetic_only_in_the_isolated_ci_gate(self) -> None:
+        confirmer = (MODULE / "src/Infrastructure/BankTransferReceiptConfirmer.php").read_text(encoding="utf-8")
+        self.assertIn("CommerceGate::isIsolatedCiCheckoutEnabled()", confirmer)
+        self.assertIn("BankTransferInstructionRepositoryInterface", confirmer)
+        self.assertIn("currencyIso", confirmer)
+        self.assertIn("orderReference", confirmer)
+        self.assertIn("receivedAmount", confirmer)
+        self.assertIn("verifiedTransfer", confirmer)
+        self.assertIn("referenceDigest", confirmer)
+        self.assertIn("total_paid_real", confirmer)
+        self.assertIn("assertSameNativeOrder", confirmer)
+        self.assertIn("idempot", confirmer.lower())
+        self.assertIn("JpyAmount::normalizePositive", confirmer)
+        self.assertIn("다른 주문", confirmer)
+
+    def test_retries_reuse_the_existing_payment_and_history_without_mutation(self) -> None:
+        confirmer = (MODULE / "src/Infrastructure/BankTransferReceiptConfirmer.php").read_text(encoding="utf-8")
+        self.assertIn("findForOrder", confirmer)
+        self.assertIn("sameReceipt", confirmer)
+        self.assertIn("return new BankTransferReceiptConfirmation", confirmer)
+        self.assertIn("assertNativeReadback", confirmer)
+        self.assertIn("!$this->isZeroAmount((string) $order->total_paid_real)", confirmer)
+
+    def test_controller_does_not_confirm_until_manual_attestation_and_matching_reference(self) -> None:
+        controller = (MODULE / "controllers/admin/AdminBusinessProfileTransfersController.php").read_text(encoding="utf-8")
+        self.assertIn("received_amount", controller)
+        self.assertIn("bank_statement_reference", controller)
+        self.assertIn("verified_transfer", controller)
+        self.assertIn("전액 입금을 직접 확인했습니다", controller)
+        self.assertIn("CommerceGate::isIsolatedCiCheckoutEnabled()", controller)
+        self.assertIn("CommerceGate::isEnabled(", controller)
+        confirm = controller.split("private function processConfirm", 1)[1].split("private function unpaidJpyOrders", 1)[0]
+        self.assertLess(confirm.index("hash_equals"), confirm.index("->confirm("))
+        self.assertLess(confirm.index("canConfirmBankTransferReceipt"), confirm.index("->confirm("))
+        self.assertLess(confirm.index("!$verifiedTransfer"), confirm.index("->confirm("))
+        self.assertIn("입금 사실을 확인해야 합니다", confirm)
+
+    def test_issue_and_customer_rendering_reject_fractional_yen(self) -> None:
+        instruction = (MODULE / "src/Domain/BankTransferInstruction.php").read_text(encoding="utf-8")
+        controller = (MODULE / "controllers/admin/AdminBusinessProfileTransfersController.php").read_text(encoding="utf-8")
+        self.assertIn("JpyAmount::normalizePositive($totalPaid)", instruction)
+        self.assertIn("JpyAmount::normalizePositive($amount) !== null", controller)
+        self.assertIn("$this->hasRecordedPayment($order)", (MODULE / "kuraneabusinessprofile.php").read_text(encoding="utf-8"))
+
+    def test_synthetic_php_fixture_covers_success_retry_denials_and_rollback(self) -> None:
+        fixture = (ROOT / "tests/business_profile/bank_transfer_receipt_confirmation.php").read_text(encoding="utf-8")
+        for expected in (
+            "setReceiptIsolatedCi(false)",
+            "setReceiptIsolatedCi(true)",
+            "Without a positive staff attestation",
+            "A partial payment",
+            "An overpayment",
+            "partial paid amount",
+            "pre-existing payment row",
+            "An identical retry",
+            "conflicting reference retry",
+            "same bank statement reference must never confirm a second order",
+            "History failure must roll back",
+            "Ledger failure must roll back",
+            "concurrent receipt with the same account-scoped digest",
+            "different shop order",
+            "non-JPY native order",
+        ):
+            self.assertIn(expected, fixture)
+
+
+if __name__ == "__main__":
+    unittest.main()

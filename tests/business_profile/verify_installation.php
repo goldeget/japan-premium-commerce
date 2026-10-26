@@ -31,6 +31,19 @@ if ($shopId < 1) {
 $repository = new \Kuranea\BusinessProfile\Infrastructure\VersionedProfileRepository();
 $draft = $repository->loadDraft($shopId);
 verifyBusinessProfile($draft !== null, 'A default ORDENOWA draft profile must be stored in the module tables.');
+$database = Db::getInstance();
+foreach ([
+    _DB_PREFIX_ . 'kuraneabusinessprofile_bank_transfer_instruction',
+    _DB_PREFIX_ . 'kuraneabusinessprofile_bank_transfer_receipt',
+] as $requiredTable) {
+    verifyBusinessProfile(
+        (string) $database->getValue(
+            "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '"
+            . pSQL($requiredTable) . "' LIMIT 1"
+        ) === $requiredTable,
+        'The order-bound transfer instruction and separate receipt ledger table must exist: ' . basename($requiredTable)
+    );
+}
 verifyBusinessProfile(($draft->profile['brand']['name']['ja-JP'] ?? '') === 'オーデノワ', 'The Japanese brand name must be stored in the profile.');
 verifyBusinessProfile(($draft->profile['brand']['name']['en-US'] ?? '') === 'ORDENOWA', 'The English brand name must be stored in the profile.');
 verifyBusinessProfile(($draft->profile['brand']['name']['ko-KR'] ?? '') === '오데노와', 'The Korean brand name must be stored in the profile.');
@@ -105,5 +118,29 @@ foreach (['AdminBusinessProfile' => '쇼핑몰 운영 설정', 'AdminBusinessPro
         verifyBusinessProfile((bool) $canView, 'SuperAdmin profile 1 must be able to view the Korean admin tab: ' . $className);
     }
 }
+
+$ordersParentId = (int) Tab::getIdFromClassName('AdminParentOrders');
+$transferTabId = (int) Tab::getIdFromClassName('AdminBusinessProfileTransfers');
+verifyBusinessProfile($ordersParentId > 0, 'The native Orders tab must exist for payment instruction management.');
+verifyBusinessProfile($transferTabId > 0, 'The payment instruction tab must exist.');
+$transferTab = new Tab($transferTabId);
+verifyBusinessProfile((bool) $transferTab->active, 'The payment instruction tab must be active.');
+verifyBusinessProfile((int) $transferTab->id_parent === $ordersParentId, 'The payment instruction tab must appear under Orders.');
+verifyBusinessProfile(in_array('주문 입금 안내', (array) $transferTab->name, true), 'The payment instruction tab must have its Korean title.');
+$canViewTransfers = Access::isGranted(
+    \PrestaShop\PrestaShop\Core\Security\Permission::PREFIX_TAB . 'ADMINBUSINESSPROFILETRANSFERS_READ',
+    1
+);
+verifyBusinessProfile((bool) $canViewTransfers, 'SuperAdmin profile 1 must be able to view the payment instruction tab.');
+$canIssueTransfers = Access::isGranted(
+    \PrestaShop\PrestaShop\Core\Security\Permission::PREFIX_TAB . 'ADMINBUSINESSPROFILETRANSFERS_CREATE',
+    1
+);
+verifyBusinessProfile((bool) $canIssueTransfers, 'SuperAdmin profile 1 must have the dedicated payment instruction create permission.');
+$canConfirmTransfers = Access::isGranted(
+    \PrestaShop\PrestaShop\Core\Security\Permission::PREFIX_TAB . 'ADMINBUSINESSPROFILETRANSFERS_UPDATE',
+    1
+);
+verifyBusinessProfile((bool) $canConfirmTransfers, 'SuperAdmin profile 1 must have the dedicated payment receipt update permission.');
 
 echo "PASS: fresh PrestaShop install keeps seller authorization pending and creates active Korean admin tabs with profile 1 view access\n";

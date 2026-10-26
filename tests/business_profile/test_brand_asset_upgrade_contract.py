@@ -10,7 +10,7 @@ class BrandAssetUpgradeContractTests(unittest.TestCase):
     def test_module_upgrade_adds_assets_as_new_versions_and_syncs_email_logo(self) -> None:
         module = (ROOT / "modules/kuraneabusinessprofile/kuraneabusinessprofile.php").read_text(encoding="utf-8")
         upgrade = (ROOT / "modules/kuraneabusinessprofile/upgrade/upgrade-1.0.3.php").read_text(encoding="utf-8")
-        self.assertIn("$this->version = '1.0.4'", module)
+        self.assertIn("$this->version = '1.0.5'", module)
         self.assertIn("upgrade_module_1_0_3", upgrade)
         self.assertIn("ordenowa_add_verified_brand_defaults", upgrade)
         self.assertIn("insertVersion($shopId, $profile, 0, $draft->id)", upgrade)
@@ -32,7 +32,7 @@ class BrandAssetUpgradeContractTests(unittest.TestCase):
 
         self.assertTrue(upgrade_path.is_file(), "existing module installs need the new front controller hook")
         upgrade = upgrade_path.read_text(encoding="utf-8")
-        self.assertIn("$this->version = '1.0.4'", module)
+        self.assertIn("$this->version = '1.0.5'", module)
         self.assertIn("function upgrade_module_1_0_4($module)", upgrade)
         self.assertIn("registerHook('actionFrontControllerSetVariables')", upgrade)
         self.assertIn("'actionFrontControllerSetVariables'", module)

@@ -15,7 +15,9 @@ use Kuranea\BusinessProfile\Customer\StructuredDataBrandEnricher;
 use Kuranea\BusinessProfile\Customer\CommerceGate;
 use Kuranea\BusinessProfile\Customer\PublishedLegalPageBuilder;
 use Kuranea\BusinessProfile\Customer\OrderConfirmationMailContent;
+use Kuranea\BusinessProfile\Customer\BankTransferInstructionPresenter;
 use Kuranea\BusinessProfile\Infrastructure\VersionedProfileRepository;
+use Kuranea\BusinessProfile\Infrastructure\BankTransferInstructionRepository;
 
 class Kuraneabusinessprofile extends Module
 {
@@ -25,7 +27,7 @@ class Kuraneabusinessprofile extends Module
     {
         $this->name = 'kuraneabusinessprofile';
         $this->tab = 'administration';
-        $this->version = '1.0.4';
+        $this->version = '1.0.5';
         $this->author = 'ORDENOWA';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -60,6 +62,8 @@ class Kuraneabusinessprofile extends Module
             'actionGetExtraMailTemplateVars',
             'actionEmailSendBefore',
             'actionEmailAddAfterContent',
+            'displayOrderConfirmation',
+            'displayOrderDetail',
         ]);
     }
 
@@ -67,6 +71,7 @@ class Kuraneabusinessprofile extends Module
     {
         $this->removeTab('AdminBusinessProfileBanks');
         $this->removeTab('AdminBusinessProfile');
+        $this->removeTab('AdminBusinessProfileTransfers');
 
         // Keep profile versions and account data when disabling or uninstalling the module.
         return parent::uninstall();
@@ -166,6 +171,18 @@ class Kuraneabusinessprofile extends Module
             $profile,
             (string) $this->context->link->getModuleLink($this->name, 'legal')
         );
+    }
+
+    /** Show instructions only for the owning customer's confirmed, order-bound record. */
+    public function hookDisplayOrderConfirmation(array $params): string
+    {
+        return $this->renderIssuedTransferInstructions($params);
+    }
+
+    /** Show the same issue-time instruction binding in the owning customer's order history. */
+    public function hookDisplayOrderDetail(array $params): string
+    {
+        return $this->renderIssuedTransferInstructions($params);
     }
 
     /** @param array<string, mixed> $params
@@ -278,6 +295,9 @@ class Kuraneabusinessprofile extends Module
                 return;
             }
 
+            // Generic templates must never inherit account details from another hook or environment.
+            $params['extra_template_vars']['{ordenowa_bank_accounts}'] = '';
+
             [$shopId, $isoCode] = $this->mailShopAndIsoCode($params, $mailContextShopId);
             $profile = (new PublishedProfileProvider(new VersionedProfileRepository()))->forShop($shopId, $isoCode);
             $safeDefaults = $profile ?? ProfileDefaults::initial();
@@ -308,7 +328,6 @@ class Kuraneabusinessprofile extends Module
             $params['extra_template_vars']['{ordenowa_payment_policy}'] = (string) ($profile['payment'][$locale] ?? '');
             $params['extra_template_vars']['{ordenowa_shipping_policy}'] = (string) ($profile['shipping'][$locale] ?? '');
             $params['extra_template_vars']['{ordenowa_refund_policy}'] = (string) ($profile['refund'][$locale] ?? '');
-            $params['extra_template_vars']['{ordenowa_bank_accounts}'] = PublicFooterBuilder::bankDetailsText($profile, (string) $locale);
             $params['extra_template_vars']['{ordenowa_seller_name}'] = (string) ($profile['seller']['legal_name'][$locale] ?? '');
             $params['extra_template_vars']['{ordenowa_seller_corporate_number}'] = (string) ($profile['seller']['corporate_number'] ?? '');
             $params['extra_template_vars']['{ordenowa_seller_address}'] = (string) ($profile['seller']['address'][$locale] ?? '');
@@ -458,7 +477,22 @@ class Kuraneabusinessprofile extends Module
             return false;
         }
 
-        return $this->upsertTab('AdminBusinessProfileBanks', '은행 계좌', $parentId) > 0;
+        if ($this->upsertTab('AdminBusinessProfileBanks', '은행 계좌', $parentId) < 1) {
+            return false;
+        }
+
+        return $this->installTransferInstructionsTab();
+    }
+
+    /** The issue screen lives under Orders and receives a separate add permission. */
+    public function installTransferInstructionsTab(): bool
+    {
+        $ordersParentId = (int) Tab::getIdFromClassName('AdminParentOrders');
+        if ($ordersParentId < 1) {
+            return false;
+        }
+
+        return $this->upsertTab('AdminBusinessProfileTransfers', '주문 입금 안내', $ordersParentId) > 0;
     }
 
     private function upsertTab(string $className, string $label, int $parentId): int
@@ -486,6 +520,95 @@ class Kuraneabusinessprofile extends Module
         if ($tabId > 0) {
             (new Tab($tabId))->delete();
         }
+    }
+
+    /** @param array<string, mixed> $params */
+    private function renderIssuedTransferInstructions(array $params): string
+    {
+        $order = $params['order'] ?? null;
+        if (!($order instanceof Order)) {
+            $orderId = is_array($order)
+                ? (int) ($order['id_order'] ?? $order['id'] ?? 0)
+                : (int) (is_object($order) ? ($order->id_order ?? $order->id ?? 0) : 0);
+            $order = $orderId > 0 ? new Order($orderId) : null;
+        }
+        if (!is_object($order)
+            || !Validate::isLoadedObject($order)
+            || (int) ($order->id_customer ?? 0) < 1
+        ) {
+            return '';
+        }
+
+        $customer = $this->context->customer ?? null;
+        $shopId = (int) ($this->context->shop->id ?? 0);
+        if (!is_object($customer)
+            || (int) ($customer->id ?? 0) !== (int) $order->id_customer
+            || (int) ($order->id_shop ?? 0) !== $shopId
+        ) {
+            return '';
+        }
+
+        try {
+            $orderState = new OrderState((int) $order->current_state);
+            if (!Validate::isLoadedObject($orderState)
+                || (bool) $orderState->paid
+                || (int) $order->current_state === (int) Configuration::get('PS_OS_CANCELED')
+                || $this->hasRecordedPayment($order)
+            ) {
+                return '';
+            }
+
+            $instruction = (new BankTransferInstructionRepository())->findForOrder($shopId, (int) $order->id);
+            $currency = new Currency((int) $order->id_currency);
+            if ($instruction === null
+                || !Validate::isLoadedObject($currency)
+                || $instruction->orderReference !== (string) $order->reference
+                || $instruction->totalPaid !== (string) $order->total_paid_tax_incl
+                || $instruction->currencyIso !== strtoupper((string) $currency->iso_code)
+            ) {
+                return '';
+            }
+
+            $profileVersion = (new VersionedProfileRepository())->find($shopId, $instruction->profileVersionId);
+            if ($profileVersion === null) {
+                return '';
+            }
+
+            $requestedLocale = PublishedProfileProvider::localeForIso((string) ($this->context->language->iso_code ?? 'ja'));
+            $defaultLocale = $profileVersion->profile['localization']['default_locale'] ?? 'ja-JP';
+            if (!in_array($defaultLocale, ProfileDefaults::LOCALES, true)) {
+                $defaultLocale = 'ja-JP';
+            }
+            $enabledLocales = $profileVersion->profile['localization']['enabled_locales'] ?? ProfileDefaults::LOCALES;
+            $locale = is_array($enabledLocales) && in_array($requestedLocale, $enabledLocales, true)
+                ? $requestedLocale
+                : $defaultLocale;
+            $formattedAmount = $this->context->getCurrentLocale()->formatPrice(
+                (float) $instruction->totalPaid,
+                (string) $currency->iso_code
+            );
+
+            return BankTransferInstructionPresenter::render(
+                $instruction,
+                $profileVersion->profile,
+                $locale,
+                (string) $formattedAmount
+            );
+        } catch (Throwable) {
+            // Do not fall back to the current profile: an unavailable immutable snapshot must not leak a different account.
+            return '';
+        }
+    }
+
+    /** Fail closed when any positive native payment amount has been recorded. */
+    private function hasRecordedPayment(Order $order): bool
+    {
+        $amount = (string) $order->total_paid_real;
+        if (preg_match('/\A(?:0|[1-9][0-9]{0,17})(?:\.([0-9]{1,6}))?\z/D', $amount, $parts) !== 1) {
+            return true;
+        }
+
+        return $amount[0] !== '0' || trim((string) ($parts[1] ?? ''), '0') !== '';
     }
 
     private function shopId(): int

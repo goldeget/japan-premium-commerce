@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Kuranea\BusinessProfile\Customer;
 
 use Kuranea\BusinessProfile\Domain\ProfileDefaults;
-use Kuranea\BusinessProfile\Domain\BankTransferPayment;
 
 /** Builds the public legal and operating-information page from one published profile version. */
 final class PublishedLegalPageBuilder
@@ -35,14 +34,6 @@ final class PublishedLegalPageBuilder
             'terms' => '利用規約',
             'privacy' => 'プライバシーポリシー',
             'specified_commercial_act' => '特定商取引法に基づく表記',
-            'bank' => '銀行振込先',
-            'branch' => '支店',
-            'account_type' => '口座種別',
-            'account_number' => '口座番号',
-            'account_holder' => '口座名義',
-            'ordinary' => '普通',
-            'current' => '当座',
-            'savings' => '貯蓄',
         ],
         'en-US' => [
             'title' => 'Company and transaction information',
@@ -67,14 +58,6 @@ final class PublishedLegalPageBuilder
             'terms' => 'Terms of service',
             'privacy' => 'Privacy policy',
             'specified_commercial_act' => 'Specified Commercial Transactions Act disclosure',
-            'bank' => 'Bank transfer account',
-            'branch' => 'Branch',
-            'account_type' => 'Account type',
-            'account_number' => 'Account number',
-            'account_holder' => 'Account holder',
-            'ordinary' => 'Ordinary',
-            'current' => 'Current',
-            'savings' => 'Savings',
         ],
         'ko-KR' => [
             'title' => '회사 정보 및 거래 안내',
@@ -99,14 +82,6 @@ final class PublishedLegalPageBuilder
             'terms' => '이용약관',
             'privacy' => '개인정보 처리방침',
             'specified_commercial_act' => '특정상거래법 표시',
-            'bank' => '은행 계좌 안내',
-            'branch' => '지점',
-            'account_type' => '계좌 종류',
-            'account_number' => '계좌번호',
-            'account_holder' => '예금주',
-            'ordinary' => '보통',
-            'current' => '당좌',
-            'savings' => '저축',
         ],
     ];
 
@@ -177,11 +152,6 @@ final class PublishedLegalPageBuilder
             $html .= self::section(self::copy($locale, $key), $content);
         }
 
-        $bankTransferAccount = BankTransferPayment::selectedActiveAccount($profile);
-        $html .= $bankTransferAccount === null
-            ? ''
-            : self::bankSection([$bankTransferAccount], $locale);
-
         return $html . '</article>';
     }
 
@@ -224,32 +194,6 @@ final class PublishedLegalPageBuilder
         }
 
         return '<section><h2>' . self::escape($title) . '</h2><dl>' . $html . '</dl></section>';
-    }
-
-    /** @param list<array<string, mixed>> $accounts */
-    private static function bankSection(array $accounts, string $locale): string
-    {
-        $active = array_values(array_filter(
-            $accounts,
-            static fn ($account): bool => is_array($account) && !empty($account['active'])
-        ));
-        if ($active === []) {
-            return '';
-        }
-
-        $html = '<section><h2>' . self::escape(self::copy($locale, 'bank')) . '</h2><ul>';
-        foreach ($active as $account) {
-            $items = array_filter([
-                (string) ($account['bank_name'] ?? ''),
-                self::copy($locale, 'branch') . ': ' . (string) ($account['branch_name'] ?? ''),
-                self::copy($locale, 'account_type') . ': ' . self::copy($locale, (string) ($account['account_type'] ?? '')),
-                self::copy($locale, 'account_number') . ': ' . (string) ($account['account_number'] ?? ''),
-                self::copy($locale, 'account_holder') . ': ' . (string) ($account['account_holder'] ?? ''),
-            ], static fn (string $value): bool => trim($value) !== '');
-            $html .= '<li>' . self::escape(implode(' · ', $items)) . '</li>';
-        }
-
-        return $html . '</ul></section>';
     }
 
     private static function paragraph(mixed $content): string

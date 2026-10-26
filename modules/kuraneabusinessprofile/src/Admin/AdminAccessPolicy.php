@@ -36,6 +36,18 @@ final class AdminAccessPolicy
         return self::canViewBank($bankTabAccess) && self::granted($bankTabAccess, 'edit');
     }
 
+    /** Issuing order-bound payment details is a separate create permission. */
+    public static function canIssueBankTransferInstructions(array $tabAccess): bool
+    {
+        return self::canView($tabAccess) && self::granted($tabAccess, 'add');
+    }
+
+    /** Confirming a matched deposit is an update permission, distinct from issuing instructions. */
+    public static function canConfirmBankTransferReceipt(array $tabAccess): bool
+    {
+        return self::canView($tabAccess) && self::granted($tabAccess, 'edit');
+    }
+
     public static function canApproveSeller(bool $isSuperAdmin): bool
     {
         return $isSuperAdmin;

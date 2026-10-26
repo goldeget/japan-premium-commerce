@@ -243,6 +243,10 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         )
 
         required_checkout = {
+            "CHECKOUT_BANK_CUSTOMER_BROWSER_QA_OUTCOME": (
+                "checkout_bank_customer_browser_qa",
+                "checkout_bank_customer",
+            ),
             "CHECKOUT_ORDER_PERSISTENCE_OUTCOME": (
                 "checkout_order_persistence",
                 "checkout_order_persistence",

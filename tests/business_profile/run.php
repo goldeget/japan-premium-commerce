@@ -242,3 +242,6 @@ assertBusinessProfileTrue(str_contains($schema, 'CREATE TABLE IF NOT EXISTS `ps_
 assertBusinessProfileTrue(!str_contains(strtoupper($schema), 'TRUNCATE'), 'The module schema must not clear existing tables or data.');
 
 echo "PASS: ORDENOWA defaults, publication guard, immutable versions, restore, and safe schema\n";
+
+require_once __DIR__ . '/bank_transfer_instructions.php';
+require_once __DIR__ . '/bank_transfer_receipt_confirmation.php';

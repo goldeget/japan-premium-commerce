@@ -1580,7 +1580,7 @@ def place_unpaid_order(driver: webdriver.Chrome, label: str, email: str) -> dict
 
 
 def emit_checkout_customer_failure(label: str, stage: str, error: Exception) -> None:
-    safe_label = label if label in {"desktop", "mobile"} else "unknown"
+    safe_label = label if label in {"desktop", "mobile", "bank"} else "unknown"
     safe_stage = stage if re.fullmatch(r"[a-z][a-z0-9_.]*", stage) else "unknown"
     exception_type = type(error).__name__
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", exception_type):
@@ -2005,6 +2005,8 @@ def run_admin_order_view() -> None:
 if __name__ == "__main__":
     if sys.argv[1:] == ["customer"]:
         run_customer_checkouts()
+    elif sys.argv[1:] == ["customer-bank"]:
+        run_customer_checkout(390, 844, "bank")
     elif sys.argv[1:] == ["admin"]:
         run_admin_order_view()
     else:

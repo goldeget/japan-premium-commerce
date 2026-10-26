@@ -56,10 +56,11 @@ $open = \Kuranea\BusinessProfile\Customer\PublishedLegalPageBuilder::build($prof
 foreach ([
     'TEST COMPANY PROFILE', 'TEST SELLER LEGAL', 'TEST SELLER ADDRESS', 'TEST RESPONSIBLE PERSON',
     'TEST CUSTOMER PHONE', 'TEST HOURS', 'TEST PAYMENT', 'TEST SHIPPING', 'TEST REFUND',
-    'TEST TERMS', 'TEST PRIVACY', 'TEST SPECIFIED ACT', '12345678',
+    'TEST TERMS', 'TEST PRIVACY', 'TEST SPECIFIED ACT',
 ] as $expected) {
     assertBusinessProfileTrue(str_contains($open, $expected), 'Authorized Japanese legal output must include ' . $expected . '.');
 }
+assertBusinessProfileTrue(!str_contains($open, 'TEST BANK') && !str_contains($open, '12345678'), 'Public legal pages must not reveal bank details before order-specific staff issuance.');
 assertBusinessProfileTrue(!str_contains($open, 'INACTIVE BANK') && !str_contains($open, '87654321'), 'Inactive bank accounts must not be published.');
 assertBusinessProfileTrue(!str_contains($open, 'DO NOT PUBLISH COMPANY REFERENCE'), 'Company reference data must not be presented as the selling entity.');
 

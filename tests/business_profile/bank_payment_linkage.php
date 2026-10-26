@@ -61,20 +61,18 @@ $profile['payment_methods']['bank_transfer'] = ['enabled' => true, 'bank_account
 $profile['_resolved_locale'] = 'ja-JP';
 
 $footer = \Kuranea\BusinessProfile\Customer\PublicFooterBuilder::build($profile, true);
-assertBusinessProfileTrue(str_contains($footer, 'SELECTED TEST BANK') && str_contains($footer, '11112222'), 'The public footer should show the selected active bank-transfer account.');
-assertBusinessProfileTrue(!str_contains($footer, 'OTHER ACTIVE TEST BANK') && !str_contains($footer, '33334444'), 'The public footer must not show other active accounts that were not selected for bank transfer.');
-assertBusinessProfileTrue(!str_contains($footer, 'INACTIVE TEST BANK') && !str_contains($footer, '55556666'), 'The public footer must never show an inactive bank account.');
-assertBusinessProfileSame('SELECTED TEST BANK / TOKYO / 普通 / 11112222 / TEST HOLDER', \Kuranea\BusinessProfile\Customer\PublicFooterBuilder::bankDetailsText($profile, 'ja-JP'), 'Email bank variables should contain only the selected active account.');
+assertBusinessProfileTrue(!str_contains($footer, 'SELECTED TEST BANK') && !str_contains($footer, '11112222'), 'Generic storefront output must not reveal bank details before staff issues an order-bound instruction.');
+assertBusinessProfileTrue(!str_contains($footer, 'OTHER ACTIVE TEST BANK') && !str_contains($footer, '33334444'), 'Generic storefront output must never reveal another account.');
+assertBusinessProfileTrue(!str_contains($footer, 'INACTIVE TEST BANK') && !str_contains($footer, '55556666'), 'Generic storefront output must never reveal inactive account details.');
 
 $legal = \Kuranea\BusinessProfile\Customer\PublishedLegalPageBuilder::build($profile, true);
-assertBusinessProfileTrue(str_contains($legal, 'SELECTED TEST BANK') && str_contains($legal, '11112222'), 'The legal page should show the selected active bank-transfer account.');
-assertBusinessProfileTrue(!str_contains($legal, 'OTHER ACTIVE TEST BANK') && !str_contains($legal, '33334444'), 'The legal page must not show an unselected active account.');
+assertBusinessProfileTrue(!str_contains($legal, 'SELECTED TEST BANK') && !str_contains($legal, '11112222'), 'The generic legal page must not reveal bank details before staff issues an order-bound instruction.');
+assertBusinessProfileTrue(!str_contains($legal, 'OTHER ACTIVE TEST BANK') && !str_contains($legal, '33334444'), 'The legal page must not show any bank account.');
 
 $disabled = $profile;
 $disabled['payment_methods']['bank_transfer'] = ['enabled' => false, 'bank_account_id' => $accountAId];
 $disabledFooter = \Kuranea\BusinessProfile\Customer\PublicFooterBuilder::build($disabled, true);
 assertBusinessProfileTrue(!str_contains($disabledFooter, '11112222'), 'Active bank details must stay private when bank transfer is disabled.');
-assertBusinessProfileSame('', \Kuranea\BusinessProfile\Customer\PublicFooterBuilder::bankDetailsText($disabled, 'ja-JP'), 'The email bank variable must be empty when bank transfer is disabled.');
 assertBusinessProfileTrue(!str_contains(\Kuranea\BusinessProfile\Customer\PublishedLegalPageBuilder::build($disabled, true), '11112222'), 'The legal page must hide accounts when bank transfer is disabled.');
 $legacyProfile = $profile;
 unset($legacyProfile['payment_methods']);
@@ -83,8 +81,8 @@ assertBusinessProfileTrue(!str_contains(\Kuranea\BusinessProfile\Customer\Public
 $mailHtml = '<html><body>Order</body></html>';
 $mailText = 'Order';
 assertBusinessProfileSame(true, \Kuranea\BusinessProfile\Customer\OrderConfirmationMailContent::append('order_conf', $mailHtml, $mailText, $profile, true), 'Order confirmation mail should still include the published profile.');
-assertBusinessProfileTrue(str_contains($mailHtml, '11112222') && !str_contains($mailHtml, '33334444'), 'HTML order mail should include only the linked bank account.');
-assertBusinessProfileTrue(str_contains($mailText, '11112222') && !str_contains($mailText, '33334444'), 'Plain-text order mail should include only the linked bank account.');
+assertBusinessProfileTrue(!str_contains($mailHtml, '11112222') && !str_contains($mailHtml, '33334444'), 'Generic HTML order mail must not reveal bank details before staff issues an order-bound instruction.');
+assertBusinessProfileTrue(!str_contains($mailText, '11112222') && !str_contains($mailText, '33334444'), 'Generic plain-text order mail must not reveal bank details before staff issuance.');
 $disabledMailHtml = '<html><body>Order</body></html>';
 $disabledMailText = 'Order';
 \Kuranea\BusinessProfile\Customer\OrderConfirmationMailContent::append('order_conf', $disabledMailHtml, $disabledMailText, $disabled, true);

@@ -49,10 +49,10 @@ foreach ([
     'TEST SELLER REPRESENTATIVE', 'TEST RESPONSIBLE PERSON', 'TEST SELLER PHONE',
     'TEST SHOP PHONE', 'TEST PAYMENT INSTRUCTIONS', 'TEST SHIPPING POLICY',
     'TEST REFUND POLICY', 'TEST TERMS', 'TEST PRIVACY', 'TEST SPECIFIED COMMERCIAL ACT',
-    '12345678', 'TEST HOLDER',
 ] as $authorizedValue) {
     assertBusinessProfileTrue(str_contains($authorizedHtml, $authorizedValue), 'Approved public seller disclosures must include ' . $authorizedValue . '.');
 }
+assertBusinessProfileTrue(!str_contains($authorizedHtml, '12345678') && !str_contains($authorizedHtml, 'TEST HOLDER'), 'Bank details must remain hidden until a staff-issued order instruction exists.');
 assertBusinessProfileTrue(!str_contains($authorizedHtml, '4010001226242'), 'Corporate reference data must not be misrepresented as the selling entity.');
 assertBusinessProfileTrue(!str_contains($authorizedHtml, '<script>'), 'Customer legal disclosures must be escaped before output.');
 
