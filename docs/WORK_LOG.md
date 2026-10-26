@@ -1,5 +1,17 @@
 # ORDENOWA 작업 기록
 
+## 2026-10-26 — 합성 catalog 승인 후 manager 경로 및 readback 검증
+
+- 시작 시 local `work` HEAD와 원격 `origin/work`가 `40edaa5ae10369b0937108c3b81dd1bc0239dcc9`로 일치했다. main은 `ee02a3657448d563508687614a246e05ac61eecd`다. 사용자 미추적 문서/파일과 pycache는 보존했다.
+- #40269983026 aggregate의 유일 실패 `catalog_import_browser_qa=failure`를 확인했다. Safe diagnostics는 Amazon approval click 이후 `stage=native_readback`, `current_substage=approved_product_link`, HTTP 200, 현재 controller가 review controller라고 기록했다. 실행 순서상 manager navigation 전에 링크 검증이 assertion으로 막혔다.
+- PrestaShop 9.2 `Link::getAdminLink()`의 legacy 경로 형식과 현재 assertion을 대조했다. 기존 helper는 exact admin root만 허용했다. 실제 manager link의 raw URL, query, token은 출력하지 않고, 관리자 디렉터리·trailing slash·index.php 세 형식만 분류하도록 수정했다. same-origin/controller/단일 양수 ID 조건은 유지했고 임의 path 및 semicolon parameter를 거부한다. 실패 diagnostics schema에는 안전한 link condition flags와 path-class enum을 추가했다.
+- 회귀 테스트를 먼저 확장해 현재 코드에서 `/admin/`와 `/admin/index.php`가 거부되는 RED를 확인했다. 수정 후 세 허용 경로와 외부/잘못된 controller/하위 경로/중복 ID/0 ID/semicolon parameter 거부를 검사했다. catalog browser/admin 및 isolated workflow 계약 검사 55개 PASS, Python compile와 diff check PASS.
+- Route/schema 독립 검토 agent들은 초기에 `DIAGNOSTIC_FIELDS` 누락과 `urlparse.params` 우회 경계를 각각 발견했다. schema allowlist를 보완하고 params를 거부하는 테스트를 추가했으며, 최종 read-only 검토에서 잔여 이슈가 없다는 결과를 받았다.
+- `Accept native PrestaShop manager entry paths` commit `e1cd6d0c9d58ee2db64462387fef305c2ab0e757`를 `work`에 push하고 원격 SHA가 같은지 확인했다. 자동 전체 격리 run [#40272141646](https://github.com/goldeget/japan-premium-commerce/actions/runs/40272141646)은 05:20 UTC에 SUCCESS로 종료했다. Step 46은 synthetic batch→Rakuten 다중 옵션 거부/반려→Amazon 단일 옵션 승인→manager editor field readback→동일 상품 reimport/readback PASS를 기록했고, Step 87 aggregate도 PASS다. 이 flow에서는 editor의 별도 저장 버튼을 누르지 않았다.
+- 해당 동일 native product의 read-only DB 증거: active false, visibility none, order false, image count 1, combinations 2, same reference count 1. 운영 상품 활성화나 고객 게시 없이 검증했다.
+- browser artifact [12628194683](https://github.com/goldeget/japan-premium-commerce/actions/runs/40272141646/artifacts/12628194683)에는 batch/rejection/option review/draft/reimport 화면과 `catalog-import-readback.json`, `catalog-import-persistence.json`이 포함된다. 이 환경의 다운로드는 403이어서 PNG 시각 검수는 하지 않았다. Work-mode GPT가 화면 artifact를 다시 열 때는 visual review만 자동 E2E와 구분한다.
+- 이 검증은 synthetic fixture에 한정한다. 실제 Amazon/Rakuten 상품 호환성 및 허용된 URL/피드 수집, 원격 이미지 다운로드/권리, 다중 옵션 그룹, 운영 판매 및 판매 게시를 PASS로 기록하지 않는다. 운영 자료·환경은 [개발 현황](DEVELOPMENT_STATUS.md)의 미정 목록에 남아 있다.
+
 ## 2026-10-25 21:20 UTC — 잔여 시각 QA 반영 및 전체 격리 검증 완료
 
 - Work-mode GPT가 #402315 artifact `12613108935`를 실제로 열어 확인했다. `詳細を表示`, 모바일 checkout buttons, 일본어 account heading은 보이는 상태로 고쳐졌다. 새 잔여 후보는 조건 데이터의 English policy copy, synthetic/default `Clothes`/`Art` category 값, 한국어 `My Account`, mobile long-title breadcrumb였다.

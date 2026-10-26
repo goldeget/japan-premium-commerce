@@ -1,5 +1,13 @@
 # ORDENOWA AI Browser QA Handoff
 
+## 최신 합성 catalog 관리자 브라우저 증거 (2026-10-26 05:20 UTC)
+
+- 대상 코드 SHA: `e1cd6d0c9d58ee2db64462387fef305c2ab0e757` (`work`); 전체 격리 run [#40272141646](https://github.com/goldeget/japan-premium-commerce/actions/runs/40272141646) SUCCESS. Step 46은 batch, 옵션 거부/반려, Amazon 단일 옵션 승인, 동일 native 상품 관리자 readback 및 reimport/readback을 PASS했고, Step 87 aggregate도 성공했다.
+- Artifact: [`ordenowa-storefront-browser-40272141646-1` / ID 12628194683](https://github.com/goldeget/japan-premium-commerce/actions/runs/40272141646/artifacts/12628194683). Codex artifact download가 403으로 실패했으므로 이 세션에서는 PNG를 열지 않았다. 업로드/coverage 성공을 visual review PASS로 보지 않는다.
+- Work-mode GPT visual review 대상: `catalog-import-batch.png`, `catalog-import-blocked-options.png`, `catalog-import-blocked-submit.png`, `catalog-import-rejected.png`, `catalog-import-review-options.png`, `catalog-import-draft.png`, `catalog-import-reimport.png`. 특히 승인된 synthetic item의 manager editor에서 정보가 보이는지, 비활성/비노출 보호 안내가 유지되는지, 승인 후 복귀·재수집 캡처가 일관되는지만 화면 근거로 기록한다. 캡처는 상호작용 증거가 아니며 review approval click/save와 manager field readback은 자동 Step 46 로그가 증명한다. 이 flow에서는 manager editor의 별도 저장 버튼을 누르지 않았다.
+- JSON evidence: `catalog-import-readback.json`은 same-product approval/readback/reimport 비교, `catalog-import-persistence.json`은 그 ID의 native flags/image/combination/reference DB readback이다. 자동 결과는 inactive, invisible, unavailable-for-order, image 1, combinations 2, same reference 1이다. 운영 게시/고객 노출은 하지 않았다.
+- 이 run은 exact synthetic Amazon/Rakuten fixtures다. 실제 marketplace page compatibility, live fetch, image rights, real SKU, production merchant state를 입증하지 않는다. 실제 기기 QA도 이 Chromium artifact로 PASS 처리하지 않는다.
+
 ## 최신 수정 코드 검수 상태 (2026-10-25 21:20 UTC)
 
 - QA source commit SHA: `95af3a9104b6e3f7bfc861155bdc73db9a91ab98` (the subsequent branch update is documentation-only); `main` unchanged at `ee02a3657448d563508687614a246e05ac61eecd`.

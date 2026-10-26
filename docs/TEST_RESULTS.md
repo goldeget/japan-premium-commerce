@@ -1,5 +1,16 @@
 # ORDENOWA 테스트 결과
 
+## 2026-10-26 — catalog 승인 후 manager 경로 수정 및 전체 격리 QA
+
+- 수정 코드 `e1cd6d0c9d58ee2db64462387fef305c2ab0e757`를 `work`에 push했고 remote SHA를 재확인했다. `main`은 변경하지 않았다.
+- 실패 원인은 앱의 상품 저장으로 단정하지 않았다. #40269983026에서 승인 click은 반환됐지만 browser가 manager GET 전에 `approved_product_link` 경로 assertion에서 멈췄다. 검증기가 `/admin-kuranea` 하나만 허용했고, PrestaShop 9.2 legacy admin link 형식 `/admin-kuranea/` 및 `/admin-kuranea/index.php`를 거부할 수 있었다.
+- 최소 수정은 native admin entrypoint 세 경로만 허용하고 same-origin, exact `AdminOrdenowaProductManager`, 단일 양수 `id_product` 검사를 유지하는 것이다. 임의 하위 경로, 외부 origin, 다른 controller, 중복/0 ID 및 URL `;params`는 거부한다. 안전 진단은 URL/query/token/상품 ID를 출력하지 않고 origin·경로 분류·controller·ID 유효성 boolean만 보존한다.
+- 회귀 검사는 기존 bare admin 경로 외에 slash/index.php 형식을 허용하고 잘못된 경로를 거부하는 것을 확인한다. 이 회귀 검사는 구현 전에 trailing slash 및 `index.php` 사례에서 실패했고 수정 후 통과했다.
+- 영향 검사: `test_catalog_import_browser_workflow_contract`, `test_catalog_import_admin_contract`, `test_isolated_ci_integration_workflow_contract` 합계 55개 PASS. 수정 Python 파일 `py_compile` 및 `git diff --check`도 통과했다. 독립 read-only 리뷰는 경로 경계와 진단 schema에서 추가 문제를 찾지 못했다.
+- 전체 격리 Actions [#40272141646](https://github.com/goldeget/japan-premium-commerce/actions/runs/40272141646), source SHA `e1cd6d0c9d58ee2db64462387fef305c2ab0e757`: workflow conclusion SUCCESS. Step 46 browser flow가 `PASS: synthetic batch, rejection, reviewed draft, local image and same-product reimport readback.`를 출력했고, Step 87 aggregate는 완료했으며 기록된 `CATALOG_IMPORT_BROWSER_QA_OUTCOME=success`로 전체 aggregate PASS를 확인했다.
+- 같은 브라우저가 manager editor 화면에서 승인된 native product ID의 언어·가격·카테고리·이미지·옵션/조합 재고 필드를 읽어 확인하고, 같은 상품 ID로 reimport 후 같은 값을 다시 비교한다. manager editor의 별도 저장 버튼 동작은 이 catalog flow에서 실행하지 않았다. workflow의 read-only DB 결과는 비활성/비노출/주문불가, 이미지 1, 조합 2, 동일 reference 1을 확인했다. `catalog-import-readback.json`과 `catalog-import-persistence.json` 및 화면 캡처는 [artifact 12628194683](https://github.com/goldeget/japan-premium-commerce/actions/runs/40272141646/artifacts/12628194683)에 있다.
+- 이 세션은 해당 artifact ZIP 다운로드에서 403을 받아 이미지를 직접 열지 않았다. artifact 생성 및 coverage PASS는 시각 검수를 뜻하지 않는다. 실제 상품 페이지 수집, 실제 상품/이미지 사용권, 판매 게시, 외부 거래는 확인되지 않았다.
+
 ## 2026-10-25 — 시각 QA 잔여 항목 수정 및 전체 격리 검증 완료
 
 QA source code SHA는 `95af3a9104b6e3f7bfc861155bdc73db9a91ab98`다. 검증 후 `work`에 문서 전용 업데이트가 올라갔으며 앱과 QA 코드는 변경되지 않았다. 최신 전체 격리 Actions [#40233614104](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104)은 workflow 성공, Step 80 aggregate `PASS: isolated browser QA and official postcode verification completed.`로 종료했다. Aggregate에 기록된 `STOREFRONT_BROWSER_QA_OUTCOME=success`, `PWA_BROWSER_QA_OUTCOME=success`; Step 42 product/cart, Step 49 PWA, Step 73/75 screenshots, Step 83 run-only cleanup 모두 성공했다. 직전 성공 run #40231567083은 SHA `aed4a3cc6e143258e9f493603dd226bfa41b34aa`의 별도 기준점으로 보존한다.

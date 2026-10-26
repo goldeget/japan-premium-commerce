@@ -1,6 +1,16 @@
 # ORDENOWA 개발 현황
 
-## 현재 QA 및 출시 체크리스트 (2026-10-25 21:20 UTC)
+## 최신 격리 QA 및 카탈로그 가져오기 상태 (2026-10-26 05:20 UTC)
+
+검증 대상 `work` commit `e1cd6d0c9d58ee2db64462387fef305c2ab0e757`는 원격과 일치한다. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다. 전체 격리 Actions [#40272141646](https://github.com/goldeget/japan-premium-commerce/actions/runs/40272141646)은 성공했고 Step 87 aggregate는 `PASS: isolated browser QA and official postcode verification completed.`로 끝났다.
+
+이전 [#40269983026](https://github.com/goldeget/japan-premium-commerce/actions/runs/40269983026)의 유일한 실패는 catalog browser의 `approved_product_link` 검사였다. 브라우저는 승인 화면에 남아 있었고 native manager로 이동하기 전에 URL 검사에서 중단됐다. PrestaShop 9.2 legacy `getAdminLink()`는 관리자 디렉터리의 `/` 또는 `/index.php` 진입 경로를 만들 수 있는데 검사는 관리자 경로의 정확한 bare 값만 허용했다. 검증기를 같은 origin, 정확한 manager controller, 단일 양수 상품 ID를 유지하면서 `/admin-kuranea`, `/admin-kuranea/`, `/admin-kuranea/index.php`만 허용하도록 수정했다. 임의 하위 경로·외부 origin·중복/무효 ID·`;params`는 계속 거부한다. 실패 시 링크 자체나 query/token은 기록하지 않고 경로 유형 및 조건별 boolean만 남긴다.
+
+새 Step 46 로그는 합성 Amazon/Rakuten batch, 옵션 가드 반려, 단일 옵션 검수 승인, native product manager 화면의 같은 상품 값 재조회 및 동일 상품 재수집 후 readback PASS를 기록했다. 이 catalog flow에서는 manager 편집 폼의 저장 버튼까지 누르지는 않았다. 같은 ID의 native product DB 확인은 `active=false`, `visibility=none`, `available_for_order=false`, 이미지 1개, 조합 2개, 동일 reference 상품 1개다. 고객 노출·판매 활성화는 수행하지 않았다. 브라우저 증거 [artifact 12628194683](https://github.com/goldeget/japan-premium-commerce/actions/runs/40272141646/artifacts/12628194683)의 캡처 시각 검수는 아직 대기 중이다. 이 Codex 환경의 artifact 다운로드는 403으로 거부되어 PNG를 열지 않았다. 검수 대상과 한계는 [AI Browser QA handoff](AI_BROWSER_QA_HANDOFF.md)에 정리했다.
+
+이 결과는 격리 synthetic fixture로 현재 승인·비활성 draft·재수집 경로를 확인한 것이다. Amazon Japan/Rakuten 실제 상품 페이지 호환, 허용된 실상품 URL/피드 수집, 원격 이미지 취득 및 사용권, 다중 옵션 조합 지원은 완료로 확대하지 않는다. 운영 판매자·상품·세금·배송·결제·법률 문안 및 production 환경 자료는 기존 미정 항목으로 남는다.
+
+## 이전 QA 및 출시 체크리스트 (2026-10-25 21:20 UTC; 2026-10-26 최신 run으로 superseded)
 
 검증 대상 코드 commit SHA는 `95af3a9104b6e3f7bfc861155bdc73db9a91ab98`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd` 그대로다. 이 검증 뒤 `work`에는 문서 전용 업데이트가 올라갔고 앱/테스트 코드는 바뀌지 않았다. 전체 격리 Actions [#40233614104](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104)은 workflow 성공이며 Step 80 실제 aggregate는 `PASS: isolated browser QA and official postcode verification completed.`다. Aggregate의 storefront/PWA browser outcomes도 각각 success이며 Step 42, 49, 73, 75, 83이 성공했다. 새 artifact [ID 12613919270](https://github.com/goldeget/japan-premium-commerce/actions/runs/40233614104/artifacts/12613919270)의 수정 화면 시각 재검수는 아직 대기 중이다. 검증 대상 코드의 로컬 영향 테스트 121개도 통과했다.
 
