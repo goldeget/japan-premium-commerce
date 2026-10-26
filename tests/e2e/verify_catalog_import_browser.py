@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from selenium import webdriver
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -31,6 +32,11 @@ from verify_product_admin_browser import (
 AMAZON = 'https://www.amazon.co.jp/dp/B0KURANEA1'
 RAKUTEN = 'https://item.rakuten.co.jp/fixture-shop/synthetic-case-b/'
 BLOCKED = 'https://www.amazon.co.jp/dp/B0KURANEA2'
+REJECTED_RAKUTEN_SNAPSHOT_NAME = '[TEST FIXTURE] 合成収納ケース B'
+REJECTED_OPTION_GUARD_MESSAGE = (
+    '현재 수집기는 여러 옵션 그룹의 실제 조합·조합별 가격·재고를 검증할 수 없어 '
+    '이 상품 초안 등록을 지원하지 않습니다. 원본에서 확인된 단일 옵션 그룹만 사용해 주세요.'
+)
 ALLOWED_CONTROLLERS = {'AdminKuraneaCatalogReview', 'AdminOrdenowaProductManager'}
 ALLOWED_STAGES = {
     'launch', 'login', 'review_menu_route', 'manager_menu_route', 'manager_navigation',
@@ -49,7 +55,7 @@ ALLOWED_READBACK_SUBSTAGES = {
     'not_started', 'approved_product_link', 'manager_navigation',
     'native_editor_id_presence', 'native_editor_form_check', 'native_editor_readback',
     'reimport_navigation', 'reimport_editor_id_presence', 'reimport_editor_form_check',
-    'reimport_editor_readback',
+    'reimport_editor_readback', 'reject_guard_readback', 'reject_status_readback',
 }
 CLICK_TARGETS = {
     'category_checkbox': 'approve_category_checkbox',
@@ -116,10 +122,120 @@ def fill(form, name, value):
 
 
 def article(driver, source_url):
-    for entry in driver.find_elements(By.CSS_SELECTOR, 'article[data-catalog-key]'):
-        if source_url in entry.text:
-            return entry
+    try:
+        entries = driver.find_elements(By.CSS_SELECTOR, 'article[data-catalog-key]')
+    except StaleElementReferenceException:
+        return False
+    for entry in entries:
+        try:
+            if source_url in entry.text:
+                return entry
+        except StaleElementReferenceException:
+            # A review row can be replaced during the native postback. The caller's
+            # existing WebDriverWait will query the new document/card again.
+            continue
     return False
+
+
+def rejection_form_for_source(driver, source_url):
+    """Return the separate visible rejection form, retrying through a replaced card."""
+    try:
+        entry = article(driver, source_url)
+        if not entry or not entry.is_displayed():
+            return False
+        forms = entry.find_elements(By.CSS_SELECTOR, 'form.catalog-review-reject')
+        if len(forms) == 1 and forms[0].is_displayed():
+            return forms[0]
+    except StaleElementReferenceException:
+        return False
+    return False
+
+
+def rejected_option_guard_state(driver, source_url):
+    """Read fixed feedback and pending-card state without exposing page text."""
+    try:
+        result = driver.execute_script("""
+            const sourceUrl = arguments[0];
+            const expectedMessage = arguments[1];
+            const visible = (element) => {
+                if (!element) return false;
+                const style = getComputedStyle(element);
+                const rect = element.getBoundingClientRect();
+                return style.display !== 'none' && style.visibility !== 'hidden'
+                    && rect.width > 0 && rect.height > 0;
+            };
+            const card = Array.from(document.querySelectorAll('article[data-catalog-key]'))
+                .find((element) => (element.innerText || '').includes(sourceUrl)) || null;
+            const guardVisible = Array.from(document.querySelectorAll('#content .alert-danger'))
+                .some((element) => visible(element) && element.innerText.trim() === expectedMessage);
+            const approvedStatus = document.querySelector('section[data-catalog-review-status="approved"]');
+            const productManagerLink = card && card.querySelector('a[href*="id_product="]');
+            return {
+                review_card_visible: visible(card),
+                guard_notice_visible: Boolean(guardVisible),
+                review_form_visible: visible(card && card.querySelector('.catalog-import-review-form')),
+                approved_status_visible: visible(approvedStatus),
+                product_manager_link_visible: visible(productManagerLink)
+            };
+        """, source_url, REJECTED_OPTION_GUARD_MESSAGE)
+    except StaleElementReferenceException:
+        return None
+    if (not isinstance(result, dict)
+            or set(result) != {
+                'review_card_visible', 'guard_notice_visible', 'review_form_visible',
+                'approved_status_visible', 'product_manager_link_visible',
+            }
+            or any(type(value) is not bool for value in result.values())):
+        return None
+    return result
+
+
+def wait_for_rejected_option_guard(driver, state):
+    state['current_substage'] = 'reject_guard_readback'
+
+    def guard_is_ready(current_driver):
+        result = rejected_option_guard_state(current_driver, RAKUTEN)
+        if (result and result['review_card_visible'] and result['guard_notice_visible']
+                and result['review_form_visible'] and not result['approved_status_visible']
+                and not result['product_manager_link_visible']):
+            return result
+        return False
+
+    result = WebDriverWait(driver, 30).until(guard_is_ready)
+    state['last_completed_substage'] = 'reject_guard_readback'
+    state['current_substage'] = 'not_started'
+    return result
+
+
+def wait_for_rejected_status(driver, state):
+    state['current_substage'] = 'reject_status_readback'
+
+    def rejection_is_ready(current_driver):
+        try:
+            return current_driver.execute_script("""
+                const visible = (element) => {
+                    if (!element) return false;
+                    const style = getComputedStyle(element);
+                    const rect = element.getBoundingClientRect();
+                    return style.display !== 'none' && style.visibility !== 'hidden'
+                        && rect.width > 0 && rect.height > 0;
+                };
+                const statuses = Array.from(document.querySelectorAll(
+                    'section[data-catalog-review-status="rejected"]'
+                )).filter((element) => {
+                    const titleMatches = Array.from(element.querySelectorAll('p'))
+                        .some((paragraph) => paragraph.textContent.trim()
+                            === `상품명: ${arguments[0]}`);
+                    return titleMatches && visible(element);
+                });
+                return statuses.length === 1;
+            """, REJECTED_RAKUTEN_SNAPSHOT_NAME) is True
+        except StaleElementReferenceException:
+            return False
+
+    WebDriverWait(driver, 30).until(rejection_is_ready)
+    state['last_completed_substage'] = 'reject_status_readback'
+    state['current_substage'] = 'not_started'
 
 
 def submit_batch(driver, review_url, urls, state, prefix='batch'):
@@ -427,6 +543,75 @@ def capture_safe_click_crop(driver, path, state):
     return path.is_file() and path.stat().st_size > 0
 
 
+def capture_safe_option_guard_notice(driver, path, state):
+    """Capture only the exact synthetic multigroup-option server guard message."""
+    try:
+        if (not isinstance(state, dict) or state.get('stage') != 'reject_rakuten'
+                or state.get('review_source') != RAKUTEN):
+            return False
+        parsed = urlparse(driver.current_url)
+        expected = urlparse(ADMIN_LOGIN)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        admin_path = ADMIN_PATH.rstrip('/')
+        if ((parsed.scheme.lower(), parsed.netloc.lower()) != (
+                expected.scheme.lower(), expected.netloc.lower())
+                or not (parsed.path == admin_path or parsed.path.startswith(admin_path + '/'))
+                or query.get('controller') != ['AdminKuraneaCatalogReview']):
+            return False
+
+        entry = article(driver, RAKUTEN)
+        if not entry or not entry.is_displayed():
+            return False
+        forms = entry.find_elements(By.CSS_SELECTOR, '.catalog-import-review-form')
+        notices = driver.find_elements(By.CSS_SELECTOR, '#content .alert-danger')
+        matching_notices = [notice for notice in notices
+                            if notice.is_displayed()
+                            and notice.text.strip() == REJECTED_OPTION_GUARD_MESSAGE]
+        if (len(forms) != 1 or not forms[0].is_displayed() or len(matching_notices) != 1
+                or entry.find_elements(By.CSS_SELECTOR, '[data-catalog-review-status="approved"]')
+                or entry.find_elements(By.CSS_SELECTOR, 'a[href*="id_product="]')):
+            return False
+
+        notice = matching_notices[0]
+        original_style = notice.get_attribute('style')
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", notice)
+        driver.execute_script("""
+            const notice = arguments[0];
+            notice.style.boxSizing = 'border-box';
+            notice.style.width = '640px';
+            notice.style.maxWidth = '640px';
+            notice.style.minHeight = '180px';
+            notice.style.height = 'auto';
+            notice.style.padding = '24px';
+            notice.style.whiteSpace = 'normal';
+            notice.style.overflowWrap = 'anywhere';
+            notice.style.overflow = 'visible';
+        """, notice)
+        try:
+            bounds = notice.size
+            if (type(bounds.get('width')) is not int or type(bounds.get('height')) is not int
+                    or not (320 <= bounds['width'] <= 640 and 180 <= bounds['height'] <= 480)):
+                return False
+            if not notice.screenshot(str(path)) or not path.is_file() or path.stat().st_size == 0:
+                return False
+            image = path.read_bytes()
+            if len(image) < 24 or not image.startswith(b'\x89PNG\r\n\x1a\n'):
+                path.unlink(missing_ok=True)
+                return False
+            width, height = struct.unpack('!II', image[16:24])
+            if not (320 <= width <= 640 and 180 <= height <= 480):
+                path.unlink(missing_ok=True)
+                return False
+            return True
+        finally:
+            if original_style:
+                driver.execute_script("arguments[0].setAttribute('style', arguments[1]);", notice, original_style)
+            else:
+                driver.execute_script("arguments[0].removeAttribute('style');", notice)
+    except Exception:
+        return False
+
+
 def capture_safe_approval_context_crop(driver, path, state, source_url=AMAZON):
     """Capture only the known synthetic option field and its blocking/confirmation UI."""
     expected_stage = 'approve_amazon' if source_url == AMAZON else 'reject_rakuten'
@@ -597,7 +782,9 @@ def safe_catalog_import_browser_state(driver, state):
         stage = 'unknown'
     if last_completed_stage not in ALLOWED_STAGES | {'not_started'}:
         last_completed_stage = 'unknown'
-    if last_completed_substage not in ALLOWED_CLICK_SUBSTAGES | {'not_started', 'batch_complete', 'reject_status_readback', 'unknown'}:
+    if last_completed_substage not in ALLOWED_CLICK_SUBSTAGES | {
+        'not_started', 'batch_complete', 'reject_guard_readback', 'reject_status_readback', 'unknown',
+    }:
         last_completed_substage = 'unknown'
     current_substage = state.get('current_substage', 'not_started')
     if current_substage not in ALLOWED_READBACK_SUBSTAGES:
@@ -689,6 +876,7 @@ def safe_catalog_import_browser_state(driver, state):
         'manager_load_failure_notice_visible': False,
         'manager_permission_denied_notice_visible': False,
         'manager_inactive_notice_visible': False,
+        'option_guard_notice_visible': False,
     }
     if driver is not None:
         try:
@@ -734,6 +922,7 @@ def safe_catalog_import_browser_state(driver, state):
                 const managerLoadFailure = '상품 관리 화면을 불러오지 못했습니다. 쇼핑몰 설정과 권한을 확인해 주세요.';
                 const managerPermissionDenied = '상품을 조회할 권한이 없습니다.';
                 const managerInactiveNotice = '상품은 기본적으로 비활성·비노출·주문 불가 상태로 저장됩니다. 이 화면에는 판매 활성화 기능이 없습니다.';
+                const optionGuardNotice = '현재 수집기는 여러 옵션 그룹의 실제 조합·조합별 가격·재고를 검증할 수 없어 이 상품 초안 등록을 지원하지 않습니다. 원본에서 확인된 단일 옵션 그룹만 사용해 주세요.';
                 const recognizedAlert = (text) => text === '관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.'
                     || text === '상품 수집·검수·등록 권한이 없습니다.'
                     || text === '상품 URL을 한 줄에 하나씩 입력해 주세요.'
@@ -744,6 +933,7 @@ def safe_catalog_import_browser_state(driver, state):
                     || text === managerLoadFailure
                     || text === managerPermissionDenied
                     || text === managerInactiveNotice
+                    || text === optionGuardNotice
                     || text === '상품 수집 항목을 반려했습니다. 사유와 담당자 기록을 보존했습니다.'
                     || text === '기존 TEST/DEMO 등록 경로는 별도 서버 게이트로 비활성화되어 있습니다.'
                     || /^(?:[1-9]|10)개 고유 상품 URL을 수집 대기열에 추가했습니다[.]$/.test(text);
@@ -776,7 +966,8 @@ def safe_catalog_import_browser_state(driver, state):
                     manager_editor_visible: managerFormVisible,
                     manager_load_failure_notice_visible: visibleAlerts.includes(managerLoadFailure),
                     manager_permission_denied_notice_visible: visibleAlerts.includes(managerPermissionDenied),
-                    manager_inactive_notice_visible: visibleAlerts.includes(managerInactiveNotice)
+                    manager_inactive_notice_visible: visibleAlerts.includes(managerInactiveNotice),
+                    option_guard_notice_visible: visibleAlerts.includes(optionGuardNotice)
                 };
             """, expected_product_id_text)
             if not isinstance(page, dict):
@@ -837,6 +1028,8 @@ def safe_catalog_import_browser_state(driver, state):
         page_class = 'batch_save_error'
     elif batch_created and not bool(page.get('batch_progress_container_visible')):
         page_class = 'batch_created_without_progress'
+    elif bool(page.get('option_guard_notice_visible')):
+        page_class = 'unsupported_options_guard'
     elif unclassified_alert:
         page_class = 'unclassified_alert'
     elif bool(page.get('login_form_visible')):
@@ -875,6 +1068,7 @@ def safe_catalog_import_browser_state(driver, state):
         'empty_url_notice_visible': bool(page.get('empty_url_notice_visible')),
         'batch_save_failure_notice_visible': batch_save_failed,
         'batch_created_notice_visible': batch_created,
+        'option_guard_notice_visible': bool(page.get('option_guard_notice_visible')),
         'unclassified_alert_visible': unclassified_alert,
         'visible_alert_count': visible_alert_count,
         'document_response_status': response_status,
@@ -973,6 +1167,17 @@ def save_safe_failure_screenshot(driver, path, state):
         return capture_safe_manager_readback_crop(driver, path, state)
     if stage in {'approve_amazon', 'reject_rakuten'}:
         source_url = RAKUTEN if stage == 'reject_rakuten' else AMAZON
+        if stage == 'reject_rakuten':
+            try:
+                if capture_safe_option_guard_notice(driver, path, state):
+                    return True
+            except Exception:
+                pass
+            if (isinstance(click, dict) and click.get('target') == 'native_draft_submit'
+                    and click.get('returned') is True):
+                # After the guard-form POST, a pre-submit screenshot would not be
+                # evidence of the server response. Require the exact fixed notice.
+                return False
         if (isinstance(click, dict) and click.get('attempted') is True
                 and click.get('returned') is False):
             try:
@@ -1253,23 +1458,21 @@ def run():
             'reject_rakuten_submit',
             'native_draft_submit',
         )
-        rejected = WebDriverWait(driver, 30).until(lambda d: article(d, RAKUTEN))
-        guard_message = (
-            '현재 수집기는 여러 옵션 그룹의 실제 조합·조합별 가격·재고를 검증할 수 없어 '
-            '이 상품 초안 등록을 지원하지 않습니다. 원본에서 확인된 단일 옵션 그룹만 사용해 주세요.'
+        guard_state = wait_for_rejected_option_guard(driver, state)
+        assert guard_state['review_card_visible']
+        assert guard_state['guard_notice_visible']
+        assert guard_state['review_form_visible']
+        assert not guard_state['approved_status_visible']
+        assert not guard_state['product_manager_link_visible']
+        assert capture_safe_option_guard_notice(
+            driver, DEST / 'catalog-import-blocked-submit.png', state
         )
-        assert any(
-            alert.is_displayed() and alert.text.strip() == guard_message
-            for alert in driver.find_elements(By.CSS_SELECTOR, '.alert-danger')
-        )
-        assert rejected.is_displayed()
-        assert rejected.find_elements(By.CSS_SELECTOR, '.catalog-import-review-form')
-        assert not driver.find_elements(By.CSS_SELECTOR, '[data-catalog-review-status="approved"]')
-        assert not rejected.find_elements(By.CSS_SELECTOR, 'a[href*="id_product="]')
+        rejected_form = WebDriverWait(driver, 30).until(lambda d: rejection_form_for_source(d, RAKUTEN))
 
-        fill(rejected, 'rejection_reason', 'Synthetic CI rejection: operator declined this fixture.')
-        rejected.find_element(By.NAME, 'submitKuraneaCatalogReject').click()
-        visible(driver, '[data-catalog-review-status="rejected"]')
+        fill(rejected_form, 'rejection_reason', 'Synthetic CI rejection: operator declined this fixture.')
+        state['current_substage'] = 'reject_status_readback'
+        rejected_form.find_element(By.NAME, 'submitKuraneaCatalogReject').click()
+        wait_for_rejected_status(driver, state)
         state['last_completed_stage'] = state['stage']
         state['last_completed_substage'] = 'reject_status_readback'
         driver.save_screenshot(str(DEST / 'catalog-import-rejected.png'))

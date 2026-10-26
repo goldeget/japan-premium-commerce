@@ -59,7 +59,8 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
                        'tests.smoke.test_catalog_import_browser_workflow_contract',
                        'tests.smoke.test_catalog_import_admin_contract',
                        "'tests/smoke/test_catalog_import_admin_contract.py'",
-                       'catalog-import-e2e.log', 'catalog-import-batch.png', 'catalog-import-rejected.png',
+                       'catalog-import-e2e.log', 'catalog-import-batch.png', 'catalog-import-blocked-submit.png',
+                       'catalog-import-rejected.png',
                        'catalog-import-blocked-options.png', 'catalog-import-review-options.png',
                        'catalog-import-draft.png', 'catalog-import-reimport.png', 'catalog-import-readback.json'):
             self.assertTrue(marker in source, f"Missing integration marker: {marker}")
@@ -149,11 +150,11 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             "rejected_form.find_elements(By.NAME, 'confirm_options_supported')",
             'assert not options_confirmations',
             "submitKuraneaCatalogImportedDraft",
-            "rejected.find_elements(By.CSS_SELECTOR, '.catalog-import-review-form')",
+            "assert guard_state['review_form_visible']",
             "[data-catalog-review-status=\"approved\"]",
             "a[href*=\"id_product=\"]",
         ):
-            self.assertIn(marker, rejection)
+            self.assertIn(marker, rejection + browser)
 
         save = browser.split('def save_safe_failure_screenshot(', 1)[1].split(
             'def safe_exception_class(', 1
@@ -228,6 +229,67 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertIn('manager_product_id_field_matches', read_native)
         self.assertNotIn("visible(driver, '[name=\"id_product\"]')", read_native)
         self.assertNotIn('EC.presence_of_element_located', read_native)
+
+    def test_rejected_option_guard_readback_retries_stale_dom_without_relaxing_guard(self):
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        rejection = browser.split("state['stage'] = 'reject_rakuten'", 1)[1].split(
+            "state['stage'] = 'approve_amazon'", 1
+        )[0]
+        for marker in (
+            "state['current_substage'] = 'reject_guard_readback'",
+            "state['current_substage'] = 'reject_status_readback'",
+            'rejected_option_guard_state',
+            "document.querySelectorAll('#content .alert-danger')",
+            "form.catalog-review-reject",
+            "section[data-catalog-review-status=\"rejected\"]",
+            'REJECTED_RAKUTEN_SNAPSHOT_NAME',
+            'except StaleElementReferenceException',
+            'option_guard_notice_visible',
+            'assert guard_state[\'review_form_visible\']',
+            'assert not guard_state[\'approved_status_visible\']',
+            'assert not guard_state[\'product_manager_link_visible\']',
+        ):
+            self.assertIn(marker, rejection + browser)
+
+        diagnostics = self.read_required('tests/e2e/catalog_import_diagnostics.py')
+        self.assertIn("'option_guard_notice_visible'", diagnostics)
+        self.assertIn("'reject_guard_readback'", diagnostics)
+        self.assertIn("'reject_status_readback'", diagnostics)
+        self.assertIn("'unsupported_options_guard'", diagnostics)
+        controller = self.read_required(
+            'modules/kuraneacatalog/controllers/admin/AdminKuraneaCatalogReviewController.php'
+        )
+        self.assertIn('$this->content .= $this->renderFeedback();', controller)
+        self.assertIn("class=\"catalog-review-reject\"", controller)
+        self.assertIn("$html .= $this->renderReviewedStatus();", controller)
+        self.assertIn("data-catalog-review-status=\"' . $this->escape($entry->status) . '\"", controller)
+        self.assertIn('def capture_safe_option_guard_notice(', browser)
+        self.assertIn("'catalog-import-blocked-submit.png'", browser)
+        self.assertIn('catalog-import-blocked-submit.png', self.read_required('.github/workflows/fresh-install.yml'))
+        self.assertIn(
+            '"name": "[TEST FIXTURE] 合成収納ケース B"',
+            self.read_required('tests/catalog/fixtures/rakuten-product.synthetic.html'),
+        )
+        guard_capture = browser.split('def capture_safe_option_guard_notice(', 1)[1].split(
+            'def capture_safe_approval_context_crop(', 1
+        )[0]
+        for marker in (
+            "state.get('review_source') != RAKUTEN",
+            "query.get('controller') != ['AdminKuraneaCatalogReview']",
+            'notice.text.strip() == REJECTED_OPTION_GUARD_MESSAGE',
+            "notice.style.width = '640px'",
+            "notice.style.minHeight = '180px'",
+            'notice.screenshot(str(path))',
+            "notice.style.overflowWrap = 'anywhere'",
+            'setAttribute(\'style\', arguments[1])',
+        ):
+            self.assertIn(marker, guard_capture)
+        save = browser.split('def save_safe_failure_screenshot(', 1)[1].split(
+            'def safe_exception_class(', 1
+        )[0]
+        self.assertIn("click.get('target') == 'native_draft_submit'", save)
+        self.assertIn('click.get(\'returned\') is True', save)
+        self.assertIn('pre-submit screenshot would not be', save)
 
     def test_approved_product_link_is_same_origin_manager_route_with_one_id(self):
         browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
@@ -445,7 +507,8 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'progress_value': None, 'progress_max': None, 'row_count': 0,
             'token_rejected_notice_visible': False, 'mutation_access_denied_notice_visible': False,
             'empty_url_notice_visible': False, 'batch_save_failure_notice_visible': False,
-            'batch_created_notice_visible': False, 'unclassified_alert_visible': False,
+            'batch_created_notice_visible': False, 'option_guard_notice_visible': False,
+            'unclassified_alert_visible': False,
             'visible_alert_count': 3, 'document_response_status': 200,
             'read_only_notice_visible': False, 'access_denied_notice_visible': False,
             'queue_unavailable_notice_visible': False, 'exception_class': 'ElementClickInterceptedException',
@@ -454,6 +517,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'manager_id_field_hidden': False, 'manager_product_id_field_matches': False,
             'manager_editor_visible': False, 'manager_load_failure_notice_visible': False,
             'manager_permission_denied_notice_visible': False, 'manager_inactive_notice_visible': False,
+            'option_guard_notice_visible': False,
             'failure_screenshot_captured': True,
         }
         DIAGNOSTICS.validate(valid)
@@ -538,6 +602,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
                 'manager_load_failure_notice_visible': True,
                 'manager_permission_denied_notice_visible': False,
                 'manager_inactive_notice_visible': False,
+                'option_guard_notice_visible': False,
                 'exception_class': 'TimeoutException',
                 'failure_screenshot_captured': True,
             }
@@ -565,7 +630,8 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'progress_value': None, 'progress_max': None, 'row_count': 0,
             'token_rejected_notice_visible': False, 'mutation_access_denied_notice_visible': False,
             'empty_url_notice_visible': False, 'batch_save_failure_notice_visible': False,
-            'batch_created_notice_visible': False, 'unclassified_alert_visible': True,
+            'batch_created_notice_visible': False, 'option_guard_notice_visible': False,
+            'unclassified_alert_visible': True,
             'visible_alert_count': 1, 'document_response_status': 200,
             'read_only_notice_visible': False, 'access_denied_notice_visible': False,
             'queue_unavailable_notice_visible': False, 'exception_class': 'TimeoutException',
@@ -574,6 +640,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'manager_id_field_hidden': False, 'manager_product_id_field_matches': False,
             'manager_editor_visible': False, 'manager_load_failure_notice_visible': False,
             'manager_permission_denied_notice_visible': False, 'manager_inactive_notice_visible': False,
+            'option_guard_notice_visible': False,
             'failure_screenshot_captured': False,
         }
         DIAGNOSTICS.validate(valid)

@@ -16,6 +16,7 @@ BOOLEAN_FIELDS = {
     'submit_returned', 'batch_progress_container_visible', 'progress_visible',
     'token_rejected_notice_visible', 'mutation_access_denied_notice_visible',
     'empty_url_notice_visible', 'batch_save_failure_notice_visible', 'batch_created_notice_visible',
+    'option_guard_notice_visible',
     'unclassified_alert_visible', 'read_only_notice_visible', 'access_denied_notice_visible',
     'queue_unavailable_notice_visible', 'manager_route_matches',
     'manager_product_id_parameter_present', 'manager_product_id_parameter_matches',
@@ -73,7 +74,7 @@ STRING_ENUMS = {
     'page_class': {
         'controller_access_denied', 'batch_capability_denied', 'queue_unavailable',
         'mutation_token_rejected', 'mutation_capability_denied', 'batch_save_error',
-        'batch_created_without_progress', 'unclassified_alert', 'login_form',
+        'batch_created_without_progress', 'unsupported_options_guard', 'unclassified_alert', 'login_form',
         'catalog_import_form', 'manager_access_denied', 'manager_load_error',
         'manager_editor', 'manager_editor_missing', 'other_admin',
     },
@@ -81,10 +82,12 @@ STRING_ENUMS = {
         'not_started', 'approved_product_link', 'manager_navigation',
         'native_editor_id_presence', 'native_editor_form_check', 'native_editor_readback',
         'reimport_navigation', 'reimport_editor_id_presence', 'reimport_editor_form_check',
-        'reimport_editor_readback', 'unknown',
+        'reimport_editor_readback', 'reject_guard_readback', 'reject_status_readback', 'unknown',
     },
     'document_ready_state': {'loading', 'interactive', 'complete', 'unknown'},
-    'last_completed_substage': CLICK_SUBSTAGES | {'not_started', 'batch_complete', 'reject_status_readback', 'unknown'},
+    'last_completed_substage': CLICK_SUBSTAGES | {
+        'not_started', 'batch_complete', 'reject_guard_readback', 'reject_status_readback', 'unknown',
+    },
     'exception_class': {
         'AssertionError', 'ElementClickInterceptedException', 'ElementNotInteractableException',
         'NoSuchElementException', 'OSError', 'RuntimeError', 'StaleElementReferenceException',
