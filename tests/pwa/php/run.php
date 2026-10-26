@@ -259,3 +259,4 @@ try {
 }
 
 require __DIR__ . '/delivery_outbox.php';
+require __DIR__ . '/order_history_producer.php';

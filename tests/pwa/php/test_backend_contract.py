@@ -3,6 +3,7 @@ from pathlib import Path
 import unittest
 
 from tests.pwa.php.test_delivery_outbox_contract import DeliveryOutboxContract
+from tests.pwa.php.test_order_history_producer_contract import OrderHistoryProducerContract
 
 ROOT = Path(__file__).resolve().parents[3]
 MODULE = ROOT / 'modules/kuraneapush'

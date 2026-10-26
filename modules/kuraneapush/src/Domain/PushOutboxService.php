@@ -11,7 +11,7 @@ final class PushOutboxService
 {
     private PushDeliveryProvider $provider;
     public function __construct(private PushOutboxStore $outbox, private PushDeliveryStore $targets,
-        private SubscriptionCipher $cipher, ?PushDeliveryProvider $provider = null)
+        private ?SubscriptionCipher $cipher = null, ?PushDeliveryProvider $provider = null)
     {
         $this->provider = $provider ?? new DisabledPushDeliveryProvider();
     }
@@ -63,6 +63,7 @@ final class PushOutboxService
             try { $available = $this->provider->available(); }
             catch (\Throwable $error) { $available = false; }
             if (!$available) { return array_replace($result, ['status'=>'provider_unavailable']); }
+            if ($this->cipher === null) { return array_replace($result, ['status'=>'storage_unavailable']); }
             foreach ($receipt['recipients'] as $recipient) {
                 $digest = $recipient['endpoint_digest'] ?? null;
                 if (!is_string($digest) || preg_match('/\A[a-f0-9]{64}\z/D', $digest) !== 1) {

@@ -11,6 +11,7 @@ use Kuranea\Push\Infrastructure\PushSettings;
 use Kuranea\Push\Infrastructure\SubscriptionCipher;
 use Kuranea\Push\Infrastructure\SubscriptionRepository;
 use Kuranea\Push\Infrastructure\PushOutboxRepository;
+use Kuranea\Push\Infrastructure\OrderHistoryPushProducer;
 
 class Kuraneapush extends Module
 {
@@ -18,7 +19,7 @@ class Kuraneapush extends Module
     {
         $this->name = 'kuraneapush';
         $this->tab = 'administration';
-        $this->version = '1.0.2';
+        $this->version = '1.0.3';
         $this->author = 'ORDENOWA';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -39,7 +40,7 @@ class Kuraneapush extends Module
             }
         }
         return $this->installTab() && $this->registerHook([
-            'displayCustomerAccount', 'actionObjectCustomerDeleteAfter',
+            'displayCustomerAccount', 'actionObjectCustomerDeleteAfter', 'actionOrderHistoryAddAfter',
         ]);
     }
 
@@ -51,6 +52,12 @@ class Kuraneapush extends Module
         }
         // Retain encrypted subscriptions and settings across disable/uninstall/reinstall.
         return parent::uninstall();
+    }
+
+    /** Repair the additive native order event hook on already-installed stores. */
+    public function ensureOrderHistoryPushHook(): bool
+    {
+        return $this->registerHook('actionOrderHistoryAddAfter');
     }
 
     public function getContent(): string
@@ -106,6 +113,13 @@ class Kuraneapush extends Module
         $this->context->controller->registerStylesheet('module-kuraneapush-account',
             'modules/' . $this->name . '/views/css/account-push.css', ['media' => 'all', 'priority' => 150]);
         return $this->display(__FILE__, 'views/templates/hook/account_push.tpl');
+    }
+
+    public function hookActionOrderHistoryAddAfter(array $params): void
+    {
+        if ($this->active) {
+            (new OrderHistoryPushProducer())->record($params['order_history'] ?? null);
+        }
     }
 
     public function hookActionObjectCustomerDeleteAfter(array $params): void
