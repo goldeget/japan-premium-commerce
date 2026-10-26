@@ -1523,6 +1523,11 @@ class FreeShippingE2eContractTest(unittest.TestCase):
         wrong_reference = Browser([Body("another-ci-only-reference")])
         self.assertFalse(predicate(wrong_reference, "reference-ci-only", 10, {}))
 
+        missing_reference_state: dict[str, object] = {}
+        missing_reference = Browser([Body("reference-ci-only")])
+        self.assertFalse(predicate(missing_reference, None, 10, missing_reference_state))
+        self.assertEqual(missing_reference_state["body_text_read"], "not_read")
+
         admin_source = ast.get_source_segment(BROWSER.read_text(encoding="utf-8"), next(
             node for node in browser_tree.body
             if isinstance(node, ast.FunctionDef) and node.name == "_assign_tracking_number_through_admin_ui"

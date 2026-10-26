@@ -1984,7 +1984,9 @@ def _matches_isolated_admin_order_detail_url(href: str, expected_order_id: int) 
     }
 
 
-def _matching_admin_order_document(browser, expected_reference: str, expected_order_id: int, diagnostics: dict) -> bool:
+def _matching_admin_order_document(
+    browser, expected_reference: object, expected_order_id: int, diagnostics: dict
+) -> bool:
     """Poll only through a transient stale body read; require the exact order and admin route."""
     attempt_count = diagnostics.get('attempt_count', 0)
     if type(attempt_count) is not int or attempt_count < 0:
@@ -1998,6 +2000,8 @@ def _matching_admin_order_document(browser, expected_reference: str, expected_or
     )
     diagnostics['body_text_read'] = 'not_read'
     diagnostics['body_reference_matches'] = False
+    if type(expected_reference) is not str or not expected_reference:
+        return False
     try:
         body_text = browser.find_element(By.TAG_NAME, 'body').text
     except StaleElementReferenceException:
@@ -2176,7 +2180,7 @@ def _assign_tracking_number_through_admin_ui(
 
     def matching_order_document(browser) -> bool:
         return _matching_admin_order_document(
-            browser, str(order.get("reference", "")), order_id, document_wait_state
+            browser, order.get("reference"), order_id, document_wait_state
         )
 
     _set_tracking_diagnostic(tracking_diagnostics, 'admin', 'admin_post_save_document_wait', driver)
