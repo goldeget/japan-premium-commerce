@@ -114,12 +114,17 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         validator = self.controller.split("private function isValidImportMutationToken(): bool", 1)[1].split(
             "private function catalogImportService(", 1
         )[0]
-        self.assertIn("SymfonyContainer::getInstance()", validator)
+        self.assertIn("\\PrestaShop\\PrestaShop\\Adapter\\SymfonyContainer::getInstance()", validator)
         self.assertIn("UserTokenManager::class", validator)
         self.assertIn("->isTokenValid()", validator)
         self.assertIn("catch (Throwable)", validator)
         self.assertNotIn("getAdminTokenLite", validator)
         self.assertNotIn("hash_equals", validator)
+
+        harness = (ROOT / "tests" / "catalog" / "admin_review_controller.php").read_text(encoding="utf-8")
+        self.assertIn("class_alias(", harness)
+        self.assertIn("PrestaShop\\\\PrestaShop\\\\Adapter\\\\SymfonyContainer", harness)
+        self.assertNotIn("final class SymfonyContainer", harness)
 
         approval = self.controller.split("private function processApproval(", 1)[1].split(
             "private function renderImportForm(", 1

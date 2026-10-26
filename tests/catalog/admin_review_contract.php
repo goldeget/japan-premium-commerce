@@ -34,6 +34,7 @@ assertCatalogTrue(str_contains($controller, "'amazon_jp' => '아마존 일본'")
 assertCatalogTrue(str_contains($controller, 'KURANEA_CATALOG_TEST_DEMO_APPROVAL') && str_contains($controller, 'confirm_test_demo'), 'Native registration should require a TEST/DEMO deployment gate and explicit confirmation.');
 assertCatalogTrue(
     str_contains($controller, 'isValidImportMutationToken()')
+        && str_contains($controller, '\\PrestaShop\\PrestaShop\\Adapter\\SymfonyContainer::getInstance()')
         && str_contains($controller, 'UserTokenManager::class')
         && str_contains($controller, '->isTokenValid()')
         && !str_contains($controller, 'hash_equals($expectedToken, $submittedToken)'),

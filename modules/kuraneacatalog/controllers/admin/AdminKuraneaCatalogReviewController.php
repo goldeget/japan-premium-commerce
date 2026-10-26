@@ -501,7 +501,7 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
     private function isValidImportMutationToken(): bool
     {
         try {
-            $container = SymfonyContainer::getInstance();
+            $container = \PrestaShop\PrestaShop\Adapter\SymfonyContainer::getInstance();
             if ($container === null) {
                 return false;
             }

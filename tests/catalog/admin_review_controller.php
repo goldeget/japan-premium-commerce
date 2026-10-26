@@ -109,7 +109,7 @@ final class CatalogAdminTestContainer
     }
 }
 
-final class SymfonyContainer
+final class CatalogAdminTestSymfonyContainer
 {
     public static bool $available = true;
     private static ?CatalogAdminTestContainer $instance = null;
@@ -123,6 +123,11 @@ final class SymfonyContainer
         return self::$instance ??= new CatalogAdminTestContainer();
     }
 }
+
+class_alias(
+    CatalogAdminTestSymfonyContainer::class,
+    'PrestaShop\\PrestaShop\\Adapter\\SymfonyContainer'
+);
 
 function assertCatalogAdminSame(mixed $expected, mixed $actual, string $message): void
 {
@@ -298,12 +303,12 @@ try {
     assertCatalogAdminTrue(str_contains($approvedPostController->content, 'TEST/DEMO 상품 ID 1234'), 'The screen should show the TEST/DEMO approval result.');
 
     CatalogAdminTestCsrfTokenManager::$acceptedRequestToken = $formCsrfToken;
-    SymfonyContainer::$available = false;
+    CatalogAdminTestSymfonyContainer::$available = false;
     Tools::$values['idempotency_key'] = $catalogAdminEntry->idempotencyKey;
     $missingCsrfServiceController = new AdminKuraneaCatalogReviewController();
     $missingCsrfServiceController->initContent();
     assertCatalogAdminTrue(str_contains($missingCsrfServiceController->content, '관리자 보안 토큰'), 'A missing PrestaShop CSRF service must fail closed.');
-    SymfonyContainer::$available = true;
+    CatalogAdminTestSymfonyContainer::$available = true;
 } finally {
     foreach (glob($catalogAdminStorage . '/*') ?: [] as $catalogAdminFile) {
         unlink($catalogAdminFile);
