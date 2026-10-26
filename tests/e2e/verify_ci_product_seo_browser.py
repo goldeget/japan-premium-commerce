@@ -46,6 +46,17 @@ def assert_true(value: object, message: str) -> None:
         raise AssertionError(message)
 
 
+def bounded_control_count(value: Any) -> str:
+    """Return a fixed, low-cardinality summary for browser control counts."""
+    if type(value) is not int or value < 0:
+        return "unavailable"
+    if value == 0:
+        return "none"
+    if value == 1:
+        return "one"
+    return "multiple"
+
+
 def same_origin(destination: str) -> bool:
     try:
         parsed = urlparse(destination)
@@ -202,9 +213,13 @@ def read_product_page(driver: webdriver.Chrome, result: dict[str, Any]) -> dict[
     assert_true(has_yen_symbol, "visible product price does not show a JPY currency symbol")
 
     result["stage"] = "visible_product_availability"
+    result["substage"] = "add_button_controls"
     add_buttons = driver.find_elements(By.CSS_SELECTOR, "button[data-ps-ref='add-to-cart']")
     visible_add_buttons = [item for item in add_buttons if item.is_displayed()]
+    result["matched_add_button_controls"] = bounded_control_count(len(add_buttons))
+    result["visible_add_button_controls"] = bounded_control_count(len(visible_add_buttons))
     assert_true(len(visible_add_buttons) == 1, "synthetic product has no unique visible add-to-cart control")
+    result["substage"] = "add_button_enabled_state"
     purchasable = visible_add_buttons[0].is_enabled() and visible_add_buttons[0].get_attribute("aria-disabled") != "true"
 
     result["stage"] = "rendered_product_offer"
@@ -282,12 +297,21 @@ def main() -> None:
         response_status = result.get("response_status")
         if type(response_status) is not int or not 100 <= response_status <= 599:
             response_status = "unavailable"
+        allowed_control_counts = ("none", "one", "multiple")
+        matched_controls = result.get("matched_add_button_controls")
+        visible_controls = result.get("visible_add_button_controls")
+        if matched_controls not in allowed_control_counts:
+            matched_controls = "unavailable"
+        if visible_controls not in allowed_control_counts:
+            visible_controls = "unavailable"
         print(
             "FAIL: synthetic product SEO browser "
             f"stage={result.get('stage', 'unknown')} substage={result.get('substage', 'unknown')} "
             f"exception={type(error).__name__} response_status={response_status} "
             f"same_origin={str(result.get('same_origin', False)).lower()} "
             f"japanese_document={str(result.get('japanese_document', False)).lower()} "
+            f"matched_add_button_controls={matched_controls} "
+            f"visible_add_button_controls={visible_controls} "
             f"checks={check_summary}",
             file=sys.stderr,
         )

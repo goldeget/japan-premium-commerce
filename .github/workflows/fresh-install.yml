@@ -1680,8 +1680,14 @@ jobs:
           import os
           from native_contact_route import read_contact_route_fixture, contact_route_class
           fixture = read_contact_route_fixture(os.environ['CONTACT_ROUTE_FIXTURE'], os.environ['SHOP_BASE_URL'])
-          route_classes = '/'.join(contact_route_class(fixture['urls_by_iso'][locale], os.environ['SHOP_BASE_URL'])
-                                   for locale in ('ja', 'en', 'ko'))
+          route_classes = '/'.join(
+              contact_route_class(
+                  fixture['urls_by_iso'][locale], os.environ['SHOP_BASE_URL'],
+                  locale=locale,
+                  localized_rewrite=fixture['localized_rewrite_by_iso'][locale],
+              )
+              for locale in ('ja', 'en', 'ko')
+          )
           rewrites = '/'.join(locale for locale in ('ja', 'en', 'ko') if fixture['localized_rewrites'][locale]) or 'none'
           print('PASS: isolated contact route metadata readback; '
                 f"meta_present={str(fixture['contact_meta_present']).lower()} "

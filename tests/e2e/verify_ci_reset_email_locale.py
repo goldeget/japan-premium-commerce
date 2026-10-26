@@ -38,7 +38,8 @@ SAFE_EXCEPTION_TYPES = {
     'NoSuchElementException', 'OtherError',
 }
 SAFE_MESSAGE_CHECKS = {
-    'none', 'parts_missing', 'locale_marker_missing', 'credential_disclosure',
+    'none', 'parts_missing', 'locale_marker_missing', 'raw_password_disclosure',
+    'password_hash_disclosure', 'customer_secure_key_outside_reset_link',
     'generic_bank_details', 'reset_credentials_invalid', 'reset_link_origin_mismatch',
     'reset_link_path_mismatch', 'parts_credentials_mismatch', 'reset_link_missing',
 }
@@ -141,26 +142,40 @@ class Links(HTMLParser):
         self.text_fragments.append(data)
 
 
-def assert_message(message: dict, language: str, base: str, reset_path: str, forbidden: list[str]) -> str:
+def assert_message(message: dict, language: str, base: str, reset_path: str,
+                   forbidden: dict[str, str]) -> str:
     html, text = message.get('HTML'), message.get('Text')
     if not isinstance(html, str) or not isinstance(text, str) or not html or not text:
         raise MessageValidationError('parts_missing')
+    secret_categories = ('raw_password', 'password_hash', 'customer_secure_key')
+    if (not isinstance(forbidden, dict) or set(forbidden) != set(secret_categories)
+            or any(not isinstance(forbidden[key], str) or not forbidden[key] for key in secret_categories)):
+        raise ValueError('native reset secret categories required')
     parser = Links()
     parser.feed(html)
     for visible in (' '.join(parser.text_fragments), text):
         without_urls = re.sub(r'https?://[^\s<>]+', '', visible)
         if MARKERS[language] not in without_urls.casefold():
             raise MessageValidationError('locale_marker_missing')
+    for category, check in (('raw_password', 'raw_password_disclosure'),
+                            ('password_hash', 'password_hash_disclosure')):
+        if any(forbidden[category] in body for body in (html, text)):
+            raise MessageValidationError(check)
     for body in (html, text):
-        if any(value and value in body for value in forbidden):
-            raise MessageValidationError('credential_disclosure')
         if re.search(r'account\s*(?:number|no\b)|口座番号|계좌\s*번호', body, re.I):
             raise MessageValidationError('generic_bank_details')
     verified_url = None
     verified_credentials = None
     credential_keys = {'token', 'reset_token', 'id_customer'}
-    for candidates in (parser.hrefs, re.findall(r'https?://[^\s<>"\']+', text)):
-        reset_links = []
+    secure_key = forbidden['customer_secure_key']
+    allowed_secure_key_occurrences = {'HTML': 0, 'Text': 0}
+    html_visible_urls = re.findall(r'https?://[^\s<>"\']+', ' '.join(parser.text_fragments))
+    text_urls = re.findall(r'https?://[^\s<>"\']+', text)
+    for part, candidates, required_link_candidates in (
+            ('HTML', [*parser.hrefs, *html_visible_urls], parser.hrefs),
+            ('Text', text_urls, text_urls)):
+        required_candidates = {candidate.rstrip('.,);]') for candidate in required_link_candidates}
+        required_reset_link_found = False
         for candidate in candidates:
             candidate = candidate.rstrip('.,);]')
             query = parse_qs(urlparse(candidate).query, keep_blank_values=True)
@@ -180,9 +195,15 @@ def assert_message(message: dict, language: str, base: str, reset_path: str, for
                 raise MessageValidationError('parts_credentials_mismatch')
             verified_credentials = credentials
             verified_url = verified_url or destination
-            reset_links.append(destination)
-        if not reset_links:
+            if candidate in required_candidates:
+                required_reset_link_found = True
+            if query.get('token') == [secure_key] and candidate.count(secure_key) == 1:
+                allowed_secure_key_occurrences[part] += 1
+        if not required_reset_link_found:
             raise MessageValidationError('reset_link_missing')
+    for part, body in (('HTML', html), ('Text', text)):
+        if body.count(secure_key) != allowed_secure_key_occurrences[part]:
+            raise MessageValidationError('customer_secure_key_outside_reset_link')
     return verified_url
 
 
@@ -256,7 +277,9 @@ $customer->id_shop = (int) $context->shop->id;
 $customer->active = 1;
 if (!$customer->add()) { throw new RuntimeException('isolated reset fixture creation failed'); }
 echo json_encode(['url' => $context->link->getPageLink('password', null, $idLang),
-                  'forbidden' => [$rawPassword, $customer->passwd, $customer->secure_key]], JSON_THROW_ON_ERROR);
+                  'forbidden' => ['raw_password' => $rawPassword,
+                                  'password_hash' => $customer->passwd,
+                                  'customer_secure_key' => $customer->secure_key]], JSON_THROW_ON_ERROR);
 '''
 
 

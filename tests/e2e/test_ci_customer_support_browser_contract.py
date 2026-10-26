@@ -288,10 +288,11 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
     def test_contact_failure_diagnostics_are_safe_and_record_status_route_and_form(self):
         browser = SCRIPT.read_text(encoding="utf-8")
         for required in (
-            "def contact_page_evidence(driver, shop_url: str)",
+            "def contact_page_evidence(",
             "contact_document_status", "contact_same_origin", "contact_native_route",
             "contact_form_count", "contact_form_visible",
-            "result.update(contact_page_evidence(customer, ctx.shop))",
+            "result.update(contact_page_evidence(",
+            "locale=locale", "localized_rewrite=localized_rewrite",
             "performance.getEntriesByType('navigation')",
         ):
             with self.subTest(required=required):
@@ -310,9 +311,10 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         route_helper = (ROOT / "tests/e2e/native_contact_route.py").read_text(encoding="utf-8")
         for required in (
             "CONTACT_ROUTE_FIXTURE", "contact_url=route_fixture[\"urls_by_iso\"][\"ja\"]",
-            "probe_contact_route(customer, query_route, ctx.shop)",
-            "probe_contact_route(customer, ctx.contact_url, ctx.shop)",
-            "CONTACT_ROUTE_DIAGNOSTIC", "contact_route_class(driver.current_url, shop_url)",
+            "probe_contact_route(", "query_route, ctx.shop, locale=\"ja\"",
+            "ctx.contact_url, ctx.shop, locale=\"ja\"",
+            "CONTACT_ROUTE_DIAGNOSTIC", "contact_route_class(",
+            "driver.current_url", "localized_rewrite=localized_rewrite",
             "private_no_store", "credentials: 'same-origin'", "cache: 'no-store'",
         ):
             with self.subTest(required=required):

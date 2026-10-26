@@ -227,6 +227,7 @@ def load_context(environ: dict[str, str] | None = None) -> Context:
             "canonical_redirect_mode": route_fixture["canonical_redirect_mode"],
             "contactform_enabled": route_fixture["contactform_enabled"],
             "localized_rewrites": route_fixture["localized_rewrites"],
+            "localized_rewrite_by_iso": route_fixture["localized_rewrite_by_iso"],
         },
         admin=admin,
         mailpit=mailpit, artifact_dir=artifact_dir, admin_email=admin_email,
@@ -241,7 +242,9 @@ def same_origin(first: str, second: str) -> bool:
     return (a.scheme, a.hostname, a.port) == (b.scheme, b.hostname, b.port)
 
 
-def contact_page_evidence(driver, shop_url: str) -> dict[str, Any]:
+def contact_page_evidence(
+    driver, shop_url: str, *, locale: str, localized_rewrite: str | None
+) -> dict[str, Any]:
     """Return response status and bounded route/form facts; never persist the URL or page text."""
     response_status = driver.execute_script("""
       const entries = performance.getEntriesByType('navigation');
@@ -251,7 +254,12 @@ def contact_page_evidence(driver, shop_url: str) -> dict[str, Any]:
     if type(response_status) is not int or not 100 <= response_status <= 599:
         response_status = None
     origin_matches = same_origin(driver.current_url, shop_url)
-    native_route = origin_matches and contact_route_class(driver.current_url, shop_url) == "contact"
+    native_route = origin_matches and contact_route_class(
+        driver.current_url,
+        shop_url,
+        locale=locale,
+        localized_rewrite=localized_rewrite,
+    ) == "contact"
     forms = driver.find_elements(By.CSS_SELECTOR, '.contact-form form')
     return {
         'contact_document_status': response_status,
@@ -971,9 +979,14 @@ def run() -> None:
 
         stage = result["stage"] = "contact_form"
         query_route = ctx.shop + "/index.php?controller=contact"
-        query_probe = probe_contact_route(customer, query_route, ctx.shop)
-        generated_probe = probe_contact_route(customer, ctx.contact_url, ctx.shop)
         metadata = ctx.contact_route_metadata
+        contact_rewrite = metadata["localized_rewrite_by_iso"]["ja"]
+        query_probe = probe_contact_route(
+            customer, query_route, ctx.shop, locale="ja", localized_rewrite=contact_rewrite
+        )
+        generated_probe = probe_contact_route(
+            customer, ctx.contact_url, ctx.shop, locale="ja", localized_rewrite=contact_rewrite
+        )
         print(
             "CONTACT_ROUTE_DIAGNOSTIC "
             f"meta_present={str(metadata['contact_meta_present']).lower()} "
@@ -987,7 +1000,9 @@ def run() -> None:
             f"generated_page={generated_probe['page_class']} generated_form_count={generated_probe['form_count']}"
         )
         customer.get(ctx.contact_url)
-        result.update(contact_page_evidence(customer, ctx.shop))
+        result.update(contact_page_evidence(
+            customer, ctx.shop, locale="ja", localized_rewrite=contact_rewrite
+        ))
         visible(customer, ".contact-form form")
         baseline_mail = mail_ids(ctx.mailpit)
         with tempfile.NamedTemporaryFile(prefix="ordenowa-support-", suffix=".txt", mode="w", encoding="utf-8", delete=False) as file:

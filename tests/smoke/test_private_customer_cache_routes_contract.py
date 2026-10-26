@@ -129,8 +129,9 @@ class PrivateCustomerCacheRouteContractTests(unittest.TestCase):
                 self.assertIn(route_case, route_check)
         for contact_check in (
             'route_fixture["urls_by_iso"][locale]',
-            'probe_contact_route(driver, query_url, shop_url)',
-            'probe_contact_route(driver, contact_url, shop_url)',
+            'localized_rewrite = route_fixture["localized_rewrite_by_iso"][locale]',
+            'probe_contact_route(\n        driver, query_url, shop_url, locale=locale, localized_rewrite=localized_rewrite\n    )',
+            'probe_contact_route(\n        driver, contact_url, shop_url, locale=locale, localized_rewrite=localized_rewrite\n    )',
             '"PWA_CONTACT_ROUTE_DIAGNOSTIC "',
             'query_form_count={query_probe[\'form_count\']}',
             'generated_page={generated_probe[\'page_class\']}',

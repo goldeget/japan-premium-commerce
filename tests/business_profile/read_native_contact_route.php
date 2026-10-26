@@ -50,11 +50,15 @@ $rewriteRows = $db->executeS(
 );
 contactRouteRequire(is_array($rewriteRows), 'Could not read isolated localized contact routes.');
 $localizedRewrites = ['ja' => false, 'en' => false, 'ko' => false];
+$localizedRewriteByIso = ['ja' => null, 'en' => null, 'ko' => null];
 foreach ($rewriteRows as $row) {
     $iso = (string) ($row['iso_code'] ?? '');
     $rewrite = $row['url_rewrite'] ?? null;
     if (isset($localizedRewrites[$iso])) {
-        $localizedRewrites[$iso] = is_string($rewrite) && trim($rewrite) !== '';
+        if (is_string($rewrite) && trim($rewrite) !== '') {
+            $localizedRewrites[$iso] = true;
+            $localizedRewriteByIso[$iso] = trim($rewrite);
+        }
     }
 }
 
@@ -74,6 +78,9 @@ $payload = [
     'canonical_redirect_mode' => (int) Configuration::get('PS_CANONICAL_REDIRECT'),
     'contactform_enabled' => Module::isInstalled('contactform') && Module::isEnabled('contactform'),
     'localized_rewrites' => $localizedRewrites,
+    // Keep exact public route slugs in the run-local fixture so the browser
+    // validator can accept language-specific native routes without logging them.
+    'localized_rewrite_by_iso' => $localizedRewriteByIso,
     'urls_by_iso' => $urlsByIso,
 ];
 fwrite(STDOUT, json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) . "\n");

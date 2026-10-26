@@ -152,7 +152,8 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             "SAFE_RESULT_KEYS",
             "SAFE_EXCEPTION_TYPES",
             "SAFE_SUBSTAGES",
-            '"csrf_form_shape"',
+            '"csrf_form_missing"',
+            '"csrf_form_ambiguous"',
             '"csrf_control_validation"',
             '"csrf_invalid_token_submit"',
             '"csrf_rejection_readback"',
@@ -171,6 +172,15 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             self.assertNotIn(forbidden, public_keys)
         self.require('"failure_substage"', public_keys)
         self.assertNotIn("bank_statement_reference", self.paid_readback)
+
+    def test_invalid_csrf_form_cardinality_is_diagnosed_without_weakening_the_gate(self) -> None:
+        helper = self.browser.split("def reject_issue_with_invalid_csrf", 1)[1].split("def confirmation_form", 1)[0]
+        self.require('if len(forms) != 1:', helper)
+        self.require('set_substage("csrf_form_missing" if not forms else "csrf_form_ambiguous")', helper)
+        self.require('raise AssertionError("the unpaid order did not expose one instruction form', helper)
+        self.require('tokens = form.find_elements(By.CSS_SELECTOR, \'input[name="token"]\')', helper)
+        self.require('buttons = form.find_elements(By.CSS_SELECTOR, \'button[name="submitOrdenowaIssueTransfer"]\')', helper)
+        self.require('safe_admin_path(action, admin_root)', helper)
 
     def test_artifact_coverage_requires_the_dedicated_bank_order_readback(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")

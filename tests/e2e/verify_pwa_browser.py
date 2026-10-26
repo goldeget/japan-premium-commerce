@@ -3527,8 +3527,13 @@ def verify_logged_out_private_routes(
     route_fixture = read_contact_route_fixture(fixture_path, shop_url)
     contact_url = route_fixture["urls_by_iso"][locale]
     query_url = urljoin(base, "index.php?controller=contact")
-    query_probe = probe_contact_route(driver, query_url, shop_url)
-    generated_probe = probe_contact_route(driver, contact_url, shop_url)
+    localized_rewrite = route_fixture["localized_rewrite_by_iso"][locale]
+    query_probe = probe_contact_route(
+        driver, query_url, shop_url, locale=locale, localized_rewrite=localized_rewrite
+    )
+    generated_probe = probe_contact_route(
+        driver, contact_url, shop_url, locale=locale, localized_rewrite=localized_rewrite
+    )
     print(
         "PWA_CONTACT_ROUTE_DIAGNOSTIC "
         f"locale={locale} meta_present={str(route_fixture['contact_meta_present']).lower()} "

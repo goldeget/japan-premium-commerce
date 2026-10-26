@@ -12,13 +12,14 @@ from tests.e2e import verify_pwa_browser as pwa_browser
 CONTACT_ROUTE_FIXTURE = {
     "contact_meta_present": True, "rewriting_enabled": True, "canonical_redirect_mode": 1,
     "contactform_enabled": True, "localized_rewrites": {"ja": True, "en": True, "ko": True},
+    "localized_rewrite_by_iso": {"ja": "contact-us", "en": "contact-us", "ko": "contact-us"},
     "urls_by_iso": {"ja": "http://localhost:18080/contact-us",
                     "en": "http://localhost:18080/en/contact-us",
                     "ko": "http://localhost:18080/ko/contact-us"},
 }
 
 
-def fake_contact_probe(_driver: object, url: str, _shop: str) -> dict[str, object]:
+def fake_contact_probe(_driver: object, url: str, _shop: str, **_kwargs: object) -> dict[str, object]:
     status = 404 if "controller=contact" in url else 200
     return {"status": status, "same_origin": True, "route_class": "contact",
             "form_count": 0 if status == 404 else 1,

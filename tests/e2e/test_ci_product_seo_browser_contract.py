@@ -101,6 +101,49 @@ class CiProductSeoBrowserContractTests(unittest.TestCase):
         self.assertIn('data-ps-ref="add-to-cart"', add_to_cart)
         self.assertIn('rel="canonical"', head)
 
+    def test_availability_failure_reports_bounded_control_counts_and_keeps_assertions(self) -> None:
+        source = SCRIPT.read_text(encoding="utf-8")
+        availability = source.split('result["stage"] = "visible_product_availability"', 1)[1].split(
+            'result["stage"] = "rendered_product_offer"', 1
+        )[0]
+
+        for required in (
+            'result["substage"] = "add_button_controls"',
+            'result["matched_add_button_controls"] = bounded_control_count(len(add_buttons))',
+            'result["visible_add_button_controls"] = bounded_control_count(len(visible_add_buttons))',
+            'assert_true(len(visible_add_buttons) == 1',
+            'result["substage"] = "add_button_enabled_state"',
+            'purchasable = visible_add_buttons[0].is_enabled()',
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, availability)
+
+        for required in (
+            '"availability_matches_purchasable_ui"',
+            'all(checks.values())',
+            'matched_add_button_controls={matched_controls}',
+            'visible_add_button_controls={visible_controls}',
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, source)
+
+    def test_availability_control_count_diagnostic_is_a_bounded_enum(self) -> None:
+        module = ast.parse(SCRIPT.read_text(encoding="utf-8"))
+        classifier = next(
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == "bounded_control_count"
+        )
+        namespace = {"Any": object}
+        exec(compile(ast.Module(body=[classifier], type_ignores=[]), str(SCRIPT), "exec"), namespace)
+        classify = namespace["bounded_control_count"]
+
+        for count, expected in ((0, "none"), (1, "one"), (2, "multiple"), (10**9, "multiple")):
+            with self.subTest(count=count):
+                self.assertEqual(expected, classify(count))
+        for invalid in (-1, True, 1.0, "1", None):
+            with self.subTest(invalid=invalid):
+                self.assertEqual("unavailable", classify(invalid))
+
     def test_fresh_install_workflow_runs_and_aggregates_the_product_seo_browser(self) -> None:
         workflow_path = ROOT / ".github/workflows/fresh-install.yml"
         workflow = workflow_path.read_text(encoding="utf-8")

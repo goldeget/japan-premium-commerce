@@ -19,7 +19,9 @@ class ResetEmailLocaleContract(unittest.TestCase):
         source = VERIFIER.read_text()
         for marker in ('order confirmation', 'METHOD_DISABLE', 'CI_COMPOSE_PROJECT_NAME',
                        'KURANEA_ISOLATED_CI', 'PS_MAIL_SERVER', 'mailpit', 'new Customer()',
-                       "('ja', 'en', 'ko')", 'getPageLink', 'id_lang', 'capture_output=True'):
+                       "('ja', 'en', 'ko')", 'getPageLink', 'id_lang', 'capture_output=True',
+                       "'raw_password' => $rawPassword", "'password_hash' => $customer->passwd",
+                       "'customer_secure_key' => $customer->secure_key"):
             self.assertIn(marker, source)
         self.assertNotIn('Configuration::updateValue', source)
         tree = ast.parse(source)
@@ -41,44 +43,106 @@ class ResetEmailLocaleContract(unittest.TestCase):
         return {'HTML': f'<html><body>{markers[language]} <a href="{url}">reset</a></body></html>',
                 'Text': markers[language] + ' ' + url}
 
+    def forbidden(self):
+        return {
+            'raw_password': 'synthetic-raw-password',
+            'password_hash': 'synthetic-password-hash',
+            'customer_secure_key': 'synthetic-customer-secure-key',
+        }
+
     def test_language_and_native_link_required(self):
         module = self.module()
         for language in ('ja', 'en', 'ko'):
-            module.assert_message(self.message(language), language, 'http://127.0.0.1:18080', '/reset', [])
+            module.assert_message(self.message(language), language, 'http://127.0.0.1:18080', '/reset', self.forbidden())
             with self.assertRaises(module.MessageValidationError) as caught:
                 module.assert_message(self.message('en' if language != 'en' else 'ko'), language,
-                                      'http://127.0.0.1:18080', '/reset', [])
+                                      'http://127.0.0.1:18080', '/reset', self.forbidden())
             self.assertEqual('locale_marker_missing', caught.exception.check)
         with self.assertRaises(module.MessageValidationError):
             module.assert_message(self.message('ja', url='http://127.0.0.1:18080/password?token=x&reset_token=y'),
-                                  'en', 'http://127.0.0.1:18080', '/password', [])
+                                  'en', 'http://127.0.0.1:18080', '/password', self.forbidden())
         for url in ('https://evil.invalid/reset?token=x&reset_token=y',
                     'http://user:secret@127.0.0.1:18080/reset?token=x&reset_token=y',
                     'http://127.0.0.1:18080/other?token=x&reset_token=y'):
             with self.assertRaises(module.MessageValidationError) as caught:
-                module.assert_message(self.message(url=url), 'en', 'http://127.0.0.1:18080', '/reset', [])
+                module.assert_message(self.message(url=url), 'en', 'http://127.0.0.1:18080', '/reset', self.forbidden())
             self.assertIn(caught.exception.check, {'reset_link_origin_mismatch', 'reset_link_path_mismatch'})
 
     def test_credentials_and_generic_bank_details_fail_without_logging_payload(self):
         module = self.module()
-        for secret in ('synthetic-password', 'Account number: 1234567', '口座番号：1234567', '계좌번호: 1234567'):
+        for category, secret, expected in (
+            ('raw_password', 'synthetic-raw-password', 'raw_password_disclosure'),
+            ('password_hash', 'synthetic-password-hash', 'password_hash_disclosure'),
+        ):
+            for part in ('HTML', 'Text'):
+                with self.subTest(category=category, part=part):
+                    message = self.message()
+                    message[part] += ' ' + secret
+                    forbidden = self.forbidden()
+                    forbidden[category] = secret
+                    output = io.StringIO()
+                    with contextlib.redirect_stderr(output), contextlib.redirect_stdout(output):
+                        with self.assertRaises(module.MessageValidationError) as caught:
+                            module.assert_message(message, 'en', 'http://127.0.0.1:18080', '/reset', forbidden)
+                    self.assertEqual(expected, caught.exception.check)
+                    self.assertNotIn(secret, str(caught.exception))
+                    self.assertEqual('', output.getvalue())
+        for secret in ('Account number: 1234567', '口座番号：1234567', '계좌번호: 1234567'):
             message = self.message()
             message['Text'] += ' ' + secret
             output = io.StringIO()
             with contextlib.redirect_stderr(output), contextlib.redirect_stdout(output):
                 with self.assertRaises(module.MessageValidationError) as caught:
-                    module.assert_message(message, 'en', 'http://127.0.0.1:18080', '/reset', ['synthetic-password'])
-            expected = 'credential_disclosure' if secret == 'synthetic-password' else 'generic_bank_details'
-            self.assertEqual(expected, caught.exception.check)
+                    module.assert_message(message, 'en', 'http://127.0.0.1:18080', '/reset', self.forbidden())
+            self.assertEqual('generic_bank_details', caught.exception.check)
             self.assertNotIn(secret, str(caught.exception))
             self.assertEqual('', output.getvalue())
+
+    def test_native_reset_link_may_carry_secure_key_only_as_the_token(self):
+        module = self.module()
+        secure_key = self.forbidden()['customer_secure_key']
+        url = ('http://127.0.0.1:18080/reset?token=' + secure_key
+               + '&id_customer=7&reset_token=synthetic-reset')
+        message = self.message('ja', url=url)
+        self.assertEqual(url, module.assert_message(
+            message, 'ja', 'http://127.0.0.1:18080', '/reset', self.forbidden()))
+
+    def test_secure_key_outside_native_reset_token_still_fails_safely(self):
+        module = self.module()
+        secure_key = self.forbidden()['customer_secure_key']
+        url = ('http://127.0.0.1:18080/reset?token=' + secure_key
+               + '&id_customer=7&reset_token=synthetic-reset')
+        message = self.message('ja', url=url)
+        message['Text'] += ' ' + secure_key
+        with self.assertRaises(module.MessageValidationError) as caught:
+            module.assert_message(message, 'ja', 'http://127.0.0.1:18080', '/reset', self.forbidden())
+        self.assertEqual('customer_secure_key_outside_reset_link', caught.exception.check)
+        self.assertNotIn(secure_key, str(caught.exception))
+
+    def test_secure_key_is_not_allowed_as_another_reset_credential(self):
+        module = self.module()
+        secure_key = self.forbidden()['customer_secure_key']
+        url = ('http://127.0.0.1:18080/reset?token=synthetic-token'
+               + '&reset_token=' + secure_key)
+        message = self.message('ja', url=url)
+        with self.assertRaises(module.MessageValidationError) as caught:
+            module.assert_message(message, 'ja', 'http://127.0.0.1:18080', '/reset', self.forbidden())
+        self.assertEqual('customer_secure_key_outside_reset_link', caught.exception.check)
+        self.assertNotIn(secure_key, str(caught.exception))
+
+    def test_all_named_secret_categories_are_required(self):
+        module = self.module()
+        forbidden = self.forbidden()
+        del forbidden['password_hash']
+        with self.assertRaisesRegex(ValueError, 'native reset secret categories required'):
+            module.assert_message(self.message(), 'en', 'http://127.0.0.1:18080', '/reset', forbidden)
 
     def test_both_email_parts_must_identify_the_same_reset_credentials(self):
         module = self.module()
         message = self.message()
         message['Text'] = message['Text'].replace('synthetic-reset', 'different-reset')
         with self.assertRaises(module.MessageValidationError) as caught:
-            module.assert_message(message, 'en', 'http://127.0.0.1:18080', '/reset', [])
+            module.assert_message(message, 'en', 'http://127.0.0.1:18080', '/reset', self.forbidden())
         self.assertEqual('parts_credentials_mismatch', caught.exception.check)
 
     def test_reset_credentials_must_be_nonempty_and_unambiguous(self):
@@ -87,7 +151,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
                       'token=x&token=y&reset_token=z', 'token=x&reset_token=z&id_customer='):
             with self.subTest(query=query), self.assertRaises(module.MessageValidationError) as caught:
                 module.assert_message(self.message(url='http://127.0.0.1:18080/reset?' + query),
-                                      'en', 'http://127.0.0.1:18080', '/reset', [])
+                                      'en', 'http://127.0.0.1:18080', '/reset', self.forbidden())
             self.assertEqual('reset_credentials_invalid', caught.exception.check)
 
     def test_message_failure_reason_is_closed_and_does_not_contain_message_data(self):
@@ -95,7 +159,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
         secret = 'synthetic-reset-secret@example.invalid'
         url = 'https://outside.invalid/reset?token=' + secret + '&reset_token=another'
         with self.assertRaises(module.MessageValidationError) as caught:
-            module.assert_message(self.message('ja', url=url), 'ja', 'http://127.0.0.1:18080', '/reset', [])
+            module.assert_message(self.message('ja', url=url), 'ja', 'http://127.0.0.1:18080', '/reset', self.forbidden())
         self.assertEqual('reset_link_origin_mismatch', caught.exception.check)
         self.assertNotIn(secret, str(caught.exception))
 
@@ -104,7 +168,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
         message = self.message()
         message['HTML'] = message['HTML'].replace('http://127.0.0.1:18080/reset?', '/reset?')
         self.assertEqual('http://127.0.0.1:18080/reset?token=synthetic-token&reset_token=synthetic-reset',
-                         module.assert_message(message, 'en', 'http://127.0.0.1:18080', '/reset', []))
+                         module.assert_message(message, 'en', 'http://127.0.0.1:18080', '/reset', self.forbidden()))
 
     def test_native_reset_page_requires_expected_origin_path_and_document_language(self):
         module = self.module()
@@ -160,6 +224,11 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 for sensitive in ("token", "password", "email@example", "http://", "current_url"):
                     self.assertNotIn(sensitive, contents)
                 self.assertIn('"message_check": "none"', contents)
+                category_result = dict(result, message_check='customer_secure_key_outside_reset_link')
+                module.write_diagnostics(category_result)
+                contents = path.read_text(encoding="utf-8")
+                self.assertIn('"message_check": "customer_secure_key_outside_reset_link"', contents)
+                self.assertNotIn('synthetic-customer-secure-key', contents)
                 module.write_diagnostics(dict(result, token="never-write"))
                 self.assertEqual(path.read_text(encoding="utf-8"), contents)
 

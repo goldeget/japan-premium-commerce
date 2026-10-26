@@ -30,7 +30,7 @@ SAFE_SUBSTAGES = {
     "none", "native_unpaid_order_readback", "transfer_link_scan", "orders_toggle_scan",
     "orders_menu_expand", "orders_menu_link_wait", "expanded_transfer_link_readback",
     "unique_transfer_link", "menu_link_token", "transfer_route_navigation",
-    "transfer_order_row_readback", "csrf_form_shape", "csrf_control_validation",
+    "transfer_order_row_readback", "csrf_form_missing", "csrf_form_ambiguous", "csrf_control_validation",
     "csrf_invalid_token_submit", "csrf_rejection_readback", "csrf_unissued_db_readback",
 }
 SAFE_EXCEPTION_TYPES = {
@@ -401,9 +401,9 @@ def read_visible_notice(driver: webdriver.Chrome):
 
 
 def reject_issue_with_invalid_csrf(driver: webdriver.Chrome, row, admin_root: str, set_substage) -> None:
-    set_substage("csrf_form_shape")
     forms = row.find_elements(By.CSS_SELECTOR, "form")
     if len(forms) != 1:
+        set_substage("csrf_form_missing" if not forms else "csrf_form_ambiguous")
         raise AssertionError("the unpaid order did not expose one instruction form for the CSRF rejection check")
     form = forms[0]
     set_substage("csrf_control_validation")
