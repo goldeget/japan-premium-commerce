@@ -57,6 +57,22 @@ try {
         ];
     }
 
+    // Keep the explicit role rows above visible as their own evidence. The
+    // Profile API also exposes PrestaShop's effective per-tab defaults,
+    // including the built-in superadmin grants when no role rows exist.
+    $stage = 'effective_profile_access_readback';
+    $profileTabAccess = $employeeFound && $employeeEmailMatches && $employeeActive && $tabId > 0
+        ? Profile::getProfileAccess($profileId, $tabId)
+        : false;
+    $profileAccess = [
+        'read' => is_array($profileTabAccess) && (string) ($profileTabAccess['view'] ?? '0') === '1',
+        'create' => is_array($profileTabAccess) && (string) ($profileTabAccess['add'] ?? '0') === '1',
+        'update' => is_array($profileTabAccess) && (string) ($profileTabAccess['edit'] ?? '0') === '1',
+    ];
+    $authorizationBasis = $profileId === _PS_ADMIN_PROFILE_
+        ? 'superadmin_profile_defaults'
+        : ($profileId > 0 ? 'profile_role_permissions' : 'unavailable');
+
     $stage = 'result_encoding';
     $tabFound = $tab instanceof Tab;
     $authorizationReady = $employeeFound
@@ -66,9 +82,9 @@ try {
         && $tabFound
         && (string) $tab->class_name === $tabClass
         && (bool) $tab->active
-        && (bool) ($roles['read']['granted'] ?? false)
-        && (bool) ($roles['create']['granted'] ?? false)
-        && (bool) ($roles['update']['granted'] ?? false);
+        && $profileAccess['read']
+        && $profileAccess['create']
+        && $profileAccess['update'];
     $result = [
         'readback_available' => true,
         'authorization_ready' => $authorizationReady,
@@ -79,14 +95,15 @@ try {
         'tab_found' => $tabFound,
         'tab_class_matches' => $tabFound && (string) $tab->class_name === $tabClass,
         'tab_active' => $tabFound && (bool) $tab->active,
-        'read_granted' => (bool) ($roles['read']['granted'] ?? false),
-        'create_granted' => (bool) ($roles['create']['granted'] ?? false),
-        'update_granted' => (bool) ($roles['update']['granted'] ?? false),
+        'profile_access_read' => $profileAccess['read'],
+        'profile_access_create' => $profileAccess['create'],
+        'profile_access_update' => $profileAccess['update'],
+        'authorization_basis' => $authorizationBasis,
         'permissions' => $roles,
     ];
 } catch (Throwable $error) {
     // A diagnostic must never serialize exception text or request data.
-    $allowedStages = ['config_load', 'fixture_employee_selector', 'employee_profile_lookup', 'tab_lookup', 'permission_role_readback', 'result_encoding'];
+    $allowedStages = ['config_load', 'fixture_employee_selector', 'employee_profile_lookup', 'tab_lookup', 'permission_role_readback', 'effective_profile_access_readback', 'result_encoding'];
     $allowedExceptions = ['Error', 'Exception', 'PDOException', 'PrestaShopException', 'RuntimeException'];
     $class = (new ReflectionClass($error))->getShortName();
     $result = [

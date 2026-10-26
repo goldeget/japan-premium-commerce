@@ -83,6 +83,47 @@ final class Tools
     }
 }
 
+final class CatalogAdminTestCsrfTokenManager
+{
+    public static ?string $acceptedRequestToken = null;
+
+    public function isTokenValid(): bool
+    {
+        $submittedToken = Tools::getValue('token');
+
+        return self::$acceptedRequestToken !== null
+            && is_string($submittedToken)
+            && hash_equals(self::$acceptedRequestToken, $submittedToken);
+    }
+}
+
+final class CatalogAdminTestContainer
+{
+    public function get(string $serviceId): ?object
+    {
+        if ($serviceId !== 'PrestaShopBundle\\Security\\Admin\\UserTokenManager') {
+            return null;
+        }
+
+        return new CatalogAdminTestCsrfTokenManager();
+    }
+}
+
+final class SymfonyContainer
+{
+    public static bool $available = true;
+    private static ?CatalogAdminTestContainer $instance = null;
+
+    public static function getInstance(): ?CatalogAdminTestContainer
+    {
+        if (!self::$available) {
+            return null;
+        }
+
+        return self::$instance ??= new CatalogAdminTestContainer();
+    }
+}
+
 function assertCatalogAdminSame(mixed $expected, mixed $actual, string $message): void
 {
     if ($expected !== $actual) {
@@ -166,6 +207,7 @@ try {
         'confirm_test_demo' => '1',
         'token' => Tools::getAdminTokenLite('AdminKuraneaCatalogReview'),
     ];
+    CatalogAdminTestCsrfTokenManager::$acceptedRequestToken = Tools::$values['token'];
     CatalogNativeRegistrarLockTestState::$events = [];
     $disabledPostController = new AdminKuraneaCatalogReviewController();
     $disabledPostController->initContent();
@@ -182,6 +224,7 @@ try {
     assertCatalogAdminSame([], CatalogNativeRegistrarLockTestState::$events, 'An unconfirmed request must not invoke native product registration.');
 
     CatalogNativeRegistrarLockTestState::$events = [];
+    CatalogAdminTestCsrfTokenManager::$acceptedRequestToken = Tools::getAdminTokenLite('AdminKuraneaCatalogReview');
     Tools::$values = [
         'idempotency_key' => $missingTokenEntry->idempotencyKey,
         'confirm_test_demo' => '1',
@@ -197,14 +240,25 @@ try {
         'confirm_test_demo' => '1',
         'token' => 'forged-token',
     ];
+    CatalogAdminTestCsrfTokenManager::$acceptedRequestToken = Tools::getAdminTokenLite('AdminKuraneaCatalogReview');
     $forgedTokenController = new AdminKuraneaCatalogReviewController();
     $forgedTokenController->initContent();
     assertCatalogAdminTrue(str_contains($forgedTokenController->content, '관리자 보안 토큰'), 'A forged admin token should be rejected explicitly.');
     assertCatalogAdminSame([], CatalogNativeRegistrarLockTestState::$events, 'A forged admin token must not invoke native product registration.');
     assertCatalogAdminSame('pending', $catalogAdminQueue->find($forgedTokenEntry->idempotencyKey)?->status, 'A forged admin token must leave its item pending.');
 
+    // The CSRF manager validates the issued form token against session state,
+    // even though regenerating the representation on this request differs.
+    $formCsrfToken = 'mask-a.valid-session-token';
+    $nextRequestCsrfToken = 'mask-b.valid-session-token';
+    assertCatalogAdminTrue($formCsrfToken !== $nextRequestCsrfToken, 'The request and regenerated CSRF token representations should differ.');
+    assertCatalogAdminTrue(
+        $formCsrfToken !== Tools::getAdminTokenLite('AdminKuraneaCatalogReview'),
+        'A valid masked form token should not be compared to a newly generated token string.'
+    );
     Tools::$values['confirm_test_demo'] = '1';
-    Tools::$values['token'] = Tools::getAdminTokenLite('AdminKuraneaCatalogReview');
+    Tools::$values['token'] = $formCsrfToken;
+    CatalogAdminTestCsrfTokenManager::$acceptedRequestToken = $formCsrfToken;
     $noAddController = new AdminKuraneaCatalogReviewController();
     $noAddController->tabAccess = ['view' => 1, 'edit' => 1, 'add' => 0];
     $noAddController->initContent();
@@ -233,6 +287,7 @@ try {
     CatalogNativeRegistrarLockTestState::$events = [];
     Tools::$values['idempotency_key'] = $catalogAdminEntry->idempotencyKey;
     Tools::$values['token'] = Tools::getAdminTokenLite('AdminKuraneaCatalogReview');
+    CatalogAdminTestCsrfTokenManager::$acceptedRequestToken = Tools::$values['token'];
     $approvedPostController = new AdminKuraneaCatalogReviewController();
     $approvedPostController->initContent();
     $approvedEntry = $catalogAdminQueue->find($catalogAdminEntry->idempotencyKey);
@@ -241,6 +296,14 @@ try {
     assertCatalogAdminSame('employee:42', $approvedEntry?->approvedBy, 'The reviewer identity should come from the authenticated employee context.');
     assertCatalogAdminTrue(in_array('product.add', CatalogNativeRegistrarLockTestState::$events, true), 'A confirmed request should delegate to the native registrar adapter.');
     assertCatalogAdminTrue(str_contains($approvedPostController->content, 'TEST/DEMO 상품 ID 1234'), 'The screen should show the TEST/DEMO approval result.');
+
+    CatalogAdminTestCsrfTokenManager::$acceptedRequestToken = $formCsrfToken;
+    SymfonyContainer::$available = false;
+    Tools::$values['idempotency_key'] = $catalogAdminEntry->idempotencyKey;
+    $missingCsrfServiceController = new AdminKuraneaCatalogReviewController();
+    $missingCsrfServiceController->initContent();
+    assertCatalogAdminTrue(str_contains($missingCsrfServiceController->content, '관리자 보안 토큰'), 'A missing PrestaShop CSRF service must fail closed.');
+    SymfonyContainer::$available = true;
 } finally {
     foreach (glob($catalogAdminStorage . '/*') ?: [] as $catalogAdminFile) {
         unlink($catalogAdminFile);

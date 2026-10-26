@@ -1122,7 +1122,7 @@ jobs:
             sh -c 'cat > /tmp/ordenowa-ci-catalog-import-rakuten.synthetic.html' \
             < tests/catalog/fixtures/rakuten-product.synthetic.html
 
-      - name: Read isolated catalog review tab access for the browser admin
+      - name: Read explicit roles and effective profile access for the browser admin
         id: catalog_import_admin_access_readback
         if: always() && !cancelled() && steps.catalog_import_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
         continue-on-error: true
@@ -1161,12 +1161,16 @@ jobs:
               booleans = {
                   'readback_available', 'authorization_ready', 'employee_found',
                   'employee_email_matches', 'employee_active', 'profile_is_superadmin',
-                  'tab_found', 'tab_class_matches', 'tab_active', 'read_granted',
-                  'create_granted', 'update_granted',
+                  'tab_found', 'tab_class_matches', 'tab_active', 'profile_access_read',
+                  'profile_access_create', 'profile_access_update',
               }
               if data.get('readback_available') is True:
-                  expected = booleans | {'permissions'}
+                  expected = booleans | {'authorization_basis', 'permissions'}
                   if set(data) != expected or any(type(data[key]) is not bool for key in booleans):
+                      raise ValueError()
+                  if data['authorization_basis'] not in {
+                      'superadmin_profile_defaults', 'profile_role_permissions', 'unavailable',
+                  }:
                       raise ValueError()
                   if not isinstance(data['permissions'], dict) or set(data['permissions']) != {'read', 'create', 'update'}:
                       raise ValueError()
@@ -1182,7 +1186,8 @@ jobs:
                       raise ValueError()
                   if data['failure_stage'] not in {
                       'config_load', 'fixture_employee_selector', 'employee_profile_lookup',
-                      'tab_lookup', 'permission_role_readback', 'result_encoding', 'unknown',
+                      'tab_lookup', 'permission_role_readback', 'effective_profile_access_readback',
+                      'result_encoding', 'unknown',
                   }:
                       raise ValueError()
                   if data['exception_class'] not in {

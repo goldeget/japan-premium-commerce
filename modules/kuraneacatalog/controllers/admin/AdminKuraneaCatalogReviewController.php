@@ -486,9 +486,7 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
 
     private function validateImportMutation(): bool
     {
-        $submittedToken = Tools::getValue('token');
-        $expectedToken = (string) Tools::getAdminTokenLite('AdminKuraneaCatalogReview');
-        if (!is_string($submittedToken) || $expectedToken === '' || !hash_equals($expectedToken, $submittedToken)) {
+        if (!$this->isValidImportMutationToken()) {
             $this->fail('관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.');
             return false;
         }
@@ -498,6 +496,24 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
         }
 
         return true;
+    }
+
+    private function isValidImportMutationToken(): bool
+    {
+        try {
+            $container = SymfonyContainer::getInstance();
+            if ($container === null) {
+                return false;
+            }
+
+            $tokenManager = $container->get(\PrestaShopBundle\Security\Admin\UserTokenManager::class);
+
+            return is_object($tokenManager)
+                && method_exists($tokenManager, 'isTokenValid')
+                && $tokenManager->isTokenValid() === true;
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private function catalogImportService(
@@ -646,14 +662,12 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
             return;
         }
 
-        $submittedToken = Tools::getValue('token');
-        $expectedToken = (string) Tools::getAdminTokenLite('AdminKuraneaCatalogReview');
-        if (!is_string($submittedToken) || $expectedToken === '' || !hash_equals($expectedToken, $submittedToken)) {
+        if (!$this->isValidImportMutationToken()) {
             $this->fail('관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.');
             return;
         }
 
-        if (!$this->canApprove()) {
+        if (!$this->canApprove() || (int) ($this->context->employee->id ?? 0) < 1) {
             $this->fail('상품을 승인할 권한이 없습니다.');
             return;
         }

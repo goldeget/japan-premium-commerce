@@ -106,9 +106,26 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         queue_renderer = self.controller.split("private function renderQueue(", 1)[1].split(
             "private function renderReviewedStatus(", 1
         )[0]
-        self.assertIn("hash_equals($expectedToken, $submittedToken)", validation)
+        self.assertIn("isValidImportMutationToken()", validation)
         self.assertIn("!$this->canApprove()", validation)
         self.assertIn("elseif ($this->canApprove())", queue_renderer)
+
+    def test_import_mutations_delegate_masked_csrf_validation_to_prestashop(self) -> None:
+        validator = self.controller.split("private function isValidImportMutationToken(): bool", 1)[1].split(
+            "private function catalogImportService(", 1
+        )[0]
+        self.assertIn("SymfonyContainer::getInstance()", validator)
+        self.assertIn("UserTokenManager::class", validator)
+        self.assertIn("->isTokenValid()", validator)
+        self.assertIn("catch (Throwable)", validator)
+        self.assertNotIn("getAdminTokenLite", validator)
+        self.assertNotIn("hash_equals", validator)
+
+        approval = self.controller.split("private function processApproval(", 1)[1].split(
+            "private function renderImportForm(", 1
+        )[0]
+        self.assertIn("$this->isValidImportMutationToken()", approval)
+        self.assertNotIn("getAdminTokenLite", approval)
 
     def test_review_capabilities_use_prestashop_lazy_access_api(self) -> None:
         view = self.controller.split("private function canView(): bool", 1)[1].split(
@@ -137,13 +154,15 @@ class CatalogImportAdminContractTests(unittest.TestCase):
             "tab_found",
             "failure_stage",
             "exception_class",
-            "read_granted",
-            "create_granted",
-            "update_granted",
+            "profile_access_read",
+            "profile_access_create",
+            "profile_access_update",
+            "authorization_basis",
             "ORDENOWA_CATALOG_ADMIN_ACCESS=",
             "authorization_ready",
             "$employeeFound\n        && $employeeEmailMatches\n        && $employeeActive\n        && $profileId > 0\n        && $tabFound",
             "'authorization_ready' => $authorizationReady",
+            "Profile::getProfileAccess($profileId, $tabId)",
             r"WHERE slug = \'",
         ):
             with self.subTest(marker=marker):
