@@ -328,6 +328,7 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
                 "row_count": 0,
                 "token_rejected_notice_visible": False,
                 "mutation_access_denied_notice_visible": False,
+                "invalid_url_notice_visible": False,
                 "empty_url_notice_visible": False,
                 "batch_save_failure_notice_visible": False,
                 "batch_created_notice_visible": False,
