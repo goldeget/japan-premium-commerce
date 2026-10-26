@@ -219,6 +219,7 @@ class Kuraneabusinessprofile extends Module
             'addresses',
             'authentication',
             'cart',
+            'contact',
             'discount',
             'getfile',
             'guest-tracking',

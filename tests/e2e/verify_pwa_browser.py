@@ -3075,12 +3075,13 @@ def verify_logged_out_private_routes(
     shop_url: str,
     set_substage: Callable[[str], None],
 ) -> None:
-    """Check private customer redirects and public order lookup without logging URLs."""
+    """Check private redirects and public lookup/contact pages without logging URLs."""
     route_cases = (
         ("addresses", "addresses", 302),
         ("history", "history", 302),
         ("order_detail", "order-detail", 302),
         ("guest_tracking", "guest-tracking", None),
+        ("contact_form", "contact", 200),
     )
     base = shop_url.rstrip("/") + "/"
     for route_stage, controller_name, expected_status in route_cases:
@@ -3094,7 +3095,7 @@ def verify_logged_out_private_routes(
             shop_url,
             f"logged-out {route_stage.replace('_', ' ')}",
             set_substage=lambda name: set_substage(f"request_{route_stage}_{name}"),
-            cache_policy_final_document=route_stage == "guest_tracking",
+            cache_policy_final_document=route_stage in {"guest_tracking", "contact_form"},
         )
         if expected_status is not None and observed.get("status") != expected_status:
             raise AssertionError(
@@ -3107,6 +3108,11 @@ def verify_logged_out_private_routes(
                 )
             set_substage("require_guest_tracking_form")
             wait_visible(driver, "#guestOrderTrackingForm")
+        elif route_stage == "contact_form":
+            if observed.get("status") != 200:
+                raise AssertionError("logged-out contact form did not render")
+            set_substage("require_contact_form")
+            wait_visible(driver, ".contact-form form")
         else:
             set_substage(f"require_{route_stage}_login_form")
             wait_visible(driver, "#login-form input[name='email']")

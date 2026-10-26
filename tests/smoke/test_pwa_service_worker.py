@@ -1845,9 +1845,13 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
 
         self.assertIn("cache_policy_final_document", navigate)
         self.assertIn("cache_policy_url = driver.current_url", navigate)
-        self.assertIn("cache_policy_final_document=route_stage == \"guest_tracking\"", guest_routes)
+        self.assertIn(
+            'cache_policy_final_document=route_stage in {"guest_tracking", "contact_form"}',
+            guest_routes,
+        )
         self.assertIn('observed.get("status") != 200', guest_routes)
         self.assertIn('wait_visible(driver, "#guestOrderTrackingForm")', guest_routes)
+        self.assertIn('wait_visible(driver, ".contact-form form")', guest_routes)
 
     def test_guest_tracking_cache_check_uses_final_same_origin_response(self) -> None:
         shop_url = "http://localhost:18080"

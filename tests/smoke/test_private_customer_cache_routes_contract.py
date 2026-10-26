@@ -14,6 +14,7 @@ REQUIRED_PRIVATE_ROUTES = {
     "addresses",
     "authentication",
     "cart",
+    "contact",
     "discount",
     "getfile",
     "guest-tracking",
@@ -123,11 +124,13 @@ class PrivateCustomerCacheRouteContractTests(unittest.TestCase):
             '("history", "history", 302)',
             '("order_detail", "order-detail", 302)',
             '("guest_tracking", "guest-tracking", None)',
+            '("contact_form", "contact", 200)',
         ):
             with self.subTest(route_case=route_case):
                 self.assertIn(route_case, route_check)
         self.assertIn('observed.get("status") != 200', route_check)
         self.assertIn('wait_visible(driver, "#guestOrderTrackingForm")', route_check)
+        self.assertIn('wait_visible(driver, ".contact-form form")', route_check)
         navigate_start = self.pwa.index("def navigate_private_document(")
         navigate_end = self.pwa.find("\ndef ", navigate_start + 1)
         navigate = self.pwa[navigate_start:navigate_end]
