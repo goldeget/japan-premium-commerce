@@ -124,10 +124,19 @@ class PrivateCustomerCacheRouteContractTests(unittest.TestCase):
             '("history", "history", 302)',
             '("order_detail", "order-detail", 302)',
             '("guest_tracking", "guest-tracking", None)',
-            '("contact_form", "contact", 200)',
         ):
             with self.subTest(route_case=route_case):
                 self.assertIn(route_case, route_check)
+        for contact_check in (
+            'route_fixture["urls_by_iso"][locale]',
+            'probe_contact_route(driver, query_url, shop_url)',
+            'probe_contact_route(driver, contact_url, shop_url)',
+            '"PWA_CONTACT_ROUTE_DIAGNOSTIC "',
+            'query_form_count={query_probe[\'form_count\']}',
+            'generated_page={generated_probe[\'page_class\']}',
+        ):
+            with self.subTest(contact_check=contact_check):
+                self.assertIn(contact_check, route_check)
         self.assertIn('observed.get("status") != 200', route_check)
         self.assertIn('wait_visible(driver, "#guestOrderTrackingForm")', route_check)
         self.assertIn('wait_visible(driver, ".contact-form form")', route_check)
@@ -136,7 +145,10 @@ class PrivateCustomerCacheRouteContractTests(unittest.TestCase):
         navigate = self.pwa[navigate_start:navigate_end]
         self.assertIn("assert_private_document_cache_headers", navigate)
         self.assertNotIn("current_url", route_check)
-        self.assertNotIn("print(", route_check)
+        self.assertIn("print(", route_check)
+        self.assertNotIn("https://", route_check)
+        self.assertNotIn("response.text", route_check)
+        self.assertNotIn("customer_id", route_check)
         self.assertIn('"logged-out account"', self.pwa)
         self.assertIn('account_response.get("status") != 302', self.pwa)
 
