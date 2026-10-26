@@ -32,7 +32,13 @@ assertCatalogTrue(
 );
 assertCatalogTrue(str_contains($controller, "'amazon_jp' => '아마존 일본'") && str_contains($controller, "'rakuten_ichiba' => '라쿠텐 이치바'"), 'Marketplace identifiers should display as Korean labels in the admin screen.');
 assertCatalogTrue(str_contains($controller, 'KURANEA_CATALOG_TEST_DEMO_APPROVAL') && str_contains($controller, 'confirm_test_demo'), 'Native registration should require a TEST/DEMO deployment gate and explicit confirmation.');
-assertCatalogTrue(str_contains($controller, 'hash_equals(') && str_contains($controller, "getValue('token'"), 'The controller should compare the submitted admin token against the PrestaShop-generated token.');
+assertCatalogTrue(
+    str_contains($controller, 'isValidImportMutationToken()')
+        && str_contains($controller, 'UserTokenManager::class')
+        && str_contains($controller, '->isTokenValid()')
+        && !str_contains($controller, 'hash_equals($expectedToken, $submittedToken)'),
+    'Import mutations should use PrestaShop CSRF validation rather than compare masked token strings.'
+);
 assertCatalogTrue(str_contains($storage, '$shopRoot') && str_contains($storage, 'KURANEA_CATALOG_QUEUE_DIR'), 'Queue storage should use an injected path outside the public shop root.');
 assertCatalogTrue(str_contains($compose, 'catalog_review_data:') && str_contains($compose, '/var/lib/kuranea/catalog-review') && str_contains($compose, 'KURANEA_CATALOG_QUEUE_DIR'), 'Compose should mount a named queue volume outside the PrestaShop webroot.');
 assertCatalogTrue(str_contains($dockerfile, 'modules/kuraneacatalog/'), 'The catalog module should be copied into the PrestaShop image.');
