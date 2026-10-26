@@ -1,0 +1,24 @@
+.ordenowa-push {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin-block: 1.5rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid var(--ordenowa-line, #d8e0e9);
+  border-radius: .5rem;
+  color: var(--ordenowa-ink, #14263c);
+  background: var(--bs-body-bg, #fff);
+}
+
+.ordenowa-push__title { font-size: 1.25rem; margin: 0 0 1rem; }
+.ordenowa-push__notice { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ordenowa-push__consent { display: flex; gap: .75rem; align-items: flex-start; }
+.ordenowa-push__consent input { flex: 0 0 auto; width: 1.125rem; height: 1.125rem; margin-top: .2rem; }
+.ordenowa-push__status { margin-block: 1rem; overflow-wrap: anywhere; }
+.ordenowa-push__actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+.ordenowa-push__actions button { min-height: 44px; white-space: normal; }
+.ordenowa-push button:disabled { opacity: .65; cursor: not-allowed; }
+.ordenowa-push :is(button, input):focus-visible { outline: 3px solid var(--ordenowa-blue, #0755b8); outline-offset: 3px; }
+
+@media (max-width: 575px) {
+  .ordenowa-push__actions button { width: 100%; }
+}

@@ -190,3 +190,71 @@ self.addEventListener('fetch', (event) => {
     })),
   );
 });
+
+const PUSH_BODY_BY_LOCALE = {
+  ja: {
+    order: 'ご注文に関するお知らせがあります。',
+    delivery: '配送に関するお知らせがあります。',
+    support: 'サポートに関するお知らせがあります。',
+  },
+  en: {
+    order: 'You have an order update.',
+    delivery: 'You have a delivery update.',
+    support: 'You have a support update.',
+  },
+  ko: {
+    order: '주문 관련 알림이 있습니다.',
+    delivery: '배송 관련 알림이 있습니다.',
+    support: '고객 지원 관련 알림이 있습니다.',
+  },
+};
+
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+
+  let payload;
+  try {
+    const bytes = event.data.arrayBuffer();
+    if (bytes.byteLength > 2048) return;
+    payload = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes));
+  } catch (_error) {
+    return;
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return;
+  const keys = Object.keys(payload);
+  if (keys.length !== 2 || !keys.includes('event') || !keys.includes('locale')) return;
+  if (!['order', 'delivery', 'support'].includes(payload.event)
+    || !['ja', 'en', 'ko'].includes(payload.locale)) return;
+
+  event.waitUntil(self.registration.showNotification('ORDENOWA', {
+    body: PUSH_BODY_BY_LOCALE[payload.locale][payload.event],
+    data: {route: 'my-account'},
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const destination = new URL('/index.php?controller=my-account', self.location.origin).href;
+    const windows = await self.clients.matchAll({type: 'window', includeUncontrolled: true});
+    for (const client of windows) {
+      try {
+        if (new URL(client.url).origin !== self.location.origin) continue;
+        if (client.url === destination) {
+          await client.focus();
+          return;
+        }
+        if (typeof client.navigate !== 'function') continue;
+        const navigated = await client.navigate(destination);
+        if (navigated && navigated.url === destination) {
+          await navigated.focus();
+          return;
+        }
+      } catch (_error) {
+        // A closed or unavailable window must not prevent opening the fixed account route.
+      }
+    }
+    const opened = await self.clients.openWindow(destination);
+    if (opened) await opened.focus();
+  })());
+});

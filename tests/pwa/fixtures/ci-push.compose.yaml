@@ -1,0 +1,13 @@
+# Synthetic API QA only. The exact run-scoped gate permits disposable account
+# registration; this flow never places an order or contacts a push sender.
+services:
+  prestashop:
+    environment:
+      CI: "true"
+      GITHUB_ACTIONS: "true"
+      GITHUB_RUN_ID: ${GITHUB_RUN_ID:?isolated push QA requires a GitHub run}
+      GITHUB_RUN_ATTEMPT: ${GITHUB_RUN_ATTEMPT:?isolated push QA requires a run attempt}
+      KURANEA_ISOLATED_CI: "1"
+      KURANEA_CI_PROJECT_NAME: ${CI_COMPOSE_PROJECT_NAME:?isolated push QA requires an exact project}
+      ORDENOWA_PUSH_TEST_MODE: "1"
+      ORDENOWA_PUSH_STORAGE_KEY: ${ORDENOWA_PUSH_STORAGE_KEY:?isolated push QA requires a throwaway storage key}

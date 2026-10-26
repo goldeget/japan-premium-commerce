@@ -3603,6 +3603,161 @@ def _assert_customer_account_chrome(
         raise AssertionError(f"{locale} customer account sidebar is not localized")
 
 
+def install_push_provider_guard(driver: webdriver.Chrome) -> None:
+    """Observe and block permission/provider calls before any account script runs."""
+    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": """
+      window.__ordenowaPushCalls = {permission: 0, subscribe: 0};
+      if ('Notification' in window) {
+        Notification.requestPermission = function () {
+          window.__ordenowaPushCalls.permission += 1;
+          return Promise.reject(new Error('Synthetic QA blocks browser permission'));
+        };
+      }
+      if ('PushManager' in window) {
+        PushManager.prototype.subscribe = function () {
+          window.__ordenowaPushCalls.subscribe += 1;
+          return Promise.reject(new Error('Synthetic QA blocks push providers'));
+        };
+      }
+    """})
+
+
+def verify_push_account_control(driver: webdriver.Chrome, locale: str, *, blank_notice: bool) -> None:
+    """Assert localized consent gating and zero implicit browser/provider calls."""
+    expected_labels = {"ja": "通知", "en": "Browser notifications", "ko": "알림"}
+    control = wait_visible(driver, "[data-ordenowa-push]")
+    metadata = driver.execute_script("""
+      const root = document.querySelector('[data-ordenowa-push]');
+      const notice = root.querySelector('[data-push-notice]');
+      const enable = root.querySelector('[data-push-enable]');
+      return {text: root.textContent, locale: root.dataset.locale,
+        blank: !notice || !notice.textContent.trim(),
+        disabled: Boolean(enable) && enable.disabled,
+        calls: window.__ordenowaPushCalls};
+    """)
+    if not isinstance(metadata, dict) or metadata.get("locale") != locale:
+        raise AssertionError("push account control locale is missing or incorrect")
+    if expected_labels[locale] not in str(metadata.get("text", "")):
+        raise AssertionError("push account control label is not localized")
+    if blank_notice and (metadata.get("blank") is not True or metadata.get("disabled") is not True):
+        raise AssertionError("blank seller notice did not disable notification consent")
+    if metadata.get("calls") != {"permission": 0, "subscribe": 0}:
+        raise AssertionError("account load attempted implicit permission or provider subscription")
+    if not control.is_displayed():
+        raise AssertionError("push account control is not visible")
+
+
+def push_api(driver: webdriver.Chrome, action: str, subscription: dict[str, object] | None = None) -> dict[str, object]:
+    """Use the real account token same-origin; return booleans/status only."""
+    result = driver.execute_async_script("""
+      const action = arguments[0], subscription = arguments[1], done = arguments[2];
+      (async () => {
+        const root = document.querySelector('[data-ordenowa-push]');
+        const url = new URL(action === 'status' ? root.dataset.statusUrl : root.dataset.subscriptionUrl, location.href);
+        if (url.origin !== location.origin) throw new Error('origin');
+        url.searchParams.set('action', action);
+        const options = {credentials: 'same-origin', cache: 'no-store', redirect: 'error'};
+        if (action !== 'status') {
+          options.method = 'POST';
+          options.headers = {'Content-Type': 'application/json'};
+          options.body = JSON.stringify(action === 'subscribe'
+            ? {token: root.dataset.token, consent: true, locale: root.dataset.locale, subscription}
+            : {token: root.dataset.token});
+        }
+        const response = await fetch(url, options);
+        const body = await response.json();
+        const directives = (response.headers.get('Cache-Control') || '').toLowerCase().split(',').map(x => x.trim().split('=')[0]);
+        const encoded = JSON.stringify(body);
+        const secretLeak = subscription && [subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth].some(x => encoded.includes(x));
+        return {status: response.status,
+          active: typeof body.active === 'boolean' ? body.active : null,
+          can_subscribe: typeof body.can_subscribe === 'boolean' ? body.can_subscribe : null,
+          safe_shape: Object.keys(body).every(key => ['active', 'can_subscribe', 'error', 'ok'].includes(key)),
+          status_shape: Object.keys(body).sort().join(',') === 'active,can_subscribe',
+          private: directives.includes('private') && directives.includes('no-store'),
+          secret_leak: Boolean(secretLeak)};
+      })().then(done).catch(() => done({failed: true}));
+    """, action, subscription)
+    if not isinstance(result, dict) or result.get("failed") or result.get("private") is not True or result.get("safe_shape") is not True or result.get("secret_leak"):
+        raise AssertionError("push API failed its private, redacted same-origin response contract")
+    if action == "status" and (
+        result.get("status_shape") is not True
+        or type(result.get("active")) is not bool
+        or type(result.get("can_subscribe")) is not bool
+    ):
+        raise AssertionError("push status response must contain only readiness/active booleans")
+    return result
+
+
+def assert_push_status(driver: webdriver.Chrome, *, active: bool, can_subscribe: bool) -> None:
+    status = push_api(driver, "status")
+    if status.get("status") != 200 or status.get("active") is not active or status.get("can_subscribe") is not can_subscribe:
+        raise AssertionError("push subscription readback did not match the expected owner state")
+
+
+def verify_synthetic_push_persistence(base_url: str, artifact_dir: Path) -> None:
+    """Exercise two disposable owners at the API boundary without a push provider."""
+    validate_isolated_ci_target(base_url)
+    if os.environ.get("ORDENOWA_PUSH_TEST_MODE") != "1":
+        raise ValueError("synthetic push persistence requires exact isolated test mode")
+    import base64
+
+    encode = lambda value: base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
+    subscription = {
+        "endpoint": "https://fcm.googleapis.com/fcm/send/ci-synthetic-" + uuid.uuid4().hex,
+        "keys": {"p256dh": encode(b"\x04" + bytes(range(64))), "auth": encode(bytes(range(16)))},
+    }
+    second_subscription = {**subscription, "endpoint": "https://fcm.googleapis.com/fcm/send/ci-synthetic-" + uuid.uuid4().hex}
+    drivers = []
+    try:
+        for owner in ("owner-a", "owner-b"):
+            options = Options()
+            for option in ("--headless=new", "--no-sandbox", "--disable-dev-shm-usage", "--window-size=1280,900", "--lang=en-US"):
+                options.add_argument(option)
+            driver = webdriver.Chrome(options=options)
+            drivers.append(driver)
+            driver.set_script_timeout(30)
+            install_push_provider_guard(driver)
+            driver.get(base_url + "/")
+            locale_home = select_storefront_locale(driver, base_url, "en")
+            unique = uuid.uuid4().hex
+            account, _ = create_session_customer(driver, base_url,
+                f"qa-push-{unique}@example.invalid", f"Push-CI-{unique}!", locale_home, "en")
+            driver.get(account)
+            verify_push_account_control(driver, "en", blank_notice=False)
+            assert_push_status(driver, active=False, can_subscribe=True)
+        first, second = drivers
+        for _ in range(2):
+            if not 200 <= push_api(first, "subscribe", subscription).get("status", 0) < 300:
+                raise AssertionError("same-owner synthetic subscribe was not idempotent")
+        assert_push_status(first, active=True, can_subscribe=True)
+        assert_push_status(second, active=False, can_subscribe=True)
+        cross_customer = push_api(second, "subscribe", subscription)
+        if not 400 <= cross_customer.get("status", 0) < 500:
+            raise AssertionError("synthetic endpoint could be transferred across customers")
+        assert_push_status(second, active=False, can_subscribe=True)
+        assert_push_status(first, active=True, can_subscribe=True)
+        if not 200 <= push_api(second, "subscribe", second_subscription).get("status", 0) < 300:
+            raise AssertionError("second customer synthetic subscription was not persisted")
+        for _ in range(2):
+            if not 200 <= push_api(first, "revoke").get("status", 0) < 300:
+                raise AssertionError("same-owner synthetic revoke was not idempotent")
+        assert_push_status(first, active=False, can_subscribe=True)
+        assert_push_status(second, active=True, can_subscribe=True)
+        if not 200 <= push_api(second, "revoke").get("status", 0) < 300:
+            raise AssertionError("second owner revoke failed")
+        assert_push_status(second, active=False, can_subscribe=True)
+        for index, driver in enumerate(drivers, 1):
+            verify_push_account_control(driver, "en", blank_notice=False)
+            driver.find_element(By.CSS_SELECTOR, "[data-ordenowa-push]").screenshot(
+                str(artifact_dir / f"pwa-push-owner-{index}.png"))
+            assert_empty_cache_storage(driver, "synthetic push API")
+        print("PASS: synthetic push API saved/revoked readback, idempotence, two-owner isolation and private/no-store responses; provider calls=0.")
+    finally:
+        for driver in drivers:
+            driver.quit()
+
+
 def run_viewport(
     base_url: str,
     artifact_dir: Path,
@@ -3646,6 +3801,7 @@ def run_viewport(
             {"headers": {"Accept-Language": locale_profile["accept_language"]}},
         )
         install_service_worker_registration_observer(driver)
+        install_push_provider_guard(driver)
         stage = "storefront_navigation"
         driver.get(base_url + "/")
         stage = "storefront_ready"
@@ -3769,6 +3925,11 @@ def run_viewport(
         _assert_customer_account_chrome(driver, locale, device)
         stage = "customer_account_privacy_link"
         _assert_localized_privacy_link(driver, locale)
+        stage = "customer_push_consent"
+        verify_push_account_control(driver, locale, blank_notice=True)
+        assert_push_status(driver, active=False, can_subscribe=False)
+        driver.find_element(By.CSS_SELECTOR, "[data-ordenowa-push]").screenshot(
+            str(artifact_dir / f"pwa-{label}-push-consent.png"))
         stage = "customer_account_screenshot"
         driver.save_screenshot(str(artifact_dir / f"pwa-{label}-account.png"))
         stage = "customer_logout"
@@ -4006,6 +4167,13 @@ def main() -> int:
     if parsed.scheme not in {"http", "https"}:
         print("FAIL: PWA QA requires HTTP or HTTPS on the isolated loopback origin.", file=sys.stderr)
         return 2
+    if os.environ.get("ORDENOWA_PUSH_QA_PHASE") == "synthetic":
+        try:
+            verify_synthetic_push_persistence(base_url, artifact_dir)
+        except Exception as error:
+            print(f"FAIL: synthetic push persistence ({type(error).__name__}).", file=sys.stderr)
+            return 1
+        return 0
     product_id_text = os.environ.get("CI_TEST_PRODUCT_ID", "")
     if re.fullmatch(r"[1-9][0-9]*", product_id_text) is None:
         print("FAIL: PWA QA requires the isolated synthetic product fixture.", file=sys.stderr)

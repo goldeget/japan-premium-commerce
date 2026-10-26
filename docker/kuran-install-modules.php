@@ -38,7 +38,7 @@ $context->cart = new Cart();
 $context->currency = kuraneaConfigureJapaneseCurrency($context);
 $kernel->getContainer()->get(ContextBuilderPreparer::class)->prepareFromLegacyContext($context);
 
-foreach (['kuraneapostcode', 'kuraneabackoffice', 'kuraneabusinessprofile', 'kuraneacatalog'] as $moduleName) {
+foreach (['kuraneapostcode', 'kuraneabackoffice', 'kuraneabusinessprofile', 'kuraneacatalog', 'kuraneapush'] as $moduleName) {
     $module = Module::getInstanceByName($moduleName);
     if (!$module) {
         throw new RuntimeException(sprintf('The bundled %s module could not be loaded.', $moduleName));
@@ -190,4 +190,4 @@ try {
     error_log('ORDENOWA_ROUTE_MIGRATION status=deferred reason=configuration_exception');
 }
 
-echo "Project modules: postcode=enabled, backoffice-ko=enabled, business-profile-ko=enabled, catalog-review=enabled\n";
+echo "Project modules: postcode=enabled, backoffice-ko=enabled, business-profile-ko=enabled, catalog-review=enabled, push-foundation=enabled\n";

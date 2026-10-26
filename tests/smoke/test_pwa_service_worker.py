@@ -51,7 +51,19 @@ const config = JSON.parse(process.argv[2]);
 const listeners = {};
 let fetchCalls = 0;
 let cacheOpenCalls = 0;
+const notifications = [];
+const clientActions = [];
 let activeConfig = config;
+const windowClient = client => ({
+  url: client.url,
+  type: 'window',
+  navigate: client.noNavigate ? undefined : async url => {
+    clientActions.push({action: 'navigate', url});
+    if (client.navigateFails) throw new Error('navigation failed');
+    return client.navigateNull ? null : windowClient({...client, url});
+  },
+  focus: async () => { clientActions.push({action: 'focus', url: client.url}); },
+});
 let currentTime = Number.isFinite(config.now) ? config.now : 0;
 let nextTimerId = 1;
 const timers = new Map();
@@ -77,7 +89,21 @@ const advanceBy = milliseconds => {
 const FakeDate = class extends Date { static now() { return currentTime; } };
 const self = {
   addEventListener: (name, callback) => { listeners[name] = callback; },
-  clients: {claim: async () => {}},
+  registration: {showNotification: async (title, options) => {
+    await Promise.resolve();
+    notifications.push({title, ...options});
+  }},
+  clients: {
+    claim: async () => {},
+    matchAll: async options => {
+      clientActions.push({action: 'matchAll', options});
+      return (activeConfig.windows || []).map(windowClient);
+    },
+    openWindow: async url => {
+      clientActions.push({action: 'openWindow', url});
+      return activeConfig.openNull ? null : windowClient({url});
+    },
+  },
   location: {origin: 'http://localhost:18080'},
   navigator: {language: 'en-US'},
   skipWaiting: async () => {},
@@ -88,9 +114,9 @@ const fetch = async (request, options) => {
   if (activeConfig.offline) throw new TypeError('offline');
   return new Response('online response', {status: 200});
 };
-const caches = {open: async () => { cacheOpenCalls += 1; throw new Error('cache must not be opened'); }};
+const caches = new Proxy({}, {get: () => { cacheOpenCalls += 1; throw new Error('cache must not be used'); }});
 vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {
-  self, fetch, Response, caches, URL, Date: FakeDate, setTimeout, clearTimeout,
+  self, fetch, Response, caches, URL, TextEncoder, TextDecoder, Date: FakeDate, setTimeout, clearTimeout,
 });
 (async () => {
   const eventConfigs = Array.isArray(config.events) ? config.events : [config];
@@ -112,7 +138,25 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {
       referrerPolicy: 'strict-origin-when-cross-origin',
       headers: {get: name => name === 'Accept-Language' ? activeConfig.language : null},
     };
-    listeners.fetch({
+    const lifetimePromises = [];
+    const kind = activeConfig.kind || 'fetch';
+    const listener = listeners[kind];
+    if (kind === 'push' || kind === 'notificationclick') {
+      const raw = activeConfig.payload;
+      const data = raw === undefined ? null : {
+        text: () => raw,
+        arrayBuffer: () => Uint8Array.from(activeConfig.bytes || Buffer.from(raw, 'utf8')).buffer,
+      };
+      if (listener) listener({
+        data,
+        notification: {
+          data: activeConfig.notificationData || {},
+          close: () => { clientActions.push({action: 'close'}); },
+        },
+        waitUntil: promise => { waitUntilCalls += 1; lifetimePromises.push(promise); },
+      });
+      await Promise.all(lifetimePromises);
+    } else listeners.fetch({
       request,
       clientId: activeConfig.clientId || '',
       resultingClientId: activeConfig.resultingClientId || '',
@@ -126,6 +170,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {
       body = await response.text();
     }
     events.push({
+      listenerRegistered: Boolean(listener),
       intercepted: responsePromise !== null,
       status: response?.status ?? null,
       responseType: response?.type ?? 'default',
@@ -137,7 +182,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {
       waitUntilCalls,
     });
   }
-  process.stdout.write(JSON.stringify({...events[0], events, fetchCalls, cacheOpenCalls}));
+  process.stdout.write(JSON.stringify({...events[0], events, fetchCalls, cacheOpenCalls, notifications, clientActions}));
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
 
@@ -163,6 +208,88 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
             text=True,
         )
         return json.loads(result.stdout)
+
+    def test_push_uses_fixed_generic_localized_copy_for_every_allowed_pair(self) -> None:
+        bodies = {
+            "ja": {"order": "ご注文に関するお知らせがあります。", "delivery": "配送に関するお知らせがあります。", "support": "サポートに関するお知らせがあります。"},
+            "en": {"order": "You have an order update.", "delivery": "You have a delivery update.", "support": "You have a support update."},
+            "ko": {"order": "주문 관련 알림이 있습니다.", "delivery": "배송 관련 알림이 있습니다.", "support": "고객 지원 관련 알림이 있습니다."},
+        }
+        for locale, messages in bodies.items():
+            for event, body in messages.items():
+                with self.subTest(locale=locale, event=event):
+                    result = self.run_worker(kind="push", payload=json.dumps({"event": event, "locale": locale}))
+                    self.assertTrue(result["listenerRegistered"])
+                    self.assertEqual([{"title": "ORDENOWA", "body": body, "data": {"route": "my-account"}}], result["notifications"])
+                    self.assertEqual(1, result["waitUntilCalls"])
+                    self.assertEqual(0, result["fetchCalls"])
+                    self.assertEqual(0, result["cacheOpenCalls"])
+
+    def test_push_rejects_malformed_unknown_and_personal_payloads(self) -> None:
+        payloads = [None, "", "not json", "null", "[]", "42", '"order"', "{}",
+                    '{"event":"order"}', '{"locale":"en"}',
+                    '{"event":"other","locale":"en"}', '{"event":"order","locale":"en-US"}',
+                    '{"event":["order"],"locale":"en"}', '{"event":"order","locale":null}']
+        for key in ("name", "orderId", "products", "address", "payment", "supportText", "tracking", "url", "__proto__"):
+            payloads.append(json.dumps({"event": "order", "locale": "en", key: "private-sentinel https://evil.invalid/"}))
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                result = self.run_worker(kind="push", **({"payload": payload} if payload is not None else {}))
+                self.assertTrue(result["listenerRegistered"])
+                self.assertEqual([], result["notifications"])
+                self.assertEqual(0, result["fetchCalls"])
+                self.assertEqual(0, result["cacheOpenCalls"])
+
+    def test_push_limits_utf8_bytes_before_json_parsing(self) -> None:
+        payload = '{"event":"order","locale":"en"}'
+        for padding, accepted in ((" " * (2048 - len(payload)), True), (" " * (2049 - len(payload)), False), ("\u3000" * 700, False)):
+            with self.subTest(accepted=accepted, padding=len(padding)):
+                result = self.run_worker(kind="push", payload=payload + padding)
+                self.assertTrue(result["listenerRegistered"])
+                self.assertEqual(int(accepted), len(result["notifications"]))
+                self.assertEqual(0, result["fetchCalls"])
+                self.assertEqual(0, result["cacheOpenCalls"])
+        result = self.run_worker(kind="push", payload=payload, bytes=list(payload.encode()) + [255])
+        self.assertEqual([], result["notifications"], "invalid UTF-8 must be rejected")
+
+    def test_notification_click_opens_only_fixed_same_origin_account_and_focuses(self) -> None:
+        for data in ({}, {"route": "my-account"}, {"url": "https://evil.invalid/private", "route": "//evil.invalid"}):
+            with self.subTest(data=data):
+                result = self.run_worker(kind="notificationclick", notificationData=data,
+                                         windows=[{"url": "https://evil.invalid/account"}])
+                self.assertTrue(result["listenerRegistered"])
+                actions = result["clientActions"]
+                self.assertEqual({"action": "close"}, actions[0])
+                self.assertEqual([{"action": "openWindow", "url": "http://localhost:18080/index.php?controller=my-account"}], [a for a in actions if a["action"] == "openWindow"])
+                self.assertEqual("focus", actions[-1]["action"])
+                self.assertEqual("http://localhost:18080/index.php?controller=my-account", actions[-1]["url"])
+                self.assertEqual(1, result["waitUntilCalls"])
+                self.assertEqual(0, result["fetchCalls"])
+                self.assertEqual(0, result["cacheOpenCalls"])
+
+    def test_notification_click_reuses_same_origin_window_by_navigating_and_focusing(self) -> None:
+        target = "http://localhost:18080/index.php?controller=my-account"
+        for url in ("http://localhost:18080/ja/category", target):
+            with self.subTest(url=url):
+                result = self.run_worker(kind="notificationclick", windows=[{"url": url}])
+                self.assertTrue(result["listenerRegistered"])
+                actions = result["clientActions"]
+                self.assertFalse(any(a["action"] == "openWindow" for a in actions))
+                self.assertEqual({"action": "focus", "url": target}, actions[-1])
+                self.assertTrue(url == target or {"action": "navigate", "url": target} in actions)
+                self.assertEqual(0, result["fetchCalls"])
+                self.assertEqual(0, result["cacheOpenCalls"])
+
+    def test_notification_click_falls_back_when_same_origin_window_cannot_navigate(self) -> None:
+        for options in ({"noNavigate": True}, {"navigateFails": True}, {"navigateNull": True}):
+            with self.subTest(options=options):
+                result = self.run_worker(kind="notificationclick", windows=[{"url": "http://localhost:18080/ja/", **options}])
+                self.assertTrue(result["listenerRegistered"])
+                self.assertIn({"action": "openWindow", "url": "http://localhost:18080/index.php?controller=my-account"}, result["clientActions"])
+                self.assertEqual("focus", result["clientActions"][-1]["action"])
+        result = self.run_worker(kind="notificationclick", openNull=True)
+        self.assertTrue(result["listenerRegistered"])
+        self.assertEqual("openWindow", result["clientActions"][-1]["action"])
 
     def test_offline_navigation_returns_localized_no_store_fallback(self) -> None:
         result = self.run_worker(

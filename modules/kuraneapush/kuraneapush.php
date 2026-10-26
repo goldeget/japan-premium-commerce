@@ -1,0 +1,136 @@
+<?php
+
+declare(strict_types=1);
+if (!defined('_PS_VERSION_')) {
+    exit;
+}
+require_once __DIR__ . '/autoload.php';
+use Kuranea\Push\Domain\Readiness;
+use Kuranea\Push\Infrastructure\PushSettings;
+use Kuranea\Push\Infrastructure\SubscriptionCipher;
+use Kuranea\Push\Infrastructure\SubscriptionRepository;
+
+class Kuraneapush extends Module
+{
+    public function __construct()
+    {
+        $this->name = 'kuraneapush';
+        $this->tab = 'administration';
+        $this->version = '1.0.0';
+        $this->author = 'ORDENOWA';
+        $this->need_instance = 0;
+        $this->bootstrap = true;
+        $this->ps_versions_compliancy = ['min' => '9.2.0', 'max' => '9.99.99'];
+        parent::__construct();
+        $this->displayName = '고객 알림 설정';
+        $this->description = '고객 알림 동의와 구독을 관리합니다. 실제 발송은 준비되지 않았습니다.';
+    }
+
+    public function install(): bool
+    {
+        if (!parent::install() || !(new SubscriptionRepository())->install()) {
+            return false;
+        }
+        foreach (Shop::getShops(false, null, true) as $shop) {
+            if (!PushSettings::initialize((int) $shop)) {
+                return false;
+            }
+        }
+        return $this->installTab() && $this->registerHook([
+            'displayCustomerAccount', 'actionObjectCustomerDeleteAfter',
+        ]);
+    }
+
+    public function uninstall(): bool
+    {
+        $tab = (int) Tab::getIdFromClassName('AdminKuraneaPush');
+        if ($tab > 0 && !(new Tab($tab))->delete()) {
+            return false;
+        }
+        // Retain encrypted subscriptions and settings across disable/uninstall/reinstall.
+        return parent::uninstall();
+    }
+
+    public function getContent(): string
+    {
+        return '<div class="panel"><h3>고객 알림 설정</h3><a class="btn btn-primary" href="'
+            . htmlspecialchars((string) $this->context->link->getAdminLink('AdminKuraneaPush'), ENT_QUOTES, 'UTF-8')
+            . '">설정 열기</a></div>';
+    }
+
+    public function hookDisplayCustomerAccount(array $params = []): string
+    {
+        $customer = $this->context->customer;
+        if (!$this->active || !$customer || !$customer->isLogged() || (bool) $customer->is_guest) {
+            return '';
+        }
+        $shop = (int) ($this->context->shop->id ?? 0);
+        if ($shop < 1 || (int) $customer->id < 1) {
+            return '';
+        }
+        $locale = (string) ($this->context->language->iso_code ?? 'ja');
+        $locale = in_array($locale, PushSettings::LOCALES, true) ? $locale : 'ja';
+        $notice = trim(PushSettings::notice($shop, $locale));
+        $keyAvailable = false;
+        try {
+            new SubscriptionCipher();
+            $keyAvailable = true;
+        } catch (\Throwable $e) {
+        }
+        $active = false;
+        try {
+            $active = (new SubscriptionRepository())->active($shop, (int) $customer->id);
+        } catch (\Throwable $e) {
+            $keyAvailable = false;
+        }
+        $url = (string) $this->context->link->getModuleLink($this->name, 'subscription');
+        $this->context->smarty->assign([
+            'ordenowa_push_status_url' => $url . (str_contains($url, '?') ? '&' : '?') . 'action=status',
+            'ordenowa_push_subscription_url' => $url,
+            'ordenowa_push_token' => (string) Tools::getToken('kuraneapush', $this->context),
+            'ordenowa_push_locale' => $locale,
+            'ordenowa_push_consent_notice' => $notice,
+            'ordenowa_push_can_subscribe' => Readiness::canSubscribe(null, $notice, $keyAvailable),
+            'ordenowa_push_active' => $active,
+            'ordenowa_push_application_server_key' => '',
+        ]);
+        $this->context->controller->registerJavascript('module-kuraneapush-account',
+            'modules/' . $this->name . '/views/js/account-push.js', ['position' => 'bottom', 'priority' => 150]);
+        $this->context->controller->registerStylesheet('module-kuraneapush-account',
+            'modules/' . $this->name . '/views/css/account-push.css', ['media' => 'all', 'priority' => 150]);
+        return $this->display(__FILE__, 'views/templates/hook/account_push.tpl');
+    }
+
+    public function hookActionObjectCustomerDeleteAfter(array $params): void
+    {
+        $customer = $params['object'] ?? null;
+        if (!is_object($customer) || !($customer instanceof Customer) || (int) $customer->id < 1) {
+            return;
+        }
+        (new SubscriptionRepository())->deleteCustomer((int) $customer->id, Shop::getShops(false, null, true));
+    }
+
+    private function installTab(): bool
+    {
+        $parent = 0;
+        foreach (['ShopParameters', 'AdminParentShopParameters', 'AdminParentPreferences'] as $name) {
+            $parent = (int) Tab::getIdFromClassName($name);
+            if ($parent > 0) {
+                break;
+            }
+        }
+        if ($parent < 1) {
+            return false;
+        }
+        $id = (int) Tab::getIdFromClassName('AdminKuraneaPush');
+        $tab = $id > 0 ? new Tab($id) : new Tab();
+        $tab->active = 1;
+        $tab->class_name = 'AdminKuraneaPush';
+        $tab->module = $this->name;
+        $tab->id_parent = $parent;
+        foreach (Language::getLanguages(false) as $language) {
+            $tab->name[(int) $language['id_lang']] = '고객 알림 설정';
+        }
+        return $id > 0 ? (bool) $tab->update() : (bool) $tab->add();
+    }
+}

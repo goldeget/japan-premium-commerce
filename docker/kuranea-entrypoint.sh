@@ -43,6 +43,7 @@ sync_module kuraneapostcode
 sync_module kuraneabackoffice
 sync_module kuraneabusinessprofile
 sync_module kuraneacatalog
+sync_module kuraneapush
 
 php /usr/local/bin/sync-ordenowa-brand-assets.php
 
