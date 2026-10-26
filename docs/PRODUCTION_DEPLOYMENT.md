@@ -85,7 +85,7 @@
 4. **복구 검증:** DB schema 및 핵심 shop/config/order counts, 무결성 manifest와 file metadata/content, queue schema 및 fixture references를 비교한다. 승인된 shop domain의 local/isolated URL에서 storefront와 관리자 로그인 페이지를 확인하고, 권한이 있는 관리자 세션에서 sample order/address projection을 read-only로 대조한다. 외부 발신 mail이나 결제 provider를 호출하지 않는다.
 5. **재시작·인수:** 복구 target을 재시작하고 같은 핵심 read-only 검사를 반복한다. snapshot set, release/migration pairing, restore operator, 검증 결과, 예외와 삭제/보존 기한을 기록한 뒤 restore 승인자가 수락/거부한다.
 
-검증 중 file/DB/queue mismatch가 하나라도 남거나 snapshot set/release/schema pairing을 확인할 수 없으면 복구본을 production으로 승격하지 않는다. CI run [#40188721058](https://github.com/goldeget/japan-premium-commerce/actions/runs/40188721058)의 Step62는 격리 DB·PrestaShop 파일·catalog queue restore/restart에 성공했고 Step72에서 해당 run 전용 리소스를 정리했다. 전체 QA는 관리자 Dashboard 경로 검사 실패로 aggregate FAIL이지만 backup/restore outcome은 성공했다. 이는 synthetic single-run data와 disposable volumes만 검증하며, 운영 암호화 저장소·보존 정책·실제 restore owner를 검증하지 않았다.
+검증 중 file/DB/queue mismatch가 하나라도 남거나 snapshot set/release/schema pairing을 확인할 수 없으면 복구본을 production으로 승격하지 않는다. 최신 CI run [#40281533046](https://github.com/goldeget/japan-premium-commerce/actions/runs/40281533046)의 Step 80은 격리 DB·PrestaShop 파일·catalog queue restore/restart를 통과했고, run aggregate도 SUCCESS로 종료됐다. 이는 synthetic single-run data와 disposable volumes만 검증하며, 운영 암호화 저장소·보존 정책·실제 restore owner를 검증하지 않았다.
 
 운영 복구 runbook을 확정하려면 백업 저장 위치와 접근권한, 보존기간, 암호화, RPO/RTO, 백업 담당자, 복원 승인과 격리 복원 대상이 먼저 정해져야 한다. 이 항목들이 없으므로 실제 운영 DB 또는 named volume에 백업·복원을 실행하지 않는다.
 

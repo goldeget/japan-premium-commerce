@@ -1,12 +1,26 @@
 # ORDENOWA AI Browser QA Handoff
 
-## 최신 pending manager edit 화면 (2026-10-26 05:45 UTC)
+## 최신 자동 QA: same-order synthetic tracking (2026-10-26 06:58 UTC)
 
-- Source: work SHA d49fa7d2e5b7714fee8f31bdd1558f54bdb2a6d7. Isolated full run [#40275686536](https://github.com/goldeget/japan-premium-commerce/actions/runs/40275686536) is in progress; artifact ID is not available yet.
-- 기존 e1cd6d0 / #40272141646 / artifact 12628194683는 batch/rejection/options/draft/reimport의 합성 증거이며, 독립 검수에서 draft/reimport 캡처를 실제 열어 확인했다. 이 기준점에는 manager edit save click이 없었다.
-- 새 flow는 승인 draft의 EN/KO 텍스트, 자체 판매가, 두 옵션 재고를 저장하고 fresh GET, 동일 source 재수집 후 같은 ID·수정 필드·이미지/옵션 identity·inactive flags를 검사한다. Step 46 log/JSON은 browser·DB assertion 근거이고, 캡처는 화면만 증명한다.
-- 새 artifact가 생기면 catalog-import-manager-edited.png를 우선 열어 저장 후 값과 비활성 안내를 확인한다. 이 화면은 synthetic product이며 screenshot-only visual evidence다. 실제 source 수집, same-product storefront publication, 운영 SKU fidelity 또는 실기기 PASS로 확대하지 않는다.
+- Source/work SHA: 229dd22f2b90cae8a4425e5a32578bf2141f030b. Full isolated run [#40281533046](https://github.com/goldeget/japan-premium-commerce/actions/runs/40281533046) completed SUCCESS; actual Step 73 `SHIPPING_FREE_TRACKING_PERSISTENCE_OUTCOME=success`, Step 88 aggregate, postal checks and cleanup succeeded. Independent QA opened artifact [12632622676](https://github.com/goldeget/japan-premium-commerce/actions/runs/40281533046/artifacts/12632622676). Its admin/customer screenshots and JSON/DB confirm the same synthetic unpaid order 10, reference `XWMNYZUWG`, OrderCarrier 10 and tracking value; amount ¥1,100, shipping ¥0, order state unchanged and paid amount 0. This is tracking-number assignment/readback only: no carrier destination, dispatch, scan or external link was configured.
+- The tracked scenario uses a synthetic unpaid Tokyo order. The admin browser writes a tracking value through the native AdminOrders modal, reloads the same order, then signs in as the customer and reads the same order detail. The read-only PHP verifier compares native Order/OrderCarrier IDs and tracking value; it checks unchanged state/JPY total, paid amount 0, ¥0 shipping, no carrier tracking destination, and no physical dispatch/scan.
+- The artifact files are shipping-free-order-tracking-admin.png, shipping-free-order-tracking-customer.png, shipping-free-order-tracking-persistence-verified.json, and shipping-free-order-tracking-persistence.log. The tracking row itself is below the customer capture fold; automation/DB readback confirms it while screenshot review does not.
+- No live QA hostname or physical iOS/Android device is available. Actions loopback is run-scoped and removed at cleanup. No physical shipment, carrier scan, external tracking URL or payment occurs.
 
+## 새 일본어 고객 주문 상세 번역 검수
+
+- #40281533046 artifact 12632622676의 `shipping-free-order-tracking-customer.png`에서 `Order Reference … placed on`, `Carrier`, `Payment method`, `Shipment tracking details`가 영어로 보였다. JA 주문 상세 한 화면의 증거이며 EN/KO나 전체 고객 locale 범위로 확대하지 않는다.
+- Source: pinned parent `themes/hummingbird/templates/customer/order-detail.tpl` uses `Shop.Theme.Customeraccount` and `Shop.Theme.Catalog`; `_partials/order-shipments.tpl` uses `Shop.Theme.Customeraccount`. Child locale assets belong under `themes/kuranea/translations/ja-JP/`; the current Customeraccount XLIFF has only sidebar entries, and no Catalog JA overlay exists.
+- Next: add only these project-visible JA translations, assert the page locale and labels in the existing same-customer order detail browser flow, and capture a viewport/scroll state that includes the tracking row. Do not translate dynamic order/carrier values as static labels or claim a real carrier destination.
+- The same admin artifact showed untranslated core navigation/payment items (`Carriers`, `Boost sales`, `Méthode de paiement`, Welcome/Care Center); retain these under ADMIN-KO-001 coverage inventory.
+
+## 완료된 합성 상품 관리자 편집 화면
+
+- Source code SHA e085be59a0f9f061769fe7ab3cb79e025042b960; full isolated run [#40277922728](https://github.com/goldeget/japan-premium-commerce/actions/runs/40277922728) SUCCESS; Step 46 manager edit save, fresh readback and edit-preserving reimport and Step 87 aggregate succeeded.
+- Artifact [12631716741](https://github.com/goldeget/japan-premium-commerce/actions/runs/40277922728/artifacts/12631716741) was downloaded and opened by independent QA. catalog-import-manager-edited.png at 1440×1057 visibly shows synthetic EN/KO names, JPY 6,780, product ID 29 and inactive notice. Image/options/Korean description are below fold and not visual-PASS.
+- JSON/DB readback on the same ID confirms save confirmation, fresh GET, manager edits preserved on same-source reimport, image identity, two combinations, base stock 0 and option stocks 5/5; DB flags remain inactive, hidden and non-orderable. This closes CAT-004 synthetic edit/readback acceptance, not real source compatibility or storefront publication.
+- GAP-002 remains unverified: this draft was not activated or checked as customer-visible. Keep the seller/publication gate.
+- Do not repeat the closed same-ID edit/reimport flow unless changed code affects it.
 
 ## 직전 완료 합성 catalog 관리자 브라우저 증거 (2026-10-26 05:20 UTC)
 
@@ -99,7 +113,7 @@ Work-mode GPT가 위 artifact를 다운로드해 실제 PNG를 열어 확인했�
 실제 interactive QA가 꼭 필요한 미검증 범위만 실행할 수 있도록 다음 환경을 한 번에 제공한다. 이는 현재 존재한다고 확인된 값이 아니다.
 
 - 재사용 시간대가 명시된, Work-mode GPT에서 열 수 있는 승인된 격리 QA HTTPS URL
-- `bb26f06` 코드와 일치하는 source/build SHA 표시 및 run 종료 뒤에도 정해진 검수 시간 동안 유지되는 환경
+- 229dd22 코드와 일치하는 source/build SHA 표시 및 run 종료 뒤에도 정해진 검수 시간 동안 유지되는 환경
 - 테스트 전용 고객·관리자 계정과 비밀번호 재설정 메일을 받을 test inbox; secret은 승인된 비밀 저장 경로로만 전달
 - fixture 이름/식별을 위한 run ID, 고객 locale, synthetic SKU/variant/coupon/order/RMA ID와 초기 상태. 실제 개인정보 대신 `example.invalid` synthetic identities 사용
 - 지원이 필요한 경우 승인된 Chromium/Safari/iOS/Android 또는 원격 기기의 모델·OS·브라우저 버전 기록

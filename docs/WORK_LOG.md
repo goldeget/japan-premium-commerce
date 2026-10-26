@@ -1,5 +1,16 @@
 # ORDENOWA 작업 기록
 
+## 2026-10-26 — 관리자 Welcome 번역 및 합성 주문 tracking QA
+
+- 시작 HEAD와 origin/work는 4011819001d941d92d15a971c12d8ef35c446381로 확인했고 main은 ee02a3657448d563508687614a246e05ac61eecd였다. 사용자 미추적 superpowers plan/spec/pycache를 수정·stage하지 않았다.
+- b9ad038에서 Welcome back %name%의 한국어 문구를 overlay하고 placeholder 보존을 확인했다. 새 테스트 RED→GREEN 및 admin-locale 31 tests PASS 후 별도 커밋했다.
+- 229dd22에서 기존 AdminOrders native shipping modal로 합성 미결제 주문 tracking 번호를 저장하고 같은 Admin order fresh GET과 customer order detail을 연결하는 browser flow를 추가했다. Read-only native Order/OrderCarrier verifier는 같은 order/tracking, state/JPY total, paid=0 및 무료배송을 대조한다. UI/DB 결과에는 raw URL/token을 남기지 않고, 물리 출고나 carrier scan을 수행하지 않는다.
+- 자유배송/workflow/artifact/backup 영향 tests 158개, Python syntax, workflow YAML, affected shell/embedded Python, git diff --check PASS 후 work로 push했고 origin/work가 229dd22f2b90cae8a4425e5a32578bf2141f030b와 일치함을 확인했다. main 불변.
+- 자동 전체 격리 run [#40281533046](https://github.com/goldeget/japan-premium-commerce/actions/runs/40281533046)은 SHA 229dd22에서 06:58 UTC SUCCESS로 종료했다. 실제 Step 73 tracking outcome, Step 88 aggregate, postal import/verification, run-owned resource cleanup이 성공했다. Independent QA artifact 12632622676의 같은 주문 캡처/JSON 검수도 기록했다. 고객 JA 주문 상세의 영어 고정 라벨은 새 locale 결함으로 분리했다.
+- 직전 full run [#40277922728](https://github.com/goldeget/japan-premium-commerce/actions/runs/40277922728), source e085be5 SUCCESS와 independent artifact 12631716741의 manager-edit 시각 검수를 재사용한다. CAT-004 synthetic same-ID edit/save/fresh GET/reimport acceptance 완료; product inactive/hidden/non-orderable다. GAP-002 public storefront path는 미검증이다.
+- 현재 별도 local 미커밋 수정은 catalog batch URL validation에서 영어 예외/URL을 노출하지 않고 고정 한국어 오류를 제공한다. Unsupported, empty, >10 URL cases의 회귀 확인과 새 screenshot/diagnostic classification을 추가했으며 120 focused contract tests와 AST/diff 검사가 통과했다. PHP CLI는 없으므로 runtime proof는 해당 파일을 포함하는 다음 Actions에 맡긴다. 이 수정은 tracking run #40281533046에 포함되지 않았다.
+- 새 Japanese locale correction은 pinned Hummingbird의 customer order-detail labels `Order Reference`, `Carrier`, `Payment method`, `Shipment tracking details`를 child-theme translation overlay에서 처리한다. 별도 task로 순차 구현하고 같은 합성 주문 화면의 locale/translation/scroll/capture를 검증한다. 운영 seller, 상품/권리, carrier contract, 실제 dispatch/payment, production environment와 실기기 결과는 별도 자료·환경 대기다.
+
 ## 2026-10-26 — 합성 catalog 승인 후 manager 경로 및 readback 검증
 
 - 시작 시 local `work` HEAD와 원격 `origin/work`가 `40edaa5ae10369b0937108c3b81dd1bc0239dcc9`로 일치했다. main은 `ee02a3657448d563508687614a246e05ac61eecd`다. 사용자 미추적 문서/파일과 pycache는 보존했다.

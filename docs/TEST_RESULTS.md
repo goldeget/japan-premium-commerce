@@ -1,5 +1,17 @@
 # ORDENOWA 테스트 결과
 
+## 2026-10-26 — 한국어 관리자 Welcome 및 동일 주문 추적 검증 추가
+
+- 현재 source/work SHA: 229dd22f2b90cae8a4425e5a32578bf2141f030b; main: ee02a3657448d563508687614a246e05ac61eecd. 최신 origin/work와 로컬 HEAD를 대조했다.
+- commit b9ad038은 관리자 Welcome back %name%를 한국어 %name%님, 환영합니다로 overlay하며 placeholder를 보존한다. 회귀 검사는 변경 전 실패했고 변경 후 admin locale 31 tests가 통과했다.
+- commit 229dd22는 격리 무결제 Tokyo 주문 하나에 네이티브 관리자 tracking 저장→fresh Admin GET→같은 고객 주문 상세 readback을 추가했다. 별도 PHP 검증은 native Order/OrderCarrier의 같은 order/carrier/tracking ID, 미결제/paid=0, 상태·JPY 합계 보존, ¥0 배송, dispatch/scan 없음을 읽는다. 임의 외부 tracking URL을 만들지 않는다.
+- 변경 영향 검증: focused free-shipping/workflow/artifact/backup tests 158개 PASS, Python compile, workflow YAML, 변경된 shell/embedded Python parse와 git diff --check PASS. Codex host에는 PHP CLI/격리 shop이 없어 native browser/runtime 검증은 Actions에 맡겼다.
+- 자동 전체 격리 QA [#40281533046](https://github.com/goldeget/japan-premium-commerce/actions/runs/40281533046), source SHA 229dd22, 06:58 UTC `completed SUCCESS`; actual Step 73 tracking outcome, Step 88 aggregate, postal verification and cleanup succeeded. Same SHA parser [#40281533000](https://github.com/goldeget/japan-premium-commerce/actions/runs/40281533000) and business-profile [#40281532995](https://github.com/goldeget/japan-premium-commerce/actions/runs/40281532995) also succeeded.
+- Artifact [12632622676](https://github.com/goldeget/japan-premium-commerce/actions/runs/40281533046/artifacts/12632622676) was opened by independent QA. Readback confirmed synthetic order 10/reference XWMNYZUWG, OrderCarrier 10, tracking value, amount ¥1,100, shipping ¥0, unpaid state unchanged, and no carrier destination. Captures show the admin/customer pages, but the customer tracking row itself is below fold. Japanese system labels remain in English and are now LOCALE-002; the capture is not click or all-locale visual QA.
+- 이전 full QA [#40277922728](https://github.com/goldeget/japan-premium-commerce/actions/runs/40277922728), source e085be5, SUCCESS를 보존한다. Step 46/87의 CAT-004 synthetic edit/save/fresh readback/reimport 성공 및 independent visual review artifact 12631716741은 완료 근거다. Importer는 inactive/hidden/non-orderable 상태를 보존했다; GAP-002 storefront 공개는 미검증이다.
+- 운영 DB/deploy/payment/trade/dispatch 및 기존 named volumes를 변경하지 않았다. 실기기·실제 판매자료·운영환경 결과는 CI synthetic PASS에 포함하지 않는다.
+- 후속 Korean catalog batch URL error handling remains a separate uncommitted local patch: exact Korean validation message and no URL/exception reflection, with safe diagnostics and artifact coverage. Focused catalog admin/browser/artifact/fresh-install contracts (120 tests), AST and diff check passed. PHP CLI is unavailable locally; the new controller and browser behavior await the next automatic isolated run.
+
 ## 2026-10-26 — imported draft 저장 확인의 DOM stale 경쟁 수정
 
 - 시작 원격은 `422f73120aeeb33327c342a1b6994897036dbd6f`였고 work만 수정했다. `d49fa7d2e5b7714fee8f31bdd1558f54bdb2a6d7`의 전체 QA [#40275686536](https://github.com/goldeget/japan-premium-commerce/actions/runs/40275686536)은 `catalog_import_browser_qa=failure` 하나로 종료됐다. 안전 진단은 `manager_edit_save_confirmation`, `StaleElementReferenceException`, save click 반환, HTTP 200, 동일 hidden product ID를 보였다. 저장 성공/실패 및 fresh readback은 입증되지 않았다.
