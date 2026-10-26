@@ -36,7 +36,6 @@ try:
     from selenium.common.exceptions import TimeoutException
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.common.by import By
-    from selenium.webdriver.common.keys import Keys
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.select import Select
     from selenium.webdriver.support.ui import WebDriverWait
@@ -45,7 +44,6 @@ except ModuleNotFoundError:  # Pure contract helpers remain importable without l
     TimeoutException = TimeoutError
     Options = None
     By = None
-    Keys = None
     EC = None
     Select = None
     WebDriverWait = None
@@ -84,8 +82,8 @@ SAFE_EXCEPTION_TYPES = {
 }
 SAFE_BROWSER_SUBSTAGES = {
     "not_applicable", "contact_form_navigation", "order_select_lookup", "order_option_scan",
-    "order_owner_assertion", "order_select_scroll", "order_select_hit_test", "order_select_click",
-    "order_select_home_key", "order_select_down_key", "order_select_enter_key", "order_select_readback",
+    "order_owner_assertion", "order_select_scroll", "order_select_hit_test",
+    "order_select_native_option", "order_select_readback",
     "contact_field_lookup", "contact_id_readback", "attachment_control_lookup", "attachment_send_keys",
     "accepted_attachment_fixture_validation", "accepted_attachment_file_readback", "message_field_lookup",
     "message_send_keys", "submit_control_lookup", "submit_control_scroll", "submit_control_hit_test",
@@ -463,7 +461,7 @@ def center_native_control(
 def select_contact_order(
     driver, select_element, value: str, *, diagnostic_result: dict[str, Any] | None = None
 ) -> None:
-    """Use the native select keyboard path and verify the exact selected value."""
+    """Select the exact native option and verify the form control's value."""
     mark_browser_substage(diagnostic_result, "order_option_scan")
     options = select_element.find_elements(By.TAG_NAME, "option")
     matching_indices = [
@@ -480,15 +478,8 @@ def select_contact_order(
         scroll_substage="order_select_scroll",
         hit_test_substage="order_select_hit_test",
     )
-    mark_browser_substage(diagnostic_result, "order_select_click")
-    select_element.click()
-    mark_browser_substage(diagnostic_result, "order_select_home_key")
-    select_element.send_keys(Keys.HOME)
-    for _ in range(matching_indices[0]):
-        mark_browser_substage(diagnostic_result, "order_select_down_key")
-        select_element.send_keys(Keys.ARROWDOWN)
-    mark_browser_substage(diagnostic_result, "order_select_enter_key")
-    select_element.send_keys(Keys.ENTER)
+    mark_browser_substage(diagnostic_result, "order_select_native_option")
+    Select(select_element).select_by_value(value)
     mark_browser_substage(diagnostic_result, "order_select_readback")
     if select_element.get_attribute("value") != value:
         raise AssertionError("native contact form did not select the exact requested order")

@@ -4,6 +4,7 @@ FROM prestashop/prestashop:9.2.0@sha256:2b8f90176b3fad68f8f5c7fbdeaa137f2f05578d
 # image so PrestaShop's first-run file copy does not write through a bind mount.
 COPY themes/hummingbird/ /opt/kuranea/themes/hummingbird/
 COPY themes/kuranea/ /opt/kuranea/themes/kuranea/
+COPY mails/ /opt/kuranea/mails/
 COPY assets/brand/ordenowa/asset-manifest.json /opt/ordenowa-brand/asset-manifest.json
 COPY assets/brand/ordenowa/official_originals/ /opt/ordenowa-brand/official_originals/
 COPY assets/brand/ordenowa/web_assets/ /opt/ordenowa-brand/web_assets/

@@ -33,6 +33,8 @@ SAFE_SUBSTAGES = {
     "unique_transfer_link", "menu_link_token", "transfer_route_navigation",
     "transfer_order_row_readback", "csrf_form_missing", "csrf_form_ambiguous", "csrf_control_validation",
     "csrf_invalid_token_submit", "csrf_rejection_readback", "csrf_unissued_db_readback",
+    "instruction_issue_navigation", "instruction_issue_order_row_readback", "instruction_issue_action_controls",
+    "instruction_issue_submit", "instruction_issue_notice_readback", "instruction_issue_db_readback",
 }
 SAFE_EXCEPTION_TYPES = {
     "AssertionError", "TimeoutException", "ValueError", "RuntimeError", "OSError",
@@ -712,20 +714,29 @@ def run() -> None:
         verify_unpaid_native_order(ctx, order, "unissued")
         result["failure_substage"] = "none"
         result["issue_csrf_rejected"] = True
+        substage = "none"
 
         stage = result["stage"] = "instruction_issue"
+        set_substage("instruction_issue_navigation")
         visit(admin, transfer_url, str(ctx["shop"]))
+        set_substage("instruction_issue_order_row_readback")
         row = order_row(admin, order)
+        set_substage("instruction_issue_action_controls")
         issue_buttons = row.find_elements(By.CSS_SELECTOR, 'button[name="submitOrdenowaIssueTransfer"]')
         if len(issue_buttons) != 1 or not issue_buttons[0].is_displayed() or not issue_buttons[0].is_enabled():
             raise AssertionError("the exact unpaid order did not expose one enabled instruction-issue action")
+        set_substage("instruction_issue_submit")
         issue_buttons[0].click()
-        notice = read_visible_notice(admin)
-        if ("미결제" not in notice.text or "alert-success" not in (notice.get_attribute("class") or "")):
+        set_substage("instruction_issue_notice_readback")
+        notice_text, notice_class = read_visible_notice_snapshot(admin)
+        if ("미결제" not in notice_text or "alert-success" not in notice_class.split()):
             raise AssertionError("issuing bank instructions did not preserve the unpaid-order notice")
         result["instruction_issued"] = True
         result["issue_left_order_unpaid"] = True
+        set_substage("instruction_issue_db_readback")
         verify_unpaid_native_order(ctx, order, "issued")
+        result["failure_substage"] = "none"
+        substage = "none"
 
         stage = result["stage"] = "instruction_readback"
         visit(admin, transfer_url, str(ctx["shop"]))

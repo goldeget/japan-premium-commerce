@@ -28,6 +28,7 @@ class CiProductSeoBrowserContractTests(unittest.TestCase):
             "validate_isolated_ci_compose_project",
             "validate_loopback_shop",
             "CI_TEST_PRODUCT_ID",
+            "CI_TEST_PRODUCT_PRICE_TAX_EXCL_JPY",
             "GITHUB_RUN_ID",
             "GITHUB_RUN_ATTEMPT",
             "querySelectorAll",
@@ -43,6 +44,8 @@ class CiProductSeoBrowserContractTests(unittest.TestCase):
             '"sku_matches_run_scoped_reference"',
             '"name_matches_visible_heading"',
             '"offer_price_matches_visible_price"',
+            '"visible_price_matches_tax_exclusive_fixture"',
+            '"offer_price_matches_tax_exclusive_fixture"',
             '"currency_matches_visible_yen_and_fixture"',
             '"offer_url_matches_canonical"',
             '"availability_matches_purchasable_ui"',
@@ -71,6 +74,7 @@ class CiProductSeoBrowserContractTests(unittest.TestCase):
         for required in (
             "'[CI ONLY] ORDENOWA free shipping product ' . $runId . '-' . $attempt",
             "'price_jpy' => '1100'",
+            "'price_tax_excl_jpy' => (float) $product->price",
             "'quantity' => '6'",
             "'[CI ONLY] synthetic product tax '",
             "$product->active = 1",
@@ -168,6 +172,32 @@ class CiProductSeoBrowserContractTests(unittest.TestCase):
         self.assertLess(offer_substage, assertion)
         self.assertIn('check_summary = ";".join(', source)
         self.assertIn('for name, value in sorted(result.get("checks", {}).items())', source)
+
+    def test_offer_price_matches_visible_amount_and_validated_fixture_without_logging_raw_price(self) -> None:
+        source = SCRIPT.read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/fresh-install.yml").read_text(encoding="utf-8")
+        fixture_check = workflow.split("id: shipping_product_fixture", 1)[1].split(
+            "      - name:", 1
+        )[0]
+        seo_step = workflow.split("id: storefront_product_seo_browser_qa", 1)[1].split(
+            "      - name:", 1
+        )[0]
+
+        self.assertIn('Decimal(os.environ["CI_TEST_PRODUCT_PRICE_TAX_EXCL_JPY"])', source)
+        self.assertIn('"offer_price_matches_visible_price": offer_price == visible_price', source)
+        self.assertIn(
+            '"visible_price_matches_tax_exclusive_fixture": visible_price == EXPECTED_PRICE_JPY',
+            source,
+        )
+        self.assertIn(
+            '"offer_price_matches_tax_exclusive_fixture": offer_price == EXPECTED_PRICE_JPY',
+            source,
+        )
+        self.assertIn('fixture["price_tax_excl_jpy"] == 1000', fixture_check)
+        self.assertIn('json.load(open(sys.argv[1], encoding="utf-8"))["price_tax_excl_jpy"]', fixture_check)
+        self.assertIn('CI_TEST_PRODUCT_PRICE_TAX_EXCL_JPY: ${{ env.CI_TEST_PRODUCT_PRICE_TAX_EXCL_JPY }}', seo_step)
+        self.assertIn("all(checks.values())", source)
+        self.assertNotIn("observed_price_jpy", source)
 
     def test_failure_summary_uses_only_fixed_button_state_values(self) -> None:
         source = SCRIPT.read_text(encoding="utf-8")

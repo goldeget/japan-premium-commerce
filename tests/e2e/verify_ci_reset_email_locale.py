@@ -45,8 +45,8 @@ SAFE_MESSAGE_CHECKS = {
     'html_reset_link_missing', 'text_reset_link_missing',
 }
 MAX_LINK_DIAGNOSTIC_COUNT = 20
-PART_EVIDENCE_KEYS = {'required_link_candidate_count', 'reset_credential_candidate_count',
-                      'native_reset_link_shape'}
+PART_EVIDENCE_KEYS = {'required_link_candidate_count', 'native_route_candidate_count',
+                      'reset_credential_candidate_count', 'native_reset_link_shape'}
 
 
 class MessageValidationError(AssertionError):
@@ -64,10 +64,18 @@ def safe_link_candidate_evidence(required_candidates: list[str], base: str, rese
     """Return only bounded counts and route-shape booleans, never link data."""
     candidates = {candidate.rstrip('.,);]') for candidate in required_candidates}
     credential_keys = {'token', 'reset_token', 'id_customer'}
+    native_route_candidate_count = 0
     credential_candidate_count = 0
     native_reset_link_shape = False
     for candidate in candidates:
         query = parse_qs(urlparse(candidate).query, keep_blank_values=True)
+        destination = urljoin(base + '/', candidate)
+        has_native_route = (
+            same_origin(destination, base)
+            and unquote(urlparse(destination).path) == unquote(reset_path)
+        )
+        if has_native_route:
+            native_route_candidate_count += 1
         if not (credential_keys & query.keys()):
             continue
         credential_candidate_count += 1
@@ -75,12 +83,11 @@ def safe_link_candidate_evidence(required_candidates: list[str], base: str, rese
                 or any(len(query[key]) != 1 or not query[key][0].strip()
                        for key in credential_keys & query.keys())):
             continue
-        destination = urljoin(base + '/', candidate)
-        if (same_origin(destination, base)
-                and unquote(urlparse(destination).path) == unquote(reset_path)):
+        if has_native_route:
             native_reset_link_shape = True
     return {
         'required_link_candidate_count': min(len(candidates), MAX_LINK_DIAGNOSTIC_COUNT),
+        'native_route_candidate_count': min(native_route_candidate_count, MAX_LINK_DIAGNOSTIC_COUNT),
         'reset_credential_candidate_count': min(credential_candidate_count, MAX_LINK_DIAGNOSTIC_COUNT),
         'native_reset_link_shape': native_reset_link_shape,
     }
@@ -94,13 +101,16 @@ def format_part_evidence(evidence: dict | None) -> str:
         values = evidence.get(part)
         if (not isinstance(values, dict) or set(values) != PART_EVIDENCE_KEYS
                 or type(values.get('required_link_candidate_count')) is not int
+                or type(values.get('native_route_candidate_count')) is not int
                 or type(values.get('reset_credential_candidate_count')) is not int
                 or type(values.get('native_reset_link_shape')) is not bool
                 or not 0 <= values['required_link_candidate_count'] <= MAX_LINK_DIAGNOSTIC_COUNT
+                or not 0 <= values['native_route_candidate_count'] <= MAX_LINK_DIAGNOSTIC_COUNT
                 or not 0 <= values['reset_credential_candidate_count'] <= MAX_LINK_DIAGNOSTIC_COUNT):
             return 'unavailable'
         rendered.append(
             f'{part}:refs={values["required_link_candidate_count"]},'
+            f'native_route_refs={values["native_route_candidate_count"]},'
             f'credential_candidates={values["reset_credential_candidate_count"]},'
             f'native_shape={str(values["native_reset_link_shape"]).lower()}'
         )
@@ -125,6 +135,8 @@ def write_diagnostics(result: dict) -> None:
                 and set(part_evidence[part]) == PART_EVIDENCE_KEYS
                 and type(part_evidence[part].get('required_link_candidate_count')) is int
                 and 0 <= part_evidence[part]['required_link_candidate_count'] <= MAX_LINK_DIAGNOSTIC_COUNT
+                and type(part_evidence[part].get('native_route_candidate_count')) is int
+                and 0 <= part_evidence[part]['native_route_candidate_count'] <= MAX_LINK_DIAGNOSTIC_COUNT
                 and type(part_evidence[part].get('reset_credential_candidate_count')) is int
                 and 0 <= part_evidence[part]['reset_credential_candidate_count'] <= MAX_LINK_DIAGNOSTIC_COUNT
                 and type(part_evidence[part].get('native_reset_link_shape')) is bool

@@ -205,12 +205,36 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.require("reject_issue_with_invalid_csrf(admin, row", csrf_flow)
         self.require('substage = "csrf_unissued_db_readback"', csrf_flow)
         self.require('result["issue_csrf_rejected"] = True', csrf_flow)
+        self.require('substage = "none"', csrf_flow)
         no_change_readback = csrf_flow.index('verify_unpaid_native_order(ctx, order, "unissued")')
         self.assertLess(
             csrf_flow.index("reject_issue_with_invalid_csrf(admin, row"),
             no_change_readback,
         )
         self.assertLess(no_change_readback, csrf_flow.index('result["issue_csrf_rejected"] = True'))
+        self.assertLess(no_change_readback, csrf_flow.index('substage = "none"'))
+
+    def test_instruction_issue_notice_uses_fresh_snapshot_before_persistence_readback(self) -> None:
+        issue_flow = self.browser.split('stage = result["stage"] = "instruction_issue"', 1)[1].split(
+            'stage = result["stage"] = "instruction_readback"', 1
+        )[0]
+        for marker in (
+            'set_substage("instruction_issue_navigation")',
+            'set_substage("instruction_issue_order_row_readback")',
+            'set_substage("instruction_issue_action_controls")',
+            'set_substage("instruction_issue_submit")',
+            'set_substage("instruction_issue_notice_readback")',
+            'notice_text, notice_class = read_visible_notice_snapshot(admin)',
+            '"미결제" not in notice_text',
+            '"alert-success" not in notice_class.split()',
+            'set_substage("instruction_issue_db_readback")',
+            'verify_unpaid_native_order(ctx, order, "issued")',
+            'result["instruction_issued"] = True',
+        ):
+            self.require(marker, issue_flow)
+        notice_readback = issue_flow.index("notice_text, notice_class = read_visible_notice_snapshot(admin)")
+        persistence_readback = issue_flow.index('verify_unpaid_native_order(ctx, order, "issued")')
+        self.assertLess(notice_readback, persistence_readback)
 
     def test_artifact_coverage_requires_the_dedicated_bank_order_readback(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")

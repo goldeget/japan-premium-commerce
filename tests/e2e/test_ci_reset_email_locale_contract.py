@@ -149,19 +149,38 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 if part == 'Text':
                     self.assertEqual(evidence['html'], {
                         'required_link_candidate_count': 1,
+                        'native_route_candidate_count': 1,
                         'reset_credential_candidate_count': 1,
                         'native_reset_link_shape': True,
                     })
                     self.assertEqual(evidence['text'], {
                         'required_link_candidate_count': 0,
+                        'native_route_candidate_count': 0,
                         'reset_credential_candidate_count': 0,
                         'native_reset_link_shape': False,
                     })
                     self.assertNotIn('synthetic-token', repr(evidence))
                     self.assertNotIn('synthetic-reset', repr(evidence))
                     self.assertEqual(module.format_part_evidence(evidence),
-                                     'html:refs=1,credential_candidates=1,native_shape=true;'
-                                     'text:refs=0,credential_candidates=0,native_shape=false')
+                                     'html:refs=1,native_route_refs=1,credential_candidates=1,native_shape=true;'
+                                     'text:refs=0,native_route_refs=0,credential_candidates=0,native_shape=false')
+
+    def test_native_reset_route_without_credentials_is_reported_without_link_data(self):
+        module = self.module()
+        url = 'http://127.0.0.1:18080/reset?campaign=synthetic'
+        with self.assertRaises(module.MessageValidationError) as caught:
+            module.assert_message(self.message('ko', url=url), 'ko',
+                                  'http://127.0.0.1:18080', '/reset', self.forbidden())
+        self.assertEqual('html_reset_link_missing', caught.exception.check)
+        evidence = caught.exception.part_evidence['html']
+        self.assertEqual(evidence, {
+            'required_link_candidate_count': 1,
+            'native_route_candidate_count': 1,
+            'reset_credential_candidate_count': 0,
+            'native_reset_link_shape': False,
+        })
+        self.assertNotIn('synthetic', repr(evidence))
+        self.assertNotIn('campaign', repr(evidence))
 
     def test_all_named_secret_categories_are_required(self):
         module = self.module()
@@ -260,9 +279,11 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 self.assertIn('"message_check": "none"', contents)
                 safe_evidence = {
                     'html': {'required_link_candidate_count': 1,
+                             'native_route_candidate_count': 1,
                              'reset_credential_candidate_count': 1,
                              'native_reset_link_shape': True},
                     'text': {'required_link_candidate_count': 0,
+                             'native_route_candidate_count': 0,
                              'reset_credential_candidate_count': 0,
                              'native_reset_link_shape': False},
                 }
@@ -277,6 +298,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 self.assertEqual(path.read_text(encoding="utf-8"), contents)
                 unbounded_evidence = {
                     'html': {'required_link_candidate_count': 21,
+                             'native_route_candidate_count': 1,
                              'reset_credential_candidate_count': 1,
                              'native_reset_link_shape': True},
                     'text': safe_evidence['text'],
@@ -325,6 +347,28 @@ class ResetEmailLocaleContract(unittest.TestCase):
                     'http://localhost:8025/path', 'https://localhost:8025'):
             with self.assertRaises(ValueError):
                 module.endpoint(url, 8025)
+
+    def test_korean_native_text_template_is_installed_after_language_generation(self):
+        root = VERIFIER.parents[2]
+        dockerfile = (root / 'docker/Dockerfile').read_text(encoding='utf-8')
+        post_install = (root / 'docker/kuran-post-install.php').read_text(encoding='utf-8')
+        smoke = (root / 'tests/smoke/fresh_install.sh').read_text(encoding='utf-8')
+        text_template = (root / 'mails/ko/password_query.txt').read_text(encoding='utf-8')
+
+        self.assertIn('COPY mails/ /opt/kuranea/mails/', dockerfile)
+        self.assertIn('비밀번호', text_template)
+        self.assertIn('{url}', text_template)
+        self.assertNotRegex(text_template, r'https?://')
+        imports = post_install.index('$languageImporter->import($isoCode)')
+        html_guard = post_install.index("$koPasswordQueryHtml = '/var/www/html/mails/ko/password_query.html'")
+        text_write = post_install.index('file_put_contents($koPasswordQueryTextTarget')
+        self.assertLess(imports, html_guard)
+        self.assertLess(html_guard, text_write)
+        self.assertIn("!is_file($koPasswordQueryHtml)", post_install)
+        self.assertNotIn("file_put_contents($koPasswordQueryHtml", post_install)
+        self.assertIn("test -s /var/www/html/mails/ko/password_query.html", smoke)
+        self.assertIn("grep -Fq '{url}' /var/www/html/mails/ko/password_query.txt", smoke)
+        self.assertIn("grep -Fq '비밀번호' /var/www/html/mails/ko/password_query.txt", smoke)
 
     def test_native_locale_email_flow_is_run_and_aggregated_with_mailpit(self):
         workflow = WORKFLOW.read_text(encoding='utf-8')

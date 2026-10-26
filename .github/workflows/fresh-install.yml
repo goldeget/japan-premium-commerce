@@ -688,7 +688,9 @@ jobs:
           PY
           product_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["product_id"])' "$fixture_json")
           product_tax_group_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["tax_rules_group_id"])' "$fixture_json")
-          printf 'CI_TEST_PRODUCT_ID=%s\nCI_TEST_PRODUCT_TAX_GROUP=%s\n' "$product_id" "$product_tax_group_id" >> "$GITHUB_ENV"
+          product_tax_exclusive_price=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["price_tax_excl_jpy"])' "$fixture_json")
+          printf 'CI_TEST_PRODUCT_ID=%s\nCI_TEST_PRODUCT_TAX_GROUP=%s\nCI_TEST_PRODUCT_PRICE_TAX_EXCL_JPY=%s\n' \
+            "$product_id" "$product_tax_group_id" "$product_tax_exclusive_price" >> "$GITHUB_ENV"
 
       - name: Prepare isolated explicit exemption product fixture
         id: exemption_product_fixture
@@ -1490,6 +1492,7 @@ jobs:
           KURANEA_CI_PROJECT_NAME: ${{ env.CI_COMPOSE_PROJECT_NAME }}
           SHOP_BASE_URL: http://localhost:18080
           CI_TEST_PRODUCT_ID: ${{ env.CI_TEST_PRODUCT_ID }}
+          CI_TEST_PRODUCT_PRICE_TAX_EXCL_JPY: ${{ env.CI_TEST_PRODUCT_PRICE_TAX_EXCL_JPY }}
           QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}

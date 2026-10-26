@@ -79,7 +79,7 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         fixture = FIXTURE.read_text(encoding="utf-8")
         self.assertIn('Tools::getMaxUploadSize() >= 4096', fixture)
 
-    def test_contact_controls_scroll_clear_and_keep_native_click_and_upload_assertions(self):
+    def test_contact_controls_scroll_clear_and_keep_native_select_and_upload_assertions(self):
         module = load_script()
 
         class Driver:
@@ -114,6 +114,7 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         self.assertIn("select_contact_order(", submit_helper)
         self.assertIn('str(order["order_id"]), diagnostic_result=diagnostic_result', submit_helper)
         self.assertIn('select_contact_order(driver, order_selects[0], "", diagnostic_result=diagnostic_result)', submit_helper)
+        self.assertIn('order["reference"] not in matching_options[0].text', submit_helper)
         self.assertIn('submit = visible(driver, "button[name=\'submitMessage\']")', submit_helper)
         self.assertIn("center_native_control(", submit_helper)
         self.assertIn('scroll_substage="submit_control_scroll"', submit_helper)
@@ -122,16 +123,20 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         self.assertIn('driver.find_elements(By.CSS_SELECTOR, ".contact-form .alert.alert-danger")', submit_helper)
         self.assertNotIn("arguments[0].click()", submit_helper)
         native_select = source[source.index("def select_contact_order("):source.index("def visit(")]
-        self.assertIn("select_element.click()", native_select)
-        self.assertIn("select_element.send_keys(Keys.HOME)", native_select)
-        self.assertIn("select_element.send_keys(Keys.ARROWDOWN)", native_select)
+        self.assertIn("Select(select_element).select_by_value(value)", native_select)
+        self.assertNotIn("select_element.click()", native_select)
+        self.assertNotIn("Keys.HOME", native_select)
+        self.assertNotIn("Keys.ARROWDOWN", native_select)
+        self.assertNotIn("execute_script", native_select)
         self.assertIn('select_element.get_attribute("value") != value', native_select)
 
-    def test_native_order_select_records_fixed_substage_before_the_first_failing_action(self):
+    def test_native_order_select_uses_exact_value_and_records_native_option_failure(self):
         module = load_script()
         module.By = SimpleNamespace(TAG_NAME="tag name")
 
         class Option:
+            text = "ORDENOWA-REF-42"
+
             def get_attribute(self, name: str) -> str | None:
                 return "order-42" if name == "value" else None
 
@@ -139,11 +144,25 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 return True
 
         class NativeSelect:
+            selected_value = ""
+
             def find_elements(self, *_args: object) -> list[Option]:
                 return [Option()]
 
             def click(self) -> None:
-                raise RuntimeError("synthetic click failure with private sentinel")
+                raise AssertionError("native select control must not be clicked")
+
+            def get_attribute(self, name: str) -> str | None:
+                return self.selected_value if name == "value" else None
+
+        class NativeSelectWrapper:
+            def __init__(self, element: NativeSelect) -> None:
+                self.element = element
+
+            def select_by_value(self, value: str) -> None:
+                self.element.selected_value = value
+
+        module.Select = NativeSelectWrapper
 
         class Driver:
             calls = 0
@@ -153,11 +172,20 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 return None if self.calls == 1 else True
 
         diagnostic = {"browser_substage": "not_applicable"}
-        with self.assertRaisesRegex(RuntimeError, "synthetic click failure"):
-            module.select_contact_order(
-                Driver(), NativeSelect(), "order-42", diagnostic_result=diagnostic
-            )
-        self.assertEqual("order_select_click", diagnostic["browser_substage"])
+        select = NativeSelect()
+        module.select_contact_order(Driver(), select, "order-42", diagnostic_result=diagnostic)
+        self.assertEqual("order-42", select.selected_value)
+        self.assertEqual("order_select_readback", diagnostic["browser_substage"])
+
+        class FailingNativeSelectWrapper(NativeSelectWrapper):
+            def select_by_value(self, _value: str) -> None:
+                raise RuntimeError("synthetic native option failure with private sentinel")
+
+        module.Select = FailingNativeSelectWrapper
+        diagnostic = {"browser_substage": "not_applicable"}
+        with self.assertRaisesRegex(RuntimeError, "synthetic native option failure"):
+            module.select_contact_order(Driver(), NativeSelect(), "order-42", diagnostic_result=diagnostic)
+        self.assertEqual("order_select_native_option", diagnostic["browser_substage"])
         self.assertIn(diagnostic["browser_substage"], module.SAFE_BROWSER_SUBSTAGES)
         self.assertNotIn("private sentinel", diagnostic["browser_substage"])
 

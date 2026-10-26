@@ -35,7 +35,16 @@ RUN_ID = os.environ["GITHUB_RUN_ID"]
 RUN_ATTEMPT = os.environ["GITHUB_RUN_ATTEMPT"]
 EXPECTED_REFERENCE = f"KURANEA-CI-{RUN_ID}-{RUN_ATTEMPT}"
 EXPECTED_NAME = f"[CI ONLY] ORDENOWA free shipping product {RUN_ID}-{RUN_ATTEMPT}"
-EXPECTED_PRICE_JPY = Decimal("1100")
+try:
+    # This anonymous, product-only request has no customer delivery address.
+    # Compare it with the persisted net fixture amount; the taxable checkout
+    # browser separately verifies the ¥1,100 Japan-address total.
+    EXPECTED_PRICE_JPY = Decimal(os.environ["CI_TEST_PRODUCT_PRICE_TAX_EXCL_JPY"])
+except (KeyError, InvalidOperation):
+    raise SystemExit("CI_TEST_PRODUCT_PRICE_TAX_EXCL_JPY must come from the validated product fixture") from None
+if (not EXPECTED_PRICE_JPY.is_finite() or EXPECTED_PRICE_JPY <= 0
+        or EXPECTED_PRICE_JPY != EXPECTED_PRICE_JPY.to_integral_value()):
+    raise SystemExit("CI_TEST_PRODUCT_PRICE_TAX_EXCL_JPY must be a positive whole-yen fixture amount")
 EXPECTED_CURRENCY = "JPY"
 RESULT_PATH = DEST / "product-seo-result.json"
 SCREENSHOT_PATH = DEST / "product-seo-desktop.png"
@@ -243,12 +252,15 @@ def read_product_page(driver: webdriver.Chrome, result: dict[str, Any]) -> dict[
     result["substage"] = "jsonld_product_offer_identity"
     product, offer = schema_product_for_reference(scripts)
 
+    offer_price = decimal_value(offer.get("price"))
     checks = {
         "product_id_matches_visible_field": True,
         "schema_org_context_matches_product": has_schema_org_context(product),
         "sku_matches_run_scoped_reference": product.get("sku") == EXPECTED_REFERENCE,
         "name_matches_visible_heading": product.get("name") == visible_name,
-        "offer_price_matches_visible_price": decimal_value(offer.get("price")) == visible_price == EXPECTED_PRICE_JPY,
+        "offer_price_matches_visible_price": offer_price == visible_price,
+        "visible_price_matches_tax_exclusive_fixture": visible_price == EXPECTED_PRICE_JPY,
+        "offer_price_matches_tax_exclusive_fixture": offer_price == EXPECTED_PRICE_JPY,
         "currency_matches_visible_yen_and_fixture": offer.get("priceCurrency") == EXPECTED_CURRENCY and has_yen_symbol,
         "offer_url_matches_canonical": offer.get("url") == canonical_url,
         "availability_matches_purchasable_ui": (
@@ -267,7 +279,6 @@ def read_product_page(driver: webdriver.Chrome, result: dict[str, Any]) -> dict[
         "stage": "complete",
         "response_status": response_status if isinstance(response_status, int) else None,
         "checks": checks,
-        "observed_price_jpy": int(visible_price),
         "observed_currency": EXPECTED_CURRENCY,
         "availability_class": "in_stock" if purchasable else "not_purchasable",
     }

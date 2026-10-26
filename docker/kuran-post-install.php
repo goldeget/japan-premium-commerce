@@ -52,6 +52,29 @@ if (!$enId || !$koId) {
     throw new RuntimeException('English and Korean language packs must both be installed.');
 }
 
+// The isolated KO capture has a native reset link in HTML but none in Text.
+// Install this text override after language generation and retain the generated
+// HTML template; the native reset-mail verifier still validates both parts.
+$koPasswordQueryHtml = '/var/www/html/mails/ko/password_query.html';
+$koPasswordQueryTextSource = '/opt/kuranea/mails/ko/password_query.txt';
+$koPasswordQueryTextTarget = '/var/www/html/mails/ko/password_query.txt';
+if (!is_file($koPasswordQueryHtml) || !is_file($koPasswordQueryTextSource)) {
+    throw new RuntimeException('Native Korean password reset mail templates are incomplete.');
+}
+$koPasswordQueryText = file_get_contents($koPasswordQueryTextSource);
+if (!is_string($koPasswordQueryText)
+    || !str_contains($koPasswordQueryText, '비밀번호')
+    || !str_contains($koPasswordQueryText, '{url}')
+) {
+    throw new RuntimeException('Bundled Korean password reset text template is invalid.');
+}
+if (false === file_put_contents($koPasswordQueryTextTarget, $koPasswordQueryText, LOCK_EX)
+    || file_get_contents($koPasswordQueryTextTarget) !== $koPasswordQueryText
+    || !is_file($koPasswordQueryHtml)
+) {
+    throw new RuntimeException('Could not install the Korean password reset text template.');
+}
+
 Configuration::updateGlobalValue('PS_SHOP_DEFAULT', 1);
 Configuration::updateGlobalValue('PS_LANG_DEFAULT', $jaId);
 Configuration::updateGlobalValue('PS_BO_ALLOW_EMPLOYEE_FORM_LANG', 1);

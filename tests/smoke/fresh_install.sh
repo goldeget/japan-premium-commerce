@@ -62,6 +62,10 @@ compose exec -T prestashop sh -ec '
   test -s /var/www/html/app/config/parameters.php
   test -s /var/www/html/var/cache/prod/appParameters.php
   test -s /var/www/html/var/.kuranea-bootstrap-v2
+  test -s /var/www/html/mails/ko/password_query.html
+  test -s /var/www/html/mails/ko/password_query.txt
+  grep -Fq '비밀번호' /var/www/html/mails/ko/password_query.txt
+  grep -Fq '{url}' /var/www/html/mails/ko/password_query.txt
   test ! -e /var/www/html/install
   test -d /var/www/html/admin-kuranea
   test ! -e /var/www/html/admin-dev
