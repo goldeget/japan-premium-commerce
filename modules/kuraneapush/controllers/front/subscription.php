@@ -49,14 +49,15 @@ class KuraneapushSubscriptionModuleFrontController extends ModuleFrontController
             } catch (\Throwable $e) {
                 // A missing or invalid key disables subscription, never owner revocation.
             }
-            $locale = $body['locale'] ?? ($this->context->language->iso_code ?? 'ja');
-            $notice = is_string($locale) ? PushSettings::notice($shop, $locale) : '';
+            $trustedLocale = (string) ($this->context->language->iso_code ?? 'ja');
+            $trustedLocale = in_array($trustedLocale, PushSettings::LOCALES, true) ? $trustedLocale : 'ja';
+            $notice = trim(PushSettings::notice($shop, $trustedLocale));
             $api = new SubscriptionApi(new SubscriptionRepository(), $cipher);
             [$status, $result] = $api->handle($method, $action, $body, $authenticated, $shop, $customerId,
                 (string) ($_SERVER['HTTP_ORIGIN'] ?? ''),
                 (string) $this->context->link->getBaseLink($shop),
                 (string) Tools::getToken('kuraneapush', $this->context),
-                Readiness::canSubscribe(null, $notice, $cipher !== null), $notice);
+                Readiness::canSubscribe(null, $notice, $cipher !== null), $notice, $trustedLocale);
             $this->respond($status, $result);
         } catch (\Throwable $e) {
             $this->respond(400, ['error' => 'invalid_request']);

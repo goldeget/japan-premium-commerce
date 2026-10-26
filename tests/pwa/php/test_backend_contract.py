@@ -2,6 +2,8 @@
 from pathlib import Path
 import unittest
 
+from tests.pwa.php.test_delivery_outbox_contract import DeliveryOutboxContract
+
 ROOT = Path(__file__).resolve().parents[3]
 MODULE = ROOT / 'modules/kuraneapush'
 
@@ -42,6 +44,88 @@ class BackendContract(unittest.TestCase):
         for value in ['hookDisplayCustomerAccount', 'hookActionObjectCustomerDeleteAfter', 'account_push.tpl', 'account-push.js', 'account-push.css']:
             self.assertIn(value, module)
         self.assertNotIn('DROP TABLE', module)
+
+    def test_subscription_binds_server_consent_to_the_displayed_notice(self):
+        api = self.source('src/Domain/SubscriptionApi.php')
+        version = self.source('src/Domain/ConsentNoticeVersion.php')
+        controller = self.source('controllers/front/subscription.php')
+        template = self.source('views/templates/hook/account_push.tpl')
+        javascript = self.source('views/js/account-push.js')
+        for value in ["'notice_version'", 'ConsentNoticeVersion::forNotice', '$locale']:
+            self.assertIn(value, api)
+        self.assertIn("hash('sha256'", version)
+        self.assertIn('expectedLocale', api)
+        self.assertIn("$body['locale'] !== $expectedLocale", api)
+        self.assertIn("$this->context->language->iso_code", controller)
+        self.assertIn('ordenowa_push_consent_notice_version', self.source('kuraneapush.php'))
+        self.assertIn('data-push-notice-version', template)
+        self.assertIn('notice_version: noticeVersion', javascript)
+        self.assertIn("/^[a-f0-9]{64}$/", javascript)
+
+    def test_consent_storage_is_nullable_owner_scoped_and_migrates_without_backfill(self):
+        repository = self.source('src/Infrastructure/SubscriptionRepository.php')
+        store = self.source('src/Domain/SubscriptionStore.php')
+        self.assertIn('consent_notice_version CHAR(64)', repository)
+        self.assertIn('consent_locale CHAR(2)', repository)
+        self.assertIn('consent_accepted_at DATETIME NULL', repository)
+        self.assertIn('SHOW COLUMNS FROM', repository)
+        self.assertIn('UTC_TIMESTAMP()', repository)
+        self.assertIn('consent_notice_version IS NOT NULL', repository)
+        self.assertIn('consent_accepted_at IS NOT NULL', repository)
+        self.assertIn('public function stored(int $shop, int $customer): bool', repository)
+        self.assertIn('public function stored(int $shop, int $customer): bool', store)
+        self.assertIn('data-revocable=', self.source('views/templates/hook/account_push.tpl'))
+        self.assertIn("root.dataset.revocable === '1'", self.source('views/js/account-push.js'))
+        self.assertIn('legacy stored subscription stays revocable', self.source('views/tests/account-push.test.cjs'))
+        self.assertIn('consentNoticeVersion', store)
+        install = repository.split('public function install(): bool', 1)[1].split('public function active(', 1)[0]
+        self.assertNotIn('UPDATE', install)
+        upgrade = (MODULE / 'upgrade/upgrade-1.0.1.php').read_text()
+        self.assertIn('SubscriptionRepository())->install()', upgrade)
+
+    def test_same_owner_resubscribe_refreshes_encrypted_material(self):
+        repository = self.source('src/Infrastructure/SubscriptionRepository.php')
+        self.assertIn("SET encrypted_subscription='", repository)
+        self.assertIn("hash_equals($envelope, $row['encrypted_subscription'])", repository)
+
+    def test_delivery_is_owner_scoped_consent_gated_and_live_disabled(self):
+        provider = self.source('src/Domain/PushDeliveryProvider.php')
+        store = self.source('src/Domain/PushDeliveryStore.php')
+        service = self.source('src/Domain/PushDeliveryService.php')
+        eligibility = self.source('src/Domain/ConsentedDeliveryTarget.php')
+        fake = self.source('src/Infrastructure/IsolatedSyntheticPushDeliveryProvider.php')
+        disabled = self.source('src/Infrastructure/DisabledPushDeliveryProvider.php')
+        repository = self.source('src/Infrastructure/SubscriptionRepository.php')
+        self.assertIn('Readiness::isolated()', fake)
+        self.assertIn('available(): bool', provider)
+        self.assertIn('deliveryTargetsForOwner', store)
+        self.assertIn('removeDeliveryTargetForOwner', store)
+        self.assertIn('deliveryTargetsForOwner($shop, $customer)', service)
+        self.assertIn('ConsentedDeliveryTarget::eligible', service)
+        self.assertIn("'consent_notice_version'", eligibility)
+        self.assertIn("'consent_locale'", eligibility)
+        self.assertIn("'consent_accepted_at'", eligibility)
+        self.assertIn('consent_notice_version IS NOT NULL', repository)
+        self.assertIn('consent_accepted_at IS NOT NULL', repository)
+        self.assertIn('PushDeliveryStore::MAX_DELIVERY_TARGETS', repository)
+        self.assertIn('MAX_DELIVERY_TARGETS = 100', store)
+        self.assertIn('available(): bool', disabled)
+        self.assertIn('new DisabledPushDeliveryProvider()', service)
+        self.assertNotIn('curl_init(', fake + disabled)
+        for source in (service, fake, disabled):
+            self.assertNotIn('error_log(', source)
+            self.assertNotIn('getMessage(', source)
+            self.assertNotIn('var_dump(', source)
+
+    def test_delivery_payload_serializes_only_the_worker_event_contract(self):
+        payload = self.source('src/Domain/DeliveryPayload.php')
+        synthetic = self.source('src/Infrastructure/IsolatedSyntheticPushDeliveryProvider.php')
+        self.assertIn('function toJson(): string', payload)
+        self.assertIn("['event' => $this->event, 'locale' => $this->locale]", payload)
+        self.assertIn("['order', 'delivery', 'support']", payload)
+        self.assertIn("['ja', 'en', 'ko']", payload)
+        self.assertIn('$payload->toJson()', synthetic)
+        self.assertNotIn('public readonly string $body', payload)
 
 if __name__ == '__main__':
     unittest.main()

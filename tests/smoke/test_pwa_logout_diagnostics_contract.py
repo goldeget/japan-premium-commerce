@@ -9,6 +9,656 @@ from tests.e2e import verify_pwa_browser as pwa_browser
 
 
 class PwaLogoutDiagnosticsTests(unittest.TestCase):
+    def test_missing_main_frame_annotation_preserves_safe_route_status_and_frame_state(self) -> None:
+        import inspect
+
+        request_url = (
+            "http://localhost:18080/index.php?controller=contact"
+            "&email=private-email-sentinel&token=private-token-sentinel"
+        )
+
+        class Driver:
+            current_url = request_url
+
+            def get_log(self, _name: str) -> list[dict[str, object]]:
+                return [{
+                    "method": "Network.responseReceived",
+                    "params": {
+                        "requestId": "private-request-id",
+                        "frameId": "private-frame-id",
+                        "type": "Document",
+                        "response": {
+                            "url": request_url,
+                            "status": 404,
+                            "headers": {"Cache-Control": "no-store"},
+                            "fromServiceWorker": False,
+                            "fromDiskCache": False,
+                        },
+                    },
+                }]
+
+            def execute_script(self, script: str) -> dict[str, object]:
+                if "performance.getEntriesByType('navigation')" in script:
+                    return {"navigation_same_origin": True, "response_status": 404}
+                self.assertNotIn("textContent", script)
+                self.assertNotIn("innerHTML", script)
+                return {
+                    "ready_state": "complete",
+                    "contact_form_count": 0,
+                    "contact_form_visible": False,
+                    "login_form_count": 1,
+                    "login_form_visible": True,
+                    "guest_tracking_form_count": 0,
+                    "guest_tracking_form_visible": False,
+                }
+
+            def assertNotIn(self, needle: str, haystack: str) -> None:
+                if needle in haystack:
+                    raise AssertionError("PWA failure diagnostic inspected page text")
+
+        metadata = pwa_browser.safe_main_frame_failure_metadata(
+            Driver(),
+            request_url,
+            "http://localhost:18080",
+            {
+                "frame_tree_available": True,
+                "root_frame_present": True,
+                "frame_id_present": False,
+            },
+        )
+        annotation = pwa_browser.format_main_frame_failure_diagnostic(metadata)
+
+        self.assertIn("response_status=404", annotation)
+        self.assertIn("response_status_source=navigation_timing", annotation)
+        self.assertIn("final_route_class=contact", annotation)
+        self.assertIn("final_path=/index.php", annotation)
+        self.assertIn("frame_tree_available=true", annotation)
+        self.assertIn("frame_id_present=false", annotation)
+        self.assertIn("contact_form_count=0", annotation)
+        self.assertNotIn("private-email-sentinel", annotation)
+        self.assertNotIn("private-token-sentinel", annotation)
+        self.assertNotIn("private-request-id", annotation)
+        self.assertNotIn("private-frame-id", annotation)
+        self.assertIn(
+            "format_main_frame_failure_diagnostic(metadata)",
+            inspect.getsource(pwa_browser.run_viewport),
+        )
+
+    def test_missing_network_response_uses_same_origin_navigation_status_fallback(self) -> None:
+        request_url = "http://localhost:18080/index.php?controller=contact&token=private-token-sentinel"
+
+        class Driver:
+            current_url = request_url
+
+            def get_log(self, _name: str) -> list[dict[str, object]]:
+                return [{
+                    "method": "Network.requestWillBeSent",
+                    "params": {
+                        "requestId": "private-request-id",
+                        "type": "Document",
+                        "request": {"url": request_url},
+                    },
+                }]
+
+            def execute_script(self, script: str) -> dict[str, object]:
+                if "performance.getEntriesByType('navigation')" in script:
+                    return {"navigation_same_origin": True, "response_status": 404}
+                return {
+                    "ready_state": "complete", "contact_form_count": 0,
+                    "contact_form_visible": False, "login_form_count": 1,
+                    "login_form_visible": True, "guest_tracking_form_count": 0,
+                    "guest_tracking_form_visible": False,
+                }
+
+        metadata = pwa_browser.safe_main_frame_failure_metadata(
+            Driver(), request_url, "http://localhost:18080", {
+                "frame_tree_available": True, "root_frame_present": False, "frame_id_present": False,
+            },
+        )
+        annotation = pwa_browser.format_main_frame_failure_diagnostic(metadata)
+        self.assertIn("response_status=404", annotation)
+        self.assertIn("response_status_source=navigation_timing", annotation)
+        self.assertNotIn("private-request-id", annotation)
+        self.assertNotIn("private-token-sentinel", annotation)
+
+    def test_cache_response_missing_failure_keeps_safe_main_frame_route_and_status(self) -> None:
+        request_url = "http://localhost:18080/index.php?controller=contact&token=private-token-sentinel"
+
+        class Driver:
+            current_url = request_url
+
+            def get_log(self, _name: str) -> list[dict[str, object]]:
+                return []
+
+            def execute_script(self, script: str) -> dict[str, object]:
+                if "performance.getEntriesByType('navigation')" in script:
+                    return {"navigation_same_origin": True, "response_status": 404}
+                self.assertNotIn("textContent", script)
+                self.assertNotIn("innerHTML", script)
+                return {
+                    "ready_state": "complete", "contact_form_count": 0,
+                    "contact_form_visible": False, "login_form_count": 1,
+                    "login_form_visible": True, "guest_tracking_form_count": 0,
+                    "guest_tracking_form_visible": False,
+                }
+
+            def assertNotIn(self, needle: str, haystack: str) -> None:
+                if needle in haystack:
+                    raise AssertionError("PWA cache failure diagnostic inspected page text")
+
+        with self.assertRaises(pwa_browser.PwaDiagnosticAssertionError) as raised:
+            pwa_browser.assert_private_document_cache_headers(
+                Driver(), request_url, "http://localhost:18080", "logged-out contact form",
+                main_frame_id="private-main-frame-id", performance_entries=[],
+            )
+
+        metadata = raised.exception.safe_metadata
+        annotation = pwa_browser.format_main_frame_failure_diagnostic(metadata)
+        self.assertEqual("document_response_missing", raised.exception.diagnostic_code)
+        self.assertEqual("contact", metadata["final_route_class"])
+        self.assertEqual(404, metadata["response_status"])
+        self.assertEqual("navigation_timing", metadata["response_status_source"])
+        self.assertFalse(metadata["contact_form_visible"])
+        self.assertIn("requested_path=/index.php", annotation)
+        self.assertIn("response_status=404", annotation)
+        self.assertIn("contact_form_visible=false", annotation)
+        self.assertNotIn("private-token-sentinel", repr(metadata))
+        self.assertNotIn("private-main-frame-id", repr(metadata))
+
+    def test_cache_policy_failure_annotation_keeps_response_cause_without_sensitive_values(self) -> None:
+        import inspect
+
+        request_url = (
+            "http://localhost:18080/index.php?controller=contact"
+            "&email=private-email-sentinel&token=private-token-sentinel"
+        )
+        response = {
+            "method": "Network.responseReceived",
+            "params": {
+                "requestId": "private-request-id",
+                "frameId": "private-main-frame-id",
+                "type": "Document",
+                "response": {
+                    "url": request_url,
+                    "status": 200,
+                    "headers": {
+                        "Cache-Control": "public, max-age=30",
+                        "X-Private-Diagnostic-Sentinel": "must-not-be-logged",
+                    },
+                    "fromServiceWorker": False,
+                    "fromDiskCache": False,
+                },
+            },
+        }
+
+        class Driver:
+            current_url = request_url
+
+            def execute_script(self, script: str) -> dict[str, object]:
+                self.assertNotIn("textContent", script)
+                self.assertNotIn("innerHTML", script)
+                return {
+                    "ready_state": "complete",
+                    "contact_form_count": 1,
+                    "contact_form_visible": True,
+                    "login_form_count": 0,
+                    "login_form_visible": False,
+                    "guest_tracking_form_count": 0,
+                    "guest_tracking_form_visible": False,
+                }
+
+            def assertNotIn(self, needle: str, haystack: str) -> None:
+                if needle in haystack:
+                    raise AssertionError("PWA cache failure diagnostic inspected page text")
+
+        with self.assertRaises(pwa_browser.PwaDiagnosticAssertionError) as raised:
+            pwa_browser.assert_private_document_cache_headers(
+                Driver(),
+                request_url,
+                "http://localhost:18080",
+                "logged-out contact form",
+                main_frame_id="private-main-frame-id",
+                performance_entries=[response],
+            )
+
+        metadata = raised.exception.safe_metadata
+        annotation = pwa_browser.format_main_frame_failure_diagnostic(metadata)
+        self.assertEqual("cache_policy_missing", raised.exception.diagnostic_code)
+        self.assertEqual(200, metadata["response_status"])
+        self.assertEqual(1, metadata["response_count"])
+        self.assertEqual("contact", metadata["final_route_class"])
+        self.assertFalse(metadata["private_cache_policy"])
+        self.assertFalse(metadata["from_service_worker"])
+        self.assertFalse(metadata["from_disk_cache"])
+        self.assertIn("response_status=200", annotation)
+        self.assertIn("response_count=1", annotation)
+        self.assertIn("cache_control_directives=max-age,public", annotation)
+        self.assertIn("private_cache_policy=false", annotation)
+        self.assertIn("final_route_class=contact", annotation)
+        self.assertNotIn("private-email-sentinel", annotation)
+        self.assertNotIn("private-token-sentinel", annotation)
+        self.assertNotIn("private-request-id", repr(metadata))
+        self.assertNotIn("private-main-frame-id", repr(metadata))
+        self.assertNotIn("must-not-be-logged", repr(metadata))
+
+        source = inspect.getsource(pwa_browser.run_viewport)
+        self.assertIn('if code in {"document_response_missing", "cache_policy_missing"}', source)
+        self.assertIn("format_main_frame_failure_diagnostic(metadata)", source)
+
+    def test_cache_failure_status_never_uses_a_matching_child_frame_response(self) -> None:
+        request_url = "http://localhost:18080/index.php?controller=contact&token=private-token-sentinel"
+        child_response = {
+            "method": "Network.responseReceived",
+            "params": {
+                "requestId": "private-iframe-request",
+                "frameId": "private-child-frame-id",
+                "type": "Document",
+                "response": {
+                    "url": request_url, "status": 418,
+                    "headers": {"Cache-Control": "no-store"},
+                    "fromServiceWorker": False, "fromDiskCache": False,
+                },
+            },
+        }
+
+        class Driver:
+            current_url = request_url
+
+            def execute_script(self, _script: str) -> dict[str, object]:
+                return {
+                    "navigation_same_origin": True, "response_status": 200,
+                    "ready_state": "complete", "contact_form_count": 1,
+                    "contact_form_visible": True, "login_form_count": 0,
+                    "login_form_visible": False, "guest_tracking_form_count": 0,
+                    "guest_tracking_form_visible": False,
+                }
+
+        metadata = pwa_browser.safe_main_frame_failure_metadata(
+            Driver(), request_url, "http://localhost:18080",
+            {"frame_tree_available": True, "root_frame_present": True, "frame_id_present": True},
+            main_frame_id="private-main-frame-id", performance_entries=[child_response],
+        )
+        annotation = pwa_browser.format_main_frame_failure_diagnostic(metadata)
+
+        self.assertEqual(200, metadata["response_status"])
+        self.assertEqual("navigation_timing", metadata["response_status_source"])
+        self.assertNotIn("418", annotation)
+        self.assertNotIn("private-child-frame-id", repr(metadata))
+        self.assertNotIn("private-token-sentinel", repr(metadata))
+
+    def test_missing_main_frame_never_attributes_child_document_response_to_top_level(self) -> None:
+        request_url = "http://localhost:18080/index.php?controller=contact&token=private-token-sentinel"
+        child_response = {
+            "method": "Network.responseReceived",
+            "params": {
+                "requestId": "private-iframe-request",
+                "frameId": "private-child-frame-id",
+                "type": "Document",
+                "response": {
+                    "url": request_url, "status": 418,
+                    "headers": {"Cache-Control": "no-store"},
+                    "fromServiceWorker": False, "fromDiskCache": False,
+                },
+            },
+        }
+
+        class Driver:
+            current_url = request_url
+
+            def execute_script(self, _script: str) -> dict[str, object]:
+                return {
+                    "navigation_same_origin": True, "response_status": 200,
+                    "ready_state": "complete", "contact_form_count": 1,
+                    "contact_form_visible": True, "login_form_count": 0,
+                    "login_form_visible": False, "guest_tracking_form_count": 0,
+                    "guest_tracking_form_visible": False,
+                }
+
+        metadata = pwa_browser.safe_main_frame_failure_metadata(
+            Driver(), request_url, "http://localhost:18080",
+            {"frame_tree_available": False, "root_frame_present": False, "frame_id_present": False},
+            performance_entries=[child_response],
+        )
+        annotation = pwa_browser.format_main_frame_failure_diagnostic(metadata)
+
+        self.assertEqual(200, metadata["response_status"])
+        self.assertEqual("navigation_timing", metadata["response_status_source"])
+        self.assertNotIn("418", annotation)
+        self.assertNotIn("private-child-frame-id", repr(metadata))
+        self.assertNotIn("private-token-sentinel", repr(metadata))
+
+    def test_missing_main_frame_fails_closed_at_its_own_substage(self) -> None:
+        class Driver:
+            current_url = "http://localhost:18080/index.php?controller=contact"
+
+            def __init__(self) -> None:
+                self.logs_read = 0
+
+            def get_log(self, _name: str) -> list[dict[str, object]]:
+                self.logs_read += 1
+                if self.logs_read == 1:
+                    return []
+                return [{
+                    "method": "Network.responseReceived",
+                    "params": {
+                        "requestId": "safe-request-id",
+                        "frameId": "safe-frame-id",
+                        "type": "Document",
+                        "response": {
+                            "url": self.current_url,
+                            "status": 404,
+                            "headers": {"Cache-Control": "no-store"},
+                            "fromServiceWorker": False,
+                            "fromDiskCache": False,
+                        },
+                    },
+                }]
+
+            def get(self, _url: str) -> None:
+                return None
+
+            def execute_script(self, script: str) -> object:
+                if script == "return document.readyState":
+                    return "complete"
+                self.assertNotIn("textContent", script)
+                self.assertNotIn("innerHTML", script)
+                return {"ready_state": "complete"}
+
+            def execute_cdp_cmd(self, method: str, _params: dict[str, object]) -> dict[str, object]:
+                if method != "Page.getFrameTree":
+                    raise AssertionError("unexpected CDP command")
+                return {"frameTree": {"frame": {}}}
+
+            def assertNotIn(self, needle: str, haystack: str) -> None:
+                if needle in haystack:
+                    raise AssertionError("PWA failure diagnostic inspected page text")
+
+        class ImmediateWait:
+            def __init__(self, browser: Driver, _timeout: int) -> None:
+                self.browser = browser
+
+            def until(self, condition) -> object:
+                return condition(self.browser)
+
+        substages: list[str] = []
+        with patch.object(pwa_browser, "WebDriverWait", ImmediateWait):
+            with self.assertRaises(pwa_browser.PwaDiagnosticAssertionError) as raised:
+                pwa_browser.navigate_private_document(
+                    Driver(),
+                    "http://localhost:18080/index.php?controller=contact",
+                    "http://localhost:18080",
+                    "logged-out contact form",
+                    set_substage=substages.append,
+                )
+
+        self.assertEqual("main_frame_missing", raised.exception.diagnostic_code)
+        self.assertEqual("main_frame_id", substages[-1])
+
+    def test_logged_out_contact_status_failure_records_available_document_state(self) -> None:
+        secret_url = (
+            "http://localhost:18080/contact?email=private-email-sentinel"
+            "&token=private-token-sentinel"
+        )
+
+        class Driver:
+            current_url = secret_url
+
+            def execute_script(self, script: str) -> dict[str, object]:
+                self.assertNotIn("textContent", script)
+                self.assertNotIn("innerHTML", script)
+                self.assertIn(".contact-form form", script)
+                return {
+                    "ready_state": "complete",
+                    "contact_form_count": 0,
+                    "contact_form_visible": False,
+                    "login_form_count": 1,
+                    "login_form_visible": True,
+                    "guest_tracking_form_count": 0,
+                    "guest_tracking_form_visible": False,
+                }
+
+            def assertNotIn(self, needle: str, haystack: str) -> None:
+                if needle in haystack:
+                    raise AssertionError("PWA route diagnostic reads page text")
+
+            def assertIn(self, needle: str, haystack: str) -> None:
+                if needle not in haystack:
+                    raise AssertionError("PWA route diagnostic omitted expected selectors")
+
+        statuses = {
+            "logged-out addresses": 302,
+            "logged-out history": 302,
+            "logged-out order detail": 302,
+            "logged-out guest tracking": 200,
+            "logged-out contact form": 404,
+        }
+
+        def navigate(_driver: object, _requested: str, _shop: str, route: str, **_kwargs: object) -> dict[str, object]:
+            return {
+                "status": statuses[route],
+                "from_service_worker": False,
+                "from_disk_cache": False,
+            }
+
+        substages: list[str] = []
+        with patch.object(pwa_browser, "navigate_private_document", side_effect=navigate), \
+             patch.object(pwa_browser, "wait_visible", return_value=object()) as wait_visible:
+            with self.assertRaises(pwa_browser.PwaDiagnosticAssertionError) as raised:
+                pwa_browser.verify_logged_out_private_routes(
+                    Driver(), "http://localhost:18080", substages.append
+                )
+
+        self.assertEqual("public_route_status_mismatch", raised.exception.diagnostic_code)
+        self.assertEqual(
+            {
+                "expected_status": 200,
+                "response_status": 404,
+                "route_class": "contact",
+                "ready_state": "complete",
+                "contact_form_count": 0,
+                "contact_form_visible": False,
+                "login_form_count": 1,
+                "login_form_visible": True,
+                "guest_tracking_form_count": 0,
+                "guest_tracking_form_visible": False,
+                "from_service_worker": False,
+                "from_disk_cache": False,
+            },
+            raised.exception.safe_metadata,
+        )
+        self.assertEqual("require_contact_form_status", substages[-1])
+        self.assertNotIn("private-email-sentinel", repr(raised.exception.safe_metadata))
+        self.assertNotIn("private-token-sentinel", repr(raised.exception.safe_metadata))
+        self.assertNotIn(".contact-form form", str(wait_visible.call_args_list))
+
+    def test_contact_http_200_still_waits_for_the_visible_form(self) -> None:
+        class Driver:
+            current_url = "http://localhost:18080/index.php?controller=contact"
+
+        statuses = {
+            "logged-out addresses": 302,
+            "logged-out history": 302,
+            "logged-out order detail": 302,
+            "logged-out guest tracking": 200,
+            "logged-out contact form": 200,
+        }
+
+        def navigate(_driver: object, _requested: str, _shop: str, route: str, **_kwargs: object) -> dict[str, object]:
+            return {"status": statuses[route], "from_service_worker": False, "from_disk_cache": False}
+
+        with patch.object(pwa_browser, "navigate_private_document", side_effect=navigate), \
+             patch.object(pwa_browser, "wait_visible", return_value=object()) as wait_visible:
+            pwa_browser.verify_logged_out_private_routes(
+                Driver(), "http://localhost:18080", lambda _stage: None
+            )
+
+        self.assertIn(".contact-form form", str(wait_visible.call_args_list))
+
+    def test_contact_http_200_without_a_form_still_fails_at_form_wait(self) -> None:
+        class Driver:
+            current_url = "http://localhost:18080/index.php?controller=contact"
+
+        statuses = {
+            "logged-out addresses": 302,
+            "logged-out history": 302,
+            "logged-out order detail": 302,
+            "logged-out guest tracking": 200,
+            "logged-out contact form": 200,
+        }
+
+        def navigate(_driver: object, _requested: str, _shop: str, route: str, **_kwargs: object) -> dict[str, object]:
+            return {"status": statuses[route], "from_service_worker": False, "from_disk_cache": False}
+
+        def wait_for_selector(_driver: object, selector: str) -> object:
+            if selector == ".contact-form form":
+                raise pwa_browser.TimeoutException("form was not visible")
+            return object()
+
+        substages: list[str] = []
+        with patch.object(pwa_browser, "navigate_private_document", side_effect=navigate), \
+             patch.object(pwa_browser, "wait_visible", side_effect=wait_for_selector):
+            with self.assertRaises(pwa_browser.TimeoutException):
+                pwa_browser.verify_logged_out_private_routes(
+                    Driver(), "http://localhost:18080", substages.append
+                )
+
+        self.assertEqual("require_contact_form", substages[-1])
+
+    def test_off_origin_contact_destination_keeps_status_but_does_not_inspect_dom(self) -> None:
+        class Driver:
+            current_url = "https://outside.invalid/contact?email=private-email-sentinel"
+
+            def execute_script(self, _script: str) -> object:
+                raise AssertionError("off-origin document must not be inspected")
+
+        metadata = pwa_browser.safe_logged_out_route_status_metadata(
+            Driver(),
+            "http://localhost:18080",
+            "contact_form",
+            200,
+            {"status": 404, "from_service_worker": False, "from_disk_cache": True},
+        )
+
+        self.assertEqual(404, metadata["response_status"])
+        self.assertEqual("other", metadata["route_class"])
+        self.assertIsNone(metadata["contact_form_count"])
+        self.assertIsNone(metadata["login_form_count"])
+        self.assertFalse(metadata["from_service_worker"])
+        self.assertTrue(metadata["from_disk_cache"])
+        self.assertNotIn("private-email-sentinel", repr(metadata))
+
+    def test_logged_out_contact_status_failure_records_only_safe_document_state(self) -> None:
+        secret_url = (
+            "http://localhost:18080/contact?email=private-email-sentinel"
+            "&token=private-token-sentinel"
+        )
+
+        class Driver:
+            current_url = secret_url
+
+            def execute_script(self, script: str) -> dict[str, object]:
+                self.assertNotIn("textContent", script)
+                self.assertNotIn("innerHTML", script)
+                self.assertIn(".contact-form form", script)
+                return {
+                    "ready_state": "complete",
+                    "contact_form_count": 0,
+                    "contact_form_visible": False,
+                    "login_form_count": 1,
+                    "login_form_visible": True,
+                }
+
+            def assertNotIn(self, needle: str, haystack: str) -> None:
+                if needle in haystack:
+                    raise AssertionError("PWA route diagnostic reads page text")
+
+            def assertIn(self, needle: str, haystack: str) -> None:
+                if needle not in haystack:
+                    raise AssertionError("PWA route diagnostic omitted expected selectors")
+
+        statuses = {
+            "logged-out addresses": 302,
+            "logged-out history": 302,
+            "logged-out order detail": 302,
+            "logged-out guest tracking": 200,
+            "logged-out contact form": 404,
+        }
+
+        def navigate(_driver: object, _requested: str, _shop: str, route: str, **_kwargs: object) -> dict[str, object]:
+            return {
+                "status": statuses[route],
+                "from_service_worker": False,
+                "from_disk_cache": False,
+            }
+
+        substages: list[str] = []
+        with patch.object(pwa_browser, "navigate_private_document", side_effect=navigate), \
+             patch.object(pwa_browser, "wait_visible", return_value=object()) as wait_visible:
+            with self.assertRaises(pwa_browser.PwaDiagnosticAssertionError) as raised:
+                pwa_browser.verify_logged_out_private_routes(
+                    Driver(), "http://localhost:18080", substages.append
+                )
+
+        self.assertEqual("public_route_status_mismatch", raised.exception.diagnostic_code)
+        self.assertEqual(
+            {
+                "expected_status": 200,
+                "response_status": 404,
+                "route_class": "contact",
+                "ready_state": "complete",
+                "contact_form_count": 0,
+                "contact_form_visible": False,
+                "login_form_count": 1,
+                "login_form_visible": True,
+                "guest_tracking_form_count": None,
+                "guest_tracking_form_visible": None,
+                "from_service_worker": False,
+                "from_disk_cache": False,
+            },
+            raised.exception.safe_metadata,
+        )
+        self.assertEqual("require_contact_form_status", substages[-1])
+        self.assertNotIn("private-email-sentinel", repr(raised.exception.safe_metadata))
+        self.assertNotIn("private-token-sentinel", repr(raised.exception.safe_metadata))
+        self.assertNotIn(".contact-form form", str(wait_visible.call_args_list))
+
+    def test_logged_out_route_status_annotation_is_allowlisted_and_bounded(self) -> None:
+        diagnostic = pwa_browser.format_logged_out_route_status_diagnostic({
+            "expected_status": 200,
+            "response_status": 404,
+            "route_class": "private-token-sentinel",
+            "ready_state": "complete",
+            "contact_form_count": 1_000_000,
+            "contact_form_visible": False,
+            "login_form_count": -4,
+            "login_form_visible": True,
+            "guest_tracking_form_count": 0,
+            "guest_tracking_form_visible": False,
+            "from_service_worker": False,
+            "from_disk_cache": True,
+            "url": "https://private-email-sentinel.invalid/?token=private-token-sentinel",
+        })
+
+        self.assertIn("expected_status=200", diagnostic)
+        self.assertIn("response_status=404", diagnostic)
+        self.assertIn("final_route_class=other", diagnostic)
+        self.assertIn("contact_form_count=20", diagnostic)
+        self.assertIn("login_form_count=0", diagnostic)
+        self.assertIn("from_service_worker=false", diagnostic)
+        self.assertIn("from_disk_cache=true", diagnostic)
+        self.assertNotIn("private-email-sentinel", diagnostic)
+        self.assertNotIn("private-token-sentinel", diagnostic)
+
+        malformed_status = pwa_browser.format_logged_out_route_status_diagnostic({
+            "expected_status": 200.5,
+            "response_status": 404.5,
+            "route_class": "contact",
+        })
+        self.assertIn("expected_status=unavailable", malformed_status)
+        self.assertIn("response_status=unavailable", malformed_status)
+        self.assertIn("from_service_worker=unknown", malformed_status)
+        self.assertIn("contact_form_count=unavailable", malformed_status)
+
     def test_signout_uses_native_centered_click_and_preserves_safe_failure_evidence(self) -> None:
         import inspect
 
@@ -1928,7 +2578,15 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
 
         with (
             patch.object(pwa_browser, "WebDriverWait", ImmediateWait),
-            patch.object(pwa_browser, "current_main_frame_id", return_value="main-frame"),
+            patch.object(
+                pwa_browser,
+                "current_main_frame_snapshot",
+                return_value=("main-frame", {
+                    "frame_tree_available": True,
+                    "root_frame_present": True,
+                    "frame_id_present": True,
+                }),
+            ),
         ):
             observed = pwa_browser.navigate_private_document(
                 Driver(),

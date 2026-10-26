@@ -31,7 +31,9 @@ function fixture(options = {}) {
       subscriptionUrl: '/index.php?fc=module&module=kuraneapush&controller=subscription',
       statusUrl: '/index.php?fc=module&module=kuraneapush&controller=subscription&action=status',
       token: 'synthetic-token', locale: options.locale || 'en',
+      pushNoticeVersion: options.noticeVersion === false ? '' : 'a'.repeat(64),
       canSubscribe: options.unavailable ? '0' : '1', active: options.active ? '1' : '0',
+      revocable: options.revocable || options.active ? '1' : '0',
       applicationServerKey: options.key === false ? '' : key.toString('base64url')
     },
     querySelector(selector) { return nodes[selector]; },
@@ -39,7 +41,7 @@ function fixture(options = {}) {
   };
   if (options.crossOrigin) root.dataset.subscriptionUrl = 'https://untrusted.invalid/subscription';
   const subscription = {
-    toJSON() { return { endpoint: 'https://synthetic.invalid/device', keys: { p256dh: 'synthetic', auth: 'synthetic' } }; },
+    toJSON() { return { endpoint: 'https://synthetic.invalid/device', expirationTime: null, keys: { p256dh: 'synthetic', auth: 'synthetic' } }; },
     async unsubscribe() { calls.push('unsubscribe'); return !options.unsubscribeFails; }
   };
   const registration = {
@@ -95,8 +97,8 @@ test('explicit enable without consent cannot ask browser permission', async () =
   assert.match(f.nodes['[data-push-status]'].textContent, /Agree to the notice/);
 });
 
-test('missing copy, missing public key and readiness off each keep enable disabled', async () => {
-  for (const options of [{ noNotice: true }, { key: false }, { unavailable: true }]) {
+test('missing copy, notice version, public key and readiness off each keep enable disabled', async () => {
+  for (const options of [{ noNotice: true }, { noticeVersion: false }, { key: false }, { unavailable: true }]) {
     const f = fixture(options);
     f.consent();
     assert.equal(f.nodes['[data-push-enable]'].disabled, true);
@@ -120,6 +122,7 @@ test('consented enable requests permission before waiting for worker and saving'
   assert.equal(request.init.redirect, 'error');
   assert.equal(request.payload.action, 'subscribe');
   assert.equal(request.payload.consent, true);
+  assert.equal(request.payload.notice_version, 'a'.repeat(64));
   assert.equal(request.payload.token, 'synthetic-token');
   assert.equal(request.payload.locale, 'en');
   assert.equal(f.nodes['[data-push-disable]'].disabled, false);
@@ -132,6 +135,17 @@ test('denied browser permission prevents worker, subscribe and save', async () =
   await f.enable();
   assert.deepEqual(f.calls, []);
   assert.match(f.nodes['[data-push-status]'].textContent, /not allowed/);
+});
+
+test('standard browser subscription JSON is normalized to the strict API schema', async () => {
+  const f = fixture();
+  f.consent();
+  await f.enable();
+  const request = f.calls.find(call => typeof call === 'object');
+  assert.deepEqual(request.payload.subscription, {
+    endpoint: 'https://synthetic.invalid/device',
+    keys: { p256dh: 'synthetic', auth: 'synthetic' }
+  });
 });
 
 test('failed save unsubscribes the newly created browser subscription', async () => {
@@ -161,6 +175,16 @@ test('active subscription stays revocable with blank copy, no key and readiness 
   assert.deepEqual(f.calls.slice(1), ['getRegistration', 'getSubscription', 'unsubscribe']);
   assert.equal(f.nodes['[data-push-disable]'].disabled, true);
   assert.match(f.nodes['[data-push-status]'].textContent, /all devices/);
+});
+
+test('legacy stored subscription stays revocable without counting as consented or active', async () => {
+  const f = fixture({ revocable: true, existing: true });
+  assert.equal(f.root.dataset.active, '0');
+  assert.equal(f.nodes['[data-push-disable]'].disabled, false);
+  assert.match(f.nodes['[data-push-status]'].textContent, /previous notification registration/i);
+  await f.revoke();
+  assert.equal(f.calls[0].payload.action, 'revoke');
+  assert.equal(f.nodes['[data-push-disable]'].disabled, true);
 });
 
 test('server revoke failure still unsubscribes locally and retains retry', async () => {

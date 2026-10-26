@@ -20,6 +20,20 @@ class PushWorkflowContractTests(unittest.TestCase):
         for filename in ('run.php', 'repository.php'):
             self.assertIn('cat > /tmp/ordenowa-push-contracts/tests/pwa/php/' + filename, step)
             self.assertIn('< tests/pwa/php/' + filename, step)
+        for filename in ('delivery_outbox.php', 'outbox_repository.php'):
+            self.assertIn('cat > /tmp/ordenowa-push-contracts/tests/pwa/php/' + filename, step)
+            self.assertIn('< tests/pwa/php/' + filename, step)
+        self.assertIn("require __DIR__ . '/delivery_outbox.php';", (ROOT / 'tests/pwa/php/run.php').read_text())
+
+    def test_ci_executes_isolated_mariadb_outbox_fixture(self):
+        workflow = (ROOT / '.github/workflows/fresh-install.yml').read_text()
+        step = workflow.split('id: pwa_push_qa', 1)[1].split('      - name:', 1)[0]
+        self.assertIn('cat > /tmp/ordenowa-push-contracts/tests/pwa/php/outbox_database.php', step)
+        self.assertIn('< tests/pwa/php/outbox_database.php', step)
+        self.assertIn('php /tmp/ordenowa-push-contracts/tests/pwa/php/outbox_database.php', step)
+        fixture = (ROOT / 'tests/pwa/php/outbox_database.php').read_text()
+        self.assertIn('if(PHP_SAPI!==\'cli\'||!Readiness::isolated())', fixture)
+        self.assertIn('finally {', fixture)
 
     def test_local_compose_has_no_storage_key_and_disables_test_mode(self):
         compose = (ROOT / 'compose.yaml').read_text()
@@ -37,11 +51,18 @@ class PushWorkflowContractTests(unittest.TestCase):
         self.assertIn('PWA_PUSH_QA_OUTCOME: ${{ steps.pwa_push_qa.outcome }}', aggregate)
         self.assertIn('"pwa_push_qa=$PWA_PUSH_QA_OUTCOME"', aggregate)
 
+    def test_synthetic_push_persistence_is_not_skipped_by_browser_pwa_failure(self):
+        workflow = (ROOT / '.github/workflows/fresh-install.yml').read_text()
+        step = workflow.split('id: pwa_push_qa', 1)[1].split('      - name:', 1)[0]
+        self.assertIn("steps.compose_up.outcome == 'success'", step)
+        self.assertNotIn("steps.pwa_browser_qa.outcome == 'success'", step)
+
     def test_browser_never_subscribes_to_provider_and_checks_two_owners(self):
         source = inspect.getsource(browser)
         self.assertNotIn('.pushManager.subscribe(', source)
         self.assertIn('def verify_push_account_control(', source)
         self.assertIn('def verify_synthetic_push_persistence(', source)
+        self.assertIn('notice_version: root.dataset.pushNoticeVersion', source)
         self.assertIn('cross_customer', source)
         self.assertIn('requestPermission', source)
 

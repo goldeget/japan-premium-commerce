@@ -225,6 +225,34 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
                     self.assertEqual(0, result["fetchCalls"])
                     self.assertEqual(0, result["cacheOpenCalls"])
 
+    @unittest.skipUnless(shutil.which("php"), "PHP payload serialization requires the Actions PHP runtime")
+    def test_php_delivery_serializer_produces_worker_accepted_notifications(self) -> None:
+        script = r'''
+        require $argv[1];
+        $payloads = [];
+        foreach (['order', 'delivery', 'support'] as $event) {
+            foreach (['ja', 'en', 'ko'] as $locale) {
+                $payloads[] = (new Kuranea\Push\Domain\DeliveryPayload($event, $locale))->toJson();
+            }
+        }
+        echo json_encode($payloads, JSON_THROW_ON_ERROR);
+        '''
+        serialized = subprocess.run(
+            ["php", "-r", script, str(ROOT / "modules/kuraneapush/autoload.php")],
+            capture_output=True, text=True, check=True,
+        )
+        payloads = json.loads(serialized.stdout)
+        self.assertEqual(9, len(payloads))
+        for wire in payloads:
+            with self.subTest(payload=wire):
+                payload = json.loads(wire)
+                self.assertEqual({"event", "locale"}, set(payload))
+                result = self.run_worker(kind="push", payload=wire)
+                self.assertEqual(1, len(result["notifications"]))
+                self.assertEqual("ORDENOWA", result["notifications"][0]["title"])
+                self.assertEqual({"route": "my-account"}, result["notifications"][0]["data"])
+                self.assertEqual(0, result["fetchCalls"])
+
     def test_push_rejects_malformed_unknown_and_personal_payloads(self) -> None:
         payloads = [None, "", "not json", "null", "[]", "42", '"order"', "{}",
                     '{"event":"order"}', '{"locale":"en"}',
@@ -1569,7 +1597,13 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
                 Driver([]), secret_url, shop_url, "logged-out account", main_frame_id="main-frame"
             )
         self.assertEqual(no_response.exception.diagnostic_code, "document_response_missing")
-        self.assertEqual(no_response.exception.safe_metadata, {"response_count": 0})
+        no_response_metadata = no_response.exception.safe_metadata
+        self.assertEqual(no_response_metadata["response_count"], 0)
+        self.assertEqual(no_response_metadata["requested_route_class"], "account")
+        self.assertEqual(no_response_metadata["requested_target"]["path"], "/ko/my-account")
+        self.assertIsNone(no_response_metadata["response_status"])
+        self.assertEqual(no_response_metadata["frame_id_present"], True)
+        self.assertNotIn("private-token-sentinel", repr(no_response_metadata))
         self.assertNotIn("private-token-sentinel", str(no_response.exception))
 
         missing_policy_event = {
@@ -1601,21 +1635,22 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
                 main_frame_id="main-frame",
             )
         self.assertEqual(missing_policy.exception.diagnostic_code, "cache_policy_missing")
-        self.assertEqual(
-            missing_policy.exception.safe_metadata,
-            {
-                "response_count": 20,
-                "status": 302,
-                "cache_control_directives": ["max-age", "no-cache"],
-                "pragma_present": False,
-                "expires_present": False,
-                "from_disk_cache": False,
-                "from_service_worker": True,
-            },
-        )
+        missing_policy_metadata = missing_policy.exception.safe_metadata
+        self.assertEqual(missing_policy_metadata["response_count"], 20)
+        self.assertEqual(missing_policy_metadata["status"], 302)
+        self.assertEqual(missing_policy_metadata["response_status"], 302)
+        self.assertEqual(missing_policy_metadata["response_status_source"], "network_document")
+        self.assertEqual(missing_policy_metadata["requested_route_class"], "account")
+        self.assertEqual(missing_policy_metadata["final_target"]["path"], "/ko/my-account")
+        self.assertEqual(missing_policy_metadata["cache_control_directives"], ["max-age", "no-cache"])
+        self.assertFalse(missing_policy_metadata["pragma_present"])
+        self.assertFalse(missing_policy_metadata["expires_present"])
+        self.assertFalse(missing_policy_metadata["from_disk_cache"])
+        self.assertTrue(missing_policy_metadata["from_service_worker"])
+        self.assertNotIn("private-token-sentinel", repr(missing_policy_metadata))
         self.assertNotIn("private-token-sentinel", str(missing_policy.exception))
         self.assertEqual(
-            pwa_browser.response_count_diagnostic(missing_policy.exception.safe_metadata["response_count"]),
+            pwa_browser.response_count_diagnostic(missing_policy_metadata["response_count"]),
             "; response_count=20",
         )
         self.assertEqual(pwa_browser.response_count_diagnostic(1000), "; response_count=20")
@@ -1660,7 +1695,8 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
 
     def test_emitted_private_response_count_uses_the_bounded_formatter(self) -> None:
         viewport = function_source(self.source, "run_viewport")
-        self.assertIn('response_count_diagnostic(metadata.get("response_count"))', viewport)
+        self.assertIn('format_main_frame_failure_diagnostic(metadata)', viewport)
+        self.assertIn('code in {"document_response_missing", "cache_policy_missing"}', viewport)
 
     def test_logged_out_private_navigation_reports_its_sanitized_substage(self) -> None:
         navigate = function_source(self.source, "navigate_private_document")

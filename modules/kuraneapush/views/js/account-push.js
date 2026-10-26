@@ -6,6 +6,7 @@
     ja: {
       unavailable: '現在、新しい通知の登録は利用できません。',
       saved: 'このアカウントには通知の登録が保存されています。',
+      legacyStored: '以前の通知登録情報が保存されています。新しい登録には案内への同意が必要です。不要な場合はすべての端末から取り消してください。',
       ready: '案内を確認して同意すると、通知を登録できます。',
       consent: '通知を有効にするには、案内への同意が必要です。',
       denied: 'ブラウザーで通知が許可されていません。ブラウザーの設定をご確認ください。',
@@ -18,6 +19,7 @@
     en: {
       unavailable: 'New notification subscriptions are currently unavailable.',
       saved: 'A notification subscription is saved for this account.',
+      legacyStored: 'A previous notification registration is stored without a recorded notice acceptance. Agree to the current notice to register again, or revoke stored registrations on all devices.',
       ready: 'Read and agree to the notice to register for notifications.',
       consent: 'Agree to the notice before enabling notifications.',
       denied: 'Notifications are not allowed in this browser. Check your browser settings.',
@@ -30,6 +32,7 @@
     ko: {
       unavailable: '현재 새 알림 구독을 사용할 수 없습니다.',
       saved: '이 계정에 저장된 알림 구독이 있습니다.',
+      legacyStored: '이전 알림 등록 정보가 저장되어 있지만 동의 기록이 없습니다. 다시 등록하려면 현재 안내에 동의하거나 모든 기기에서 철회하세요.',
       ready: '안내를 확인하고 동의하면 알림을 등록할 수 있습니다.',
       consent: '알림을 사용하려면 안내에 동의해야 합니다.',
       denied: '이 브라우저에서 알림이 허용되지 않았습니다. 브라우저 설정을 확인해 주세요.',
@@ -81,16 +84,19 @@
     var key = applicationKey(root.dataset.applicationServerKey);
     var notice = root.querySelector('[data-push-notice]');
     var active = root.dataset.active === '1';
+    var revocable = root.dataset.revocable === '1';
     var localRevokePending = false;
     var busy = false;
     var supported = Boolean(window.isSecureContext && 'Notification' in window && 'PushManager' in window && 'serviceWorker' in navigator);
-    var available = Boolean(endpoint && root.dataset.token && root.dataset.canSubscribe === '1' && key && notice && notice.textContent.trim() && supported);
+    var noticeVersion = root.dataset.pushNoticeVersion || '';
+    var available = Boolean(endpoint && root.dataset.token && root.dataset.canSubscribe === '1' && key && notice && notice.textContent.trim()
+      && /^[a-f0-9]{64}$/.test(noticeVersion) && supported);
 
     function render() {
       consent.disabled = busy || !available;
       enable.disabled = busy || !available || !consent.checked;
       // Revocation depends only on authentication, never subscription readiness.
-      disable.disabled = busy || !(active || localRevokePending) || !endpoint || !root.dataset.token;
+      disable.disabled = busy || !(active || revocable || localRevokePending) || !endpoint || !root.dataset.token;
       root.setAttribute('aria-busy', busy ? 'true' : 'false');
     }
 
@@ -149,9 +155,15 @@
           subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
           created = subscription;
         }
-        await post({ action: 'subscribe', token: root.dataset.token, consent: true, locale: locale, subscription: subscription.toJSON() });
+        var browserSubscription = subscription.toJSON();
+        await post({ action: 'subscribe', token: root.dataset.token, consent: true, locale: locale,
+          notice_version: noticeVersion, subscription: {
+            endpoint: browserSubscription.endpoint,
+            keys: { p256dh: browserSubscription.keys.p256dh, auth: browserSubscription.keys.auth }
+          } });
         created = null;
         active = true;
+        revocable = true;
         say('enabled');
       } catch (error) {
         if (created) {
@@ -167,7 +179,7 @@
     });
 
     disable.addEventListener('click', async function () {
-      if (busy || !(active || localRevokePending)) return;
+      if (busy || !(active || revocable || localRevokePending)) return;
       busy = true;
       render();
       say('working');
@@ -177,6 +189,7 @@
         await post({ action: 'revoke', token: root.dataset.token });
         serverRevoked = true;
         active = false;
+        revocable = false;
       } catch (error) { /* Always attempt current-device removal as well. */ }
       try {
         if ('serviceWorker' in navigator) {
@@ -196,7 +209,8 @@
 
     // No permission, service-worker readiness, browser subscription or network
     // operation takes place during initialization.
-    status.textContent = (active ? copy.saved + ' ' : '') + (available ? copy.ready : copy.unavailable);
+    status.textContent = (active ? copy.saved + ' ' : (revocable ? copy.legacyStored + ' ' : ''))
+      + (available ? copy.ready : copy.unavailable);
     render();
   }
 

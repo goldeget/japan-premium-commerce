@@ -6,9 +6,11 @@ if (!defined('_PS_VERSION_')) {
 }
 require_once __DIR__ . '/autoload.php';
 use Kuranea\Push\Domain\Readiness;
+use Kuranea\Push\Domain\ConsentNoticeVersion;
 use Kuranea\Push\Infrastructure\PushSettings;
 use Kuranea\Push\Infrastructure\SubscriptionCipher;
 use Kuranea\Push\Infrastructure\SubscriptionRepository;
+use Kuranea\Push\Infrastructure\PushOutboxRepository;
 
 class Kuraneapush extends Module
 {
@@ -16,7 +18,7 @@ class Kuraneapush extends Module
     {
         $this->name = 'kuraneapush';
         $this->tab = 'administration';
-        $this->version = '1.0.0';
+        $this->version = '1.0.2';
         $this->author = 'ORDENOWA';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -28,7 +30,7 @@ class Kuraneapush extends Module
 
     public function install(): bool
     {
-        if (!parent::install() || !(new SubscriptionRepository())->install()) {
+        if (!parent::install() || !(new SubscriptionRepository())->install() || !(new PushOutboxRepository())->install()) {
             return false;
         }
         foreach (Shop::getShops(false, null, true) as $shop) {
@@ -78,8 +80,11 @@ class Kuraneapush extends Module
         } catch (\Throwable $e) {
         }
         $active = false;
+        $revocable = false;
         try {
-            $active = (new SubscriptionRepository())->active($shop, (int) $customer->id);
+            $subscriptions = new SubscriptionRepository();
+            $active = $subscriptions->active($shop, (int) $customer->id);
+            $revocable = $subscriptions->stored($shop, (int) $customer->id);
         } catch (\Throwable $e) {
             $keyAvailable = false;
         }
@@ -90,8 +95,10 @@ class Kuraneapush extends Module
             'ordenowa_push_token' => (string) Tools::getToken('kuraneapush', $this->context),
             'ordenowa_push_locale' => $locale,
             'ordenowa_push_consent_notice' => $notice,
+            'ordenowa_push_consent_notice_version' => ConsentNoticeVersion::forNotice($notice, $locale),
             'ordenowa_push_can_subscribe' => Readiness::canSubscribe(null, $notice, $keyAvailable),
             'ordenowa_push_active' => $active,
+            'ordenowa_push_revocable' => $revocable,
             'ordenowa_push_application_server_key' => '',
         ]);
         $this->context->controller->registerJavascript('module-kuraneapush-account',
@@ -108,6 +115,7 @@ class Kuraneapush extends Module
             return;
         }
         (new SubscriptionRepository())->deleteCustomer((int) $customer->id, Shop::getShops(false, null, true));
+        (new PushOutboxRepository())->deleteCustomer((int) $customer->id, Shop::getShops(false, null, true));
     }
 
     private function installTab(): bool

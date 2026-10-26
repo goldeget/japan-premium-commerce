@@ -41,7 +41,7 @@ except ImportError:  # Pure manifest contract helpers remain importable without 
 EXPECTED_SHOP_PORT = 18080
 MAX_PWA_DIAGNOSTIC_RESPONSE_COUNT = 20
 MAX_PWA_DIAGNOSTIC_ELEMENT_COUNT = 20
-PWA_LOGOUT_ROUTE_CLASSES = {"authentication", "account", "home", "other"}
+PWA_LOGOUT_ROUTE_CLASSES = {"authentication", "account", "contact", "home", "other"}
 PWA_DIAGNOSTIC_MAX_REDIRECTS = 8
 PWA_DIAGNOSTIC_MAX_PATH_LENGTH = 160
 PWA_DIAGNOSTIC_MAX_QUERY_KEYS = 8
@@ -57,6 +57,8 @@ PWA_DIAGNOSTIC_ROUTE_SEGMENTS = {
     "address",
     "authentication",
     "cart",
+    "contact",
+    "contact-us",
     "discount",
     "guest-tracking",
     "history",
@@ -633,6 +635,11 @@ def customer_route_class(candidate_url: str, shop_url: str) -> str:
     ):
         return "account"
 
+    if controller in {"contact", "contact-us"} or any(
+        segment in {"contact", "contact-us"} for segment in segments
+    ):
+        return "contact"
+
     if segments and re.fullmatch(r"[a-z]{2}(?:-[a-z]{2})?", segments[0]):
         segments = segments[1:]
     if not segments or segments == ["index.php"]:
@@ -644,6 +651,125 @@ def _bounded_logout_element_count(value: object) -> int | None:
     if type(value) is not int:
         return None
     return min(max(value, 0), MAX_PWA_DIAGNOSTIC_ELEMENT_COUNT)
+
+
+def safe_logged_out_route_status_metadata(
+    driver: webdriver.Chrome,
+    shop_url: str,
+    route_stage: str,
+    expected_status: int,
+    observed: dict[str, object],
+) -> dict[str, object]:
+    """Capture bounded same-origin route/form metadata without reading page text or URL values."""
+    status = observed.get("status")
+    metadata: dict[str, object] = {
+        "expected_status": expected_status,
+        "response_status": (
+            status
+            if type(status) is int and 100 <= status <= 599
+            else None
+        ),
+        "route_class": "other",
+        "ready_state": "unknown",
+        "contact_form_count": None,
+        "contact_form_visible": None,
+        "login_form_count": None,
+        "login_form_visible": None,
+        "guest_tracking_form_count": None,
+        "guest_tracking_form_visible": None,
+        "from_service_worker": (
+            observed.get("from_service_worker")
+            if type(observed.get("from_service_worker")) is bool
+            else None
+        ),
+        "from_disk_cache": (
+            observed.get("from_disk_cache")
+            if type(observed.get("from_disk_cache")) is bool
+            else None
+        ),
+    }
+    try:
+        current_url = driver.current_url
+    except Exception:
+        return metadata
+    if not isinstance(current_url, str) or not same_origin(shop_url, current_url):
+        return metadata
+
+    metadata["route_class"] = customer_route_class(current_url, shop_url)
+    try:
+        raw = driver.execute_script("""
+          const visible = element => {
+            if (!element) return false;
+            const style = window.getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            return style.display !== 'none' && style.visibility !== 'hidden'
+              && Number(rect.width) > 0 && Number(rect.height) > 0;
+          };
+          const contact = Array.from(document.querySelectorAll('.contact-form form'));
+          const login = Array.from(document.querySelectorAll('#login-form input[name="email"]'));
+          const tracking = Array.from(document.querySelectorAll('#guestOrderTrackingForm'));
+          return {
+            ready_state: document.readyState,
+            contact_form_count: contact.length,
+            contact_form_visible: contact.some(visible),
+            login_form_count: login.length,
+            login_form_visible: login.some(visible),
+            guest_tracking_form_count: tracking.length,
+            guest_tracking_form_visible: tracking.some(visible)
+          };
+        """)
+    except Exception:
+        return metadata
+    if not isinstance(raw, dict):
+        return metadata
+
+    ready_state = raw.get("ready_state")
+    if ready_state in {"loading", "interactive", "complete"}:
+        metadata["ready_state"] = ready_state
+    for key in ("contact_form_count", "login_form_count", "guest_tracking_form_count"):
+        metadata[key] = _bounded_logout_element_count(raw.get(key))
+    for key in ("contact_form_visible", "login_form_visible", "guest_tracking_form_visible"):
+        value = raw.get(key)
+        metadata[key] = value if type(value) is bool else None
+    return metadata
+
+
+def format_logged_out_route_status_diagnostic(metadata: dict[str, object]) -> str:
+    expected = metadata.get("expected_status")
+    expected_status = str(expected) if type(expected) is int and 100 <= expected <= 599 else "unavailable"
+    observed = metadata.get("response_status")
+    response_status = str(observed) if type(observed) is int and 100 <= observed <= 599 else "unavailable"
+    route_class = metadata.get("route_class")
+    if route_class not in PWA_LOGOUT_ROUTE_CLASSES:
+        route_class = "other"
+    ready_state = metadata.get("ready_state")
+    if ready_state not in {"loading", "interactive", "complete"}:
+        ready_state = "unknown"
+    fields = [
+        f"expected_status={expected_status}",
+        f"response_status={response_status}",
+        f"final_route_class={route_class}",
+        f"ready_state={ready_state}",
+    ]
+    for key in (
+        "contact_form_count",
+        "contact_form_visible",
+        "login_form_count",
+        "login_form_visible",
+        "guest_tracking_form_count",
+        "guest_tracking_form_visible",
+        "from_service_worker",
+        "from_disk_cache",
+    ):
+        value = metadata.get(key)
+        if key.endswith("_count"):
+            count = _bounded_logout_element_count(value)
+            fields.append(f"{key}={count if count is not None else 'unavailable'}")
+        elif type(value) is bool:
+            fields.append(f"{key}={str(value).lower()}")
+        else:
+            fields.append(f"{key}=unknown")
+    return "; " + "; ".join(fields)
 
 
 def safe_logout_wait_diagnostics(driver: webdriver.Chrome, shop_url: str) -> dict[str, object]:
@@ -2215,13 +2341,256 @@ def require_service_worker_registration_match(
 
 
 def current_main_frame_id(driver: webdriver.Chrome) -> str | None:
+    return current_main_frame_snapshot(driver)[0]
+
+
+def current_main_frame_snapshot(
+    driver: webdriver.Chrome,
+) -> tuple[str | None, dict[str, bool | None]]:
+    """Return the CDP main-frame ID internally and a non-sensitive presence summary."""
+    metadata: dict[str, bool | None] = {
+        "frame_tree_available": False,
+        "root_frame_present": False,
+        "frame_id_present": False,
+    }
     try:
-        frame_tree = driver.execute_cdp_cmd("Page.getFrameTree", {}).get("frameTree", {})
-        frame = frame_tree.get("frame", {}) if isinstance(frame_tree, dict) else {}
-        frame_id = frame.get("id") if isinstance(frame, dict) else None
-        return frame_id if isinstance(frame_id, str) and frame_id else None
+        result = driver.execute_cdp_cmd("Page.getFrameTree", {})
     except Exception:
-        return None
+        return None, metadata
+
+    frame_tree = result.get("frameTree") if isinstance(result, dict) else None
+    metadata["frame_tree_available"] = isinstance(frame_tree, dict)
+    frame = frame_tree.get("frame") if isinstance(frame_tree, dict) else None
+    metadata["root_frame_present"] = isinstance(frame, dict)
+    frame_id = frame.get("id") if isinstance(frame, dict) else None
+    metadata["frame_id_present"] = isinstance(frame_id, str) and bool(frame_id)
+    return (frame_id if metadata["frame_id_present"] else None), metadata
+
+
+def safe_main_frame_failure_metadata(
+    driver: webdriver.Chrome,
+    requested_url: str,
+    shop_url: str,
+    frame_state: dict[str, object],
+    *,
+    main_frame_id: str | None = None,
+    performance_entries: object | None = None,
+) -> dict[str, object]:
+    """Capture the failed document's safe route, response, cache and form state."""
+    metadata: dict[str, object] = {
+        "frame_tree_available": frame_state.get("frame_tree_available")
+        if type(frame_state.get("frame_tree_available")) is bool else None,
+        "root_frame_present": frame_state.get("root_frame_present")
+        if type(frame_state.get("root_frame_present")) is bool else None,
+        "frame_id_present": frame_state.get("frame_id_present")
+        if type(frame_state.get("frame_id_present")) is bool else None,
+        "requested_target": safe_navigation_target(requested_url, shop_url),
+        "requested_route_class": customer_route_class(requested_url, shop_url),
+        "final_target": {"path": "<other>", "query_keys": []},
+        "final_route_class": "other",
+        "response_count": 0,
+        "response_status": None,
+        "response_status_source": "unavailable",
+        "from_service_worker": None,
+        "from_disk_cache": None,
+        "private_cache_policy": None,
+        "ready_state": "unknown",
+        "contact_form_count": None,
+        "contact_form_visible": None,
+        "login_form_count": None,
+        "login_form_visible": None,
+        "guest_tracking_form_count": None,
+        "guest_tracking_form_visible": None,
+    }
+
+    try:
+        current_url = driver.current_url
+    except Exception:
+        current_url = None
+
+    if isinstance(current_url, str) and same_origin(shop_url, current_url):
+        metadata["final_target"] = safe_navigation_target(current_url, shop_url)
+        metadata["final_route_class"] = customer_route_class(current_url, shop_url)
+        try:
+            snapshot = driver.execute_script("""
+              const visible = element => {
+                if (!element) return false;
+                const style = window.getComputedStyle(element);
+                const rect = element.getBoundingClientRect();
+                return style.display !== 'none' && style.visibility !== 'hidden'
+                  && Number(rect.width) > 0 && Number(rect.height) > 0;
+              };
+              const contact = Array.from(document.querySelectorAll('.contact-form form'));
+              const login = Array.from(document.querySelectorAll('#login-form input[name="email"]'));
+              const tracking = Array.from(document.querySelectorAll('#guestOrderTrackingForm'));
+              return {
+                ready_state: document.readyState,
+                contact_form_count: contact.length,
+                contact_form_visible: contact.some(visible),
+                login_form_count: login.length,
+                login_form_visible: login.some(visible),
+                guest_tracking_form_count: tracking.length,
+                guest_tracking_form_visible: tracking.some(visible)
+              };
+            """)
+        except Exception:
+            snapshot = None
+        if isinstance(snapshot, dict):
+            state = snapshot.get("ready_state")
+            if state in {"loading", "interactive", "complete"}:
+                metadata["ready_state"] = state
+            for key in ("contact_form_count", "login_form_count", "guest_tracking_form_count"):
+                metadata[key] = _bounded_logout_element_count(snapshot.get(key))
+            for key in ("contact_form_visible", "login_form_visible", "guest_tracking_form_visible"):
+                value = snapshot.get(key)
+                metadata[key] = value if type(value) is bool else None
+
+    if performance_entries is None:
+        try:
+            performance_entries = driver.get_log("performance")
+        except Exception:
+            performance_entries = None
+    events = chrome_performance_events(performance_entries)
+    request_id: str | None = None
+    for event in events:
+        params = event.get("params")
+        request = params.get("request") if isinstance(params, dict) else None
+        if (
+            event.get("method") == "Network.requestWillBeSent"
+            and isinstance(params, dict)
+            and isinstance(main_frame_id, str)
+            and bool(main_frame_id)
+            and params.get("frameId") == main_frame_id
+            and params.get("type") == "Document"
+            and isinstance(request, dict)
+            and _navigation_url_matches(request.get("url"), requested_url, shop_url)
+            and isinstance(params.get("requestId"), str)
+        ):
+            request_id = params["requestId"]
+            break
+
+    responses: list[dict[str, object]] = []
+    for event in events:
+        params = event.get("params")
+        if not isinstance(params, dict) or params.get("type") != "Document":
+            continue
+        # CDP document responses are frame-scoped. If the root frame ID is
+        # unavailable, do not guess that a matching same-origin iframe is the
+        # top-level document; use the same-origin Navigation Timing fallback.
+        if not isinstance(main_frame_id, str) or not main_frame_id or params.get("frameId") != main_frame_id:
+            continue
+        if request_id is not None and params.get("requestId") != request_id:
+            continue
+        response: object = None
+        if event.get("method") == "Network.responseReceived":
+            response = params.get("response")
+        elif event.get("method") == "Network.requestWillBeSent":
+            response = params.get("redirectResponse")
+        if not isinstance(response, dict):
+            continue
+        response_url = response.get("url")
+        if not isinstance(response_url, str) or not same_origin(shop_url, response_url):
+            continue
+        matched_requested = _navigation_url_matches(response_url, requested_url, shop_url)
+        matched_current = (
+            isinstance(current_url, str)
+            and same_storefront_route(response_url, current_url, shop_url)
+        )
+        if request_id is None and not (matched_requested or matched_current):
+            continue
+        responses.append(response)
+
+    metadata["response_count"] = min(len(responses), MAX_PWA_DIAGNOSTIC_RESPONSE_COUNT)
+    if responses:
+        response = responses[-1]
+        metadata["response_status"] = _safe_http_status(response.get("status"))
+        if type(metadata["response_status"]) is int:
+            metadata["response_status_source"] = "network_document"
+        response_url = response.get("url")
+        if isinstance(response_url, str):
+            metadata["final_target"] = safe_navigation_target(response_url, shop_url)
+            metadata["final_route_class"] = customer_route_class(response_url, shop_url)
+        provenance = _safe_response_cache_provenance(response)
+        metadata["from_service_worker"] = provenance.get("from_service_worker")
+        metadata["from_disk_cache"] = provenance.get("from_disk_cache")
+        metadata["private_cache_policy"] = provenance.get("private_cache_policy")
+    if metadata["response_status"] is None:
+        try:
+            navigation = driver.execute_script("""
+              const entry = performance.getEntriesByType('navigation')[0];
+              let sameOrigin = false;
+              try {
+                sameOrigin = Boolean(entry && new URL(entry.name, window.location.href).origin === window.location.origin);
+              } catch (_) {}
+              return {
+                navigation_same_origin: sameOrigin,
+                response_status: entry && Number.isInteger(entry.responseStatus) ? entry.responseStatus : null
+              };
+            """)
+        except Exception:
+            navigation = None
+        if isinstance(navigation, dict) and navigation.get("navigation_same_origin") is True:
+            status = navigation.get("response_status")
+            if type(status) is int and 100 <= status <= 599:
+                metadata["response_status"] = status
+                metadata["response_status_source"] = "navigation_timing"
+    return metadata
+
+
+def format_main_frame_failure_diagnostic(metadata: dict[str, object]) -> str:
+    """Format only sanitized route, integer status, booleans and bounded counts."""
+    requested_route = metadata.get("requested_route_class")
+    if requested_route not in PWA_LOGOUT_ROUTE_CLASSES:
+        requested_route = "other"
+    final_route = metadata.get("final_route_class")
+    if final_route not in PWA_LOGOUT_ROUTE_CLASSES:
+        final_route = "other"
+    requested_target = _safe_navigation_target_metadata(metadata.get("requested_target"))
+    final_target = _safe_navigation_target_metadata(metadata.get("final_target"))
+
+    def bool_value(key: str) -> str:
+        value = metadata.get(key)
+        return str(value).lower() if type(value) is bool else "unknown"
+
+    def status_value(key: str) -> str:
+        status = metadata.get(key)
+        return str(status) if type(status) is int and 100 <= status <= 599 else "unavailable"
+
+    fields = [
+        f"frame_tree_available={bool_value('frame_tree_available')}",
+        f"root_frame_present={bool_value('root_frame_present')}",
+        f"frame_id_present={bool_value('frame_id_present')}",
+        f"requested_route_class={requested_route}",
+        f"requested_path={requested_target.get('path', '<other>')}",
+        f"final_route_class={final_route}",
+        f"final_path={final_target.get('path', '<other>')}",
+        f"response_status={status_value('response_status')}",
+        f"response_status_source={metadata.get('response_status_source') if metadata.get('response_status_source') in {'network_document', 'navigation_timing'} else 'unavailable'}",
+        f"response_count={response_count_diagnostic(metadata.get('response_count')).split('=', 1)[1]}",
+        f"ready_state={metadata.get('ready_state') if metadata.get('ready_state') in {'loading', 'interactive', 'complete'} else 'unknown'}",
+    ]
+    for key in (
+        "contact_form_count", "contact_form_visible", "login_form_count", "login_form_visible",
+        "guest_tracking_form_count", "guest_tracking_form_visible", "from_service_worker",
+        "from_disk_cache", "private_cache_policy", "pragma_present", "expires_present",
+    ):
+        value = metadata.get(key)
+        if key.endswith("_count"):
+            count = _bounded_logout_element_count(value)
+            fields.append(f"{key}={count if count is not None else 'unavailable'}")
+        else:
+            fields.append(f"{key}={str(value).lower() if type(value) is bool else 'unknown'}")
+    controller = final_target.get("controller")
+    if isinstance(controller, str):
+        fields.append(f"final_controller={controller}")
+    directives = metadata.get("cache_control_directives")
+    if isinstance(directives, list):
+        safe_directives = sorted({
+            item for item in directives
+            if isinstance(item, str) and re.fullmatch(r"[a-z0-9-]{1,32}", item)
+        })[:8]
+        fields.append(f"cache_control_directives={','.join(safe_directives) or 'missing'}")
+    return "; " + "; ".join(fields)
 
 
 def matching_document_responses(
@@ -2298,10 +2667,23 @@ def assert_private_document_cache_headers(
     if not responses:
         message = f"UNVERIFIED: document cache headers could not be observed for {route_label}."
         print(message, file=sys.stderr)
+        frame_state = {
+            "frame_tree_available": True,
+            "root_frame_present": True,
+            "frame_id_present": bool(main_frame_id),
+        }
+        safe_metadata = safe_main_frame_failure_metadata(
+            driver,
+            requested_url,
+            shop_url,
+            frame_state,
+            main_frame_id=main_frame_id,
+            performance_entries=performance_entries,
+        )
         raise PwaDiagnosticAssertionError(
             message,
             "document_response_missing",
-            {"response_count": 0},
+            safe_metadata,
         )
 
     response = responses[-1]
@@ -2370,6 +2752,19 @@ def assert_private_document_cache_headers(
         }
         if isinstance(observed.get("navigation_trace"), dict):
             safe_metadata["navigation_trace"] = observed["navigation_trace"]
+        safe_metadata.update(safe_main_frame_failure_metadata(
+            driver,
+            requested_url,
+            shop_url,
+            {
+                "frame_tree_available": True,
+                "root_frame_present": True,
+                "frame_id_present": bool(main_frame_id),
+            },
+            main_frame_id=main_frame_id,
+            performance_entries=performance_entries,
+        ))
+        safe_metadata["cache_control_directives"] = safe_directives
         directive_summary = ",".join(safe_directives) or "missing"
         message = (
             f"FAIL: {route_label} response lacks Cache-Control no-store semantics "
@@ -2418,9 +2813,14 @@ def navigate_private_document(
         cache_policy_url = driver.current_url
         if not same_origin(shop_url, cache_policy_url):
             raise AssertionError(f"{route_label} canonical destination left the isolated shop origin")
-    main_frame_id = current_main_frame_id(driver)
+    mark_substage("main_frame_id")
+    main_frame_id, frame_state = current_main_frame_snapshot(driver)
     if not main_frame_id:
-        raise AssertionError("Chrome main frame could not be identified for private response verification")
+        raise PwaDiagnosticAssertionError(
+            "Chrome main frame could not be identified for private response verification",
+            "main_frame_missing",
+            safe_main_frame_failure_metadata(driver, requested_url, shop_url, frame_state),
+        )
     mark_substage("cache_policy")
     if capture_navigation_trace:
         try:
@@ -3097,10 +3497,16 @@ def verify_logged_out_private_routes(
             set_substage=lambda name: set_substage(f"request_{route_stage}_{name}"),
             cache_policy_final_document=route_stage in {"guest_tracking", "contact_form"},
         )
-        if expected_status is not None and observed.get("status") != expected_status:
-            raise AssertionError(
-                f"logged-out {route_stage.replace('_', ' ')} did not redirect to sign-in"
-            )
+        if expected_status is not None:
+            set_substage(f"require_{route_stage}_status")
+            if observed.get("status") != expected_status:
+                raise PwaDiagnosticAssertionError(
+                    f"logged-out {route_stage.replace('_', ' ')} did not return the expected status",
+                    "public_route_status_mismatch",
+                    safe_logged_out_route_status_metadata(
+                        driver, shop_url, route_stage, expected_status, observed
+                    ),
+                )
         if route_stage == "guest_tracking":
             if observed.get("status") != 200:
                 raise AssertionError(
@@ -3751,6 +4157,7 @@ def verify_push_account_control(
       const enable = root.querySelector('[data-push-enable]');
       return {text: root.textContent, locale: root.dataset.locale,
         blank: !notice || !notice.textContent.trim(),
+        noticeVersionValid: /^[a-f0-9]{64}$/.test(root.dataset.pushNoticeVersion || ''),
         disabled: Boolean(enable) && enable.disabled,
         calls: window.__ordenowaPushCalls};
     """, control)
@@ -3760,6 +4167,8 @@ def verify_push_account_control(
         raise AssertionError("push account control label is not localized")
     if blank_notice and (metadata.get("blank") is not True or metadata.get("disabled") is not True):
         raise AssertionError("blank seller notice did not disable notification consent")
+    if not blank_notice and metadata.get("noticeVersionValid") is not True:
+        raise AssertionError("push consent notice version is missing or invalid")
     if metadata.get("calls") != {"permission": 0, "subscribe": 0}:
         raise AssertionError("account load attempted implicit permission or provider subscription")
     if not control.is_displayed():
@@ -3781,7 +4190,8 @@ def push_api(driver: webdriver.Chrome, action: str, subscription: dict[str, obje
           options.method = 'POST';
           options.headers = {'Content-Type': 'application/json'};
           options.body = JSON.stringify(action === 'subscribe'
-            ? {token: root.dataset.token, consent: true, locale: root.dataset.locale, subscription}
+            ? {token: root.dataset.token, consent: true, locale: root.dataset.locale,
+                notice_version: root.dataset.pushNoticeVersion, subscription}
             : {token: root.dataset.token});
         }
         const response = await fetch(url, options);
@@ -4195,21 +4605,8 @@ def run_viewport(
                 diagnostic += f"; diagnostic={code}"
                 metadata = error.safe_metadata
                 if code in {"document_response_missing", "cache_policy_missing"}:
-                    diagnostic += response_count_diagnostic(metadata.get("response_count"))
+                    diagnostic += format_main_frame_failure_diagnostic(metadata)
                 if code == "cache_policy_missing":
-                    safe_status = metadata.get("status")
-                    if isinstance(safe_status, int) and 100 <= safe_status <= 599:
-                        diagnostic += f"; response_status={safe_status}"
-                    directives = metadata.get("cache_control_directives")
-                    if isinstance(directives, list) and all(
-                        isinstance(item, str) and re.fullmatch(r"[a-z0-9-]{1,32}", item)
-                        for item in directives
-                    ):
-                        diagnostic += f"; cache_control_directives={','.join(directives) or 'missing'}"
-                    for key in ("pragma_present", "expires_present", "from_disk_cache", "from_service_worker"):
-                        value = metadata.get(key)
-                        if isinstance(value, bool):
-                            diagnostic += f"; {key}={str(value).lower()}"
                     navigation_trace = metadata.get("navigation_trace")
                     if isinstance(navigation_trace, dict):
                         diagnostic += f"; navigation_trace={_format_navigation_trace(navigation_trace)}"
@@ -4219,6 +4616,10 @@ def run_viewport(
                         diagnostic += f"; navigation_trace={_format_navigation_trace(navigation_trace)}"
                 elif code == "service_worker_registration":
                     diagnostic += format_service_worker_registration_diagnostic(metadata)
+                elif code == "public_route_status_mismatch":
+                    diagnostic += format_logged_out_route_status_diagnostic(metadata)
+                elif code == "main_frame_missing":
+                    diagnostic += format_main_frame_failure_diagnostic(metadata)
         if isinstance(error, ChromeBrowserCdpError):
             code = getattr(error, "diagnostic_code", "")
             cause = getattr(error, "cause_type", "")

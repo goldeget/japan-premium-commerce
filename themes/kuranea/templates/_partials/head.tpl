@@ -79,6 +79,7 @@
 
 {block name='head_icons'}
   <script defer src="{$urls.theme_assets|escape:'htmlall':'UTF-8'}js/pwa-register.js" data-service-worker="{$urls.base_url|escape:'htmlall':'UTF-8'}sw.js" data-scope="{$urls.base_url|escape:'htmlall':'UTF-8'}"></script>
+  <script defer src="{$urls.theme_assets|escape:'htmlall':'UTF-8'}js/skip-to-main.js"></script>
 {/block}
 
 {block name='stylesheets'}

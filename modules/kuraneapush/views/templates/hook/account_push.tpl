@@ -33,6 +33,8 @@
   data-locale="{$push_locale|escape:'htmlall':'UTF-8'}"
   data-can-subscribe="{if $ordenowa_push_can_subscribe}1{else}0{/if}"
   data-active="{if $ordenowa_push_active}1{else}0{/if}"
+  data-revocable="{if $ordenowa_push_revocable}1{else}0{/if}"
+  data-push-notice-version="{$ordenowa_push_consent_notice_version|escape:'htmlall':'UTF-8'}"
   {if isset($ordenowa_push_application_server_key)}data-application-server-key="{$ordenowa_push_application_server_key|escape:'htmlall':'UTF-8'}"{/if}
   lang="{$push_locale|escape:'htmlall':'UTF-8'}">
   <h2 class="ordenowa-push__title">{$push_title|escape:'htmlall':'UTF-8'}</h2>
@@ -52,6 +54,6 @@
   <p class="ordenowa-push__status" data-push-status role="status" aria-live="polite" aria-atomic="true">{if $ordenowa_push_active}{$push_saved|escape:'htmlall':'UTF-8'} {/if}{$push_unavailable|escape:'htmlall':'UTF-8'}</p>
   <div class="ordenowa-push__actions">
     <button class="btn btn-primary" type="button" data-push-enable disabled>{$push_enable|escape:'htmlall':'UTF-8'}</button>
-    <button class="btn btn-outline-secondary" type="button" data-push-disable{if !$ordenowa_push_active} disabled{/if}>{$push_disable|escape:'htmlall':'UTF-8'}</button>
+    <button class="btn btn-outline-secondary" type="button" data-push-disable{if !$ordenowa_push_revocable} disabled{/if}>{$push_disable|escape:'htmlall':'UTF-8'}</button>
   </div>
 </section>
