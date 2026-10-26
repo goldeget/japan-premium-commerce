@@ -1,5 +1,13 @@
 # ORDENOWA 작업 기록
 
+## 2026-10-26 — catalog readback 진단 및 JA 주문 상세 번역 checkpoint
+
+- 시작 시 local/origin `work`는 `f4c75b89f4c89edbe1fb97ba097cbd061dc30259`, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다. 사용자 미추적 superpowers 문서와 pycache는 보존했고 stage하지 않았다.
+- `20f3708`은 #40284146117에서 미계측된 native manager readback assertion을 predicate 단위로 기록한다. 진단은 enum 이름과 boolean/null만 허용하고 기존 실패 assertion을 유지한다. `791f2d3`은 JA 주문 상세의 고정 UI 라벨을 child-theme XLIFF에 추가하고 같은 주문 상세에서 locale/라벨을 검사하며 운송장 행 스크롤 캡처를 보존한다. parent Hummingbird와 운영 taxonomy/데이터는 수정하지 않았다.
+- Exact fresh-install Step 8 명령 538 tests (7 skipped), 관련 catalog/locale/integration tests 85/85, Python AST/XLIFF parsing, `git diff --check`가 통과했다. Codex 작업공간에서는 Docker/browser 실행을 하지 않았다.
+- 최신 runtime 근거는 이전 SHA f4c75b8의 전체 run #40284146117 FAILURE (aggregate 유일 실패 `catalog_import_browser_qa=failure`)다. 새 진단과 JA 화면은 Actions 실행을 기다린다. Independent QA는 artifact 12633129812의 고정 한국어 unsupported URL 안내 캡처만 시각 PASS로 확인했다. manager failure field와 JA runtime 화면을 이 PASS로 확대하지 않는다.
+- 코드 커밋은 `20f3708`과 `791f2d31456abd4cfa4dd98447ba1838a41073b0`; 현재 문서 변경은 다음 docs-only commit으로 저장하고 code-tested SHA와 remote HEAD를 분리해 기록한다. 변경 묶음 push 후 자동 Actions를 재사용하며 동일 변경으로 수동 중복 실행하지 않는다.
+
 ## 2026-10-26 — 관리자 Welcome 번역 및 합성 주문 tracking QA
 
 - 시작 HEAD와 origin/work는 4011819001d941d92d15a971c12d8ef35c446381로 확인했고 main은 ee02a3657448d563508687614a246e05ac61eecd였다. 사용자 미추적 superpowers plan/spec/pycache를 수정·stage하지 않았다.
@@ -8,8 +16,8 @@
 - 자유배송/workflow/artifact/backup 영향 tests 158개, Python syntax, workflow YAML, affected shell/embedded Python, git diff --check PASS 후 work로 push했고 origin/work가 229dd22f2b90cae8a4425e5a32578bf2141f030b와 일치함을 확인했다. main 불변.
 - 자동 전체 격리 run [#40281533046](https://github.com/goldeget/japan-premium-commerce/actions/runs/40281533046)은 SHA 229dd22에서 06:58 UTC SUCCESS로 종료했다. 실제 Step 73 tracking outcome, Step 88 aggregate, postal import/verification, run-owned resource cleanup이 성공했다. Independent QA artifact 12632622676의 같은 주문 캡처/JSON 검수도 기록했다. 고객 JA 주문 상세의 영어 고정 라벨은 새 locale 결함으로 분리했다.
 - 직전 full run [#40277922728](https://github.com/goldeget/japan-premium-commerce/actions/runs/40277922728), source e085be5 SUCCESS와 independent artifact 12631716741의 manager-edit 시각 검수를 재사용한다. CAT-004 synthetic same-ID edit/save/fresh GET/reimport acceptance 완료; product inactive/hidden/non-orderable다. GAP-002 public storefront path는 미검증이다.
-- 현재 별도 local 미커밋 수정은 catalog batch URL validation에서 영어 예외/URL을 노출하지 않고 고정 한국어 오류를 제공한다. Unsupported, empty, >10 URL cases의 회귀 확인과 새 screenshot/diagnostic classification을 추가했으며 120 focused contract tests와 AST/diff 검사가 통과했다. PHP CLI는 없으므로 runtime proof는 해당 파일을 포함하는 다음 Actions에 맡긴다. 이 수정은 tracking run #40281533046에 포함되지 않았다.
-- 새 Japanese locale correction은 pinned Hummingbird의 customer order-detail labels `Order Reference`, `Carrier`, `Payment method`, `Shipment tracking details`를 child-theme translation overlay에서 처리한다. 별도 task로 순차 구현하고 같은 합성 주문 화면의 locale/translation/scroll/capture를 검증한다. 운영 seller, 상품/권리, carrier contract, 실제 dispatch/payment, production environment와 실기기 결과는 별도 자료·환경 대기다.
+- fe09a56에서 catalog URL empty/unsupported/>10 입력의 exception과 입력 URL 반사를 막고 fixed Korean 안내, safe page classification/screenshot, browser check를 추가했다. Commit f4c75b8는 새 `invalid_url_notice_visible` 필드를 aggregate contract fixture에 더했다. fe09 전체 run은 fixture 누락으로 preflight에서 중단됐고, 정확한 Step 8 535 tests 및 관련 targeted contract 2개는 로컬에서 통과했다. f4 실행 #40284146117은 Step 8을 통과했지만 최종 FAILURE다. Step 88 actual aggregate의 유일 실패는 `catalog_import_browser_qa=failure`; safe diagnostics는 approve 후 `native_readback/native_editor_readback` AssertionError, HTTP200, 정상 manager ID/편집기, 권한거부 없음으로 한정한다. Artifact 12633129812는 shell 다운로드 403으로 이미지 검수가 미완료다. 다른 outcome/backup/restore/postcode/run 전용 정리는 성공했으며 전체 QA PASS로 취급하지 않는다.
+- 일본어 주문 상세 번역은 parent Hummingbird를 수정하지 않는다. Customeraccount/Checkout child XLIFF에 order reference/tracking heading/carrier table header를, Catalog XLIFF에 payment/carrier-summary labels를 추가하고 기존 same-order browser flow로 JA page/document locale/labels를 검사할 계획이다. 이 task는 URL QA 완료 후 순차 진행한다. 운영 seller, 상품/권리, carrier contract, 실제 dispatch/payment, production environment와 실기기 결과는 별도 자료·환경 대기다.
 
 ## 2026-10-26 — 합성 catalog 승인 후 manager 경로 및 readback 검증
 

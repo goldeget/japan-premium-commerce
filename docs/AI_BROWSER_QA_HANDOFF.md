@@ -1,5 +1,13 @@
 # ORDENOWA AI Browser QA Handoff
 
+## 작업 중 code checkpoint (2026-10-26 07:42 UTC)
+
+- Local `work` code commits: `20f3708` (safe native readback predicate diagnostics) and `791f2d3` (JA order-detail labels and tracking-row capture). Validated code SHA: `791f2d31456abd4cfa4dd98447ba1838a41073b0`; `origin/work` still points at f4c75b8 until these commits are pushed. No new Actions run has started for these commits.
+- Step 8 preflight command from `fresh-install.yml` passed locally: 538 tests, 7 skipped. Related catalog/locale/integration contracts passed 85/85; Python AST, JA XLIFF parsing, and `git diff --check` passed. Browser runtime is not available in this workspace, so the next push-triggered isolated run is still required.
+- Latest complete source run remains f4c75b8 / [#40284146117](https://github.com/goldeget/japan-premium-commerce/actions/runs/40284146117), FAILURE, with actual aggregate's only failure `catalog_import_browser_qa=failure`. It stopped after Amazon approval in `native_readback/native_editor_readback`; prior safe flags show same-origin manager route, matching positive ID, editor visible, HTTP 200, and no token/access denial. New diagnostics record an allowlisted predicate name and match boolean/null immediately around reads, comparisons, same-ID uniqueness, edit preservation, and reimport; they do not print values or raw errors. The failing screenshot only showed the prior inactive notice and did not identify the failed value.
+- Independent reviewer opened `catalog-import-unsupported-url.png` from artifact [12633129812](https://github.com/goldeget/japan-premium-commerce/actions/runs/40284146117/artifacts/12633129812): the safe Korean supported-URL guidance is fully visible; this is only that error screen, not catalog import completion.
+- The locale patch adds Japanese strings in child-theme `ShopThemeCustomeraccount`, `ShopThemeCatalog`, and `ShopThemeCheckout` catalogs, checks the same customer's Japanese order detail, and saves an additional scrolled tracking-table screenshot. The browser assertions and screenshot are not runtime-verified until the next Actions artifact. They do not verify physical dispatch or carrier link setup.
+
 ## 최신 자동 QA: same-order synthetic tracking (2026-10-26 06:58 UTC)
 
 - Source/work SHA: 229dd22f2b90cae8a4425e5a32578bf2141f030b. Full isolated run [#40281533046](https://github.com/goldeget/japan-premium-commerce/actions/runs/40281533046) completed SUCCESS; actual Step 73 `SHIPPING_FREE_TRACKING_PERSISTENCE_OUTCOME=success`, Step 88 aggregate, postal checks and cleanup succeeded. Independent QA opened artifact [12632622676](https://github.com/goldeget/japan-premium-commerce/actions/runs/40281533046/artifacts/12632622676). Its admin/customer screenshots and JSON/DB confirm the same synthetic unpaid order 10, reference `XWMNYZUWG`, OrderCarrier 10 and tracking value; amount ¥1,100, shipping ¥0, order state unchanged and paid amount 0. This is tracking-number assignment/readback only: no carrier destination, dispatch, scan or external link was configured.
@@ -7,11 +15,15 @@
 - The artifact files are shipping-free-order-tracking-admin.png, shipping-free-order-tracking-customer.png, shipping-free-order-tracking-persistence-verified.json, and shipping-free-order-tracking-persistence.log. The tracking row itself is below the customer capture fold; automation/DB readback confirms it while screenshot review does not.
 - No live QA hostname or physical iOS/Android device is available. Actions loopback is run-scoped and removed at cleanup. No physical shipment, carrier scan, external tracking URL or payment occurs.
 
+## 최신 코드 검증: catalog URL 고정 오류 피드백
+
+- The original `invalid_url_notice_visible` fixture mismatch is fixed by f4c75b8; its Step 8 passed in CI. The latest f4 full run failure and artifact limits are recorded above. Do not count Step 46's continue-on-error green display as PASS or claim full QA success.
+
 ## 새 일본어 고객 주문 상세 번역 검수
 
 - #40281533046 artifact 12632622676의 `shipping-free-order-tracking-customer.png`에서 `Order Reference … placed on`, `Carrier`, `Payment method`, `Shipment tracking details`가 영어로 보였다. JA 주문 상세 한 화면의 증거이며 EN/KO나 전체 고객 locale 범위로 확대하지 않는다.
-- Source: pinned parent `themes/hummingbird/templates/customer/order-detail.tpl` uses `Shop.Theme.Customeraccount` and `Shop.Theme.Catalog`; `_partials/order-shipments.tpl` uses `Shop.Theme.Customeraccount`. Child locale assets belong under `themes/kuranea/translations/ja-JP/`; the current Customeraccount XLIFF has only sidebar entries, and no Catalog JA overlay exists.
-- Next: add only these project-visible JA translations, assert the page locale and labels in the existing same-customer order detail browser flow, and capture a viewport/scroll state that includes the tracking row. Do not translate dynamic order/carrier values as static labels or claim a real carrier destination.
+- Source: pinned parent `customer/order-detail.tpl` uses `Shop.Theme.Customeraccount` for order reference and `Shop.Theme.Catalog` for payment method plus conditional `Carrier: %carrier_name%`; `_partials/order-shipments.tpl` and `_partials/order-carrier.tpl` use Customeraccount for the tracking heading and Checkout for the Carrier column. Child JA catalogs now include all three exact source domains and preserve interpolation placeholders.
+- The same-customer browser flow asserts the `ja` document language, Japanese reference/payment/carrier/tracking labels and captures the tracking table after scrolling. The contract checks both shipment templates and the `Order tracking` XLIFF entry. This code-only evidence awaits Actions runtime and screenshot review. Do not translate dynamic order/carrier values as static labels or claim a real carrier destination.
 - The same admin artifact showed untranslated core navigation/payment items (`Carriers`, `Boost sales`, `Méthode de paiement`, Welcome/Care Center); retain these under ADMIN-KO-001 coverage inventory.
 
 ## 완료된 합성 상품 관리자 편집 화면
