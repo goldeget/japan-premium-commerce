@@ -188,11 +188,12 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         self.assertIn("$_SERVER['REQUEST_METHOD'] = 'POST';", missing_service_case)
         self.assertIn("Tools::$submitted = true;", missing_service_case)
         self.assertIn("Tools::$submittedAction = 'submitKuraneaCatalogApprove';", missing_service_case)
+        self.assertIn("'idempotency_key' => $missingTokenEntry->idempotencyKey", missing_service_case)
         self.assertIn("'token' => $formCsrfToken", missing_service_case)
         self.assertIn("$missingCsrfServiceController->initContent();", missing_service_case)
         self.assertIn("A missing PrestaShop CSRF service must fail closed.", missing_service_case)
         self.assertIn("A missing CSRF service must not invoke native product registration.", missing_service_case)
-        self.assertIn("'pending', $catalogAdminQueue->find($catalogAdminEntry->idempotencyKey)?->status", missing_service_case)
+        self.assertIn("'pending', $catalogAdminQueue->find($missingTokenEntry->idempotencyKey)?->status", missing_service_case)
 
     def test_review_capabilities_use_prestashop_lazy_access_api(self) -> None:
         view = self.controller.split("private function canView(): bool", 1)[1].split(

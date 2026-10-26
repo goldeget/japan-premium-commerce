@@ -412,7 +412,7 @@ try {
     Tools::$submitted = true;
     Tools::$submittedAction = 'submitKuraneaCatalogApprove';
     Tools::$values = [
-        'idempotency_key' => $catalogAdminEntry->idempotencyKey,
+        'idempotency_key' => $missingTokenEntry->idempotencyKey,
         'confirm_test_demo' => '1',
         'token' => $formCsrfToken,
     ];
@@ -421,7 +421,7 @@ try {
     $missingCsrfServiceController->initContent();
     assertCatalogAdminTrue(str_contains($missingCsrfServiceController->content, '관리자 보안 토큰'), 'A missing PrestaShop CSRF service must fail closed.');
     assertCatalogAdminSame([], CatalogNativeRegistrarLockTestState::$events, 'A missing CSRF service must not invoke native product registration.');
-    assertCatalogAdminSame('pending', $catalogAdminQueue->find($catalogAdminEntry->idempotencyKey)?->status, 'A missing CSRF service must leave the review item pending.');
+    assertCatalogAdminSame('pending', $catalogAdminQueue->find($missingTokenEntry->idempotencyKey)?->status, 'A missing CSRF service must leave the review item pending.');
     CatalogAdminTestSymfonyContainer::$available = true;
 } finally {
     foreach (glob($catalogAdminStorage . '/*') ?: [] as $catalogAdminFile) {
