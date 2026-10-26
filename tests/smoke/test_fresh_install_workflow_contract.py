@@ -420,10 +420,12 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         step_names = re.findall(r"^\s+- name: (.+)$", workflow, flags=re.MULTILINE)
         brand_position = step_names.index("Verify official ORDENOWA brand upload and publish in Chromium")
         email_position = step_names.index("Verify the published ORDENOWA password-reset email logo in Chromium")
+        locale_email_position = step_names.index("Verify native password-reset emails in JA EN and KO")
         account_override_position = step_names.index("Enable run-scoped checkout only for customer account browser QA")
         account_position = step_names.index("Verify customer registration, email login, logout, password reset, and my page in Chromium")
         self.assertEqual(email_position, brand_position + 1)
-        self.assertEqual(account_override_position, email_position + 1)
+        self.assertEqual(locale_email_position, email_position + 1)
+        self.assertEqual(account_override_position, locale_email_position + 1)
         self.assertEqual(account_position, account_override_position + 1)
 
     def test_customer_account_registration_uses_exact_ci_checkout_override_and_restores_it(self) -> None:
@@ -754,8 +756,11 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         product_admin_position = step_names.index(product_admin_step)
         email_step = "Verify the published ORDENOWA password-reset email logo in Chromium"
         email_position = step_names.index(email_step)
+        locale_email_step = "Verify native password-reset emails in JA EN and KO"
+        locale_email_position = step_names.index(locale_email_step)
         self.assertEqual(step_names[brand_position + 1], email_step)
-        self.assertEqual(step_names[email_position + 1], account_override_step)
+        self.assertEqual(step_names[email_position + 1], locale_email_step)
+        self.assertEqual(step_names[locale_email_position + 1], account_override_step)
         self.assertEqual(step_names[account_position - 1], account_override_step)
         self.assertEqual(step_names[account_position + 1], account_restore_step)
         self.assertEqual(step_names[account_position + 2], "Verify focused customer account browser evidence")
@@ -1560,6 +1565,69 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             r"if:\s*always\(\)\s*&&\s*steps\.checkout_override\.outcome\s*!=\s*'skipped'",
             "restoration should run after a failed or successful override, but not when checkout QA never started",
         )
+
+    def test_bank_transfer_browser_qa_uses_unpaid_checkout_orders_and_is_aggregated(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        step8 = workflow.split("- name: Verify fresh-install workflow contracts", 1)[1].split("- name:", 1)[0]
+        self.assertIn("tests.e2e.test_ci_bank_transfer_browser_contract", step8)
+        self.assertIn("tests.business_profile.test_bank_transfer_instructions_contract", step8)
+        self.assertIn("tests.business_profile.test_bank_transfer_receipt_contract", step8)
+
+        checkout_name = "Place dedicated bank-transfer acceptance order through Chromium"
+        fixture_name = "Prepare synthetic bank transfer account for the persisted unpaid browser order"
+        browser_name = "Verify order-bound bank transfer issue, rejection, and receipt confirmation in Chromium"
+        checkout = workflow.split(f"- name: {checkout_name}", 1)[1].split("- name:", 1)[0]
+        fixture = workflow.split(f"- name: {fixture_name}", 1)[1].split("- name:", 1)[0]
+        browser = workflow.split(f"- name: {browser_name}", 1)[1].split("- name:", 1)[0]
+        self.assertIn("id: checkout_bank_customer_browser_qa", checkout)
+        self.assertIn("verify_ci_checkout_admin_browser.py customer-bank", checkout)
+        self.assertLess(workflow.index("id: checkout_customer_browser_qa"), workflow.index("id: checkout_bank_customer_browser_qa"))
+        self.assertLess(workflow.index("id: checkout_bank_customer_browser_qa"), workflow.index("id: checkout_order_persistence"))
+        persistence = workflow.split("id: checkout_order_persistence", 1)[1].split("- name:", 1)[0]
+        self.assertIn("viewports=(desktop mobile)", persistence)
+        self.assertIn("viewports+=(bank)", persistence)
+        self.assertIn("env.ORDENOWA_ADMIN_QA_FOCUS == 'true' || steps.checkout_bank_customer_browser_qa.outcome == 'success'", persistence)
+        self.assertIn("id: bank_transfer_fixture", fixture)
+        self.assertIn("tests/business_profile/prepare_ci_bank_transfer_fixture.php", fixture)
+        self.assertIn("steps.checkout_order_persistence.outcome == 'success'", fixture)
+        self.assertIn("KURANEA_CI_ORDER_ID", fixture)
+        self.assertIn('ci-checkout-bank.json', fixture)
+        self.assertIn("KURANEA_CI_VIEWPORT=bank", fixture)
+        self.assertIn("KURANEA_ISOLATED_CI=1", fixture)
+        self.assertIn("id: bank_transfer_browser_qa", browser)
+        self.assertIn("steps.bank_transfer_fixture.outcome == 'success'", browser)
+        self.assertIn("steps.checkout_order_persistence.outcome == 'success'", browser)
+        self.assertIn("ADMIN_PASSWD: ${{ env.ADMIN_PASSWD }}", browser)
+        self.assertIn("VIEW_ONLY_EMAIL: ${{ env.VIEW_ONLY_EMPLOYEE_EMAIL }}", browser)
+        self.assertIn("tests/e2e/verify_ci_bank_transfer_browser.py", browser)
+        self.assertLess(
+            workflow.index(f"- name: {fixture_name}"),
+            workflow.index("- name: Verify a separate admin session can view both browser orders"),
+        )
+        self.assertLess(workflow.index("id: checkout_admin_browser_qa"), workflow.index("id: order_lifecycle"))
+        self.assertLess(workflow.index("id: order_lifecycle"), workflow.index(f"- name: {browser_name}"))
+
+        evidence = workflow.split("- name: Verify browser QA screenshot coverage", 1)[1].split("- name:", 1)[0]
+        for expected in (
+            "CHECKOUT_BANK_CUSTOMER_BROWSER_QA_OUTCOME: ${{ steps.checkout_bank_customer_browser_qa.outcome }}",
+            "BANK_TRANSFER_FIXTURE_OUTCOME: ${{ steps.bank_transfer_fixture.outcome }}",
+            "BANK_TRANSFER_BROWSER_QA_OUTCOME: ${{ steps.bank_transfer_browser_qa.outcome }}",
+            "bank-transfer-fixture.log",
+            "bank-transfer-browser-result.json",
+            "bank-transfer-customer-instructions-mobile.png",
+            "bank-transfer-admin-confirmed-desktop.png",
+            "bank-transfer-customer-paid-mobile.png",
+            "bank-transfer-limited-denied-desktop.png",
+        ):
+            self.assertIn(expected, evidence)
+
+        aggregate = workflow.split("- name: Aggregate browser QA and postal verification failures", 1)[1].split("- name:", 1)[0]
+        self.assertIn("CHECKOUT_BANK_CUSTOMER_BROWSER_QA_OUTCOME: ${{ steps.checkout_bank_customer_browser_qa.outcome }}", aggregate)
+        self.assertIn("BANK_TRANSFER_FIXTURE_OUTCOME: ${{ steps.bank_transfer_fixture.outcome }}", aggregate)
+        self.assertIn("BANK_TRANSFER_BROWSER_QA_OUTCOME: ${{ steps.bank_transfer_browser_qa.outcome }}", aggregate)
+        self.assertIn('"checkout_bank_customer=$CHECKOUT_BANK_CUSTOMER_BROWSER_QA_OUTCOME"', aggregate)
+        self.assertIn('"bank_transfer_fixture=$BANK_TRANSFER_FIXTURE_OUTCOME"', aggregate)
+        self.assertIn('"bank_transfer=$BANK_TRANSFER_BROWSER_QA_OUTCOME"', aggregate)
 
 
 if __name__ == "__main__":
