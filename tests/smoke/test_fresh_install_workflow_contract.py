@@ -1601,9 +1601,17 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertLess(workflow.index("id: checkout_customer_browser_qa"), workflow.index("id: checkout_bank_customer_browser_qa"))
         self.assertLess(workflow.index("id: checkout_bank_customer_browser_qa"), workflow.index("id: checkout_order_persistence"))
         persistence = workflow.split("id: checkout_order_persistence", 1)[1].split("- name:", 1)[0]
+        persistence_condition = persistence.split("run: |", 1)[0]
+        persistence_shell = " ".join(persistence.split("run: |", 1)[1].replace("\\\n", " ").split())
+        self.assertIn("steps.checkout_customer_browser_qa.outcome == 'success'", persistence_condition)
+        self.assertNotIn("steps.checkout_bank_customer_browser_qa.outcome == 'success'", persistence_condition)
         self.assertIn("viewports=(desktop mobile)", persistence)
-        self.assertIn("viewports+=(bank)", persistence)
-        self.assertIn("env.ORDENOWA_ADMIN_QA_FOCUS == 'true' || steps.checkout_bank_customer_browser_qa.outcome == 'success'", persistence)
+        self.assertIn(
+            'if [[ "${{ steps.checkout_bank_customer_browser_qa.outcome }}" == "success" '
+            '&& -s "$RUNNER_TEMP/ordenowa-browser-qa/ci-checkout-bank.json" ]]; then '
+            "viewports+=(bank) fi",
+            persistence_shell,
+        )
         self.assertIn("id: bank_transfer_fixture", fixture)
         self.assertIn("tests/business_profile/prepare_ci_bank_transfer_fixture.php", fixture)
         self.assertIn("steps.checkout_order_persistence.outcome == 'success'", fixture)

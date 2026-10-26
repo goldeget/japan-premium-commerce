@@ -2103,7 +2103,7 @@ jobs:
 
       - name: Verify saved browser orders are unpaid and retain Japan addresses
         id: checkout_order_persistence
-        if: steps.checkout_customer_browser_qa.outcome == 'success' && (env.ORDENOWA_ADMIN_QA_FOCUS == 'true' || steps.checkout_bank_customer_browser_qa.outcome == 'success') && (env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_ADMIN_RETURN_FOCUS == 'true')
+        if: steps.checkout_customer_browser_qa.outcome == 'success' && (env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_ADMIN_RETURN_FOCUS == 'true')
         continue-on-error: true
         shell: bash
         run: |
@@ -2112,7 +2112,8 @@ jobs:
             sh -c 'cat > /tmp/verify_ci_browser_checkout_order.php' \
             < tests/postcode/verify_ci_browser_checkout_order.php
           viewports=(desktop mobile)
-          if [[ "$ORDENOWA_ADMIN_QA_FOCUS" != true ]]; then
+          if [[ "${{ steps.checkout_bank_customer_browser_qa.outcome }}" == "success" \
+            && -s "$RUNNER_TEMP/ordenowa-browser-qa/ci-checkout-bank.json" ]]; then
             viewports+=(bank)
           fi
           for viewport in "${viewports[@]}"; do
