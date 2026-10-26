@@ -84,6 +84,8 @@ STRING_ENUMS = {
     'current_substage': {
         'not_started', 'approved_product_link', 'manager_navigation',
         'native_editor_id_presence', 'native_editor_form_check', 'native_editor_readback',
+        'manager_edit_fields', 'manager_edit_save_click', 'manager_edit_save_confirmation',
+        'manager_edit_fresh_navigation', 'manager_edit_fresh_readback',
         'reimport_navigation', 'reimport_editor_id_presence', 'reimport_editor_form_check',
         'reimport_editor_readback', 'reject_guard_readback', 'reject_status_readback', 'unknown',
     },
@@ -92,7 +94,9 @@ STRING_ENUMS = {
     },
     'document_ready_state': {'loading', 'interactive', 'complete', 'unknown'},
     'last_completed_substage': CLICK_SUBSTAGES | {
-        'not_started', 'batch_complete', 'reject_guard_readback', 'reject_status_readback', 'unknown',
+        'not_started', 'batch_complete', 'reject_guard_readback', 'reject_status_readback',
+        'manager_edit_fields', 'manager_edit_save_click', 'manager_edit_save_confirmation',
+        'manager_edit_fresh_readback', 'unknown',
     },
     'exception_class': {
         'AssertionError', 'ElementClickInterceptedException', 'ElementNotInteractableException',
@@ -256,13 +260,27 @@ def main() -> int:
                 screenshot_width, screenshot_height = _png_dimensions(args.screenshot)
                 if not (320 <= screenshot_width <= 640 and 180 <= screenshot_height <= 480):
                     raise ValueError('catalog import review form failure screenshot crop is outside the safe bounds')
-            if (data['stage'] == 'native_readback'
-                    and data['manager_route_matches']
-                    and data['manager_product_id_parameter_matches']
-                    and (data['manager_editor_visible'] or data['manager_load_failure_notice_visible']
-                         or data['manager_permission_denied_notice_visible'])):
-                if not data['failure_screenshot_captured']:
-                    raise ValueError('catalog import manager readback failure screenshot was not captured')
+            manager_postback_id_matches = (
+                not data['manager_product_id_parameter_present']
+                and data['manager_id_field_present']
+                and data['manager_id_field_hidden']
+                and data['manager_product_id_field_matches']
+            )
+            manager_screenshot_identity_matches = (
+                data['manager_product_id_parameter_matches'] or manager_postback_id_matches
+            )
+            manager_readback_context = (
+                data['stage'] == 'native_readback'
+                and data['manager_route_matches']
+                and manager_screenshot_identity_matches
+                and (data['manager_editor_visible'] or data['manager_load_failure_notice_visible']
+                     or data['manager_permission_denied_notice_visible'])
+            )
+            if manager_readback_context and not data['failure_screenshot_captured']:
+                raise ValueError('catalog import manager readback failure screenshot was not captured')
+            if (data['stage'] == 'native_readback' and data['failure_screenshot_captured']):
+                if not data['manager_route_matches'] or not manager_screenshot_identity_matches:
+                    raise ValueError('catalog import manager screenshot route and product identity do not match')
                 screenshot_width, screenshot_height = _png_dimensions(args.screenshot)
                 if not (320 <= screenshot_width <= 640 and 180 <= screenshot_height <= 480):
                     raise ValueError('catalog import manager readback screenshot crop is outside the safe bounds')

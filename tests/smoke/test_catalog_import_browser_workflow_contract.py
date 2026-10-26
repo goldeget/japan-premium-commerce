@@ -62,7 +62,8 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
                        'catalog-import-e2e.log', 'catalog-import-batch.png', 'catalog-import-blocked-submit.png',
                        'catalog-import-rejected.png',
                        'catalog-import-blocked-options.png', 'catalog-import-review-options.png',
-                       'catalog-import-draft.png', 'catalog-import-reimport.png', 'catalog-import-readback.json'):
+                       'catalog-import-draft.png', 'catalog-import-manager-edited.png',
+                       'catalog-import-reimport.png', 'catalog-import-readback.json'):
             self.assertTrue(marker in source, f"Missing integration marker: {marker}")
         for step, variable in (('catalog_import_fixture', 'CATALOG_IMPORT_FIXTURE_OUTCOME'),
                                ('catalog_import_admin_access_readback', 'CATALOG_IMPORT_ADMIN_ACCESS_READBACK_OUTCOME'),
@@ -86,6 +87,8 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         browser = source.split('id: catalog_import_browser_qa', 1)[1].split('\n      - name:', 1)[0]
         for marker in ('product_shop', 'available_for_order', '$row["active"] !== 0',
                        '$row["visibility"] !== "none"', '$sameReference !== 1',
+                       '$combinationQuantities !== [5, 5]', '$baseQuantity !== 0',
+                       '"combination_quantities" => $combinationQuantities',
                        '$images !== 1', '$combinations !== 2', 'catalog-import-persistence.json'):
             self.assertIn(marker, browser)
         self.assertNotIn('DELETE ', browser)
@@ -193,10 +196,14 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             "'상품 관리 화면을 불러오지 못했습니다. 쇼핑몰 설정과 권한을 확인해 주세요.'",
             'manager_load_error',
             'manager_inactive_notice_visible',
+            'postback_id_matches',
+            'route_id_matches',
             "'manager_product_id_parameter_matches'",
             "'manager_editor_visible'",
             "'manager_load_failure_notice_visible'",
-            "'reimport_editor_id_presence' if is_reimport else 'native_editor_id_presence'",
+            "phase_substages = {",
+            "'reimport_navigation', 'reimport_editor_form_check', 'reimport_editor_id_presence', 'reimport_editor_readback'",
+            "'manager_edit_fresh_navigation'",
             'def capture_safe_manager_readback_crop(',
             'def validated_product_id_from_manager_link(',
             "query.get('controller') == ['AdminOrdenowaProductManager']",
@@ -370,6 +377,48 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertIn("driver.find_elements(By.CSS_SELECTOR, 'input[name=\"category_ids[]\"]')", source)
         self.assertIn('assert category_ids == expected_category_ids', source)
         self.assertIn('read_native(driver, product_id, expected_category_ids, state)', source)
+
+    def test_browser_saves_same_imported_draft_then_proves_edit_survives_reimport(self):
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        self.assertIn('def edit_imported_draft(', browser)
+        edit = browser.split('def edit_imported_draft(', 1)[1].split('\ndef run(', 1)[0]
+        for marker in (
+            "'name_ko': 'ORDENOWA 합성 주방 도구 수정'",
+            "'description_ko': '관리자에서 저장한 합성 설명입니다.'",
+            "'price_jpy': '6780'",
+            "expected_combination_quantities = ['5', '5']",
+            "[name=\"submitKuraneaProductSave\"]",
+            "alert-success",
+            'validated_product_id_from_manager_link',
+            'driver.get(manager_link)',
+            "'manager_edit_save_confirmation'",
+            "'manager_edit_fresh_readback'",
+            "'catalog-import-manager-edited.png'",
+            "'M|L' in initial_readback['option_values']",
+            "remove_image_ids[]",
+        ):
+            self.assertIn(marker, edit)
+        self.assertEqual(edit.count(".click()"), 1, 'The manager form must use a real Selenium save click.')
+        self.assertNotIn('execute_script', edit)
+
+        run = browser.split('def run():', 1)[1]
+        initial_read = run.index('readback = read_native(')
+        manager_edit = run.index('readback = edit_imported_draft(')
+        reimport = run.index("submit_batch(driver, review_url, [AMAZON], state, prefix='reimport')")
+        final_read = run.index('after = read_native(')
+        self.assertLess(initial_read, manager_edit)
+        self.assertLess(manager_edit, reimport)
+        self.assertLess(reimport, final_read)
+        self.assertIn("readback['reimport_preserved_manager_edits'] = True", run)
+        self.assertIn("'inactive_notice_visible': readback['manager_page']['inactive_notice_visible']", run)
+        self.assertIn("$row[\"active\"] !== 0", self.read_required('.github/workflows/fresh-install.yml'))
+        self.assertIn("$row[\"available_for_order\"] !== 0", self.read_required('.github/workflows/fresh-install.yml'))
+
+        diagnostics = self.read_required('tests/e2e/catalog_import_diagnostics.py')
+        for substage in ('manager_edit_fields', 'manager_edit_save_click',
+                         'manager_edit_save_confirmation', 'manager_edit_fresh_navigation',
+                         'manager_edit_fresh_readback'):
+            self.assertIn(substage, diagnostics)
 
     def test_browser_batch_waits_and_failure_summary_expose_safe_substage_evidence(self):
         browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
@@ -562,6 +611,20 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'failure_screenshot_captured': True,
         }
         DIAGNOSTICS.validate(valid)
+        for substage in (
+            'manager_edit_fields', 'manager_edit_save_click', 'manager_edit_save_confirmation',
+            'manager_edit_fresh_navigation', 'manager_edit_fresh_readback',
+        ):
+            DIAGNOSTICS.validate({
+                **valid,
+                'stage': 'native_readback',
+                'last_completed_stage': 'native_readback',
+                'last_completed_substage': 'manager_edit_save_confirmation',
+                'current_substage': substage,
+                'click_diagnostics': None,
+            })
+        with self.assertRaises(ValueError):
+            DIAGNOSTICS.validate({**valid, 'current_substage': 'https://private.invalid/?token=secret'})
         with self.assertRaises(ValueError):
             DIAGNOSTICS.validate({**valid, 'click_diagnostics': {**valid_click, 'target': 'private-css-selector'}})
         with self.assertRaises(ValueError):
@@ -662,6 +725,39 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
                 check=False, capture_output=True, text=True,
             )
             self.assertEqual(manager_valid.returncode, 0, manager_valid.stdout + manager_valid.stderr)
+
+            manager_postback = {
+                **manager_readback,
+                'manager_product_id_parameter_present': False,
+                'manager_product_id_parameter_matches': False,
+                'manager_id_field_present': True,
+                'manager_id_field_hidden': True,
+                'manager_product_id_field_matches': True,
+                'manager_editor_visible': True,
+                'manager_load_failure_notice_visible': False,
+                'manager_permission_denied_notice_visible': False,
+                'failure_screenshot_captured': True,
+            }
+            diagnostic_path.write_text(json.dumps(manager_postback), encoding='utf-8')
+            postback_valid = subprocess.run(
+                [sys.executable, str(DIAGNOSTICS_PATH), '--validate',
+                 str(diagnostic_path), str(screenshot_path)],
+                check=False, capture_output=True, text=True,
+            )
+            self.assertEqual(postback_valid.returncode, 0, postback_valid.stdout + postback_valid.stderr)
+
+            mismatched_manager_query = {
+                **manager_postback,
+                'manager_product_id_parameter_present': True,
+                'manager_product_id_parameter_matches': False,
+            }
+            diagnostic_path.write_text(json.dumps(mismatched_manager_query), encoding='utf-8')
+            mismatched_manager_query_result = subprocess.run(
+                [sys.executable, str(DIAGNOSTICS_PATH), '--validate',
+                 str(diagnostic_path), str(screenshot_path)],
+                check=False, capture_output=True, text=True,
+            )
+            self.assertEqual(mismatched_manager_query_result.returncode, 2)
 
     def test_failure_diagnostic_validator_rejects_unlisted_or_malformed_data_before_emission(self):
         valid = {

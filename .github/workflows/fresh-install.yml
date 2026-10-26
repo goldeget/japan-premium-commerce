@@ -1289,12 +1289,15 @@ jobs:
           $s = $db->getRow("SELECT active, visibility, available_for_order FROM " . _DB_PREFIX_ . "product_shop WHERE id_shop=1 AND id_product=" . $id);
           $images = (int) $db->getValue("SELECT COUNT(*) FROM " . _DB_PREFIX_ . "image WHERE id_product=" . $id);
           $combinations = (int) $db->getValue("SELECT COUNT(*) FROM " . _DB_PREFIX_ . "product_attribute WHERE id_product=" . $id);
+          $stockRows = $db->executeS("SELECT sa.quantity FROM " . _DB_PREFIX_ . "product_attribute pa INNER JOIN " . _DB_PREFIX_ . "stock_available sa ON sa.id_product=pa.id_product AND sa.id_product_attribute=pa.id_product_attribute WHERE pa.id_product=" . $id . " AND sa.id_shop=1 ORDER BY pa.id_product_attribute");
+          $combinationQuantities = array_map(static fn(array $row): int => (int) $row["quantity"], is_array($stockRows) ? $stockRows : []);
+          $baseQuantity = (int) $db->getValue("SELECT quantity FROM " . _DB_PREFIX_ . "stock_available WHERE id_product=" . $id . " AND id_product_attribute=0 AND id_shop=1");
           $sameReference = (int) $db->getValue("SELECT COUNT(*) FROM " . _DB_PREFIX_ . "product WHERE reference=(SELECT reference FROM (SELECT reference FROM " . _DB_PREFIX_ . "product WHERE id_product=" . $id . ") AS imported)");
           foreach ([$p, $s] as $row) {
               if (!$row || (int) $row["active"] !== 0 || $row["visibility"] !== "none" || (int) $row["available_for_order"] !== 0) { exit(1); }
           }
-          if ($images !== 1 || $combinations !== 2 || $sameReference !== 1) { exit(1); }
-          echo json_encode(["linked_product_id" => $id, "active" => false, "visibility" => "none", "available_for_order" => false, "images" => $images, "combinations" => $combinations, "same_reference_product_count" => $sameReference]), PHP_EOL;
+          if ($images !== 1 || $combinations !== 2 || $combinationQuantities !== [5, 5] || $baseQuantity !== 0 || $sameReference !== 1) { exit(1); }
+          echo json_encode(["linked_product_id" => $id, "active" => false, "visibility" => "none", "available_for_order" => false, "images" => $images, "combinations" => $combinations, "base_quantity" => $baseQuantity, "combination_quantities" => $combinationQuantities, "same_reference_product_count" => $sameReference]), PHP_EOL;
           ' | tee "$QA_ARTIFACT_DIR/catalog-import-persistence.json"
 
       - name: Restore base Compose after synthetic catalog import QA
@@ -2669,6 +2672,7 @@ jobs:
               catalog-import-blocked-options.png
               catalog-import-review-options.png
               catalog-import-draft.png
+              catalog-import-manager-edited.png
               catalog-import-reimport.png
               catalog-import-readback.json
               catalog-import-persistence.json
