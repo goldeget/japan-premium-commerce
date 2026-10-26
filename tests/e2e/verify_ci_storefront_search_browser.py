@@ -67,32 +67,61 @@ def wait_document(driver) -> None:
     WebDriverWait(driver, 40).until(lambda browser: browser.execute_script('return document.readyState') == 'complete')
 
 
-def search(driver, query: str, mobile: bool) -> None:
+def search(driver, query: str, mobile: bool, result: dict) -> None:
+    diagnostics = result["diagnostics"]
     if mobile:
-        click_at_center(driver, visible(driver, '[data-bs-target="#searchCanvas"]'))
+        result["substage"] = "search_toggle"
+        toggle = visible(driver, '[data-bs-target="#searchCanvas"]')
+        diagnostics["search_toggle_visible"] = toggle.is_displayed()
+        click_at_center(driver, toggle)
+    result["substage"] = "search_field"
     field = visible(driver, '#ps_searchbar_input[name="s"]')
+    diagnostics["search_field_visible"] = field.is_displayed()
     form = field.find_element(By.XPATH, './ancestor::form')
-    assert_true(form.get_attribute('method').lower() == 'get', "Search must use the native GET form")
+    result["substage"] = "search_form_method"
+    diagnostics["form_method_get"] = (form.get_attribute('method') or '').lower() == 'get'
+    assert_true(diagnostics["form_method_get"], "Search must use the native GET form")
     action = urljoin(driver.current_url, form.get_attribute('action') or '')
-    assert_same_origin(action)
+    result["substage"] = "search_form_origin"
+    action_origin = urlparse(action)
+    base_origin = urlparse(BASE)
+    diagnostics["form_action_same_origin"] = (
+        action_origin.scheme == base_origin.scheme
+        and action_origin.hostname == base_origin.hostname
+        and action_origin.port == base_origin.port
+        and action_origin.username is None and action_origin.password is None
+    )
+    assert_true(diagnostics["form_action_same_origin"], "Search navigation must remain on the isolated shop origin")
     action_parts = urlparse(action)
     action_query = parse_qs(action_parts.query)
-    assert_true(
+    diagnostics["form_action_native_search"] = (
         action_query.get('controller') == ['search']
-        or (action_parts.path.rstrip('/').endswith('/search') and not action_query.get('controller')),
-        "Search form does not target the native search route",
+        or (action_parts.path.rstrip('/').endswith('/search') and not action_query.get('controller'))
     )
+    result["substage"] = "search_form_route"
+    assert_true(diagnostics["form_action_native_search"], "Search form does not target the native search route")
     old_document = driver.find_element(By.TAG_NAME, 'html')
     field.clear()
     field.send_keys(query)
+    result["substage"] = "search_submit"
     field.send_keys(Keys.ENTER)
     WebDriverWait(driver, 40).until(EC.staleness_of(old_document))
+    diagnostics["document_changed"] = True
     wait_document(driver)
+    result["substage"] = "search_result_document"
+    response_status = driver.execute_script(
+        "const entries=performance.getEntriesByType('navigation');const entry=entries.length?entries[0]:null;return entry&&Number.isInteger(entry.responseStatus)?entry.responseStatus:null;"
+    )
+    diagnostics["response_status"] = response_status if type(response_status) is int and 100 <= response_status <= 599 else None
     assert_japanese_document(driver)
-    assert_true(bool(driver.find_elements(By.CSS_SELECTOR, 'body#search')), "Search did not render its results document")
-    assert_true(parse_qs(urlparse(driver.current_url).query).get('s') == [query], "Search changed the submitted Japanese query")
+    diagnostics["search_document"] = bool(driver.find_elements(By.CSS_SELECTOR, 'body#search'))
+    assert_true(diagnostics["search_document"], "Search did not render its results document")
+    result["substage"] = "search_query_readback"
+    diagnostics["query_readback_matches"] = parse_qs(urlparse(driver.current_url).query).get('s') == [query]
+    assert_true(diagnostics["query_readback_matches"], "Search changed the submitted Japanese query")
     field_value = driver.find_element(By.CSS_SELECTOR, '#ps_searchbar_input[name="s"]').get_attribute('value')
-    assert_true(field_value == query, "Search input did not preserve the submitted Japanese query")
+    diagnostics["input_readback_matches"] = field_value == query
+    assert_true(diagnostics["input_readback_matches"], "Search input did not preserve the submitted Japanese query")
 
 
 def verify_product(driver, expected_name: str) -> None:
@@ -123,11 +152,19 @@ def run_viewport(label: str, width: int, height: int, run_id: str, attempt: str)
     for argument in ('--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--lang=ja-JP'):
         options.add_argument(argument)
     options.add_argument(f'--window-size={width},{height}')
-    driver = webdriver.Chrome(options=options)
-    result = {'viewport': label, 'status': 'failed', 'stage': 'home', 'cases': [],
-              'product_navigation': False, 'paid': False, 'payment_provider_called': False}
+    driver = None
+    result = {'viewport': label, 'status': 'failed', 'stage': 'home', 'substage': 'browser_start', 'cases': [],
+              'product_navigation': False, 'paid': False, 'payment_provider_called': False,
+              'diagnostics': {
+                  'search_toggle_visible': False, 'search_field_visible': False,
+                  'form_method_get': False, 'form_action_same_origin': False,
+                  'form_action_native_search': False, 'document_changed': False,
+                  'response_status': None, 'search_document': False,
+                  'query_readback_matches': False, 'input_readback_matches': False,
+              }}
     expected_name = f'[CI ONLY] ORDENOWA カートオプション {run_id}-{attempt}'
     try:
+        driver = webdriver.Chrome(options=options)
         # Hummingbird moves the language selector into mobile navigation.
         # Establish the locale while its desktop control is visible.
         driver.set_window_size(1440, 960)
@@ -154,7 +191,14 @@ def run_viewport(label: str, width: int, height: int, run_id: str, attempt: str)
             ("missing", f"該当なし検索検証{run_id}試行{attempt}"),
         ):
             result['stage'] = case
-            search(driver, query, width < 768)
+            result['diagnostics'].update(
+                search_toggle_visible=False, search_field_visible=False,
+                form_method_get=False, form_action_same_origin=False,
+                form_action_native_search=False, document_changed=False,
+                response_status=None, search_document=False,
+                query_readback_matches=False, input_readback_matches=False,
+            )
+            search(driver, query, width < 768, result)
             header = visible(driver, '#js-product-list-header')
             assert_true(query in header.text, "Search heading omitted the Japanese query")
             if case == 'missing':
@@ -181,16 +225,19 @@ def run_viewport(label: str, width: int, height: int, run_id: str, attempt: str)
                 driver.save_screenshot(str(DEST / f'storefront-search-{label}-{case}.png'))
             result['cases'].append(case)
         result.update(status='success', stage='complete')
+        result['substage'] = 'complete'
         print(f'PASS: {label} Japanese exact/partial/missing search and isolated product navigation')
     except Exception:
-        try:
-            driver.save_screenshot(str(DEST / f'storefront-search-{label}-failure.png'))
-        except Exception:
-            pass
+        if driver is not None:
+            try:
+                driver.save_screenshot(str(DEST / f'storefront-search-{label}-failure.png'))
+            except Exception:
+                pass
         raise AssertionError(f'Japanese search failed at {label}/{result["stage"]}; see bounded result artifact') from None
     finally:
         (DEST / f'storefront-search-{label}-result.json').write_text(json.dumps(result, ensure_ascii=False) + '\n', encoding='utf-8')
-        driver.quit()
+        if driver is not None:
+            driver.quit()
 
 
 def main() -> None:

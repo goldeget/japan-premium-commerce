@@ -43,9 +43,23 @@ check(str_contains($db->queries[0], 'WHERE id_shop=3 AND id_customer=44'), 'inse
 check(str_contains($db->queries[1], 'consent_notice_version,consent_locale,consent_accepted_at'), 'insert stores consent snapshot');
 $db->queries=[];$db->reads=[[['id_subscription'=>1]],[['id_subscription'=>1,'consent_notice_version'=>str_repeat('b',64),'consent_locale'=>'ja','consent_accepted_at'=>'2026-10-26 00:00:01','encrypted_subscription'=>$envelope]]];
 $repository->save(3,44,$digest,$envelope,'ja',str_repeat('b',64));
-check(count($db->queries)===2 && str_starts_with($db->queries[0], 'UPDATE'), 'explicit resubscribe refreshes consent evidence');
-check(str_contains($db->queries[0], 'WHERE id_shop=3 AND id_customer=44'), 'consent update remains owner scoped');
-check(str_contains($db->queries[0], "SET encrypted_subscription='" . pSQL($envelope) . "'"), 'same-owner resubscribe refreshes subscription encryption material');
+check(count($db->queries)===3 && str_starts_with($db->queries[0], 'SELECT')
+    && str_starts_with($db->queries[1], 'UPDATE') && str_starts_with($db->queries[2], 'SELECT'),
+    'explicit resubscribe refreshes consent evidence and reads it back');
+check(str_contains($db->queries[0], 'WHERE id_shop=3 AND id_customer=44')
+    && str_contains($db->queries[0], "AND endpoint_digest='" . pSQL($digest) . "'"),
+    'resubscribe lookup is scoped to the trusted owner and endpoint');
+check(str_contains($db->queries[1], 'WHERE id_shop=3 AND id_customer=44')
+    && str_contains($db->queries[1], "AND endpoint_digest='" . pSQL($digest) . "'"),
+    'consent update remains owner and endpoint scoped');
+check(str_contains($db->queries[1], "SET encrypted_subscription='" . pSQL($envelope) . "'")
+    && str_contains($db->queries[1], "consent_notice_version='" . str_repeat('b',64) . "'")
+    && str_contains($db->queries[1], "consent_locale='ja'")
+    && str_contains($db->queries[1], 'consent_accepted_at=UTC_TIMESTAMP()'),
+    'same-owner resubscribe refreshes the encrypted subscription and consent snapshot');
+check(str_contains($db->queries[2], 'SELECT encrypted_subscription,consent_notice_version,consent_locale,consent_accepted_at')
+    && str_contains($db->queries[2], 'WHERE id_shop=3 AND id_customer=44'),
+    'refreshed consent evidence is read back for the same owner');
 $db->queries=[];$db->reads=[[['Field'=>'consent_notice_version']],[['Field'=>'consent_locale']],[['Field'=>'consent_accepted_at']]];
 check($repository->install(), 'upgrade legacy schema');
 check(count($db->queries)===4 && !preg_grep('/ALTER TABLE/i', $db->queries), 'existing columns are preserved without destructive migration');
@@ -53,7 +67,7 @@ $db->queries=[];
 $db->queries=[];$db->reads=[[['id_subscription'=>1]]];
 $db->reads=[[['id_subscription'=>1]],[['id_subscription'=>1,'consent_notice_version'=>str_repeat('c',64),'consent_locale'=>'ko','consent_accepted_at'=>'2026-10-26 00:00:02','encrypted_subscription'=>$envelope]]];
 $repository->save(3,44,$digest,$envelope,'ko',str_repeat('c',64));
-check(count($db->queries)===2, 'idempotent save refreshes consent without owner reassignment');
+check(count($db->queries)===3, 'idempotent save refreshes consent and reads back without owner reassignment');
 $db->queries=[];$db->reads=[[['id_subscription'=>1]]];
 check($repository->stored(3,44), 'legacy subscription remains stored for owner revocation');
 check(!str_contains($db->queries[0], 'consent_notice_version IS NOT NULL'), 'stored lookup includes legacy unconsented rows');

@@ -270,7 +270,8 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         self.assertIn("$entry->linkedProductId !== null", self.draft_validation)
 
     def test_selected_local_upload_has_a_preview_separate_from_remote_source_metadata_and_rights(self) -> None:
-        self.assertIn("public function setMedia()", self.controller)
+        self.assertIn("public function setMedia($isNewTheme = false)", self.controller)
+        self.assertIn("parent::setMedia($isNewTheme)", self.controller)
         self.assertIn("catalog-import-image-preview.js", self.controller)
         self.assertIn('data-catalog-image-preview', self.import_form)
         self.assertIn("미리보기는 업로드 예정 파일만 표시하며 사용권 승인을 대신하지 않습니다.", self.import_form)

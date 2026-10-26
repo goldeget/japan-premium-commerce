@@ -152,6 +152,7 @@ def product_id_matches_url(destination: str) -> bool:
 
 def read_product_page(driver: webdriver.Chrome, result: dict[str, Any]) -> dict[str, Any]:
     result["stage"] = "product_document"
+    result["substage"] = "navigation"
     driver.get(BASE + "/index.php?" + urlencode({"controller": "product", "id_product": PRODUCT_ID}))
     WebDriverWait(driver, 40).until(
         lambda browser: browser.execute_script("return document.readyState") == "complete"
@@ -164,10 +165,17 @@ def read_product_page(driver: webdriver.Chrome, result: dict[str, Any]) -> dict[
         return entry && Number.isInteger(entry.responseStatus) ? entry.responseStatus : null;
         """
     )
+    result["response_status"] = response_status if type(response_status) is int and 100 <= response_status <= 599 else None
+    result["substage"] = "response_status"
     assert_true(response_status in (None, 200), "synthetic product document did not return HTTP 200")
-    assert_true(same_origin(driver.current_url), "product page left the isolated shop origin")
+    result["same_origin"] = same_origin(driver.current_url)
+    result["substage"] = "origin"
+    assert_true(result["same_origin"], "product page left the isolated shop origin")
+    result["substage"] = "document_locale"
+    document_language = (driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower().split("-")[0]
+    result["japanese_document"] = document_language == "ja"
     assert_true(
-        (driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower().split("-")[0] == "ja",
+        result["japanese_document"],
         "product page did not retain the Japanese customer locale",
     )
 
@@ -245,12 +253,13 @@ def main() -> None:
         options.add_argument(argument)
     options.add_argument("--window-size=1440,960")
 
-    result: dict[str, Any] = {"status": "failure", "stage": "browser_start", "checks": {}}
+    result: dict[str, Any] = {"status": "failure", "stage": "browser_start", "substage": "browser_start", "checks": {}}
     driver: webdriver.Chrome | None = None
     try:
         driver = webdriver.Chrome(options=options)
         result.update(read_product_page(driver, result))
         result["stage"] = "complete"
+        result["substage"] = "complete"
         driver.save_screenshot(str(SCREENSHOT_PATH))
         result["screenshot_saved"] = True
         print("PASS: synthetic product identity, name, JPY Offer, canonical URL, and availability match rendered UI")

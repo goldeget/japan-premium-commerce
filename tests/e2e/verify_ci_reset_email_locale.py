@@ -19,11 +19,70 @@ import subprocess
 import sys
 import time
 from html.parser import HTMLParser
+from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 LANGUAGES = ('ja', 'en', 'ko')
 MARKERS = {'ja': 'パスワード', 'en': 'password', 'ko': '비밀번호'}
+SAFE_STAGES = {
+    'context', 'seed', 'native_request_document', 'native_request_email_field',
+    'native_request_submit_control', 'native_request_submit', 'native_request_readback',
+    'captured_message', 'native_link_document', 'native_link_password_field',
+    'native_link_confirmation_field', 'complete',
+}
+SAFE_EXCEPTION_TYPES = {
+    'AssertionError', 'TimeoutException', 'ValueError', 'RuntimeError', 'URLError',
+    'OSError', 'WebDriverException', 'NoSuchElementException', 'OtherError',
+}
+
+
+def write_diagnostics(result: dict) -> None:
+    artifact_text, runner_temp = os.environ.get('QA_ARTIFACT_DIR', ''), os.environ.get('RUNNER_TEMP', '')
+    if not artifact_text or not runner_temp:
+        return
+    artifact_dir, temp_dir = Path(artifact_text).resolve(), Path(runner_temp).resolve()
+    try:
+        artifact_dir.relative_to(temp_dir)
+    except ValueError:
+        return
+    if artifact_dir == temp_dir:
+        return
+    if (set(result) != {
+            'status', 'language', 'stage', 'exception_type', 'response_status',
+            'same_origin', 'native_route', 'language_matches', 'email_field_present',
+            'submit_control_present', 'success_alert_present', 'reset_fields_present',
+        }
+            or result['status'] not in {'success', 'failure'}
+            or result['language'] not in (*LANGUAGES, 'none')
+            or result['stage'] not in SAFE_STAGES
+            or (result['exception_type'] is not None and result['exception_type'] not in SAFE_EXCEPTION_TYPES)
+            or (result['response_status'] is not None and (
+                type(result['response_status']) is not int or not 100 <= result['response_status'] <= 599
+            ))
+            or any(type(result[key]) is not bool for key in (
+                'same_origin', 'native_route', 'language_matches', 'email_field_present',
+                'submit_control_present', 'success_alert_present', 'reset_fields_present'))):
+        return
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    (artifact_dir / 'reset-email-locale-result.json').write_text(
+        json.dumps(result, ensure_ascii=True, sort_keys=True, indent=2) + '\n', encoding='utf-8'
+    )
+
+
+def navigation_status(driver):
+    status = driver.execute_script("""
+      const entries = performance.getEntriesByType('navigation');
+      const entry = entries.length ? entries[0] : null;
+      return entry && Number.isInteger(entry.responseStatus) ? entry.responseStatus : null;
+    """)
+    return status if type(status) is int and 100 <= status <= 599 else None
+
+
+def native_password_route(current: str, expected: str, base: str) -> bool:
+    if not same_origin(current, base):
+        return False
+    return unquote(urlparse(current).path) == unquote(urlparse(expected).path)
 
 
 def endpoint(value: str, port: int) -> None:
@@ -212,6 +271,13 @@ def validate_context() -> tuple[str, str, str]:
 def run() -> bool:
     driver = None
     stage, language = 'context', 'none'
+    diagnostic = {
+        'status': 'failure', 'language': 'none', 'stage': 'context', 'exception_type': None,
+        'response_status': None, 'same_origin': False, 'native_route': False,
+        'language_matches': False, 'email_field_present': False,
+        'submit_control_present': False, 'success_alert_present': False,
+        'reset_fields_present': False,
+    }
     try:
         project, base, api = validate_context()
         from selenium import webdriver
@@ -221,6 +287,10 @@ def run() -> bool:
         from selenium.webdriver.support import expected_conditions as EC
         for language in LANGUAGES:
             stage = 'seed'
+            diagnostic.update(language=language, stage=stage, response_status=None,
+                              same_origin=False, native_route=False, language_matches=False,
+                              email_field_present=False, submit_control_present=False,
+                              success_alert_present=False, reset_fields_present=False)
             email = f'ordenowa-reset-locale-{os.environ["GITHUB_RUN_ID"]}-{os.environ["GITHUB_RUN_ATTEMPT"]}-{language}-{secrets.token_hex(4)}@example.invalid'
             fixture = seed(project, language, email)
             if not same_origin(fixture['url'], base):
@@ -229,33 +299,60 @@ def run() -> bool:
             for flag in ('--headless=new', '--no-sandbox', '--disable-dev-shm-usage'):
                 options.add_argument(flag)
             driver = webdriver.Chrome(options=options)
-            stage = 'native_request'
+            stage = 'native_request_document'
             driver.get(fixture['url'])
             wait = WebDriverWait(driver, 30)
-            wait.until(EC.visibility_of_element_located((By.ID, 'email'))).send_keys(email)
-            wait.until(EC.element_to_be_clickable((By.ID, 'send-reset-link'))).click()
+            diagnostic['response_status'] = navigation_status(driver)
+            diagnostic['same_origin'] = same_origin(driver.current_url, base)
+            diagnostic['native_route'] = native_password_route(driver.current_url, fixture['url'], base)
+            stage = 'native_request_email_field'
+            email_field = wait.until(EC.visibility_of_element_located((By.ID, 'email')))
+            diagnostic['email_field_present'] = True
+            email_field.send_keys(email)
+            stage = 'native_request_submit_control'
+            submit_control = wait.until(EC.element_to_be_clickable((By.ID, 'send-reset-link')))
+            diagnostic['submit_control_present'] = True
+            stage = 'native_request_submit'
+            submit_control.click()
+            stage = 'native_request_readback'
             success = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, '.alert-success')))
+            diagnostic['success_alert_present'] = True
             if not success.text.strip() or not same_origin(driver.current_url, base):
                 raise AssertionError('native reset request did not succeed')
-            if driver.find_element(By.TAG_NAME, 'html').get_attribute('lang').split('-')[0] != language:
+            diagnostic['same_origin'] = same_origin(driver.current_url, base)
+            diagnostic['native_route'] = native_password_route(driver.current_url, fixture['url'], base)
+            document_language = (driver.find_element(By.TAG_NAME, 'html').get_attribute('lang') or '').lower().split('-')[0]
+            diagnostic['language_matches'] = document_language == language
+            if not diagnostic['language_matches']:
                 raise AssertionError('native recovery response language mismatch')
             stage = 'captured_message'
             reset_path = urlparse(fixture['url']).path
             reset_url = assert_message(wait_message(api, email), language, base,
                                        reset_path, fixture['forbidden'])
-            stage = 'native_link_destination'
+            stage = 'native_link_document'
             driver.get(reset_url)
+            diagnostic['response_status'] = navigation_status(driver)
+            diagnostic['same_origin'] = same_origin(driver.current_url, base)
+            diagnostic['native_route'] = native_password_route(driver.current_url, fixture['url'], base)
+            stage = 'native_link_password_field'
             wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[name="passwd"]')))
+            stage = 'native_link_confirmation_field'
             wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[name="confirmation"]')))
+            diagnostic['reset_fields_present'] = True
             assert_reset_page(driver, language, base, reset_path)
             driver.quit()
             driver = None
             print(f'PASS: isolated native reset email locale={language}')
+        stage = 'complete'
+        diagnostic.update(status='success', language='ko', stage=stage, exception_type=None)
         return True
-    except Exception:
+    except Exception as error:
+        diagnostic['exception_type'] = type(error).__name__ if type(error).__name__ in SAFE_EXCEPTION_TYPES else 'OtherError'
         print(f'FAIL: isolated native reset email locale={language} stage={stage}', file=sys.stderr)
         return False
     finally:
+        diagnostic['language'], diagnostic['stage'] = language, stage
+        write_diagnostics(diagnostic)
         if driver is not None:
             try:
                 driver.quit()

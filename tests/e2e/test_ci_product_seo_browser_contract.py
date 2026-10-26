@@ -49,6 +49,8 @@ class CiProductSeoBrowserContractTests(unittest.TestCase):
             "all(checks.values())",
             "product-seo-desktop.png",
             "product-seo-result.json",
+            'result["substage"]', 'result["response_status"]',
+            'result["same_origin"]', 'result["japanese_document"]',
         ):
             with self.subTest(required=required):
                 self.assertIn(required, source)

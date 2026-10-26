@@ -25,6 +25,7 @@ class StorefrontSearchBrowserContractTests(unittest.TestCase):
             'storefront-search-{label}-{case}.png',
             'storefront-search-{label}-product.png',
             'storefront-search-{label}-result.json', 'payment_provider_called',
+            '"diagnostics"', '"search_result_document"', '"query_readback_matches"',
         ):
             with self.subTest(required=required):
                 self.assertIn(required, source)
@@ -83,6 +84,7 @@ class StorefrontSearchBrowserContractTests(unittest.TestCase):
         ):
             with self.subTest(evidence=evidence):
                 self.assertIn(evidence, coverage)
+        self.assertIn('elif [[ "$STOREFRONT_SEARCH_BROWSER_QA_OUTCOME" == failure ]]; then', coverage)
         aggregate = workflow.split("- name: Aggregate browser QA and postal verification failures", 1)[1].split("- name:", 1)[0]
         self.assertIn("STOREFRONT_SEARCH_BROWSER_QA_OUTCOME: ${{ steps.storefront_search_browser_qa.outcome }}", aggregate)
         self.assertIn("steps.storefront_search_browser_qa.outcome", aggregate)

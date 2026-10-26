@@ -30,6 +30,10 @@ class ModuleAdminController
     public array $accessCalls = [];
     /** @var array<string, int> */
     public array $defaultAccess = ['view' => 1, 'edit' => 1, 'add' => 1];
+    /** @var list<mixed> */
+    public array $mediaModes = [];
+    /** @var list<string> */
+    public array $scripts = [];
     public object $context;
 
     public function __construct()
@@ -43,6 +47,17 @@ class ModuleAdminController
 
     public function initContent(): void
     {
+    }
+
+    // Match the public PrestaShop 9.2 AdminController signature so incompatible overrides fail here.
+    public function setMedia($isNewTheme = false)
+    {
+        $this->mediaModes[] = $isNewTheme;
+    }
+
+    public function addJS($path): void
+    {
+        $this->scripts[] = (string) $path;
     }
 
     public function access(string $action): bool
@@ -153,6 +168,9 @@ if (!mkdir($catalogAdminShopRoot, 0700, true) || !mkdir($catalogAdminStorage, 07
 if (!defined('_PS_ROOT_DIR_')) {
     define('_PS_ROOT_DIR_', $catalogAdminShopRoot);
 }
+if (!defined('__PS_BASE_URI__')) {
+    define('__PS_BASE_URI__', '/');
+}
 putenv('KURANEA_CATALOG_QUEUE_DIR=' . $catalogAdminStorage);
 putenv('KURANEA_CATALOG_TEST_DEMO_APPROVAL=0');
 
@@ -184,6 +202,15 @@ try {
     $_SERVER['REQUEST_METHOD'] = 'GET';
     Tools::$submitted = false;
     Tools::$values = [];
+    $mediaController = new AdminKuraneaCatalogReviewController();
+    $mediaController->setMedia(true);
+    assertCatalogAdminSame([true], $mediaController->mediaModes, 'The review controller should forward the inherited theme mode to the PrestaShop 9.2 media setup.');
+    assertCatalogAdminSame(
+        ['/modules/kuraneacatalog/views/js/catalog-import-image-preview.js'],
+        $mediaController->scripts,
+        'The review controller should add its image preview script after the native media setup.'
+    );
+
     $catalogAdminController = new AdminKuraneaCatalogReviewController();
     $catalogAdminController->initContent();
     assertCatalogAdminTrue(str_contains($catalogAdminController->content, 'id="product_urls"'), 'The authorized import form should render when PrestaShop lazily resolves tab access.');

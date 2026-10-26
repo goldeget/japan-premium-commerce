@@ -65,8 +65,13 @@ SAFE_RESULT_KEYS = {
     "assignment_reassigned", "assignment_actor_history", "assignment_limited_employee_denied",
     "image_attachment_admin_readback", "image_attachment_foreign_denied", "disallowed_attachment_rejected",
     "foreign_valid_thread_denied", "foreign_orderless_post_denied", "orderless_thread_unchanged",
+    "contact_document_status", "contact_same_origin", "contact_native_route",
+    "contact_form_count", "contact_form_visible",
 }
-RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {"status", "stage", "exception_type", "mailpit_provider"}
+RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {
+    "status", "stage", "exception_type", "mailpit_provider",
+    "contact_document_status", "contact_form_count",
+}
 SAFE_EXCEPTION_TYPES = {
     "AssertionError", "TimeoutException", "ValueError", "RuntimeError", "URLError", "OSError",
     "StaleElementReferenceException", "ElementClickInterceptedException", "NoSuchElementException", "OtherError",
@@ -215,6 +220,32 @@ def same_origin(first: str, second: str) -> bool:
     a = urlparse(first)
     b = urlparse(urljoin(first.rstrip("/") + "/", second))
     return (a.scheme, a.hostname, a.port) == (b.scheme, b.hostname, b.port)
+
+
+def contact_page_evidence(driver, shop_url: str) -> dict[str, Any]:
+    """Return response status and bounded route/form facts; never persist the URL or page text."""
+    response_status = driver.execute_script("""
+      const entries = performance.getEntriesByType('navigation');
+      const entry = entries.length ? entries[0] : null;
+      return entry && Number.isInteger(entry.responseStatus) ? entry.responseStatus : null;
+    """)
+    if type(response_status) is not int or not 100 <= response_status <= 599:
+        response_status = None
+    current = urlparse(driver.current_url)
+    origin_matches = same_origin(driver.current_url, shop_url)
+    query = parse_qs(current.query, keep_blank_values=True)
+    native_route = origin_matches and (
+        (current.path.rstrip('/') == '/index.php' and query.get('controller') == ['contact'])
+        or current.path.rstrip('/') == '/contact'
+    )
+    forms = driver.find_elements(By.CSS_SELECTOR, '.contact-form form')
+    return {
+        'contact_document_status': response_status,
+        'contact_same_origin': origin_matches,
+        'contact_native_route': native_route,
+        'contact_form_count': len(forms),
+        'contact_form_visible': any(form.is_displayed() for form in forms),
+    }
 
 
 def safe_admin_path(value: str, admin_url: str) -> bool:
@@ -868,6 +899,11 @@ def write_result(path: Path, result: dict[str, Any]) -> None:
         or result.get("stage") not in SAFE_STAGES
         or result.get("status") not in {"success", "failure"}
         or any(type(result.get(key)) is not bool for key in RESULT_BOOLEAN_KEYS)
+        or (result.get("contact_document_status") is not None and (
+            type(result.get("contact_document_status")) is not int
+            or not 100 <= result["contact_document_status"] <= 599
+        ))
+        or type(result.get("contact_form_count")) is not int or result["contact_form_count"] < 0
         or result.get("mailpit_provider") != "isolated_only"
         or (result.get("exception_type") is not None and result.get("exception_type") not in SAFE_EXCEPTION_TYPES)
         or (result.get("status") == "success" and (
@@ -897,7 +933,9 @@ def run() -> None:
         "image_attachment_admin_readback": False, "image_attachment_foreign_denied": False,
         "disallowed_attachment_rejected": False,
         "foreign_valid_thread_denied": False, "foreign_orderless_post_denied": False,
-        "orderless_thread_unchanged": False,
+        "orderless_thread_unchanged": False, "contact_document_status": None,
+        "contact_same_origin": False, "contact_native_route": False,
+        "contact_form_count": 0, "contact_form_visible": False,
     }
     customer = admin = foreign = limited = None
     buyer_marker = f"[CI ONLY] ORDENOWA support inquiry {ctx.run_id}-{ctx.attempt}-{secrets.token_hex(5)}"
@@ -919,6 +957,7 @@ def run() -> None:
 
         stage = result["stage"] = "contact_form"
         customer.get(ctx.shop + "/index.php?controller=contact")
+        result.update(contact_page_evidence(customer, ctx.shop))
         visible(customer, ".contact-form form")
         baseline_mail = mail_ids(ctx.mailpit)
         with tempfile.NamedTemporaryFile(prefix="ordenowa-support-", suffix=".txt", mode="w", encoding="utf-8", delete=False) as file:

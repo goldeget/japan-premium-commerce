@@ -269,6 +269,9 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 "disallowed_attachment_rejected": True,
                 "foreign_valid_thread_denied": True, "foreign_orderless_post_denied": True,
                 "orderless_thread_unchanged": True,
+                "contact_document_status": 200, "contact_same_origin": True,
+                "contact_native_route": True, "contact_form_count": 1,
+                "contact_form_visible": True,
             }
             module.write_result(path, result)
             content = path.read_text(encoding="utf-8")
@@ -281,6 +284,20 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             incomplete = dict(result, assignment_actor_history=False)
             with self.assertRaises(ValueError):
                 module.write_result(path, incomplete)
+
+    def test_contact_failure_diagnostics_are_safe_and_record_status_route_and_form(self):
+        browser = SCRIPT.read_text(encoding="utf-8")
+        for required in (
+            "def contact_page_evidence(driver, shop_url: str)",
+            "contact_document_status", "contact_same_origin", "contact_native_route",
+            "contact_form_count", "contact_form_visible",
+            "result.update(contact_page_evidence(customer, ctx.shop))",
+            "performance.getEntriesByType('navigation')",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, browser)
+        helper = browser[browser.index("def contact_page_evidence"):browser.index("def safe_admin_path")]
+        self.assertNotIn('"current_url"', helper)
 
 
 if __name__ == "__main__":

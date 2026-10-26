@@ -35,9 +35,9 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
         $this->meta_title = '상품 검수 대기열';
     }
 
-    public function setMedia()
+    public function setMedia($isNewTheme = false)
     {
-        parent::setMedia();
+        parent::setMedia($isNewTheme);
         $this->addJS(__PS_BASE_URI__ . 'modules/kuraneacatalog/views/js/catalog-import-image-preview.js');
     }
 

@@ -4,6 +4,7 @@ import contextlib
 import importlib.util
 import io
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
@@ -116,6 +117,39 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 self.assertFalse(module.run())
         self.assertEqual(output.getvalue(), 'FAIL: isolated native reset email locale=none stage=context\n')
 
+    def test_failure_artifact_keeps_only_bounded_browser_facts(self):
+        module = self.module()
+        with tempfile.TemporaryDirectory() as temp:
+            artifact = Path(temp) / "ordenowa-browser-qa"
+            result = {
+                "status": "failure", "language": "ja", "stage": "native_request_email_field",
+                "exception_type": "TimeoutException", "response_status": 404,
+                "same_origin": True, "native_route": True, "language_matches": False,
+                "email_field_present": False, "submit_control_present": False,
+                "success_alert_present": False, "reset_fields_present": False,
+            }
+            with patch.dict(module.os.environ, {"RUNNER_TEMP": temp, "QA_ARTIFACT_DIR": str(artifact)}):
+                module.write_diagnostics(result)
+                path = artifact / "reset-email-locale-result.json"
+                self.assertTrue(path.is_file())
+                contents = path.read_text(encoding="utf-8")
+                self.assertIn('"response_status": 404', contents)
+                for sensitive in ("token", "password", "email@example", "http://", "current_url"):
+                    self.assertNotIn(sensitive, contents)
+                module.write_diagnostics(dict(result, token="never-write"))
+                self.assertEqual(path.read_text(encoding="utf-8"), contents)
+
+    def test_native_request_failure_is_split_into_safe_browser_substages(self):
+        source = VERIFIER.read_text(encoding="utf-8")
+        for stage in (
+            "native_request_document", "native_request_email_field",
+            "native_request_submit_control", "native_request_submit", "native_request_readback",
+        ):
+            with self.subTest(stage=stage):
+                self.assertIn(stage, source)
+        self.assertIn("navigation_status(driver)", source)
+        self.assertIn("native_password_route(driver.current_url", source)
+
     def test_context_rejects_unowned_project_before_any_fixture_or_network_access(self):
         module = self.module()
         environment = {'CI': 'true', 'GITHUB_ACTIONS': 'true', 'KURANEA_ISOLATED_CI': '1',
@@ -151,9 +185,11 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 self.assertIn(key, step)
         self.assertIn('tests/e2e/verify_ci_reset_email_locale.py', step)
         self.assertIn('reset-email-locale-e2e.log', step)
+        self.assertIn('QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa', step)
         coverage = workflow.split('- name: Verify browser QA screenshot coverage', 1)[1].split('- name:', 1)[0]
         self.assertIn('RESET_EMAIL_LOCALE_BROWSER_QA_OUTCOME: ${{ steps.reset_email_locale_browser_qa.outcome }}', coverage)
         self.assertIn('reset-email-locale-e2e.log', coverage)
+        self.assertIn('reset-email-locale-result.json', coverage)
         aggregate = workflow.split('- name: Aggregate browser QA and postal verification failures', 1)[1].split('- name:', 1)[0]
         self.assertIn('RESET_EMAIL_LOCALE_BROWSER_QA_OUTCOME: ${{ steps.reset_email_locale_browser_qa.outcome }}', aggregate)
         self.assertIn('steps.reset_email_locale_browser_qa.outcome', aggregate)

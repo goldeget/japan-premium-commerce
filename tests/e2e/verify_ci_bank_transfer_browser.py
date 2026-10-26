@@ -323,17 +323,33 @@ def admin_login(driver: webdriver.Chrome, ctx: dict[str, object], email: str | N
 
 
 def find_transfer_menu_link(driver: webdriver.Chrome, admin_root: str) -> str:
-    candidates = set()
-    for link in driver.find_elements(By.CSS_SELECTOR, "a[href]"):
-        if " ".join((link.text or "").split()) != "주문 입금 안내":
-            continue
-        href = link.get_attribute("href") or ""
-        if not safe_admin_path(href, admin_root):
-            raise AssertionError("the generated transfer menu link left the authenticated Back Office")
-        parsed = urlparse(href)
-        query = parse_qs(parsed.query, keep_blank_values=True)
-        if query.get("controller") == ["AdminBusinessProfileTransfers"] or "/transfer" in parsed.path.lower():
-            candidates.add(href)
+    def visible_transfer_links() -> set[str]:
+        matches = set()
+        for link in driver.find_elements(By.CSS_SELECTOR, "#nav-sidebar a[href]"):
+            if " ".join((link.text or "").split()) != "주문 입금 안내" or not link.is_displayed():
+                continue
+            href = link.get_attribute("href") or ""
+            if not safe_admin_path(href, admin_root):
+                raise AssertionError("the generated transfer menu link left the authenticated Back Office")
+            parsed = urlparse(href)
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            if query.get("controller") == ["AdminBusinessProfileTransfers"] or "/transfer" in parsed.path.lower():
+                matches.add(href)
+        return matches
+
+    candidates = visible_transfer_links()
+    if not candidates:
+        orders_toggles = [
+            item for item in driver.find_elements(By.CSS_SELECTOR, "#nav-sidebar a, #nav-sidebar button")
+            if " ".join((item.text or "").split()) == "주문" and item.is_displayed() and item.is_enabled()
+        ]
+        if len(orders_toggles) != 1:
+            raise AssertionError("the authenticated Orders sidebar did not expose one native menu toggle")
+        orders_toggle = orders_toggles[0]
+        if orders_toggle.get_attribute("aria-expanded") != "true":
+            orders_toggle.click()
+        WebDriverWait(driver, 10).until(lambda _browser: bool(visible_transfer_links()))
+        candidates = visible_transfer_links()
     if len(candidates) != 1:
         raise AssertionError("the authenticated Orders menu did not expose one native bank-transfer route")
     return next(iter(candidates))
