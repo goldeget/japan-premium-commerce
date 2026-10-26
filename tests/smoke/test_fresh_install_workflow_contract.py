@@ -2,7 +2,11 @@
 from __future__ import annotations
 
 import ast
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -28,7 +32,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             job,
         )
         self.assertIn(
-            "ORDENOWA_ADMIN_QA_FOCUS: ${{ github.event_name == 'push' && (startsWith(github.event.head_commit.message, '[admin-security-focus]') || startsWith(github.event.head_commit.message, '[admin-return-focus]')) }}",
+            "ORDENOWA_ADMIN_QA_FOCUS: ${{ github.event_name == 'push' && (startsWith(github.event.head_commit.message, '[admin-security-focus]') || startsWith(github.event.head_commit.message, '[admin-return-focus]') || startsWith(github.event.head_commit.message, '[customer-account-focus]')) }}",
             job,
         )
 
@@ -53,8 +57,10 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "Verify Korean admin shipping links resolve in Chromium",
             "Verify official ORDENOWA brand upload and publish in Chromium",
             "Verify the published ORDENOWA password-reset email logo in Chromium",
+            "Enable run-scoped checkout only for customer account browser QA",
             "Prepare run-scoped Back Office password-reset employee",
             "Verify customer registration, email login, logout, password reset, and my page in Chromium",
+            "Restore fail-closed checkout after customer account browser QA",
             "Verify Korean admin native product create and edit in Chromium",
             "Verify real product detail and cart in Chromium (no payment)",
             "Verify native variant selection and cart controls in Chromium",
@@ -90,10 +96,13 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         for name in focus_gated:
             with self.subTest(step=name):
                 step_block = step(name)
-                if name in {
-                    "Import synthetic Tokyo postcode fixture for isolated checkout QA",
+                if name == "Import synthetic Tokyo postcode fixture for isolated checkout QA":
+                    self.assertIn(
+                        "env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_ADMIN_RETURN_FOCUS == 'true' || env.ORDENOWA_CUSTOMER_ACCOUNT_FOCUS == 'true'",
+                        step_block,
+                    )
+                elif name in {
                     "Verify isolated CI Tokyo postcode lookup",
-                    "Start disposable Mailpit for customer password-reset email",
                     "Create isolated synthetic tax product and reconcile native unpaid order",
                     "Prepare isolated active product for storefront and free-shipping QA",
                     "Prepare isolated free-shipping order and coupon fixtures",
@@ -114,6 +123,13 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
                         "env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_ADMIN_RETURN_FOCUS == 'true'",
                         step_block,
                     )
+                elif name in {
+                    "Start disposable Mailpit for customer password-reset email",
+                    "Enable run-scoped checkout only for customer account browser QA",
+                    "Verify customer registration, email login, logout, password reset, and my page in Chromium",
+                    "Restore fail-closed checkout after customer account browser QA",
+                }:
+                    self.assertIn("env.ORDENOWA_CUSTOMER_ACCOUNT_FOCUS == 'true'", step_block)
                 else:
                     self.assertIn("env.ORDENOWA_ADMIN_QA_FOCUS != 'true'", step_block)
 
@@ -459,7 +475,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertTrue("MAILPIT_API_URL: http://127.0.0.1:8025" in workflow, "browser test cannot read captured reset mail")
         self.assertTrue("customer-account-e2e.log" in workflow, "account browser execution log is not preserved")
         self.assertIn("ORDENOWA_ACCOUNT_EMAIL_LOGIN_SAFE_STATE", account_flow)
-        self.assertIn("email_login_diagnostics=$(rg '^ORDENOWA_ACCOUNT_EMAIL_LOGIN_SAFE_STATE='", workflow)
+        self.assertIn("email_login_diagnostics=$(grep '^ORDENOWA_ACCOUNT_EMAIL_LOGIN_SAFE_STATE='", workflow)
         self.assertIn("MAILPIT_OWNED: ${{ steps.mailpit_setup.outputs.mailpit_owned }}", workflow)
         self.assertIn('elif ! docker rm -f "${BASH_REMATCH[1]}"', workflow)
         self.assertTrue('input[name="email"]' in account_flow and 'get_attribute("type") != "email"' in account_flow, "customer login is not verified as email-based")
@@ -482,6 +498,122 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertGreaterEqual(account_flow.count("assert_route_path_matches(driver, recovery_route_path"), 2)
         self.assertIn("actual_path != expected_path", account_flow)
         self.assertIn("same_origin", account_flow)
+
+    def test_account_failure_diagnostics_work_without_ripgrep_and_keep_browser_failure(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        account_step = workflow.split(
+            "- name: Verify customer registration, email login, logout, password reset, and my page in Chromium",
+            1,
+        )[1].split("- name:", 1)[0]
+        aggregate = workflow.split(
+            "- name: Aggregate browser QA and postal verification failures", 1
+        )[1].split("- name:", 1)[0]
+
+        self.assertNotIn("rg ", account_step)
+        extractor_lines = [
+            line.strip()
+            for line in account_step.splitlines()
+            if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=\$\(grep ", line.strip())
+        ]
+        self.assertGreaterEqual(len(extractor_lines), 2)
+        self.assertIn("browser_status=${PIPESTATUS[0]}", account_step)
+        self.assertLess(
+            account_step.index("browser_status=${PIPESTATUS[0]}"),
+            account_step.index(extractor_lines[0]),
+        )
+        self.assertIn('exit "$browser_status"', account_step)
+        self.assertIn('"account=$ACCOUNT_BROWSER_QA_OUTCOME"', aggregate)
+        self.assertIn('if [[ "$entry" != *=success ]]; then', aggregate)
+
+        grep_path = shutil.which("grep")
+        tail_path = shutil.which("tail")
+        self.assertIsNotNone(grep_path)
+        self.assertIsNotNone(tail_path)
+        with tempfile.TemporaryDirectory() as temporary:
+            bin_dir = Path(temporary) / "bin"
+            bin_dir.mkdir()
+            (bin_dir / "grep").symlink_to(grep_path)
+            (bin_dir / "tail").symlink_to(tail_path)
+            log_file = Path(temporary) / "account.log"
+            log_file.write_text(
+                "FAIL: mobile customer account at customer_address_edit (TimeoutException)\n"
+                "ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE={\"substage\":\"form_wait\"}\n",
+                encoding="utf-8",
+            )
+            failure_extractor = next(line for line in extractor_lines if "FAIL:" in line)
+            address_extractor = next(
+                line for line in extractor_lines if "CUSTOMER_ADDRESS_EDIT_SAFE_STATE" in line
+            )
+            script = "\n".join(
+                (
+                    "set -euo pipefail",
+                    "browser_status=23",
+                    'log_file="$1"',
+                    failure_extractor,
+                    address_extractor,
+                    'printf "%s\\n%s\\n" "$failure_line" "$address_edit_diagnostics"',
+                    'exit "$browser_status"',
+                )
+            )
+            completed = subprocess.run(
+                ["/bin/bash", "-c", script, "bash", str(log_file)],
+                check=False,
+                capture_output=True,
+                text=True,
+                env={"PATH": str(bin_dir)},
+            )
+
+        self.assertEqual(completed.returncode, 23)
+        self.assertIn("customer_address_edit (TimeoutException)", completed.stdout)
+        self.assertIn('"substage":"form_wait"', completed.stdout)
+        self.assertNotIn("command not found", completed.stderr)
+
+    def test_customer_account_focus_runs_only_isolated_account_prerequisites_and_evidence(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        job = workflow.split("  install:\n", 1)[1].split("    steps:\n", 1)[0]
+
+        def step(name: str) -> str:
+            return workflow.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
+
+        self.assertIn("ORDENOWA_CUSTOMER_ACCOUNT_FOCUS:", job)
+        self.assertIn("[customer-account-focus]", job)
+        for name in (
+            "Import synthetic Tokyo postcode fixture for isolated checkout QA",
+            "Start disposable Mailpit for customer password-reset email",
+            "Enable run-scoped checkout only for customer account browser QA",
+            "Verify customer registration, email login, logout, password reset, and my page in Chromium",
+            "Restore fail-closed checkout after customer account browser QA",
+        ):
+            with self.subTest(step=name):
+                self.assertIn("ORDENOWA_CUSTOMER_ACCOUNT_FOCUS == 'true'", step(name))
+
+        evidence = step("Verify focused customer account browser evidence")
+        for filename in (
+            "customer-account-e2e.log",
+            "desktop-customer-address-saved.png",
+            "mobile-customer-address-saved.png",
+            "desktop-customer-address-edited-after-refresh.png",
+            "mobile-customer-address-edited-after-refresh.png",
+            "ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE=",
+        ):
+            with self.subTest(evidence=filename):
+                self.assertIn(filename, evidence)
+
+        aggregate = step("Aggregate browser QA and postal verification failures")
+        account_branch = aggregate.split(
+            'if [[ "$ORDENOWA_CUSTOMER_ACCOUNT_FOCUS" == true ]]; then', 1
+        )[1].split('if [[ "$ORDENOWA_ADMIN_RETURN_FOCUS" == true ]]; then', 1)[0]
+        for outcome in (
+            '"compose_up=$COMPOSE_UP_OUTCOME"',
+            '"postcode_fixture=$POSTCODE_FIXTURE_OUTCOME"',
+            '"mailpit_setup=$MAILPIT_SETUP_OUTCOME"',
+            '"account=$ACCOUNT_BROWSER_QA_OUTCOME"',
+            '"account_checkout_restore=$ACCOUNT_CHECKOUT_RESTORE_OUTCOME"',
+            '"account_browser_evidence=$ACCOUNT_BROWSER_EVIDENCE_OUTCOME"',
+        ):
+            with self.subTest(outcome=outcome):
+                self.assertIn(outcome, account_branch)
+        self.assertIn('if [[ "$entry" != *=success ]]; then', account_branch)
 
     def test_mailpit_cleanup_is_run_owned_and_docker_lookup_fails_closed(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -606,7 +738,8 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertEqual(step_names[email_position + 1], account_override_step)
         self.assertEqual(step_names[account_position - 1], account_override_step)
         self.assertEqual(step_names[account_position + 1], account_restore_step)
-        self.assertEqual(step_names[account_position + 2], product_admin_step)
+        self.assertEqual(step_names[account_position + 2], "Verify focused customer account browser evidence")
+        self.assertEqual(step_names[account_position + 3], product_admin_step)
         self.assertLess(product_admin_position, step_names.index(storefront_step))
         self.assertLess(product_admin_position, step_names.index(checkout_gate_step))
         self.assertLess(product_admin_position, step_names.index(order_step))
@@ -754,7 +887,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("ORDENOWA_ACCOUNT_REGISTRATION_SAFE_STATE=", diagnostics)
         self.assertNotIn("window.location.search", diagnostics)
         self.assertNotIn("email.value", diagnostics)
-        self.assertIn('rg \'^ORDENOWA_ACCOUNT_REGISTRATION_SAFE_STATE=\' "$log_file"', workflow)
+        self.assertIn('grep \'^ORDENOWA_ACCOUNT_REGISTRATION_SAFE_STATE=\' "$log_file"', workflow)
         self.assertIn("customer-account-e2e.log", workflow)
 
     def test_registration_link_is_scrolled_and_hit_tested_before_native_click(self) -> None:
@@ -899,7 +1032,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             failure,
         )
         self.assertIn("ORDENOWA_ACCOUNT_PROFILE_UPDATE_SAFE_STATE=", account_step)
-        self.assertIn("profile_diagnostics_lines=$(rg '^ORDENOWA_ACCOUNT_PROFILE_UPDATE_SAFE_STATE=' \"$log_file\" || true)", account_step)
+        self.assertIn("profile_diagnostics_lines=$(grep '^ORDENOWA_ACCOUNT_PROFILE_UPDATE_SAFE_STATE=' \"$log_file\" || true)", account_step)
 
     def test_same_origin_long_token_path_segment_is_redacted(self) -> None:
         source = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(encoding="utf-8")
@@ -1042,7 +1175,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertNotIn("str(error)", annotation)
         self.assertIn("browser_status=${PIPESTATUS[0]}", account_step)
         self.assertIn('exit "$browser_status"', account_step)
-        self.assertIn('diagnostics_lines=$(rg \'^ORDENOWA_ACCOUNT_REGISTRATION_SAFE_STATE=\' "$log_file" || true)', account_step)
+        self.assertIn('diagnostics_lines=$(grep \'^ORDENOWA_ACCOUNT_REGISTRATION_SAFE_STATE=\' "$log_file" || true)', account_step)
         self.assertIn('::error title=Customer account registration safe state::%s\\n', account_step)
         self.assertIn('ACCOUNT_BROWSER_QA_OUTCOME: ${{ steps.account_browser_qa.outcome }}', aggregate)
         self.assertIn('"account=$ACCOUNT_BROWSER_QA_OUTCOME"', aggregate)

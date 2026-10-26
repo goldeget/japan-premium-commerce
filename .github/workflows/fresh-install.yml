@@ -143,7 +143,8 @@ jobs:
       KURANEA_ADMIN_LOCALE_DIAGNOSTICS: '1'
       ORDENOWA_ADMIN_SECURITY_FOCUS: ${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, '[admin-security-focus]') }}
       ORDENOWA_ADMIN_RETURN_FOCUS: ${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, '[admin-return-focus]') }}
-      ORDENOWA_ADMIN_QA_FOCUS: ${{ github.event_name == 'push' && (startsWith(github.event.head_commit.message, '[admin-security-focus]') || startsWith(github.event.head_commit.message, '[admin-return-focus]')) }}
+      ORDENOWA_CUSTOMER_ACCOUNT_FOCUS: ${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, '[customer-account-focus]') }}
+      ORDENOWA_ADMIN_QA_FOCUS: ${{ github.event_name == 'push' && (startsWith(github.event.head_commit.message, '[admin-security-focus]') || startsWith(github.event.head_commit.message, '[admin-return-focus]') || startsWith(github.event.head_commit.message, '[customer-account-focus]')) }}
     steps:
       - name: Check out work and pinned submodules
         uses: actions/checkout@v4
@@ -360,7 +361,7 @@ jobs:
             php /tmp/verify_native_registration.php
 
       - name: Import synthetic Tokyo postcode fixture for isolated checkout QA
-        if: ${{ (env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_ADMIN_RETURN_FOCUS == 'true') }}
+        if: ${{ (env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_ADMIN_RETURN_FOCUS == 'true' || env.ORDENOWA_CUSTOMER_ACCOUNT_FOCUS == 'true') }}
         id: postcode_fixture
         continue-on-error: true
         shell: bash
@@ -522,7 +523,7 @@ jobs:
             php /tmp/verify_native_order_persistence.php
 
       - name: Start disposable Mailpit for customer password-reset email
-        if: ${{ (env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_ADMIN_RETURN_FOCUS == 'true') }}
+        if: ${{ (env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_ADMIN_RETURN_FOCUS == 'true' || env.ORDENOWA_CUSTOMER_ACCOUNT_FOCUS == 'true') }}
         id: mailpit_setup
         shell: bash
         run: |
@@ -974,7 +975,7 @@ jobs:
 
       - name: Enable run-scoped checkout only for customer account browser QA
         id: account_checkout_override
-        if: steps.compose_up.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
+        if: steps.compose_up.outcome == 'success' && (env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_CUSTOMER_ACCOUNT_FOCUS == 'true')
         continue-on-error: true
         shell: bash
         env:
@@ -994,7 +995,7 @@ jobs:
             up -d --no-deps --wait --wait-timeout 300 prestashop
 
       - name: Verify customer registration, email login, logout, password reset, and my page in Chromium
-        if: ${{ steps.account_checkout_override.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true' }}
+        if: ${{ steps.account_checkout_override.outcome == 'success' && (env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_CUSTOMER_ACCOUNT_FOCUS == 'true') }}
         id: account_browser_qa
         continue-on-error: true
         shell: bash
@@ -1014,12 +1015,13 @@ jobs:
           browser_status=${PIPESTATUS[0]}
           set -e
           if [ "$browser_status" -ne 0 ]; then
-            failure_line=$(rg '^FAIL:' "$log_file" | tail -n 1 || true)
-            diagnostics_lines=$(rg '^ORDENOWA_ACCOUNT_REGISTRATION_SAFE_STATE=' "$log_file" || true)
-            profile_diagnostics_lines=$(rg '^ORDENOWA_ACCOUNT_PROFILE_UPDATE_SAFE_STATE=' "$log_file" || true)
-            email_login_diagnostics=$(rg '^ORDENOWA_ACCOUNT_EMAIL_LOGIN_SAFE_STATE=' "$log_file" || true)
-            korean_login_diagnostics=$(rg '^ORDENOWA_KOREAN_LOGIN_SAFE_STATE=' "$log_file" || true)
-            korean_login_stage_diagnostics=$(rg '^ORDENOWA_KOREAN_LOGIN_STAGE_SAFE_STATE=' "$log_file" || true)
+            failure_line=$(grep '^FAIL:' "$log_file" | tail -n 1 || true)
+            diagnostics_lines=$(grep '^ORDENOWA_ACCOUNT_REGISTRATION_SAFE_STATE=' "$log_file" || true)
+            profile_diagnostics_lines=$(grep '^ORDENOWA_ACCOUNT_PROFILE_UPDATE_SAFE_STATE=' "$log_file" || true)
+            email_login_diagnostics=$(grep '^ORDENOWA_ACCOUNT_EMAIL_LOGIN_SAFE_STATE=' "$log_file" || true)
+            korean_login_diagnostics=$(grep '^ORDENOWA_KOREAN_LOGIN_SAFE_STATE=' "$log_file" || true)
+            korean_login_stage_diagnostics=$(grep '^ORDENOWA_KOREAN_LOGIN_STAGE_SAFE_STATE=' "$log_file" || true)
+            address_edit_diagnostics=$(grep '^ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE=' "$log_file" || true)
             printf 'ORDENOWA customer account browser failure: %s\n' "${failure_line:-See the uploaded account browser log for the failing stage.}" >> "$GITHUB_STEP_SUMMARY"
             if [ -n "$korean_login_diagnostics" ]; then
               printf '%s\n' "$korean_login_diagnostics" >> "$GITHUB_STEP_SUMMARY"
@@ -1058,12 +1060,21 @@ jobs:
                 printf '%s\n' "$email_login_diagnostics_line" >> "$GITHUB_STEP_SUMMARY"
               done <<< "$email_login_diagnostics"
             fi
+            if [ -n "$address_edit_diagnostics" ]; then
+              while IFS= read -r address_edit_diagnostics_line; do
+                printf '%s\n' "$address_edit_diagnostics_line" >> "$GITHUB_STEP_SUMMARY"
+                address_edit_annotation=${address_edit_diagnostics_line//'%'/'%25'}
+                address_edit_annotation=${address_edit_annotation//$'\r'/'%0D'}
+                address_edit_annotation=${address_edit_annotation//$'\n'/'%0A'}
+                printf '::error title=Customer account address edit safe state::%s\n' "$address_edit_annotation"
+              done <<< "$address_edit_diagnostics"
+            fi
             exit "$browser_status"
           fi
 
       - name: Restore fail-closed checkout after customer account browser QA
         id: account_checkout_restore
-        if: always() && steps.account_checkout_override.outcome != 'skipped' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
+        if: always() && steps.account_checkout_override.outcome != 'skipped' && (env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_CUSTOMER_ACCOUNT_FOCUS == 'true')
         continue-on-error: true
         shell: bash
         run: |
@@ -1071,6 +1082,58 @@ jobs:
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" \
             up -d --no-deps --force-recreate --wait --wait-timeout 300 prestashop
           printf 'PASS: restored the fail-closed base checkout environment after customer account browser QA.\n'
+
+      - name: Verify focused customer account browser evidence
+        id: account_browser_evidence
+        if: always() && env.ORDENOWA_CUSTOMER_ACCOUNT_FOCUS == 'true'
+        shell: bash
+        env:
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+          ACCOUNT_BROWSER_QA_OUTCOME: ${{ steps.account_browser_qa.outcome }}
+        run: |
+          set -euo pipefail
+          log_file="$QA_ARTIFACT_DIR/customer-account-e2e.log"
+          if [[ ! -s "$log_file" ]]; then
+            echo '::error title=Customer account browser evidence::The focused account log is missing or empty.'
+            exit 1
+          fi
+          if [[ "$ACCOUNT_BROWSER_QA_OUTCOME" == success ]]; then
+            for file in \
+              desktop-customer-address-saved.png \
+              mobile-customer-address-saved.png \
+              desktop-customer-address-edit-form.png \
+              mobile-customer-address-edit-form.png \
+              desktop-customer-address-edited-after-refresh.png \
+              mobile-customer-address-edited-after-refresh.png; do
+              if [[ ! -s "$QA_ARTIFACT_DIR/$file" ]]; then
+                echo "::error title=Customer account browser evidence::Missing focused address screenshot: $file"
+                exit 1
+              fi
+            done
+            grep -q '^PASS: mobile customer registration' "$log_file"
+            printf 'PASS: isolated desktop/mobile address creation, edit, and refreshed readback screenshots are present.\n'
+          else
+            if ! grep -q '^FAIL:' "$log_file"; then
+              echo '::error title=Customer account browser evidence::The failed account run has no safe FAIL stage marker.'
+              exit 1
+            fi
+            failure_screenshot_found=false
+            for viewport in desktop mobile; do
+              if [[ -s "$QA_ARTIFACT_DIR/${viewport}-customer-account-failure.png" ]]; then
+                failure_screenshot_found=true
+              fi
+            done
+            if [[ "$failure_screenshot_found" != true ]]; then
+              echo '::error title=Customer account browser evidence::No failure viewport screenshot was captured.'
+              exit 1
+            fi
+            if grep -q 'at customer_address_edit' "$log_file" \
+              && ! grep -q '^ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE=' "$log_file"; then
+              echo '::error title=Customer account browser evidence::Address edit failed without its safe stage diagnostics.'
+              exit 1
+            fi
+            printf 'PASS: isolated account failure stage and viewport screenshot are preserved for diagnosis.\n'
+          fi
 
       - name: Verify Korean admin native product create and edit in Chromium
         id: product_admin_browser_qa
@@ -2815,6 +2878,12 @@ jobs:
               customer-account-e2e.log
               desktop-customer-account-created.png
               mobile-customer-account-created.png
+              desktop-customer-address-saved.png
+              mobile-customer-address-saved.png
+              desktop-customer-address-edit-form.png
+              mobile-customer-address-edit-form.png
+              desktop-customer-address-edited-after-refresh.png
+              mobile-customer-address-edited-after-refresh.png
             )
           fi
           if [[ "$TAX_FIXTURE_OUTCOME" == success ]]; then
@@ -3193,6 +3262,8 @@ jobs:
         env:
           ORDENOWA_ADMIN_SECURITY_FOCUS: ${{ env.ORDENOWA_ADMIN_SECURITY_FOCUS }}
           ORDENOWA_ADMIN_RETURN_FOCUS: ${{ env.ORDENOWA_ADMIN_RETURN_FOCUS }}
+          ORDENOWA_CUSTOMER_ACCOUNT_FOCUS: ${{ env.ORDENOWA_CUSTOMER_ACCOUNT_FOCUS }}
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
           COMPOSE_UP_OUTCOME: ${{ steps.compose_up.outcome }}
           CHROMIUM_SETUP_OUTCOME: ${{ steps.chromium_setup.outcome }}
           MAILPIT_SETUP_OUTCOME: ${{ steps.mailpit_setup.outcome }}
@@ -3227,6 +3298,7 @@ jobs:
           SHIPPING_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.shipping_admin_browser_qa.outcome }}
           RESET_EMAIL_BRAND_BROWSER_QA_OUTCOME: ${{ steps.reset_email_brand_browser_qa.outcome }}
           ACCOUNT_BROWSER_QA_OUTCOME: ${{ steps.account_browser_qa.outcome }}
+          ACCOUNT_BROWSER_EVIDENCE_OUTCOME: ${{ steps.account_browser_evidence.outcome }}
           ACCOUNT_CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.account_checkout_override.outcome }}
           ACCOUNT_CHECKOUT_RESTORE_OUTCOME: ${{ steps.account_checkout_restore.outcome }}
           CATALOG_IMPORT_FIXTURE_OUTCOME: ${{ steps.catalog_import_fixture.outcome }}
@@ -3258,6 +3330,28 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "$ORDENOWA_CUSTOMER_ACCOUNT_FOCUS" == true ]]; then
+            failed_steps=()
+            for entry in \
+              "compose_up=$COMPOSE_UP_OUTCOME" \
+              "chromium_setup=$CHROMIUM_SETUP_OUTCOME" \
+              "postcode_fixture=$POSTCODE_FIXTURE_OUTCOME" \
+              "mailpit_setup=$MAILPIT_SETUP_OUTCOME" \
+              "account_checkout_override=$ACCOUNT_CHECKOUT_OVERRIDE_OUTCOME" \
+              "account=$ACCOUNT_BROWSER_QA_OUTCOME" \
+              "account_checkout_restore=$ACCOUNT_CHECKOUT_RESTORE_OUTCOME" \
+              "account_browser_evidence=$ACCOUNT_BROWSER_EVIDENCE_OUTCOME"; do
+              if [[ "$entry" != *=success ]]; then
+                failed_steps+=("$entry")
+              fi
+            done
+            if ((${#failed_steps[@]})); then
+              printf '::error title=ORDENOW focused customer account QA::Failed steps: %s\n' "${failed_steps[*]}"
+              exit 1
+            fi
+            printf 'PASS: focused customer account browser flow and evidence completed in the isolated install.\n'
+            exit 0
+          fi
           if [[ "$ORDENOWA_ADMIN_RETURN_FOCUS" == true ]]; then
             failed_steps=()
             for entry in \

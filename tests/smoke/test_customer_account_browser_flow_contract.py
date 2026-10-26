@@ -254,13 +254,20 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn("wait_for_customer_address_card(driver, address_alias)", address_add_persist)
 
         address_edit = self.blocks["customer_address_edit"]
-        self.assertIn("open_customer_address_edit(driver, address_alias, address_id)", address_edit)
+        self.assertRegex(
+            address_edit,
+            r"open_customer_address_edit\(\s*driver,\s*address_alias,\s*address_id,\s*"
+            r"substage_callback=mark_customer_address_edit_substage,\s*"
+            r"diagnostic_state=address_edit_state,\s*\)",
+        )
         address_submit = self.blocks["customer_address_edit_submit"]
         self.assertIn("save_customer_address_edit", address_submit)
         self.assertIn("edited_address_line", address_submit)
         address_persist = self.blocks["customer_address_edit_persist_wait"]
         self.assertIn("assert_customer_address_line", address_persist)
         self.assertIn("driver.refresh()", address_persist)
+        self.assertIn("청구 및 배송 주소를 관리하여 다음 주문을 더 간편하게 진행하세요.", self.source)
+        self.assertIn("Korean customer address list omitted its localized description", self.source)
 
         self.assertIn('data-link-action="edit-address"', self.source)
         self.assertIn('data-id-address', self.source)
@@ -320,6 +327,151 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn('stage == "customer_address_add"', run_viewport)
         self.assertIn("mark_customer_address_substage", run_viewport)
         self.assertIn('failure_control = {"name": "", "type": ""}', run_viewport)
+
+    def test_customer_address_edit_records_each_navigation_boundary(self) -> None:
+        edit_helper = self.source.split("def open_customer_address_edit", 1)[1].split(
+            "def save_customer_address_edit", 1
+        )[0]
+        edit_substages = (
+            "address_edit_card_wait",
+            "address_edit_identity_check",
+            "address_edit_link_lookup",
+            "address_edit_link_origin_check",
+            "address_edit_click_scroll",
+            "address_edit_clickable_wait",
+            "address_edit_center_hit_wait",
+            "address_edit_native_click",
+            "address_edit_form_wait",
+            "address_edit_form_identity_check",
+        )
+        for substage in edit_substages:
+            with self.subTest(substage=substage):
+                self.assertIn(substage, edit_helper)
+
+        self.assertIn("substage_callback", edit_helper)
+        self.assertIn("last_completed_substage", edit_helper)
+        self.assertIn("click_centered(", edit_helper)
+        self.assertIn("edit_link,", edit_helper)
+        self.assertIn("element.click()", self.source.split("def click_centered", 1)[1].split(
+            "def wait_for_registration_success", 1
+        )[0])
+
+        run_viewport = self.source.split("def run_viewport", 1)[1].split(
+            "\n\nif __name__", 1
+        )[0]
+        failure_handler = run_viewport.split("except Exception as error:", 1)[1].split(
+            "inner_stage = (", 1
+        )[0]
+        self.assertIn('stage == "customer_address_edit"', failure_handler)
+        self.assertIn("emit_customer_address_edit_diagnostics", failure_handler)
+        self.assertIn('"customer_address_edit"', run_viewport)
+
+    def test_customer_address_edit_diagnostics_are_redacted_and_bounded(self) -> None:
+        tree = ast.parse(self.source)
+        names = {
+            "safe_diagnostic_boolean",
+            "safe_diagnostic_name",
+            "safe_same_origin_path",
+            "collect_customer_address_edit_diagnostics",
+            "emit_customer_address_edit_diagnostics",
+        }
+        functions = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in names
+        ]
+        namespace = {
+            "BASE": "https://shop.example.test",
+            "json": json,
+            "re": re,
+            "sys": sys,
+            "unquote": unquote,
+            "urlparse": urlparse,
+        }
+        exec(
+            compile(
+                ast.fix_missing_locations(ast.Module(body=functions, type_ignores=[])),
+                str(ACCOUNT_FLOW),
+                "exec",
+            ),
+            namespace,
+        )
+
+        class FakeDriver:
+            current_url = (
+                "https://shop.example.test/ko/addresses/42?email=private%40example.test"
+                "&token=secret-query-token"
+            )
+
+            @staticmethod
+            def execute_script(_script: str, *_arguments: object) -> dict[str, object]:
+                return {
+                    "same_origin": True,
+                    "document_path_changed": True,
+                    "address_card_present": True,
+                    "address_card_visible": True,
+                    "expected_address_present": True,
+                    "target_id_matches": True,
+                    "edit_link_present": True,
+                    "edit_link_visible": True,
+                    "edit_link_enabled": True,
+                    "edit_link_same_origin": True,
+                    "native_click_attempted": True,
+                    "native_click_returned": True,
+                    "center_hit_relation": "other",
+                    "occluder_class": "modal-backdrop",
+                    "edit_form_present": False,
+                    "edit_form_visible": False,
+                    "edit_form_id_matches": False,
+                    "untrusted_address": "〒100-0004 private street",
+                    "href": "https://shop.example.test/ko/addresses/42?token=secret-query-token",
+                }
+
+        state = {
+            "substage": "address_edit_form_wait",
+            "last_completed_substage": "address_edit_native_click_returned",
+            "expected_address_id": "secret-address-id-42",
+            "address_id": "secret-address-id-42",
+            "alias": "private@example.test",
+            "before_url": "https://shop.example.test/ko/addresses?token=secret-query-token",
+            "native_click_attempted": True,
+            "native_click_returned": True,
+            "center_unobstructed": True,
+            "center_hit_relation": "other",
+            "occluder_class": "modal-backdrop",
+            "failure_type": "TimeoutException",
+        }
+        output = StringIO()
+        with redirect_stderr(output):
+            namespace["emit_customer_address_edit_diagnostics"](FakeDriver(), state)
+        rendered = output.getvalue()
+        self.assertIn("ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE=", rendered)
+        for expected in (
+            '"substage": "address_edit_form_wait"',
+            '"last_completed_substage": "address_edit_native_click_returned"',
+            '"same_origin": true',
+            '"path": "/ko/addresses/<redacted>"',
+            '"document_path_changed": true',
+            '"expected_address_present": true',
+            '"target_id_matches": true',
+            '"native_click_returned": true',
+            '"center_hit_relation": "other"',
+            '"center_unobstructed": false',
+            '"occluder_class": "modal-backdrop"',
+            '"edit_form_present": false',
+            '"edit_form_visible": false',
+            '"failure_type": "TimeoutException"',
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, rendered)
+        for private_value in (
+            "secret-address-id-42",
+            "private@example.test",
+            "secret-query-token",
+            "private street",
+            "https://shop.example.test/ko/addresses/42?",
+        ):
+            with self.subTest(private_value=private_value):
+                self.assertNotIn(private_value, rendered)
 
     def test_customer_address_persistence_reopens_native_list_and_reports_safe_state(self) -> None:
         persist = self.blocks["customer_address_add_persist_wait"]

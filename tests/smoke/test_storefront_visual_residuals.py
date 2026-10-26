@@ -31,6 +31,10 @@ class StorefrontVisualResidualTests(unittest.TestCase):
         translations = self._translation_targets(locale_path)
         self.assertEqual(translations.get("My Account"), "내 계정")
         self.assertEqual(translations.get("My account navigation sidebar"), "내 계정 메뉴")
+        self.assertEqual(
+            translations.get("Manage your addresses for billing and delivery to streamline your future orders."),
+            "청구 및 배송 주소를 관리하여 다음 주문을 더 간편하게 진행하세요.",
+        )
 
         browser = (ROOT / "tests" / "e2e" / "verify_pwa_browser.py").read_text(encoding="utf-8")
         self.assertIn("def _assert_customer_account_chrome", browser)

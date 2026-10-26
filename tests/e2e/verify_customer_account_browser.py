@@ -993,9 +993,22 @@ def emit_safe_click_blocker_summary(driver: webdriver.Chrome, element) -> None:
     print("::error title=Browser click target blocked::" + annotation, file=sys.stderr)
 
 
-def click_centered(driver: webdriver.Chrome, element) -> bool:
+def click_centered(
+    driver: webdriver.Chrome,
+    element,
+    substage_callback: Callable[[str, bool], None] | None = None,
+) -> bool:
+    def mark(value: str, completed: bool = False) -> None:
+        if substage_callback is not None:
+            substage_callback(value, completed)
+
+    mark("address_edit_click_scroll")
     driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", element)
+    mark("address_edit_click_scroll", True)
+    mark("address_edit_clickable_wait")
     WebDriverWait(driver, 30).until(EC.element_to_be_clickable(element))
+    mark("address_edit_clickable_wait", True)
+    mark("address_edit_center_hit_wait")
     try:
         center_unobstructed = WebDriverWait(driver, 10).until(
             lambda browser: browser.execute_script(
@@ -1011,11 +1024,14 @@ def click_centered(driver: webdriver.Chrome, element) -> bool:
     except TimeoutException:
         emit_safe_click_blocker_summary(driver, element)
         raise
+    mark("address_edit_center_hit_wait", True)
+    mark("address_edit_native_click")
     try:
         element.click()
     except ElementClickInterceptedException:
         emit_safe_click_blocker_summary(driver, element)
         raise
+    mark("address_edit_native_click_returned", True)
     return bool(center_unobstructed)
 
 
@@ -2958,26 +2974,294 @@ def assert_customer_address_line(
         raise AssertionError("the customer address list still showed the previous address line")
 
 
-def open_customer_address_edit(driver: webdriver.Chrome, alias: str, address_id: str) -> None:
+def open_customer_address_edit(
+    driver: webdriver.Chrome,
+    alias: str,
+    address_id: str,
+    *,
+    substage_callback: Callable[[str, bool], None] | None = None,
+    diagnostic_state: dict[str, object] | None = None,
+) -> None:
+    state = diagnostic_state if diagnostic_state is not None else {}
+
+    def mark(value: str, completed: bool = False) -> None:
+        state["substage"] = value
+        if completed:
+            state["last_completed_substage"] = value
+        if value == "address_edit_native_click" and not completed:
+            state["native_click_attempted"] = True
+        elif value == "address_edit_native_click_returned" and completed:
+            state["native_click_returned"] = True
+        elif value == "address_edit_center_hit_wait" and completed:
+            state["center_unobstructed"] = True
+            state["center_hit_relation"] = "target"
+            state["occluder_class"] = "none"
+        if substage_callback is not None:
+            substage_callback(value, completed)
+
+    state["alias"] = alias
+    state["expected_address_id"] = address_id
+    state["before_url"] = driver.current_url
+    state["native_click_attempted"] = False
+    state["native_click_returned"] = False
+    state["center_unobstructed"] = None
+
+    mark("address_edit_card_wait")
     card = wait_for_customer_address_card(driver, alias)
+    state["address_card_present"] = True
+    state["address_card_visible"] = bool(card.is_displayed())
+    mark("address_edit_card_wait", True)
+
+    mark("address_edit_identity_check")
     if card.get_attribute("data-id-address") != address_id:
         raise AssertionError("the customer address list resolved a different address")
+    mark("address_edit_identity_check", True)
+
+    mark("address_edit_link_lookup")
     edit_link = card.find_element(By.CSS_SELECTOR, 'a[data-link-action="edit-address"]')
+    mark("address_edit_link_lookup", True)
+
+    mark("address_edit_link_origin_check")
     edit_url = urljoin(driver.current_url, edit_link.get_attribute("href") or "")
     edit_location = urlparse(edit_url)
     shop_location = urlparse(BASE)
-    if (edit_location.scheme, edit_location.hostname, edit_location.port) != (
-        shop_location.scheme,
-        shop_location.hostname,
-        shop_location.port,
-    ):
+    edit_link_same_origin = (
+        edit_location.scheme.lower(), edit_location.hostname, edit_location.port
+    ) == (
+        shop_location.scheme.lower(), shop_location.hostname, shop_location.port
+    )
+    state["edit_link_same_origin"] = edit_link_same_origin
+    if not edit_link_same_origin:
         raise AssertionError("the customer address edit link changed the isolated shop origin")
-    click_centered(driver, edit_link)
+    mark("address_edit_link_origin_check", True)
+
+    center_unobstructed = click_centered(
+        driver,
+        edit_link,
+        substage_callback=mark,
+    )
+    state["center_unobstructed"] = center_unobstructed
+    mark("address_edit_form_wait")
     form = visible(driver, ".js-address-form form")
+    state["edit_form_present"] = True
+    state["edit_form_visible"] = True
+    mark("address_edit_form_wait", True)
+
+    mark("address_edit_form_identity_check")
     if form.get_attribute("data-id-address") != address_id:
         raise AssertionError("the customer address edit form did not load the selected address")
+    mark("address_edit_form_identity_check", True)
 
 
+def collect_customer_address_edit_diagnostics(
+    driver: webdriver.Chrome,
+    state: dict[str, object],
+) -> dict[str, object]:
+    substage_names = {
+        "not_started",
+        "address_edit_card_wait",
+        "address_edit_identity_check",
+        "address_edit_link_lookup",
+        "address_edit_link_origin_check",
+        "address_edit_click_scroll",
+        "address_edit_clickable_wait",
+        "address_edit_center_hit_wait",
+        "address_edit_native_click",
+        "address_edit_native_click_returned",
+        "address_edit_form_wait",
+        "address_edit_form_identity_check",
+    }
+    failure_types = {
+        "TimeoutException",
+        "StaleElementReferenceException",
+        "ElementClickInterceptedException",
+        "NoSuchElementException",
+        "AssertionError",
+        "WebDriverException",
+        "other",
+        "unavailable",
+    }
+    allowed_occluders = {
+        "fixed-top",
+        "sticky-top",
+        "modal-backdrop",
+        "offcanvas-backdrop",
+        "overlay",
+        "navbar",
+        "dropdown-menu",
+        "modal",
+        "other",
+        "none",
+        "unavailable",
+    }
+    try:
+        current_url = driver.current_url
+    except Exception:
+        current_url = ""
+
+    browser_state: dict[str, object] = {}
+    try:
+        result = driver.execute_script(
+            r"""
+            const alias = arguments[0];
+            const expectedId = String(arguments[1] || '');
+            const shopOrigin = arguments[2];
+            const visible = element => Boolean(element && element.getClientRects().length);
+            const cards = [...document.querySelectorAll('article.address-card[data-id-address]')];
+            const card = cards.find(candidate =>
+              [...candidate.querySelectorAll('.address-card__alias')]
+                .some(node => (node.textContent || '').trim() === alias));
+            const link = card?.querySelector('a[data-link-action="edit-address"]');
+            const form = document.querySelector('.js-address-form form');
+            let linkSameOrigin = false;
+            if (link) {
+              try { linkSameOrigin = new URL(link.getAttribute('href') || '', location.href).origin === shopOrigin; }
+              catch (_) { linkSameOrigin = false; }
+            }
+            let hitRelation = 'missing';
+            let occluderClasses = [];
+            if (link && visible(link)) {
+              const rect = link.getBoundingClientRect();
+              const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+              if (!hit) hitRelation = 'missing';
+              else if (hit === link || link.contains(hit)) hitRelation = 'target';
+              else {
+                hitRelation = 'other';
+                occluderClasses = [...(hit.classList || [])].slice(0, 24);
+              }
+            }
+            return {
+              same_origin: location.origin === shopOrigin,
+              address_card_present: Boolean(card),
+              address_card_visible: visible(card),
+              expected_address_present: Boolean(card),
+              target_id_matches: Boolean(card && card.getAttribute('data-id-address') === expectedId),
+              edit_link_present: Boolean(link),
+              edit_link_visible: visible(link),
+              edit_link_enabled: Boolean(link && !link.hasAttribute('disabled') && link.getAttribute('aria-disabled') !== 'true'),
+              edit_link_same_origin: linkSameOrigin,
+              center_hit_relation: hitRelation,
+              occluder_classes: occluderClasses,
+              edit_form_present: Boolean(form),
+              edit_form_visible: visible(form),
+              edit_form_id_matches: Boolean(form && form.getAttribute('data-id-address') === expectedId)
+            };
+            """,
+            state.get("alias", ""),
+            state.get("expected_address_id", ""),
+            f"{urlparse(BASE).scheme}://{urlparse(BASE).netloc}",
+        )
+        if isinstance(result, dict):
+            browser_state = result
+    except Exception as error:
+        error_type = type(error).__name__
+        browser_state["collection_error_type"] = (
+            error_type if error_type in failure_types else "other"
+        )
+
+    def safe_stage(value: object) -> str:
+        return value if isinstance(value, str) and value in substage_names else "unavailable"
+
+    def safe_occluder(value: object) -> str:
+        if isinstance(value, str):
+            return value if value in allowed_occluders else "other"
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, str) and item in allowed_occluders:
+                    return item
+        return "unavailable"
+
+    try:
+        current_location = urlparse(current_url) if current_url else None
+        before_url = state.get("before_url")
+        before_location = urlparse(before_url) if isinstance(before_url, str) else None
+        base_location = urlparse(BASE)
+        same_origin = bool(
+            current_location
+            and (current_location.scheme.lower(), current_location.hostname, current_location.port)
+            == (base_location.scheme.lower(), base_location.hostname, base_location.port)
+        )
+        document_path_changed = bool(
+            current_location
+            and before_location
+            and same_origin
+            and current_location.path != before_location.path
+        )
+        document_location_changed = bool(
+            isinstance(before_url, str) and current_url and before_url != current_url
+        )
+    except (TypeError, ValueError):
+        same_origin = False
+        document_path_changed = False
+        document_location_changed = False
+
+    hit_relation = state.get("center_hit_relation", browser_state.get("center_hit_relation"))
+    if not isinstance(hit_relation, str) or hit_relation not in {
+        "target",
+        "other",
+        "missing",
+        "unavailable",
+    }:
+        hit_relation = "unavailable"
+    occluder = safe_occluder(
+        state.get("occluder_class", browser_state.get("occluder_classes"))
+    )
+    failure_type = state.get("failure_type", "unavailable")
+    if not isinstance(failure_type, str) or failure_type not in failure_types:
+        failure_type = "other"
+    collection_error_type = browser_state.get("collection_error_type")
+    if not isinstance(collection_error_type, str) or collection_error_type not in failure_types:
+        collection_error_type = ""
+
+    center_unobstructed = (
+        True
+        if hit_relation == "target"
+        else False
+        if hit_relation in {"other", "missing"}
+        else safe_diagnostic_boolean(state.get("center_unobstructed"))
+    )
+
+    return {
+        "stage": "customer_address_edit",
+        "substage": safe_stage(state.get("substage")),
+        "last_completed_substage": safe_stage(state.get("last_completed_substage")),
+        "same_origin": same_origin and browser_state.get("same_origin") is True,
+        "path": safe_same_origin_path(current_url),
+        "document_path_changed": document_path_changed,
+        "document_location_changed": document_location_changed,
+        "address_card_present": safe_diagnostic_boolean(browser_state.get("address_card_present")),
+        "address_card_visible": safe_diagnostic_boolean(browser_state.get("address_card_visible")),
+        "expected_address_present": safe_diagnostic_boolean(browser_state.get("expected_address_present")),
+        "target_id_matches": safe_diagnostic_boolean(browser_state.get("target_id_matches")),
+        "edit_link_present": safe_diagnostic_boolean(browser_state.get("edit_link_present")),
+        "edit_link_visible": safe_diagnostic_boolean(browser_state.get("edit_link_visible")),
+        "edit_link_enabled": safe_diagnostic_boolean(browser_state.get("edit_link_enabled")),
+        "edit_link_same_origin": safe_diagnostic_boolean(browser_state.get("edit_link_same_origin")),
+        "native_click_attempted": safe_diagnostic_boolean(state.get("native_click_attempted")),
+        "native_click_returned": safe_diagnostic_boolean(state.get("native_click_returned")),
+        "center_unobstructed": center_unobstructed,
+        "center_hit_relation": hit_relation,
+        "occluder_class": occluder,
+        "edit_form_present": safe_diagnostic_boolean(browser_state.get("edit_form_present")),
+        "edit_form_visible": safe_diagnostic_boolean(browser_state.get("edit_form_visible")),
+        "edit_form_id_matches": safe_diagnostic_boolean(browser_state.get("edit_form_id_matches")),
+        "failure_type": failure_type,
+        "collection_error_type": collection_error_type,
+    }
+
+
+def emit_customer_address_edit_diagnostics(
+    driver: webdriver.Chrome,
+    state: dict[str, object],
+) -> None:
+    safe_state_json = json.dumps(
+        collect_customer_address_edit_diagnostics(driver, state),
+        ensure_ascii=True,
+        sort_keys=True,
+    )
+    print("ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE=" + safe_state_json, file=sys.stderr)
+    annotation = safe_state_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::error title=Customer account address edit safe state::{annotation}", file=sys.stderr)
 def save_customer_address_edit(
     driver: webdriver.Chrome,
     address_id: str,
@@ -3583,6 +3867,14 @@ def run_viewport(width: int, height: int, label: str) -> bool:
     email_login_substage = ""
     email_login_account_route_classification = "unavailable"
     address_substage = "not_started"
+    address_edit_state: dict[str, object] = {
+        "substage": "not_started",
+        "last_completed_substage": "not_started",
+        "native_click_attempted": False,
+        "native_click_returned": False,
+        "center_unobstructed": None,
+        "failure_type": "unavailable",
+    }
     expected_first_name = f"CI-{label.title()}"
     driver = None
     success = False
@@ -3602,6 +3894,29 @@ def run_viewport(width: int, height: int, label: str) -> bool:
     def mark_customer_address_substage(value: str) -> None:
         nonlocal address_substage
         address_substage = value
+
+    def mark_customer_address_edit_substage(value: str, completed: bool = False) -> None:
+        allowed = {
+            "address_edit_card_wait",
+            "address_edit_identity_check",
+            "address_edit_link_lookup",
+            "address_edit_link_origin_check",
+            "address_edit_click_scroll",
+            "address_edit_clickable_wait",
+            "address_edit_center_hit_wait",
+            "address_edit_native_click",
+            "address_edit_native_click_returned",
+            "address_edit_form_wait",
+            "address_edit_form_identity_check",
+        }
+        safe_value = value if value in allowed else "unavailable"
+        address_edit_state["substage"] = safe_value
+        if completed:
+            address_edit_state["last_completed_substage"] = safe_value
+        if safe_value == "address_edit_native_click" and not completed:
+            address_edit_state["native_click_attempted"] = True
+        elif safe_value == "address_edit_native_click_returned" and completed:
+            address_edit_state["native_click_returned"] = True
 
     try:
         validate_isolated_ci_compose_project()
@@ -3817,12 +4132,23 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         address_id = added_address_card.get_attribute("data-id-address") or ""
         if not address_id or address_id == "0":
             raise AssertionError("the new customer address did not receive a native address ID")
+        korean_address_description = (
+            "청구 및 배송 주소를 관리하여 다음 주문을 더 간편하게 진행하세요."
+        )
+        if korean_address_description not in driver.find_element(By.TAG_NAME, "body").text:
+            raise AssertionError("the Korean customer address list omitted its localized description")
         assert_customer_address_line(driver, address_alias, address_id, initial_address_line)
         driver.save_screenshot(str(DEST / f"{label}-customer-address-saved.png"))
 
         edited_address_line = f"大手町4-5-6 {label.upper()} CI EDITED"
         stage = "customer_address_edit"
-        open_customer_address_edit(driver, address_alias, address_id)
+        open_customer_address_edit(
+            driver,
+            address_alias,
+            address_id,
+            substage_callback=mark_customer_address_edit_substage,
+            diagnostic_state=address_edit_state,
+        )
         stage = "customer_address_edit_submit"
         save_customer_address_edit(driver, address_id, edited_address_line, label)
         stage = "customer_address_edit_persist_wait"
@@ -3842,6 +4168,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             edited_address_line,
             previous_line=initial_address_line,
         )
+        driver.save_screenshot(str(DEST / f"{label}-customer-address-edited-after-refresh.png"))
 
         stage = "email_login"
         email_login_substage = "logout"
@@ -3971,6 +4298,23 @@ def run_viewport(width: int, height: int, label: str) -> bool:
                     )
                 except Exception:
                     pass
+            elif stage == "customer_address_edit":
+                try:
+                    error_type = type(error).__name__
+                    allowed_error_types = {
+                        "TimeoutException",
+                        "StaleElementReferenceException",
+                        "ElementClickInterceptedException",
+                        "NoSuchElementException",
+                        "AssertionError",
+                        "WebDriverException",
+                    }
+                    address_edit_state["failure_type"] = (
+                        error_type if error_type in allowed_error_types else "other"
+                    )
+                    emit_customer_address_edit_diagnostics(driver, address_edit_state)
+                except Exception:
+                    pass
             elif stage in {"email_login", "password_reset_login"}:
                 try:
                     emit_email_login_diagnostics(
@@ -3996,16 +4340,28 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             if stage.startswith("profile_update_")
             else ""
         )
+        address_edit_substage_detail = (
+            f"; address_edit_substage={address_edit_state.get('substage', 'unavailable')}; "
+            f"address_edit_last_completed={address_edit_state.get('last_completed_substage', 'unavailable')}"
+            if stage == "customer_address_edit"
+            else ""
+        )
+        reported_error_type = (
+            address_edit_state.get("failure_type", "other")
+            if stage == "customer_address_edit"
+            else type(error).__name__
+        )
         print(
             f"FAIL: {label} customer account flow at {stage}"
-            f"{inner_stage_detail}{email_login_substage_detail}{profile_substage_detail} "
-            f"({type(error).__name__})",
+            f"{inner_stage_detail}{email_login_substage_detail}{profile_substage_detail}"
+            f"{address_edit_substage_detail} "
+            f"({reported_error_type})",
             file=sys.stderr,
         )
         print(
             f"::error title=Customer account browser QA::{label} failed at {stage} "
-            f"({type(error).__name__}){inner_stage_detail}{email_login_substage_detail}"
-            f"{profile_substage_detail}; "
+            f"({reported_error_type}){inner_stage_detail}{email_login_substage_detail}"
+            f"{profile_substage_detail}{address_edit_substage_detail}; "
             f"control_name={failure_control.get('name') or 'none'}; "
             f"control_type={failure_control.get('type') or 'none'}",
             file=sys.stderr,

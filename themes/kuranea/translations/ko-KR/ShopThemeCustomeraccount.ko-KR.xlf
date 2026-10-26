@@ -10,6 +10,10 @@
         <source>My account navigation sidebar</source>
         <target state="final">내 계정 메뉴</target>
       </trans-unit>
+      <trans-unit id="customer-account-addresses-description">
+        <source>Manage your addresses for billing and delivery to streamline your future orders.</source>
+        <target state="final">청구 및 배송 주소를 관리하여 다음 주문을 더 간편하게 진행하세요.</target>
+      </trans-unit>
     </body>
   </file>
 </xliff>
