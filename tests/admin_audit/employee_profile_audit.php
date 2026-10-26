@@ -482,6 +482,7 @@ employeeProfileAuditAssertSame(true, str_contains($allShopController->content, '
 
 Shop::$context = Shop::CONTEXT_SHOP;
 Context::$instance->shop->id = 8;
+Context::$instance->employee = (object) ['id' => 90, 'id_profile' => 2];
 $orderHistoryQueryCount = count(array_filter(
     $db->queries,
     static fn (string $sql): bool => str_contains($sql, 'FROM `ps_order_history` oh')

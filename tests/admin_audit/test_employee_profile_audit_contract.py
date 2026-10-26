@@ -114,6 +114,7 @@ class EmployeeProfileAuditContractTests(unittest.TestCase):
         self.assertIn("Access::$grants[Permission::PREFIX_TAB . 'ADMINORDERS_READ:2'] = true;", fixture)
         self.assertIn("Access::isGranted($ordersReadRole, $profileId)", fixture)
         self.assertIn("$ordersReadRole = Permission::PREFIX_TAB . 'ADMINORDERS_READ';", fixture)
+        self.assertIn("Context::$instance->employee = (object) ['id' => 90, 'id_profile' => 2];", fixture)
 
     def test_module_installs_additive_audit_schema_tab_and_employee_hooks(self) -> None:
         module = (MODULE / "kuraneabackoffice.php").read_text(encoding="utf-8")
