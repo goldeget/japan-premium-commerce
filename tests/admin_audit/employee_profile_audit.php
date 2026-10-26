@@ -497,11 +497,23 @@ employeeProfileAuditAssertSame($orderHistoryQueryCount, count(array_filter(
 employeeProfileAuditAssertSame(false, str_contains($profileAuditReader->content, 'OTHER-SHOP-ORDER'), 'An audit-only reader must not see order references.');
 
 Access::$grants[Permission::PREFIX_TAB . 'ADMINORDERS_READ:2'] = true;
-employeeProfileAuditAssertSame(true, Access::isGranted(Permission::PREFIX_TAB . 'ADMINORDERS_READ', 2), 'The fixture should grant the same native Orders role the controller checks.');
+$ordersReadRole = Permission::PREFIX_TAB . 'ADMINORDERS_READ';
+$profileId = (int) Context::$instance->employee->id_profile;
+employeeProfileAuditAssertSame(true, Access::isGranted($ordersReadRole, $profileId),
+    'The fixture should grant native role ' . $ordersReadRole . ' to profile ' . $profileId . '.');
 $allowedController = new AdminKuraneaEmployeeProfileAuditController();
 $allowedController->nativeView = true;
 $allowedController->tabAccess['view'] = true;
 $allowedController->initContent();
+$orderHistoryQueries = array_values(array_filter(
+    $db->queries,
+    static fn (string $sql): bool => str_contains($sql, 'FROM `ps_order_history` oh')
+));
+employeeProfileAuditAssertSame($orderHistoryQueryCount + 1, count($orderHistoryQueries),
+    'Orders READ should permit exactly one order-history query for profile ' . $profileId . '.');
+$allowedOrderQuery = $orderHistoryQueries[array_key_last($orderHistoryQueries)] ?? '';
+employeeProfileAuditAssertSame(true, str_contains($allowedOrderQuery, 'WHERE o.`id_shop` = 8'),
+    'The authorized order-history query should use the selected shop.');
 employeeProfileAuditAssertSame(true, str_contains($allowedController->content, '<td>44</td>'), 'A shop reader should see its own target employee ID.');
 employeeProfileAuditAssertSame(true, str_contains($allowedController->content, '<td>55</td>'), 'A shop reader should see global-context changes.');
 employeeProfileAuditAssertSame(true, str_contains($allowedController->content, '<td>31</td>'), 'A shop reader should see the global-context Employee update.');

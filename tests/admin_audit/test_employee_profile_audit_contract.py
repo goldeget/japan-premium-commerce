@@ -112,7 +112,8 @@ class EmployeeProfileAuditContractTests(unittest.TestCase):
     def test_order_history_fixture_grants_the_native_permission_slug_used_by_the_controller(self) -> None:
         fixture = (ROOT / "tests" / "admin_audit" / "employee_profile_audit.php").read_text(encoding="utf-8")
         self.assertIn("Access::$grants[Permission::PREFIX_TAB . 'ADMINORDERS_READ:2'] = true;", fixture)
-        self.assertIn("Access::isGranted(Permission::PREFIX_TAB . 'ADMINORDERS_READ', 2)", fixture)
+        self.assertIn("Access::isGranted($ordersReadRole, $profileId)", fixture)
+        self.assertIn("$ordersReadRole = Permission::PREFIX_TAB . 'ADMINORDERS_READ';", fixture)
 
     def test_module_installs_additive_audit_schema_tab_and_employee_hooks(self) -> None:
         module = (MODULE / "kuraneabackoffice.php").read_text(encoding="utf-8")
