@@ -17,6 +17,11 @@ import zlib
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from catalog_import_diagnostics import (
+    READBACK_CHECKS,
+    begin_native_readback_check,
+    finish_native_readback_check,
+)
 from selenium import webdriver
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
@@ -877,6 +882,12 @@ def safe_catalog_import_browser_state(driver, state):
     current_substage = state.get('current_substage', 'not_started')
     if current_substage not in ALLOWED_READBACK_SUBSTAGES:
         current_substage = 'unknown'
+    native_readback_check = state.get('native_readback_check', 'not_started')
+    if type(native_readback_check) is not str or native_readback_check not in READBACK_CHECKS:
+        native_readback_check = 'unknown'
+    native_readback_check_match = state.get('native_readback_check_match')
+    if native_readback_check_match is not None and type(native_readback_check_match) is not bool:
+        native_readback_check_match = None
 
     raw_click = state.get('click_diagnostics')
     click_diagnostics = None
@@ -1153,6 +1164,8 @@ def safe_catalog_import_browser_state(driver, state):
         'last_completed_stage': last_completed_stage,
         'last_completed_substage': last_completed_substage,
         'current_substage': current_substage,
+        'native_readback_check': native_readback_check,
+        'native_readback_check_match': native_readback_check_match,
         'click_diagnostics': click_diagnostics,
         'same_admin_origin': current_origin == expected_origin,
         'admin_path_matches': admin_path_matches,
@@ -1457,42 +1470,52 @@ def read_native(
         raise ValueError('unknown imported product readback phase')
     navigation_substage, form_substage, id_substage, values_substage = phase_substages[phase]
     state['current_substage'] = navigation_substage
-    assert validated_product_id_from_manager_link(driver.current_url) == product_id
+    begin_native_readback_check(state, 'manager_route')
+    route_product_id = validated_product_id_from_manager_link(driver.current_url)
+    finish_native_readback_check(state, 'manager_route', route_product_id == product_id)
     state['current_substage'] = form_substage
+    begin_native_readback_check(state, 'manager_form')
     save_button = WebDriverWait(driver, 30).until(
         EC.visibility_of_element_located((By.CSS_SELECTOR, '#content form [name="submitKuraneaProductSave"]'))
     )
     manager_form = save_button.find_element(By.XPATH, './ancestor::form')
-    assert manager_form.is_displayed()
+    finish_native_readback_check(state, 'manager_form', manager_form.is_displayed())
     state['current_substage'] = id_substage
+    begin_native_readback_check(state, 'product_id')
     id_fields = manager_form.find_elements(By.NAME, 'id_product')
-    assert len(id_fields) == 1
+    finish_native_readback_check(state, 'product_id', len(id_fields) == 1)
     id_field = id_fields[0]
     state['current_substage'] = values_substage
+    begin_native_readback_check(state, 'product_id')
     state['manager_product_id_field_matches'] = id_field.get_attribute('value') == str(product_id)
-    assert state['manager_product_id_field_matches']
+    finish_native_readback_check(state, 'product_id', state['manager_product_id_field_matches'])
     manager_page = safe_catalog_import_browser_state(driver, state)
-    for field in (
+    begin_native_readback_check(state, 'manager_route')
+    finish_native_readback_check(state, 'manager_route', all(manager_page[field] for field in (
         'manager_route_matches', 'manager_product_id_parameter_matches',
         'manager_id_field_present', 'manager_product_id_field_matches', 'manager_editor_visible',
-    ):
-        assert manager_page[field], field
-    assert manager_page['page_class'] == 'manager_editor'
-    assert not manager_page['manager_load_failure_notice_visible']
-    assert not manager_page['manager_permission_denied_notice_visible']
+    )))
+    begin_native_readback_check(state, 'manager_page_class')
+    finish_native_readback_check(state, 'manager_page_class', (
+        manager_page['page_class'] == 'manager_editor'
+        and not manager_page['manager_load_failure_notice_visible']
+        and not manager_page['manager_permission_denied_notice_visible']
+    ))
+    begin_native_readback_check(state, 'category_ids')
     category_ids = sorted(
         int(box.get_attribute('value'))
         for box in driver.find_elements(By.CSS_SELECTOR, 'input[name="category_ids[]"]')
         if box.is_selected()
     )
-    assert category_ids == expected_category_ids
-    form_values = {
-        name: driver.find_element(By.NAME, name).get_attribute('value')
-        for name in (
-            'name_ja', 'name_en', 'name_ko', 'description_ja', 'description_en',
-            'description_ko', 'quantity', 'tax_rules_group_id', 'price_jpy',
-        )
-    }
+    finish_native_readback_check(state, 'category_ids', category_ids == expected_category_ids)
+    form_values = {}
+    form_field_names = (
+        'name_ja', 'name_en', 'name_ko', 'description_ja', 'description_en',
+        'description_ko', 'quantity', 'tax_rules_group_id', 'price_jpy',
+    )
+    for name in form_field_names:
+        begin_native_readback_check(state, name)
+        form_values[name] = driver.find_element(By.NAME, name).get_attribute('value')
     expected = {
         'name_ja': '[TEST FIXTURE] 合成キッチンツール A',
         'name_en': 'ORDENOWA synthetic kitchen tool', 'name_ko': 'ORDENOWA 합성 주방 도구',
@@ -1504,26 +1527,52 @@ def read_native(
     if expected_fields is not None:
         expected.update(expected_fields)
     for name, value in expected.items():
-        assert form_values[name] == value, name
+        begin_native_readback_check(state, name)
+        finish_native_readback_check(state, name, form_values[name] == value)
+    begin_native_readback_check(state, 'option_value')
     option_values = driver.find_element(By.NAME, 'options').get_attribute('value')
-    assert 'M|L' in option_values
+    finish_native_readback_check(state, 'option_value', 'M|L' in option_values)
+    begin_native_readback_check(state, 'combination_count')
     combinations = driver.find_elements(By.CSS_SELECTOR, 'input[name^="combination_quantities["]')
-    assert len(combinations) == 2
+    finish_native_readback_check(state, 'combination_count', len(combinations) == 2)
+    begin_native_readback_check(state, 'combination_quantities')
     combination_quantity_values = [field.get_attribute('value') for field in combinations]
     if expected_combination_quantities is None:
         expected_combination_quantities = ['7', '7']
-    assert combination_quantity_values == expected_combination_quantities
+    finish_native_readback_check(
+        state, 'combination_quantities', combination_quantity_values == expected_combination_quantities
+    )
+    begin_native_readback_check(state, 'combination_field_names')
     combination_field_names = sorted(field.get_attribute('name') for field in combinations)
-    if expected_combination_field_names is not None:
-        assert combination_field_names == expected_combination_field_names
+    finish_native_readback_check(
+        state,
+        'combination_field_names',
+        expected_combination_field_names is None or combination_field_names == expected_combination_field_names,
+    )
+    begin_native_readback_check(state, 'image_count')
     images = driver.find_elements(By.NAME, 'remove_image_ids[]')
-    assert len(images) == 1
+    finish_native_readback_check(state, 'image_count', len(images) == 1)
+    begin_native_readback_check(state, 'image_identity')
     image_ids = sorted(field.get_attribute('value') for field in images)
-    if expected_image_ids is not None:
-        assert image_ids == expected_image_ids
+    finish_native_readback_check(
+        state, 'image_identity', expected_image_ids is None or image_ids == expected_image_ids
+    )
+    begin_native_readback_check(state, 'image_load')
     image_results = driver.execute_script('return Array.from(document.querySelectorAll(".ordenowa-product-image img")).map(i => ({complete:i.complete,width:i.naturalWidth}))')
-    assert len(image_results) == 1 and all(image['complete'] and image['width'] > 0 for image in image_results)
-    assert '비활성 · 비노출 · 주문 불가' in driver.find_element(By.TAG_NAME, 'body').text
+    finish_native_readback_check(
+        state,
+        'image_load',
+        len(image_results) == 1 and all(image['complete'] and image['width'] > 0 for image in image_results),
+    )
+    begin_native_readback_check(state, 'inactive_gate')
+    finish_native_readback_check(
+        state, 'inactive_gate', '비활성 · 비노출 · 주문 불가' in driver.find_element(By.TAG_NAME, 'body').text
+    )
+    begin_native_readback_check(state, 'unique_product_ids')
+    unique_product_ids = manager_ids(driver)
+    finish_native_readback_check(
+        state, 'unique_product_ids', product_id in unique_product_ids
+    )
     return {'linked_product_id': product_id, 'category_ids': category_ids, 'form_values': form_values,
             'option_values': option_values, 'combination_quantity_values': combination_quantity_values,
             '_combination_field_names': combination_field_names, '_image_ids': image_ids,
@@ -1532,7 +1581,7 @@ def read_native(
                 expected_combination_field_names is None or combination_field_names == expected_combination_field_names
             ),
             'image_count': len(images), 'combination_count': len(combinations),
-            'unique_product_ids': manager_ids(driver),
+            'unique_product_ids': unique_product_ids,
             'manager_page': {
                 'same_admin_origin': manager_page['same_admin_origin'],
                 'admin_path_matches': manager_page['admin_path_matches'],
@@ -1583,34 +1632,60 @@ def edit_imported_draft(driver, manager_link, product_id, expected_category_ids,
     save_button = visible(driver, '#content form [name="submitKuraneaProductSave"]')
     form = save_button.find_element(By.XPATH, './ancestor::form')
     id_fields = form.find_elements(By.NAME, 'id_product')
-    assert len(id_fields) == 1 and id_fields[0].get_attribute('value') == str(product_id)
-    assert form.find_element(By.NAME, 'options').get_attribute('value') == initial_readback['option_values']
-    assert 'M|L' in initial_readback['option_values']
+    begin_native_readback_check(state, 'product_id')
+    finish_native_readback_check(
+        state, 'product_id', len(id_fields) == 1 and id_fields[0].get_attribute('value') == str(product_id)
+    )
+    begin_native_readback_check(state, 'option_value')
+    finish_native_readback_check(
+        state, 'option_value',
+        form.find_element(By.NAME, 'options').get_attribute('value') == initial_readback['option_values']
+        and 'M|L' in initial_readback['option_values'],
+    )
+    begin_native_readback_check(state, 'category_ids')
     category_ids = sorted(
         int(box.get_attribute('value'))
         for box in form.find_elements(By.CSS_SELECTOR, 'input[name="category_ids[]"]')
         if box.is_selected()
     )
-    assert category_ids == expected_category_ids
+    finish_native_readback_check(state, 'category_ids', category_ids == expected_category_ids)
+    begin_native_readback_check(state, 'image_count')
     image_controls = form.find_elements(By.NAME, 'remove_image_ids[]')
-    assert len(image_controls) == 1 and not any(field.is_selected() for field in image_controls)
+    finish_native_readback_check(
+        state, 'image_count', len(image_controls) == 1 and not any(field.is_selected() for field in image_controls)
+    )
     fill(form, 'name_en', expected_fields['name_en'])
     fill(form, 'name_ko', expected_fields['name_ko'])
     fill(form, 'description_ko', expected_fields['description_ko'])
     fill(form, 'price_jpy', expected_fields['price_jpy'])
-    assert form.find_element(By.NAME, 'quantity').get_attribute('value') == '0'
-    assert form.find_element(By.NAME, 'tax_rules_group_id').get_attribute('value') == str(TAX_RULES_GROUP_ID)
+    begin_native_readback_check(state, 'quantity')
+    finish_native_readback_check(
+        state, 'quantity', form.find_element(By.NAME, 'quantity').get_attribute('value') == '0'
+    )
+    begin_native_readback_check(state, 'tax_rules_group_id')
+    finish_native_readback_check(
+        state, 'tax_rules_group_id',
+        form.find_element(By.NAME, 'tax_rules_group_id').get_attribute('value') == str(TAX_RULES_GROUP_ID),
+    )
+    begin_native_readback_check(state, 'combination_count')
     combination_fields = form.find_elements(By.CSS_SELECTOR, 'input[name^="combination_quantities["]')
-    assert len(combination_fields) == len(expected_combination_quantities) == 2
+    finish_native_readback_check(
+        state, 'combination_count', len(combination_fields) == len(expected_combination_quantities) == 2
+    )
     for field, quantity in zip(combination_fields, expected_combination_quantities, strict=True):
         field.clear()
         field.send_keys(quantity)
-    assert [field.get_attribute('value') for field in combination_fields] == expected_combination_quantities
+    begin_native_readback_check(state, 'combination_quantities')
+    finish_native_readback_check(
+        state, 'combination_quantities',
+        [field.get_attribute('value') for field in combination_fields] == expected_combination_quantities,
+    )
     state['last_completed_substage'] = 'manager_edit_fields'
 
     state['current_substage'] = 'manager_edit_save_click'
     state['manager_product_id_field_matches'] = id_fields[0].get_attribute('value') == str(product_id)
-    assert state['manager_product_id_field_matches']
+    begin_native_readback_check(state, 'product_id')
+    finish_native_readback_check(state, 'product_id', state['manager_product_id_field_matches'])
     save_button.click()
     state['last_completed_substage'] = 'manager_edit_save_click'
 
@@ -1634,10 +1709,21 @@ def edit_imported_draft(driver, manager_link, product_id, expected_category_ids,
         expected_image_ids=initial_readback['_image_ids'],
         expected_combination_field_names=initial_readback['_combination_field_names'],
     )
-    assert fresh_readback['option_values'] == initial_readback['option_values']
-    assert fresh_readback['image_identity_preserved']
-    assert fresh_readback['combination_identity_preserved']
-    assert fresh_readback['unique_product_ids'] == initial_readback['unique_product_ids']
+    begin_native_readback_check(state, 'option_value')
+    finish_native_readback_check(
+        state, 'option_value', fresh_readback['option_values'] == initial_readback['option_values']
+    )
+    begin_native_readback_check(state, 'image_identity')
+    finish_native_readback_check(state, 'image_identity', fresh_readback['image_identity_preserved'])
+    begin_native_readback_check(state, 'combination_field_names')
+    finish_native_readback_check(
+        state, 'combination_field_names', fresh_readback['combination_identity_preserved']
+    )
+    begin_native_readback_check(state, 'unique_product_ids')
+    finish_native_readback_check(
+        state, 'unique_product_ids',
+        fresh_readback['unique_product_ids'] == initial_readback['unique_product_ids'],
+    )
     state['last_completed_substage'] = 'manager_edit_fresh_readback'
     driver.save_screenshot(str(DEST / 'catalog-import-manager-edited.png'))
     return fresh_readback
@@ -1655,6 +1741,8 @@ def run():
         'last_completed_stage': 'not_started',
         'last_completed_substage': 'not_started',
         'current_substage': 'not_started',
+        'native_readback_check': 'not_started',
+        'native_readback_check_match': None,
         'click_diagnostics': None,
         'manager_link_diagnostics': None,
         'submit_attempted': False,
@@ -1849,7 +1937,10 @@ def run():
         state['current_substage'] = 'manager_navigation'
         driver.get(product_link)
         readback = read_native(driver, product_id, expected_category_ids, state)
-        assert readback['unique_product_ids'] == sorted(before_ids + [product_id])
+        begin_native_readback_check(state, 'unique_product_ids')
+        finish_native_readback_check(
+            state, 'unique_product_ids', readback['unique_product_ids'] == sorted(before_ids + [product_id])
+        )
         state['last_completed_stage'] = state['stage']
         driver.save_screenshot(str(DEST / 'catalog-import-draft.png'))
         edited_readback = edit_imported_draft(
@@ -1875,9 +1966,12 @@ def run():
             expected_image_ids=readback['_image_ids'],
             expected_combination_field_names=readback['_combination_field_names'],
         )
-        assert {key: value for key, value in after.items() if key != 'manager_page'} == {
+        begin_native_readback_check(state, 'reimport_value_identity')
+        finish_native_readback_check(state, 'reimport_value_identity', {
+            key: value for key, value in after.items() if key != 'manager_page'
+        } == {
             key: value for key, value in readback.items() if key != 'manager_page'
-        }
+        })
         readback['reimport_same_product'] = True
         readback['reimport_preserved_manager_edits'] = True
         readback['manager_edit'] = {

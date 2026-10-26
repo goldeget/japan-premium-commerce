@@ -57,6 +57,15 @@ CLICK_DIAGNOSTIC_FIELDS = {
     'substage', 'target', 'action', 'attempted', 'returned', 'visible', 'enabled',
     'target_rect', 'occluder_rect', 'center_in_viewport', 'center_hit_relation', 'occluder_category',
 }
+READBACK_CHECKS = {
+    'not_started', 'unknown', 'manager_route', 'manager_form', 'product_id',
+    'manager_page_class', 'category_ids', 'name_ja', 'name_en', 'name_ko',
+    'description_ja', 'description_en', 'description_ko', 'quantity',
+    'tax_rules_group_id', 'price_jpy', 'option_value', 'combination_count',
+    'combination_quantities', 'combination_field_names', 'image_count',
+    'image_identity', 'image_load', 'inactive_gate', 'unique_product_ids',
+    'reimport_value_identity',
+}
 STRING_ENUMS = {
     'stage': {
         'launch', 'login', 'review_menu_route', 'manager_menu_route', 'manager_navigation',
@@ -110,9 +119,29 @@ DIAGNOSTIC_FIELDS = (
     | set(INTEGER_LIMITS)
     | {'stage', 'last_completed_stage', 'last_completed_substage', 'click_diagnostics',
        'admin_controller', 'page_class', 'document_ready_state', 'current_substage',
-       'manager_link_path_class', *OPTIONAL_INTEGER_FIELDS,
+       'manager_link_path_class', 'native_readback_check', 'native_readback_check_match',
+       *OPTIONAL_INTEGER_FIELDS,
        'document_response_status', 'exception_class'}
 )
+
+
+def begin_native_readback_check(state: dict[str, Any], check: str) -> None:
+    """Record a fixed predicate name before reading synthetic manager form data."""
+    if type(check) is not str or check not in READBACK_CHECKS - {'not_started', 'unknown'}:
+        raise ValueError('catalog import native readback check is not allowlisted')
+    state['native_readback_check'] = check
+    state['native_readback_check_match'] = None
+
+
+def finish_native_readback_check(state: dict[str, Any], check: str, matches: bool) -> None:
+    """Record only whether an allowlisted readback predicate matched; never record values."""
+    if type(check) is not str or state.get('native_readback_check') != check or check not in READBACK_CHECKS:
+        raise ValueError('catalog import native readback check state is invalid')
+    if type(matches) is not bool:
+        raise ValueError('catalog import native readback match must be boolean')
+    state['native_readback_check_match'] = matches
+    if not matches:
+        raise AssertionError(check)
 
 
 def _validate_rect(value: Any) -> bool:
@@ -216,6 +245,14 @@ def validate(data: Any) -> dict[str, Any]:
     for key, allowed in STRING_ENUMS.items():
         if type(data[key]) is not str or data[key] not in allowed:
             raise ValueError('catalog import failure diagnostic enum is invalid')
+    readback_check = data['native_readback_check']
+    if type(readback_check) is not str or readback_check not in READBACK_CHECKS:
+        raise ValueError('catalog import native readback check is invalid')
+    readback_match = data['native_readback_check_match']
+    if readback_match is not None and type(readback_match) is not bool:
+        raise ValueError('catalog import native readback match is invalid')
+    if readback_check in {'not_started', 'unknown'} and readback_match is not None:
+        raise ValueError('catalog import native readback state is inconsistent')
     _validate_click_diagnostics(data['click_diagnostics'])
     return data
 

@@ -240,6 +240,10 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertIn("data['stage'] == 'native_readback'", validator)
         self.assertIn("data['manager_route_matches']", validator)
         self.assertIn("data['manager_product_id_parameter_matches']", validator)
+        self.assertIn("'native_readback_check': native_readback_check", browser)
+        self.assertIn("'native_readback_check_match': native_readback_check_match", browser)
+        self.assertIn("'native_readback_check', 'native_readback_check_match'", validator)
+        self.assertIn('READBACK_CHECKS', validator)
         self.assertIn("'current_substage': {", validator)
         self.assertNotIn('native_product_id', DIAGNOSTICS.DIAGNOSTIC_FIELDS)
 
@@ -255,11 +259,48 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
         read_native = browser.split('def read_native(', 1)[1].split('\ndef run(', 1)[0]
         self.assertIn("manager_form.find_elements(By.NAME, 'id_product')", read_native)
-        self.assertIn('assert len(id_fields) == 1', read_native)
+        self.assertIn("finish_native_readback_check(state, 'product_id', len(id_fields) == 1)", read_native)
         self.assertIn('manager_form.is_displayed()', read_native)
         self.assertIn('manager_product_id_field_matches', read_native)
+        self.assertIn("begin_native_readback_check(state, 'manager_form')", read_native)
         self.assertNotIn("visible(driver, '[name=\"id_product\"]')", read_native)
         self.assertNotIn('EC.presence_of_element_located', read_native)
+
+    def test_native_readback_failure_records_only_an_allowlisted_check_and_boolean(self):
+        state = {}
+        DIAGNOSTICS.begin_native_readback_check(state, 'price_jpy')
+        with self.assertRaises(AssertionError):
+            DIAGNOSTICS.finish_native_readback_check(state, 'price_jpy', False)
+        self.assertEqual(state, {
+            'native_readback_check': 'price_jpy',
+            'native_readback_check_match': False,
+        })
+        self.assertNotIn('6780', json.dumps(state))
+        with self.assertRaises(ValueError):
+            DIAGNOSTICS.begin_native_readback_check(state, 'price_jpy=6780')
+
+    def test_native_manager_readback_guards_product_identity_and_edit_preservation(self):
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        read_native = browser.split('def read_native(', 1)[1].split('\ndef manager_save_confirmation(', 1)[0]
+        edit_flow = browser.split('def edit_imported_draft(', 1)[1].split('\ndef run(', 1)[0]
+        self.assertLess(
+            read_native.index("begin_native_readback_check(state, 'unique_product_ids')"),
+            read_native.index('unique_product_ids = manager_ids(driver)'),
+        )
+        for marker in (
+            "begin_native_readback_check(state, 'option_value')",
+            "begin_native_readback_check(state, 'category_ids')",
+            "begin_native_readback_check(state, 'image_count')",
+            "begin_native_readback_check(state, 'quantity')",
+            "begin_native_readback_check(state, 'tax_rules_group_id')",
+            "begin_native_readback_check(state, 'combination_count')",
+            "begin_native_readback_check(state, 'combination_quantities')",
+            "begin_native_readback_check(state, 'image_identity')",
+            "begin_native_readback_check(state, 'combination_field_names')",
+            "begin_native_readback_check(state, 'unique_product_ids')",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, edit_flow)
 
     def test_rejected_option_guard_readback_retries_stale_dom_without_relaxing_guard(self):
         browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
@@ -395,7 +436,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertIn('expected_category_ids', source)
         self.assertIn("form.find_elements(By.CSS_SELECTOR, 'input[name=\"category_ids[]\"]')", source)
         self.assertIn("driver.find_elements(By.CSS_SELECTOR, 'input[name=\"category_ids[]\"]')", source)
-        self.assertIn('assert category_ids == expected_category_ids', source)
+        self.assertIn("finish_native_readback_check(state, 'category_ids', category_ids == expected_category_ids)", source)
         self.assertIn('read_native(driver, product_id, expected_category_ids, state)', source)
 
     def test_browser_saves_same_imported_draft_then_proves_edit_survives_reimport(self):
@@ -467,6 +508,12 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'batch_progress_readback',
             'same_admin_origin',
             'admin_path_matches',
+            'begin_native_readback_check',
+            'finish_native_readback_check',
+            'native_readback_check_match',
+            'category_ids',
+            'combination_quantities',
+            'image_load',
             'controller_parameter_present',
             'controller_allowed',
             'login_form_visible',
@@ -619,6 +666,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'stage': 'approve_amazon', 'last_completed_stage': 'reject_rakuten',
             'last_completed_substage': 'reject_status_readback', 'click_diagnostics': valid_click,
             'current_substage': 'not_started',
+            'native_readback_check': 'not_started', 'native_readback_check_match': None,
             'same_admin_origin': True, 'admin_path_matches': True,
             'controller_parameter_present': True, 'controller_allowed': True,
             'admin_controller': 'AdminKuraneaCatalogReview', 'page_class': 'catalog_import_form',
@@ -810,6 +858,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'stage': 'batch_completion_wait', 'last_completed_stage': 'batch_submit_click',
             'last_completed_substage': 'not_started', 'click_diagnostics': None,
             'current_substage': 'not_started',
+            'native_readback_check': 'not_started', 'native_readback_check_match': None,
             'same_admin_origin': True, 'admin_path_matches': True,
             'controller_parameter_present': True, 'controller_allowed': True,
             'admin_controller': 'AdminKuraneaCatalogReview', 'page_class': 'unclassified_alert',
@@ -840,6 +889,15 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'failure_screenshot_captured': False,
         }
         DIAGNOSTICS.validate(valid)
+        DIAGNOSTICS.validate({
+            **valid,
+            'native_readback_check': 'price_jpy',
+            'native_readback_check_match': False,
+        })
+        with self.assertRaises(ValueError):
+            DIAGNOSTICS.validate({**valid, 'native_readback_check': 'price_jpy=6780'})
+        with self.assertRaises(ValueError):
+            DIAGNOSTICS.validate({**valid, 'native_readback_check_match': '6780'})
         with self.assertRaises(ValueError):
             DIAGNOSTICS.validate({**valid, 'unexpected': 'could contain a secret'})
         with self.assertRaises(ValueError):

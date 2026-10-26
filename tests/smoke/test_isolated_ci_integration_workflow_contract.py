@@ -307,6 +307,8 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
                 "last_completed_stage": "login",
                 "last_completed_substage": "not_started",
                 "current_substage": "not_started",
+                "native_readback_check": "not_started",
+                "native_readback_check_match": None,
                 "click_diagnostics": None,
                 "same_admin_origin": True,
                 "admin_path_matches": True,
