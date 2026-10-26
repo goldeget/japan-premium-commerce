@@ -2,9 +2,9 @@
 
 ## 최신 work 코드 및 catalog 편집 검증 (2026-10-26 05:45 UTC)
 
-현재 work/origin SHA는 d49fa7d2e5b7714fee8f31bdd1558f54bdb2a6d7이며 main은 ee02a3657448d563508687614a246e05ac61eecd로 유지한다. 전체 격리 Actions [#40275686536](https://github.com/goldeget/japan-premium-commerce/actions/runs/40275686536)은 이 SHA에서 진행 중이다. 마지막 완료 기준점 e1cd6d0 / #40272141646은 전체 SUCCESS였다. 현재 run의 browser/DB/aggregate 결과는 완료 전 PASS로 간주하지 않는다.
+현재 격리 run의 application code SHA는 d49fa7d2e5b7714fee8f31bdd1558f54bdb2a6d7이다. 그 뒤 work에는 문서 전용 status update만 올라갔으며 main은 ee02a3657448d563508687614a246e05ac61eecd로 유지한다. 전체 격리 Actions [#40275686536](https://github.com/goldeget/japan-premium-commerce/actions/runs/40275686536)은 이 SHA에서 진행 중이다. 마지막 완료 기준점 e1cd6d0 / #40272141646은 전체 SUCCESS였다. 현재 run의 browser/DB/aggregate 결과는 완료 전 PASS로 간주하지 않는다.
 
-d49fa7d는 합성으로 승인된 동일 native 상품을 관리자에서 실제 저장하고, 확인 알림 후 검증된 manager link로 fresh GET하여 편집값을 읽고, 같은 source를 재수집해 기존 편집값을 유지하는 E2E를 추가했다. 바뀌는 fixture 값은 EN/KO 텍스트, 자체 판매가격 ¥6,780, 두 조합 재고 7→5/5다. 이미지·카테고리·세금·옵션 및 combination identity가 유지되고, product는 inactive/hidden/non-orderable로 남아야 한다. 05:53 UTC의 마지막 확인에서 Step 56 Chromium PWA/cache 검증 중이었다. runtime 판정은 최종 run 결과 대기다. 독립 정적 리뷰에서는 identity binding, 새 GET, 이미지/옵션/재고 readback 및 판매 보호 조건에서 차단 사유가 발견되지 않았다. 또한 독립 QA는 #40233614104 artifact 12613919270에서 pwa-desktop-ko-account.png와 mobile-product-detail-breadcrumb.png를 실제 열어 한국어 내 계정과 긴 상품명 줄바꿈을 시각 확인했다. 이는 해당 두 캡처에만 적용되며 전체 화면/기기 검증이 아니다.
+d49fa7d는 합성으로 승인된 동일 native 상품을 관리자에서 실제 저장하고, 확인 알림 후 검증된 manager link로 fresh GET하여 편집값을 읽고, 같은 source를 재수집해 기존 편집값을 유지하는 E2E를 추가했다. 바뀌는 fixture 값은 EN/KO 텍스트, 자체 판매가격 ¥6,780, 두 조합 재고 7→5/5다. 이미지·카테고리·세금·옵션 및 combination identity가 유지되고, product는 inactive/hidden/non-orderable로 남아야 한다. 05:55 UTC의 마지막 확인에서 Step 66 admin order browser 검증 중이었다. runtime 판정은 최종 run 결과 대기다. 독립 정적 리뷰에서는 identity binding, 새 GET, 이미지/옵션/재고 readback 및 판매 보호 조건에서 차단 사유가 발견되지 않았다. 또한 독립 QA는 #40233614104 artifact 12613919270에서 pwa-desktop-ko-account.png와 mobile-product-detail-breadcrumb.png를 실제 열어 한국어 내 계정과 긴 상품명 줄바꿈을 시각 확인했다. 이는 해당 두 캡처에만 적용되며 전체 화면/기기 검증이 아니다.
 
 
 ## 직전 완료 격리 QA 및 catalog import 기준점 (2026-10-26 05:20 UTC)

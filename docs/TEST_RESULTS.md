@@ -2,8 +2,8 @@
 
 ## 2026-10-26 — 동일 imported draft 편집·재조회·재수집 검사 추가
 
-- 코드 SHA d49fa7d2e5b7714fee8f31bdd1558f54bdb2a6d7를 work에 push했고 origin/work와 일치함을 확인했다. main은 변경하지 않았다.
-- 기존 성공 기준점은 e1cd6d0 / 전체 격리 Actions #40272141646 SUCCESS다. 새 run [#40275686536](https://github.com/goldeget/japan-premium-commerce/actions/runs/40275686536)은 d49fa7d에서 시작되어 현재 진행 중이며 결과를 아직 주장하지 않는다.
+- code SHA d49fa7d2e5b7714fee8f31bdd1558f54bdb2a6d7를 먼저 work에 push했고 origin/work와 일치함을 확인했다. 이후 docs-only status updates를 push했으며 앱/테스트 코드는 바꾸지 않았다. main은 변경하지 않았다.
+- 기존 성공 기준점은 e1cd6d0 / 전체 격리 Actions #40272141646 SUCCESS다. 별도 parser run #40275686540은 d49fa7d source에서 PHP lint, synthetic parser와 65개 contract를 SUCCESS로 마쳤다. 새 run [#40275686536](https://github.com/goldeget/japan-premium-commerce/actions/runs/40275686536)은 d49fa7d에서 시작되어 현재 진행 중이며 결과를 아직 주장하지 않는다.
 - 추가된 browser acceptance는 승인 상품의 동일 ID를 유지한 채 EN/KO 텍스트·설명, JPY sale price, 두 조합의 자체 재고를 변경하고 native save를 click한 뒤 정확한 성공 알림을 확인한다. 검증된 manager link로 fresh GET을 열어 필드와 이미지/옵션 identity를 읽고, 동일 source reimport 후 동일 product ID와 수정값 보존을 다시 확인한다.
 - 예상 persistence contract는 base stock 0, combination stocks [5,5], image 1개, combination 2개, 같은 reference 1개, product/shop 모두 inactive·hidden·unavailable-for-order다. 이는 코드 assertion이지 아직 #402756 결과가 아니다.
 - 관련 집중 contract/Python/YAML 검증과 독립 정적 리뷰는 이전 작업 기록에 있으며, PHP/PrestaShop/Chromium runtime은 GitHub Actions에 맡긴다. artifact와 실제 workflow outcome/aggregate는 run 종료 후 갱신한다.
