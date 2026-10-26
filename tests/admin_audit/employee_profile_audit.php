@@ -7,12 +7,32 @@ define('_DB_PREFIX_', 'ps_');
 
 require_once dirname(__DIR__, 2) . '/modules/kuraneabackoffice/vendor/autoload.php';
 
+final class EmployeeProfileAuditFakePermission
+{
+    public const PREFIX_TAB = 'ROLE_MOD_TAB_';
+}
+
+class_alias(EmployeeProfileAuditFakePermission::class, 'PrestaShop\\PrestaShop\\Core\\Security\\Permission');
+
+final class Access
+{
+    /** @var array<string, bool> */
+    public static array $grants = [];
+
+    public static function isGranted(string $permission, int $profileId): bool
+    {
+        return self::$grants[$permission . ':' . $profileId] ?? false;
+    }
+}
+
 final class EmployeeProfileAuditFakeDatabase
 {
     /** @var array<int, int> */
     public array $employeeProfiles = [];
     /** @var list<array{id_event:int,id_shop:int,actor_employee_id:?int,target_employee_id:int,old_profile_id:int,new_profile_id:int,changed_at_utc:string}> */
     public array $events = [];
+    /** @var list<array{id_order_history:int,id_order:int,id_shop:int,reference:string,id_order_state:int,state_name:string,id_employee:?int,date_add:string}> */
+    public array $orderHistory = [];
     /** @var list<string> */
     public array $queries = [];
 
@@ -42,6 +62,21 @@ final class EmployeeProfileAuditFakeDatabase
             usort($events, static fn (array $left, array $right): int => $right['id_event'] <=> $left['id_event']);
 
             return array_slice($events, $offset, $limit);
+        }
+
+        if (str_contains($sql, 'FROM `ps_order_history` oh')) {
+            preg_match('/o\.`id_shop`\s*=\s*(\d+)/', $sql, $shopMatch);
+            preg_match('/LIMIT\s+51\s+OFFSET\s+(\d+)/', $sql, $windowMatch);
+            $shopId = (int) ($shopMatch[1] ?? 0);
+            $offset = (int) ($windowMatch[1] ?? 0);
+            $rows = array_values(array_filter(
+                $this->orderHistory,
+                static fn (array $row): bool => $row['id_shop'] === $shopId
+            ));
+            usort($rows, static fn (array $left, array $right): int => $right['date_add'] <=> $left['date_add']
+                ?: $right['id_order_history'] <=> $left['id_order_history']);
+
+            return array_slice($rows, $offset, 51);
         }
 
         return [];
@@ -295,7 +330,8 @@ $db = new EmployeeProfileAuditFakeDatabase();
 Db::$instance = $db;
 Context::$instance = (object) [
     'shop' => (object) ['id' => 7],
-    'employee' => (object) ['id' => 90],
+    'employee' => (object) ['id' => 90, 'id_profile' => 2],
+    'language' => (object) ['id' => 3],
     'smarty' => new EmployeeProfileAuditFakeSmarty(),
     'link' => new EmployeeProfileAuditFakeLink(),
 ];
@@ -314,7 +350,9 @@ employeeProfileAuditAssertSame(true, str_starts_with($auditTableCreates[0], 'CRE
 employeeProfileAuditAssertSame(true, Tab::getIdFromClassName('AdminKuraneaEmployeeProfileAudit') > 0, 'Fresh install should register the native admin tab.');
 
 require_once dirname(__DIR__, 2) . '/modules/kuraneabackoffice/upgrade/upgrade-1.0.3.php';
+require_once dirname(__DIR__, 2) . '/modules/kuraneabackoffice/upgrade/upgrade-1.0.5.php';
 employeeProfileAuditAssertSame(true, upgrade_module_1_0_3($module), 'The installed-module upgrade should apply the additive audit setup.');
+employeeProfileAuditAssertSame(true, upgrade_module_1_0_5($module), 'The installed-module upgrade should rename the existing audit tab.');
 $auditTableCreates = array_values(array_filter(
     $db->queries,
     static fn (string $sql): bool => str_contains($sql, 'kuraneabackoffice_employee_profile_audit')
@@ -373,6 +411,52 @@ employeeProfileAuditAssertSame(true, (bool) array_filter(
     static fn (string $sql): bool => str_contains($sql, 'WHERE (`id_shop` = 7 OR `id_shop` = 0)')
         && str_contains($sql, 'LIMIT 51 OFFSET 0')
 ), 'The page query should be shop-scoped and bounded.');
+
+for ($index = 1; $index <= 51; $index++) {
+    $db->orderHistory[] = [
+        'id_order_history' => $index,
+        'id_order' => 100 + $index,
+        'id_shop' => 7,
+        'reference' => 'CI-ORDER-' . $index,
+        'id_order_state' => 2,
+        'state_name' => '결제 대기',
+        'id_employee' => 90,
+        'date_add' => '2026-10-26 12:00:00',
+    ];
+}
+$db->orderHistory[] = [
+    'id_order_history' => 52,
+    'id_order' => 200,
+    'id_shop' => 8,
+    'reference' => 'OTHER-SHOP-ORDER',
+    'id_order_state' => 2,
+    'state_name' => '결제 대기',
+    'id_employee' => 90,
+    'date_add' => '2026-10-26 12:00:00',
+];
+$orderHistoryRepository = new \Kuranea\Backoffice\Infrastructure\OrderHistoryAuditRepository($db, 'ps_');
+$orderHistoryPage = $orderHistoryRepository->pageForShop(7, 3, 1);
+employeeProfileAuditAssertSame(50, count($orderHistoryPage['rows']), 'Order audit pages should cap rows at fifty.');
+employeeProfileAuditAssertSame(true, $orderHistoryPage['has_next'], 'An order audit lookahead row should indicate another page.');
+employeeProfileAuditAssertSame(51, $orderHistoryPage['rows'][0]['id_order_history'], 'Order history should be sorted newest-first with an ID tie-breaker.');
+employeeProfileAuditAssertSame(false, (bool) array_filter(
+    $orderHistoryPage['rows'],
+    static fn (array $row): bool => $row['reference'] === 'OTHER-SHOP-ORDER'
+), 'Order history must not expose a different shop.');
+employeeProfileAuditAssertSame(true, (bool) array_filter(
+    $db->queries,
+    static fn (string $sql): bool => str_contains($sql, 'INNER JOIN `ps_orders`')
+        && str_contains($sql, 'LEFT JOIN `ps_order_state_lang`')
+        && str_contains($sql, 'WHERE o.`id_shop` = 7')
+        && str_contains($sql, 'LIMIT 51 OFFSET 0')
+), 'Order audit must read native history, localize the status, and constrain the selected shop.');
+employeeProfileAuditAssertSame(1, preg_match('/\A\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\z/', $orderHistoryPage['rows'][0]['date_add']),
+    'Order audit should preserve the native history timestamp.');
+try {
+    $orderHistoryRepository->pageForShop(7, 3, 0);
+    throw new RuntimeException('An invalid order audit page was accepted.');
+} catch (InvalidArgumentException $expected) {
+}
 $otherShopPage = $repository->pageForShop(8, 1);
 employeeProfileAuditAssertSame(3, count($otherShopPage['rows']), 'A shop page should include its own and global events only.');
 employeeProfileAuditAssertSame([55, 44, 31], array_column($otherShopPage['rows'], 'target_employee_id'), 'A shop page must not expose another shop’s events.');
@@ -396,6 +480,21 @@ employeeProfileAuditAssertSame(true, str_contains($allShopController->content, '
 
 Shop::$context = Shop::CONTEXT_SHOP;
 Context::$instance->shop->id = 8;
+$orderHistoryQueryCount = count(array_filter(
+    $db->queries,
+    static fn (string $sql): bool => str_contains($sql, 'FROM `ps_order_history` oh')
+));
+$profileAuditReader = new AdminKuraneaEmployeeProfileAuditController();
+$profileAuditReader->nativeView = true;
+$profileAuditReader->tabAccess['view'] = true;
+$profileAuditReader->initContent();
+employeeProfileAuditAssertSame($orderHistoryQueryCount, count(array_filter(
+    $db->queries,
+    static fn (string $sql): bool => str_contains($sql, 'FROM `ps_order_history` oh')
+)), 'An audit-only reader without native Orders READ must not query order history.');
+employeeProfileAuditAssertSame(false, str_contains($profileAuditReader->content, 'OTHER-SHOP-ORDER'), 'An audit-only reader must not see order references.');
+
+Access::$grants['ROLE_MOD_TAB_ADMINORDERS_READ:2'] = true;
 $allowedController = new AdminKuraneaEmployeeProfileAuditController();
 $allowedController->nativeView = true;
 $allowedController->tabAccess['view'] = true;
@@ -404,5 +503,7 @@ employeeProfileAuditAssertSame(true, str_contains($allowedController->content, '
 employeeProfileAuditAssertSame(true, str_contains($allowedController->content, '<td>55</td>'), 'A shop reader should see global-context changes.');
 employeeProfileAuditAssertSame(true, str_contains($allowedController->content, '<td>31</td>'), 'A shop reader should see the global-context Employee update.');
 employeeProfileAuditAssertSame(false, str_contains($allowedController->content, '<td>32</td>'), 'A shop reader must not see another shop’s target employee ID.');
+employeeProfileAuditAssertSame(true, str_contains($allowedController->content, 'OTHER-SHOP-ORDER'), 'A shop audit reader should see its own order references.');
+employeeProfileAuditAssertSame(false, str_contains($allowedController->content, 'CI-ORDER-'), 'A shop audit reader must not see another shop’s order references.');
 
-echo "PASS: Employee profile updates append actor/target old-new UTC events, unchanged updates do not, absent actors remain null, and reads include global context without leaking other shops, capped at 50 rows.\n";
+echo "PASS: Employee profile changes and native order status history are shop-scoped, read-only, actor/time aware, and bounded to 50 rows.\n";

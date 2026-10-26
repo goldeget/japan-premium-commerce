@@ -12,7 +12,7 @@ class Kuraneabackoffice extends Module
     {
         $this->name = 'kuraneabackoffice';
         $this->tab = 'administration';
-        $this->version = '1.0.4';
+        $this->version = '1.0.5';
         $this->author = 'ORDENOWA';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -162,9 +162,9 @@ class Kuraneabackoffice extends Module
         $tab->name = [];
 
         $labels = [
-            'ja' => '従業員プロファイル履歴',
-            'en' => 'Employee profile history',
-            'ko' => '관리자 프로필 변경 이력',
+            'ja' => '管理者監査記録',
+            'en' => 'Administrator audit log',
+            'ko' => '관리자 감사 기록',
         ];
         foreach (Language::getLanguages(false) as $language) {
             $languageId = (int) ($language['id_lang'] ?? 0);

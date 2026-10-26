@@ -78,14 +78,44 @@ class EmployeeProfileAuditContractTests(unittest.TestCase):
             self.assertIn(field, controller)
         self.assertNotRegex(controller, re.compile(r"\b(?:email|firstname|lastname|password|token|address1|address2)\b", re.I))
         self.assertNotIn("AdminAccessController", controller)
-        self.assertNotIn("Access::", controller)
+
+    def test_order_status_audit_reads_native_history_read_only_and_shop_scoped(self) -> None:
+        repository_path = MODULE / "src" / "Infrastructure" / "OrderHistoryAuditRepository.php"
+        self.assertTrue(repository_path.is_file(), "missing native order history audit read model")
+        repository = repository_path.read_text(encoding="utf-8")
+        for field in ("id_order_history", "id_order", "reference", "id_order_state", "id_employee", "date_add"):
+            self.assertIn(field, repository)
+        self.assertIn("INNER JOIN `", repository)
+        self.assertIn("$this->prefix . 'orders`", repository)
+        self.assertIn("' WHERE o.`id_shop` = ' . $shopId", repository)
+        self.assertIn("$this->prefix . 'order_state_lang`", repository)
+        self.assertIn("LIMIT 51 OFFSET", repository)
+        self.assertNotRegex(repository, re.compile(r"\b(?:INSERT|UPDATE|DELETE|REPLACE)\b", re.I))
+        self.assertNotRegex(repository, re.compile(r"\b(?:email|firstname|lastname|passwd|password|token|address1|address2)\b", re.I))
+
+        controller = (MODULE / "controllers" / "admin" / "AdminKuraneaEmployeeProfileAuditController.php").read_text(encoding="utf-8")
+        self.assertIn("OrderHistoryAuditRepository", controller)
+        self.assertIn("pageForShop($shopId, $languageId, $page)", controller)
+        self.assertIn("canViewOrderHistory()", controller)
+        self.assertIn("Access::isGranted(Permission::PREFIX_TAB . 'ADMINORDERS_READ'", controller)
+        self.assertIn("if ($canViewOrderHistory)", controller)
+        self.assertIn("use PrestaShop\\PrestaShop\\Core\\Security\\Permission;", controller)
+        self.assertIn("renderOrderHistoryRows", controller)
+        self.assertIn("주문 상태 변경 이력", controller)
+        self.assertNotRegex(controller, re.compile(r"<form|<input|method=[\"']post", re.I))
+
+    def test_order_history_php_fixture_parses_the_production_shop_alias_format(self) -> None:
+        fixture = (ROOT / "tests" / "admin_audit" / "employee_profile_audit.php").read_text(encoding="utf-8")
+        self.assertIn("preg_match('/o\\.`id_shop`\\s*=\\s*(\\d+)/', $sql, $shopMatch);", fixture)
+        self.assertIn("WHERE o.`id_shop` = 7", fixture)
 
     def test_module_installs_additive_audit_schema_tab_and_employee_hooks(self) -> None:
         module = (MODULE / "kuraneabackoffice.php").read_text(encoding="utf-8")
-        self.assertIn("$this->version = '1.0.4';", module)
+        self.assertIn("$this->version = '1.0.5';", module)
         self.assertIn("installEmployeeProfileAudit", module)
         self.assertIn("installEmployeeProfileAuditTab", module)
         self.assertIn("AdminKuraneaEmployeeProfileAudit", module)
+        self.assertIn("관리자 감사 기록", module)
         self.assertIn("EmployeeProfileAuditSchema::tableSql", module)
         self.assertIn("actionObjectEmployeeUpdateBefore", module)
         self.assertIn("actionObjectEmployeeUpdateAfter", module)
@@ -102,11 +132,16 @@ class EmployeeProfileAuditContractTests(unittest.TestCase):
         upgrade = upgrade_path.read_text(encoding="utf-8")
         self.assertIn("installEmployeeProfileAudit", upgrade)
         self.assertNotRegex(upgrade, re.compile(r"DROP\s+TABLE", re.I))
+        audit_upgrade = (MODULE / "upgrade" / "upgrade-1.0.5.php").read_text(encoding="utf-8")
+        self.assertIn("upgrade_module_1_0_5", audit_upgrade)
+        self.assertIn("installEmployeeProfileAuditTab", audit_upgrade)
+        self.assertNotRegex(audit_upgrade, re.compile(r"DROP\s+TABLE", re.I))
 
     def test_php_fixture_and_source_contract_run_in_existing_business_profile_workflow(self) -> None:
         fixture = (ROOT / "tests" / "admin_audit" / "employee_profile_audit.php").read_text(encoding="utf-8")
         self.assertIn("$module->install()", fixture)
         self.assertIn("upgrade_module_1_0_3($module)", fixture)
+        self.assertIn("upgrade_module_1_0_5($module)", fixture)
         self.assertIn("in_array($hookName, self::$module->registeredHooks, true)", fixture)
         workflow = (ROOT / ".github" / "workflows" / "business-profile.yml").read_text(encoding="utf-8")
         self.assertIn("php tests/admin_audit/employee_profile_audit.php", workflow)
