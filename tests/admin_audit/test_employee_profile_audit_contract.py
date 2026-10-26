@@ -109,6 +109,11 @@ class EmployeeProfileAuditContractTests(unittest.TestCase):
         self.assertIn("preg_match('/o\\.`id_shop`\\s*=\\s*(\\d+)/', $sql, $shopMatch);", fixture)
         self.assertIn("WHERE o.`id_shop` = 7", fixture)
 
+    def test_order_history_fixture_grants_the_native_permission_slug_used_by_the_controller(self) -> None:
+        fixture = (ROOT / "tests" / "admin_audit" / "employee_profile_audit.php").read_text(encoding="utf-8")
+        self.assertIn("Access::$grants[Permission::PREFIX_TAB . 'ADMINORDERS_READ:2'] = true;", fixture)
+        self.assertIn("Access::isGranted(Permission::PREFIX_TAB . 'ADMINORDERS_READ', 2)", fixture)
+
     def test_module_installs_additive_audit_schema_tab_and_employee_hooks(self) -> None:
         module = (MODULE / "kuraneabackoffice.php").read_text(encoding="utf-8")
         self.assertIn("$this->version = '1.0.5';", module)

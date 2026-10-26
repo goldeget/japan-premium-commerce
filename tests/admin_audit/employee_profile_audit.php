@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use PrestaShop\PrestaShop\Core\Security\Permission;
+
 define('_PS_VERSION_', '9.2.0');
 define('_DB_PREFIX_', 'ps_');
 
@@ -494,7 +496,8 @@ employeeProfileAuditAssertSame($orderHistoryQueryCount, count(array_filter(
 )), 'An audit-only reader without native Orders READ must not query order history.');
 employeeProfileAuditAssertSame(false, str_contains($profileAuditReader->content, 'OTHER-SHOP-ORDER'), 'An audit-only reader must not see order references.');
 
-Access::$grants['ROLE_MOD_TAB_ADMINORDERS_READ:2'] = true;
+Access::$grants[Permission::PREFIX_TAB . 'ADMINORDERS_READ:2'] = true;
+employeeProfileAuditAssertSame(true, Access::isGranted(Permission::PREFIX_TAB . 'ADMINORDERS_READ', 2), 'The fixture should grant the same native Orders role the controller checks.');
 $allowedController = new AdminKuraneaEmployeeProfileAuditController();
 $allowedController->nativeView = true;
 $allowedController->tabAccess['view'] = true;
