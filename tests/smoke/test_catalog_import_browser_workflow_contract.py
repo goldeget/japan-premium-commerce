@@ -388,7 +388,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             "'price_jpy': '6780'",
             "expected_combination_quantities = ['5', '5']",
             "[name=\"submitKuraneaProductSave\"]",
-            "alert-success",
+            'manager_save_confirmation(browser, expected_notice)',
             'validated_product_id_from_manager_link',
             'driver.get(manager_link)',
             "'manager_edit_save_confirmation'",
@@ -419,6 +419,21 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
                          'manager_edit_save_confirmation', 'manager_edit_fresh_navigation',
                          'manager_edit_fresh_readback'):
             self.assertIn(substage, diagnostics)
+
+    def test_manager_save_confirmation_reads_visible_success_alert_from_one_dom_snapshot(self):
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        helper_start = browser.find('def manager_save_confirmation(')
+        self.assertGreaterEqual(helper_start, 0, 'save confirmation must use the atomic DOM snapshot helper')
+        confirmation = browser[helper_start:].split('\ndef edit_imported_draft(', 1)[0]
+        self.assertIn('browser.execute_script(', confirmation)
+        self.assertIn("document.querySelectorAll('#content .alert-success')", confirmation)
+        self.assertIn('const expectedNotice = arguments[0]', confirmation)
+        self.assertIn("(element.innerText || element.textContent || '').trim()", confirmation)
+        self.assertIn('notice === expectedNotice', confirmation)
+        self.assertIn('return isVisible(element) && notice === expectedNotice', confirmation)
+        self.assertNotIn('find_elements(', confirmation)
+        self.assertNotIn('.is_displayed()', confirmation)
+        self.assertIn('manager_save_confirmation(browser, expected_notice)', browser)
 
     def test_browser_batch_waits_and_failure_summary_expose_safe_substage_evidence(self):
         browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
@@ -607,6 +622,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'manager_id_field_hidden': False, 'manager_product_id_field_matches': False,
             'manager_editor_visible': False, 'manager_load_failure_notice_visible': False,
             'manager_permission_denied_notice_visible': False, 'manager_inactive_notice_visible': False,
+            'manager_save_success_notice_visible': False,
             'option_guard_notice_visible': False,
             'failure_screenshot_captured': True,
         }
@@ -713,6 +729,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
                 'manager_load_failure_notice_visible': True,
                 'manager_permission_denied_notice_visible': False,
                 'manager_inactive_notice_visible': False,
+                'manager_save_success_notice_visible': False,
                 'option_guard_notice_visible': False,
                 'exception_class': 'TimeoutException',
                 'failure_screenshot_captured': True,
@@ -788,6 +805,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'manager_id_field_hidden': False, 'manager_product_id_field_matches': False,
             'manager_editor_visible': False, 'manager_load_failure_notice_visible': False,
             'manager_permission_denied_notice_visible': False, 'manager_inactive_notice_visible': False,
+            'manager_save_success_notice_visible': False,
             'option_guard_notice_visible': False,
             'failure_screenshot_captured': False,
         }

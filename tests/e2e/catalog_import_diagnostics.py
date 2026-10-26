@@ -26,6 +26,7 @@ BOOLEAN_FIELDS = {
     'manager_id_field_present', 'manager_id_field_hidden', 'manager_product_id_field_matches',
     'manager_editor_visible', 'manager_load_failure_notice_visible',
     'manager_permission_denied_notice_visible', 'manager_inactive_notice_visible',
+    'manager_save_success_notice_visible',
     'failure_screenshot_captured',
 }
 INTEGER_LIMITS = {

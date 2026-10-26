@@ -937,6 +937,7 @@ def safe_catalog_import_browser_state(driver, state):
         'manager_load_failure_notice_visible': False,
         'manager_permission_denied_notice_visible': False,
         'manager_inactive_notice_visible': False,
+        'manager_save_success_notice_visible': False,
         'option_guard_notice_visible': False,
     }
     if driver is not None:
@@ -983,6 +984,8 @@ def safe_catalog_import_browser_state(driver, state):
                 const managerLoadFailure = '상품 관리 화면을 불러오지 못했습니다. 쇼핑몰 설정과 권한을 확인해 주세요.';
                 const managerPermissionDenied = '상품을 조회할 권한이 없습니다.';
                 const managerInactiveNotice = '상품은 기본적으로 비활성·비노출·주문 불가 상태로 저장됩니다. 이 화면에는 판매 활성화 기능이 없습니다.';
+                const managerSaveSuccessNotice = expectedProductId
+                    ? `상품 ID ${expectedProductId}를 비활성 상태로 저장했습니다.` : '';
                 const optionGuardNotice = '현재 수집기는 여러 옵션 그룹의 실제 조합·조합별 가격·재고를 검증할 수 없어 이 상품 초안 등록을 지원하지 않습니다. 원본에서 확인된 단일 옵션 그룹만 사용해 주세요.';
                 const recognizedAlert = (text) => text === '관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.'
                     || text === '상품 수집·검수·등록 권한이 없습니다.'
@@ -994,6 +997,7 @@ def safe_catalog_import_browser_state(driver, state):
                     || text === managerLoadFailure
                     || text === managerPermissionDenied
                     || text === managerInactiveNotice
+                    || (managerSaveSuccessNotice && text === managerSaveSuccessNotice)
                     || text === optionGuardNotice
                     || text === '상품 수집 항목을 반려했습니다. 사유와 담당자 기록을 보존했습니다.'
                     || text === '기존 TEST/DEMO 등록 경로는 별도 서버 게이트로 비활성화되어 있습니다.'
@@ -1028,6 +1032,7 @@ def safe_catalog_import_browser_state(driver, state):
                     manager_load_failure_notice_visible: visibleAlerts.includes(managerLoadFailure),
                     manager_permission_denied_notice_visible: visibleAlerts.includes(managerPermissionDenied),
                     manager_inactive_notice_visible: visibleAlerts.includes(managerInactiveNotice),
+                    manager_save_success_notice_visible: visibleAlerts.includes(managerSaveSuccessNotice),
                     option_guard_notice_visible: visibleAlerts.includes(optionGuardNotice)
                 };
             """, expected_product_id_text)
@@ -1159,6 +1164,7 @@ def safe_catalog_import_browser_state(driver, state):
         'manager_load_failure_notice_visible': manager_load_failure,
         'manager_permission_denied_notice_visible': manager_permission_denied,
         'manager_inactive_notice_visible': bool(page.get('manager_inactive_notice_visible')),
+        'manager_save_success_notice_visible': bool(page.get('manager_save_success_notice_visible')),
     }
 
 
@@ -1502,6 +1508,23 @@ def read_native(
             }}
 
 
+def manager_save_confirmation(browser, expected_notice):
+    """Read visible save alerts from one DOM snapshot so a postback cannot stale element handles."""
+    return browser.execute_script("""
+        const expectedNotice = arguments[0];
+        const isVisible = (element) => {
+            const style = window.getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            return style.display !== 'none' && style.visibility !== 'hidden'
+                && rect.width > 0 && rect.height > 0;
+        };
+        return Array.from(document.querySelectorAll('#content .alert-success')).some((element) => {
+            const notice = (element.innerText || element.textContent || '').trim();
+            return isVisible(element) && notice === expectedNotice;
+        });
+    """, expected_notice) is True
+
+
 def edit_imported_draft(driver, manager_link, product_id, expected_category_ids, initial_readback, state):
     """Save synthetic manager edits to the linked inactive draft and verify a new GET."""
     expected_fields = {
@@ -1549,13 +1572,9 @@ def edit_imported_draft(driver, manager_link, product_id, expected_category_ids,
     state['current_substage'] = 'manager_edit_save_confirmation'
     expected_notice = f'상품 ID {product_id}를 비활성 상태로 저장했습니다.'
 
-    def save_confirmation(browser):
-        for alert in browser.find_elements(By.CSS_SELECTOR, '#content .alert-success'):
-            if alert.is_displayed() and alert.text.strip() == expected_notice:
-                return True
-        return False
-
-    assert WebDriverWait(driver, 45).until(save_confirmation)
+    assert WebDriverWait(driver, 45).until(
+        lambda browser: manager_save_confirmation(browser, expected_notice)
+    )
     state['last_completed_substage'] = 'manager_edit_save_confirmation'
 
     state['manager_link_diagnostics'] = safe_manager_link_diagnostics(manager_link)
