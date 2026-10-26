@@ -1,9 +1,10 @@
 # ORDENOWA 개발 현황
 
-## 현재 원격 코드 및 실행 상태 (2026-10-26 11:58 UTC)
+## 현재 원격 코드 및 실행 상태 (2026-10-26 12:05 UTC)
 
-- Latest verified code source is `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`; `work`/`origin/work` have later documentation-only checkpoints, and `main` remains `ee02a3657448d563508687614a246e05ac61eecd`. Existing untracked user files remain untouched.
+- Latest completed full-QA source is `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`; the PWA follow-up patch is in the current `work` update and awaits Actions runtime. `main` remains `ee02a3657448d563508687614a246e05ac61eecd`; existing untracked user files remain untouched.
 - QA-CI-002는 `acbdc5e`에서 shipping-admin 계약의 추출기 기대를 `rg`에서 workflow의 `grep`으로 맞춰 해결했다. 단계·안전 상세 추출 및 실패 판정은 보존됐고 관련 계약과 전체 run Step 9가 통과했다.
+- #40315517530 PWA failure 조사에서 mobile consent timeout은 hidden sidebar의 첫 번째 중복 hook을 기다린 browser test 문제로 확정했다. 검사는 visible root를 선택하도록 바뀌었다. Desktop JA/EN logout의 click interception은 원본 occluder가 아직 미확인이라 center-hit 진단을 남기고 스크롤 후 native click을 사용하도록 했다. 영향 PWA contract suite 118개 PASS; 새 전체 runtime Actions 결과 대기 중이며 이 패치를 완료로 기록하지 않는다.
 - PWA-002 합성 Web Push foundation은 `50d924f`에 있으며, 공급자 호출 없이 동의 UI·격리된 암호화 소유자별 저장·철회를 검증한다. 운영 송신과 동의 감사/보존 범위는 미완료다.
 - 선행 실행 [#40315042151](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315042151), source `eefb193`, Step 6 설치 순서 계약에서 `kuraneapush`를 포함한 실제 목록과 오래된 네 모듈 기대값이 달라 중단됐다. 후속 캡처/aggregate 실패는 브라우저가 실행되지 않아 생긴 파생 실패다.
 - [#40315327770](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315327770), source `19ceed3`, Step 9의 stale `rg` 문자열 때문에 preflight에서 중단됐다. 수정 후 [#40315517530](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530), source `acbdc5e`, Step 9와 preflight, image build, fresh install을 통과했다.

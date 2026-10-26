@@ -1,5 +1,12 @@
 # ORDENOWA 작업 기록
 
+## 2026-10-26 — PWA 계정 검사의 모바일 중복 훅과 로그아웃 클릭 보완
+
+- #40315517530 source `acbdc5e`의 실제 aggregate 실패는 `pwa_browser_qa=failure pwa_push_qa=skipped`였다. 모바일 JA/EN/KO는 `customer_push_consent` 대기, 데스크톱 JA/EN은 `click_signout`의 `ElementClickInterceptedException`에서 중단됐다. 원본 step의 초록 표시를 실제 outcome으로 사용하지 않았다.
+- 모바일 timeout의 원인은 템플릿 구조와 Selenium 조회의 조합이다. Hummingbird `page.tpl`은 좁은 화면에서 CSS로 숨겨지는 `.account-menu--sidebar`를 본문보다 먼저 렌더하고, account page와 sidebar 양쪽에 `displayCustomerAccount` hook을 호출한다. 이전 검사는 `visibility_of_element_located`로 첫 selector 결과만 기다려 숨겨진 push 복사본에서 timeout됐다. 검사를 모든 일치 요소 중 첫 표시 요소를 찾도록 바꾸고 숨김 복사본 회귀검사를 추가했다.
+- 데스크톱 logout은 기록된 `ElementClickInterceptedException` 이상으로 실제 가림 요소가 아직 확인되지 않았다. 링크를 화면 중앙으로 스크롤하고 허용된 center hit/occluder 분류를 수집한 뒤 기존 WebDriver native click을 사용한다. 실패 때 안전한 경로 진단과 캡처를 브라우저 종료 전에 보존한다. JavaScript click, timeout 확대, logout/cache assertion 완화는 없다.
+- 로컬 PWA lifecycle/logout/registration 회귀 suite 118개 PASS, `git diff --check` PASS. 다음 코드 push의 기존 fresh-install workflow 실행으로 mobile visible-hook 선택과 desktop click/runtime을 확인하며 그 전까지 PWA runtime은 미검증이다.
+
 ## 2026-10-26 — CI 사전 검사 수정 및 격리 전체 QA 결과
 
 - 시작 시 `work` HEAD `eefb19382beaeb08ac6d6f64199da3ae76a17e1f`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`. #40315042151 Step 6이 `kuraneapush`를 포함하지 않는 오래된 설치 순서 계약으로 실패했다. `tests/smoke/test_admin_folder_install_order.py`를 실제 모듈 설치 목록에 맞췄고 commit `19ceed329bdfd2cd47d06979ffca22598a9076d3`을 work에 푸시했다.

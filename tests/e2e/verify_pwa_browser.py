@@ -1474,6 +1474,23 @@ def _format_selected_signout(value: object) -> str:
     target = value.get("target")
     if isinstance(target, dict):
         formatted += f";target={_format_safe_target(target)}"
+    for key, label, allowed in (
+        ("target_displayed", "displayed", {True, False}),
+        ("target_enabled", "enabled", {True, False}),
+    ):
+        item = value.get(key)
+        if type(item) is bool and item in allowed:
+            formatted += f";{label}={str(item).lower()}"
+    hit_relation = value.get("center_hit_relation")
+    if isinstance(hit_relation, str) and hit_relation in {
+        "target", "descendant", "other", "missing", "unknown"
+    }:
+        formatted += f";center_hit={hit_relation}"
+    occluder = value.get("occluder_class")
+    if isinstance(occluder, str) and occluder in {
+        "none", "header", "account_sidebar", "mobile_nav", "modal", "other", "unknown"
+    }:
+        formatted += f";occluder={occluder}"
     return formatted
 
 
@@ -3110,6 +3127,71 @@ def safe_selected_signout_metadata(signout: object, shop_url: str) -> dict[str, 
     return {"container": container, "element_id": safe_id, "target": target}
 
 
+def safe_signout_center_metadata(
+    driver: webdriver.Chrome, signout: object
+) -> dict[str, object]:
+    """Classify the real signout click center without exposing page content or class names."""
+    metadata: dict[str, object] = {
+        "target_displayed": None,
+        "target_enabled": None,
+        "center_hit_relation": "unknown",
+        "occluder_class": "unknown",
+    }
+    try:
+        raw = driver.execute_script(
+            """
+        const element = arguments[0];
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        const displayed = style.display !== 'none' && style.visibility !== 'hidden'
+          && rect.width > 0 && rect.height > 0;
+        const enabled = !element.disabled && element.getAttribute('aria-disabled') !== 'true';
+        const hit = displayed
+          ? document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+          : null;
+        let relation = 'missing';
+        let occluder = 'unknown';
+        if (hit === element) {
+          relation = 'target';
+          occluder = 'none';
+        } else if (hit && element.contains(hit)) {
+          relation = 'descendant';
+          occluder = 'none';
+        } else if (hit) {
+          relation = 'other';
+          if (hit.closest('header, #header')) occluder = 'header';
+          else if (hit.closest('.account-menu--sidebar')) occluder = 'account_sidebar';
+          else if (hit.closest('.kuranea-mobile-nav, .mobile-nav')) occluder = 'mobile_nav';
+          else if (hit.closest('[role="dialog"], .modal')) occluder = 'modal';
+          else occluder = 'other';
+        }
+        return {displayed, enabled, relation, occluder};
+            """,
+            signout,
+        )
+    except Exception:
+        return metadata
+    if not isinstance(raw, dict):
+        return metadata
+    for source_key, target_key in (("displayed", "target_displayed"), ("enabled", "target_enabled")):
+        value = raw.get(source_key)
+        metadata[target_key] = value if type(value) is bool else None
+    relation = raw.get("relation")
+    metadata["center_hit_relation"] = (
+        relation
+        if isinstance(relation, str) and relation in {"target", "descendant", "other", "missing"}
+        else "unknown"
+    )
+    occluder = raw.get("occluder")
+    metadata["occluder_class"] = (
+        occluder
+        if isinstance(occluder, str)
+        and occluder in {"none", "header", "account_sidebar", "mobile_nav", "modal", "other"}
+        else "unknown"
+    )
+    return metadata
+
+
 def attach_logout_context(
     error: BaseException,
     *,
@@ -3186,7 +3268,27 @@ def verify_logout_protection(
         )
         raise error
     mark_stage("click_signout")
-    signout.click()
+    try:
+        driver.execute_script(
+            "arguments[0].scrollIntoView({behavior: 'instant', block: 'center', inline: 'nearest'});",
+            signout,
+        )
+        selected_signout.update(safe_signout_center_metadata(driver, signout))
+        click_native_when_unobstructed(driver, signout)
+    except Exception as error:
+        try:
+            driver.save_screenshot(str(screenshot))
+        except Exception:
+            pass
+        attach_logout_context(
+            error,
+            snapshot=safe_logout_wait_diagnostics(driver, shop_url),
+            selected_signout=selected_signout,
+            logout_trace=safe_document_navigation_trace([], signout_url, shop_url, signout_frame_id or ""),
+            protected_pwa_trace=safe_document_navigation_trace([], account_url, shop_url, ""),
+            protected_network_trace=safe_document_navigation_trace([], account_url, shop_url, ""),
+        )
+        raise
     mark_stage("wait_signed_out_header")
     WebDriverWait(driver, 30).until(
         lambda browser: not any(
@@ -3625,16 +3727,25 @@ def install_push_provider_guard(driver: webdriver.Chrome) -> None:
 def verify_push_account_control(driver: webdriver.Chrome, locale: str, *, blank_notice: bool) -> None:
     """Assert localized consent gating and zero implicit browser/provider calls."""
     expected_labels = {"ja": "通知", "en": "Browser notifications", "ko": "알림"}
-    control = wait_visible(driver, "[data-ordenowa-push]")
+    control = WebDriverWait(driver, 30).until(
+        lambda browser: next(
+            (
+                candidate
+                for candidate in browser.find_elements(By.CSS_SELECTOR, "[data-ordenowa-push]")
+                if candidate.is_displayed()
+            ),
+            False,
+        )
+    )
     metadata = driver.execute_script("""
-      const root = document.querySelector('[data-ordenowa-push]');
+      const root = arguments[0];
       const notice = root.querySelector('[data-push-notice]');
       const enable = root.querySelector('[data-push-enable]');
       return {text: root.textContent, locale: root.dataset.locale,
         blank: !notice || !notice.textContent.trim(),
         disabled: Boolean(enable) && enable.disabled,
         calls: window.__ordenowaPushCalls};
-    """)
+    """, control)
     if not isinstance(metadata, dict) or metadata.get("locale") != locale:
         raise AssertionError("push account control locale is missing or incorrect")
     if expected_labels[locale] not in str(metadata.get("text", "")):

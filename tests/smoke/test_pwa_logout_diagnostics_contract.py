@@ -9,6 +9,56 @@ from tests.e2e import verify_pwa_browser as pwa_browser
 
 
 class PwaLogoutDiagnosticsTests(unittest.TestCase):
+    def test_signout_uses_native_centered_click_and_preserves_safe_failure_evidence(self) -> None:
+        import inspect
+
+        logout_source = inspect.getsource(pwa_browser.verify_logout_protection)
+
+        self.assertIn("scrollIntoView", logout_source)
+        self.assertIn("click_native_when_unobstructed(driver, signout)", logout_source)
+        self.assertIn("safe_signout_center_metadata", logout_source)
+        self.assertIn("driver.save_screenshot(str(screenshot))", logout_source)
+        self.assertIn("attach_logout_context(", logout_source)
+
+    def test_signout_center_metadata_is_bounded_and_redacts_dom_details(self) -> None:
+        class Driver:
+            def execute_script(self, script: str, _element: object) -> dict[str, object]:
+                self.assertNotIn("textContent", script)
+                self.assertNotIn("innerHTML", script)
+                self.assertIn("elementFromPoint", script)
+                return {
+                    "displayed": True,
+                    "enabled": False,
+                    "relation": "other",
+                    "occluder": "customer-email-secret-class",
+                    "body": "customer-email-secret",
+                }
+
+            def assertNotIn(self, needle: str, haystack: str) -> None:
+                if needle in haystack:
+                    raise AssertionError("PWA click diagnostic script reads page content")
+
+            def assertIn(self, needle: str, haystack: str) -> None:
+                if needle not in haystack:
+                    raise AssertionError("PWA click diagnostic script omitted the hit test")
+
+        metadata = pwa_browser.safe_signout_center_metadata(Driver(), object())
+        self.assertEqual(
+            {
+                "target_displayed": True,
+                "target_enabled": False,
+                "center_hit_relation": "other",
+                "occluder_class": "unknown",
+            },
+            metadata,
+        )
+        diagnostic = pwa_browser.format_logout_wait_diagnostic({
+            "selected_signout": {"container": "account_menu", **metadata}
+        })
+        self.assertIn("center_hit=other", diagnostic)
+        self.assertIn("occluder=unknown", diagnostic)
+        self.assertNotIn("customer-email-secret", diagnostic)
+
     def test_logout_route_classifier_recognizes_japanese_and_korean_login_slugs(self) -> None:
         classifier = pwa_browser.customer_route_class
 
@@ -1082,7 +1132,14 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
             def find_element(self, by: str, selector: str) -> FakeBody:
                 return FakeBody()
 
-            def execute_script(self, _script: str) -> str:
+            def execute_script(self, script: str, *_args: object) -> object:
+                if "elementFromPoint" in script:
+                    return {
+                        "displayed": True,
+                        "enabled": True,
+                        "relation": "target",
+                        "occluder": "none",
+                    }
                 return "complete"
 
             def get_log(self, _name: str) -> list[dict[str, object]]:

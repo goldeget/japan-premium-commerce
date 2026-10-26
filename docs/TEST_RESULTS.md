@@ -1,14 +1,15 @@
 # ORDENOWA 테스트 결과
 
-## 현재 사전 검사와 실행 (2026-10-26 11:58 UTC)
+## 현재 사전 검사와 실행 (2026-10-26 12:05 UTC)
 
-- 검증 대상 code source `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`; later `work`/`origin/work` commits update QA documentation only. `main` remains `ee02a3657448d563508687614a246e05ac61eecd`.
+- Latest completed full-QA code source is `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`; the PWA follow-up patch in the current `work` update awaits Actions runtime. `main` remains `ee02a3657448d563508687614a246e05ac61eecd`.
 - `tests.smoke.test_admin_folder_install_order`와 PWA workflow contract를 포함한 좁은 검사 17개 PASS. Step 9 workflow에 수록된 checkout/Admin contract 147개를 `ORDENOWA_ADMIN_SECURITY_FOCUS=false`와 `true` 각각 실행해 모두 PASS. Cart/shipping/account/PWA/installer 영향 계약 86개 PASS, `git diff --check` PASS.
 - 격리 전체 실행 [#40315517530](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530)은 source `acbdc5e`에서 preflight, 이미지 빌드, 빈 볼륨 설치를 통과하고 completed **FAILURE**다. Actual aggregate 실패는 `pwa_browser_qa=failure pwa_push_qa=skipped`; Step 9는 성공했다. Desktop JA/EN logout click은 interception, mobile JA/EN/KO consent는 timeout이었고 desktop KO lifecycle은 통과했다.
 - 이전 run #40315042151은 obsolete module-list contract로 Step 6에서, #40315327770은 `rg`를 기대하는 stale shipping log contract로 Step 9에서 중단됐다. 두 run 모두 browser QA에 도달하지 않았다. 두 테스트 기대값을 각각 현재 installer/workflow와 일치시켰다.
 - Business-profile module workflow [#40315517831](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517831)은 SUCCESS다. 이는 격리 전체 QA나 브라우저 결과를 대신하지 않는다.
 
 - Browser artifact는 [12646464536](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530/artifacts/12646464536), diagnostics artifact는 [12647935305](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530/artifacts/12647935305)다. 전체 QA는 PASS가 아니며 provider-free push persistence는 skipped다.
+- 이 PWA failure follow-up에서 `test_pwa_service_worker`, `test_pwa_logout_diagnostics_contract`, `test_pwa_registration_diagnostics_contract` 118개를 로컬 실행해 PASS했다. 모바일 중복 hook 선택을 고정하는 회귀검사와 logout click 진단/redaction 계약을 포함한다. 새 코드 push로 시작되는 Actions가 브라우저 runtime의 판정 수단이며 현재는 아직 실행 전이다.
 
 ## 2026-10-26 — 카트/배송 진단과 PWA foundation의 로컬 검사 (Actions 대기)
 

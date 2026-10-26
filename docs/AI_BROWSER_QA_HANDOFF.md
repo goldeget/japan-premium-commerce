@@ -1,12 +1,13 @@
 # ORDENOWA AI Browser QA Handoff
 
-## Latest isolated browser evidence for independent review
+## Latest isolated browser evidence and pending PWA fix review
 
-- Tested code source SHA: `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`; current `work`/`origin/work` includes later documentation-only updates; `main` remains unchanged at `ee02a3657448d563508687614a246e05ac61eecd`.
+- Last completed full-QA source SHA: `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`; the current `work` update contains a PWA browser fix awaiting Actions runtime; `main` remains unchanged at `ee02a3657448d563508687614a246e05ac61eecd`.
 - Full isolated Actions [#40315517530](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530) completed **FAILURE**. It passed preflight, image build and fresh installation. The actual aggregate is `pwa_browser_qa=failure pwa_push_qa=skipped`. Desktop JA/EN logout native clicks were intercepted; mobile JA/EN/KO consent waits timed out; desktop KO lifecycle passed. Do not infer push persistence or a full QA pass.
 - QA-CI-002 is resolved in code commit `acbdc5e`: the contract now matches workflow's `grep` detail extraction. Step 9 passed in #40315517530. The original browser exit/outcome and sanitized stage/detail extraction remain enforced.
 - Browser artifact [12646464536](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530/artifacts/12646464536); diagnostics artifact [12647935305](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530/artifacts/12647935305). Independently inspect only screenshots relevant to the neutral Korean address helper and PWA failure if present. Capture visual conclusions separately from automation. The archive could not be downloaded in the Codex environment because the configured network policy denies its storage host; the artifact IDs are supplied for approved review.
 - Cart/mobile, account/address, catalog, category, carrier, checkout/order, backup and postal outcomes passed at this tested SHA. PWA lifecycle failure remains open; push persistence was skipped. Synthetic provider-free QA is not production delivery, and no real seller data, shipment, payment or device was used.
+- Pending patch: `verify_push_account_control` must select the visible `data-ordenowa-push` instance because the hidden mobile sidebar hook precedes the main account-page hook. The desktop signout click now scrolls and uses the existing center-checked native WebDriver click; safe center/occluder metadata and a pre-shutdown failure capture are added. Wait for the new source SHA/run/artifact before judging runtime; screenshot alone does not establish the click or logout state.
 
 ## 다음 코드 변경의 독립 브라우저/시각 검수
 

@@ -1272,6 +1272,70 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
             except FakeTimeout:
                 self.fail("mobile privacy label check timed out on the hidden sidebar duplicate")
 
+    def test_push_consent_check_skips_hidden_mobile_sidebar_duplicate(self) -> None:
+        class FakePushRoot:
+            def __init__(self, visible: bool) -> None:
+                self.visible = visible
+
+            def is_displayed(self) -> bool:
+                return self.visible
+
+        class FakeDriver:
+            def __init__(self) -> None:
+                self.roots = [FakePushRoot(False), FakePushRoot(True)]
+
+            def find_elements(self, by: str, selector: str) -> list[FakePushRoot]:
+                if by != "css selector" or selector != "[data-ordenowa-push]":
+                    raise AssertionError("push consent assertion requested an unexpected selector")
+                return self.roots
+
+            def find_element(self, by: str, selector: str) -> FakePushRoot:
+                return self.find_elements(by, selector)[0]
+
+            def execute_script(self, _script: str, root: FakePushRoot) -> dict[str, object]:
+                if not root.is_displayed():
+                    raise AssertionError("push consent assertions used a hidden hook copy")
+                return {
+                    "text": "通知",
+                    "locale": "ja",
+                    "blank": True,
+                    "disabled": True,
+                    "calls": {"permission": 0, "subscribe": 0},
+                }
+
+        class FakeTimeout(Exception):
+            pass
+
+        class ImmediateWait:
+            def __init__(self, driver: FakeDriver, _timeout: int) -> None:
+                self.driver = driver
+
+            def until(self, condition):
+                result = condition(self.driver)
+                if not result:
+                    raise FakeTimeout("visible push control timed out")
+                return result
+
+        def visible_first_element(locator):
+            by, selector = locator
+
+            def condition(driver):
+                element = driver.find_element(by, selector)
+                return element if element.is_displayed() else False
+
+            return condition
+
+        driver = FakeDriver()
+        with (
+            patch.object(pwa_browser, "WebDriverWait", ImmediateWait),
+            patch.object(pwa_browser, "By", SimpleNamespace(CSS_SELECTOR="css selector")),
+            patch.object(pwa_browser, "EC", SimpleNamespace(visibility_of_element_located=visible_first_element)),
+        ):
+            try:
+                pwa_browser.verify_push_account_control(driver, "ja", blank_notice=True)
+            except FakeTimeout:
+                self.fail("mobile push consent check timed out on the hidden sidebar duplicate")
+
     def test_account_route_comes_from_authenticated_header_and_all_links_check_full_origin(self) -> None:
         create_customer = function_source(self.source, "create_session_customer")
         account_link = function_source(self.source, "authenticated_account_url")
