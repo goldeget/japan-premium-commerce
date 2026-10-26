@@ -20,6 +20,7 @@ $project = (string) getenv('CI_COMPOSE_PROJECT_NAME');
 $orderIdText = (string) getenv('KURANEA_CI_ORDER_ID');
 $viewport = (string) getenv('KURANEA_CI_VIEWPORT');
 $orderReference = (string) getenv('KURANEA_CI_ORDER_REFERENCE');
+$productIdText = (string) getenv('KURANEA_CI_PRODUCT_ID');
 $expectation = (string) getenv('KURANEA_CI_TRANSFER_EXPECTATION');
 $expectedProject = sprintf('kuranea-ci-%s-%s', $runId, $attempt);
 ordenowaBankUnpaidRequire(
@@ -31,6 +32,7 @@ ordenowaBankUnpaidRequire(
         && $project === $expectedProject
         && getenv('KURANEA_CI_PROJECT_NAME') === $expectedProject
         && preg_match('/\A[1-9][0-9]{0,9}\z/D', $orderIdText) === 1
+        && preg_match('/\A[1-9][0-9]{0,9}\z/D', $productIdText) === 1
         && $viewport === 'bank'
         && preg_match('/\A[A-Z0-9]{8,16}\z/D', $orderReference) === 1
         && in_array($expectation, ['unissued', 'issued'], true),
@@ -50,6 +52,7 @@ ordenowaBankUnpaidRequire(
 
 $shopId = (int) Shop::getContextShopID();
 $orderId = (int) $orderIdText;
+$productId = (int) $productIdText;
 $order = new Order($orderId);
 $customer = Validate::isLoadedObject($order) ? new Customer((int) $order->id_customer) : false;
 $currency = Validate::isLoadedObject($order) ? new Currency((int) $order->id_currency) : false;
@@ -84,6 +87,20 @@ ordenowaBankUnpaidRequire(
 
 $prefix = _DB_PREFIX_;
 $database = Db::getInstance();
+$productLines = $database->executeS(
+    'SELECT `product_id`, `product_name`, `product_quantity`, `total_price_tax_incl` FROM `' . $prefix . 'order_detail`'
+    . ' WHERE `id_order` = ' . (int) $orderId . ' ORDER BY `id_order_detail`'
+);
+ordenowaBankUnpaidRequire(
+    is_array($productLines)
+        && count($productLines) === 1
+        && (int) $productLines[0]['product_id'] === $productId
+        && (int) $productLines[0]['product_quantity'] === 1
+        && is_string($productLines[0]['product_name'] ?? null)
+        && str_contains((string) $productLines[0]['product_name'], '[CI ONLY]')
+        && JpyAmount::normalizePositive((string) $productLines[0]['total_price_tax_incl']) !== null,
+    'The same isolated bank order must contain exactly its one run-scoped CI-only product line.'
+);
 ordenowaBankUnpaidRequire(
     $database->execute(DatabaseSchema::createBankTransferInstructionTableSql($prefix))
         && $database->execute(DatabaseSchema::createBankTransferReceiptLedgerTableSql($prefix)),
@@ -116,6 +133,10 @@ ordenowaBankUnpaidRequire(
 echo json_encode([
     'status' => 'success',
     'order_id' => $orderId,
+    'product_id' => $productId,
+    'product_name' => (string) $productLines[0]['product_name'],
+    'product_quantity' => (int) $productLines[0]['product_quantity'],
+    'product_total' => JpyAmount::normalizePositive((string) $productLines[0]['total_price_tax_incl']),
     'reference_match' => true,
     'owner_matches' => true,
     'amount' => $amount,

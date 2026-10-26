@@ -143,6 +143,14 @@ class BankTransferReceiptContractTests(unittest.TestCase):
         self.assertIn("function pSQL(string $value", fixture)
         self.assertIn("return addslashes($value)", fixture)
 
+    def test_installation_table_readback_does_not_duplicate_native_get_value_limit(self) -> None:
+        verifier = (ROOT / "tests/business_profile/verify_installation.php").read_text(encoding="utf-8")
+        query = verifier.split("$database->getValue(", 1)[1].split(") === $requiredTable", 1)[0]
+        self.assertIn("information_schema.TABLES", query)
+        self.assertIn("TABLE_NAME = '", query)
+        self.assertNotIn("LIMIT 1", query.upper())
+        self.assertIn(",\n            false", query)
+
 
 if __name__ == "__main__":
     unittest.main()

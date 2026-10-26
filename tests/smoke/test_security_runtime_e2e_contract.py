@@ -1027,11 +1027,13 @@ class SecurityRuntimeE2EContractTests(unittest.TestCase):
         fixture = FIXTURE.read_text(encoding="utf-8")
         self.assertIn("$employee->default_tab = (int) Tab::getIdFromClassName('AdminBusinessProfile');", fixture)
         access_setup = fixture.split("$access = new Access();", 1)[1].split("$employee = new Employee();", 1)[0]
-        self.assertIn("foreach (['AdminBusinessProfile', 'AdminDashboard', 'AdminOrders', 'AdminParentOrders', 'SELL', 'ShopParameters'] as $className)", access_setup)
+        self.assertIn("foreach (['AdminBusinessProfile', 'AdminBusinessProfileTransfers', 'AdminDashboard', 'AdminOrders', 'AdminParentOrders', 'SELL', 'ShopParameters'] as $className)", access_setup)
         self.assertIn("$access->updateLgcAccess((int) $profile->id, $tabId, 'view', true, false)", access_setup)
         for permission in ("'edit' => 'UPDATE'", "'add' => 'CREATE'", "'delete' => 'DELETE'"):
             self.assertIn(permission, access_setup)
         self.assertIn("$action === 'view' ? $granted : !$granted", access_setup)
+        self.assertIn("$transferAccess['view'] ?? '0') === '1'", access_setup)
+        self.assertIn("'The isolated view-only profile must read transfer orders without issue or confirmation rights.'", access_setup)
 
     def test_view_only_dashboard_access_is_read_back_and_opened_via_employee_default_tab(self):
         fixture = FIXTURE.read_text(encoding="utf-8")

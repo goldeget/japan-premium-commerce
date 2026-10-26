@@ -9,6 +9,7 @@ PREPARE = ROOT / "tests" / "business_profile" / "prepare_ci_bank_transfer_fixtur
 UNPAID_READBACK = ROOT / "tests" / "business_profile" / "verify_ci_bank_transfer_unpaid_order.php"
 PAID_READBACK = ROOT / "tests" / "business_profile" / "verify_ci_bank_transfer_persistence.php"
 LIMITED_ROUTE = ROOT / "tests" / "business_profile" / "resolve_ci_limited_transfer_route.php"
+SECURITY_FIXTURE = ROOT / "tests" / "business_profile" / "seed_security_fixtures.php"
 TRANSFER_CONTROLLER = ROOT / "modules" / "kuraneabusinessprofile" / "controllers" / "admin" / "AdminBusinessProfileTransfersController.php"
 
 
@@ -20,6 +21,7 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         cls.unpaid_readback = UNPAID_READBACK.read_text(encoding="utf-8") if UNPAID_READBACK.exists() else ""
         cls.paid_readback = PAID_READBACK.read_text(encoding="utf-8")
         cls.limited_route = LIMITED_ROUTE.read_text(encoding="utf-8") if LIMITED_ROUTE.exists() else ""
+        cls.security_fixture = SECURITY_FIXTURE.read_text(encoding="utf-8")
         cls.controller = TRANSFER_CONTROLLER.read_text(encoding="utf-8")
 
     def require(self, needle: str, haystack: str) -> None:
@@ -91,8 +93,33 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.assertIn("section.ordenowa-bank-transfer-instructions", self.browser)
         self.require("주문 입금 확인 권한이 없습니다.", self.controller)
         self.require("주문 입금 안내를 발급할 권한이 없습니다.", self.controller)
-        for expected in ("VIEW_ONLY_EMAIL", "Profile::getProfileAccesses", "AdminBusinessProfileTransfers", "view_denied", "issue_denied", "confirm_denied"):
+        for expected in ("VIEW_ONLY_EMAIL", "Profile::getProfileAccesses", "AdminBusinessProfileTransfers", "view_allowed", "issue_denied", "confirm_denied"):
             self.require(expected, self.limited_route)
+
+    def test_customer_instruction_is_bound_to_the_visible_native_order_product_line(self) -> None:
+        self.require("product_id", self.unpaid_readback)
+        self.require("product_name", self.unpaid_readback)
+        self.require("KURANEA_CI_PRODUCT_ID", self.unpaid_readback)
+        self.require("assert_customer_order_product", self.browser)
+        self.require('"order_product_line_match"', self.browser)
+        self.require("order_product_line_match", self.browser)
+        self.require("product_name", self.browser)
+        self.require("product_quantity", self.browser)
+
+    def test_native_view_only_transfer_employee_cannot_confirm_with_a_valid_token(self) -> None:
+        self.require("AdminBusinessProfileTransfers", self.security_fixture)
+        self.require("$transferAccess['view']", self.security_fixture)
+        self.require("$transferAccess['edit']", self.security_fixture)
+        self.require("$transferAccess['add']", self.security_fixture)
+        self.require("view_allowed", self.limited_route)
+        self.require("issue_denied", self.limited_route)
+        self.require("confirm_denied", self.limited_route)
+        self.require("view_only_confirmation_denied", self.browser)
+        self.require("confirmation form", self.browser)
+        self.require("주문 입금 확인 권한이 없습니다.", self.browser)
+        self.require('verify_unpaid_native_order(ctx, order, "issued")', self.browser)
+        self.require("canView($tabAccess)", self.controller)
+        self.require("AdminAccessPolicy::canConfirmBankTransferReceipt", self.controller)
 
     def test_replay_is_idempotent_and_native_order_payment_history_are_unique(self) -> None:
         self.require('"receipt_replay"', self.browser)

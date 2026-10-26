@@ -43,9 +43,9 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
         $tabAccess = (array) ($this->tabAccess ?? []);
         $canIssue = AdminAccessPolicy::canIssueBankTransferInstructions($tabAccess);
         $canConfirm = AdminAccessPolicy::canConfirmBankTransferReceipt($tabAccess);
-        if (!$canIssue && !$canConfirm) {
+        if (!AdminAccessPolicy::canView($tabAccess)) {
             http_response_code(403);
-            $this->content = '<div class="alert alert-danger">주문 입금 안내 또는 입금 확인 권한이 없습니다.</div>';
+            $this->content = '<div class="alert alert-danger">주문 입금 정보를 조회할 권한이 없습니다.</div>';
             $this->context->smarty->assign('content', $this->content);
 
             return;

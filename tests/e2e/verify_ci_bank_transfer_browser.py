@@ -22,7 +22,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 SAFE_STAGES = {
     "context", "admin_login", "transfer_menu", "instruction_issue", "instruction_readback",
-    "customer_login", "customer_order_readback", "foreign_customer_denial", "receipt_confirmation",
+    "customer_login", "customer_order_readback", "customer_order_product_line", "foreign_customer_denial", "receipt_confirmation",
     "csrf_rejected", "wrong_amount_rejected", "limited_staff_denial", "customer_paid_readback",
     "receipt_replay", "native_readback", "complete",
 }
@@ -34,8 +34,8 @@ SAFE_EXCEPTION_TYPES = {
 SAFE_RESULT_KEYS = {
     "status", "stage", "exception_type", "fixture_bound", "instruction_issued",
     "issue_left_order_unpaid", "instruction_immutable", "customer_instruction_visible",
-    "order_identity_match", "amount_match", "account_match", "foreign_customer_denied",
-    "limited_staff_denied", "issue_csrf_rejected", "csrf_rejected", "wrong_amount_rejected", "receipt_confirmed",
+    "order_identity_match", "order_product_line_match", "amount_match", "account_match", "foreign_customer_denied",
+    "limited_staff_denied", "view_only_confirmation_denied", "issue_csrf_rejected", "csrf_rejected", "wrong_amount_rejected", "receipt_confirmed",
     "idempotent_replay", "customer_paid_state_changed", "instruction_hidden_after_payment",
     "native_readback",
 }
@@ -83,16 +83,22 @@ def load_order(artifact_dir: Path, viewport: str, run_id: str, attempt: str) -> 
     if (browser_order.get("viewport") != viewport
             or type(order_id) is not int or order_id < 1
             or browser_order.get("email") != expected_email
+            or type(browser_order.get("product_id")) is not int or browser_order["product_id"] < 1
             or not isinstance(reference, str) or re.fullmatch(r"[A-Z0-9]{8,16}", reference) is None
             or verified_order.get("order_id") != order_id
             or verified_order.get("reference") != reference
             or verified_order.get("email") != expected_email
+            or verified_order.get("product_id") != browser_order["product_id"]
+            or verified_order.get("product_quantity") != 1
             or verified_order.get("payment_module") != "ps_checkpayment"
             or verified_order.get("currency") != "JPY"
             or verified_order.get("total_paid_real") != 0
             or verified_order.get("state_iso_code") != "JP-13"):
         raise ValueError("the run-scoped unpaid JPY bank-transfer order fixture is missing or invalid")
-    return {"order_id": order_id, "reference": reference, "email": expected_email, "viewport": viewport}
+    return {
+        "order_id": order_id, "reference": reference, "email": expected_email,
+        "product_id": browser_order["product_id"], "viewport": viewport,
+    }
 
 
 def load_context() -> dict[str, object]:
@@ -226,17 +232,25 @@ def verify_unpaid_native_order(ctx: dict[str, object], order: dict[str, object],
         {
             "KURANEA_CI_ORDER_ID": str(order["order_id"]),
             "KURANEA_CI_ORDER_REFERENCE": str(order["reference"]),
+            "KURANEA_CI_PRODUCT_ID": str(order["product_id"]),
             "KURANEA_CI_VIEWPORT": str(order["viewport"]),
             "KURANEA_CI_TRANSFER_EXPECTATION": expectation,
         },
     )
     expected_keys = {
-        "status", "order_id", "reference_match", "owner_matches", "amount", "unpaid",
+        "status", "order_id", "product_id", "product_name", "product_quantity", "product_total",
+        "reference_match", "owner_matches", "amount", "unpaid",
         "currency_jpy", "offline_method", "instruction_count", "receipt_count", "payment_count",
     }
     expected_instruction_count = 1 if expectation == "issued" else 0
     if (set(payload) != expected_keys or payload.get("status") != "success"
             or payload.get("order_id") != order["order_id"]
+            or payload.get("product_id") != order["product_id"]
+            or not isinstance(payload.get("product_name"), str)
+            or "[CI ONLY]" not in payload["product_name"]
+            or payload.get("product_quantity") != 1
+            or not isinstance(payload.get("product_total"), str)
+            or re.fullmatch(r"[1-9][0-9]{0,13}", payload["product_total"]) is None
             or any(payload.get(key) is not True for key in (
                 "reference_match", "owner_matches", "unpaid", "currency_jpy", "offline_method",
             ))
@@ -247,9 +261,16 @@ def verify_unpaid_native_order(ctx: dict[str, object], order: dict[str, object],
             or payload.get("payment_count") != 0):
         raise RuntimeError("the same isolated order did not retain its expected unpaid transfer state")
     order["amount"] = payload["amount"]
+    order["product_name"] = payload["product_name"]
+    order["product_quantity"] = payload["product_quantity"]
+    order["product_total"] = payload["product_total"]
     if expectation == "unissued":
         artifact = {
             "order_id": payload["order_id"],
+            "product_id": payload["product_id"],
+            "product_name": payload["product_name"],
+            "product_quantity": payload["product_quantity"],
+            "product_total": payload["product_total"],
             "unpaid": True,
             "currency_jpy": True,
             "offline_method": True,
@@ -269,9 +290,9 @@ def limited_transfer_route(ctx: dict[str, object]) -> tuple[str, str]:
         "/tmp/resolve_ci_limited_transfer_route.php",
         {"VIEW_ONLY_EMAIL": str(ctx["view_email"])},
     )
-    if (set(payload) != {"status", "route", "employee_found", "view_denied", "issue_denied", "confirm_denied"}
+    if (set(payload) != {"status", "route", "employee_found", "view_allowed", "issue_denied", "confirm_denied"}
             or payload.get("status") != "success"
-            or any(payload.get(key) is not True for key in ("employee_found", "view_denied", "issue_denied", "confirm_denied"))
+            or any(payload.get(key) is not True for key in ("employee_found", "view_allowed", "issue_denied", "confirm_denied"))
             or not isinstance(payload.get("route"), str)):
         raise RuntimeError("the isolated limited employee permission fixture was not read back safely")
     internal = urlparse("http://localhost:18080" + str(payload["route"]))
@@ -492,6 +513,25 @@ def assert_customer_instruction(driver: webdriver.Chrome, order: dict[str, objec
         raise AssertionError("the displayed transfer amount did not match the native order total")
 
 
+def assert_customer_order_product(driver: webdriver.Chrome, order: dict[str, object]) -> None:
+    rows = driver.find_elements(By.CSS_SELECTOR, ".order-products .grid-table__inner:first-child .grid-table__row")
+    product_rows = [row for row in rows if row.find_elements(By.CSS_SELECTOR, "a.order-product__name")]
+    if len(product_rows) != 1:
+        raise AssertionError("the same customer order detail did not show exactly one native product line")
+
+    row = product_rows[0]
+    names = row.find_elements(By.CSS_SELECTOR, "a.order-product__name")
+    quantities = row.find_elements(By.CSS_SELECTOR, ".grid-table__cell--center")
+    totals = row.find_elements(By.CSS_SELECTOR, ".grid-table__cell--right")
+    if (len(names) != 1
+            or " ".join(names[0].text.split()) != order.get("product_name")
+            or len(quantities) < 1
+            or quantities[0].text.strip() != str(order.get("product_quantity"))
+            or len(totals) != 1
+            or not displayed_jpy_amount_matches(totals[0].text, str(order.get("product_total")))):
+        raise AssertionError("the visible customer product line did not match the same native order readback")
+
+
 def verify_native_readback(ctx: dict[str, object], order: dict[str, object]) -> dict[str, object]:
     source_path = Path(__file__).resolve().parents[1] / "business_profile" / "verify_ci_bank_transfer_persistence.php"
     payload = docker_php_json(
@@ -560,8 +600,8 @@ def run() -> None:
         "status": "failure", "stage": stage, "exception_type": None,
         "fixture_bound": False, "instruction_issued": False, "issue_left_order_unpaid": False,
         "instruction_immutable": False, "customer_instruction_visible": False,
-        "order_identity_match": False, "amount_match": False, "account_match": False,
-        "foreign_customer_denied": False, "limited_staff_denied": False,
+        "order_identity_match": False, "order_product_line_match": False, "amount_match": False, "account_match": False,
+        "foreign_customer_denied": False, "limited_staff_denied": False, "view_only_confirmation_denied": False,
         "issue_csrf_rejected": False, "csrf_rejected": False, "wrong_amount_rejected": False, "receipt_confirmed": False,
         "idempotent_replay": False, "customer_paid_state_changed": False,
         "instruction_hidden_after_payment": False, "native_readback": False,
@@ -632,6 +672,10 @@ def run() -> None:
         stage = result["stage"] = "customer_order_readback"
         before_url = customer_order_detail(customer, ctx, order)
         mobile_detail_url = before_url
+        stage = result["stage"] = "customer_order_product_line"
+        assert_customer_order_product(customer, order)
+        result["order_product_line_match"] = True
+        stage = result["stage"] = "customer_order_readback"
         section = customer.find_element(By.CSS_SELECTOR, "section.ordenowa-bank-transfer-instructions")
         assert_customer_instruction(customer, order, account_number)
         status_before = " ".join(customer.find_element(By.CSS_SELECTOR, ".order-status__table").text.split())
@@ -659,11 +703,12 @@ def run() -> None:
         stage = result["stage"] = "limited_staff_denial"
         limited = new_driver(1440, 960)
         admin_login(limited, ctx, str(ctx["view_email"]))
-        if any(" ".join((link.text or "").split()) == "주문 입금 안내" for link in limited.find_elements(By.CSS_SELECTOR, "a[href]")):
-            raise AssertionError("the view-only employee received a bank-transfer menu link")
         limited_url, limited_token = limited_transfer_route(ctx)
         visit(limited, limited_url, str(ctx["shop"]))
-        assert_restricted_denial(limited, limited.find_element(By.TAG_NAME, "body").text)
+        limited_row = order_row(limited, order)
+        if (limited_row.find_elements(By.CSS_SELECTOR, 'button[name="submitOrdenowaIssueTransfer"]')
+                or limited_row.find_elements(By.CSS_SELECTOR, 'button[name="submitOrdenowaConfirmBankTransfer"]')):
+            raise AssertionError("the native view-only employee received a transfer mutation control")
         for submit_name, fields in (
             ("submitOrdenowaIssueTransfer", {"id_order": str(order["order_id"])}),
             ("submitOrdenowaConfirmBankTransfer", {
@@ -674,7 +719,12 @@ def run() -> None:
             body = submit_hidden_admin_post(
                 limited, limited_url, limited_token, {**fields, submit_name: "1"}, str(ctx["admin"])
             )
-            assert_restricted_denial(limited, body)
+            if submit_name == "submitOrdenowaConfirmBankTransfer":
+                if "주문 입금 확인 권한이 없습니다." not in body:
+                    raise AssertionError("a view-only employee's valid-token receipt confirmation was not denied explicitly")
+                result["view_only_confirmation_denied"] = True
+            elif "주문 입금 안내를 발급할 권한이 없습니다." not in body:
+                raise AssertionError("a view-only employee's valid-token instruction issue was not denied explicitly")
             verify_unpaid_native_order(ctx, order, "issued")
         result["limited_staff_denied"] = True
         limited.save_screenshot(str(Path(ctx["artifact_dir"]) / "bank-transfer-limited-denied-desktop.png"))

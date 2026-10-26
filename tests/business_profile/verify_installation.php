@@ -37,9 +37,11 @@ foreach ([
     _DB_PREFIX_ . 'kuraneabusinessprofile_bank_transfer_receipt',
 ] as $requiredTable) {
     verifyBusinessProfile(
+        // PrestaShop 9.2 Db::getValue() appends LIMIT 1 through getRow().
         (string) $database->getValue(
             "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '"
-            . pSQL($requiredTable) . "' LIMIT 1"
+            . pSQL($requiredTable) . "'",
+            false
         ) === $requiredTable,
         'The order-bound transfer instruction and separate receipt ledger table must exist: ' . basename($requiredTable)
     );

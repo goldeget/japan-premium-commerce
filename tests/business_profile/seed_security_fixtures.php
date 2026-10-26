@@ -78,7 +78,7 @@ try {
     securityFixtureRequire((bool) $profile->add(), 'The isolated view-only profile could not be created.');
 
     $access = new Access();
-    foreach (['AdminBusinessProfile', 'AdminDashboard', 'AdminOrders', 'AdminParentOrders', 'SELL', 'ShopParameters'] as $className) {
+    foreach (['AdminBusinessProfile', 'AdminBusinessProfileTransfers', 'AdminDashboard', 'AdminOrders', 'AdminParentOrders', 'SELL', 'ShopParameters'] as $className) {
         $tabId = (int) Tab::getIdFromClassName($className);
         securityFixtureRequire($tabId > 0, 'A required isolated Back Office tab is missing.');
         securityFixtureRequire(
@@ -159,6 +159,16 @@ try {
     securityFixtureRequire(
         ($profileAccesses[$sellTabId]['view'] ?? '0') === '1',
         'The isolated view-only profile does not expose Sell in native tab navigation.'
+    );
+    $transferTabId = (int) Tab::getIdFromClassName('AdminBusinessProfileTransfers');
+    $transferAccess = $profileAccesses[$transferTabId] ?? [];
+    securityFixtureRequire(
+        $transferTabId > 0
+            && ($transferAccess['view'] ?? '0') === '1'
+            && ($transferAccess['add'] ?? '0') !== '1'
+            && ($transferAccess['edit'] ?? '0') !== '1'
+            && ($transferAccess['delete'] ?? '0') !== '1',
+        'The isolated view-only profile must read transfer orders without issue or confirmation rights.'
     );
 
     $employee = new Employee();

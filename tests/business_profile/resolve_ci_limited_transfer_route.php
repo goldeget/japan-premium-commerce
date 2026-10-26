@@ -42,8 +42,8 @@ $canView = ($tabAccess['view'] ?? '0') === '1';
 $canIssue = ($tabAccess['add'] ?? '0') === '1';
 $canConfirm = ($tabAccess['edit'] ?? '0') === '1';
 ordenowaLimitedRouteRequire(
-    !$canView && !$canIssue && !$canConfirm,
-    'The run-scoped view-only employee unexpectedly has bank-transfer access.'
+    $canView && !$canIssue && !$canConfirm,
+    'The run-scoped transfer employee must have read-only, not issue or confirmation, permission.'
 );
 
 Context::getContext()->employee = $employee;
@@ -68,7 +68,7 @@ echo json_encode([
     'status' => 'success',
     'route' => $path . '?' . (string) $parts['query'],
     'employee_found' => true,
-    'view_denied' => true,
+    'view_allowed' => true,
     'issue_denied' => true,
     'confirm_denied' => true,
 ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) . PHP_EOL;
