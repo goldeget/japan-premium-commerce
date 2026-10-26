@@ -532,6 +532,13 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertTrue(path.is_file(), "missing module-owned Admin.Navigation.Header overlay")
         self.assertEqual("내 쇼핑몰 보기", translations(path).get("View my store"))
 
+    def test_admin_navigation_header_welcome_preserves_employee_name_placeholder(self) -> None:
+        path = MODULE / "translations" / "ko-KR" / "AdminNavigationHeader.ko-KR.xlf"
+        source = "Welcome back %name%"
+        target = translations(path).get(source)
+        self.assertEqual("%name%님, 환영합니다", target)
+        self.assertEqual(re.findall(r"%[^%]+%", source), re.findall(r"%[^%]+%", target))
+
     def test_psgdpr_overlay_translates_the_observed_admin_gaps(self) -> None:
         path = MODULE / "translations" / "ko-KR" / "messages.ko-KR.xlf"
         self.assertTrue(path.is_file(), "missing module-owned psgdpr fallback overlay")

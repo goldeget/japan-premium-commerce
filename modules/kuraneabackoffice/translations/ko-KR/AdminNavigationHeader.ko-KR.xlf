@@ -7,6 +7,11 @@
         <target state="final">내 쇼핑몰 보기</target>
         <note>PrestaShop 9.2 Back Office multistore header action.</note>
       </trans-unit>
+      <trans-unit id="kuranea-welcome-back-employee" approved="yes">
+        <source>Welcome back %name%</source>
+        <target state="final">%name%님, 환영합니다</target>
+        <note>PrestaShop 9.2 Back Office navigation header greeting.</note>
+      </trans-unit>
     </body>
   </file>
 </xliff>
