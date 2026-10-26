@@ -1,5 +1,15 @@
 # ORDENOWA 테스트 결과
 
+## 현재 사전 검사와 실행 (2026-10-26 11:35 UTC)
+
+- 검증 대상 source `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`; `work` 및 원격 SHA가 일치하고 `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지된다.
+- `tests.smoke.test_admin_folder_install_order`와 PWA workflow contract를 포함한 좁은 검사 17개 PASS. Step 9 workflow에 수록된 checkout/Admin contract 147개를 `ORDENOWA_ADMIN_SECURITY_FOCUS=false`와 `true` 각각 실행해 모두 PASS. Cart/shipping/account/PWA/installer 영향 계약 86개 PASS, `git diff --check` PASS.
+- 격리 전체 실행 [#40315517530](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530)은 source `acbdc5e`에서 사전 검사, 이미지 빌드, 빈 볼륨 설치를 통과했다. 11:35 UTC 현재 ORDENOWA brand upload/publish Chromium 단계 진행 중이며 cart/carrier/PWA/outcome/aggregate는 미확인이다.
+- 이전 run #40315042151은 obsolete module-list contract로 Step 6에서, #40315327770은 `rg`를 기대하는 stale shipping log contract로 Step 9에서 중단됐다. 두 run 모두 browser QA에 도달하지 않았다. 두 테스트 기대값을 각각 현재 installer/workflow와 일치시켰다.
+- Business-profile module workflow [#40315517831](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517831)은 SUCCESS다. 이는 격리 전체 QA나 브라우저 결과를 대신하지 않는다.
+
+이번 실행이 종료되기 전에는 cart/carrier 수정, PWA-002, 주소 중립 문구를 runtime PASS로 기록하지 않는다. 완료 artifact는 실제 목록과 source SHA를 대조한 뒤 별도로 기록한다.
+
 ## 2026-10-26 — 카트/배송 진단과 PWA foundation의 로컬 검사 (Actions 대기)
 
 - 로컬 `work` code SHA `50d924fdf6923a551c49c0cee65fb5b428765bb1`; 원격 `origin/work`는 push 전 `a890c83f04b81240b07a338f9ed734f0a25caf78`. `main`은 변경하지 않았다. 변경은 `ec7ef6b` 카트/배송/한국어 주소 문구 보완과 `50d924f` PWA synthetic foundation 두 commit으로 분리됐다. 아직 새 Docker/DB/Chromium Actions runtime은 없다.

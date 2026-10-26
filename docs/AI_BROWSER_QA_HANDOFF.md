@@ -1,5 +1,13 @@
 # ORDENOWA AI Browser QA Handoff
 
+## Current source awaiting independent review
+
+- Tested `work` source SHA: `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`; `main` unchanged at `ee02a3657448d563508687614a246e05ac61eecd`.
+- Full isolated Actions [#40315517530](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530) is still in progress as of 2026-10-26 11:35 UTC. It passed preflight/image build/empty-volume install and reached “Verify official ORDENOWA brand upload and publish in Chromium”; do not inspect it as a completed result. Refresh the run for actual outcome and artifacts before review.
+- Preceding #40315042151 and #40315327770 failed in preflight only (stale installed-module expectation; stale `rg` assertion after workflow moved to `grep`). They have no browser result. The fixes are commits `19ceed329bdfd2cd47d06979ffca22598a9076d3` and `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`.
+- Once #40315517530 finishes, independently inspect only new artifact files relevant to: `mobile-customer-address-edit-form.png` (neutral Korean helper), successful mobile cart product/option/quantity/cart evidence or failure diagnostic, carrier admin saved-state capture/diagnostic if present, and `pwa-*-push-consent.png`, owner screenshots and `pwa-push-e2e.log` if present. Record actual names, viewport and tested source SHA. A screenshot alone does not prove native click, persistence, or DB readback; use the actual browser log and aggregate too.
+- Keep outcomes separate: cart/mobile, carrier configure, PWA lifecycle/private cache, synthetic push persistence, account/address, and final aggregate. Any skipped step is not PASS. Synthetic provider-free push is not production delivery; no real seller data, shipment, payment or device is in this run.
+
 ## 다음 코드 변경의 독립 브라우저/시각 검수
 
 - Local code source SHA before push: `50d924fdf6923a551c49c0cee65fb5b428765bb1`; remote `origin/work` was still `a890c83f04b81240b07a338f9ed734f0a25caf78` at handoff update. `main` remains `ee02a3657448d563508687614a246e05ac61eecd`. Check the push-triggered Actions run and use its actual source SHA/artifact; no new run or artifact exists yet.

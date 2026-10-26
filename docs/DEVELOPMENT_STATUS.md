@@ -1,6 +1,18 @@
 # ORDENOWA 개발 현황
 
-## 최신 QA 결과와 로컬 수정 (2026-10-26)
+## 현재 원격 코드 및 실행 상태 (2026-10-26 11:35 UTC)
+
+- `work` local HEAD와 확인된 `origin/work`는 `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 보존했다. 미추적 사용자 파일은 그대로 두고 커밋하지 않았다.
+- 전체 QA [#40310232196](https://github.com/goldeget/japan-premium-commerce/actions/runs/40310232196)의 실제 실패는 mobile cart readiness와 carrier admin 설정 두 항목이다. `ec7ef6b`는 cart readiness 조사 중 stale element만 다시 읽도록 했고 carrier saved-readback에 안전한 단계 진단을 추가했다. 해당 runtime 수정은 아직 새 전체 실행에서 확인 전이다.
+- PWA-002 합성 Web Push foundation은 `50d924f`에 있으며, 공급자 호출 없이 동의 UI·격리된 암호화 소유자별 저장·철회를 검증한다. 운영 송신과 동의 감사/보존 범위는 미완료다.
+- 선행 실행 [#40315042151](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315042151), source `eefb193`, Step 6 설치 순서 계약에서 `kuraneapush`를 포함한 실제 목록과 오래된 네 모듈 기대값이 달라 중단됐다. 후속 캡처/aggregate 실패는 브라우저가 실행되지 않아 생긴 파생 실패다.
+- [#40315327770](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315327770), source `19ceed3`, Step 9는 workflow의 `grep` 변경 뒤에도 `rg` 추출 문자열을 요구한 shipping-admin contract에서 중단됐다. browser/install 검증은 실행되지 않았고 artifact는 진단용뿐이다. `QA-CI-001/002` 두 하네스 계약 불일치를 각각 수정했다.
+- 현재 격리 전체 실행 [#40315517530](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530), source `acbdc5e`, 모든 사전 검사·이미지 빌드·빈 볼륨 설치를 통과했고 11:35 UTC에는 **ORDENOWA brand upload/publish Chromium** 단계였다. 카트, carrier, 주소 중립 문구, PWA browser/API 및 최종 aggregate는 실행 완료 전이다. 실행 중인 상태를 PASS로 기록하지 않는다.
+- 최신 독립 확인 [#40315517831](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517831) business-profile module tests는 SUCCESS다. 이는 전체 fresh-install QA 성공을 뜻하지 않는다.
+
+아래의 기존 `최신 QA 결과와 로컬 수정` 절은 위 코드 push 이전의 작업 이력을 보존한다. 그 안의 HEAD·원격 SHA 및 “새 실행 없음” 표현은 이 checkpoint 이후 현재 상태를 설명하지 않는다.
+
+## 이전 QA 및 로컬 수정 기록 (2026-10-26)
 
 현재 로컬 `work`는 `50d924fdf6923a551c49c0cee65fb5b428765bb1`; `origin/work`는 아직 `a890c83f04b81240b07a338f9ed734f0a25caf78`이다. 두 로컬 commit `ec7ef6b`와 `50d924f`는 미푸시이며, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다. 새 Actions 실행은 없다. 마지막 전체 격리 QA [#40310232196](https://github.com/goldeget/japan-premium-commerce/actions/runs/40310232196)은 source `a890c83`에서 **FAILURE**로 끝났다. 실제 aggregate 실패는 `cart_controls_browser_qa=failure`와 `shipping_free_admin_configure=failure`; 주소 계정 outcome은 `success`다. 첫 실패는 모바일 `product_add_add_button_wait`의 `StaleElementReferenceException`, 둘째는 `verify_admin_saved_carrier`의 `TimeoutException`이다. 해당 후속 shipping 단계는 dependency 때문에 skipped다. 이 실행은 전체 QA PASS가 아니다.
 

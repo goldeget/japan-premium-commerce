@@ -1,5 +1,13 @@
 # ORDENOWA 작업 기록
 
+## 2026-10-26 — CI 사전 검사 수정 및 격리 전체 QA 진행
+
+- 시작 시 `work` HEAD `eefb19382beaeb08ac6d6f64199da3ae76a17e1f`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`. #40315042151 Step 6이 `kuraneapush`를 포함하지 않는 오래된 설치 순서 계약으로 실패했다. `tests/smoke/test_admin_folder_install_order.py`를 실제 모듈 설치 목록에 맞췄고 commit `19ceed329bdfd2cd47d06979ffca22598a9076d3`을 work에 푸시했다.
+- #40315327770 Step 9는 `test_shipping_admin_links_contract.py`가 workflow가 이미 바꾼 `grep` 대신 `rg` 문자열을 기대해 실패했다. 안전한 stage/detail 검사와 원래 browser outcome을 보존하면서 기대 문자열만 고치고 commit `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`를 푸시했다. 이 두 run은 browser/install UI 검증을 수행하지 않았다.
+- 좁은 suite 17개, Step 9 exact suite는 focus false/true 각각 147개, cart/shipping/account/PWA 영향 suite 86개 PASS. 전체/브라우저 검증으로 계산하지 않는다.
+- source `acbdc5e`의 새 전체 실행 [#40315517530](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530)은 preflight와 image build, empty-volume bootstrap을 통과했다. 11:35 UTC 현재 brand upload/publish Chromium 단계 진행 중. 결과와 artifact는 실행 종료 후 기록한다.
+- `main`은 수정하지 않았고 사용자 미추적 파일·작업 plan/spec·pycache도 stage하거나 삭제하지 않았다. 여전히 확인할 범위: mobile cart native add→cart readback, carrier saved-state exact stage, address neutral helper fresh image, PWA synthetic runtime and aggregate.
+
 ## 2026-10-26 — cart/carrier 검증 보완 및 PWA foundation checkpoint
 
 - 시작 원격 `work` SHA `a890c83f04b81240b07a338f9ed734f0a25caf78`, `main` `ee02a3657448d563508687614a246e05ac61eecd`; 원격 조회에서 진행 중 Actions는 없었다. 로컬 `work`에는 먼저 문서 checkpoint `fa2574e`, 이어 두 변경 commit `ec7ef6b`와 `50d924f`가 있다. 아직 push하지 않았고 사용자 미추적 파일은 stage하지 않았다.
