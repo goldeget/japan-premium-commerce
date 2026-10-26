@@ -20,19 +20,45 @@ from urllib.request import Request, urlopen
 EXPECTED_SHOP_PORT = 18080
 EXPECTED_MAILPIT_PORT = 8025
 FIXTURE_MARKER = "ORDENOWA_ADMIN_RECOVERY_FIXTURE="
+# Verified against PrestaShop tag 9.2.0, commit 84db6bd3a3c1612535b15b9df934afd609085423:
+# EmployeePasswordResetter::doSendResetEmail uses password_query and Emails.Subject.
+# classic/modern/core/password_query.html.twig use these Emails.Body sources.
+# This detects missing Korean content/fallbacks; it does not prescribe pack wording.
+RESET_EMAIL_ENGLISH_FALLBACKS = (
+    "Password Query",
+    "Password reset request for",
+    "You have requested to reset your",
+    "Please note that this will change your current password.",
+    "To confirm this action, please use the following link:",
+    "In order to confirm this action, click on the following link:",
+    "If you did not make this request, just ignore this email.",
+)
+RESET_EMAIL_SUBJECT_ENGLISH_FALLBACKS = ("Password Query", "Your new password")
 
 
 class ResetLinks(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.hrefs: list[str] = []
+        self.text_fragments: list[str] = []
+        self.hidden_depth = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() in {"head", "style", "script"}:
+            self.hidden_depth += 1
         if tag.lower() != "a":
             return
         attributes = {name.lower(): value or "" for name, value in attrs}
         if attributes.get("href"):
             self.hrefs.append(attributes["href"])
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in {"head", "style", "script"}:
+            self.hidden_depth = max(0, self.hidden_depth - 1)
+
+    def handle_data(self, data: str) -> None:
+        if not self.hidden_depth:
+            self.text_fragments.append(data)
 
 
 def validate_loopback_endpoint(value: str, expected_port: int, label: str) -> tuple[str, str, int]:
@@ -204,22 +230,44 @@ def reset_url_from_mailpit_message(
         return None
     parser = ResetLinks()
     html = message.get("HTML")
-    if isinstance(html, str):
-        parser.feed(html)
-    candidates = list(parser.hrefs)
     text_body = message.get("Text")
-    if isinstance(text_body, str):
-        candidates.extend(re.findall(r"https?://[^\s<>\"']+", text_body))
-    for candidate in candidates:
-        candidate = candidate.strip().rstrip(".,);]")
-        try:
-            parsed = urlparse(urljoin(admin_login_url.rstrip("/") + "/", candidate))
-        except ValueError:
-            continue
-        if "/reset-password/" not in unquote(parsed.path):
-            continue
-        return validate_employee_reset_url(candidate, admin_login_url)
-    return None
+    subject = message.get("Subject")
+    if any(not isinstance(part, str) or not part.strip() for part in (html, text_body, subject)):
+        raise ValueError("employee reset email requires subject and both body parts")
+    parser.feed(html)
+    # Mail::Send may prepend [shop_name]; a Korean shop name alone is not a Korean subject.
+    subject_content = re.sub(r"^\s*\[[^\]]*\]\s*", "", subject)
+    if not re.search(r"[가-힣]", subject_content) or any(
+        fallback.casefold() in subject_content.casefold()
+        for fallback in RESET_EMAIL_SUBJECT_ENGLISH_FALLBACKS
+    ):
+        raise ValueError("employee reset email subject lacks Korean localization")
+    for body in (" ".join(parser.text_fragments), text_body):
+        visible = re.sub(r"https?://[^\s<>]+", "", body)
+        normalized = " ".join(visible.split()).casefold()
+        if not re.search(r"[가-힣]", visible) or any(
+            source.casefold() in normalized for source in RESET_EMAIL_ENGLISH_FALLBACKS
+        ):
+            raise ValueError("employee reset email body lacks Korean localization")
+
+    parts = []
+    for candidates in (parser.hrefs, re.findall(r"https?://[^\s<>\"']+", text_body)):
+        urls = set()
+        for candidate in candidates:
+            candidate = candidate.strip().rstrip(".,);]")
+            try:
+                parsed = urlparse(urljoin(admin_login_url.rstrip("/") + "/", candidate))
+            except ValueError:
+                continue
+            if "/reset-password/" not in unquote(parsed.path):
+                continue
+            urls.add(validate_employee_reset_url(candidate, admin_login_url))
+        if len(urls) != 1:
+            raise ValueError("employee reset email part requires one native recovery destination")
+        parts.append(urls)
+    if parts[0] != parts[1]:
+        raise ValueError("employee reset email body parts identify different recovery destinations")
+    return next(iter(parts[0]))
 
 
 def request_json(url: str) -> dict[str, object]:

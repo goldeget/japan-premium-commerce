@@ -447,8 +447,9 @@ class AdminPasswordResetContractTests(unittest.TestCase):
         reset_url = "http://localhost:18080/admin-kuranea/index.php/reset-password/" + ("a" * 40)
         message = {
             "To": [{"Address": email, "Name": ""}],
-            "HTML": f'<a href="{reset_url}">Reset password</a>',
-            "Text": "",
+            "Subject": "[Synthetic shop] 합성 한국어 제목",
+            "HTML": f'<p>합성 한국어 본문</p><a href="{reset_url}">합성 링크</a>',
+            "Text": "합성 한국어 본문 " + reset_url,
         }
         try:
             actual_reset_url = module.reset_url_from_mailpit_message(
@@ -483,6 +484,52 @@ class AdminPasswordResetContractTests(unittest.TestCase):
                         email,
                         "http://localhost:18080/admin-kuranea",
                     )
+
+    def test_recovery_mail_requires_korean_subject_and_both_body_parts(self):
+        module = load_script()
+        email = 'synthetic@example.invalid'
+        base = 'http://localhost:18080/admin-kuranea'
+        url = base + '/index.php/reset-password/' + 'a' * 40
+        message = {'To': [{'Address': email}], 'Subject': '[Synthetic] 합성 한국어 제목',
+                   'HTML': '<p>합성 한국어 본문</p><a href="' + url + '">합성 링크</a>',
+                   'Text': '합성 한국어 본문 ' + url}
+        self.assertEqual(url, module.reset_url_from_mailpit_message(message, email, base))
+        for field, value in (
+            ('Subject', ''), ('Subject', '[한국어 상점] Your new password'),
+            ('Subject', '[ORDENOWA] 비밀번호 안내 Password Query'),
+            ('HTML', ''), ('Text', ''), ('HTML', '<a href="' + url + '">Reset password</a>'),
+            ('Text', 'Reset password ' + url),
+            ('HTML', message['HTML'] + ' Please note that this will change your current password.'),
+            ('Text', message['Text'] + ' In order to confirm this action, click on the following link:'),
+        ):
+            with self.subTest(field=field, value=value):
+                with self.assertRaises(ValueError) as caught:
+                    module.reset_url_from_mailpit_message({**message, field: value}, email, base)
+                self.assertNotIn(url, str(caught.exception))
+
+    def test_recovery_mail_html_and_text_must_link_the_same_native_token(self):
+        module = load_script()
+        base = 'http://localhost:18080/admin-kuranea'
+        url = base + '/index.php/reset-password/' + 'a' * 40
+        other = base + '/index.php/reset-password/' + 'b' * 40
+        message = {'To': [{'Address': 'synthetic@example.invalid'}], 'Subject': '합성 한국어 제목',
+                   'HTML': '<p>합성 한국어 본문</p><a href="' + url + '">합성 링크</a>',
+                   'Text': '합성 한국어 본문 ' + other}
+        with self.assertRaises(ValueError) as caught:
+            module.reset_url_from_mailpit_message(message, 'synthetic@example.invalid', base)
+        self.assertNotIn(url, str(caught.exception))
+        self.assertNotIn(other, str(caught.exception))
+
+    def test_recovery_fixture_persists_active_korean_language_independent_of_primary_employee(self):
+        source = (ROOT / 'tests/business_profile/seed_admin_recovery_fixture.php').read_text()
+        self.assertIn("Language::getIdByIso('ko', true)", source)
+        self.assertIn('new Language($koreanLanguageId)', source)
+        self.assertIn("$koreanLanguage->locale === 'ko-KR'", source)
+        self.assertIn('$koreanLanguage->active', source)
+        self.assertIn('$employee->id_lang = $koreanLanguageId;', source)
+        self.assertNotIn('$employee->id_lang = (int) $admin->id_lang;', source)
+        self.assertIn('$savedEmployee = new Employee((int) $employee->id);', source)
+        self.assertIn('(int) $savedEmployee->id_lang === $koreanLanguageId', source)
 
     def test_run_guard_accepts_only_the_exact_local_actions_services(self):
         module = load_script()

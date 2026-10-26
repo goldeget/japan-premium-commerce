@@ -60,11 +60,21 @@ try {
         'The isolated shop does not contain the native Dashboard tab.'
     );
 
+    $koreanLanguageId = (int) Language::getIdByIso('ko', true);
+    $koreanLanguage = new Language($koreanLanguageId);
+    adminRecoveryFixtureRequire(
+        $koreanLanguageId > 0
+            && Validate::isLoadedObject($koreanLanguage)
+            && (bool) $koreanLanguage->active
+            && $koreanLanguage->locale === 'ko-KR',
+        'The isolated recovery employee requires the active Korean language.'
+    );
+
     $employee = new Employee();
     $employee->firstname = 'ORDENOWA';
     $employee->lastname = 'CI Password Recovery';
     $employee->email = $email;
-    $employee->id_lang = (int) $admin->id_lang;
+    $employee->id_lang = $koreanLanguageId;
     $employee->passwd = (string) $admin->passwd;
     $employee->active = true;
     $employee->id_profile = (int) $admin->id_profile;
@@ -77,6 +87,12 @@ try {
     adminRecoveryFixtureRequire(
         (bool) $employee->add() && (int) $employee->id > 1,
         'The isolated recovery employee could not be created separately from employee id 1.'
+    );
+    $savedEmployee = new Employee((int) $employee->id);
+    adminRecoveryFixtureRequire(
+        Validate::isLoadedObject($savedEmployee)
+            && (int) $savedEmployee->id_lang === $koreanLanguageId,
+        'The isolated recovery employee language did not persist as Korean.'
     );
 
     $result = json_encode(
