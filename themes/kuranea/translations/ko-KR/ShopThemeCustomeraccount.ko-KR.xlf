@@ -14,6 +14,10 @@
         <source>Manage your addresses for billing and delivery to streamline your future orders.</source>
         <target state="final">청구 및 배송 주소를 관리하여 다음 주문을 더 간편하게 진행하세요.</target>
       </trans-unit>
+      <trans-unit id="customer-account-address-form-description">
+        <source>Add a new address to your account.</source>
+        <target state="final">계정에 새 주소를 등록할 수 있습니다.</target>
+      </trans-unit>
     </body>
   </file>
 </xliff>

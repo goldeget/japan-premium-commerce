@@ -137,8 +137,6 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "Start the empty-volume shop",
             "Verify ORDENOWA business profile installation and admin access",
             "Prepare Chromium browser smoke environment",
-            "Prepare isolated admin security and reset-token fixtures",
-            "Verify Back Office token and view-only authorization in Chromium",
             "Restore CI administrator language after locale QA",
             "Upload browser QA screenshots",
             "Remove only this run's containers and volumes",
@@ -146,6 +144,18 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         for name in retained:
             with self.subTest(step=name):
                 self.assertNotIn("env.ORDENOWA_ADMIN_QA_FOCUS != 'true'", step(name))
+
+        for name in (
+            "Prepare isolated admin security and reset-token fixtures",
+            "Verify Back Office token and view-only authorization in Chromium",
+        ):
+            with self.subTest(security_step=name):
+                block = step(name)
+                self.assertIn(
+                    "env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_ADMIN_SECURITY_FOCUS == 'true'",
+                    block,
+                )
+                self.assertIn("env.ORDENOWA_ADMIN_RETURN_FOCUS != 'true'", block)
 
         self.assertIn(
             "Verify focused admin security route screenshot",
@@ -586,6 +596,16 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         ):
             with self.subTest(step=name):
                 self.assertIn("ORDENOWA_CUSTOMER_ACCOUNT_FOCUS == 'true'", step(name))
+
+        for name in (
+            "Prepare isolated admin security and reset-token fixtures",
+            "Verify Back Office token and view-only authorization in Chromium",
+        ):
+            with self.subTest(unrelated_security_step=name):
+                self.assertIn(
+                    "env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_ADMIN_SECURITY_FOCUS == 'true'",
+                    step(name),
+                )
 
         evidence = step("Verify focused customer account browser evidence")
         for filename in (

@@ -1,5 +1,15 @@
 # ORDENOWA AI Browser QA Handoff
 
+## 모바일 주소 수정 후속 시각 검수 (2026-10-26)
+
+- Source/work SHA: `c045d21313af925072d55629f74ec5272d16dbc1`; focused Actions [#40307437142](https://github.com/goldeget/japan-premium-commerce/actions/runs/40307437142) SUCCESS; browser artifact [12642513725](https://github.com/goldeget/japan-premium-commerce/actions/runs/40307437142/artifacts/12642513725).
+- 이 run의 실제 browser outcome은 desktop/mobile account acceptance success다. 합성 고객의 일본 주소 생성→같은 주소 edit form→native save→새 문서 및 refresh 재조회가 통과했다. 가입/중복 가입 거부/login/logout/Mailpit reset도 해당 focus 범위에서 통과했다. 주소의 실제 개인 데이터나 운영 계정은 사용하지 않았다.
+- 우선 열어 볼 이름: `mobile-customer-address-saved.png`, `mobile-customer-address-edit-form.png`, `mobile-customer-address-edited-after-refresh.png`. 대응 desktop 캡처는 `desktop-customer-address-saved.png`, `desktop-customer-address-edit-form.png`, `desktop-customer-address-edited-after-refresh.png`다. 화면에서 주소 필드 값은 격리 합성 fixture다. 주소 안내 문구가 한국어로 보이고 화면폭 안에서 저장 버튼과 폼이 읽히는지 확인해 주세요. 캡처만으로 click/save를 판정하지 말고 E2E 로그와 persistence assertion을 별도 근거로 사용하세요.
+- 독립 검수에서 `mobile-customer-address-edited-after-refresh.png` 390×701의 edited alias 및 한국어 목록 안내는 PASS였다. 같은 c045 artifact의 `mobile-customer-address-edit-form.png`에는 `Add a new address to your account.`가 영어로 남아 있었다. 이 c045 artifact는 후속 XLIFF/browser assertion 변경보다 앞선 캡처이므로 수정된 문구의 시각 근거로 쓰지 않는다. 최종 workflow 수정 commit의 새 artifact가 나오면 그 run/source SHA의 `mobile-customer-address-edit-form.png`만 다시 열어 정적 안내가 `계정에 새 주소를 등록할 수 있습니다.`로 표시되는지 확인한다.
+- #40300616469의 이전 timeout은 이번 focused run에서 재현되지 않았다. 해당 run에는 card→edit link→form 사이의 정확한 failing predicate가 남지 않아 이전 원인은 미확정이다. 새 단계별 진단은 이후 실패 시 안전한 화면 경로/폼/클릭 상태를 분류한다. 이 handoff는 timeout 원인 확정이나 전체 QA PASS를 뜻하지 않는다.
+- #40300616469의 aggregate에서는 catalog same-ID edit/readback/reimport 및 synthetic same-order tracking browser/DB success를 유지한다. 이 검수 대상은 주소 화면 캡처와 한국어 정적 안내뿐이다. 실기기·실출고·운영 쇼핑몰을 대상으로 하지 않는다.
+- Codex가 Actions artifact를 현재 환경에서 직접 다운로드할 수 없을 경우 이 handoff의 artifact link와 filename을 써서 독립 시각 QA를 수행한다. 비밀번호/token은 필요하지 않으며 테스트용 credential은 artifact 또는 채팅에 기록하지 않는다.
+
 ## 최신 자동 브라우저 증거 (2026-10-26 09:49 UTC)
 
 - Final `work` source/remote SHA `0b68e96f1a38a36feb3732b2d3a26c06afd40c1a`; `main` remains `ee02a3657448d563508687614a246e05ac61eecd`.

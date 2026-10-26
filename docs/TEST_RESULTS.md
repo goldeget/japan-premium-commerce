@@ -1,5 +1,17 @@
 # ORDENOWA 테스트 결과
 
+## 2026-10-26 — 모바일 주소 편집 focused QA 통과 및 회귀 준비
+
+- 시작 기준 work/origin은 `c045d21313af925072d55629f74ec5272d16dbc1`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`다. 중간에 추가된 workflow 조건 수정은 아직 commit되지 않았으며 기존 변경·미추적 파일은 보존한다.
+- 전체 #40300616469의 실제 유일 실패는 `account=failure`, mobile `customer_address_edit=TimeoutException`이었다. 그 run에는 카드/동일 주소 확인 이후 edit-link click, form wait 중 어느 predicate에서 timeout됐는지 기록되지 않았다. 새 focused QA가 통과했어도 이전 실패 원인은 미확정이며 timeout 증가나 성공 조건 완화는 하지 않았다.
+- #40307147507은 account focus preflight Step 8에서 실패해 브라우저까지 도달하지 않았다. commit prefix가 `ORDENOWA_CUSTOMER_ACCOUNT_FOCUS=true`를 설정한 상태에서 full-mode aggregate fixture가 상속한 것이 원인이었다. c045d21은 full fixtures에 명시적 false, focus fixture에 명시적 true를 넣었다. 이 수정 후 자동 account-focused run [#40307437142](https://github.com/goldeget/japan-premium-commerce/actions/runs/40307437142)는 actual aggregate SUCCESS였으며, desktop/mobile 회원가입·중복 거부·profile/address create/edit/save/fresh GET·login/logout·Mailpit reset이 통과했다.
+- Browser artifact [12642513725](https://github.com/goldeget/japan-premium-commerce/actions/runs/40307437142/artifacts/12642513725)는 저장/수정 폼/새로고침 후 주소 화면 캡처를 포함한다: `desktop-customer-address-saved.png`, `mobile-customer-address-saved.png`, `desktop-customer-address-edit-form.png`, `mobile-customer-address-edit-form.png`, `desktop-customer-address-edited-after-refresh.png`, `mobile-customer-address-edited-after-refresh.png`. 새 캡처는 자동 E2E/화면 내용 근거이며 Codex에서 PNG를 실제 열지 않았다. Work-mode GPT가 화면을 열어 정적 한국어 주소 안내와 레이아웃을 확인하도록 `AI_BROWSER_QA_HANDOFF.md`에 범위를 적었다.
+- 브라우저 주소 단계 계측은 민감값을 제외해 safe route class, form/card/link boolean, same-address identity boolean, native click attempt/return, 문서 이동 및 allowlisted error/occluder를 기록한다. 새 Korean locale assertion은 Step 41에서 PASS했다. 기존 주소 수정 실제 동작을 바꾸지 않았다.
+- 이후 보완한 workflow condition은 account focus에서 unrelated admin security fixture/browser를 건너뛰고, default/full 및 admin-security focus에서는 실행되게 한다. inherited focus variables를 둔 exact Step 8은 551 tests PASS (7 skipped), Step 9는 147 PASS, 영향 contract suite는 199 PASS다. YAML parse와 `git diff --check`도 통과했다. 이 workflow 변경을 포함한 push가 시작할 최종 전체 격리 run은 아직 없다.
+- #40300616469의 합성 catalog native same-ID edit/readback/reimport 및 shipping tracking browser/DB outcomes는 success로 보존한다. 현재 회귀 QA가 끝나기 전에는 전체 QA PASS로 보고하지 않는다.
+- 독립 Work QA는 c045 artifact 12642513725의 `mobile-customer-address-edited-after-refresh.png` (390×701)를 실제 열어 edited synthetic address와 한국어 목록 안내를 확인했다. 같은 artifact의 `mobile-customer-address-edit-form.png`에는 영문 정적 안내 `Add a new address to your account.`가 남았다. 이에 XLIFF target `계정에 새 주소를 등록할 수 있습니다.`와 한국어 edit-form browser assertion을 추가했다. c045 artifact는 이 변경 전 캡처라 수정 후 시각 PASS로 재사용하지 않는다.
+- XLIFF와 form assertion을 구현한 최신 local source의 targeted customer/account/locale/workflow contract suite는 199 tests PASS했다. 최신 Step 8 exact command 551 PASS (7 skipped), Step 9 147 PASS, YAML/Python/XLIFF validation 및 `git diff --check`도 통과했다. 수정된 edit copy의 실제 PrestaShop 렌더링은 다음 Actions에서 재검증해야 한다.
+
 ## 2026-10-26 — catalog baseline 및 운송장 문서 대기 회귀 검증
 
 - Final `work` SHA `0b68e96f1a38a36feb3732b2d3a26c06afd40c1a`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 보존했다.

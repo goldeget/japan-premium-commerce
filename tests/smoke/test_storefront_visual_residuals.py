@@ -35,6 +35,10 @@ class StorefrontVisualResidualTests(unittest.TestCase):
             translations.get("Manage your addresses for billing and delivery to streamline your future orders."),
             "청구 및 배송 주소를 관리하여 다음 주문을 더 간편하게 진행하세요.",
         )
+        self.assertEqual(
+            translations.get("Add a new address to your account."),
+            "계정에 새 주소를 등록할 수 있습니다.",
+        )
 
         browser = (ROOT / "tests" / "e2e" / "verify_pwa_browser.py").read_text(encoding="utf-8")
         self.assertIn("def _assert_customer_account_chrome", browser)

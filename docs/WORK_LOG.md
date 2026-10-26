@@ -1,5 +1,17 @@
 # ORDENOWA 작업 기록
 
+## 2026-10-26 — 모바일 주소 수정 재검증과 workflow focus 경계 보완
+
+- 최신 원격 `work`와 local HEAD는 `c045d21313af925072d55629f74ec5272d16dbc1`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다. 시작 당시 진행 중인 Actions는 없었고, 사용자 미추적 파일은 보존했다.
+- #40300616469의 actual aggregate 유일 실패는 mobile account의 `customer_address_edit` TimeoutException이었다. 캡처에는 같은 주소 카드와 수정 링크가 있었지만 failing predicate는 미계측이었다. `open_customer_address_edit()`를 카드 조회/동일 ID/링크/route/scroll·clickability/center hit/native click/form wait/새 ID 검사로 나누고 안전 enum·boolean 진단 및 실패 캡처를 브라우저 종료 전에 저장하도록 했다. 세션/주소 데이터·URL query·원문 예외는 출력하지 않는다. native click, timeout 또는 acceptance 조건을 약화하지 않았다.
+- 독립 정적 검토에서 알려지지 않은 가림 요소 class가 있었음에도 `unavailable`로 기록되는 분류 공백과 diagnostics contract가 주소 ID 일치 결과/단계 순서를 충분히 고정하지 않은 점을 찾았다. 미등록 비어 있지 않은 class는 값 자체를 노출하지 않고 `other`로 분류하도록 고쳤고, 회귀 테스트는 edit form ID boolean과 카드→링크→native click→form 순서를 확인한다.
+- 한국어 주소 안내를 `ShopThemeCustomeraccount.ko-KR.xlf`에 추가하고 browser assertion을 연결했다. #40300616469가 그대로 반복되는 대신 기존 fixture를 이용한 account focused run #40307437142가 source c045d21에서 SUCCESS했다. desktop/mobile 주소 생성·편집·저장·새 문서/refresh 재조회 및 회원 auth/reset 흐름이 통과했다. 이전 timeout은 재현되지 않아 원인을 확인된 앱/테스트 결함이라고 정하지 않는다. Artifact 12642513725의 캡처 목록은 handoff에 기록했다.
+- #40307147507의 선행 preflight failure는 parent focus 환경 상속과 전체 aggregate test fixture의 실행 모드 미지정이 원인이었다. c045d21에는 full fixture=false/focused fixture=true가 명시되어 같은 focused run의 Step 8/aggregate가 통과했다. focused run이 unrelated admin security fixture/browser도 실행한 누락 condition을 발견해 현재 `.github/workflows/fresh-install.yml`과 contract test를 추가 보완했다: full/default 또는 explicit admin-security focus에서만 실행한다.
+- 보완 뒤 inherited `ORDENOWA_CUSTOMER_ACCOUNT_FOCUS=true` 환경에서 workflow Step 8 exact command 551 PASS (7 skipped), Step 9 147 PASS, 영향 계약 199 PASS가 확인됐다. YAML parse, diff check도 통과했다. 이 보완 patch와 현재 QA 상태 문서는 아직 최종 regression push/run을 기다린다.
+- #40300616469의 catalog native product 29 same-ID edit/fresh GET/reimport, tracking order 10 browser/admin/customer/DB outcomes success를 요구사항 matrix에 보존했다. 이는 synthetic acceptance이며 실상품/실출고·운영 판매를 의미하지 않는다.
+- Work-mode GPT는 #40307437142 artifact 12642513725의 mobile after-refresh PNG를 실제 열어 동일 synthetic 주소의 수정값과 한국어 목록 안내를 확인했다. 편집 폼 PNG에서 별도 고정 안내 `Add a new address to your account.`가 영어임을 발견했다. XLIFF target `계정에 새 주소를 등록할 수 있습니다.`와 해당 Korean form의 exact text browser assertion을 추가해 기존 전체 QA 준비 변경과 한 번의 다음 run에 포함한다. c045 캡처는 이 신규 수정 전이므로 수정 후 화면 evidence는 다음 artifact에서 확인해야 한다.
+- matrix는 focus QA/기존 성공 evidence를 반영하고 ADDR-002/LOCALE-003을 분리한다. PWA-002 Web Push는 다음 기존 승인 범위 code task로 남기고, 실제 HTTPS/VAPID/운영 동의 문안/모바일 실기기 제약을 별도로 기록한다.
+
 ## 2026-10-26 — catalog readback 진단 및 JA 주문 상세 번역 checkpoint
 
 - 시작 시 local/origin `work`는 `f4c75b89f4c89edbe1fb97ba097cbd061dc30259`, `main`은 `ee02a3657448d563508687614a246e05ac61eecd`였다. 사용자 미추적 superpowers 문서와 pycache는 보존했고 stage하지 않았다.

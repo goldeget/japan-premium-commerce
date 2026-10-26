@@ -223,6 +223,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             "customer_address_add",
             "customer_address_add_persist_wait",
             "customer_address_edit",
+            "customer_address_edit_copy",
             "customer_address_edit_submit",
             "customer_address_edit_persist_wait",
             "email_login",
@@ -260,6 +261,14 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             r"substage_callback=mark_customer_address_edit_substage,\s*"
             r"diagnostic_state=address_edit_state,\s*\)",
         )
+        address_copy = self.blocks["customer_address_edit_copy"]
+        self.assertIn("assert_korean_customer_address_edit_copy(driver)", address_copy)
+        copy_assertion = self.source.split(
+            "def assert_korean_customer_address_edit_copy", 1
+        )[1].split("def save_customer_address_edit", 1)[0]
+        self.assertIn('get_attribute("lang")', copy_assertion)
+        self.assertIn('document_language.startswith("ko")', copy_assertion)
+        self.assertIn("계정에 새 주소를 등록할 수 있습니다.", copy_assertion)
         address_submit = self.blocks["customer_address_edit_submit"]
         self.assertIn("save_customer_address_edit", address_submit)
         self.assertIn("edited_address_line", address_submit)
@@ -341,12 +350,29 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             "address_edit_clickable_wait",
             "address_edit_center_hit_wait",
             "address_edit_native_click",
+            "address_edit_native_click_returned",
             "address_edit_form_wait",
             "address_edit_form_identity_check",
         )
         for substage in edit_substages:
             with self.subTest(substage=substage):
                 self.assertIn(substage, edit_helper)
+        open_order = (
+            'mark("address_edit_card_wait")',
+            'mark("address_edit_identity_check")',
+            'mark("address_edit_link_lookup")',
+            'mark("address_edit_link_origin_check")',
+            "center_unobstructed = click_centered(",
+            'mark("address_edit_form_wait")',
+            'mark("address_edit_form_identity_check")',
+        )
+        open_positions = [edit_helper.index(marker) for marker in open_order]
+        self.assertEqual(open_positions, sorted(open_positions))
+        click_helper = self.source.split("def click_centered", 1)[1].split(
+            "def wait_for_registration_success", 1
+        )[0]
+        click_positions = [click_helper.index(marker) for marker in edit_substages[4:9]]
+        self.assertEqual(click_positions, sorted(click_positions))
 
         self.assertIn("substage_callback", edit_helper)
         self.assertIn("last_completed_substage", edit_helper)
@@ -418,7 +444,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
                     "native_click_attempted": True,
                     "native_click_returned": True,
                     "center_hit_relation": "other",
-                    "occluder_class": "modal-backdrop",
+                    "occluder_classes": ["unlisted-layout-class"],
                     "edit_form_present": False,
                     "edit_form_visible": False,
                     "edit_form_id_matches": False,
@@ -437,7 +463,6 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             "native_click_returned": True,
             "center_unobstructed": True,
             "center_hit_relation": "other",
-            "occluder_class": "modal-backdrop",
             "failure_type": "TimeoutException",
         }
         output = StringIO()
@@ -456,9 +481,10 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             '"native_click_returned": true',
             '"center_hit_relation": "other"',
             '"center_unobstructed": false',
-            '"occluder_class": "modal-backdrop"',
+            '"occluder_class": "other"',
             '"edit_form_present": false',
             '"edit_form_visible": false',
+            '"edit_form_id_matches": false',
             '"failure_type": "TimeoutException"',
         ):
             with self.subTest(expected=expected):
@@ -468,6 +494,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             "private@example.test",
             "secret-query-token",
             "private street",
+            "unlisted-layout-class",
             "https://shop.example.test/ko/addresses/42?",
         ):
             with self.subTest(private_value=private_value):

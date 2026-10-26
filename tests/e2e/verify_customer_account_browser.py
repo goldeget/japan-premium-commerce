@@ -3169,6 +3169,8 @@ def collect_customer_address_edit_diagnostics(
             for item in value:
                 if isinstance(item, str) and item in allowed_occluders:
                     return item
+            if any(isinstance(item, str) and item for item in value):
+                return "other"
         return "unavailable"
 
     try:
@@ -3262,6 +3264,18 @@ def emit_customer_address_edit_diagnostics(
     print("ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE=" + safe_state_json, file=sys.stderr)
     annotation = safe_state_json.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
     print(f"::error title=Customer account address edit safe state::{annotation}", file=sys.stderr)
+
+
+def assert_korean_customer_address_edit_copy(driver: webdriver.Chrome) -> None:
+    expected_copy = "계정에 새 주소를 등록할 수 있습니다."
+    document_language = (driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "").lower()
+    if not document_language.startswith("ko"):
+        raise AssertionError("the customer address edit page did not preserve the Korean locale")
+    page_text = driver.find_element(By.TAG_NAME, "body").text
+    if expected_copy not in page_text:
+        raise AssertionError("the Korean customer address edit page omitted its localized description")
+
+
 def save_customer_address_edit(
     driver: webdriver.Chrome,
     address_id: str,
@@ -4149,6 +4163,8 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             substage_callback=mark_customer_address_edit_substage,
             diagnostic_state=address_edit_state,
         )
+        stage = "customer_address_edit_copy"
+        assert_korean_customer_address_edit_copy(driver)
         stage = "customer_address_edit_submit"
         save_customer_address_edit(driver, address_id, edited_address_line, label)
         stage = "customer_address_edit_persist_wait"

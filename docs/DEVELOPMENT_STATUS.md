@@ -1,5 +1,18 @@
 # ORDENOWA 개발 현황
 
+## 최신 주소 편집 집중 QA 및 전체 회귀 준비 (2026-10-26)
+
+현재 `work`와 실제 원격은 `c045d21313af925072d55629f74ec5272d16dbc1`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다. 이번 checkout focus QA [#40307437142](https://github.com/goldeget/japan-premium-commerce/actions/runs/40307437142)는 SUCCESS이며 account/browser evidence artifact [12642513725](https://github.com/goldeget/japan-premium-commerce/actions/runs/40307437142/artifacts/12642513725)를 저장했다.
+
+- #40300616469의 유일한 aggregate 실패는 `account=failure`, mobile `customer_address_edit` timeout이었다. 당시 캡처에서 주소 카드는 남아 있고 수정 링크가 보였으나 그 run은 edit 단계 내부 세부 원인을 기록하지 않았다. 이번 focused run은 desktop/mobile 모두 합성 일본 주소 생성·동일 주소 수정·저장·새 문서 및 refresh 후 재조회, 가입·중복 가입 거부·로그인/로그아웃·Mailpit reset까지 통과했다. 과거 timeout은 재현되지 않아 원인을 클릭 실패/폼 진입/저장 문제 중 하나로 단정하지 않는다.
+- `tests/e2e/verify_customer_account_browser.py`는 주소 카드·ID 일치·edit link·same-origin route·scroll/clickability/center hit/native click·edit form visibility/ID 검사로 단계를 나눴다. 실패 진단은 허용된 stage/error/path/occluder 분류와 boolean/null만 출력하고 query, 주소/이름/email, token, DOM 원문을 배제한다. 수정 성공/refresh 뒤 캡처도 추가했다. native 클릭, 원래 wait 제한, 동일 주소 ID/저장/새 조회 조건은 유지했다.
+- 고객 한국어 주소 목록 안내는 child-theme XLIFF로 번역했고 #40307437142 Step 41 자동 assertion이 통과했다. 독립 검수는 artifact 12642513725의 `mobile-customer-address-edited-after-refresh.png` 390×701을 열어 편집값과 목록 안내를 시각 확인했다. Codex에서 PNG를 직접 연 것은 아니다.
+- 독립 재검수는 artifact 12642513725의 `mobile-customer-address-edited-after-refresh.png` (390×701)에서 같은 합성 주소 ID의 수정값과 한국어 목록 안내가 보임을 확인했다. `mobile-customer-address-edit-form.png`에는 정적 `Add a new address to your account.`가 영어로 남아 있음을 추가 발견했다. 현재 XLIFF에 한국어 문구를 추가하고 edit form에서 정확히 검사하는 browser assertion을 작성했으나, 이 새 코드 변경은 아직 Actions에서 실행되지 않았다.
+- 이전 b83ab55 실행 #40307147507은 브라우저가 시작되기 전 preflight Step 8 실패였다. 실제 이유는 commit prefix로 focus=true가 된 환경을 전체 집계 fixture가 물려받은 것이며 제품의 주소 결함이 아니다. c045d21은 full-mode fixtures가 false를 명시하게 하고 account-focus aggregate fixture만 true를 설정했다. 같은 SHA의 account focus #40307437142는 aggregate success다.
+- 그 focused run은 workflow condition 누락으로 관련 없는 admin security fixture/browser도 실행했다. 현재 local follow-up은 이를 full/admin-security focus에서만 실행하게 제한하고 회귀 계약을 추가했다. 독립 검수에서 확인된 edit-form 한국어 문구 누락도 same-source XLIFF 및 browser assertion으로 함께 보완했다. 최신 local validation: Step 8 exact command 551 tests PASS (7 skipped), Step 9 exact command 147 PASS, 영향 계약 묶음 199 PASS; workflow YAML, browser Python AST, Korean XLIFF parsing과 `git diff --check`도 PASS다. 새 edit-form 문구의 PrestaShop runtime은 다음 Actions에서 확인해야 한다. 이 변경 묶음 push 이후 자동 전체 격리 QA가 아직 필요하며 그 전까지 전체 QA는 대기 상태다.
+- #40300616469에서 통과한 catalog same-ID edit/readback/reimport와 synthetic tracking browser/DB outcome을 보존한다. #40298163222의 일본어 tracking/customer 화면 확인도 그대로 유지한다. 합성 결과를 live marketplace 수집, 실출고, 운영 판매, 전체 UI 시각 확인으로 넓히지 않는다.
+- 다음 코드 구현 후보는 승인 요구사항의 PWA-002 consent-based Web Push다. 기존 service worker는 install/activate/fetch만 제공한다. 이를 business-profile manifest 기능과 분리하고 isolated fake sender에서 구독/해지·소유권·payload/path 검증을 구현할 계획이다. 생산 HTTPS, 승인된 consent/privacy 보존 문안, VAPID key custody/발송자, iOS·Android 실기기는 별도 자료·환경 대기다.
+
 ## 최신 코드 및 격리 QA 상태 (2026-10-26 09:49 UTC)
 
 `work`와 `origin/work`는 `0b68e96f1a38a36feb3732b2d3a26c06afd40c1a`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지했다.

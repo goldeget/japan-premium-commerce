@@ -1427,7 +1427,7 @@ jobs:
 
       - name: Prepare isolated admin security and reset-token fixtures
         id: security_fixture
-        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && env.ORDENOWA_ADMIN_RETURN_FOCUS != 'true'
+        if: always() && !cancelled() && steps.compose_up.outcome == 'success' && env.ORDENOWA_ADMIN_RETURN_FOCUS != 'true' && (env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_ADMIN_SECURITY_FOCUS == 'true')
         continue-on-error: true
         shell: bash
         run: |
@@ -1519,7 +1519,7 @@ jobs:
 
       - name: Verify Back Office token and view-only authorization in Chromium
         id: admin_security_browser_qa
-        if: always() && !cancelled() && steps.security_fixture.outcome == 'success' && steps.chromium_setup.outcome == 'success' && env.ORDENOWA_ADMIN_RETURN_FOCUS != 'true'
+        if: always() && !cancelled() && steps.security_fixture.outcome == 'success' && steps.chromium_setup.outcome == 'success' && env.ORDENOWA_ADMIN_RETURN_FOCUS != 'true' && (env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_ADMIN_SECURITY_FOCUS == 'true')
         continue-on-error: true
         shell: bash
         env:
