@@ -1,12 +1,14 @@
 # ORDENOWA 작업 기록
 
-## 2026-10-26 — CI 사전 검사 수정 및 격리 전체 QA 진행
+## 2026-10-26 — CI 사전 검사 수정 및 격리 전체 QA 결과
 
 - 시작 시 `work` HEAD `eefb19382beaeb08ac6d6f64199da3ae76a17e1f`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`. #40315042151 Step 6이 `kuraneapush`를 포함하지 않는 오래된 설치 순서 계약으로 실패했다. `tests/smoke/test_admin_folder_install_order.py`를 실제 모듈 설치 목록에 맞췄고 commit `19ceed329bdfd2cd47d06979ffca22598a9076d3`을 work에 푸시했다.
 - #40315327770 Step 9는 `test_shipping_admin_links_contract.py`가 workflow가 이미 바꾼 `grep` 대신 `rg` 문자열을 기대해 실패했다. 안전한 stage/detail 검사와 원래 browser outcome을 보존하면서 기대 문자열만 고치고 commit `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`를 푸시했다. 이 두 run은 browser/install UI 검증을 수행하지 않았다.
 - 좁은 suite 17개, Step 9 exact suite는 focus false/true 각각 147개, cart/shipping/account/PWA 영향 suite 86개 PASS. 전체/브라우저 검증으로 계산하지 않는다.
-- source `acbdc5e`의 새 전체 실행 [#40315517530](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530)은 preflight와 image build, empty-volume bootstrap을 통과했다. 11:35 UTC 현재 brand upload/publish Chromium 단계 진행 중. 결과와 artifact는 실행 종료 후 기록한다.
-- `main`은 수정하지 않았고 사용자 미추적 파일·작업 plan/spec·pycache도 stage하거나 삭제하지 않았다. 여전히 확인할 범위: mobile cart native add→cart readback, carrier saved-state exact stage, address neutral helper fresh image, PWA synthetic runtime and aggregate.
+- QA-CI-002 수정은 `acbdc5e`에서 계약 assertion 한 줄만 `rg`에서 workflow가 실제 쓰는 `grep`으로 맞췄다. Workflow의 stage/detail 추출, 마지막 진단 줄 선택, 원래 browser exit/outcome 판정은 그대로다. 관련 계약 8개를 로컬에서 실행해 통과했고, #40315517530 Step 9도 성공했다.
+- source `acbdc5e` 전체 격리 실행 [#40315517530](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530)은 completed **FAILURE**다. Preflight, image build, empty-volume 설치와 이후 account/cart/product/catalog/category/carrier/checkout/order/backup/postcode 검사가 진행됐다. 실제 aggregate 실패는 `pwa_browser_qa=failure pwa_push_qa=skipped`다. PWA desktop JA/EN 로그아웃 클릭은 interception, mobile JA/EN/KO 동의 단계는 timeout, desktop KO lifecycle은 통과했다. continue-on-error의 표시를 실제 outcome으로 간주하지 않는다.
+- Browser artifact [12646464536](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530/artifacts/12646464536), 진단 artifact [12647935305](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530/artifacts/12647935305). 이 실행은 QA-CI-002 preflight 차단을 재현하지 않았으며 전체 QA 성공도 아니다.
+- `main`은 수정하지 않았고 사용자 미추적 파일·작업 plan/spec·pycache도 stage하거나 삭제하지 않았다. 카트와 carrier는 이번 source에서 브라우저 저장/재조회를 통과했다. PWA 실패 원인과 push persistence는 아직 열려 있다. LOCALE-003의 neutral helper 자동 assertion은 account flow에서 실행됐지만 새 캡처의 독립 시각 검수는 별도다.
 
 ## 2026-10-26 — cart/carrier 검증 보완 및 PWA foundation checkpoint
 

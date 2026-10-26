@@ -1,12 +1,12 @@
 # ORDENOWA AI Browser QA Handoff
 
-## Current source awaiting independent review
+## Latest isolated browser evidence for independent review
 
-- Tested `work` source SHA: `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`; `main` unchanged at `ee02a3657448d563508687614a246e05ac61eecd`.
-- Full isolated Actions [#40315517530](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530) is still in progress as of 2026-10-26 11:35 UTC. It passed preflight/image build/empty-volume install and reached “Verify official ORDENOWA brand upload and publish in Chromium”; do not inspect it as a completed result. Refresh the run for actual outcome and artifacts before review.
-- Preceding #40315042151 and #40315327770 failed in preflight only (stale installed-module expectation; stale `rg` assertion after workflow moved to `grep`). They have no browser result. The fixes are commits `19ceed329bdfd2cd47d06979ffca22598a9076d3` and `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`.
-- Once #40315517530 finishes, independently inspect only new artifact files relevant to: `mobile-customer-address-edit-form.png` (neutral Korean helper), successful mobile cart product/option/quantity/cart evidence or failure diagnostic, carrier admin saved-state capture/diagnostic if present, and `pwa-*-push-consent.png`, owner screenshots and `pwa-push-e2e.log` if present. Record actual names, viewport and tested source SHA. A screenshot alone does not prove native click, persistence, or DB readback; use the actual browser log and aggregate too.
-- Keep outcomes separate: cart/mobile, carrier configure, PWA lifecycle/private cache, synthetic push persistence, account/address, and final aggregate. Any skipped step is not PASS. Synthetic provider-free push is not production delivery; no real seller data, shipment, payment or device is in this run.
+- Tested code source SHA: `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`; current `work`/`origin/work` includes docs checkpoint `09a628198d700eb82dba392f75850a3be68ef66f`; `main` remains unchanged at `ee02a3657448d563508687614a246e05ac61eecd`.
+- Full isolated Actions [#40315517530](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530) completed **FAILURE**. It passed preflight, image build and fresh installation. The actual aggregate is `pwa_browser_qa=failure pwa_push_qa=skipped`. Desktop JA/EN logout native clicks were intercepted; mobile JA/EN/KO consent waits timed out; desktop KO lifecycle passed. Do not infer push persistence or a full QA pass.
+- QA-CI-002 is resolved in code commit `acbdc5e`: the contract now matches workflow's `grep` detail extraction. Step 9 passed in #40315517530. The original browser exit/outcome and sanitized stage/detail extraction remain enforced.
+- Browser artifact [12646464536](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530/artifacts/12646464536); diagnostics artifact [12647935305](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530/artifacts/12647935305). Independently inspect only screenshots relevant to the neutral Korean address helper and PWA failure if present. Capture visual conclusions separately from automation. The archive could not be downloaded in the Codex environment because the configured network policy denies its storage host; the artifact IDs are supplied for approved review.
+- Cart/mobile, account/address, catalog, category, carrier, checkout/order, backup and postal outcomes passed at this tested SHA. PWA lifecycle failure remains open; push persistence was skipped. Synthetic provider-free QA is not production delivery, and no real seller data, shipment, payment or device was used.
 
 ## 다음 코드 변경의 독립 브라우저/시각 검수
 

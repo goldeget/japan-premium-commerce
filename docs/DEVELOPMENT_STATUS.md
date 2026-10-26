@@ -1,13 +1,14 @@
 # ORDENOWA 개발 현황
 
-## 현재 원격 코드 및 실행 상태 (2026-10-26 11:35 UTC)
+## 현재 원격 코드 및 실행 상태 (2026-10-26 11:50 UTC)
 
-- `work` local HEAD와 확인된 `origin/work`는 `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`; `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 보존했다. 미추적 사용자 파일은 그대로 두고 커밋하지 않았다.
-- 전체 QA [#40310232196](https://github.com/goldeget/japan-premium-commerce/actions/runs/40310232196)의 실제 실패는 mobile cart readiness와 carrier admin 설정 두 항목이다. `ec7ef6b`는 cart readiness 조사 중 stale element만 다시 읽도록 했고 carrier saved-readback에 안전한 단계 진단을 추가했다. 해당 runtime 수정은 아직 새 전체 실행에서 확인 전이다.
+- local/`origin/work` HEAD는 문서 checkpoint `09a628198d700eb82dba392f75850a3be68ef66f`; 최근 검증 코드 SHA는 `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`. `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 보존했다. 기존 미추적 사용자 파일은 건드리지 않았다.
+- QA-CI-002는 `acbdc5e`에서 shipping-admin 계약의 추출기 기대를 `rg`에서 workflow의 `grep`으로 맞춰 해결했다. 단계·안전 상세 추출 및 실패 판정은 보존됐고 관련 계약과 전체 run Step 9가 통과했다.
 - PWA-002 합성 Web Push foundation은 `50d924f`에 있으며, 공급자 호출 없이 동의 UI·격리된 암호화 소유자별 저장·철회를 검증한다. 운영 송신과 동의 감사/보존 범위는 미완료다.
 - 선행 실행 [#40315042151](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315042151), source `eefb193`, Step 6 설치 순서 계약에서 `kuraneapush`를 포함한 실제 목록과 오래된 네 모듈 기대값이 달라 중단됐다. 후속 캡처/aggregate 실패는 브라우저가 실행되지 않아 생긴 파생 실패다.
-- [#40315327770](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315327770), source `19ceed3`, Step 9는 workflow의 `grep` 변경 뒤에도 `rg` 추출 문자열을 요구한 shipping-admin contract에서 중단됐다. browser/install 검증은 실행되지 않았고 artifact는 진단용뿐이다. `QA-CI-001/002` 두 하네스 계약 불일치를 각각 수정했다.
-- 현재 격리 전체 실행 [#40315517530](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530), source `acbdc5e`, 모든 사전 검사·이미지 빌드·빈 볼륨 설치를 통과했고 11:35 UTC에는 **ORDENOWA brand upload/publish Chromium** 단계였다. 카트, carrier, 주소 중립 문구, PWA browser/API 및 최종 aggregate는 실행 완료 전이다. 실행 중인 상태를 PASS로 기록하지 않는다.
+- [#40315327770](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315327770), source `19ceed3`, Step 9의 stale `rg` 문자열 때문에 preflight에서 중단됐다. 수정 후 [#40315517530](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530), source `acbdc5e`, Step 9와 preflight, image build, fresh install을 통과했다.
+- #40315517530 completed **FAILURE**이며 actual aggregate는 `pwa_browser_qa=failure pwa_push_qa=skipped`다. Desktop JA/EN PWA logout은 native click interception, mobile JA/EN/KO는 consent 단계 timeout; desktop KO lifecycle은 통과했다. Browser artifact [12646464536](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530/artifacts/12646464536)와 diagnostics [12647935305](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530/artifacts/12647935305)가 있다. PWA 원인은 별도로 조사 중이며 전체 QA PASS가 아니다.
+- #40315517530에서는 mobile cart controls, account/address, native product, catalog import, category locale, free carrier configure/restart/readback, order/tracking, backup/restore 및 Japan Post verification outcome이 통과했다. 이는 해당 synthetic CI 범위만 닫는다. Neutral address helper의 screenshot visual review, 전체 관리자 한국어, live push, 운영준비는 구분해 둔다.
 - 최신 독립 확인 [#40315517831](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517831) business-profile module tests는 SUCCESS다. 이는 전체 fresh-install QA 성공을 뜻하지 않는다.
 
 아래의 기존 `최신 QA 결과와 로컬 수정` 절은 위 코드 push 이전의 작업 이력을 보존한다. 그 안의 HEAD·원격 SHA 및 “새 실행 없음” 표현은 이 checkpoint 이후 현재 상태를 설명하지 않는다.
