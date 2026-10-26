@@ -923,7 +923,6 @@ jobs:
           QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
-          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
         run: |
           set -euo pipefail
           log_file="$RUNNER_TEMP/ordenowa-browser-qa/password-reset-email-brand-e2e.log"
@@ -2313,6 +2312,7 @@ jobs:
           SHOP_BASE_URL: http://localhost:18080
           ADMIN_LOGIN_URL: http://localhost:18080/admin-kuranea
           ADMIN_MAIL: ci-ordenowa@example.invalid
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
