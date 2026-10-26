@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 
@@ -92,7 +93,10 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
 
         clear_driver = Driver(True)
         element = object()
-        module.center_native_control(clear_driver, element, "message submit")
+        module.center_native_control(
+            clear_driver, element, "message submit",
+            scroll_substage="submit_control_scroll", hit_test_substage="submit_control_hit_test",
+        )
         self.assertIn("scrollIntoView", clear_driver.scripts[0])
         self.assertIn("block: 'center'", clear_driver.scripts[0])
         self.assertIn("elementFromPoint", clear_driver.scripts[1])
@@ -100,14 +104,20 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
 
         obstructed_driver = Driver(False)
         with self.assertRaisesRegex(AssertionError, "message submit control is obstructed"):
-            module.center_native_control(obstructed_driver, element, "message submit")
+            module.center_native_control(
+                obstructed_driver, element, "message submit",
+                scroll_substage="submit_control_scroll", hit_test_substage="submit_control_hit_test",
+            )
 
         source = SCRIPT.read_text(encoding="utf-8")
         submit_helper = source[source.index("def submit_contact_message("):source.index("def assert_support_denied_response")]
-        self.assertIn('select_contact_order(driver, order_selects[0], str(order["order_id"]))', submit_helper)
-        self.assertIn('select_contact_order(driver, order_selects[0], "")', submit_helper)
+        self.assertIn("select_contact_order(", submit_helper)
+        self.assertIn('str(order["order_id"]), diagnostic_result=diagnostic_result', submit_helper)
+        self.assertIn('select_contact_order(driver, order_selects[0], "", diagnostic_result=diagnostic_result)', submit_helper)
         self.assertIn('submit = visible(driver, "button[name=\'submitMessage\']")', submit_helper)
-        self.assertIn("center_native_control(driver, submit, \"message submit\")", submit_helper)
+        self.assertIn("center_native_control(", submit_helper)
+        self.assertIn('scroll_substage="submit_control_scroll"', submit_helper)
+        self.assertIn('hit_test_substage="submit_control_hit_test"', submit_helper)
         self.assertIn("submit.click()", submit_helper)
         self.assertIn('driver.find_elements(By.CSS_SELECTOR, ".contact-form .alert.alert-danger")', submit_helper)
         self.assertNotIn("arguments[0].click()", submit_helper)
@@ -116,6 +126,40 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         self.assertIn("select_element.send_keys(Keys.HOME)", native_select)
         self.assertIn("select_element.send_keys(Keys.ARROWDOWN)", native_select)
         self.assertIn('select_element.get_attribute("value") != value', native_select)
+
+    def test_native_order_select_records_fixed_substage_before_the_first_failing_action(self):
+        module = load_script()
+        module.By = SimpleNamespace(TAG_NAME="tag name")
+
+        class Option:
+            def get_attribute(self, name: str) -> str | None:
+                return "order-42" if name == "value" else None
+
+            def is_enabled(self) -> bool:
+                return True
+
+        class NativeSelect:
+            def find_elements(self, *_args: object) -> list[Option]:
+                return [Option()]
+
+            def click(self) -> None:
+                raise RuntimeError("synthetic click failure with private sentinel")
+
+        class Driver:
+            calls = 0
+
+            def execute_script(self, _script: str, _element: object) -> object:
+                self.calls += 1
+                return None if self.calls == 1 else True
+
+        diagnostic = {"browser_substage": "not_applicable"}
+        with self.assertRaisesRegex(RuntimeError, "synthetic click failure"):
+            module.select_contact_order(
+                Driver(), NativeSelect(), "order-42", diagnostic_result=diagnostic
+            )
+        self.assertEqual("order_select_click", diagnostic["browser_substage"])
+        self.assertIn(diagnostic["browser_substage"], module.SAFE_BROWSER_SUBSTAGES)
+        self.assertNotIn("private sentinel", diagnostic["browser_substage"])
 
     def test_native_reply_form_is_found_through_its_official_9_2_wrapper(self):
         source = SCRIPT.read_text(encoding="utf-8")
@@ -296,6 +340,7 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             path = Path(temp) / "result.json"
             result = {
                 "status": "success", "stage": "complete", "exception_type": None,
+                "browser_substage": "not_applicable",
                 "customer_submitted": True, "order_association_verified": True,
                 "attachment_admin_readback": True, "private_note_admin_only": True,
                 "status_close_reopen": True, "admin_public_reply": True,
@@ -320,6 +365,9 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             unsafe = dict(result, token="never-write")
             with self.assertRaises(ValueError):
                 module.write_result(path, unsafe)
+            unsafe_substage = dict(result, browser_substage="contact:private-email-sentinel")
+            with self.assertRaises(ValueError):
+                module.write_result(path, unsafe_substage)
             incomplete = dict(result, assignment_actor_history=False)
             with self.assertRaises(ValueError):
                 module.write_result(path, incomplete)
@@ -330,6 +378,7 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             "def contact_page_evidence(",
             "contact_document_status", "contact_same_origin", "contact_native_route",
             "contact_form_count", "contact_form_visible",
+            "browser_substage={result['browser_substage']}", "SAFE_BROWSER_SUBSTAGES",
             "result.update(contact_page_evidence(",
             "locale=locale", "localized_rewrite=localized_rewrite",
             "performance.getEntriesByType('navigation')",

@@ -144,6 +144,24 @@ class ResetEmailLocaleContract(unittest.TestCase):
                     module.assert_message(message, 'en', 'http://127.0.0.1:18080', '/reset', self.forbidden())
                 self.assertEqual(expected, caught.exception.check)
                 self.assertNotIn('synthetic-token', str(caught.exception))
+                evidence = caught.exception.part_evidence
+                self.assertEqual(set(evidence), {'html', 'text'})
+                if part == 'Text':
+                    self.assertEqual(evidence['html'], {
+                        'required_link_candidate_count': 1,
+                        'reset_credential_candidate_count': 1,
+                        'native_reset_link_shape': True,
+                    })
+                    self.assertEqual(evidence['text'], {
+                        'required_link_candidate_count': 0,
+                        'reset_credential_candidate_count': 0,
+                        'native_reset_link_shape': False,
+                    })
+                    self.assertNotIn('synthetic-token', repr(evidence))
+                    self.assertNotIn('synthetic-reset', repr(evidence))
+                    self.assertEqual(module.format_part_evidence(evidence),
+                                     'html:refs=1,credential_candidates=1,native_shape=true;'
+                                     'text:refs=0,credential_candidates=0,native_shape=false')
 
     def test_all_named_secret_categories_are_required(self):
         module = self.module()
@@ -212,7 +230,8 @@ class ResetEmailLocaleContract(unittest.TestCase):
         self.assertEqual(
             output.getvalue(),
             'FAIL: isolated native reset email locale=none stage=context exception=RuntimeError; '
-            'response_status=unavailable; message_check=none; same_origin=false; native_route=false; language_matches=false; '
+            'response_status=unavailable; message_check=none; message_parts=unavailable; '
+            'same_origin=false; native_route=false; language_matches=false; '
             'email_field=false; submit_control=false; submit_center_in_viewport=false; '
             'submit_center_unobstructed=false; success_alert=false; reset_fields=false\n',
         )
@@ -224,7 +243,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
             result = {
                 "status": "failure", "language": "ja", "stage": "native_request_email_field",
                 "exception_type": "TimeoutException", "response_status": 404,
-                "message_check": "none",
+                "message_check": "none", "message_part_evidence": None,
                 "same_origin": True, "native_route": True, "language_matches": False,
                 "email_field_present": False, "submit_control_present": False,
                 "submit_center_in_viewport": False, "submit_center_unobstructed": False,
@@ -239,13 +258,30 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 for sensitive in ("token", "password", "email@example", "http://", "current_url"):
                     self.assertNotIn(sensitive, contents)
                 self.assertIn('"message_check": "none"', contents)
-                for check in ('customer_secure_key_outside_reset_link',
-                              'html_reset_link_missing', 'text_reset_link_missing'):
-                    module.write_diagnostics(dict(result, message_check=check))
-                    contents = path.read_text(encoding="utf-8")
-                    self.assertIn(f'"message_check": "{check}"', contents)
-                    self.assertNotIn('synthetic-customer-secure-key', contents)
+                safe_evidence = {
+                    'html': {'required_link_candidate_count': 1,
+                             'reset_credential_candidate_count': 1,
+                             'native_reset_link_shape': True},
+                    'text': {'required_link_candidate_count': 0,
+                             'reset_credential_candidate_count': 0,
+                             'native_reset_link_shape': False},
+                }
+                module.write_diagnostics(dict(result, message_check='text_reset_link_missing',
+                                              message_part_evidence=safe_evidence))
+                contents = path.read_text(encoding="utf-8")
+                self.assertIn('"message_check": "text_reset_link_missing"', contents)
+                self.assertIn('"native_reset_link_shape": true', contents)
+                for sensitive in ('synthetic-token', 'synthetic-reset', 'http://', 'private@example.invalid'):
+                    self.assertNotIn(sensitive, contents)
                 module.write_diagnostics(dict(result, token="never-write"))
+                self.assertEqual(path.read_text(encoding="utf-8"), contents)
+                unbounded_evidence = {
+                    'html': {'required_link_candidate_count': 21,
+                             'reset_credential_candidate_count': 1,
+                             'native_reset_link_shape': True},
+                    'text': safe_evidence['text'],
+                }
+                module.write_diagnostics(dict(result, message_part_evidence=unbounded_evidence))
                 self.assertEqual(path.read_text(encoding="utf-8"), contents)
 
     def test_native_request_failure_is_split_into_safe_browser_substages(self):

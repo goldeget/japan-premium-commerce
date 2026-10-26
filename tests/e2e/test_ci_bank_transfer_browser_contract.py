@@ -182,6 +182,36 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.require('buttons = form.find_elements(By.CSS_SELECTOR, \'button[name="submitOrdenowaIssueTransfer"]\')', helper)
         self.require('safe_admin_path(action, admin_root)', helper)
 
+    def test_invalid_csrf_notice_retries_stale_dom_and_keeps_exact_rejection_and_db_readback(self) -> None:
+        snapshot = self.browser.split("def read_visible_notice_snapshot", 1)[1].split(
+            "def reject_issue_with_invalid_csrf", 1
+        )[0]
+        self.require("WebDriverWait(driver, 35).until(read_snapshot)", snapshot)
+        self.require("browser.find_elements(By.CSS_SELECTOR, \".alert.alert-success, .alert.alert-danger\")", snapshot)
+        self.require("except StaleElementReferenceException:", snapshot)
+        self.require("text = notice.text", snapshot)
+        self.require('class_name = notice.get_attribute("class") or ""', snapshot)
+
+        helper = self.browser.split("def reject_issue_with_invalid_csrf", 1)[1].split("def confirmation_form", 1)[0]
+        self.require(
+            'notice_text.strip() != "관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요."',
+            helper,
+        )
+        self.require('"alert-danger" not in notice_class.split()', helper)
+
+        csrf_flow = self.browser.split('stage = result["stage"] = "csrf_rejected"', 1)[1].split(
+            'stage = result["stage"] = "instruction_issue"', 1
+        )[0]
+        self.require("reject_issue_with_invalid_csrf(admin, row", csrf_flow)
+        self.require('substage = "csrf_unissued_db_readback"', csrf_flow)
+        self.require('result["issue_csrf_rejected"] = True', csrf_flow)
+        no_change_readback = csrf_flow.index('verify_unpaid_native_order(ctx, order, "unissued")')
+        self.assertLess(
+            csrf_flow.index("reject_issue_with_invalid_csrf(admin, row"),
+            no_change_readback,
+        )
+        self.assertLess(no_change_readback, csrf_flow.index('result["issue_csrf_rejected"] = True'))
+
     def test_artifact_coverage_requires_the_dedicated_bank_order_readback(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
         self.require('name = f"bank-transfer-{order[\'viewport\']}-unpaid-readback.json"', self.browser)

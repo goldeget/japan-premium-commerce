@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from selenium import webdriver
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -400,6 +401,23 @@ def read_visible_notice(driver: webdriver.Chrome):
     ), None))
 
 
+def read_visible_notice_snapshot(driver: webdriver.Chrome) -> tuple[str, str]:
+    def read_snapshot(browser):
+        for notice in browser.find_elements(By.CSS_SELECTOR, ".alert.alert-success, .alert.alert-danger"):
+            try:
+                if not notice.is_displayed():
+                    continue
+                text = notice.text
+                class_name = notice.get_attribute("class") or ""
+                if notice.is_displayed():
+                    return text, class_name
+            except StaleElementReferenceException:
+                continue
+        return False
+
+    return WebDriverWait(driver, 35).until(read_snapshot)
+
+
 def reject_issue_with_invalid_csrf(driver: webdriver.Chrome, row, admin_root: str, set_substage) -> None:
     forms = row.find_elements(By.CSS_SELECTOR, "form")
     if len(forms) != 1:
@@ -416,9 +434,9 @@ def reject_issue_with_invalid_csrf(driver: webdriver.Chrome, row, admin_root: st
     driver.execute_script("arguments[0].value = 'invalid';", tokens[0])
     buttons[0].click()
     set_substage("csrf_rejection_readback")
-    notice = read_visible_notice(driver)
-    if ("관리자 보안 토큰이 올바르지 않습니다." not in notice.text
-            or "alert-danger" not in (notice.get_attribute("class") or "")):
+    notice_text, notice_class = read_visible_notice_snapshot(driver)
+    if (notice_text.strip() != "관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요."
+            or "alert-danger" not in notice_class.split()):
         raise AssertionError("an invalid instruction CSRF token was not rejected by the native controller")
 
 

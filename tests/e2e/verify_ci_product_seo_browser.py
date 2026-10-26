@@ -223,17 +223,24 @@ def read_product_page(driver: webdriver.Chrome, result: dict[str, Any]) -> dict[
     result["visible_add_button_controls"] = bounded_control_count(len(visible_add_buttons))
     assert_true(len(visible_add_buttons) == 1, "synthetic product has no unique visible add-to-cart control")
     result["substage"] = "add_button_enabled_state"
-    purchasable = visible_add_buttons[0].is_enabled() and visible_add_buttons[0].get_attribute("aria-disabled") != "true"
+    button_enabled = visible_add_buttons[0].is_enabled()
+    aria_disabled = visible_add_buttons[0].get_attribute("aria-disabled")
+    purchasable = button_enabled and aria_disabled != "true"
+    result["add_button_state"] = "enabled" if purchasable else "disabled"
 
     result["stage"] = "rendered_product_offer"
+    result["substage"] = "canonical_link_count"
     canonical_links = driver.find_elements(By.CSS_SELECTOR, "link[rel='canonical']")
     assert_true(len(canonical_links) == 1, "product page has no unique canonical URL")
+    result["substage"] = "canonical_product_identity"
     canonical_url = canonical_links[0].get_attribute("href") or ""
     assert_true(product_id_matches_url(canonical_url), "canonical URL does not identify the fixture on the isolated shop origin")
+    result["substage"] = "jsonld_script_readback"
     scripts = driver.execute_script(
         "return [...document.querySelectorAll('script[type=\"application/ld+json\"]')].map(item => item.textContent || '')"
     )
     assert_true(isinstance(scripts, list) and bool(scripts), "product page has no JSON-LD scripts")
+    result["substage"] = "jsonld_product_offer_identity"
     product, offer = schema_product_for_reference(scripts)
 
     checks = {
@@ -250,6 +257,10 @@ def read_product_page(driver: webdriver.Chrome, result: dict[str, Any]) -> dict[
             and purchasable
         ),
     }
+    # Keep bounded predicate evidence when a rendered contract fails. The
+    # exception summary may contain booleans and fixed keys only.
+    result["checks"] = checks
+    result["substage"] = "offer_assertions"
     assert_true(all(checks.values()), "Product/Offer JSON-LD did not match its visible synthetic product UI")
     return {
         "status": "success",
@@ -272,7 +283,10 @@ def main() -> None:
         options.add_argument(argument)
     options.add_argument("--window-size=1440,960")
 
-    result: dict[str, Any] = {"status": "failure", "stage": "browser_start", "substage": "browser_start", "checks": {}}
+    result: dict[str, Any] = {
+        "status": "failure", "stage": "browser_start", "substage": "browser_start",
+        "checks": {}, "add_button_state": "unavailable",
+    }
     driver: webdriver.Chrome | None = None
     try:
         driver = webdriver.Chrome(options=options)
@@ -301,12 +315,16 @@ def main() -> None:
         if type(response_status) is not int or not 100 <= response_status <= 599:
             response_status = "unavailable"
         allowed_control_counts = ("none", "one", "multiple")
+        allowed_button_states = ("enabled", "disabled", "unavailable")
         matched_controls = result.get("matched_add_button_controls")
         visible_controls = result.get("visible_add_button_controls")
+        button_state = result.get("add_button_state")
         if matched_controls not in allowed_control_counts:
             matched_controls = "unavailable"
         if visible_controls not in allowed_control_counts:
             visible_controls = "unavailable"
+        if button_state not in allowed_button_states:
+            button_state = "unavailable"
         print(
             "FAIL: synthetic product SEO browser "
             f"stage={result.get('stage', 'unknown')} substage={result.get('substage', 'unknown')} "
@@ -315,6 +333,7 @@ def main() -> None:
             f"japanese_document={str(result.get('japanese_document', False)).lower()} "
             f"matched_add_button_controls={matched_controls} "
             f"visible_add_button_controls={visible_controls} "
+            f"add_button_state={button_state} "
             f"checks={check_summary}",
             file=sys.stderr,
         )

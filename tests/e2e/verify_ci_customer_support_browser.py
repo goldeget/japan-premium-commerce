@@ -72,15 +72,24 @@ SAFE_RESULT_KEYS = {
     "image_attachment_admin_readback", "image_attachment_foreign_denied", "disallowed_attachment_rejected",
     "foreign_valid_thread_denied", "foreign_orderless_post_denied", "orderless_thread_unchanged",
     "contact_document_status", "contact_same_origin", "contact_native_route",
-    "contact_form_count", "contact_form_visible",
+    "contact_form_count", "contact_form_visible", "browser_substage",
 }
 RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {
     "status", "stage", "exception_type", "mailpit_provider",
-    "contact_document_status", "contact_form_count",
+    "contact_document_status", "contact_form_count", "browser_substage",
 }
 SAFE_EXCEPTION_TYPES = {
     "AssertionError", "TimeoutException", "ValueError", "RuntimeError", "URLError", "OSError",
     "StaleElementReferenceException", "ElementClickInterceptedException", "NoSuchElementException", "OtherError",
+}
+SAFE_BROWSER_SUBSTAGES = {
+    "not_applicable", "contact_form_navigation", "order_select_lookup", "order_option_scan",
+    "order_owner_assertion", "order_select_scroll", "order_select_hit_test", "order_select_click",
+    "order_select_home_key", "order_select_down_key", "order_select_enter_key", "order_select_readback",
+    "contact_field_lookup", "contact_id_readback", "attachment_control_lookup", "attachment_send_keys",
+    "accepted_attachment_fixture_validation", "accepted_attachment_file_readback", "message_field_lookup",
+    "message_send_keys", "submit_control_lookup", "submit_control_scroll", "submit_control_hit_test",
+    "submit_button_click", "response_alert_wait", "rejection_assertion", "rejection_verified",
 }
 
 
@@ -422,12 +431,24 @@ def visible(driver, selector: str, timeout: int = 30):
     return WebDriverWait(driver, timeout).until(EC.visibility_of_element_located((By.CSS_SELECTOR, selector)))
 
 
-def center_native_control(driver, element, control_name: str) -> None:
+def mark_browser_substage(result: dict[str, Any] | None, substage: str) -> None:
+    if not isinstance(substage, str) or substage not in SAFE_BROWSER_SUBSTAGES:
+        raise ValueError("customer support browser substage is not allowlisted")
+    if result is not None:
+        result["browser_substage"] = substage
+
+
+def center_native_control(
+    driver, element, control_name: str, *, diagnostic_result: dict[str, Any] | None = None,
+    scroll_substage: str, hit_test_substage: str,
+) -> None:
     """Scroll one exact native control clear of sticky viewport overlays."""
+    mark_browser_substage(diagnostic_result, scroll_substage)
     driver.execute_script(
         "arguments[0].scrollIntoView({behavior: 'instant', block: 'center', inline: 'nearest'});",
         element,
     )
+    mark_browser_substage(diagnostic_result, hit_test_substage)
     unobscured = driver.execute_script("""
       const element = arguments[0];
       const rect = element.getBoundingClientRect();
@@ -439,8 +460,11 @@ def center_native_control(driver, element, control_name: str) -> None:
         raise AssertionError(f"native support {control_name} control is obstructed")
 
 
-def select_contact_order(driver, select_element, value: str) -> None:
+def select_contact_order(
+    driver, select_element, value: str, *, diagnostic_result: dict[str, Any] | None = None
+) -> None:
     """Use the native select keyboard path and verify the exact selected value."""
+    mark_browser_substage(diagnostic_result, "order_option_scan")
     options = select_element.find_elements(By.TAG_NAME, "option")
     matching_indices = [
         index for index, option in enumerate(options)
@@ -448,12 +472,24 @@ def select_contact_order(driver, select_element, value: str) -> None:
     ]
     if len(matching_indices) != 1 or not options[matching_indices[0]].is_enabled():
         raise AssertionError("native contact form did not expose one selectable order option")
-    center_native_control(driver, select_element, "order selection")
+    center_native_control(
+        driver,
+        select_element,
+        "order selection",
+        diagnostic_result=diagnostic_result,
+        scroll_substage="order_select_scroll",
+        hit_test_substage="order_select_hit_test",
+    )
+    mark_browser_substage(diagnostic_result, "order_select_click")
     select_element.click()
+    mark_browser_substage(diagnostic_result, "order_select_home_key")
     select_element.send_keys(Keys.HOME)
     for _ in range(matching_indices[0]):
+        mark_browser_substage(diagnostic_result, "order_select_down_key")
         select_element.send_keys(Keys.ARROWDOWN)
+    mark_browser_substage(diagnostic_result, "order_select_enter_key")
     select_element.send_keys(Keys.ENTER)
+    mark_browser_substage(diagnostic_result, "order_select_readback")
     if select_element.get_attribute("value") != value:
         raise AssertionError("native contact form did not select the exact requested order")
 
@@ -568,35 +604,48 @@ def contact_form(driver, url: str):
 def submit_contact_message(
     driver, ctx: Context, order: dict[str, Any], marker: str, attachment_path: Path | None,
     thread_url: str | None = None, *, expected_rejection: bool = False, order_linked: bool = True,
+    diagnostic_result: dict[str, Any] | None = None,
 ) -> None:
+    mark_browser_substage(diagnostic_result, "contact_form_navigation")
     form = contact_form(driver, thread_url or ctx.contact_url)
+    mark_browser_substage(diagnostic_result, "order_select_lookup")
     order_selects = form.find_elements(By.CSS_SELECTOR, "select#contact-us-id-order-select[name='id_order']")
     if not order_selects:
         raise AssertionError("native contact form did not expose the customer's order selection")
     order_select = Select(order_selects[0])
+    mark_browser_substage(diagnostic_result, "order_option_scan")
     matching_options = [option for option in order_select.options if option.get_attribute("value") == str(order["order_id"])]
+    mark_browser_substage(diagnostic_result, "order_owner_assertion")
     if order_linked:
         if len(matching_options) != 1 or order["reference"] not in matching_options[0].text:
             raise AssertionError("native contact form did not offer the exact customer-owned order")
-        select_contact_order(driver, order_selects[0], str(order["order_id"]))
+        select_contact_order(
+            driver, order_selects[0], str(order["order_id"]), diagnostic_result=diagnostic_result
+        )
     else:
-        select_contact_order(driver, order_selects[0], "")
+        select_contact_order(driver, order_selects[0], "", diagnostic_result=diagnostic_result)
 
+    mark_browser_substage(diagnostic_result, "contact_field_lookup")
     contact_fields = form.find_elements(By.NAME, "id_contact")
     if len(contact_fields) != 1:
         raise AssertionError("native contact form must select exactly one support contact")
+    mark_browser_substage(diagnostic_result, "contact_id_readback")
     contact_value = contact_fields[0].get_attribute("value")
     if not isinstance(contact_value, str) or not contact_value.isdigit() or int(contact_value) < 1:
         raise AssertionError("native contact form did not select a valid contact")
+    mark_browser_substage(diagnostic_result, "attachment_control_lookup")
     file_fields = form.find_elements(By.CSS_SELECTOR, "input[type='file'][name='fileUpload']")
     if attachment_path is not None:
         if len(file_fields) != 1 or not file_fields[0].is_displayed():
             raise AssertionError("native contact form did not expose the enabled attachment control")
         expected_mime = "image/png" if attachment_path.suffix == ".png" else "text/plain"
         if not expected_rejection:
+            mark_browser_substage(diagnostic_result, "accepted_attachment_fixture_validation")
             validate_synthetic_upload(attachment_path.name, attachment_path.read_bytes(), expected_mime)
+        mark_browser_substage(diagnostic_result, "attachment_send_keys")
         file_fields[0].send_keys(str(attachment_path))
         if not expected_rejection:
+            mark_browser_substage(diagnostic_result, "accepted_attachment_file_readback")
             metadata = driver.execute_script("""
               const file = arguments[0].files[0];
               return file ? {name: file.name, mime: file.type, size: file.size} : null;
@@ -604,15 +653,30 @@ def submit_contact_message(
             if (not isinstance(metadata, dict) or metadata.get("name") != attachment_path.name
                 or metadata.get("mime") != expected_mime or metadata.get("size") != attachment_path.stat().st_size):
                 raise AssertionError("native contact upload did not select the exact bounded synthetic fixture")
-    visible(driver, "#contact-us-message-textarea").send_keys(marker)
+    mark_browser_substage(diagnostic_result, "message_field_lookup")
+    message_field = visible(driver, "#contact-us-message-textarea")
+    mark_browser_substage(diagnostic_result, "message_send_keys")
+    message_field.send_keys(marker)
+    mark_browser_substage(diagnostic_result, "submit_control_lookup")
     submit = visible(driver, "button[name='submitMessage']")
-    center_native_control(driver, submit, "message submit")
+    center_native_control(
+        driver,
+        submit,
+        "message submit",
+        diagnostic_result=diagnostic_result,
+        scroll_substage="submit_control_scroll",
+        hit_test_substage="submit_control_hit_test",
+    )
+    mark_browser_substage(diagnostic_result, "submit_button_click")
     submit.click()
+    mark_browser_substage(diagnostic_result, "response_alert_wait")
     WebDriverWait(driver, 35).until(lambda browser: bool(browser.find_elements(By.CSS_SELECTOR, ".contact-form .alert.alert-success, .contact-form .alert.alert-danger")))
     if expected_rejection:
+        mark_browser_substage(diagnostic_result, "rejection_assertion")
         if (not driver.find_elements(By.CSS_SELECTOR, ".contact-form .alert.alert-danger")
             or driver.find_elements(By.CSS_SELECTOR, ".contact-form .alert.alert-success")):
             raise AssertionError("native contact form accepted a disallowed attachment extension")
+        mark_browser_substage(diagnostic_result, "rejection_verified")
         return
     if driver.find_elements(By.CSS_SELECTOR, ".contact-form .alert.alert-danger"):
         raise AssertionError("native contact form reported a failed inquiry submission")
@@ -966,6 +1030,8 @@ def write_result(path: Path, result: dict[str, Any]) -> None:
             or not 100 <= result["contact_document_status"] <= 599
         ))
         or type(result.get("contact_form_count")) is not int or result["contact_form_count"] < 0
+        or not isinstance(result.get("browser_substage"), str)
+        or result["browser_substage"] not in SAFE_BROWSER_SUBSTAGES
         or result.get("mailpit_provider") != "isolated_only"
         or (result.get("exception_type") is not None and result.get("exception_type") not in SAFE_EXCEPTION_TYPES)
         or (result.get("status") == "success" and (
@@ -984,6 +1050,7 @@ def run() -> None:
     stage = "fixture"
     result: dict[str, Any] = {
         "status": "failure", "stage": stage, "exception_type": None,
+        "browser_substage": "not_applicable",
         "customer_submitted": False, "order_association_verified": False,
         "attachment_admin_readback": False, "private_note_admin_only": False,
         "status_close_reopen": False, "admin_public_reply": False,
@@ -1056,8 +1123,12 @@ def run() -> None:
             file.write(b"ORDENOWA_CI_INERT_DISALLOWED_EXTENSION")
             rejected_file = Path(file.name)
         stage = result["stage"] = "rejected_attachment"
-        submit_contact_message(customer, ctx, ctx.buyer, rejected_marker, rejected_file, expected_rejection=True)
+        submit_contact_message(
+            customer, ctx, ctx.buyer, rejected_marker, rejected_file,
+            expected_rejection=True, diagnostic_result=result,
+        )
         result["disallowed_attachment_rejected"] = True
+        mark_browser_substage(result, "not_applicable")
         stage = result["stage"] = "submit_inquiry"
         submit_contact_message(customer, ctx, ctx.buyer, buyer_marker, attachment_file)
         result["customer_submitted"] = True
@@ -1304,6 +1375,7 @@ def run() -> None:
             contact_status = "unavailable"
         print(
             f"FAIL: isolated customer support QA; stage={stage}; exception={result['exception_type']}; "
+            f"browser_substage={result['browser_substage']}; "
             f"contact_status={contact_status}; "
             f"same_origin={str(result['contact_same_origin']).lower()}; "
             f"native_route={str(result['contact_native_route']).lower()}; "

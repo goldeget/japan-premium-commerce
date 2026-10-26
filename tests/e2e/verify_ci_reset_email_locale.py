@@ -44,16 +44,67 @@ SAFE_MESSAGE_CHECKS = {
     'reset_link_path_mismatch', 'parts_credentials_mismatch',
     'html_reset_link_missing', 'text_reset_link_missing',
 }
+MAX_LINK_DIAGNOSTIC_COUNT = 20
+PART_EVIDENCE_KEYS = {'required_link_candidate_count', 'reset_credential_candidate_count',
+                      'native_reset_link_shape'}
 
 
 class MessageValidationError(AssertionError):
     """A reset email failed one named predicate without retaining message data."""
 
-    def __init__(self, check: str) -> None:
+    def __init__(self, check: str, part_evidence: dict | None = None) -> None:
         if check not in SAFE_MESSAGE_CHECKS - {'none'}:
             raise ValueError('unknown reset message check')
         self.check = check
+        self.part_evidence = part_evidence
         super().__init__('native reset message check failed')
+
+
+def safe_link_candidate_evidence(required_candidates: list[str], base: str, reset_path: str) -> dict:
+    """Return only bounded counts and route-shape booleans, never link data."""
+    candidates = {candidate.rstrip('.,);]') for candidate in required_candidates}
+    credential_keys = {'token', 'reset_token', 'id_customer'}
+    credential_candidate_count = 0
+    native_reset_link_shape = False
+    for candidate in candidates:
+        query = parse_qs(urlparse(candidate).query, keep_blank_values=True)
+        if not (credential_keys & query.keys()):
+            continue
+        credential_candidate_count += 1
+        if ('token' not in query or not ({'reset_token', 'id_customer'} & query.keys())
+                or any(len(query[key]) != 1 or not query[key][0].strip()
+                       for key in credential_keys & query.keys())):
+            continue
+        destination = urljoin(base + '/', candidate)
+        if (same_origin(destination, base)
+                and unquote(urlparse(destination).path) == unquote(reset_path)):
+            native_reset_link_shape = True
+    return {
+        'required_link_candidate_count': min(len(candidates), MAX_LINK_DIAGNOSTIC_COUNT),
+        'reset_credential_candidate_count': min(credential_candidate_count, MAX_LINK_DIAGNOSTIC_COUNT),
+        'native_reset_link_shape': native_reset_link_shape,
+    }
+
+
+def format_part_evidence(evidence: dict | None) -> str:
+    if not isinstance(evidence, dict) or set(evidence) != {'html', 'text'}:
+        return 'unavailable'
+    rendered = []
+    for part in ('html', 'text'):
+        values = evidence.get(part)
+        if (not isinstance(values, dict) or set(values) != PART_EVIDENCE_KEYS
+                or type(values.get('required_link_candidate_count')) is not int
+                or type(values.get('reset_credential_candidate_count')) is not int
+                or type(values.get('native_reset_link_shape')) is not bool
+                or not 0 <= values['required_link_candidate_count'] <= MAX_LINK_DIAGNOSTIC_COUNT
+                or not 0 <= values['reset_credential_candidate_count'] <= MAX_LINK_DIAGNOSTIC_COUNT):
+            return 'unavailable'
+        rendered.append(
+            f'{part}:refs={values["required_link_candidate_count"]},'
+            f'credential_candidates={values["reset_credential_candidate_count"]},'
+            f'native_shape={str(values["native_reset_link_shape"]).lower()}'
+        )
+    return ';'.join(rendered)
 
 
 def write_diagnostics(result: dict) -> None:
@@ -67,13 +118,26 @@ def write_diagnostics(result: dict) -> None:
         return
     if artifact_dir == temp_dir:
         return
+    part_evidence = result.get('message_part_evidence')
+    valid_part_evidence = part_evidence is None or (
+        isinstance(part_evidence, dict) and set(part_evidence) == {'html', 'text'}
+        and all(isinstance(part_evidence.get(part), dict)
+                and set(part_evidence[part]) == PART_EVIDENCE_KEYS
+                and type(part_evidence[part].get('required_link_candidate_count')) is int
+                and 0 <= part_evidence[part]['required_link_candidate_count'] <= MAX_LINK_DIAGNOSTIC_COUNT
+                and type(part_evidence[part].get('reset_credential_candidate_count')) is int
+                and 0 <= part_evidence[part]['reset_credential_candidate_count'] <= MAX_LINK_DIAGNOSTIC_COUNT
+                and type(part_evidence[part].get('native_reset_link_shape')) is bool
+                for part in ('html', 'text'))
+    )
     if (set(result) != {
             'status', 'language', 'stage', 'exception_type', 'response_status',
-            'message_check',
+            'message_check', 'message_part_evidence',
             'same_origin', 'native_route', 'language_matches', 'email_field_present',
             'submit_control_present', 'submit_center_in_viewport',
             'submit_center_unobstructed', 'success_alert_present', 'reset_fields_present',
         }
+            or not valid_part_evidence
             or result['status'] not in {'success', 'failure'}
             or result['language'] not in (*LANGUAGES, 'none')
             or result['stage'] not in SAFE_STAGES
@@ -172,9 +236,18 @@ def assert_message(message: dict, language: str, base: str, reset_path: str,
     allowed_secure_key_occurrences = {'HTML': 0, 'Text': 0}
     html_visible_urls = re.findall(r'https?://[^\s<>"\']+', ' '.join(parser.text_fragments))
     text_urls = re.findall(r'https?://[^\s<>"\']+', text)
-    for part, candidates, required_link_candidates in (
-            ('HTML', [*parser.hrefs, *html_visible_urls], parser.hrefs),
-            ('Text', text_urls, text_urls)):
+    part_candidates = (
+        ('HTML', [*parser.hrefs, *html_visible_urls], parser.hrefs),
+        ('Text', text_urls, text_urls),
+    )
+    part_evidence = {
+        part.lower(): safe_link_candidate_evidence(
+            list({candidate.rstrip('.,);]') for candidate in required_link_candidates}),
+            base, reset_path,
+        )
+        for part, _, required_link_candidates in part_candidates
+    }
+    for part, candidates, required_link_candidates in part_candidates:
         required_candidates = {candidate.rstrip('.,);]') for candidate in required_link_candidates}
         required_reset_link_found = False
         for candidate in candidates:
@@ -201,7 +274,7 @@ def assert_message(message: dict, language: str, base: str, reset_path: str,
             if query.get('token') == [secure_key] and candidate.count(secure_key) == 1:
                 allowed_secure_key_occurrences[part] += 1
         if not required_reset_link_found:
-            raise MessageValidationError(f'{part.lower()}_reset_link_missing')
+            raise MessageValidationError(f'{part.lower()}_reset_link_missing', part_evidence)
     for part, body in (('HTML', html), ('Text', text)):
         if body.count(secure_key) != allowed_secure_key_occurrences[part]:
             raise MessageValidationError('customer_secure_key_outside_reset_link')
@@ -318,7 +391,7 @@ def run() -> bool:
     stage, language = 'context', 'none'
     diagnostic = {
         'status': 'failure', 'language': 'none', 'stage': 'context', 'exception_type': None,
-        'message_check': 'none',
+        'message_check': 'none', 'message_part_evidence': None,
         'response_status': None, 'same_origin': False, 'native_route': False,
         'language_matches': False, 'email_field_present': False,
         'submit_control_present': False, 'submit_center_in_viewport': False,
@@ -335,7 +408,7 @@ def run() -> bool:
         for language in LANGUAGES:
             stage = 'seed'
             diagnostic.update(language=language, stage=stage, response_status=None,
-                              message_check='none',
+                              message_check='none', message_part_evidence=None,
                               same_origin=False, native_route=False, language_matches=False,
                               email_field_present=False, submit_control_present=False,
                               submit_center_in_viewport=False, submit_center_unobstructed=False,
@@ -416,6 +489,7 @@ def run() -> bool:
         diagnostic['exception_type'] = type(error).__name__ if type(error).__name__ in SAFE_EXCEPTION_TYPES else 'OtherError'
         if isinstance(error, MessageValidationError):
             diagnostic['message_check'] = error.check
+            diagnostic['message_part_evidence'] = error.part_evidence
         response_status = diagnostic['response_status']
         if type(response_status) is not int or not 100 <= response_status <= 599:
             response_status = 'unavailable'
@@ -423,6 +497,7 @@ def run() -> bool:
             f'FAIL: isolated native reset email locale={language} stage={stage} '
             f'exception={diagnostic["exception_type"]}; response_status={response_status}; '
             f'message_check={diagnostic["message_check"]}; '
+            f'message_parts={format_part_evidence(diagnostic["message_part_evidence"])}; '
             f'same_origin={str(diagnostic["same_origin"]).lower()}; '
             f'native_route={str(diagnostic["native_route"]).lower()}; '
             f'language_matches={str(diagnostic["language_matches"]).lower()}; '

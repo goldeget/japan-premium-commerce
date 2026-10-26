@@ -127,7 +127,8 @@ class CiProductSeoBrowserContractTests(unittest.TestCase):
             'result["visible_add_button_controls"] = bounded_control_count(len(visible_add_buttons))',
             'assert_true(len(visible_add_buttons) == 1',
             'result["substage"] = "add_button_enabled_state"',
-            'purchasable = visible_add_buttons[0].is_enabled()',
+            'button_enabled = visible_add_buttons[0].is_enabled()',
+            'result["add_button_state"] = "enabled" if purchasable else "disabled"',
         ):
             with self.subTest(required=required):
                 self.assertIn(required, availability)
@@ -157,6 +158,23 @@ class CiProductSeoBrowserContractTests(unittest.TestCase):
         for invalid in (-1, True, 1.0, "1", None):
             with self.subTest(invalid=invalid):
                 self.assertEqual("unavailable", classify(invalid))
+
+    def test_rendered_offer_failure_persists_bounded_checks_and_exact_substage(self) -> None:
+        source = SCRIPT.read_text(encoding="utf-8")
+        checks_written = source.index('result["checks"] = checks')
+        offer_substage = source.index('result["substage"] = "offer_assertions"', checks_written)
+        assertion = source.index('assert_true(all(checks.values())', offer_substage)
+        self.assertLess(checks_written, offer_substage)
+        self.assertLess(offer_substage, assertion)
+        self.assertIn('check_summary = ";".join(', source)
+        self.assertIn('for name, value in sorted(result.get("checks", {}).items())', source)
+
+    def test_failure_summary_uses_only_fixed_button_state_values(self) -> None:
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('allowed_button_states = ("enabled", "disabled", "unavailable")', source)
+        self.assertIn('button_state = result.get("add_button_state")', source)
+        self.assertIn('f"add_button_state={button_state} "', source)
+        self.assertIn('if button_state not in allowed_button_states:', source)
 
     def test_fresh_install_workflow_runs_and_aggregates_the_product_seo_browser(self) -> None:
         workflow_path = ROOT / ".github/workflows/fresh-install.yml"
