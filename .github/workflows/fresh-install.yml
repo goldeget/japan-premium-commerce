@@ -1094,7 +1094,19 @@ jobs:
           browser_status=${PIPESTATUS[0]}
           set -e
           if [ "$browser_status" -ne 0 ]; then
-            failure_line=$(rg '^ORDENOWA_PRODUCT_ADMIN_STAGE=' "$log_file" | tail -n 1 || true)
+            failure_line=$(python3 - "$log_file" <<'PY'
+          from pathlib import Path
+          import sys
+
+          marker = 'ORDENOWA_PRODUCT_ADMIN_STAGE='
+          try:
+              lines = Path(sys.argv[1]).read_text(encoding='utf-8').splitlines()
+          except (OSError, UnicodeError):
+              lines = []
+          matches = [line for line in lines if line.startswith(marker)]
+          print(matches[-1] if matches else '')
+          PY
+          )
             printf 'ORDENOWA product admin browser failure: %s\n' "${failure_line:-See the uploaded product admin browser log for the failing stage.}" >> "$GITHUB_STEP_SUMMARY"
             exit "$browser_status"
           fi

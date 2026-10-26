@@ -616,6 +616,8 @@ def product_edit_failure_diagnostics(
     product_id: int,
     expected_field_values: dict[str, str],
     category_ids_before_submit: object,
+    edit_substage: str,
+    distinct_stock_milestones: dict[str, bool],
 ) -> dict[str, object]:
     """Return bounded edit state, excluding product values, page text, and tokens."""
     page_state = driver.execute_script(
@@ -701,6 +703,18 @@ def product_edit_failure_diagnostics(
     network_diagnostics = product_post_network_diagnostics(driver)
 
     return {
+        "edit_substage": edit_substage if edit_substage in {
+            "not_started", "resolve_distinct_stock_submit_control", "click_distinct_stock_submit",
+            "wait_distinct_stock_form_stale", "wait_distinct_stock_save_confirmation",
+            "verify_distinct_option_stock_readback", "verify_product_level_default_stock",
+        } else "unknown",
+        "distinct_stock_click_attempted": distinct_stock_milestones.get("click_attempted") is True,
+        "distinct_stock_click_returned": distinct_stock_milestones.get("click_returned") is True,
+        "distinct_stock_form_stale_wait_completed": distinct_stock_milestones.get("form_stale_wait_completed") is True,
+        "distinct_stock_save_confirmation_observed": distinct_stock_milestones.get("save_confirmation_observed") is True,
+        "distinct_stock_readback_started": distinct_stock_milestones.get("readback_started") is True,
+        "distinct_stock_readback_completed": distinct_stock_milestones.get("readback_completed") is True,
+        "product_default_stock_check_completed": distinct_stock_milestones.get("product_default_stock_check_completed") is True,
         "manager_route_present": bool(page_state.get("manager_route_present")),
         "product_form_present": bool(page_state.get("product_form_present")),
         "product_id_present": bool(page_state.get("product_id_present")),
@@ -805,6 +819,16 @@ def run() -> None:
     stage = "chromium_startup"
     create_operation = "not_started"
     edit_operation = "not_started"
+    edit_substage = "not_started"
+    distinct_stock_milestones = {
+        "click_attempted": False,
+        "click_returned": False,
+        "form_stale_wait_completed": False,
+        "save_confirmation_observed": False,
+        "readback_started": False,
+        "readback_completed": False,
+        "product_default_stock_check_completed": False,
+    }
     product_id = 0
     expected_edit_fields: dict[str, str] = {}
     edit_category_ids_before_submit: list[str] = []
@@ -1110,20 +1134,34 @@ def run() -> None:
         distinct_stock_form = visible(driver, "form #name_ja")
         edit_operation = "submit_distinct_option_stock"
         clear_product_browser_network_events(driver)
-        visible(driver, 'button[name="submitKuraneaProductSave"]').click()
+        edit_substage = "resolve_distinct_stock_submit_control"
+        distinct_stock_submit = visible(driver, 'button[name="submitKuraneaProductSave"]')
+        edit_substage = "click_distinct_stock_submit"
+        distinct_stock_milestones["click_attempted"] = True
+        distinct_stock_submit.click()
+        distinct_stock_milestones["click_returned"] = True
+        edit_substage = "wait_distinct_stock_form_stale"
         WebDriverWait(driver, 45).until(EC.staleness_of(distinct_stock_form))
+        distinct_stock_milestones["form_stale_wait_completed"] = True
+        edit_substage = "wait_distinct_stock_save_confirmation"
         distinct_stock_result = WebDriverWait(driver, 45).until(product_save_result)
         if not isinstance(distinct_stock_result, dict) or distinct_stock_result.get("status") != "success":
             raise AssertionError("distinct option stock did not save successfully")
+        distinct_stock_milestones["save_confirmation_observed"] = True
         edit_operation = "verify_distinct_option_stock"
+        edit_substage = "verify_distinct_option_stock_readback"
+        distinct_stock_milestones["readback_started"] = True
         saved_combination_stock_values = wait_for_combination_stock_values(
             driver,
             expected_combination_quantities,
         )
         if saved_combination_stock_values != expected_combination_quantities:
             raise AssertionError("distinct option stock did not persist for every native combination")
+        distinct_stock_milestones["readback_completed"] = True
+        edit_substage = "verify_product_level_default_stock"
         if visible(driver, "#quantity").get_attribute("value") != "0":
             raise AssertionError("per-combination stock editing changed the product-level default quantity")
+        distinct_stock_milestones["product_default_stock_check_completed"] = True
         driver.save_screenshot(str(DEST / "product-admin-distinct-combination-stock-desktop.png"))
 
         print(f"PASS: Chromium created and edited inactive native product ID={product_id}; image {old_image_id} replaced; distinct combination stock saved.")
@@ -1153,6 +1191,8 @@ def run() -> None:
                         product_id,
                         expected_edit_fields,
                         edit_category_ids_before_submit,
+                        edit_substage=edit_substage,
+                        distinct_stock_milestones=distinct_stock_milestones,
                     )
                 except Exception:
                     edit_diagnostics = {"diagnostics_unavailable": True}

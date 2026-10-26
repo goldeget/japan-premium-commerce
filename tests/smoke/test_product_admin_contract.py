@@ -840,6 +840,55 @@ class ProductAdminContractTests(unittest.TestCase):
             submit_flow.index("wait_for_combination_stock_values"),
         )
 
+    def test_distinct_option_stock_diagnostics_split_submit_waits_and_native_readback(self) -> None:
+        browser = (ROOT / "tests" / "e2e" / "verify_product_admin_browser.py").read_text(encoding="utf-8")
+        edit_flow = browser.split('stage = "native_product_edit"', 1)[1].split(
+            "    except Exception as error:", 1
+        )[0]
+        failure_handler = browser.split("except Exception as error:", 1)[1].split("finally:", 1)[0]
+        diagnostics = browser.split("def product_edit_failure_diagnostics(", 1)[1].split(
+            "def product_links(", 1
+        )[0]
+        required = (
+            'edit_substage = "click_distinct_stock_submit"',
+            'edit_substage = "wait_distinct_stock_form_stale"',
+            'edit_substage = "wait_distinct_stock_save_confirmation"',
+            'edit_substage = "verify_distinct_option_stock_readback"',
+            'edit_substage = "verify_product_level_default_stock"',
+            'edit_substage=edit_substage',
+            '"edit_substage"',
+            '"distinct_stock_click_returned"',
+            '"distinct_stock_form_stale_wait_completed"',
+            '"distinct_stock_save_confirmation_observed"',
+            '"distinct_stock_readback_started"',
+            '"distinct_stock_readback_completed"',
+        )
+        for marker in required:
+            with self.subTest(marker=marker):
+                self.assertIn(marker, edit_flow + failure_handler + diagnostics)
+
+        submit_flow = edit_flow.split('edit_operation = "submit_distinct_option_stock"', 1)[1].split(
+            'driver.save_screenshot(str(DEST / "product-admin-distinct-combination-stock-desktop.png"))', 1
+        )[0]
+        self.assertIn('WebDriverWait(driver, 45).until(EC.staleness_of(distinct_stock_form))', submit_flow)
+        self.assertIn('WebDriverWait(driver, 45).until(product_save_result)', submit_flow)
+        self.assertIn('expected_combination_quantities = ["0", "2", "4", "6"]', edit_flow)
+        self.assertIn('wait_for_combination_stock_values(', submit_flow)
+        self.assertIn('expected_combination_quantities,', submit_flow)
+        self.assertIn('saved_combination_stock_values != expected_combination_quantities', submit_flow)
+        self.assertIn('visible(driver, "#quantity").get_attribute("value") != "0"', submit_flow)
+
+    def test_product_admin_failure_summary_uses_available_python_not_rg(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
+        step = workflow.split("id: product_admin_browser_qa", 1)[1].split("\n      - name:", 1)[0]
+
+        self.assertIn("failure_line=$(python3 -", step)
+        self.assertIn("ORDENOWA_PRODUCT_ADMIN_STAGE=", step)
+        self.assertIn('exit "$browser_status"', step)
+        self.assertNotIn("rg ", step)
+
+        browser_path = ROOT / "tests" / "e2e" / "verify_product_admin_browser.py"
+        browser = browser_path.read_text(encoding="utf-8")
         tree = ast.parse(browser)
         helper_names = {"combination_stock_values", "wait_for_combination_stock_values"}
         helper_nodes = [

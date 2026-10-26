@@ -182,9 +182,104 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertLess(browser.index('alert.screenshot(str(path))'), browser.index('form.screenshot(str(path))'))
         self.assertIn("state.get('stage', 'unknown')", browser)
 
+    def test_approval_clicks_capture_allowlisted_native_target_and_safe_obstruction_crop(self):
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        click_helper = browser.split('def click_with_safe_diagnostics(', 1)[1].split(
+            'def capture_safe_click_crop(', 1
+        )[0]
+        self.assertEqual(click_helper.count('element.click()'), 1)
+        self.assertNotIn('arguments[0].click()', click_helper)
+        self.assertNotIn('form.submit()', click_helper)
+        approval = browser.split("state['stage'] = 'approve_amazon'", 1)[1].split(
+            "state['last_completed_stage'] = state['stage']", 1
+        )[0]
+        for marker in (
+            'click_with_safe_diagnostics',
+            'approve_category_checkbox',
+            'approve_translation_review_en',
+            'approve_translation_review_ko',
+            'approve_options_confirmation',
+            'approve_image_rights_confirmation',
+            'approve_submit',
+        ):
+            self.assertIn(marker, approval)
+        self.assertNotIn('.click()', approval, 'approval interactions must go through the native-click evidence wrapper')
+        self.assertIn('elementFromPoint', browser)
+        self.assertIn('center_hit_relation', browser)
+        self.assertIn('target_rect', browser)
+        self.assertIn('occluder_category', browser)
+        self.assertIn('last_completed_substage', browser)
+        self.assertIn('capture_safe_click_crop', browser)
+        self.assertIn('Page.captureScreenshot', browser)
+        self.assertIn('상품 수집 항목을 반려했습니다. 사유와 담당자 기록을 보존했습니다.', browser)
+        self.assertIn('기존 TEST/DEMO 등록 경로는 별도 서버 게이트로 비활성화되어 있습니다.', browser)
+
+    def test_click_diagnostic_schema_rejects_unbounded_or_sensitive_target_data(self):
+        valid_click = {
+            'substage': 'approve_submit', 'target': 'native_draft_submit', 'action': 'native_click',
+            'attempted': True, 'returned': False, 'visible': True, 'enabled': True,
+            'target_rect': [420, 670, 140, 36], 'occluder_rect': None,
+            'center_in_viewport': True, 'center_hit_relation': 'alert', 'occluder_category': 'alert',
+        }
+        valid = {
+            'stage': 'approve_amazon', 'last_completed_stage': 'reject_rakuten',
+            'last_completed_substage': 'reject_status_readback', 'click_diagnostics': valid_click,
+            'same_admin_origin': True, 'admin_path_matches': True,
+            'controller_parameter_present': True, 'controller_allowed': True,
+            'admin_controller': 'AdminKuraneaCatalogReview', 'page_class': 'catalog_import_form',
+            'document_ready_state': 'complete', 'login_form_visible': False,
+            'product_url_field_visible': True, 'submit_control_visible': True,
+            'submit_attempted': True, 'submit_returned': True, 'submitted_url_count': 3,
+            'batch_progress_container_visible': False, 'progress_visible': False,
+            'progress_value': None, 'progress_max': None, 'row_count': 0,
+            'token_rejected_notice_visible': False, 'mutation_access_denied_notice_visible': False,
+            'empty_url_notice_visible': False, 'batch_save_failure_notice_visible': False,
+            'batch_created_notice_visible': False, 'unclassified_alert_visible': False,
+            'visible_alert_count': 3, 'document_response_status': 200,
+            'read_only_notice_visible': False, 'access_denied_notice_visible': False,
+            'queue_unavailable_notice_visible': False, 'exception_class': 'ElementClickInterceptedException',
+            'failure_screenshot_captured': True,
+        }
+        DIAGNOSTICS.validate(valid)
+        with self.assertRaises(ValueError):
+            DIAGNOSTICS.validate({**valid, 'click_diagnostics': {**valid_click, 'target': 'private-css-selector'}})
+        with self.assertRaises(ValueError):
+            DIAGNOSTICS.validate({**valid, 'click_diagnostics': {**valid_click, 'target_rect': [0, 0, 1, 'secret']}})
+        with self.assertRaises(ValueError):
+            DIAGNOSTICS.validate({**valid, 'click_diagnostics': {**valid_click, 'occluder_category': 'secret-class'}})
+        with self.assertRaises(ValueError):
+            DIAGNOSTICS.validate({**valid, 'click_diagnostics': {**valid_click, 'html': '<button>secret</button>'}})
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            diagnostic_path = Path(temporary_directory) / 'diagnostic.json'
+            screenshot_path = Path(temporary_directory) / 'failure.png'
+            screenshot_path.write_bytes(b'isolated-test-screenshot')
+            for broken_click in (None, {**valid_click, 'returned': True}):
+                with self.subTest(broken_click=broken_click):
+                    diagnostic_path.write_text(json.dumps({
+                        **valid,
+                        'click_diagnostics': broken_click,
+                        'failure_screenshot_captured': False,
+                    }), encoding='utf-8')
+                    completed = subprocess.run(
+                        [sys.executable, str(DIAGNOSTICS_PATH), '--validate',
+                         str(diagnostic_path), str(screenshot_path)],
+                        check=False, capture_output=True, text=True,
+                    )
+                    self.assertEqual(completed.returncode, 2)
+
+            diagnostic_path.write_text(json.dumps(valid), encoding='utf-8')
+            completed = subprocess.run(
+                [sys.executable, str(DIAGNOSTICS_PATH), '--validate',
+                 str(diagnostic_path), str(screenshot_path)],
+                check=False, capture_output=True, text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
     def test_failure_diagnostic_validator_rejects_unlisted_or_malformed_data_before_emission(self):
         valid = {
             'stage': 'batch_completion_wait', 'last_completed_stage': 'batch_submit_click',
+            'last_completed_substage': 'not_started', 'click_diagnostics': None,
             'same_admin_origin': True, 'admin_path_matches': True,
             'controller_parameter_present': True, 'controller_allowed': True,
             'admin_controller': 'AdminKuraneaCatalogReview', 'page_class': 'unclassified_alert',

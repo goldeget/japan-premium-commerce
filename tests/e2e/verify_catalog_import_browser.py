@@ -7,6 +7,7 @@ Only fixed stage labels, numeric IDs and sanitized readback are logged.
 from __future__ import annotations
 
 import json
+import base64
 import os
 import re
 import struct
@@ -42,6 +43,23 @@ ALLOWED_EXCEPTION_CLASSES = {
     'AssertionError', 'ElementClickInterceptedException', 'ElementNotInteractableException',
     'NoSuchElementException', 'OSError', 'RuntimeError', 'StaleElementReferenceException',
     'TimeoutException', 'ValueError', 'WebDriverException', 'Exception',
+}
+CLICK_TARGETS = {
+    'category_checkbox': 'approve_category_checkbox',
+    'translation_en_checkbox': 'approve_translation_review_en',
+    'translation_ko_checkbox': 'approve_translation_review_ko',
+    'options_confirmation_checkbox': 'approve_options_confirmation',
+    'image_rights_confirmation_checkbox': 'approve_image_rights_confirmation',
+    'native_draft_submit': 'approve_submit',
+}
+ALLOWED_CLICK_SUBSTAGES = set(CLICK_TARGETS.values()) | {'reject_rakuten_submit'}
+ALLOWED_CLICK_RELATIONS = {
+    'target', 'target_descendant', 'target_label', 'modal', 'backdrop', 'alert',
+    'fixed_navigation', 'other', 'unknown', 'outside_viewport',
+}
+ALLOWED_OCCLUDER_CATEGORIES = {
+    'none', 'label', 'modal', 'modal_backdrop', 'alert', 'fixed_header',
+    'fixed_navigation', 'other', 'unknown',
 }
 
 
@@ -108,14 +126,279 @@ def submit_batch(driver, review_url, urls, state, prefix='batch'):
     return progress_text
 
 
+def _safe_rect(value):
+    if not isinstance(value, list) or len(value) != 4:
+        return None
+    if any(type(item) is not int for item in value):
+        return None
+    if not (-2000 <= value[0] <= 2000 and -2000 <= value[1] <= 2000
+            and 0 <= value[2] <= 2000 and 0 <= value[3] <= 2000):
+        return None
+    return value
+
+
+def _safe_click_geometry(driver, element):
+    """Read only bounded geometry and fixed structural labels; never return DOM identifiers or text."""
+    empty = {
+        'target_rect': None,
+        'occluder_rect': None,
+        'visible': False,
+        'enabled': False,
+        'center_in_viewport': False,
+        'center_hit_relation': 'unknown',
+        'occluder_category': 'unknown',
+    }
+    try:
+        raw = driver.execute_script("""
+        const target = arguments[0];
+        const asRect = (rect) => [rect.left, rect.top, rect.width, rect.height]
+            .map((value) => Math.max(-2000, Math.min(2000, Math.round(value))));
+        const rect = target.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        const inViewport = x >= 0 && y >= 0 && x < window.innerWidth && y < window.innerHeight;
+        const hit = inViewport ? document.elementFromPoint(x, y) : null;
+        const visible = (() => {
+            const style = getComputedStyle(target);
+            return style.display !== 'none' && style.visibility !== 'hidden'
+                && Number(style.opacity) !== 0 && rect.width > 0 && rect.height > 0;
+        })();
+        let relation = 'unknown';
+        let category = 'unknown';
+        let blockerRect = null;
+        if (!inViewport) {
+            relation = 'outside_viewport';
+        } else if (hit === target) {
+            relation = 'target';
+            category = 'none';
+        } else if (hit && target.contains(hit)) {
+            relation = 'target_descendant';
+            category = 'none';
+        } else if (hit && hit.closest('label') &&
+            (hit.closest('label').control === target || hit.closest('label').contains(target))) {
+            relation = 'target_label';
+            category = 'label';
+            blockerRect = hit.closest('label').getBoundingClientRect();
+        } else if (hit) {
+            const semanticOverlay = hit.closest('dialog, [role="dialog"], .modal-backdrop, [data-modal-backdrop="true"], [role="alert"], .alert');
+            if (semanticOverlay) {
+                blockerRect = semanticOverlay.getBoundingClientRect();
+                if (semanticOverlay.matches('.modal-backdrop, [data-modal-backdrop="true"]')) {
+                    relation = 'backdrop';
+                    category = 'modal_backdrop';
+                } else if (semanticOverlay.matches('dialog, [role="dialog"]')) {
+                    relation = 'modal';
+                    category = 'modal';
+                } else {
+                    relation = 'alert';
+                    category = 'alert';
+                }
+            } else {
+                let positioned = hit;
+                while (positioned && positioned !== document.documentElement
+                    && getComputedStyle(positioned).position !== 'fixed') {
+                    positioned = positioned.parentElement;
+                }
+                if (positioned && positioned !== document.documentElement) {
+                    blockerRect = positioned.getBoundingClientRect();
+                    const blocker = blockerRect;
+                    if (blocker.top + blocker.height / 2 >= window.innerHeight / 2) {
+                        relation = 'fixed_navigation';
+                        category = 'fixed_navigation';
+                    } else {
+                        relation = 'other';
+                        category = 'fixed_header';
+                    }
+                } else {
+                    relation = 'other';
+                    category = 'other';
+                    blockerRect = hit.getBoundingClientRect();
+                }
+            }
+        }
+        return {
+            target_rect: asRect(rect),
+            occluder_rect: blockerRect ? asRect(blockerRect) : null,
+            visible,
+            enabled: !target.disabled,
+            center_in_viewport: inViewport,
+            center_hit_relation: relation,
+            occluder_category: category,
+        };
+        """, element)
+    except Exception:
+        try:
+            rect = element.rect
+            empty.update({
+                'target_rect': _safe_rect([
+                    round(rect.get('x', 0)), round(rect.get('y', 0)),
+                    round(rect.get('width', 0)), round(rect.get('height', 0)),
+                ]),
+                'visible': element.is_displayed() is True,
+                'enabled': element.is_enabled() is True,
+            })
+        except Exception:
+            pass
+        return empty
+    if not isinstance(raw, dict):
+        return empty
+    result = {
+        'target_rect': _safe_rect(raw.get('target_rect')),
+        'occluder_rect': _safe_rect(raw.get('occluder_rect')),
+        'visible': raw.get('visible') is True,
+        'enabled': raw.get('enabled') is True,
+        'center_in_viewport': raw.get('center_in_viewport') is True,
+        'center_hit_relation': raw.get('center_hit_relation'),
+        'occluder_category': raw.get('occluder_category'),
+    }
+    if result['center_hit_relation'] not in ALLOWED_CLICK_RELATIONS:
+        result['center_hit_relation'] = 'unknown'
+    if result['occluder_category'] not in ALLOWED_OCCLUDER_CATEGORIES:
+        result['occluder_category'] = 'unknown'
+    return result
+
+
+def click_with_safe_diagnostics(driver, element, state, substage, target):
+    """Attempt one native WebDriver click and retain a secret-free obstruction record."""
+    if substage not in ALLOWED_CLICK_SUBSTAGES or target not in set(CLICK_TARGETS) | {'rejection_submit'}:
+        raise ValueError('catalog import click diagnostic label is invalid')
+    state['last_completed_substage'] = state.get('last_completed_substage', 'not_started')
+    diagnostic = {
+        'substage': substage,
+        'target': target,
+        'action': 'native_click',
+        'attempted': False,
+        'returned': False,
+        'visible': False,
+        'enabled': False,
+        'target_rect': None,
+        'occluder_rect': None,
+        'center_in_viewport': False,
+        'center_hit_relation': 'unknown',
+        'occluder_category': 'unknown',
+    }
+    try:
+        geometry = _safe_click_geometry(driver, element)
+        diagnostic.update(geometry)
+    except Exception:
+        pass
+    state['click_diagnostics'] = diagnostic
+    diagnostic['attempted'] = True
+    try:
+        element.click()
+    except Exception:
+        try:
+            diagnostic.update(_safe_click_geometry(driver, element))
+            diagnostic['attempted'] = True
+            diagnostic['returned'] = False
+            state['click_diagnostics'] = diagnostic
+        except Exception:
+            pass
+        raise
+    diagnostic['returned'] = True
+    state['click_diagnostics'] = diagnostic
+    if target.endswith('_checkbox') and not element.is_selected():
+        raise AssertionError('review confirmation checkbox did not become selected')
+    state['last_completed_substage'] = substage
+
+
+def capture_safe_click_crop(driver, path, state):
+    """Save only the target/obstruction crop from the isolated synthetic review form."""
+    click = state.get('click_diagnostics')
+    if not isinstance(click, dict) or not click.get('attempted') or click.get('returned'):
+        return False
+    current = urlparse(driver.current_url)
+    expected = urlparse(ADMIN_LOGIN)
+    query = parse_qs(current.query, keep_blank_values=True)
+    if ((current.scheme.lower(), current.netloc.lower()) != (expected.scheme.lower(), expected.netloc.lower())
+            or not (current.path == ADMIN_PATH.rstrip('/')
+                    or current.path.startswith(ADMIN_PATH.rstrip('/') + '/'))
+            or query.get('controller') != ['AdminKuraneaCatalogReview']):
+        return False
+    synthetic_entry = article(driver, AMAZON)
+    if not synthetic_entry or not synthetic_entry.find_elements(By.CSS_SELECTOR, '.catalog-import-review-form'):
+        return False
+    target = click.get('target_rect')
+    blocker = click.get('occluder_rect')
+    if not _safe_rect(target):
+        return False
+    viewport = driver.execute_script('return {width: window.innerWidth, height: window.innerHeight};')
+    if not isinstance(viewport, dict):
+        return False
+    width = viewport.get('width')
+    height = viewport.get('height')
+    if type(width) is not int or type(height) is not int or not (0 < width <= 2000 and 0 < height <= 2000):
+        return False
+    rects = [target]
+    if _safe_rect(blocker):
+        rects.append(blocker)
+    left = max(0, min(rect[0] for rect in rects) - 12)
+    top = max(0, min(rect[1] for rect in rects) - 12)
+    right = min(width, max(rect[0] + rect[2] for rect in rects) + 12)
+    bottom = min(height, max(rect[1] + rect[3] for rect in rects) + 12)
+    if right - left > 640:
+        center_x = target[0] + target[2] // 2
+        left = max(0, min(width - 640, center_x - 320))
+        right = min(width, left + 640)
+    if bottom - top > 480:
+        center_y = target[1] + target[3] // 2
+        top = max(0, min(height - 480, center_y - 240))
+        bottom = min(height, top + 480)
+    if right <= left or bottom <= top:
+        return False
+    screenshot = driver.execute_cdp_cmd('Page.captureScreenshot', {
+        'format': 'png',
+        'fromSurface': True,
+        'captureBeyondViewport': False,
+        'clip': {'x': left, 'y': top, 'width': right - left, 'height': bottom - top, 'scale': 1},
+    })
+    image_data = screenshot.get('data') if isinstance(screenshot, dict) else None
+    if not isinstance(image_data, str):
+        return False
+    image = base64.b64decode(image_data, validate=True)
+    if not image.startswith(b'\x89PNG\r\n\x1a\n'):
+        return False
+    path.write_bytes(image)
+    return path.is_file() and path.stat().st_size > 0
+
+
 def safe_catalog_import_browser_state(driver, state):
     """Return only fixed labels, booleans, and bounded counters from the isolated synthetic page."""
     stage = state.get('stage', 'launch')
     last_completed_stage = state.get('last_completed_stage', 'not_started')
+    last_completed_substage = state.get('last_completed_substage', 'not_started')
     if stage not in ALLOWED_STAGES:
         stage = 'unknown'
     if last_completed_stage not in ALLOWED_STAGES | {'not_started'}:
         last_completed_stage = 'unknown'
+    if last_completed_substage not in ALLOWED_CLICK_SUBSTAGES | {'not_started', 'batch_complete', 'reject_status_readback', 'unknown'}:
+        last_completed_substage = 'unknown'
+
+    raw_click = state.get('click_diagnostics')
+    click_diagnostics = None
+    if isinstance(raw_click, dict):
+        candidate = {
+            'substage': raw_click.get('substage'),
+            'target': raw_click.get('target'),
+            'action': raw_click.get('action'),
+            'attempted': raw_click.get('attempted') is True,
+            'returned': raw_click.get('returned') is True,
+            'visible': raw_click.get('visible') is True,
+            'enabled': raw_click.get('enabled') is True,
+            'target_rect': _safe_rect(raw_click.get('target_rect')),
+            'occluder_rect': _safe_rect(raw_click.get('occluder_rect')),
+            'center_in_viewport': raw_click.get('center_in_viewport') is True,
+            'center_hit_relation': raw_click.get('center_hit_relation'),
+            'occluder_category': raw_click.get('occluder_category'),
+        }
+        if (candidate['substage'] in ALLOWED_CLICK_SUBSTAGES
+                and candidate['target'] in set(CLICK_TARGETS) | {'rejection_submit'}
+                and candidate['action'] == 'native_click'):
+            if candidate['center_hit_relation'] not in ALLOWED_CLICK_RELATIONS:
+                candidate['center_hit_relation'] = 'unknown'
+            if candidate['occluder_category'] not in ALLOWED_OCCLUDER_CATEGORIES:
+                candidate['occluder_category'] = 'unknown'
+            click_diagnostics = candidate
 
     current_url = ''
     if driver is not None:
@@ -191,6 +474,8 @@ def safe_catalog_import_browser_state(driver, state):
                     || text === '상품 수집 작업은 편집·등록 권한이 있는 직원만 수행할 수 있습니다.'
                     || text === '상품 검수 대기열을 조회할 권한이 없습니다.'
                     || text === '검수 대기열을 불러오지 못했습니다. 저장소 설정을 확인해 주세요.'
+                    || text === '상품 수집 항목을 반려했습니다. 사유와 담당자 기록을 보존했습니다.'
+                    || text === '기존 TEST/DEMO 등록 경로는 별도 서버 게이트로 비활성화되어 있습니다.'
                     || /^(?:[1-9]|10)개 고유 상품 URL을 수집 대기열에 추가했습니다[.]$/.test(text);
                 const numberOrNull = (value) => /^[0-9]{1,6}$/.test(value || '') ? Number(value) : null;
                 return {
@@ -274,6 +559,8 @@ def safe_catalog_import_browser_state(driver, state):
     return {
         'stage': stage,
         'last_completed_stage': last_completed_stage,
+        'last_completed_substage': last_completed_substage,
+        'click_diagnostics': click_diagnostics,
         'same_admin_origin': current_origin == expected_origin,
         'admin_path_matches': admin_path_matches,
         'controller_parameter_present': controller_parameter_present,
@@ -306,8 +593,17 @@ def safe_catalog_import_browser_state(driver, state):
     }
 
 
-def save_safe_failure_screenshot(driver, path, stage):
+def save_safe_failure_screenshot(driver, path, state):
     """Capture synthetic batch progress, a fixed alert, or a scrubbed import form crop."""
+    stage = state.get('stage', 'unknown') if isinstance(state, dict) else 'unknown'
+    click = state.get('click_diagnostics') if isinstance(state, dict) else None
+    if (stage == 'approve_amazon' and isinstance(click, dict)
+            and click.get('attempted') is True and click.get('returned') is False):
+        try:
+            return capture_safe_click_crop(driver, path, state)
+        except Exception:
+            return False
+
     safe_route = False
     form = None
     try:
@@ -359,6 +655,8 @@ def save_safe_failure_screenshot(driver, path, stage):
         '상품 수집 작업은 편집·등록 권한이 있는 직원만 수행할 수 있습니다.',
         '상품 검수 대기열을 조회할 권한이 없습니다.',
         '검수 대기열을 불러오지 못했습니다. 저장소 설정을 확인해 주세요.',
+        '상품 수집 항목을 반려했습니다. 사유와 담당자 기록을 보존했습니다.',
+        '기존 TEST/DEMO 등록 경로는 별도 서버 게이트로 비활성화되어 있습니다.',
     }
     if safe_route:
         for alert in driver.find_elements(By.CSS_SELECTOR, '.alert'):
@@ -456,6 +754,8 @@ def run():
     state = {
         'stage': 'launch',
         'last_completed_stage': 'not_started',
+        'last_completed_substage': 'not_started',
+        'click_diagnostics': None,
         'submit_attempted': False,
         'submit_returned': False,
     }
@@ -491,8 +791,10 @@ def run():
         rejected.find_element(By.NAME, 'submitKuraneaCatalogReject').click()
         visible(driver, '[data-catalog-review-status="rejected"]')
         state['last_completed_stage'] = state['stage']
+        state['last_completed_substage'] = 'reject_status_readback'
         driver.save_screenshot(str(DEST / 'catalog-import-rejected.png'))
         state['stage'] = 'approve_amazon'
+        state['click_diagnostics'] = None
         entry = WebDriverWait(driver, 30).until(lambda d: article(d, AMAZON))
         form = entry.find_element(By.CSS_SELECTOR, '.catalog-import-review-form')
         category_boxes = form.find_elements(By.CSS_SELECTOR, 'input[name="category_ids[]"]')
@@ -502,7 +804,11 @@ def run():
         if first_category is None:
             raise AssertionError('No enabled shop category is available for the synthetic import fixture.')
         if not first_category.is_selected():
-            first_category.click()
+            click_with_safe_diagnostics(
+                driver, first_category, state, 'approve_category_checkbox', 'category_checkbox'
+            )
+        else:
+            state['last_completed_substage'] = 'approve_category_checkbox'
         expected_category_ids = sorted(
             int(box.get_attribute('value')) for box in category_boxes if box.is_selected()
         )
@@ -518,15 +824,29 @@ def run():
         Select(form.find_element(By.NAME, 'tax_rules_group_id')).select_by_value(str(TAX_RULES_GROUP_ID))
         Select(form.find_element(By.NAME, 'tax_treatment')).select_by_value('taxable')
         Select(form.find_element(By.NAME, 'image_rights_basis')).select_by_value('synthetic_ci_fixture')
-        for name in ('translation_reviewed_en', 'translation_reviewed_ko', 'confirm_options_supported', 'confirm_image_rights'):
+        confirmation_targets = {
+            'translation_reviewed_en': ('approve_translation_review_en', 'translation_en_checkbox'),
+            'translation_reviewed_ko': ('approve_translation_review_ko', 'translation_ko_checkbox'),
+            'confirm_options_supported': ('approve_options_confirmation', 'options_confirmation_checkbox'),
+            'confirm_image_rights': ('approve_image_rights_confirmation', 'image_rights_confirmation_checkbox'),
+        }
+        for name, (substage, target) in confirmation_targets.items():
             field = form.find_element(By.NAME, name)
             if not field.is_selected():
-                field.click()
+                click_with_safe_diagnostics(driver, field, state, substage, target)
+            else:
+                state['last_completed_substage'] = substage
         with tempfile.TemporaryDirectory(prefix='ordenowa-import-') as temp:
             image = Path(temp) / 'original-synthetic.png'
             tiny_png(image)
             form.find_element(By.NAME, 'import_product_images[]').send_keys(str(image))
-            form.find_element(By.NAME, 'submitKuraneaCatalogImportedDraft').click()
+            click_with_safe_diagnostics(
+                driver,
+                form.find_element(By.NAME, 'submitKuraneaCatalogImportedDraft'),
+                state,
+                'approve_submit',
+                'native_draft_submit',
+            )
             approved = visible(driver, '[data-catalog-review-status="approved"]')
         state['last_completed_stage'] = state['stage']
         product_link = approved.find_element(By.CSS_SELECTOR, 'a[href*="id_product="]').get_attribute('href')
@@ -556,7 +876,7 @@ def run():
         if driver is not None:
             try:
                 diagnostics['failure_screenshot_captured'] = save_safe_failure_screenshot(
-                    driver, DEST / 'catalog-import-failure.png', state.get('stage', 'unknown')
+                    driver, DEST / 'catalog-import-failure.png', state
                 )
             except Exception:
                 diagnostics['failure_screenshot_captured'] = False
@@ -568,6 +888,7 @@ def run():
         print(
             f"ORDENOWA_CATALOG_IMPORT stage={diagnostics['stage']}; "
             f"last_completed_stage={diagnostics['last_completed_stage']}; "
+            f"last_completed_substage={diagnostics['last_completed_substage']}; "
             f"exception_class={diagnostics['exception_class']}",
             file=sys.stderr,
         )
