@@ -1958,7 +1958,16 @@ def run():
         with tempfile.TemporaryDirectory(prefix='ordenowa-import-') as temp:
             image = Path(temp) / 'original-synthetic.png'
             tiny_png(image)
-            form.find_element(By.NAME, 'import_product_images[]').send_keys(str(image))
+            image_input = form.find_element(By.NAME, 'import_product_images[]')
+            image_input.send_keys(str(image))
+            preview = form.find_element(By.CSS_SELECTOR, '[data-catalog-image-preview]')
+            preview_image = preview.find_element(By.CSS_SELECTOR, '[data-preview-items] img')
+            assert preview.get_attribute('data-preview-count') == '1'
+            assert preview_image.get_attribute('src').startswith('blob:'), 'The preview must use the selected local file.'
+            assert preview_image.get_attribute('alt') == '선택한 업로드 이미지 1 미리보기'
+            assert not form.find_element(By.NAME, 'confirm_image_rights').is_selected(), (
+                'Showing a local preview must not approve image usage rights.'
+            )
             Select(form.find_element(By.NAME, 'image_rights_basis')).select_by_value('synthetic_ci_fixture')
             fill(form, 'image_rights_reference', 'CI locally generated original PNG; synthetic fixture only')
             rights_confirmation = form.find_element(By.NAME, 'confirm_image_rights')

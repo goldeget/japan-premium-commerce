@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTROLLER = ROOT / "modules" / "kuraneacatalog" / "controllers" / "admin" / "AdminKuraneaCatalogReviewController.php"
 PRODUCT_DRAFT = ROOT / "modules" / "kuraneacatalog" / "src" / "Domain" / "ProductAdminDraft.php"
 NATIVE_MANAGER = ROOT / "modules" / "kuraneacatalog" / "src" / "Integration" / "PrestaShopNativeProductManager.php"
+IMAGE_PREVIEW = ROOT / "modules" / "kuraneacatalog" / "views" / "js" / "catalog-import-image-preview.js"
 
 
 class CatalogImportAdminContractTests(unittest.TestCase):
@@ -229,6 +230,21 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         self.assertIn("normalizedImportUploads()", self.draft_validation)
         self.assertIn("validateImageRightsInputs(\n            $uploads,", self.draft_validation)
         self.assertIn("$entry->linkedProductId !== null", self.draft_validation)
+
+    def test_selected_local_upload_has_a_preview_separate_from_remote_source_metadata_and_rights(self) -> None:
+        self.assertIn("public function setMedia()", self.controller)
+        self.assertIn("catalog-import-image-preview.js", self.controller)
+        self.assertIn('data-catalog-image-preview', self.import_form)
+        self.assertIn("미리보기는 업로드 예정 파일만 표시하며 사용권 승인을 대신하지 않습니다.", self.import_form)
+        self.assertTrue(IMAGE_PREVIEW.is_file(), "The local upload preview script must be installed with the module.")
+
+        script = IMAGE_PREVIEW.read_text(encoding="utf-8")
+        self.assertIn("input.files", script)
+        self.assertIn("URL.createObjectURL(file)", script)
+        self.assertIn("URL.revokeObjectURL", script)
+        self.assertIn("data-preview-items", script)
+        self.assertNotIn("snapshot->images", script)
+        self.assertNotIn("image->url", script)
 
     def test_inactive_draft_link_and_evidence_are_saved_before_queue_approval(self) -> None:
         process = self.controller.split("private function processImportedDraft(", 1)[1].split(

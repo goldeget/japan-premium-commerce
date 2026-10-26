@@ -34,6 +34,12 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
         $this->meta_title = '상품 검수 대기열';
     }
 
+    public function setMedia()
+    {
+        parent::setMedia();
+        $this->addJS(__PS_BASE_URI__ . 'modules/kuraneacatalog/views/js/catalog-import-image-preview.js');
+    }
+
     public function initHeader()
     {
         $koreanLanguageId = (int) Language::getIdByIso('ko', true);
@@ -1077,7 +1083,11 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
             . $optionReviewConfirmation
             . '<div class="form-group"><label for="import-images-' . substr($hash, 0, 12) . '">사용권 확인된 상품 이미지 업로드</label>'
             . '<input class="form-control" id="import-images-' . substr($hash, 0, 12) . '" name="import_product_images[]" type="file" accept="image/jpeg,image/png,image/webp" multiple>'
-            . '<p class="help-block">출처 이미지 URL을 읽은 것만으로 파일을 내려받거나 사용할 권리가 생기지 않습니다. 권리가 확인된 파일만 올리세요.</p></div>'
+            . '<p class="help-block">출처 이미지 URL을 읽은 것만으로 파일을 내려받거나 사용할 권리가 생기지 않습니다. 권리가 확인된 파일만 올리세요.</p>'
+            . '<div class="catalog-import-image-preview" data-catalog-image-preview data-preview-count="0" role="status" aria-live="polite">'
+            . '<p data-preview-status>파일 선택 시 업로드 예정 이미지의 미리보기가 표시됩니다.</p>'
+            . '<p class="help-block">미리보기는 업로드 예정 파일만 표시하며 사용권 승인을 대신하지 않습니다.</p>'
+            . '<div data-preview-items></div></div></div>'
             . '<div class="form-group"><label for="image-rights-basis-' . substr($hash, 0, 12) . '">이미지 사용권 근거</label><select class="form-control" id="image-rights-basis-'
             . substr($hash, 0, 12) . '" name="image_rights_basis"><option value="">이미지 미사용 또는 권리 미확인</option>'
             . $imageRightsOptions . '</select>'
