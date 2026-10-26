@@ -519,6 +519,31 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertTrue(path.is_file(), "missing module-owned Admin.Dashboard.Feature overlay")
         self.assertEqual("데모 모드", translations(path).get("Demo mode"))
 
+    def test_successful_update_overlay_preserves_both_verified_native_source_ids(self) -> None:
+        path = MODULE / "translations" / "ko-KR" / "AdminNotificationsSuccess.ko-KR.xlf"
+        self.assertTrue(path.is_file(), "missing module-owned Admin.Notifications.Success overlay")
+        root = ET.parse(path).getroot()
+        entries = {
+            unit.attrib["id"]: (
+                unit.findtext("x:source", namespaces=NAMESPACE),
+                unit.findtext("x:target", namespaces=NAMESPACE),
+            )
+            for unit in root.findall(".//x:trans-unit", NAMESPACE)
+        }
+        self.assertEqual({
+            "d4eab6753f9f3d4b57580427264beaa6": ("Successful update", "변경 사항을 저장했습니다."),
+            "b4a34d3f58b039e7685c2e39b5413757": ("Successful update.", "변경 사항을 저장했습니다."),
+        }, entries)
+
+    def test_successful_update_overlay_is_registered_and_checked_in_both_locale_modes(self) -> None:
+        subscriber = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text(encoding="utf-8")
+        lifecycle = (ROOT / "tests" / "admin_locale" / "locale_lifecycle.php").read_text(encoding="utf-8")
+        self.assertIn("'Admin.Notifications.Success' => 'AdminNotificationsSuccess.ko-KR.xlf'", subscriber)
+        for source in ("Successful update", "Successful update."):
+            with self.subTest(source=source):
+                self.assertIn(f"$translator->trans('{source}', [], 'Admin.Notifications.Success', 'ko-KR')", lifecycle)
+                self.assertIn(f"$translator->trans('{source}', [], 'Admin.Notifications.Success')", lifecycle)
+
     def test_navigation_overlay_translates_native_payment_menu_variants(self) -> None:
         path = MODULE / "translations" / "ko-KR" / "AdminNavigationMenu.ko-KR.xlf"
         self.assertEqual("결제 수단", translations(path).get("Payment Methods"))

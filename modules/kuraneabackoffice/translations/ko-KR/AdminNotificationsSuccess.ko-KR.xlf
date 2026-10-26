@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="AdminNotificationsSuccess.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="d4eab6753f9f3d4b57580427264beaa6" approved="yes">
+        <source>Successful update</source>
+        <target state="final">변경 사항을 저장했습니다.</target>
+        <note>PrestaShop 9.2.0 AdminController confirmation code 4; source ID verified in translations/default/AdminNotificationsSuccess.xlf at commit 84db6bd3a3c1612535b15b9df934afd609085423.</note>
+      </trans-unit>
+      <trans-unit id="b4a34d3f58b039e7685c2e39b5413757" approved="yes">
+        <source>Successful update.</source>
+        <target state="final">변경 사항을 저장했습니다.</target>
+        <note>PrestaShop 9.2.0 punctuated confirmation; source ID verified in translations/default/AdminNotificationsSuccess.xlf at commit 84db6bd3a3c1612535b15b9df934afd609085423.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

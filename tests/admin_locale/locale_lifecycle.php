@@ -185,6 +185,8 @@ foreach ([
         same('결제 수단', $translator->trans('Payment methods', [], 'Admin.Navigation.Menu', 'ko-KR'), $route . ' explicit Korean payment menu label');
         same('결제 방법', $translator->trans('Payment method', [], 'Admin.Orderscustomers.Feature', 'ko-KR'), $route . ' explicit Korean payment method label');
         same('데모 모드', $translator->trans('Demo mode', [], 'Admin.Dashboard.Feature', 'ko-KR'), $route . ' explicit Korean demo mode label');
+        same('변경 사항을 저장했습니다.', $translator->trans('Successful update', [], 'Admin.Notifications.Success', 'ko-KR'), $route . ' explicit Korean update confirmation');
+        same('변경 사항을 저장했습니다.', $translator->trans('Successful update.', [], 'Admin.Notifications.Success', 'ko-KR'), $route . ' explicit Korean punctuated update confirmation');
         if ($route === 'admin_orders_index') {
             same('평균 주문 금액', $translator->trans('Average Order Value', [], 'Admin.Global', 'ko-KR'), $route . ' explicit Admin.Global KPI translation');
         }
@@ -195,6 +197,8 @@ foreach ([
         same('결제 수단', $translator->trans('Payment Methods', [], 'Admin.Navigation.Menu'), $route . ' default Korean payment menu title');
         same('결제 수단', $translator->trans('Payment methods', [], 'Admin.Navigation.Menu'), $route . ' default Korean payment menu label');
         same('데모 모드', $translator->trans('Demo mode', [], 'Admin.Dashboard.Feature'), $route . ' default Korean demo mode label');
+        same('변경 사항을 저장했습니다.', $translator->trans('Successful update', [], 'Admin.Notifications.Success'), $route . ' default Korean update confirmation');
+        same('변경 사항을 저장했습니다.', $translator->trans('Successful update.', [], 'Admin.Notifications.Success'), $route . ' default Korean punctuated update confirmation');
     }
     if ($activeModules !== [] && $route === 'admin_orders_index') {
         same('평균 주문 금액', $translator->trans('Average Order Value', [], 'Admin.Global'), $route . ' default Admin.Global KPI translation');

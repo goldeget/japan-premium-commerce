@@ -341,6 +341,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
             'Admin.Dashboard.Feature' => 'AdminDashboardFeature.ko-KR.xlf',
             'Admin.Navigation.Header' => 'AdminNavigationHeader.ko-KR.xlf',
             'Admin.Navigation.Menu' => 'AdminNavigationMenu.ko-KR.xlf',
+            'Admin.Notifications.Success' => 'AdminNotificationsSuccess.ko-KR.xlf',
             'Admin.Orderscustomers.Feature' => 'AdminOrderscustomersFeature.ko-KR.xlf',
             'messages' => 'messages.ko-KR.xlf',
         ] as $domain => $filename) {
