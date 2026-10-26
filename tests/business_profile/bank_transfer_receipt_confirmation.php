@@ -12,6 +12,13 @@ use Kuranea\BusinessProfile\Domain\JpyAmount;
 use Kuranea\BusinessProfile\Infrastructure\BankTransferReceiptConfirmer;
 use Kuranea\BusinessProfile\Admin\AdminAccessPolicy;
 
+if (!function_exists('pSQL')) {
+    function pSQL(string $value, bool $htmlOK = false): string
+    {
+        return addslashes($value);
+    }
+}
+
 function assertReceiptSame(mixed $expected, mixed $actual, string $message): void
 {
     if ($expected !== $actual) {

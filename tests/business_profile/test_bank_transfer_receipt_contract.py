@@ -137,6 +137,12 @@ class BankTransferReceiptContractTests(unittest.TestCase):
         self.assertIn("isset($this->instructions[$key])", repository)
         self.assertIn("$this->instructions[$key] = $instruction", repository)
 
+    def test_standalone_fixture_provides_only_the_sql_escaping_primitive_it_uses(self) -> None:
+        fixture = (ROOT / "tests/business_profile/bank_transfer_receipt_confirmation.php").read_text(encoding="utf-8")
+        self.assertIn("if (!function_exists('pSQL'))", fixture)
+        self.assertIn("function pSQL(string $value", fixture)
+        self.assertIn("return addslashes($value)", fixture)
+
 
 if __name__ == "__main__":
     unittest.main()
