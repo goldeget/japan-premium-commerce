@@ -198,8 +198,8 @@ fetchAssert(count($http->requests) === 1, 'Rebinding to a forbidden destination 
     new TransportResponse(302, '', '', '/dp/B012345679'),
     new TransportResponse(503, '', 'text/html'),
 ]);
-fetchRejects(fn () => $fetcher->fetch($amazon), 'Redirect must not reset the one-retry allowance.');
-fetchAssert(count($http->requests) === 3, 'Retry count must be global across redirects.');
+fetchRejects(fn () => $fetcher->fetch($amazon), 'A retry must still reject a redirect to a different product identity.');
+fetchAssert(count($http->requests) === 2, 'A cross-product redirect must fail before a third product request.');
 
 // Decoded streaming chunks are bounded before concatenation, independently of
 // Content-Length or Content-Encoding values supplied by the remote server.

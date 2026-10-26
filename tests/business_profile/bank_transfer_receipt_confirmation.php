@@ -37,7 +37,7 @@ function assertReceiptThrows(callable $callback, string $message): void
     throw new RuntimeException($message);
 }
 
-if (class_exists('Db', false)) {
+if (defined('_PS_VERSION_')) {
     throw new RuntimeException('Synthetic receipt contract must run outside a bootstrapped production PrestaShop process.');
 }
 

@@ -120,6 +120,13 @@ class BankTransferReceiptContractTests(unittest.TestCase):
         ):
             self.assertIn(expected, fixture)
 
+    def test_synthetic_fixture_guard_uses_the_prestashop_bootstrap_marker(self) -> None:
+        fixture = (ROOT / "tests/business_profile/bank_transfer_receipt_confirmation.php").read_text(encoding="utf-8")
+        guard = fixture.split("if (defined('_PS_VERSION_'))", 1)
+        self.assertEqual(len(guard), 2, "The receipt fixture must refuse to run inside a bootstrapped PrestaShop process.")
+        self.assertLess(guard[1].index("throw new RuntimeException"), guard[1].index("final class FakeTransferReceiptDb"))
+        self.assertNotIn("class_exists('Db', false)", fixture, "A fake Db class declared later in this fixture must not trip its own guard.")
+
 
 if __name__ == "__main__":
     unittest.main()
