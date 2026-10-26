@@ -34,6 +34,15 @@ class DeliveryOutboxContract(unittest.TestCase):
         self.assertIn('consent_generation', service)
         self.assertIn('hash_equals', service)
 
+    def test_consent_preflight_completes_before_the_durable_send_claim(self):
+        service = (MODULE / 'src/Domain/PushOutboxService.php').read_text()
+        recipient_loop = service.split("foreach ($receipt['recipients'] as $recipient)", 1)[1]
+        claim = recipient_loop.index('$this->outbox->startAttempt(')
+        self.assertLess(recipient_loop.index('$this->currentTargets('), claim,
+                        'a consent read outage must not strand an unsent recipient as sending')
+        self.assertLess(recipient_loop.index('hash_equals('), claim,
+                        'consent generation validation is part of preflight')
+
     @unittest.skipUnless(shutil.which('php'), 'PHP outbox behavior requires Actions PHP runtime')
     def test_php_outbox_behavior(self):
         result = subprocess.run(['php', str(ROOT / 'tests/pwa/php/delivery_outbox.php')],

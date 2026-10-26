@@ -78,12 +78,13 @@ final class PushOutboxService
                     continue;
                 }
                 if (!in_array($state, ['pending','retryable_failure'], true)) { continue; }
-                $attempt = $this->outbox->startAttempt($shop,$customer,$eventId,$digest);
-                // Re-read current consent before each attempt, including explicit retries.
+                // A failed consent preflight has not sent anything and must remain retryable.
                 $current = $this->currentTargets($shop,$customer);
                 $generation = $recipient['consent_generation'] ?? null;
-                $outcome = isset($current[$digest]) && is_string($generation)
-                    && hash_equals($generation, ConsentedDeliveryTarget::generation($current[$digest]))
+                $eligible = isset($current[$digest]) && is_string($generation)
+                    && hash_equals($generation, ConsentedDeliveryTarget::generation($current[$digest]));
+                $attempt = $this->outbox->startAttempt($shop,$customer,$eventId,$digest);
+                $outcome = $eligible
                     ? $this->sendTarget($current[$digest],$shop,$customer,$digest,$payload)
                     : 'skipped';
                 $this->outbox->finishAttempt($shop,$customer,$eventId,$digest,$attempt,$outcome);

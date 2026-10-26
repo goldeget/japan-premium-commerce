@@ -32,7 +32,12 @@ final class FixtureOutbox implements PushOutboxStore {
 final class FixtureTargets implements PushDeliveryStore {
     public array $rows=[];
     public array $removed=[];
-    public function deliveryTargetsForOwner(int $s,int $c): array { return $this->rows; } // Deliberately inject foreign rows.
+    public int $readCount=0;
+    public ?int $failOnRead=null;
+    public function deliveryTargetsForOwner(int $s,int $c): array {
+        if (++$this->readCount === $this->failOnRead) { throw new RuntimeException('Synthetic consent read failure.'); }
+        return $this->rows; // Deliberately inject foreign rows.
+    }
     public function removeDeliveryTargetForOwner(int $s,int $c,string $d): void {
         $this->removed[]=[$s,$c,$d];$this->rows=array_values(array_filter($this->rows,fn($r)=>!($r['id_shop']===$s&&$r['id_customer']===$c&&$r['endpoint_digest']===$d)));
     }
@@ -104,6 +109,36 @@ assertOutbox($service->retry(1,10,'event-disabled')['status']==='busy','concurre
 $k='1:10:event-disabled';$outbox->events[$k]['recipients'][0]['outcome']='sending';$outbox->events[$k]['recipients'][0]['attempts']=1;
 $before=count($provider->calls);$result=$service->retry(1,10,'event-disabled');
 assertOutbox($result['interrupted']===1&&count($provider->calls)===$before,'uncertain interrupted send is not blindly resent');
+$preflightTargets=new FixtureTargets();$preflightTargets->rows=[$row(1,10,'preflight-recovery')];
+$preflightTargets->failOnRead=2; // Snapshot succeeds; the current-consent recheck fails before provider I/O.
+$preflightOutbox=new FixtureOutbox();$preflightProvider=new FixtureProvider();
+$preflightService=new PushOutboxService($preflightOutbox,$preflightTargets,$cipher,$preflightProvider);
+$preflightResult=$preflightService->receive(1,10,'delivery-history:preflight',new DeliveryPayload('delivery','en'));
+$pendingRecipient=$preflightOutbox->events['1:10:delivery-history:preflight']['recipients'][0]??null;
+assertOutbox($preflightResult['status']==='storage_unavailable'&&$preflightProvider->calls===[]
+    &&$preflightOutbox->history===[]&&$pendingRecipient['outcome']==='pending'&&$pendingRecipient['attempts']===0,
+    'consent-read failure before sending preserves a pending receipt without an interrupted attempt');
+$preflightTargets->failOnRead=null;
+$preflightResult=$preflightService->retry(1,10,'delivery-history:preflight');
+assertOutbox($preflightResult['delivered']===1&&count($preflightProvider->calls)===1,
+    'explicit retry recovers a consent-read outage and performs one synthetic provider attempt');
+$preflightService->retry(1,10,'delivery-history:preflight');
+assertOutbox(count($preflightProvider->calls)===1,'recovered successful recipient is not resent');
+$retryTargets=new FixtureTargets();$retryTargets->rows=[$row(1,10,'retry-preflight-recovery')];
+$retryOutbox=new FixtureOutbox();$retryProvider=new FixtureProvider();
+$retryEndpoint=$subscription('retry-preflight-recovery')['endpoint'];
+$retryProvider->outcomes[$retryEndpoint]=PushDeliveryResult::RETRYABLE_FAILURE;
+$retryService=new PushOutboxService($retryOutbox,$retryTargets,$cipher,$retryProvider);
+$retryService->receive(1,10,'delivery-history:retry-preflight',new DeliveryPayload('delivery','en'));
+$retryTargets->failOnRead=$retryTargets->readCount+2;
+$retryResult=$retryService->retry(1,10,'delivery-history:retry-preflight');
+$failedRecipient=$retryOutbox->events['1:10:delivery-history:retry-preflight']['recipients'][0];
+assertOutbox($retryResult['status']==='storage_unavailable'&&count($retryProvider->calls)===1
+    &&$failedRecipient['outcome']==='retryable_failure'&&$failedRecipient['attempts']===1
+    &&count($retryOutbox->history)===2,'consent preflight outage during retry preserves the prior failure and attempt history');
+$retryTargets->failOnRead=null;$retryProvider->outcomes[$retryEndpoint]=PushDeliveryResult::DELIVERED;
+$retryResult=$retryService->retry(1,10,'delivery-history:retry-preflight');
+assertOutbox($retryResult['delivered']===1&&count($retryProvider->calls)===2,'retry resumes after consent storage recovers');
 $overflowTargets=new FixtureTargets();
 $overflowTargets->rows=array_fill(0, PushDeliveryStore::MAX_DELIVERY_TARGETS + 1, []);
 $overflowOutbox=new FixtureOutbox();
