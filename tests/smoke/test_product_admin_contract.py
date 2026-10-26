@@ -1106,5 +1106,15 @@ class ProductAdminContractTests(unittest.TestCase):
         self.assertIn("distinct option stock", browser)
         self.assertIn('product-admin-distinct-combination-stock-desktop.png', browser)
 
+    def test_imported_combination_stock_readback_separates_product_and_variant_levels(self) -> None:
+        verifier = (ROOT / "tests" / "catalog" / "verify_native_product_admin.php").read_text(encoding="utf-8")
+        imported_checks = verifier.split("$stage = 'synthetic imported product draft and duplicate guard';", 1)[1]
+        imported_checks = imported_checks.split("$variantPriceAdjustment =", 1)[0]
+
+        self.assertIn("'product_level_stock_readback' => ($reloadedImportedEditor['quantity'] ?? null) === 0", imported_checks)
+        self.assertIn("'combination_stock_ids_readback' => $readbackImportedCombinationIds === $expectedImportedCombinationIds", imported_checks)
+        self.assertIn("'combination_stock_count_readback' => count($readbackImportedCombinationQuantities) === 4", imported_checks)
+        self.assertIn("'combination_stock_values_readback' => $readbackImportedCombinationQuantities === [2, 2, 2, 2]", imported_checks)
+
 if __name__ == "__main__":
     unittest.main()

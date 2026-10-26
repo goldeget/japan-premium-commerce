@@ -190,6 +190,12 @@ try {
     catalogImportAssertSame('queued', $stored->item($untouchedItem->id)->status, 'An unrelated queued item should remain queued.');
     catalogImportAssertSame(['queued' => 1, 'processing' => 0, 'succeeded' => 1, 'failed' => 1], $stored->counts(), 'Counts should reflect per-item progress.');
 
+    $failedReopened = new JsonFileCatalogImportBatchRepository($privateDirectory, $shopRoot);
+    $persistedFailure = $failedReopened->find($stored->id);
+    catalogImportAssertTrue($persistedFailure instanceof CatalogImportBatch, 'Failed batches should survive repository reconstruction.');
+    catalogImportAssertSame('failed', $persistedFailure->item($rakutenItem->id)->status, 'Failed status should survive persistence before retry.');
+    catalogImportAssertSame('parse_failed', $persistedFailure->item($rakutenItem->id)->failureCategory, 'Fixed failure categories should survive persistence before retry.');
+
     catalogImportAssertThrows(
         static fn () => $repository->markFailed($stored->id, $amazonItem->id, 1, 'raw token=must-not-persist'),
         'Failure updates must reject non-enumerated categories.'
@@ -212,7 +218,8 @@ try {
     catalogImportAssertSame('succeeded', $persisted->item($amazonItem->id)->status, 'Succeeded status should survive persistence.');
     catalogImportAssertSame('https://www.amazon.co.jp/dp/B0KURANEA1', $persisted->item($amazonItem->id)->snapshot->sourceUrl, 'Persisted snapshots should use the canonical source URL without its query.');
     catalogImportAssertSame('https://images.example.invalid/catalog/item.jpg', $persisted->item($amazonItem->id)->snapshot->images[0]->url, 'Image metadata queries and fragments should be removed before persistence.');
-    catalogImportAssertSame('parse_failed', $persisted->item($rakutenItem->id)->failureCategory, 'Fixed failure categories should survive persistence.');
+    catalogImportAssertSame('queued', $persisted->item($rakutenItem->id)->status, 'Retry status should survive persistence.');
+    catalogImportAssertSame(null, $persisted->item($rakutenItem->id)->failureCategory, 'Retry should clear the failure category in persisted state.');
 
     $storedJson = file_get_contents($privateDirectory . '/catalog-import-batches.json');
     catalogImportAssertTrue(is_string($storedJson), 'The repository should create its JSON store in the private directory.');

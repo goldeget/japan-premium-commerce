@@ -51,16 +51,44 @@ jobs:
             test_status=$?
           fi
           if [ "$test_status" -ne 0 ]; then
+            failure_type=$(awk '
+              /^PHP Fatal error:/ {
+                if ($0 ~ /Uncaught RuntimeException:/) { print "RuntimeException"; exit }
+                if ($0 ~ /Uncaught InvalidArgumentException:/) { print "InvalidArgumentException"; exit }
+                if ($0 ~ /Uncaught LogicException:/) { print "LogicException"; exit }
+                if ($0 ~ /Uncaught DomainException:/) { print "DomainException"; exit }
+                if ($0 ~ /Uncaught OutOfBoundsException:/) { print "OutOfBoundsException"; exit }
+                if ($0 ~ /Uncaught UnexpectedValueException:/) { print "UnexpectedValueException"; exit }
+                if ($0 ~ /Uncaught TypeError:/) { print "TypeError"; exit }
+                if ($0 ~ /Uncaught Error:/) { print "Error"; exit }
+                if ($0 ~ /Uncaught ParseError:/) { print "ParseError"; exit }
+                if ($0 ~ /Uncaught /) { print "PHP_EXCEPTION"; exit }
+                print "PHP_FATAL"; exit
+              }
+            ' "$test_log")
+            case "$failure_type" in
+              RuntimeException|InvalidArgumentException|LogicException|DomainException|OutOfBoundsException|UnexpectedValueException|TypeError|Error|ParseError|PHP_EXCEPTION|PHP_FATAL) ;;
+              *) failure_type='UNKNOWN' ;;
+            esac
+            failure_site=$(awk '
+              /#0 .*\/tests\/catalog\/[A-Za-z0-9_.\/-]+\.php\([0-9]+\)/ {
+                source = $0
+                sub(/^.*\/tests\/catalog\//, "tests/catalog/", source)
+                sub(/\).*/, "", source)
+                sub(/\(/, ":", source)
+                print source
+                exit
+              }
+            ' "$test_log")
+            if [ -z "$failure_site" ]; then
+              failure_site='source unavailable'
+            fi
             {
               echo '### Catalog parser test failure'
-              echo '```text'
-              tail -n 80 "$test_log"
-              echo '```'
+              echo "Failure type: $failure_type"
+              echo "Test source: $failure_site"
             } >> "$GITHUB_STEP_SUMMARY"
-            failure_line=$(grep -m1 -E 'Uncaught|Fatal error' "$test_log" | sed -E 's/; expected .*//; s/ in .*//' | cut -c1-500) || failure_line='Offline catalog tests failed; see the bounded step summary.'
-            failure_line="${failure_line//'%'/'%25'}"
-            failure_line="${failure_line//$'\r'/'%0D'}"
-            failure_line="${failure_line//$'\n'/'%0A'}"
+            failure_line="Offline catalog parser tests failed (type=$failure_type, source=$failure_site)."
             echo "::error title=Offline catalog parser tests::$failure_line"
             exit "$test_status"
           else

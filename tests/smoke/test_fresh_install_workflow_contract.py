@@ -1374,15 +1374,19 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("ps_kuraneapostcode_stage", smoke)
         self.assertIn('test "$postcode_stage_rows" = 0', smoke)
 
-    def test_catalog_parser_failure_diagnostics_are_bounded_and_escaped(self) -> None:
+    def test_catalog_parser_failure_diagnostics_expose_only_safe_class_and_source(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "catalog-parser.yml").read_text(encoding="utf-8")
         step = workflow.split("- name: Run synthetic offline Amazon Japan and Rakuten parser tests", 1)[1].split("- name:", 1)[0]
-        failure_branch = step.split('if [ "$test_status" -ne 0 ]; then', 1)[1].split("fi", 1)[0]
-        self.assertIn('tail -n 80 "$test_log"', failure_branch)
-        self.assertIn("cut -c1-500", failure_branch)
-        self.assertIn("%25", failure_branch)
-        self.assertIn("%0D", failure_branch)
-        self.assertIn("%0A", failure_branch)
+        failure_branch = step.split('if [ "$test_status" -ne 0 ]; then', 1)[1].split("\n          else", 1)[0]
+        self.assertIn('failure_type=$(awk', failure_branch)
+        self.assertIn('failure_site=$(awk', failure_branch)
+        self.assertIn('echo "Failure type: $failure_type"', failure_branch)
+        self.assertIn('echo "Test source: $failure_site"', failure_branch)
+        self.assertNotIn('tail -n', failure_branch)
+        self.assertNotIn('cat "$test_log"', failure_branch)
+        self.assertNotIn('failure_line=$(grep', failure_branch)
+        self.assertNotIn('"$failure_message"', failure_branch)
+        self.assertIn('failure_line="Offline catalog parser tests failed (type=$failure_type, source=$failure_site)."', failure_branch)
         self.assertLess(step.index('if [ "$test_status"'), step.index('cat "$test_log"'))
 
     def test_catalog_parser_contract_checks_out_hummingbird_submodule(self) -> None:

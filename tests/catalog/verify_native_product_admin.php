@@ -568,6 +568,16 @@ if (!$tamperedImportedProduct->update()) {
 $reloadedImportedProduct = new Product($importedProductId, false, $languageId, $shopId);
 $reloadedImportedEditor = $manager->editorData($importedProductId);
 $reloadedImportedImageIds = $manager->imageIds($importedProductId);
+$reloadedImportedCombinationQuantities = $reloadedImportedEditor['combination_quantities'] ?? null;
+$readbackImportedCombinationQuantities = is_array($reloadedImportedCombinationQuantities)
+    ? array_values($reloadedImportedCombinationQuantities)
+    : [];
+$readbackImportedCombinationIds = is_array($reloadedImportedCombinationQuantities)
+    ? array_map('intval', array_keys($reloadedImportedCombinationQuantities))
+    : [];
+$expectedImportedCombinationIds = $importedCombinationIds;
+sort($readbackImportedCombinationIds, SORT_NUMERIC);
+sort($expectedImportedCombinationIds, SORT_NUMERIC);
 $importedDraftChecks = [
     'product_id_valid' => $importedProductId > 0,
     'duplicate_reuses_product' => $duplicateImportedProductId === $importedProductId,
@@ -581,11 +591,14 @@ $importedDraftChecks = [
     'changed_duplicate_rejected' => $changedDuplicateDraftRejected,
     'japanese_name_readback' => ($reloadedImportedEditor['name_ja'] ?? null) === 'ORDENOWA CI 合成取込草案',
     'sale_price_readback' => ($reloadedImportedEditor['price_jpy'] ?? null) === 1560,
-    'own_stock_readback' => ($reloadedImportedEditor['quantity'] ?? null) === 2,
+    'product_level_stock_readback' => ($reloadedImportedEditor['quantity'] ?? null) === 0,
     'option_text_readback' => ($reloadedImportedEditor['options'] ?? null) === "色:青|赤\nサイズ:S|M",
     'image_count_readback' => count($reloadedImportedImageIds) === 1,
     'image_identity_preserved' => $reloadedImportedImageIds === $importedImageIds,
     'combination_count_readback' => count($importedCombinationIds) === 4,
+    'combination_stock_ids_readback' => $readbackImportedCombinationIds === $expectedImportedCombinationIds,
+    'combination_stock_count_readback' => count($readbackImportedCombinationQuantities) === 4,
+    'combination_stock_values_readback' => $readbackImportedCombinationQuantities === [2, 2, 2, 2],
     'combination_membership_readback' => $importedOptionMemberships === $expectedImportedOptionMemberships,
     'combination_price_count_readback' => count($importedVariantPriceAdjustments) === 4,
     'combination_price_adjustments_zero' => array_filter(
