@@ -14,7 +14,7 @@ BOOLEAN_FIELDS = {
     'same_admin_origin', 'admin_path_matches', 'controller_parameter_present', 'controller_allowed',
     'login_form_visible', 'product_url_field_visible', 'submit_control_visible', 'submit_attempted',
     'submit_returned', 'batch_progress_container_visible', 'progress_visible',
-    'token_rejected_notice_visible', 'mutation_access_denied_notice_visible',
+    'token_rejected_notice_visible', 'mutation_access_denied_notice_visible', 'invalid_url_notice_visible',
     'empty_url_notice_visible', 'batch_save_failure_notice_visible', 'batch_created_notice_visible',
     'option_guard_notice_visible',
     'unclassified_alert_visible', 'read_only_notice_visible', 'access_denied_notice_visible',
@@ -77,7 +77,7 @@ STRING_ENUMS = {
     'admin_controller': {'AdminKuraneaCatalogReview', 'AdminOrdenowaProductManager', 'other_admin', 'unknown'},
     'page_class': {
         'controller_access_denied', 'batch_capability_denied', 'queue_unavailable',
-        'mutation_token_rejected', 'mutation_capability_denied', 'batch_save_error',
+        'mutation_token_rejected', 'mutation_capability_denied', 'invalid_url_rejected', 'batch_save_error',
         'batch_created_without_progress', 'unsupported_options_guard', 'unclassified_alert', 'login_form',
         'catalog_import_form', 'manager_access_denied', 'manager_load_error',
         'manager_editor', 'manager_editor_missing', 'other_admin',

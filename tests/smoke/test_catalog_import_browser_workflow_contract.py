@@ -60,6 +60,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
                        'tests.smoke.test_catalog_import_admin_contract',
                        "'tests/smoke/test_catalog_import_admin_contract.py'",
                        'catalog-import-e2e.log', 'catalog-import-batch.png', 'catalog-import-blocked-submit.png',
+                       'catalog-import-unsupported-url.png',
                        'catalog-import-rejected.png',
                        'catalog-import-blocked-options.png', 'catalog-import-review-options.png',
                        'catalog-import-draft.png', 'catalog-import-manager-edited.png',
@@ -105,6 +106,8 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
                        'https://item.rakuten.co.jp/fixture-shop/synthetic-case-b/',
                        'https://www.amazon.co.jp/dp/B0KURANEA2', 'validate_isolated_ci_compose_project',
                        'validate_loopback_admin_targets', 'submitKuraneaCatalogReject',
+                       'reject_unsupported_product_url', 'https://example.invalid/not-a-supported-product',
+                       'catalog-import-unsupported-url.png',
                        'translation_reviewed_en', 'translation_reviewed_ko', 'confirm_options_supported',
                        'synthetic_ci_fixture', 'import_product_images[]', 'combination_quantities[',
                        'remove_image_ids[]', 'catalog-import-readback.json', 'linked_product_id',
@@ -113,6 +116,23 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertNotIn('page_source', source)
         self.assertNotIn('print(error)', source)
         self.assertNotIn('requests.', source)
+
+    def test_unsupported_url_browser_rejection_precedes_any_valid_import_batch(self):
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        flow = browser.split('def reject_unsupported_product_url(', 1)[1].split('def _safe_rect(', 1)[0]
+        for marker in (
+            'INVALID_URL_NOTICE',
+            "'.alert.alert-danger'",
+            "assert 'example.invalid' not in notice",
+            "By.ID, 'catalog-import-progress'",
+            "catalog-import-unsupported-url.png",
+        ):
+            self.assertIn(marker, flow)
+        self.assertIn("page_class = 'invalid_url_rejected'", browser)
+        self.assertIn('invalid_url_notice_visible', browser)
+        self.assertIn('INVALID_URL_NOTICE,', browser)
+        self.assertLess(browser.index('reject_unsupported_product_url(driver, review_url, state)'),
+                        browser.index('submit_batch(driver, review_url, [AMAZON, RAKUTEN, BLOCKED], state)'))
 
     def test_approved_browser_fixture_has_one_supported_option_group(self):
         fixture_path = ROOT / 'tests/catalog/fixtures/amazon-jp-review-single-option.synthetic.html'
@@ -460,6 +480,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'row_count',
             'token_rejected_notice_visible',
             'mutation_access_denied_notice_visible',
+            'invalid_url_notice_visible',
             'empty_url_notice_visible',
             'batch_save_failure_notice_visible',
             'batch_created_notice_visible',
@@ -607,6 +628,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'batch_progress_container_visible': False, 'progress_visible': False,
             'progress_value': None, 'progress_max': None, 'row_count': 0,
             'token_rejected_notice_visible': False, 'mutation_access_denied_notice_visible': False,
+            'invalid_url_notice_visible': False,
             'empty_url_notice_visible': False, 'batch_save_failure_notice_visible': False,
             'batch_created_notice_visible': False, 'option_guard_notice_visible': False,
             'unclassified_alert_visible': False,
@@ -627,6 +649,13 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'failure_screenshot_captured': True,
         }
         DIAGNOSTICS.validate(valid)
+        invalid_url_rejected = {
+            **valid,
+            'page_class': 'invalid_url_rejected',
+            'invalid_url_notice_visible': True,
+            'unclassified_alert_visible': False,
+        }
+        DIAGNOSTICS.validate(invalid_url_rejected)
         for substage in (
             'manager_edit_fields', 'manager_edit_save_click', 'manager_edit_save_confirmation',
             'manager_edit_fresh_navigation', 'manager_edit_fresh_readback',
@@ -790,6 +819,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'batch_progress_container_visible': False, 'progress_visible': False,
             'progress_value': None, 'progress_max': None, 'row_count': 0,
             'token_rejected_notice_visible': False, 'mutation_access_denied_notice_visible': False,
+            'invalid_url_notice_visible': False,
             'empty_url_notice_visible': False, 'batch_save_failure_notice_visible': False,
             'batch_created_notice_visible': False, 'option_guard_notice_visible': False,
             'unclassified_alert_visible': True,

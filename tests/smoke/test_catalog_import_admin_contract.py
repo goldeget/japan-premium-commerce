@@ -28,6 +28,12 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         cls.tax_renderer = cls.controller.split("private function reviewTaxRules(", 1)[1].split(
             "/** @param list<array{id_category:int,name:string}> $categories */", 1
         )[0]
+        import_processing = cls.controller.split("private function processImportRequests(", 1)[1].split(
+            "private function processApproval(", 1
+        )[0]
+        cls.batch_submission = import_processing.split(
+            "if (Tools::isSubmit('submitKuraneaCatalogImportBatch'))", 1
+        )[1].split("if (Tools::isSubmit('submitKuraneaCatalogImportNext'))", 1)[0]
 
     def test_import_form_requires_separate_english_and_korean_translation_review(self) -> None:
         for field in ("translation_reviewed_en", "translation_reviewed_ko"):
@@ -78,6 +84,24 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         self.assertIn("querySelector(\\'button[name=\"submitKuraneaCatalogImportNext\"]\\')", self.batch_renderer)
         self.assertIn("f.requestSubmit(button)", self.batch_renderer)
         self.assertNotIn("f.requestSubmit();", self.batch_renderer)
+
+    def test_unsupported_product_urls_use_safe_korean_feedback(self) -> None:
+        self.assertIn(
+            "$this->fail('상품 URL을 등록할 수 없습니다. Amazon Japan 또는 Rakuten의 지원 상품 주소를 1~10개 입력해 주세요.');",
+            self.batch_submission,
+        )
+        self.assertNotIn("$this->fail($exception->getMessage());", self.batch_submission)
+        harness = (ROOT / "tests" / "catalog" / "admin_review_controller.php").read_text(encoding="utf-8")
+        for marker in (
+            "submitKuraneaCatalogImportBatch",
+            "https://example.invalid/not-a-supported-product",
+            "상품 URL을 등록할 수 없습니다. Amazon Japan 또는 Rakuten의 지원 상품 주소를 1~10개 입력해 주세요.",
+            "not a supported marketplace product URL",
+            "A catalog import batch must contain between one and ten URLs.",
+            'id="catalog-import-progress"',
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, harness)
 
     def test_existing_product_link_uses_the_product_managers_own_admin_token(self) -> None:
         self.assertIn("getAdminLink('AdminOrdenowaProductManager')", self.controller)

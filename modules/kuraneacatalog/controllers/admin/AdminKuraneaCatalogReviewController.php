@@ -98,8 +98,8 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
             try {
                 $this->activeBatch = $batches->create($urls);
                 $this->succeed(sprintf('%d개 고유 상품 URL을 수집 대기열에 추가했습니다.', count($this->activeBatch->items)));
-            } catch (\InvalidArgumentException $exception) {
-                $this->fail($exception->getMessage());
+            } catch (\InvalidArgumentException) {
+                $this->fail('상품 URL을 등록할 수 없습니다. Amazon Japan 또는 Rakuten의 지원 상품 주소를 1~10개 입력해 주세요.');
             } catch (Throwable) {
                 $this->fail('상품 URL 일괄 등록을 저장하지 못했습니다. URL과 저장 공간을 확인해 주세요.');
             }

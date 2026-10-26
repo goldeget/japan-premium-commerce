@@ -32,6 +32,8 @@ from verify_product_admin_browser import (
 AMAZON = 'https://www.amazon.co.jp/dp/B0KURANEA1'
 RAKUTEN = 'https://item.rakuten.co.jp/fixture-shop/synthetic-case-b/'
 BLOCKED = 'https://www.amazon.co.jp/dp/B0KURANEA2'
+UNSUPPORTED = 'https://example.invalid/not-a-supported-product'
+INVALID_URL_NOTICE = '상품 URL을 등록할 수 없습니다. Amazon Japan 또는 Rakuten의 지원 상품 주소를 1~10개 입력해 주세요.'
 REJECTED_RAKUTEN_SNAPSHOT_NAME = '[TEST FIXTURE] 合成収納ケース B'
 REJECTED_OPTION_GUARD_MESSAGE = (
     '현재 수집기는 여러 옵션 그룹의 실제 조합·조합별 가격·재고를 검증할 수 없어 '
@@ -321,6 +323,40 @@ def submit_batch(driver, review_url, urls, state, prefix='batch'):
     progress_text = visible(driver, '#catalog-import-progress').text
     state['last_completed_stage'] = state['stage']
     return progress_text
+
+
+def reject_unsupported_product_url(driver, review_url, state):
+    """Verify the admin rejects unsupported synthetic URLs without storing a batch."""
+    state['stage'] = 'batch_review_navigation'
+    driver.get(review_url)
+    state['last_completed_stage'] = state['stage']
+    state['stage'] = 'batch_url_field'
+    visible(driver, '#product_urls').send_keys(UNSUPPORTED)
+    state['last_completed_stage'] = state['stage']
+    state['stage'] = 'batch_submit_control'
+    submit_button = visible(driver, '[name="submitKuraneaCatalogImportBatch"]')
+    state['last_completed_stage'] = state['stage']
+    state['stage'] = 'batch_submit_click'
+    state['submit_attempted'] = True
+    state['submitted_url_count'] = 1
+    submit_button.click()
+    state['submit_returned'] = True
+    state['last_completed_stage'] = state['stage']
+    state['stage'] = 'batch_progress_readback'
+
+    def has_expected_notice(current_driver):
+        return any(
+            alert.is_displayed() and alert.text.strip() == INVALID_URL_NOTICE
+            for alert in current_driver.find_elements(By.CSS_SELECTOR, '.alert.alert-danger')
+        )
+
+    WebDriverWait(driver, 20).until(has_expected_notice)
+    notice = visible(driver, '.alert.alert-danger').text.strip()
+    assert notice == INVALID_URL_NOTICE
+    assert 'example.invalid' not in notice
+    assert not driver.find_elements(By.ID, 'catalog-import-progress')
+    driver.save_screenshot(str(DEST / 'catalog-import-unsupported-url.png'))
+    state['last_completed_stage'] = state['stage']
 
 
 def _safe_rect(value):
@@ -922,6 +958,7 @@ def safe_catalog_import_browser_state(driver, state):
         'row_count': 0,
         'token_rejected_notice_visible': False,
         'mutation_access_denied_notice_visible': False,
+        'invalid_url_notice_visible': False,
         'empty_url_notice_visible': False,
         'batch_save_failure_notice_visible': False,
         'batch_created_notice_visible': False,
@@ -987,8 +1024,10 @@ def safe_catalog_import_browser_state(driver, state):
                 const managerSaveSuccessNotice = expectedProductId
                     ? `상품 ID ${expectedProductId}를 비활성 상태로 저장했습니다.` : '';
                 const optionGuardNotice = '현재 수집기는 여러 옵션 그룹의 실제 조합·조합별 가격·재고를 검증할 수 없어 이 상품 초안 등록을 지원하지 않습니다. 원본에서 확인된 단일 옵션 그룹만 사용해 주세요.';
+                const invalidUrlNotice = '상품 URL을 등록할 수 없습니다. Amazon Japan 또는 Rakuten의 지원 상품 주소를 1~10개 입력해 주세요.';
                 const recognizedAlert = (text) => text === '관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.'
                     || text === '상품 수집·검수·등록 권한이 없습니다.'
+                    || text === invalidUrlNotice
                     || text === '상품 URL을 한 줄에 하나씩 입력해 주세요.'
                     || text === '상품 URL 일괄 등록을 저장하지 못했습니다. URL과 저장 공간을 확인해 주세요.'
                     || text === '상품 수집 작업은 편집·등록 권한이 있는 직원만 수행할 수 있습니다.'
@@ -1015,6 +1054,7 @@ def safe_catalog_import_browser_state(driver, state):
                     row_count: Math.min(rows.length, 1000),
                     token_rejected_notice_visible: visibleAlerts.includes('관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.'),
                     mutation_access_denied_notice_visible: visibleAlerts.includes('상품 수집·검수·등록 권한이 없습니다.'),
+                    invalid_url_notice_visible: visibleAlerts.includes(invalidUrlNotice),
                     empty_url_notice_visible: visibleAlerts.includes('상품 URL을 한 줄에 하나씩 입력해 주세요.'),
                     batch_save_failure_notice_visible: visibleAlerts.includes('상품 URL 일괄 등록을 저장하지 못했습니다. URL과 저장 공간을 확인해 주세요.'),
                     batch_created_notice_visible: visibleAlerts.some((text) => /^(?:[1-9]|10)개 고유 상품 URL을 수집 대기열에 추가했습니다[.]$/.test(text)),
@@ -1065,6 +1105,7 @@ def safe_catalog_import_browser_state(driver, state):
     queue_unavailable = bool(page.get('queue_unavailable_notice_visible'))
     token_rejected = bool(page.get('token_rejected_notice_visible'))
     mutation_access_denied = bool(page.get('mutation_access_denied_notice_visible'))
+    invalid_url_notice = bool(page.get('invalid_url_notice_visible'))
     batch_save_failed = bool(page.get('batch_save_failure_notice_visible'))
     batch_created = bool(page.get('batch_created_notice_visible'))
     unclassified_alert = bool(page.get('unclassified_alert_visible'))
@@ -1090,6 +1131,8 @@ def safe_catalog_import_browser_state(driver, state):
         page_class = 'mutation_token_rejected'
     elif mutation_access_denied:
         page_class = 'mutation_capability_denied'
+    elif invalid_url_notice:
+        page_class = 'invalid_url_rejected'
     elif batch_save_failed:
         page_class = 'batch_save_error'
     elif batch_created and not bool(page.get('batch_progress_container_visible')):
@@ -1131,6 +1174,7 @@ def safe_catalog_import_browser_state(driver, state):
         'row_count': row_count,
         'token_rejected_notice_visible': token_rejected,
         'mutation_access_denied_notice_visible': mutation_access_denied,
+        'invalid_url_notice_visible': invalid_url_notice,
         'empty_url_notice_visible': bool(page.get('empty_url_notice_visible')),
         'batch_save_failure_notice_visible': batch_save_failed,
         'batch_created_notice_visible': batch_created,
@@ -1330,6 +1374,7 @@ def save_safe_failure_screenshot(driver, path, state):
     safe_messages = {
         '관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.',
         '상품 수집·검수·등록 권한이 없습니다.',
+        INVALID_URL_NOTICE,
         '상품 URL을 한 줄에 하나씩 입력해 주세요.',
         '상품 URL 일괄 등록을 저장하지 못했습니다. URL과 저장 공간을 확인해 주세요.',
         '상품 수집 작업은 편집·등록 권한이 있는 직원만 수행할 수 있습니다.',
@@ -1633,6 +1678,7 @@ def run():
         state['stage'] = 'manager_navigation'
         driver.get(manager_url)
         state['last_completed_stage'] = state['stage']
+        reject_unsupported_product_url(driver, review_url, state)
         before_ids = manager_ids(driver)
         status = submit_batch(driver, review_url, [AMAZON, RAKUTEN, BLOCKED], state)
         assert '성공 2건' in status and '실패 1건' in status and '대기 0건' in status

@@ -64,12 +64,13 @@ class ModuleAdminController
 final class Tools
 {
     public static bool $submitted = false;
+    public static string $submittedAction = 'submitKuraneaCatalogApprove';
     /** @var array<string, mixed> */
     public static array $values = [];
 
     public static function isSubmit(string $name): bool
     {
-        return self::$submitted && $name === 'submitKuraneaCatalogApprove';
+        return self::$submitted && $name === self::$submittedAction;
     }
 
     public static function getValue(string $name, mixed $default = null): mixed
@@ -207,6 +208,51 @@ try {
 
     $_SERVER['REQUEST_METHOD'] = 'POST';
     Tools::$submitted = true;
+    Tools::$submittedAction = 'submitKuraneaCatalogImportBatch';
+    $unsupportedUrl = 'https://example.invalid/not-a-supported-product';
+    Tools::$values = [
+        'product_urls' => $unsupportedUrl,
+        'token' => Tools::getAdminTokenLite('AdminKuraneaCatalogReview'),
+    ];
+    CatalogAdminTestCsrfTokenManager::$acceptedRequestToken = Tools::$values['token'];
+    $unsupportedUrlController = new AdminKuraneaCatalogReviewController();
+    $unsupportedUrlController->initContent();
+    assertCatalogAdminTrue(
+        str_contains($unsupportedUrlController->content, '상품 URL을 등록할 수 없습니다. Amazon Japan 또는 Rakuten의 지원 상품 주소를 1~10개 입력해 주세요.'),
+        'An unsupported URL should display the fixed Korean validation message.'
+    );
+    assertCatalogAdminTrue(!str_contains($unsupportedUrlController->content, 'not a supported marketplace product URL'), 'An unsupported URL must not expose the exception message.');
+    assertCatalogAdminTrue(!str_contains($unsupportedUrlController->content, $unsupportedUrl), 'An unsupported URL must not be reflected into the response.');
+    assertCatalogAdminTrue(!str_contains($unsupportedUrlController->content, 'id="catalog-import-progress"'), 'An unsupported URL must not create or render a batch.');
+
+    $urlInputError = '상품 URL을 등록할 수 없습니다. Amazon Japan 또는 Rakuten의 지원 상품 주소를 1~10개 입력해 주세요.';
+    $invalidUrlInputs = [
+        ['value' => '', 'label' => 'An empty URL list should display safe Korean validation feedback.'],
+        [
+            'value' => implode("\n", array_fill(0, 11, 'https://www.amazon.co.jp/dp/B0KURANEA1')),
+            'label' => 'More than ten URLs should display safe Korean validation feedback.',
+        ],
+    ];
+    foreach ($invalidUrlInputs as $invalidUrlInput) {
+        Tools::$values = [
+            'product_urls' => $invalidUrlInput['value'],
+            'token' => Tools::getAdminTokenLite('AdminKuraneaCatalogReview'),
+        ];
+        CatalogAdminTestCsrfTokenManager::$acceptedRequestToken = Tools::$values['token'];
+        $invalidUrlController = new AdminKuraneaCatalogReviewController();
+        $invalidUrlController->initContent();
+        assertCatalogAdminTrue(str_contains($invalidUrlController->content, $urlInputError), $invalidUrlInput['label']);
+        assertCatalogAdminTrue(
+            !str_contains($invalidUrlController->content, 'A catalog import batch must contain between one and ten URLs.'),
+            'A URL count exception must not be exposed to the admin screen.'
+        );
+        assertCatalogAdminTrue(
+            !str_contains($invalidUrlController->content, 'id="catalog-import-progress"'),
+            'Invalid URL input must not render an imported batch.'
+        );
+    }
+    Tools::$submittedAction = 'submitKuraneaCatalogApprove';
+
     Tools::$values = [
         'idempotency_key' => $catalogAdminEntry->idempotencyKey,
         'confirm_test_demo' => '1',
