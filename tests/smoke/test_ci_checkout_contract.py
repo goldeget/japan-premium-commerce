@@ -264,6 +264,7 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
                         **os.environ,
                         "ORDENOWA_ADMIN_SECURITY_FOCUS": "false",
                         "ORDENOWA_ADMIN_RETURN_FOCUS": "false",
+                        "ORDENOWA_CUSTOMER_ACCOUNT_FOCUS": "false",
                         "ORDENOWA_ADMIN_QA_FOCUS": "false",
                         **environment,
                         variable: outcome,

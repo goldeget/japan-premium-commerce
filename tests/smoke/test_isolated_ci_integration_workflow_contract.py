@@ -201,6 +201,7 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             **{variable: "success" for variable, _ in outcome_vars},
             "ORDENOWA_ADMIN_SECURITY_FOCUS": "false",
             "ORDENOWA_ADMIN_RETURN_FOCUS": "false",
+            "ORDENOWA_CUSTOMER_ACCOUNT_FOCUS": "false",
             "ORDENOWA_ADMIN_QA_FOCUS": "false",
             "SECURITY_ADMIN_LOCALE_MUTATED": "1",
         }
@@ -221,6 +222,7 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             **{variable: "success" for variable, _ in outcome_vars},
             "ORDENOWA_ADMIN_SECURITY_FOCUS": "true",
             "ORDENOWA_ADMIN_RETURN_FOCUS": "false",
+            "ORDENOWA_CUSTOMER_ACCOUNT_FOCUS": "false",
             "ORDENOWA_ADMIN_QA_FOCUS": "true",
             "SECURITY_ADMIN_LOCALE_MUTATED": "1",
         }
@@ -251,6 +253,7 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             **{variable: "success" for variable, _ in outcome_vars},
             "ORDENOWA_ADMIN_SECURITY_FOCUS": "false",
             "ORDENOWA_ADMIN_RETURN_FOCUS": "true",
+            "ORDENOWA_CUSTOMER_ACCOUNT_FOCUS": "false",
             "ORDENOWA_ADMIN_QA_FOCUS": "true",
         }
         command = shell_body(aggregate)
@@ -282,6 +285,7 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             **{variable: "success" for variable, _ in outcome_vars},
             "ORDENOWA_ADMIN_SECURITY_FOCUS": "false",
             "ORDENOWA_ADMIN_RETURN_FOCUS": "false",
+            "ORDENOWA_CUSTOMER_ACCOUNT_FOCUS": "false",
             "ORDENOWA_ADMIN_QA_FOCUS": "false",
             "SECURITY_ADMIN_LOCALE_MUTATED": "",
         }
@@ -290,6 +294,39 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
         result = subprocess.run(["bash", "-c", shell_body(aggregate)], env=env, capture_output=True, text=True)
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_customer_account_focus_aggregate_requires_isolated_account_dependencies(self) -> None:
+        aggregate = step("Aggregate browser QA and postal verification failures")
+        outcome_vars = re.findall(r"^          ([A-Z_]+): \$\{\{ steps\.([a-z_]+)\.outcome \}\}", aggregate, re.MULTILINE)
+        env = {
+            **os.environ,
+            **{variable: "success" for variable, _ in outcome_vars},
+            "ORDENOWA_ADMIN_SECURITY_FOCUS": "false",
+            "ORDENOWA_ADMIN_RETURN_FOCUS": "false",
+            "ORDENOWA_CUSTOMER_ACCOUNT_FOCUS": "true",
+            "ORDENOWA_ADMIN_QA_FOCUS": "true",
+        }
+        command = shell_body(aggregate)
+        self.assertEqual(subprocess.run(["bash", "-c", command], env=env, capture_output=True).returncode, 0)
+
+        for step_id, variable in (
+            ("compose_up", "COMPOSE_UP_OUTCOME"),
+            ("chromium_setup", "CHROMIUM_SETUP_OUTCOME"),
+            ("postcode_fixture", "POSTCODE_FIXTURE_OUTCOME"),
+            ("mailpit_setup", "MAILPIT_SETUP_OUTCOME"),
+            ("account", "ACCOUNT_BROWSER_QA_OUTCOME"),
+            ("account_checkout_restore", "ACCOUNT_CHECKOUT_RESTORE_OUTCOME"),
+            ("account_browser_evidence", "ACCOUNT_BROWSER_EVIDENCE_OUTCOME"),
+        ):
+            with self.subTest(step=step_id):
+                result = subprocess.run(
+                    ["bash", "-c", command],
+                    env={**env, variable: "failure"},
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(step_id, result.stdout + result.stderr)
 
     def test_successful_cart_requires_its_evidence_even_when_another_step_failed(self) -> None:
         coverage = step("Verify browser QA screenshot coverage")
