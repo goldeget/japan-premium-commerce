@@ -180,12 +180,22 @@ foreach ([
     // of the current locale. Default translation exposes later locale resets.
     if ($activeModules !== [] && str_starts_with($route, 'admin_')) {
         same('주문', $translator->trans('Orders', [], 'Admin.Navigation.Menu', 'ko-KR'), $route . ' explicit Korean catalogue');
+        same('배송사', $translator->trans('Carriers', [], 'Admin.Navigation.Menu', 'ko-KR'), $route . ' explicit Korean carrier navigation');
+        same('결제 수단', $translator->trans('Payment Methods', [], 'Admin.Navigation.Menu', 'ko-KR'), $route . ' explicit Korean payment menu title');
+        same('결제 수단', $translator->trans('Payment methods', [], 'Admin.Navigation.Menu', 'ko-KR'), $route . ' explicit Korean payment menu label');
+        same('결제 방법', $translator->trans('Payment method', [], 'Admin.Orderscustomers.Feature', 'ko-KR'), $route . ' explicit Korean payment method label');
+        same('데모 모드', $translator->trans('Demo mode', [], 'Admin.Dashboard.Feature', 'ko-KR'), $route . ' explicit Korean demo mode label');
         if ($route === 'admin_orders_index') {
             same('평균 주문 금액', $translator->trans('Average Order Value', [], 'Admin.Global', 'ko-KR'), $route . ' explicit Admin.Global KPI translation');
         }
     }
     $context->getTranslator();
     same($expectedOrders, $translator->trans('Orders', [], 'Admin.Navigation.Menu'), $route . ' Orders title');
+    if ($activeModules !== [] && str_starts_with($route, 'admin_')) {
+        same('결제 수단', $translator->trans('Payment Methods', [], 'Admin.Navigation.Menu'), $route . ' default Korean payment menu title');
+        same('결제 수단', $translator->trans('Payment methods', [], 'Admin.Navigation.Menu'), $route . ' default Korean payment menu label');
+        same('데모 모드', $translator->trans('Demo mode', [], 'Admin.Dashboard.Feature'), $route . ' default Korean demo mode label');
+    }
     if ($activeModules !== [] && $route === 'admin_orders_index') {
         same('평균 주문 금액', $translator->trans('Average Order Value', [], 'Admin.Global'), $route . ' default Admin.Global KPI translation');
 

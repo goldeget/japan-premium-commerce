@@ -12,7 +12,7 @@ class Kuraneabackoffice extends Module
     {
         $this->name = 'kuraneabackoffice';
         $this->tab = 'administration';
-        $this->version = '1.0.1';
+        $this->version = '1.0.3';
         $this->author = 'ORDENOWA';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -30,7 +30,129 @@ class Kuraneabackoffice extends Module
             'displayAdminLogin',
             'displayAdminEndContent',
             'actionAdminControllerSetMedia',
-        ]);
+        ]) && $this->installSupportAssignments() && $this->installEmployeeProfileAudit();
+    }
+
+    /** Additive install/upgrade entry point for the shop-scoped support assignment store. */
+    public function installSupportAssignments(): bool
+    {
+        require_once __DIR__ . '/vendor/autoload.php';
+
+        $database = Db::getInstance();
+        if (!$database->execute(\Kuranea\Backoffice\Infrastructure\SupportAssignmentSchema::currentTableSql(_DB_PREFIX_))
+            || !$database->execute(\Kuranea\Backoffice\Infrastructure\SupportAssignmentSchema::historyTableSql(_DB_PREFIX_))) {
+            return false;
+        }
+
+        return $this->installSupportAssignmentsTab();
+    }
+
+    /** Adds a dedicated entry under customer service without altering native thread behavior. */
+    public function installSupportAssignmentsTab(): bool
+    {
+        $parentId = (int) Tab::getIdFromClassName('AdminParentCustomerService');
+        if ($parentId < 1) {
+            $parentId = (int) Tab::getIdFromClassName('AdminParentOrders');
+        }
+        if ($parentId < 1) {
+            return false;
+        }
+
+        $className = 'AdminKuraneaSupportAssignments';
+        $tabId = (int) Tab::getIdFromClassName($className);
+        $tab = $tabId > 0 ? new Tab($tabId) : new Tab();
+        $tab->active = 1;
+        $tab->class_name = $className;
+        $tab->module = $this->name;
+        $tab->id_parent = $parentId;
+        $tab->name = [];
+
+        $labels = [
+            'ja' => '問い合わせ担当者',
+            'en' => 'Support assignment',
+            'ko' => '고객 문의 담당자',
+        ];
+        foreach (Language::getLanguages(false) as $language) {
+            $languageId = (int) ($language['id_lang'] ?? 0);
+            if ($languageId > 0) {
+                $isoCode = strtolower((string) ($language['iso_code'] ?? 'ko'));
+                $tab->name[$languageId] = $labels[$isoCode] ?? $labels['ko'];
+            }
+        }
+
+        return $tabId > 0 ? (bool) $tab->update() : (bool) $tab->add();
+    }
+
+    /** Additive store, observer hooks, and native-view tab for Employee profile transitions. */
+    public function installEmployeeProfileAudit(): bool
+    {
+        require_once __DIR__ . '/vendor/autoload.php';
+
+        $database = Db::getInstance();
+        if (!$database->execute(\Kuranea\Backoffice\Infrastructure\EmployeeProfileAuditSchema::tableSql(_DB_PREFIX_))) {
+            return false;
+        }
+
+        return $this->registerHook([
+            'actionObjectEmployeeUpdateBefore',
+            'actionObjectEmployeeUpdateAfter',
+        ]) && $this->installEmployeeProfileAuditTab();
+    }
+
+    /** The tab grants no permissions; PrestaShop's existing profile access remains authoritative. */
+    public function installEmployeeProfileAuditTab(): bool
+    {
+        $parentId = 0;
+        foreach ([
+            'AdminParentEmployees',
+            'AdminParentAdvancedParameters',
+            'AdminParentShopParameters',
+            'AdminParentPreferences',
+        ] as $parentClass) {
+            $parentId = (int) Tab::getIdFromClassName($parentClass);
+            if ($parentId > 0) {
+                break;
+            }
+        }
+        if ($parentId < 1) {
+            return false;
+        }
+
+        $className = 'AdminKuraneaEmployeeProfileAudit';
+        $tabId = (int) Tab::getIdFromClassName($className);
+        $tab = $tabId > 0 ? new Tab($tabId) : new Tab();
+        $tab->active = 1;
+        $tab->class_name = $className;
+        $tab->module = $this->name;
+        $tab->id_parent = $parentId;
+        $tab->name = [];
+
+        $labels = [
+            'ja' => '従業員プロファイル履歴',
+            'en' => 'Employee profile history',
+            'ko' => '관리자 프로필 변경 이력',
+        ];
+        foreach (Language::getLanguages(false) as $language) {
+            $languageId = (int) ($language['id_lang'] ?? 0);
+            if ($languageId > 0) {
+                $isoCode = strtolower((string) ($language['iso_code'] ?? 'ko'));
+                $tab->name[$languageId] = $labels[$isoCode] ?? $labels['ko'];
+            }
+        }
+
+        return $tabId > 0 ? (bool) $tab->update() : (bool) $tab->add();
+    }
+
+    public function hookActionObjectEmployeeUpdateBefore(array $params): void
+    {
+        require_once __DIR__ . '/vendor/autoload.php';
+        \Kuranea\Backoffice\Admin\EmployeeProfileAuditObserver::beforeUpdate($params);
+    }
+
+    public function hookActionObjectEmployeeUpdateAfter(array $params): void
+    {
+        require_once __DIR__ . '/vendor/autoload.php';
+        \Kuranea\Backoffice\Admin\EmployeeProfileAuditObserver::afterUpdate($params);
     }
 
     public function hookActionAdminControllerSetMedia(): void

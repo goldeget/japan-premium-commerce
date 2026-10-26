@@ -514,11 +514,27 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertTrue(path.is_file(), "missing module-owned Admin.Global overlay")
         self.assertEqual("평균 주문 금액", translations(path).get("Average Order Value"))
 
+    def test_dashboard_overlay_translates_native_demo_mode_label(self) -> None:
+        path = MODULE / "translations" / "ko-KR" / "AdminDashboardFeature.ko-KR.xlf"
+        self.assertTrue(path.is_file(), "missing module-owned Admin.Dashboard.Feature overlay")
+        self.assertEqual("데모 모드", translations(path).get("Demo mode"))
+
+    def test_navigation_overlay_translates_native_payment_menu_variants(self) -> None:
+        path = MODULE / "translations" / "ko-KR" / "AdminNavigationMenu.ko-KR.xlf"
+        self.assertEqual("결제 수단", translations(path).get("Payment Methods"))
+        self.assertEqual("결제 수단", translations(path).get("Payment methods"))
+
     def test_orders_locale_lifecycle_checks_the_runtime_admin_global_kpi_translation(self) -> None:
         lifecycle = (ROOT / "tests" / "admin_locale" / "locale_lifecycle.php").read_text(encoding="utf-8")
         self.assertIn("Average Order Value", lifecycle)
         self.assertIn("Admin.Global KPI translation", lifecycle)
         self.assertIn("default Admin.Global KPI translation", lifecycle)
+
+    def test_dashboard_demo_mode_overlay_is_registered_and_lifecycle_checked(self) -> None:
+        subscriber = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text(encoding="utf-8")
+        lifecycle = (ROOT / "tests" / "admin_locale" / "locale_lifecycle.php").read_text(encoding="utf-8")
+        self.assertIn("'Admin.Dashboard.Feature' => 'AdminDashboardFeature.ko-KR.xlf'", subscriber)
+        self.assertIn("$translator->trans('Demo mode', [], 'Admin.Dashboard.Feature', 'ko-KR')", lifecycle)
 
     def test_orders_feature_overlay_translates_new_order_toolbar_action(self) -> None:
         path = MODULE / "translations" / "ko-KR" / "AdminOrderscustomersFeature.ko-KR.xlf"
@@ -538,6 +554,26 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         target = translations(path).get(source)
         self.assertEqual("%name%님, 환영합니다", target)
         self.assertEqual(re.findall(r"%[^%]+%", source), re.findall(r"%[^%]+%", target))
+
+    def test_observed_admin_labels_are_checked_through_runtime_translator(self) -> None:
+        lifecycle = (ROOT / "tests" / "admin_locale" / "locale_lifecycle.php").read_text(encoding="utf-8")
+        self.assertIn("$translator->trans('Carriers', [], 'Admin.Navigation.Menu', 'ko-KR')", lifecycle)
+        self.assertIn("$translator->trans('Payment Methods', [], 'Admin.Navigation.Menu', 'ko-KR')", lifecycle)
+        self.assertIn("$translator->trans('Payment methods', [], 'Admin.Navigation.Menu', 'ko-KR')", lifecycle)
+        self.assertIn("$translator->trans('Payment method', [], 'Admin.Orderscustomers.Feature', 'ko-KR')", lifecycle)
+        self.assertIn("explicit Korean payment menu title", lifecycle)
+        self.assertIn("explicit Korean payment menu label", lifecycle)
+        self.assertIn("explicit Korean demo mode label", lifecycle)
+        self.assertIn("explicit Korean carrier navigation", lifecycle)
+        self.assertIn("explicit Korean payment method label", lifecycle)
+
+    def test_observed_carrier_menu_label_is_korean(self) -> None:
+        path = MODULE / "translations" / "ko-KR" / "AdminNavigationMenu.ko-KR.xlf"
+        self.assertEqual("배송사", translations(path).get("Carriers"))
+
+    def test_observed_order_payment_method_label_is_korean(self) -> None:
+        path = MODULE / "translations" / "ko-KR" / "AdminOrderscustomersFeature.ko-KR.xlf"
+        self.assertEqual("결제 방법", translations(path).get("Payment method"))
 
     def test_psgdpr_overlay_translates_the_observed_admin_gaps(self) -> None:
         path = MODULE / "translations" / "ko-KR" / "messages.ko-KR.xlf"

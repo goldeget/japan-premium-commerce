@@ -338,6 +338,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
         foreach ([
             'Admin.Actions' => 'AdminActions.ko-KR.xlf',
             'Admin.Global' => 'AdminGlobal.ko-KR.xlf',
+            'Admin.Dashboard.Feature' => 'AdminDashboardFeature.ko-KR.xlf',
             'Admin.Navigation.Header' => 'AdminNavigationHeader.ko-KR.xlf',
             'Admin.Navigation.Menu' => 'AdminNavigationMenu.ko-KR.xlf',
             'Admin.Orderscustomers.Feature' => 'AdminOrderscustomersFeature.ko-KR.xlf',

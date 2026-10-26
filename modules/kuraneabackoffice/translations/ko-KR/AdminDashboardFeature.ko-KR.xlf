@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="AdminDashboardFeature.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="948a2986c50ad6bb8c90b4d93ae5c04d" approved="yes">
+        <source>Demo mode</source>
+        <target state="final">데모 모드</target>
+        <note>PrestaShop 9.2 AdminDashboardController label.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

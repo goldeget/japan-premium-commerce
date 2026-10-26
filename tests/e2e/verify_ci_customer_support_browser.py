@@ -1,0 +1,1145 @@
+#!/usr/bin/env python3
+"""Exercise PrestaShop's native order-associated customer-thread lifecycle in isolated CI."""
+
+# Native controls are pinned to the PrestaShop 9.2.0 admin_customer_threads
+# routes, CustomerThread view/reply/forward templates, and contactform module.
+# See tests/e2e/test_ci_customer_support_browser_contract.py for the checked
+# route, form, thread identity, and attachment boundaries.
+
+from __future__ import annotations
+
+import hashlib
+import ipaddress
+import json
+import os
+import re
+import secrets
+import struct
+import sys
+import tempfile
+import time
+import zlib
+from dataclasses import dataclass
+from html.parser import HTMLParser
+from pathlib import Path
+from typing import Any
+from urllib.error import URLError
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
+from urllib.request import Request, urlopen
+
+try:
+    from selenium import webdriver
+    from selenium.common.exceptions import TimeoutException
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.select import Select
+    from selenium.webdriver.support.ui import WebDriverWait
+except ModuleNotFoundError:  # Pure contract helpers remain importable without local browser extras.
+    webdriver = None
+    TimeoutException = TimeoutError
+    Options = None
+    By = None
+    EC = None
+    Select = None
+    WebDriverWait = None
+
+
+EXPECTED_SHOP_PORT = 18080
+EXPECTED_MAILPIT_PORT = 8025
+THREAD_TOKEN_PATTERN = re.compile(r"#ct([1-9][0-9]{0,9})\s+#tc([A-Za-z0-9]{12})")
+SAFE_STAGES = {
+    "fixture", "customer_login", "contact_form", "submit_inquiry", "mailpit_confirmation",
+    "foreign_customer_denial", "admin_login", "admin_thread_lookup", "attachment_readback",
+    "private_forward_note", "close_thread", "reopen_thread", "admin_public_reply",
+    "mailpit_public_reply", "customer_followup", "thread_fresh_readback", "assignment_lookup",
+    "assignment_create", "assignment_reassign", "assignment_history_readback",
+    "limited_staff_denial", "assignment_limited_denial", "rejected_attachment", "image_attachment_readback", "complete",
+}
+SAFE_RESULT_KEYS = {
+    "status", "stage", "exception_type", "customer_submitted", "order_association_verified",
+    "attachment_admin_readback", "private_note_admin_only", "status_close_reopen", "admin_public_reply",
+    "customer_followup_same_thread", "foreign_customer_denied", "limited_employee_denied",
+    "mailpit_provider", "paid", "payment_provider_called", "assignment_created",
+    "assignment_reassigned", "assignment_actor_history", "assignment_limited_employee_denied",
+    "image_attachment_admin_readback", "image_attachment_foreign_denied", "disallowed_attachment_rejected",
+}
+RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {"status", "stage", "exception_type", "mailpit_provider"}
+SAFE_EXCEPTION_TYPES = {
+    "AssertionError", "TimeoutException", "ValueError", "RuntimeError", "URLError", "OSError",
+    "StaleElementReferenceException", "ElementClickInterceptedException", "NoSuchElementException", "OtherError",
+}
+
+
+@dataclass(frozen=True)
+class Context:
+    run_id: str
+    attempt: str
+    project: str
+    shop: str
+    admin: str
+    mailpit: str
+    artifact_dir: Path
+    admin_email: str
+    admin_password: str
+    view_only_email: str
+    customer_password: str
+    buyer: dict[str, Any]
+    foreign: dict[str, Any]
+
+
+class MessageLinks(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.hrefs: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() != "a":
+            return
+        href = dict(attrs).get("href")
+        if isinstance(href, str) and href:
+            self.hrefs.append(href)
+
+
+def validate_loopback_url(value: str, port: int, label: str) -> str:
+    try:
+        parsed = urlparse(value)
+        host = (parsed.hostname or "").lower()
+        actual_port = parsed.port
+        loopback = host == "localhost" or ipaddress.ip_address(host).is_loopback
+    except (ValueError, TypeError):
+        raise ValueError(f"{label} must be a valid isolated loopback endpoint") from None
+    if (
+        parsed.scheme != "http" or not loopback or actual_port != port
+        or parsed.username is not None or parsed.password is not None
+        or parsed.path not in {"", "/"} or parsed.query or parsed.fragment
+    ):
+        raise ValueError(f"{label} must use the isolated loopback port {port}")
+    return f"http://{host}:{port}"
+
+
+def validate_admin_url(value: str, shop: str) -> str:
+    try:
+        parsed = urlparse(value)
+        expected = urlparse(shop)
+    except ValueError:
+        raise ValueError("ADMIN_LOGIN_URL is invalid for the isolated Back Office") from None
+    if (
+        (parsed.scheme, parsed.hostname, parsed.port) != (expected.scheme, expected.hostname, expected.port)
+        or parsed.path.rstrip("/") != "/admin-kuranea"
+        or parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment
+    ):
+        raise ValueError("ADMIN_LOGIN_URL must use the isolated shop's exact Back Office path")
+    return value.rstrip("/")
+
+
+def load_order(artifact_dir: Path, viewport: str, run_id: str, attempt: str) -> dict[str, Any]:
+    browser_path = artifact_dir / f"ci-checkout-{viewport}.json"
+    verified_path = artifact_dir / f"ci-checkout-{viewport}-verified.json"
+    try:
+        browser_order = json.loads(browser_path.read_text(encoding="utf-8"))
+        verified_order = json.loads(verified_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        raise ValueError(f"the isolated {viewport} order fixture is missing or invalid") from None
+    expected_email = f"qa-ordenowa-checkout-{run_id}-{attempt}-{viewport}@example.invalid"
+    order_id = browser_order.get("order_id")
+    reference = browser_order.get("reference")
+    if (
+        browser_order.get("viewport") != viewport
+        or type(order_id) is not int or order_id < 1
+        or browser_order.get("email") != expected_email
+        or not isinstance(reference, str) or re.fullmatch(r"[A-Z0-9]{8,16}", reference) is None
+        or verified_order.get("order_id") != order_id
+        or verified_order.get("reference") != reference
+        or verified_order.get("email") != expected_email
+        or verified_order.get("payment_module") != "ps_checkpayment"
+        or verified_order.get("total_paid_real") != 0
+    ):
+        raise ValueError(f"the isolated {viewport} order is not the matching run-scoped unpaid offline order")
+    return {"order_id": order_id, "reference": reference, "email": expected_email}
+
+
+def load_context(environ: dict[str, str] | None = None) -> Context:
+    values = os.environ if environ is None else environ
+    run_id = values.get("GITHUB_RUN_ID", "")
+    attempt = values.get("GITHUB_RUN_ATTEMPT", "")
+    project = f"kuranea-ci-{run_id}-{attempt}"
+    if (
+        values.get("CI") != "true" or values.get("GITHUB_ACTIONS") != "true"
+        or values.get("KURANEA_ISOLATED_CI") != "1"
+        or re.fullmatch(r"[0-9]+", run_id) is None
+        or re.fullmatch(r"[0-9]+", attempt) is None
+        or values.get("CI_COMPOSE_PROJECT_NAME") != project
+        or values.get("KURANEA_CI_PROJECT_NAME") != project
+    ):
+        raise ValueError("customer support browser QA requires its exact disposable Actions project")
+    shop = validate_loopback_url(values.get("SHOP_BASE_URL", ""), EXPECTED_SHOP_PORT, "SHOP_BASE_URL")
+    mailpit = validate_loopback_url(values.get("MAILPIT_API_URL", ""), EXPECTED_MAILPIT_PORT, "MAILPIT_API_URL")
+    admin = validate_admin_url(values.get("ADMIN_LOGIN_URL", ""), shop)
+    artifact_text = values.get("QA_ARTIFACT_DIR", "")
+    runner_temp = values.get("RUNNER_TEMP", "")
+    if not artifact_text or not runner_temp:
+        raise ValueError("customer support artifacts require an explicit runner temporary directory")
+    artifact_dir = Path(artifact_text).resolve()
+    temp_dir = Path(runner_temp).resolve()
+    try:
+        artifact_dir.relative_to(temp_dir)
+    except ValueError:
+        raise ValueError("customer support artifacts must remain inside RUNNER_TEMP") from None
+    if artifact_dir == temp_dir:
+        raise ValueError("customer support artifacts require a run-specific child directory")
+
+    admin_email = values.get("ADMIN_MAIL", "").strip().lower()
+    password = values.get("ADMIN_PASSWD", "")
+    view_email = values.get("VIEW_ONLY_EMAIL", "").strip().lower()
+    expected_view = rf"ordenowa-security-view-{re.escape(run_id)}-{re.escape(attempt)}-[a-f0-9]+@example\.invalid"
+    if admin_email != "ci-ordenowa@example.invalid" or not password or re.fullmatch(expected_view, view_email) is None:
+        raise ValueError("customer support browser QA requires the run-scoped admin and limited-employee fixtures")
+
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    buyer = load_order(artifact_dir, "desktop", run_id, attempt)
+    foreign = load_order(artifact_dir, "mobile", run_id, attempt)
+    if buyer["order_id"] == foreign["order_id"] or buyer["email"] == foreign["email"]:
+        raise ValueError("support ownership fixtures must identify two distinct native customers and orders")
+    return Context(
+        run_id=run_id, attempt=attempt, project=project, shop=shop, admin=admin,
+        mailpit=mailpit, artifact_dir=artifact_dir, admin_email=admin_email,
+        admin_password=password, view_only_email=view_email,
+        customer_password=f"ORDENOWA-CI-{run_id}-{attempt}-Aa1!", buyer=buyer, foreign=foreign,
+    )
+
+
+def same_origin(first: str, second: str) -> bool:
+    a = urlparse(first)
+    b = urlparse(urljoin(first.rstrip("/") + "/", second))
+    return (a.scheme, a.hostname, a.port) == (b.scheme, b.hostname, b.port)
+
+
+def safe_admin_path(value: str, admin_url: str) -> bool:
+    candidate = urlparse(urljoin(admin_url.rstrip("/") + "/", value))
+    expected = urlparse(admin_url)
+    root = expected.path.rstrip("/")
+    return (
+        (candidate.scheme, candidate.hostname, candidate.port) == (expected.scheme, expected.hostname, expected.port)
+        and (candidate.path == root or candidate.path.startswith(root + "/"))
+        and candidate.username is None and candidate.password is None and not candidate.fragment
+    )
+
+
+def thread_route_identity(value: str, admin_url: str) -> tuple[str, int] | None:
+    if not safe_admin_path(value, admin_url):
+        return None
+    parsed = urlparse(urljoin(admin_url.rstrip("/") + "/", value))
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    if query.get("controller") == ["AdminCustomerThreads"]:
+        candidates = query.get("id_customer_thread", [])
+        if query.get("viewcustomer_thread") in (["1"], [""]) and len(candidates) == 1 and candidates[0].isdigit():
+            thread_id = int(candidates[0])
+            return ("legacy_thread_view", thread_id) if thread_id > 0 else None
+    match = re.search(r"/sell/customer-service/customer-threads/([1-9][0-9]{0,9})/view/?$", parsed.path)
+    if match:
+        return "modern_thread_view", int(match.group(1))
+    return None
+
+
+def parse_thread_email_subject(subject: object) -> tuple[int, str] | None:
+    if not isinstance(subject, str):
+        return None
+    match = THREAD_TOKEN_PATTERN.search(subject)
+    return (int(match.group(1)), match.group(2)) if match else None
+
+
+def validate_customer_thread_url(candidate: str, shop_url: str, expected_thread_id: int) -> bool:
+    try:
+        destination = urljoin(shop_url.rstrip("/") + "/", candidate)
+        parsed = urlparse(destination)
+        expected = urlparse(shop_url)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+    except (TypeError, ValueError):
+        return False
+    same_shop = (parsed.scheme, parsed.hostname, parsed.port) == (expected.scheme, expected.hostname, expected.port)
+    contact_route = (
+        parsed.path.rstrip("/") in {"/contact", "/index.php"}
+        and ("controller" not in query or query.get("controller") == ["contact"])
+    )
+    return (
+        same_shop and contact_route
+        and query.get("id_customer_thread") == [str(expected_thread_id)]
+        and len(query.get("token", [])) == 1
+        and re.fullmatch(r"[A-Za-z0-9]{12}", query["token"][0]) is not None
+        and parsed.username is None and parsed.password is None and not parsed.fragment
+    )
+
+
+def recipients(message: dict[str, Any]) -> set[str]:
+    values = message.get("To", [])
+    if isinstance(values, (str, dict)):
+        values = [values]
+    found: set[str] = set()
+    if isinstance(values, list):
+        for item in values:
+            address = item.get("Address", "") if isinstance(item, dict) else item
+            if isinstance(address, str):
+                found.add(address.strip().lower())
+    return found
+
+
+def mailpit_json(url: str) -> dict[str, Any]:
+    request = Request(url, headers={"Accept": "application/json"})
+    with urlopen(request, timeout=10) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("Mailpit returned an unexpected response")
+    return payload
+
+
+def mail_ids(mailpit_url: str) -> set[str]:
+    result = mailpit_json(f"{mailpit_url}/api/v1/messages?{urlencode({'start': 0, 'limit': 100})}")
+    messages = result.get("messages", [])
+    if not isinstance(messages, list):
+        return set()
+    return {str(row.get("ID") or row.get("Id")) for row in messages if isinstance(row, dict) and (row.get("ID") or row.get("Id"))}
+
+
+def wait_for_thread_email(
+    mailpit_url: str, expected_recipient: str, previous_ids: set[str], timeout_seconds: int = 45
+) -> tuple[int, str, dict[str, Any]]:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            listing = mailpit_json(f"{mailpit_url}/api/v1/messages?{urlencode({'start': 0, 'limit': 100})}")
+            for summary in listing.get("messages", []):
+                if not isinstance(summary, dict):
+                    continue
+                message_id = summary.get("ID") or summary.get("Id")
+                if not isinstance(message_id, str) or message_id in previous_ids or expected_recipient.lower() not in recipients(summary):
+                    continue
+                detail = mailpit_json(f"{mailpit_url}/api/v1/message/{message_id}")
+                identity = parse_thread_email_subject(detail.get("Subject"))
+                if identity:
+                    return identity[0], identity[1], detail
+        except (OSError, URLError, ValueError, json.JSONDecodeError):
+            pass
+        time.sleep(0.4)
+    raise TimeoutError("the isolated customer-thread email did not arrive in Mailpit")
+
+
+def thread_link_from_email(message: dict[str, Any], shop_url: str, expected_thread_id: int) -> str:
+    parser = MessageLinks()
+    html_body = message.get("HTML")
+    if isinstance(html_body, str):
+        parser.feed(html_body)
+    candidates = list(parser.hrefs)
+    text_body = message.get("Text")
+    if isinstance(text_body, str):
+        candidates.extend(re.findall(r"https?://[^\s<>\"']+", text_body))
+    for candidate in candidates:
+        candidate = candidate.strip().rstrip(".,);]")
+        if validate_customer_thread_url(candidate, shop_url, expected_thread_id):
+            return urljoin(shop_url.rstrip("/") + "/", candidate)
+    raise ValueError("the native customer reply email did not contain a valid same-shop thread link")
+
+
+def new_driver(width: int = 1440, height: int = 960, download_dir: Path | None = None):
+    if webdriver is None or Options is None:
+        raise RuntimeError("Selenium browser dependencies are unavailable")
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument(f"--window-size={width},{height}")
+    options.add_argument("--lang=ja-JP")
+    if download_dir is not None:
+        download_dir.mkdir(parents=True, exist_ok=True)
+        options.add_experimental_option("prefs", {
+            "download.default_directory": str(download_dir),
+            "download.prompt_for_download": False,
+            "download.directory_upgrade": True,
+            "safebrowsing.enabled": True,
+        })
+    return webdriver.Chrome(options=options)
+
+
+def visible(driver, selector: str, timeout: int = 30):
+    return WebDriverWait(driver, timeout).until(EC.visibility_of_element_located((By.CSS_SELECTOR, selector)))
+
+
+def visit(driver, url: str) -> None:
+    driver.get(url)
+    WebDriverWait(driver, 35).until(lambda browser: browser.execute_script("return document.readyState") == "complete")
+
+
+def clear_password_inputs(driver) -> bool:
+    return bool(driver.execute_script("""
+      const fields = Array.from(document.querySelectorAll('input[type="password"]'));
+      for (const field of fields) field.value = '';
+      return fields.every(field => field.value === '');
+    """))
+
+
+def customer_login(driver, ctx: Context, account: dict[str, Any]) -> None:
+    visit(driver, ctx.shop + "/index.php?controller=authentication")
+    visible(driver, "#login-form input[name='email']").send_keys(account["email"])
+    visible(driver, "#login-form input[name='password']").send_keys(ctx.customer_password)
+    visible(driver, "#submit-login").click()
+    WebDriverWait(driver, 35).until(lambda browser: bool(browser.find_elements(By.ID, "userMenuButton")))
+    if not clear_password_inputs(driver):
+        raise AssertionError("synthetic customer password remained in the browser DOM")
+
+
+def synthetic_support_png(marker: str) -> bytes:
+    """Generate a one-pixel RGB PNG containing only a bounded synthetic marker."""
+    if re.fullmatch(r"[A-Za-z0-9_]{1,128}", marker, flags=re.ASCII) is None:
+        raise ValueError("support image fixture requires a bounded synthetic marker")
+
+    def chunk(kind: bytes, payload: bytes) -> bytes:
+        return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload) & 0xffffffff)
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
+        + chunk(b"tEXt", b"Comment\x00" + marker.encode("ascii"))
+        + chunk(b"IDAT", zlib.compress(b"\x00\x24\x65\xab"))
+        + chunk(b"IEND", b"")
+    )
+
+
+def validate_synthetic_upload(filename: str, content: bytes, mime: str) -> None:
+    """Validate this acceptance's fixtures, independently of native upload policy."""
+    if re.fullmatch(r"[A-Za-z0-9_-]{1,80}\.(png|txt)", filename, flags=re.ASCII) is None or not 0 < len(content) <= 4096:
+        raise ValueError("support fixture filename or size is invalid")
+    if filename.endswith(".txt"):
+        if mime != "text/plain" or re.fullmatch(rb"[A-Za-z0-9_]{1,128}", content) is None:
+            raise ValueError("support text fixture MIME or content is invalid")
+        return
+    if mime != "image/png" or not content.startswith(b"\x89PNG\r\n\x1a\n") or len(content) < 57:
+        raise ValueError("support image fixture MIME or signature is invalid")
+    # The generator puts its sole metadata chunk immediately after IHDR.
+    text_size = struct.unpack(">I", content[33:37])[0]
+    try:
+        marker = content[49:41 + text_size].decode("ascii")
+        expected = synthetic_support_png(marker)
+    except (UnicodeDecodeError, ValueError):
+        raise ValueError("support image fixture metadata is invalid") from None
+    if content != expected:
+        raise ValueError("support image fixture bytes are invalid")
+
+
+def assert_image_attachment_filename(href: str) -> None:
+    names = parse_qs(urlparse(href).query).get("fileName", [])
+    if len(names) != 1 or re.fullmatch(r"[A-Za-z0-9_-]{1,100}\.png", names[0], flags=re.ASCII) is None:
+        raise AssertionError("native support image link did not identify one safe PNG filename")
+
+
+def assert_image_attachment_response(result: Any, expected: bytes) -> None:
+    if (
+        not isinstance(result, dict) or result.get("status") != 200
+        or result.get("size") != len(expected)
+        or result.get("sha256") != hashlib.sha256(expected).hexdigest()
+        or result.get("mime") != "image/png"
+        or result.get("pngSignature") is not True or result.get("safeFilename") is not True
+    ):
+        raise AssertionError("authenticated support image readback did not match its synthetic PNG metadata")
+
+
+def read_native_image_attachment(driver, href: str, expected: bytes) -> None:
+    # The pinned native SecuredFileReaderController renders PNG as image/png.
+    assert_image_attachment_filename(href)
+    # Only nonsecret metadata returns to Python; response bytes and raw headers stay in-browser.
+    result = driver.execute_async_script(r"""
+      const [url, done] = arguments;
+      fetch(url, {credentials: 'same-origin', redirect: 'follow'})
+        .then(async response => {
+          const bytes = new Uint8Array(await response.arrayBuffer());
+          const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+          const disposition = response.headers.get('Content-Disposition') || '';
+          const filename = disposition.match(/(?:^|;)\s*filename="?([^";]+)"?/i);
+          const safeFilename = !disposition || (filename && /^[A-Za-z0-9_-]{1,100}\.png$/.test(filename[1]));
+          done({status: response.status, size: bytes.length,
+            sha256: Array.from(hash, b => b.toString(16).padStart(2, '0')).join(''),
+            mime: (response.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase(),
+            pngSignature: [137,80,78,71,13,10,26,10].every((b, i) => bytes[i] === b),
+            safeFilename: Boolean(safeFilename)});
+        })
+        .catch(() => done({status: 0}));
+    """, href)
+    assert_image_attachment_response(result, expected)
+
+
+def contact_form(driver, url: str):
+    visit(driver, url)
+    return visible(driver, ".contact-form form")
+
+
+def submit_contact_message(
+    driver, ctx: Context, order: dict[str, Any], marker: str, attachment_path: Path | None,
+    thread_url: str | None = None, *, expected_rejection: bool = False,
+) -> None:
+    form = contact_form(driver, thread_url or (ctx.shop + "/index.php?controller=contact"))
+    order_selects = form.find_elements(By.CSS_SELECTOR, "select#contact-us-id-order-select[name='id_order']")
+    if not order_selects:
+        raise AssertionError("native contact form did not expose the customer's order selection")
+    order_select = Select(order_selects[0])
+    matching_options = [option for option in order_select.options if option.get_attribute("value") == str(order["order_id"])]
+    if len(matching_options) != 1 or order["reference"] not in matching_options[0].text:
+        raise AssertionError("native contact form did not offer the exact customer-owned order")
+    order_select.select_by_value(str(order["order_id"]))
+
+    contact_fields = form.find_elements(By.NAME, "id_contact")
+    if len(contact_fields) != 1:
+        raise AssertionError("native contact form must select exactly one support contact")
+    contact_value = contact_fields[0].get_attribute("value")
+    if not isinstance(contact_value, str) or not contact_value.isdigit() or int(contact_value) < 1:
+        raise AssertionError("native contact form did not select a valid contact")
+    file_fields = form.find_elements(By.CSS_SELECTOR, "input[type='file'][name='fileUpload']")
+    if attachment_path is not None:
+        if len(file_fields) != 1 or not file_fields[0].is_displayed():
+            raise AssertionError("native contact form did not expose the enabled attachment control")
+        expected_mime = "image/png" if attachment_path.suffix == ".png" else "text/plain"
+        if not expected_rejection:
+            validate_synthetic_upload(attachment_path.name, attachment_path.read_bytes(), expected_mime)
+        file_fields[0].send_keys(str(attachment_path))
+        if not expected_rejection:
+            metadata = driver.execute_script("""
+              const file = arguments[0].files[0];
+              return file ? {name: file.name, mime: file.type, size: file.size} : null;
+            """, file_fields[0])
+            if (not isinstance(metadata, dict) or metadata.get("name") != attachment_path.name
+                or metadata.get("mime") != expected_mime or metadata.get("size") != attachment_path.stat().st_size):
+                raise AssertionError("native contact upload did not select the exact bounded synthetic fixture")
+    visible(driver, "#contact-us-message-textarea").send_keys(marker)
+    visible(driver, "button[name='submitMessage']").click()
+    WebDriverWait(driver, 35).until(lambda browser: bool(browser.find_elements(By.CSS_SELECTOR, ".contact-form .alert.alert-success, .contact-form .alert.alert-danger")))
+    if expected_rejection:
+        if (not driver.find_elements(By.CSS_SELECTOR, ".contact-form .alert.alert-danger")
+            or driver.find_elements(By.CSS_SELECTOR, ".contact-form .alert.alert-success")):
+            raise AssertionError("native contact form accepted a disallowed attachment extension")
+        return
+    if driver.find_elements(By.CSS_SELECTOR, ".contact-form .alert.alert-danger"):
+        raise AssertionError("native contact form reported a failed inquiry submission")
+
+
+def generated_customer_threads_link(driver, admin_url: str) -> str:
+    candidates = []
+    for link in driver.find_elements(By.CSS_SELECTOR, "a[href]"):
+        href = link.get_attribute("href") or ""
+        parsed = urlparse(href)
+        query = parse_qs(parsed.query)
+        route_match = (
+            query.get("controller") == ["AdminCustomerThreads"]
+            or "/sell/customer-service/customer-threads" in parsed.path
+        )
+        if route_match:
+            if not safe_admin_path(href, admin_url):
+                raise AssertionError("native Customer service navigation left the isolated Back Office")
+            candidates.append(href)
+    if len(set(candidates)) != 1:
+        raise AssertionError("the authenticated administrator did not expose one native Customer service route")
+    return candidates[0]
+
+
+def admin_login(driver, ctx: Context, email: str) -> None:
+    visit(driver, ctx.admin + "/login")
+    visible(driver, '#login_form input[name="email"], input[type="email"]').send_keys(email)
+    visible(driver, '#login_form input[name="passwd"], #login_form input[name="password"], input[type="password"]').send_keys(ctx.admin_password)
+    visible(driver, '#login_form button[type="submit"], #login_form input[type="submit"], button[type="submit"]').click()
+    WebDriverWait(driver, 35).until(lambda browser: "/login" not in urlparse(browser.current_url).path)
+    if not clear_password_inputs(driver):
+        raise AssertionError("Back Office password remained in the browser DOM")
+
+
+def view_link_from_index(driver, ctx: Context, buyer: dict[str, Any]) -> tuple[str, int]:
+    WebDriverWait(driver, 40).until(lambda browser: bool(browser.find_elements(By.CSS_SELECTOR, "table tbody tr")))
+    links: set[str] = set()
+    for row in driver.find_elements(By.CSS_SELECTOR, "table tbody tr"):
+        text = row.text
+        # PrestaShop 9.2 limits the grid's last-message cell to 32 characters,
+        # so the random inquiry marker is intentionally not used as a row key.
+        row_matches = buyer["email"] in text
+        if not row_matches:
+            continue
+        for link in row.find_elements(By.CSS_SELECTOR, "a[href]"):
+            href = link.get_attribute("href") or ""
+            identity = thread_route_identity(href, ctx.admin)
+            if identity is not None:
+                links.add(href)
+    if len(links) != 1:
+        raise AssertionError("native Customer service list did not identify one thread for the submitted order")
+    thread_url = next(iter(links))
+    identity = thread_route_identity(thread_url, ctx.admin)
+    if identity is None or identity[1] < 1:
+        raise AssertionError("native Customer service row did not link to a valid thread view")
+    return thread_url, identity[1]
+
+
+def assert_thread_order_link(driver, expected_order_id: int) -> None:
+    for link in driver.find_elements(By.CSS_SELECTOR, "a[href]"):
+        href = link.get_attribute("href") or ""
+        parsed = urlparse(href)
+        query = parse_qs(parsed.query)
+        candidates = query.get("id_order", [])
+        if not candidates:
+            match = re.search(r"/sell/orders/([1-9][0-9]*)/?$", parsed.path)
+            candidates = [match.group(1)] if match else []
+        if candidates == [str(expected_order_id)]:
+            return
+    raise AssertionError("native customer thread did not link to the same associated order")
+
+
+def find_attachment_link(driver, admin_url: str, buyer_marker: str) -> str:
+    message = None
+    for candidate in driver.find_elements(By.CSS_SELECTOR, "[data-role='messages-thread'] p.thread-message"):
+        if buyer_marker in candidate.text:
+            message = candidate
+            break
+    if message is None:
+        raise AssertionError("native customer message with the uploaded attachment is missing")
+    message_row = message.find_element(By.XPATH, "./ancestor::li[1]")
+    found = [
+        link.get_attribute("href") or ""
+        for link in message_row.find_elements(By.CSS_SELECTOR, "a[href]")
+    ]
+    if len(set(found)) != 1:
+        raise AssertionError("native customer message did not expose exactly one owned attachment")
+    href = found[0]
+    if not safe_admin_path(href, admin_url):
+        raise AssertionError("native support attachment link left the authenticated Back Office")
+    return href
+
+
+def attachment_visible_to_session(driver, href: str, expected_content: str) -> bool:
+    result = driver.execute_async_script("""
+      const [url, marker, done] = arguments;
+      fetch(url, {credentials: 'same-origin', redirect: 'follow'})
+        .then(async response => {
+          const body = await response.text();
+          done({status: response.status, contentMatch: body.includes(marker)});
+        })
+        .catch(() => done({status: 0, contentMatch: false}));
+    """, href, expected_content)
+    if (
+        not isinstance(result, dict)
+        or type(result.get("status")) is not int
+        or type(result.get("contentMatch")) is not bool
+    ):
+        raise AssertionError("support attachment privacy probe returned an invalid response")
+    if result["contentMatch"]:
+        return True
+    if result["status"] not in {200, 401, 403, 404}:
+        raise AssertionError("support attachment privacy probe did not complete a verifiable access check")
+    return False
+
+
+def open_native_attachment(driver, href: str, expected_content: str, download_dir: Path) -> None:
+    previous = set(driver.window_handles)
+    original_handle = driver.current_window_handle
+    link = next((element for element in driver.find_elements(By.CSS_SELECTOR, "a[href]") if element.get_attribute("href") == href), None)
+    if link is None:
+        raise AssertionError("the owned attachment link disappeared before readback")
+    for child in download_dir.iterdir():
+        if child.is_file():
+            child.unlink()
+    link.click()
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        download = next((path for path in download_dir.iterdir() if path.is_file() and not path.name.endswith(".crdownload")), None)
+        if download is not None:
+            if expected_content not in download.read_text(encoding="utf-8", errors="replace"):
+                raise AssertionError("authenticated native attachment download did not return the uploaded fixture content")
+            return
+        new_handles = [handle for handle in driver.window_handles if handle not in previous]
+        if new_handles:
+            driver.switch_to.window(new_handles[0])
+            if driver.execute_script("return document.readyState") == "complete":
+                try:
+                    page_text = driver.find_element(By.TAG_NAME, "body").text
+                except Exception:
+                    page_text = ""
+                if expected_content in page_text:
+                    driver.close()
+                    driver.switch_to.window(original_handle)
+                    return
+            driver.switch_to.window(original_handle)
+        elif driver.current_url == href and driver.execute_script("return document.readyState") == "complete":
+            if expected_content in driver.find_element(By.TAG_NAME, "body").text:
+                return
+        time.sleep(0.2)
+    raise TimeoutError("authenticated native attachment readback did not complete")
+
+
+def status_action_form(driver, status: str):
+    matches = []
+    for form in driver.find_elements(By.CSS_SELECTOR, "[data-role='messages-thread'] form"):
+        fields = form.find_elements(By.CSS_SELECTOR, f"input[name='newStatus'][value='{status}']")
+        if fields:
+            matches.append((form, fields[0]))
+    if len(matches) != 1:
+        raise AssertionError(f"native support thread did not expose the expected {status} status action")
+    return matches[0][0]
+
+
+def update_thread_status(driver, status: str, expected_next_action: str) -> None:
+    form = status_action_form(driver, status)
+    button = form.find_element(By.CSS_SELECTOR, "button")
+    button.click()
+    WebDriverWait(driver, 25).until(lambda browser: len(browser.find_elements(
+        By.CSS_SELECTOR, f"[data-role='messages-thread'] form input[name='newStatus'][value='{expected_next_action}']"
+    )) == 1)
+
+
+def employee_scoped_thread_url(driver, source_url: str, admin_url: str) -> str:
+    identity = thread_route_identity(source_url, admin_url)
+    if identity is not None and identity[0] == "modern_thread_view":
+        target = urlparse(source_url)
+        query = parse_qs(target.query, keep_blank_values=True)
+        query.pop("token", None)
+        query.pop("_token", None)
+        return urlunparse((target.scheme, target.netloc, target.path, target.params, urlencode(query, doseq=True), ""))
+
+    employee_token = ""
+    candidates = [driver.current_url]
+    candidates.extend(link.get_attribute("href") or "" for link in driver.find_elements(By.CSS_SELECTOR, "a[href]"))
+    for candidate in candidates:
+        if not safe_admin_path(candidate, admin_url):
+            continue
+        tokens = parse_qs(urlparse(candidate).query, keep_blank_values=True).get("token", [])
+        if len(tokens) == 1 and tokens[0]:
+            employee_token = tokens[0]
+            break
+    if not employee_token:
+        raise AssertionError("limited employee session did not expose its own native admin token")
+    target = urlparse(source_url)
+    expected = urlparse(admin_url)
+    if (target.scheme, target.hostname, target.port) != (expected.scheme, expected.hostname, expected.port) or not safe_admin_path(source_url, admin_url):
+        raise AssertionError("customer thread target left the isolated Back Office")
+    query = parse_qs(target.query, keep_blank_values=True)
+    query.pop("token", None)
+    query["token"] = [employee_token]
+    return urlunparse((target.scheme, target.netloc, target.path, target.params, urlencode(query, doseq=True), ""))
+
+
+def employee_scoped_legacy_controller_url(driver, controller: str, admin_url: str) -> str:
+    if controller not in {"AdminKuraneaSupportAssignments"}:
+        raise ValueError("legacy Back Office controller is outside the support test allowlist")
+    employee_token = ""
+    candidates = [driver.current_url]
+    candidates.extend(link.get_attribute("href") or "" for link in driver.find_elements(By.CSS_SELECTOR, "a[href]"))
+    for candidate in candidates:
+        if not safe_admin_path(candidate, admin_url):
+            continue
+        parsed = urlparse(candidate)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        if len(query.get("token", [])) == 1 and query["token"][0]:
+            employee_token = query["token"][0]
+            break
+    if not employee_token:
+        raise AssertionError("employee session did not expose its own native Back Office token")
+    root = urlparse(admin_url)
+    path = root.path.rstrip("/") + "/index.php"
+    return urlunparse((root.scheme, root.netloc, path, "", urlencode({"controller": controller, "token": employee_token}), ""))
+
+
+def generated_support_assignment_link(driver, admin_url: str) -> str:
+    candidates = set()
+    for link in driver.find_elements(By.CSS_SELECTOR, "a[href]"):
+        href = link.get_attribute("href") or ""
+        if parse_qs(urlparse(href).query).get("controller") == ["AdminKuraneaSupportAssignments"]:
+            if not safe_admin_path(href, admin_url):
+                raise AssertionError("support assignment navigation left the isolated Back Office")
+            candidates.add(href)
+    if len(candidates) != 1:
+        raise AssertionError("the administrator did not expose one native support-assignment navigation link")
+    return next(iter(candidates))
+
+
+def assignment_row(driver, thread_id: int):
+    WebDriverWait(driver, 30).until(lambda browser: bool(browser.find_elements(By.CSS_SELECTOR, ".table tbody tr")))
+    matches = []
+    for row in driver.find_elements(By.CSS_SELECTOR, ".table tbody tr"):
+        cells = row.find_elements(By.CSS_SELECTOR, "td")
+        if cells and cells[0].text.strip() == str(thread_id):
+            matches.append(row)
+    if len(matches) != 1:
+        raise AssertionError("support assignment list did not identify exactly one same-shop thread")
+    return matches[0]
+
+
+def assign_thread(driver, thread_id: int, employee_id: str) -> None:
+    row = assignment_row(driver, thread_id)
+    selects = row.find_elements(By.CSS_SELECTOR, "select[name='id_employee']")
+    if len(selects) != 1 or not any(option.get_attribute("value") == employee_id for option in Select(selects[0]).options):
+        raise AssertionError("support assignment did not offer the selected active employee")
+    Select(selects[0]).select_by_value(employee_id)
+    submit = row.find_element(By.CSS_SELECTOR, "button[name='submitOrdenowaSupportAssignment']")
+    if not submit.is_displayed() or not submit.is_enabled():
+        raise AssertionError("support assignment save control is not available to the administrator")
+    submit.click()
+    visible(driver, ".alert.alert-success", timeout=20)
+
+
+def selected_assignment_employee(driver, thread_id: int) -> str:
+    row = assignment_row(driver, thread_id)
+    selects = row.find_elements(By.CSS_SELECTOR, "select[name='id_employee']")
+    if len(selects) != 1:
+        raise AssertionError("saved support assignment does not expose one employee selector")
+    value = Select(selects[0]).first_selected_option.get_attribute("value")
+    if not isinstance(value, str) or not value.isdigit() or int(value) < 1:
+        raise AssertionError("saved support assignment did not resolve to a positive employee ID")
+    return value
+
+
+def assignment_history_link(driver, thread_id: int, admin_url: str) -> str:
+    row = assignment_row(driver, thread_id)
+    links = [
+        link.get_attribute("href") or ""
+        for link in row.find_elements(By.CSS_SELECTOR, "a[href]")
+        if "변경 이력 보기" in link.text
+    ]
+    if len(set(links)) != 1 or not safe_admin_path(links[0], admin_url):
+        raise AssertionError("same-shop thread did not expose one safe assignment-history route")
+    query = parse_qs(urlparse(links[0]).query, keep_blank_values=True)
+    if query.get("id_customer_thread") != [str(thread_id)]:
+        raise AssertionError("assignment-history route did not retain the same native thread identity")
+    return links[0]
+
+
+def assert_assignment_history(driver, thread_id: int, first_name: str, second_name: str) -> None:
+    heading_text = f"문의 #{thread_id} 담당자 변경 이력"
+    heading = next((item for item in driver.find_elements(By.CSS_SELECTOR, "h3") if item.text.strip() == heading_text), None)
+    if heading is None:
+        raise AssertionError("support assignment history did not identify the same native thread")
+    table = heading.find_element(By.XPATH, "following::table[1]")
+    rows = table.find_elements(By.CSS_SELECTOR, "tbody tr")
+    if len(rows) < 2:
+        raise AssertionError("support assignment history did not retain create and reassign events")
+    cells = rows[0].find_elements(By.CSS_SELECTOR, "td")
+    if len(cells) != 4 or cells[1].text.strip() != first_name or cells[2].text.strip() != second_name or not cells[3].text.strip():
+        raise AssertionError("latest support assignment history did not retain prior, new, and acting employees")
+    first_event = rows[1].find_elements(By.CSS_SELECTOR, "td")
+    if len(first_event) != 4 or first_event[1].text.strip() != "최초 지정" or first_event[2].text.strip() != first_name or not first_event[3].text.strip():
+        raise AssertionError("initial support assignment history did not retain the new and acting employees")
+
+
+def write_result(path: Path, result: dict[str, Any]) -> None:
+    if (
+        set(result) != SAFE_RESULT_KEYS
+        or result.get("stage") not in SAFE_STAGES
+        or result.get("status") not in {"success", "failure"}
+        or any(type(result.get(key)) is not bool for key in RESULT_BOOLEAN_KEYS)
+        or result.get("mailpit_provider") != "isolated_only"
+        or (result.get("exception_type") is not None and result.get("exception_type") not in SAFE_EXCEPTION_TYPES)
+        or (result.get("status") == "success" and (
+            result.get("exception_type") is not None
+            or any(result.get(key) is not True for key in RESULT_BOOLEAN_KEYS - {"paid", "payment_provider_called"})
+            or result.get("paid") is not False
+            or result.get("payment_provider_called") is not False
+        ))
+    ):
+        raise ValueError("customer support diagnostics did not match the allowlisted result schema")
+    path.write_text(json.dumps(result, ensure_ascii=True, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+
+
+def run() -> None:
+    ctx = load_context()
+    stage = "fixture"
+    result: dict[str, Any] = {
+        "status": "failure", "stage": stage, "exception_type": None,
+        "customer_submitted": False, "order_association_verified": False,
+        "attachment_admin_readback": False, "private_note_admin_only": False,
+        "status_close_reopen": False, "admin_public_reply": False,
+        "customer_followup_same_thread": False, "foreign_customer_denied": False,
+        "limited_employee_denied": False, "mailpit_provider": "isolated_only",
+        "paid": False, "payment_provider_called": False, "assignment_created": False,
+        "assignment_reassigned": False, "assignment_actor_history": False,
+        "assignment_limited_employee_denied": False,
+        "image_attachment_admin_readback": False, "image_attachment_foreign_denied": False,
+        "disallowed_attachment_rejected": False,
+    }
+    customer = admin = foreign = limited = None
+    buyer_marker = f"[CI ONLY] ORDENOWA support inquiry {ctx.run_id}-{ctx.attempt}-{secrets.token_hex(5)}"
+    reply_marker = f"[CI ONLY] ORDENOWA public support reply {ctx.run_id}-{ctx.attempt}-{secrets.token_hex(5)}"
+    followup_marker = f"[CI ONLY] ORDENOWA customer follow-up {ctx.run_id}-{ctx.attempt}-{secrets.token_hex(5)}"
+    private_marker = f"[CI ONLY] ORDENOWA internal note {ctx.run_id}-{ctx.attempt}-{secrets.token_hex(5)}"
+    attachment_marker = f"ORDENOWA_SUPPORT_ATTACHMENT_{ctx.run_id}_{ctx.attempt}_{secrets.token_hex(5)}"
+    image_marker = f"ORDENOWA_SUPPORT_IMAGE_{ctx.run_id}_{ctx.attempt}_{secrets.token_hex(5)}"
+    rejected_marker = f"[CI ONLY] ORDENOWA rejected upload {ctx.run_id}-{ctx.attempt}-{secrets.token_hex(5)}"
+    image_bytes = synthetic_support_png(image_marker)
+    attachment_file = image_file = rejected_file = None
+    download_dir = None
+    try:
+        stage = result["stage"] = "customer_login"
+        customer = new_driver()
+        customer_login(customer, ctx, ctx.buyer)
+
+        stage = result["stage"] = "contact_form"
+        customer.get(ctx.shop + "/index.php?controller=contact")
+        visible(customer, ".contact-form form")
+        baseline_mail = mail_ids(ctx.mailpit)
+        with tempfile.NamedTemporaryFile(prefix="ordenowa-support-", suffix=".txt", mode="w", encoding="utf-8", delete=False) as file:
+            file.write(attachment_marker)
+            attachment_file = Path(file.name)
+        with tempfile.NamedTemporaryFile(prefix="ordenowa-support-", suffix=".png", delete=False) as file:
+            file.write(image_bytes)
+            image_file = Path(file.name)
+        with tempfile.NamedTemporaryFile(prefix="ordenowa-support-", suffix=".php", delete=False) as file:
+            # Inert bytes; the negative case tests the disallowed extension, not executable content.
+            file.write(b"ORDENOWA_CI_INERT_DISALLOWED_EXTENSION")
+            rejected_file = Path(file.name)
+        stage = result["stage"] = "rejected_attachment"
+        submit_contact_message(customer, ctx, ctx.buyer, rejected_marker, rejected_file, expected_rejection=True)
+        result["disallowed_attachment_rejected"] = True
+        stage = result["stage"] = "submit_inquiry"
+        submit_contact_message(customer, ctx, ctx.buyer, buyer_marker, attachment_file)
+        result["customer_submitted"] = True
+        customer.save_screenshot(str(ctx.artifact_dir / "customer-support-inquiry-submitted.png"))
+
+        stage = result["stage"] = "mailpit_confirmation"
+        first_thread_id, thread_token, _confirmation = wait_for_thread_email(ctx.mailpit, ctx.buyer["email"], baseline_mail)
+        valid_customer_thread_url = urlunparse((
+            urlparse(ctx.shop).scheme, urlparse(ctx.shop).netloc, "/index.php", "",
+            urlencode({"controller": "contact", "id_customer_thread": first_thread_id, "token": thread_token}), "",
+        ))
+        if not validate_customer_thread_url(valid_customer_thread_url, ctx.shop, first_thread_id):
+            raise AssertionError("native customer confirmation did not produce a bounded thread URL")
+
+        stage = result["stage"] = "foreign_customer_denial"
+        foreign = new_driver()
+        customer_login(foreign, ctx, ctx.foreign)
+        invalid_token = "".join(secrets.choice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") for _ in range(12))
+        if invalid_token == thread_token:
+            replacement = "A" if thread_token[0] != "A" else "B"
+            invalid_token = replacement + thread_token[1:]
+        invalid_url = urlunparse((
+            urlparse(ctx.shop).scheme, urlparse(ctx.shop).netloc, "/index.php", "",
+            urlencode({"controller": "contact", "id_customer_thread": first_thread_id, "token": invalid_token}), "",
+        ))
+        foreign_form = contact_form(foreign, invalid_url)
+        foreign_text = foreign.find_element(By.TAG_NAME, "body").text
+        foreign_order_options = [option.get_attribute("value") for option in foreign_form.find_elements(By.CSS_SELECTOR, "select#contact-us-id-order-select option")]
+        if buyer_marker in foreign_text or str(ctx.buyer["order_id"]) in foreign_order_options:
+            raise AssertionError("foreign customer could see another customer's support thread or order")
+        result["foreign_customer_denied"] = True
+        foreign.save_screenshot(str(ctx.artifact_dir / "customer-support-foreign-denied.png"))
+
+        stage = result["stage"] = "admin_login"
+        download_dir = Path(tempfile.mkdtemp(prefix="ordenowa-support-download-"))
+        admin = new_driver(download_dir=download_dir)
+        admin_login(admin, ctx, ctx.admin_email)
+        index_link = generated_customer_threads_link(admin, ctx.admin)
+        stage = result["stage"] = "admin_thread_lookup"
+        visit(admin, index_link)
+        thread_view_url, thread_id = view_link_from_index(admin, ctx, ctx.buyer)
+        if thread_id != first_thread_id:
+            raise AssertionError("native customer service page did not open the confirmation's same thread")
+        visit(admin, thread_view_url)
+        visible(admin, "[data-role='messages-thread']")
+        thread_body = admin.find_element(By.CSS_SELECTOR, "[data-role='messages-thread']").text
+        if buyer_marker not in thread_body:
+            raise AssertionError("native administrator thread did not show the submitted customer inquiry")
+        assert_thread_order_link(admin, int(ctx.buyer["order_id"]))
+        result["order_association_verified"] = True
+        admin.save_screenshot(str(ctx.artifact_dir / "customer-support-admin-thread.png"))
+
+        stage = result["stage"] = "attachment_readback"
+        attachment_url = find_attachment_link(admin, ctx.admin, buyer_marker)
+        open_native_attachment(admin, attachment_url, attachment_marker, download_dir)
+        if attachment_visible_to_session(foreign, attachment_url, attachment_marker):
+            raise AssertionError("a different customer session could read the private support attachment")
+        result["attachment_admin_readback"] = True
+
+        stage = result["stage"] = "private_forward_note"
+        forward_button = visible(admin, 'button[data-target="#forwardThreadModal"]')
+        forward_button.click()
+        modal = visible(admin, "#forwardThreadModal.show")
+        employee_selects = modal.find_elements(By.CSS_SELECTOR, "select[name$='[employee_id]']")
+        note_fields = modal.find_elements(By.CSS_SELECTOR, "textarea[name$='[comment]']")
+        if len(employee_selects) != 1 or len(note_fields) != 1:
+            raise AssertionError("native forward form did not expose employee and internal comment fields")
+        employee_select = Select(employee_selects[0])
+        if not any(option.get_attribute("value") == "1" for option in employee_select.options):
+            raise AssertionError("the native internal-note recipient is not the isolated primary administrator")
+        employee_select.select_by_value("1")
+        note_fields[0].send_keys(private_marker)
+        forward_submit = modal.find_element(By.CSS_SELECTOR, "button[type='submit']")
+        forward_submit.click()
+        WebDriverWait(admin, 30).until(lambda browser: private_marker in browser.find_element(By.CSS_SELECTOR, "[data-role='messages-thread']").text)
+        result["private_note_admin_only"] = True
+
+        stage = result["stage"] = "close_thread"
+        update_thread_status(admin, "closed", "open")
+        stage = result["stage"] = "reopen_thread"
+        update_thread_status(admin, "open", "closed")
+        result["status_close_reopen"] = True
+
+        stage = result["stage"] = "admin_public_reply"
+        before_reply = mail_ids(ctx.mailpit)
+        reply_card = visible(admin, "[data-role='employee-answer']")
+        # In the pinned 9.2 Twig template `form_start()` wraps the answer card.
+        reply_form = reply_card.find_element(By.XPATH, "./ancestor::form[1]")
+        reply_textareas = reply_form.find_elements(By.CSS_SELECTOR, "textarea[name$='[reply_message]']")
+        if len(reply_textareas) != 1:
+            raise AssertionError("native admin thread did not expose one customer reply field")
+        reply_buttons = reply_form.find_elements(By.CSS_SELECTOR, "button")
+        if len(reply_buttons) != 1 or not reply_buttons[0].is_displayed() or not reply_buttons[0].is_enabled():
+            raise AssertionError("native admin thread did not expose one enabled customer reply control")
+        reply_textareas[0].send_keys(reply_marker)
+        reply_buttons[0].click()
+        WebDriverWait(admin, 35).until(lambda browser: len(browser.find_elements(
+            By.CSS_SELECTOR, "[data-role='messages-thread'] form input[name='newStatus'][value='open']"
+        )) == 1)
+        stage = result["stage"] = "mailpit_public_reply"
+        reply_thread_id, reply_token, reply_message = wait_for_thread_email(ctx.mailpit, ctx.buyer["email"], before_reply)
+        if reply_thread_id != first_thread_id:
+            raise AssertionError("native admin reply email did not retain the original thread identity")
+        reply_body = str(reply_message.get("HTML") or "") + str(reply_message.get("Text") or "")
+        if reply_marker not in reply_body:
+            raise AssertionError("the customer-facing native reply email did not contain its public reply")
+        if private_marker in reply_body:
+            raise AssertionError("the customer-facing reply email exposed an administrator-only note")
+        customer_reply_url = thread_link_from_email(reply_message, ctx.shop, first_thread_id)
+        query = parse_qs(urlparse(customer_reply_url).query)
+        if query.get("token") != [reply_token]:
+            raise AssertionError("native admin reply link and message identity disagree")
+        result["admin_public_reply"] = True
+
+        stage = result["stage"] = "customer_followup"
+        before_followup = mail_ids(ctx.mailpit)
+        submit_contact_message(customer, ctx, ctx.buyer, followup_marker, image_file, customer_reply_url)
+        followup_id, _followup_token, _followup_mail = wait_for_thread_email(
+            ctx.mailpit, ctx.buyer["email"], before_followup
+        )
+        if followup_id != first_thread_id:
+            raise AssertionError("customer follow-up did not retain the original native thread identity")
+        if private_marker in customer.page_source:
+            raise AssertionError("the customer-facing contact page exposed the administrator's private note")
+        result["customer_followup_same_thread"] = True
+
+        stage = result["stage"] = "thread_fresh_readback"
+        visit(admin, thread_view_url)
+        fresh_body = visible(admin, "[data-role='messages-thread']").text
+        if followup_marker not in fresh_body or private_marker not in fresh_body or buyer_marker not in fresh_body:
+            raise AssertionError("fresh native thread readback did not preserve public/private/customer messages")
+
+        stage = result["stage"] = "image_attachment_readback"
+        image_url = find_attachment_link(admin, ctx.admin, followup_marker)
+        read_native_image_attachment(admin, image_url, image_bytes)
+        result["image_attachment_admin_readback"] = True
+        if attachment_visible_to_session(foreign, image_url, image_marker):
+            raise AssertionError("a different customer session could read the private support image")
+        result["image_attachment_foreign_denied"] = True
+        if rejected_marker in fresh_body:
+            raise AssertionError("the rejected extension inquiry was unexpectedly stored in the native thread")
+        stage = result["stage"] = "assignment_lookup"
+        assignment_url = generated_support_assignment_link(admin, ctx.admin)
+        visit(admin, assignment_url)
+        initial_assignment_row = assignment_row(admin, thread_id)
+        initial_cells = initial_assignment_row.find_elements(By.CSS_SELECTOR, "td")
+        if len(initial_cells) < 5 or initial_cells[3].text.strip() != "미지정":
+            raise AssertionError("new synthetic support thread already has an unexpected employee assignment")
+        employee_selects = initial_assignment_row.find_elements(By.CSS_SELECTOR, "select[name='id_employee']")
+        if len(employee_selects) != 1:
+            raise AssertionError("same-shop support assignment did not expose one writable employee selector")
+        employee_options = [
+            (option.get_attribute("value") or "", option.text.strip())
+            for option in Select(employee_selects[0]).options
+        ]
+        employee_options = [(value, name) for value, name in employee_options if value.isdigit() and int(value) > 0 and name]
+        distinct_options = list(dict.fromkeys(employee_options))
+        if len(distinct_options) < 2 or distinct_options[0][0] == distinct_options[1][0]:
+            raise AssertionError("isolated same-shop support fixture needs two active employee choices for reassignment")
+        first_employee_id, first_employee_name = distinct_options[0]
+        second_employee_id, second_employee_name = distinct_options[1]
+
+        stage = result["stage"] = "assignment_create"
+        assign_thread(admin, thread_id, first_employee_id)
+        result["assignment_created"] = True
+        admin.save_screenshot(str(ctx.artifact_dir / "customer-support-assignment-created.png"))
+        visit(admin, assignment_url)
+        if selected_assignment_employee(admin, thread_id) != first_employee_id:
+            raise AssertionError("fresh support assignment GET did not persist the first employee")
+
+        stage = result["stage"] = "assignment_reassign"
+        assign_thread(admin, thread_id, second_employee_id)
+        result["assignment_reassigned"] = True
+        visit(admin, assignment_url)
+        if selected_assignment_employee(admin, thread_id) != second_employee_id:
+            raise AssertionError("fresh support assignment GET did not persist the reassigned employee")
+
+        stage = result["stage"] = "assignment_history_readback"
+        history_url = assignment_history_link(admin, thread_id, ctx.admin)
+        visit(admin, history_url)
+        assert_assignment_history(admin, thread_id, first_employee_name, second_employee_name)
+        result["assignment_actor_history"] = True
+        admin.save_screenshot(str(ctx.artifact_dir / "customer-support-assignment-history.png"))
+
+        stage = result["stage"] = "limited_staff_denial"
+        limited = new_driver()
+        admin_login(limited, ctx, ctx.view_only_email)
+        limited_assignment_target = employee_scoped_legacy_controller_url(
+            limited, "AdminKuraneaSupportAssignments", ctx.admin
+        )
+        limited_target = employee_scoped_thread_url(limited, thread_view_url, ctx.admin)
+        visit(limited, limited_target)
+        limited_body = limited.find_element(By.TAG_NAME, "body").text
+        if limited.find_elements(By.CSS_SELECTOR, "[data-role='messages-thread']") or buyer_marker in limited_body or private_marker in limited_body:
+            raise AssertionError("limited-privilege employee could view a protected customer support thread")
+        result["limited_employee_denied"] = True
+
+        stage = result["stage"] = "assignment_limited_denial"
+        visit(limited, limited_assignment_target)
+        denied_assignment_body = limited.find_element(By.TAG_NAME, "body").text
+        visible_thread_row = any(
+            (cells := row.find_elements(By.CSS_SELECTOR, "td"))
+            and cells[0].text.strip() == str(thread_id)
+            for row in limited.find_elements(By.CSS_SELECTOR, ".table tbody tr")
+        )
+        if (
+            "고객 문의 담당자 지정" in denied_assignment_body or visible_thread_row
+            or limited.find_elements(By.CSS_SELECTOR, "form select[name='id_employee']")
+            or buyer_marker in denied_assignment_body or private_marker in denied_assignment_body
+        ):
+            raise AssertionError("limited-privilege employee could view or modify support assignment data")
+        result["assignment_limited_employee_denied"] = True
+        result["status"] = "success"
+        result["stage"] = "complete"
+        print("PASS: native order-linked support inquiry, attachment, private note, reply, status, and access gates verified")
+    except Exception as error:
+        result["exception_type"] = type(error).__name__ if type(error).__name__ in {
+            "AssertionError", "TimeoutException", "ValueError", "RuntimeError", "URLError", "OSError",
+            "StaleElementReferenceException", "ElementClickInterceptedException", "NoSuchElementException",
+        } else "OtherError"
+        print(f"FAIL: isolated customer support QA; stage={stage}; exception={result['exception_type']}", file=sys.stderr)
+        try:
+            target = ctx.artifact_dir / "customer-support-browser-result.json"
+            write_result(target, result)
+        except Exception:
+            pass
+        raise
+    finally:
+        for fixture_file in (attachment_file, image_file, rejected_file):
+            if fixture_file is not None:
+                try:
+                    fixture_file.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        if download_dir is not None:
+            try:
+                for child in download_dir.iterdir():
+                    if child.is_file():
+                        child.unlink()
+                download_dir.rmdir()
+            except OSError:
+                pass
+        for browser in (limited, foreign, admin, customer):
+            if browser is not None:
+                try:
+                    browser.quit()
+                except Exception:
+                    pass
+        if result.get("status") == "success":
+            write_result(ctx.artifact_dir / "customer-support-browser-result.json", result)
+
+
+if __name__ == "__main__":
+    run()

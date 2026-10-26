@@ -8,6 +8,10 @@ on:
       - 'modules/kuraneabusinessprofile/**'
       - 'modules/kuraneabackoffice/**'
       - 'tests/business_profile/**'
+      - 'tests/admin_support_assignments/**'
+      - 'tests/e2e/verify_ci_customer_support_browser.py'
+      - 'tests/e2e/test_ci_customer_support_browser_contract.py'
+      - 'tests/admin_audit/**'
       - 'tests/backoffice_locale/**'
   pull_request:
     paths:
@@ -15,6 +19,10 @@ on:
       - 'modules/kuraneabusinessprofile/**'
       - 'modules/kuraneabackoffice/**'
       - 'tests/business_profile/**'
+      - 'tests/admin_support_assignments/**'
+      - 'tests/e2e/verify_ci_customer_support_browser.py'
+      - 'tests/e2e/test_ci_customer_support_browser_contract.py'
+      - 'tests/admin_audit/**'
       - 'tests/backoffice_locale/**'
   workflow_dispatch:
 
@@ -47,6 +55,9 @@ jobs:
           if [ -d modules/kuraneabusinessprofile ]; then
             find modules/kuraneabusinessprofile -name '*.php' -print0 >> "$RUNNER_TEMP/business-profile-files"
           fi
+          if [ -d modules/kuraneabackoffice ]; then
+            find modules/kuraneabackoffice -name '*.php' -print0 >> "$RUNNER_TEMP/business-profile-files"
+          fi
           xargs -0 -n1 php -l < "$RUNNER_TEMP/business-profile-files"
 
       - name: Run profile lifecycle tests
@@ -54,6 +65,22 @@ jobs:
 
       - name: Run Korean admin settings tests
         run: php tests/business_profile/admin_settings.php
+
+      - name: Verify durable support assignment repository behavior
+        run: php tests/admin_support_assignments/assignment_repository.php
+
+      - name: Verify durable support assignment access contracts
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -m unittest discover -s tests/admin_support_assignments -p 'test_*.py' -v
+
+      - name: Verify employee profile audit hook and bounded read behavior
+        run: php tests/admin_audit/employee_profile_audit.php
+
+      - name: Verify employee profile audit source contracts
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -m unittest discover -s tests/admin_audit -p 'test_*.py' -v
 
       - name: Verify official brand source upload and derivatives
         run: php tests/business_profile/brand_assets.php

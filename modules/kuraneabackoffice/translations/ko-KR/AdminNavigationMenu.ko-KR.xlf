@@ -6,6 +6,21 @@
         <source>Orders</source>
         <target state="final">주문</target>
       </trans-unit>
+      <trans-unit id="kuranea-carriers-menu" approved="yes">
+        <source>Carriers</source>
+        <target state="final">배송사</target>
+        <note>PrestaShop 9.2 Back Office shipping navigation item.</note>
+      </trans-unit>
+      <trans-unit id="af01f8c298aa063d9c7490f00eddd2df" approved="yes">
+        <source>Payment Methods</source>
+        <target state="final">결제 수단</target>
+        <note>PrestaShop 9.2 Admin.Navigation.Menu catalogue entry.</note>
+      </trans-unit>
+      <trans-unit id="0da8d9a75492046bea7f314521e07cae" approved="yes">
+        <source>Payment methods</source>
+        <target state="final">결제 수단</target>
+        <note>PrestaShop 9.2 Admin.Navigation.Menu catalogue entry.</note>
+      </trans-unit>
     </body>
   </file>
 </xliff>

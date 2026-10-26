@@ -12,6 +12,11 @@
         <target state="final">주문 상태 변경</target>
         <note>PrestaShop AdminOrders bulk action.</note>
       </trans-unit>
+      <trans-unit id="kuranea-order-payment-method-label" approved="yes">
+        <source>Payment method</source>
+        <target state="final">결제 방법</target>
+        <note>PrestaShop 9.2 Back Office order detail payment section label.</note>
+      </trans-unit>
       <trans-unit id="kuranea-orders-empty-state-title" approved="yes">
         <source>Manage your orders</source>
         <target state="final">주문 관리</target>
