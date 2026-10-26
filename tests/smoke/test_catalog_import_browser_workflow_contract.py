@@ -372,6 +372,20 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             self.assertIn(marker, browser)
         self.assertIn("state['manager_list_diagnostics'] = summarize_manager_product_ids(", read_native)
 
+    def test_catalog_manager_baseline_is_captured_before_unsupported_url_navigation(self):
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        run = browser.split('\ndef run():', 1)[1].split('\nif __name__ ==', 1)[0]
+        manager_navigation = run.index('driver.get(manager_url)')
+        baseline_capture = run.index('before_ids = manager_ids(driver)')
+        unsupported_navigation = run.index('reject_unsupported_product_url(driver, review_url, state)')
+
+        self.assertLess(manager_navigation, baseline_capture)
+        self.assertLess(
+            baseline_capture,
+            unsupported_navigation,
+            'the expected manager ID set must be sampled while the native product manager is open',
+        )
+
     def test_native_manager_readback_guards_product_identity_and_edit_preservation(self):
         browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
         read_native = browser.split('def read_native(', 1)[1].split('\ndef manager_save_confirmation(', 1)[0]

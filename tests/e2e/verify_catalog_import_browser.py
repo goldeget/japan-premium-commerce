@@ -1817,8 +1817,8 @@ def run():
         state['stage'] = 'manager_navigation'
         driver.get(manager_url)
         state['last_completed_stage'] = state['stage']
-        reject_unsupported_product_url(driver, review_url, state)
         before_ids = manager_ids(driver)
+        reject_unsupported_product_url(driver, review_url, state)
         status = submit_batch(driver, review_url, [AMAZON, RAKUTEN, BLOCKED], state)
         assert '성공 2건' in status and '실패 1건' in status and '대기 0건' in status
         blocked_row = next(row for row in driver.find_elements(By.CSS_SELECTOR, '#catalog-import-progress tbody tr')
