@@ -4,16 +4,31 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+import struct
 import subprocess
 import sys
 import tempfile
 import unittest
+import zlib
+from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parents[2]
 DIAGNOSTICS_PATH = ROOT / 'tests/e2e/catalog_import_diagnostics.py'
 DIAGNOSTICS_SPEC = importlib.util.spec_from_file_location('catalog_import_diagnostics', DIAGNOSTICS_PATH)
 DIAGNOSTICS = importlib.util.module_from_spec(DIAGNOSTICS_SPEC)
 DIAGNOSTICS_SPEC.loader.exec_module(DIAGNOSTICS)
+
+
+def png_fixture(width, height):
+    def chunk(kind, payload):
+        return (struct.pack('!I', len(payload)) + kind + payload
+                + struct.pack('!I', zlib.crc32(kind + payload) & 0xffffffff))
+
+    rows = b''.join(b'\x00' + b'\x20\x60\xa0' * width for _ in range(height))
+    return (b'\x89PNG\r\n\x1a\n'
+            + chunk(b'IHDR', struct.pack('!2I5B', width, height, 8, 2, 0, 0, 0))
+            + chunk(b'IDAT', zlib.compress(rows))
+            + chunk(b'IEND', b''))
 
 
 class CatalogImportBrowserWorkflowContract(unittest.TestCase):
@@ -45,6 +60,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
                        'tests.smoke.test_catalog_import_admin_contract',
                        "'tests/smoke/test_catalog_import_admin_contract.py'",
                        'catalog-import-e2e.log', 'catalog-import-batch.png', 'catalog-import-rejected.png',
+                       'catalog-import-blocked-options.png', 'catalog-import-review-options.png',
                        'catalog-import-draft.png', 'catalog-import-reimport.png', 'catalog-import-readback.json'):
             self.assertTrue(marker in source, f"Missing integration marker: {marker}")
         for step, variable in (('catalog_import_fixture', 'CATALOG_IMPORT_FIXTURE_OUTCOME'),
@@ -122,6 +138,127 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertIn('assert options_confirmation.is_displayed() and options_confirmation.is_enabled()', browser)
         self.assertIn('assert options_confirmation.is_selected()', browser)
 
+    def test_browser_proves_supported_and_blocked_option_review_forms(self):
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        rejection = browser.split("state['stage'] = 'reject_rakuten'", 1)[1].split(
+            "state['stage'] = 'approve_amazon'", 1
+        )[0]
+        for marker in (
+            "rejected_options.get_attribute('value') == '色:生成り\\n容量:12L'",
+            '옵션 연결을 지원하지 않아 초안 등록이 차단됩니다.',
+            "rejected_form.find_elements(By.NAME, 'confirm_options_supported')",
+            'assert not options_confirmations',
+            "submitKuraneaCatalogImportedDraft",
+            "rejected.find_elements(By.CSS_SELECTOR, '.catalog-import-review-form')",
+            "[data-catalog-review-status=\"approved\"]",
+            "a[href*=\"id_product=\"]",
+        ):
+            self.assertIn(marker, rejection)
+
+        save = browser.split('def save_safe_failure_screenshot(', 1)[1].split(
+            'def safe_exception_class(', 1
+        )[0]
+        approval_capture = save.index("if stage in {'approve_amazon', 'reject_rakuten'}")
+        form_capture = save.index('capture_safe_approval_context_crop')
+        generic_batch_capture = save.index("driver.find_element(By.ID, 'catalog-import-progress')")
+        self.assertLess(approval_capture, form_capture)
+        self.assertLess(form_capture, generic_batch_capture)
+
+        context_crop = browser.split('def capture_safe_approval_context_crop(', 1)[1].split(
+            'def _safe_document_rect(', 1
+        )[0]
+        for marker in (
+            "form.find_elements(By.NAME, 'options')",
+            "form.find_elements(By.CSS_SELECTOR, '.alert-warning')",
+            "form.find_elements(By.NAME, 'confirm_options_supported')",
+            'window.scrollX',
+            'window.scrollY',
+            'value.left + window.scrollX',
+            'value.top + window.scrollY',
+            'document.documentElement.scrollHeight',
+            'not _safe_document_rect(option_rect, document_width, document_height)',
+            "'x': left,",
+            "'y': top,",
+            "'captureBeyondViewport': True",
+            'catalog-import-review-options.png',
+            'catalog-import-blocked-options.png',
+        ):
+            self.assertIn(marker, context_crop + save + browser)
+
+    def test_native_readback_failure_is_classified_and_captures_the_manager_alert(self):
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        for marker in (
+            "state['native_product_id'] = product_id",
+            "'상품 관리 화면을 불러오지 못했습니다. 쇼핑몰 설정과 권한을 확인해 주세요.'",
+            'manager_load_error',
+            'manager_inactive_notice_visible',
+            "'manager_product_id_parameter_matches'",
+            "'manager_editor_visible'",
+            "'manager_load_failure_notice_visible'",
+            "'reimport_editor_id_presence' if is_reimport else 'native_editor_id_presence'",
+            'def capture_safe_manager_readback_crop(',
+            'def validated_product_id_from_manager_link(',
+            "query.get('controller') == ['AdminOrdenowaProductManager']",
+            'state.get(\'native_product_id\')',
+            "'catalog-import-failure.png'",
+        ):
+            self.assertIn(marker, browser)
+
+        validator = self.read_required('tests/e2e/catalog_import_diagnostics.py')
+        self.assertIn("data['stage'] == 'native_readback'", validator)
+        self.assertIn("data['manager_route_matches']", validator)
+        self.assertIn("data['manager_product_id_parameter_matches']", validator)
+        self.assertIn("'current_substage': {", validator)
+        self.assertNotIn('native_product_id', DIAGNOSTICS.DIAGNOSTIC_FIELDS)
+
+        manager_capture = browser.split('def capture_safe_manager_readback_crop(', 1)[1].split(
+            'def save_safe_failure_screenshot(', 1
+        )[0]
+        self.assertIn('notice.screenshot(str(path))', manager_capture)
+        self.assertIn("notice.style.width = '640px'", manager_capture)
+        self.assertIn("notice.style.minHeight = '180px'", manager_capture)
+        self.assertNotIn('Page.captureScreenshot', manager_capture)
+
+    def test_native_readback_checks_hidden_product_id_presence_without_visibility_wait(self):
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        read_native = browser.split('def read_native(', 1)[1].split('\ndef run(', 1)[0]
+        self.assertIn("manager_form.find_elements(By.NAME, 'id_product')", read_native)
+        self.assertIn('assert len(id_fields) == 1', read_native)
+        self.assertIn('manager_form.is_displayed()', read_native)
+        self.assertIn('manager_product_id_field_matches', read_native)
+        self.assertNotIn("visible(driver, '[name=\"id_product\"]')", read_native)
+        self.assertNotIn('EC.presence_of_element_located', read_native)
+
+    def test_approved_product_link_is_same_origin_manager_route_with_one_id(self):
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        tree = ast.parse(browser)
+        function = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == 'validated_product_id_from_manager_link'
+        )
+        namespace = {
+            'urlparse': urlparse,
+            'parse_qs': parse_qs,
+            'ADMIN_LOGIN': 'https://shop.example.test/admin/index.php',
+            'ADMIN_PATH': '/admin/index.php',
+        }
+        exec(compile(ast.Module(body=[function], type_ignores=[]), '<route-helper-test>', 'exec'), namespace)
+        validated = namespace['validated_product_id_from_manager_link']
+        self.assertEqual(
+            validated('https://shop.example.test/admin/index.php?controller=AdminOrdenowaProductManager&id_product=42'),
+            42,
+        )
+        for invalid in (
+            'https://outside.example/admin/index.php?controller=AdminOrdenowaProductManager&id_product=42',
+            'https://shop.example.test/admin/index.php?controller=AdminKuraneaCatalogReview&id_product=42',
+            'https://shop.example.test/admin/index.php/other?controller=AdminOrdenowaProductManager&id_product=42',
+            'https://shop.example.test/admin/index.php?controller=AdminOrdenowaProductManager&id_product=42&id_product=43',
+            'https://shop.example.test/admin/index.php?controller=AdminOrdenowaProductManager&id_product=0',
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(AssertionError):
+                    validated(invalid)
+
     def test_browser_requires_one_loaded_native_product_image(self):
         source = self.read_required('tests/e2e/verify_catalog_import_browser.py')
         self.assertIn('len(image_results) == 1', source)
@@ -133,7 +270,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertIn("form.find_elements(By.CSS_SELECTOR, 'input[name=\"category_ids[]\"]')", source)
         self.assertIn("driver.find_elements(By.CSS_SELECTOR, 'input[name=\"category_ids[]\"]')", source)
         self.assertIn('assert category_ids == expected_category_ids', source)
-        self.assertIn('read_native(driver, product_id, expected_category_ids)', source)
+        self.assertIn('read_native(driver, product_id, expected_category_ids, state)', source)
 
     def test_browser_batch_waits_and_failure_summary_expose_safe_substage_evidence(self):
         browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
@@ -177,6 +314,11 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             self.assertIn(marker, browser)
         self.assertNotIn('print(driver.current_url', browser)
         self.assertNotIn('page_source', browser)
+
+        diagnostic_validator = self.read_required('tests/e2e/catalog_import_diagnostics.py')
+        self.assertIn("data['stage'] in {'approve_amazon', 'reject_rakuten'}", diagnostic_validator)
+        self.assertIn('320 <= screenshot_width <= 640', diagnostic_validator)
+        self.assertIn('180 <= screenshot_height <= 480', diagnostic_validator)
 
         workflow = self.read_required('.github/workflows/fresh-install.yml')
         access_step = workflow.split('id: catalog_import_admin_access_readback', 1)[1].split('\n      - name:', 1)[0]
@@ -238,6 +380,8 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertIn('center_hit_relation', browser)
         self.assertIn('target_rect', browser)
         self.assertIn('occluder_category', browser)
+        self.assertIn('target_fields = {', browser)
+        self.assertIn('forms[0].find_elements(By.NAME, target_field_name)', browser)
         self.assertIn('last_completed_substage', browser)
         self.assertIn('capture_safe_click_crop', browser)
         self.assertIn('Page.captureScreenshot', browser)
@@ -290,6 +434,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         valid = {
             'stage': 'approve_amazon', 'last_completed_stage': 'reject_rakuten',
             'last_completed_substage': 'reject_status_readback', 'click_diagnostics': valid_click,
+            'current_substage': 'not_started',
             'same_admin_origin': True, 'admin_path_matches': True,
             'controller_parameter_present': True, 'controller_allowed': True,
             'admin_controller': 'AdminKuraneaCatalogReview', 'page_class': 'catalog_import_form',
@@ -304,6 +449,11 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'visible_alert_count': 3, 'document_response_status': 200,
             'read_only_notice_visible': False, 'access_denied_notice_visible': False,
             'queue_unavailable_notice_visible': False, 'exception_class': 'ElementClickInterceptedException',
+            'manager_route_matches': False, 'manager_product_id_parameter_present': False,
+            'manager_product_id_parameter_matches': False, 'manager_id_field_present': False,
+            'manager_id_field_hidden': False, 'manager_product_id_field_matches': False,
+            'manager_editor_visible': False, 'manager_load_failure_notice_visible': False,
+            'manager_permission_denied_notice_visible': False, 'manager_inactive_notice_visible': False,
             'failure_screenshot_captured': True,
         }
         DIAGNOSTICS.validate(valid)
@@ -319,7 +469,29 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             diagnostic_path = Path(temporary_directory) / 'diagnostic.json'
             screenshot_path = Path(temporary_directory) / 'failure.png'
-            screenshot_path.write_bytes(b'isolated-test-screenshot')
+            screenshot_path.write_bytes(png_fixture(1151, 54))
+            diagnostic_path.write_text(json.dumps(valid), encoding='utf-8')
+            undersized_crop = subprocess.run(
+                [sys.executable, str(DIAGNOSTICS_PATH), '--validate',
+                 str(diagnostic_path), str(screenshot_path)],
+                check=False, capture_output=True, text=True,
+            )
+            self.assertEqual(undersized_crop.returncode, 2)
+            self.assertIn('safe bounds', undersized_crop.stdout)
+
+            screenshot_path.write_bytes(png_fixture(640, 320)[:24])
+            truncated_png = subprocess.run(
+                [sys.executable, str(DIAGNOSTICS_PATH), '--validate',
+                 str(diagnostic_path), str(screenshot_path)],
+                check=False, capture_output=True, text=True,
+            )
+            self.assertEqual(truncated_png.returncode, 2)
+            self.assertTrue(
+                'malformed PNG chunk' in truncated_png.stdout or 'incomplete' in truncated_png.stdout,
+                truncated_png.stdout,
+            )
+
+            screenshot_path.write_bytes(png_fixture(640, 320))
             for broken_click in (None, {**valid_click, 'returned': True}):
                 with self.subTest(broken_click=broken_click):
                     diagnostic_path.write_text(json.dumps({
@@ -342,10 +514,47 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
+            manager_readback = {
+                **valid,
+                'stage': 'native_readback',
+                'last_completed_stage': 'approve_amazon',
+                'current_substage': 'native_editor_id_presence',
+                'click_diagnostics': None,
+                'same_admin_origin': True,
+                'admin_path_matches': True,
+                'controller_parameter_present': True,
+                'controller_allowed': True,
+                'admin_controller': 'AdminOrdenowaProductManager',
+                'page_class': 'manager_load_error',
+                'product_url_field_visible': False,
+                'submit_control_visible': False,
+                'manager_route_matches': True,
+                'manager_product_id_parameter_present': True,
+                'manager_product_id_parameter_matches': True,
+                'manager_id_field_present': False,
+                'manager_id_field_hidden': False,
+                'manager_product_id_field_matches': False,
+                'manager_editor_visible': False,
+                'manager_load_failure_notice_visible': True,
+                'manager_permission_denied_notice_visible': False,
+                'manager_inactive_notice_visible': False,
+                'exception_class': 'TimeoutException',
+                'failure_screenshot_captured': True,
+            }
+            screenshot_path.write_bytes(png_fixture(640, 320))
+            diagnostic_path.write_text(json.dumps(manager_readback), encoding='utf-8')
+            manager_valid = subprocess.run(
+                [sys.executable, str(DIAGNOSTICS_PATH), '--validate',
+                 str(diagnostic_path), str(screenshot_path)],
+                check=False, capture_output=True, text=True,
+            )
+            self.assertEqual(manager_valid.returncode, 0, manager_valid.stdout + manager_valid.stderr)
+
     def test_failure_diagnostic_validator_rejects_unlisted_or_malformed_data_before_emission(self):
         valid = {
             'stage': 'batch_completion_wait', 'last_completed_stage': 'batch_submit_click',
             'last_completed_substage': 'not_started', 'click_diagnostics': None,
+            'current_substage': 'not_started',
             'same_admin_origin': True, 'admin_path_matches': True,
             'controller_parameter_present': True, 'controller_allowed': True,
             'admin_controller': 'AdminKuraneaCatalogReview', 'page_class': 'unclassified_alert',
@@ -360,11 +569,18 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'visible_alert_count': 1, 'document_response_status': 200,
             'read_only_notice_visible': False, 'access_denied_notice_visible': False,
             'queue_unavailable_notice_visible': False, 'exception_class': 'TimeoutException',
+            'manager_route_matches': False, 'manager_product_id_parameter_present': False,
+            'manager_product_id_parameter_matches': False, 'manager_id_field_present': False,
+            'manager_id_field_hidden': False, 'manager_product_id_field_matches': False,
+            'manager_editor_visible': False, 'manager_load_failure_notice_visible': False,
+            'manager_permission_denied_notice_visible': False, 'manager_inactive_notice_visible': False,
             'failure_screenshot_captured': False,
         }
         DIAGNOSTICS.validate(valid)
         with self.assertRaises(ValueError):
             DIAGNOSTICS.validate({**valid, 'unexpected': 'could contain a secret'})
+        with self.assertRaises(ValueError):
+            DIAGNOSTICS.validate({**valid, 'native_product_id': 42})
         with self.assertRaises(ValueError):
             DIAGNOSTICS.validate({**valid, 'stage': 'https://private.invalid/?token=secret'})
         with self.assertRaises(ValueError):

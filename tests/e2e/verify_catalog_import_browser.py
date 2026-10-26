@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, urlparse
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
 from verify_product_admin_browser import (
@@ -43,6 +44,12 @@ ALLOWED_EXCEPTION_CLASSES = {
     'AssertionError', 'ElementClickInterceptedException', 'ElementNotInteractableException',
     'NoSuchElementException', 'OSError', 'RuntimeError', 'StaleElementReferenceException',
     'TimeoutException', 'ValueError', 'WebDriverException', 'Exception',
+}
+ALLOWED_READBACK_SUBSTAGES = {
+    'not_started', 'approved_product_link', 'manager_navigation',
+    'native_editor_id_presence', 'native_editor_form_check', 'native_editor_readback',
+    'reimport_navigation', 'reimport_editor_id_presence', 'reimport_editor_form_check',
+    'reimport_editor_readback',
 }
 CLICK_TARGETS = {
     'category_checkbox': 'approve_category_checkbox',
@@ -83,6 +90,25 @@ def route_link(driver, controller):
     return False
 
 
+def validated_product_id_from_manager_link(href):
+    """Accept only one same-origin manager route with one positive product key."""
+    parsed = urlparse(href)
+    expected = urlparse(ADMIN_LOGIN)
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    admin_path = ADMIN_PATH.rstrip('/')
+    same_origin = (parsed.scheme.lower(), parsed.netloc.lower()) == (
+        expected.scheme.lower(), expected.netloc.lower()
+    )
+    admin_path_matches = parsed.path == admin_path
+    product_ids = query.get('id_product', [])
+    if (not same_origin or not admin_path_matches
+            or query.get('controller') != ['AdminOrdenowaProductManager']
+            or len(product_ids) != 1 or not product_ids[0].isdecimal()
+            or int(product_ids[0]) <= 0):
+        raise AssertionError('approved product manager link did not match the isolated shop route')
+    return int(product_ids[0])
+
+
 def fill(form, name, value):
     field = form.find_element(By.NAME, name)
     field.clear()
@@ -100,6 +126,7 @@ def submit_batch(driver, review_url, urls, state, prefix='batch'):
     state['submit_attempted'] = False
     state['submit_returned'] = False
     state['submitted_url_count'] = 0
+    state['current_substage'] = 'not_started'
     state['stage'] = f'{prefix}_review_navigation'
     driver.get(review_url)
     state['last_completed_stage'] = state['stage']
@@ -315,8 +342,25 @@ def capture_safe_click_crop(driver, path, state):
                     or current.path.startswith(ADMIN_PATH.rstrip('/') + '/'))
             or query.get('controller') != ['AdminKuraneaCatalogReview']):
         return False
-    synthetic_entry = article(driver, AMAZON)
-    if not synthetic_entry or not synthetic_entry.find_elements(By.CSS_SELECTOR, '.catalog-import-review-form'):
+    source_url = state.get('review_source', AMAZON) if isinstance(state, dict) else AMAZON
+    if source_url not in {AMAZON, RAKUTEN}:
+        return False
+    synthetic_entry = article(driver, source_url)
+    forms = synthetic_entry.find_elements(By.CSS_SELECTOR, '.catalog-import-review-form') if synthetic_entry else []
+    if len(forms) != 1 or not forms[0].is_displayed():
+        return False
+    target_fields = {
+        'category_checkbox': 'category_ids[]',
+        'translation_en_checkbox': 'translation_reviewed_en',
+        'translation_ko_checkbox': 'translation_reviewed_ko',
+        'options_confirmation_checkbox': 'confirm_options_supported',
+        'image_rights_confirmation_checkbox': 'confirm_image_rights',
+        'native_draft_submit': 'submitKuraneaCatalogImportedDraft',
+    }
+    target_field_name = target_fields.get(click.get('target'))
+    if target_field_name is None or not any(
+        field.is_displayed() for field in forms[0].find_elements(By.NAME, target_field_name)
+    ):
         return False
     target = click.get('target_rect')
     blocker = click.get('occluder_rect')
@@ -383,6 +427,167 @@ def capture_safe_click_crop(driver, path, state):
     return path.is_file() and path.stat().st_size > 0
 
 
+def capture_safe_approval_context_crop(driver, path, state, source_url=AMAZON):
+    """Capture only the known synthetic option field and its blocking/confirmation UI."""
+    expected_stage = 'approve_amazon' if source_url == AMAZON else 'reject_rakuten'
+    if source_url not in {AMAZON, RAKUTEN} or not isinstance(state, dict):
+        return False
+    if state.get('stage') != expected_stage:
+        return False
+    try:
+        parsed = urlparse(driver.current_url)
+        expected = urlparse(ADMIN_LOGIN)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        admin_path = ADMIN_PATH.rstrip('/')
+        same_origin = (parsed.scheme.lower(), parsed.netloc.lower()) == (
+            expected.scheme.lower(), expected.netloc.lower()
+        )
+        admin_path_matches = parsed.path == admin_path or parsed.path.startswith(admin_path + '/')
+        if not (same_origin and admin_path_matches
+                and query.get('controller') == ['AdminKuraneaCatalogReview']):
+            return False
+
+        entry = article(driver, source_url)
+        if not entry or not entry.is_displayed():
+            return False
+        forms = entry.find_elements(By.CSS_SELECTOR, '.catalog-import-review-form')
+        if len(forms) != 1 or not forms[0].is_displayed():
+            return False
+        form = forms[0]
+        option_fields = form.find_elements(By.NAME, 'options')
+        warnings = form.find_elements(By.CSS_SELECTOR, '.alert-warning')
+        confirmations = form.find_elements(By.NAME, 'confirm_options_supported')
+        if len(option_fields) != 1 or not option_fields[0].is_displayed():
+            return False
+        option_value = option_fields[0].get_attribute('value')
+        if source_url == RAKUTEN:
+            if (option_value != '色:生成り\n容量:12L' or len(warnings) != 1 or confirmations
+                    or warnings[0].text.strip() != (
+                        '현재 수집기는 여러 옵션 그룹 사이의 실제 판매 조합·조합별 가격·재고를 '
+                        '확인하지 못합니다. 이 상품은 옵션 연결을 지원하지 않아 초안 등록이 차단됩니다.'
+                    )):
+                return False
+            context = warnings[0]
+        else:
+            if option_value != 'サイズ:M|L' or warnings or len(confirmations) != 1:
+                return False
+            context = driver.execute_script(
+                "return arguments[0].closest('.form-group') || arguments[0].closest('label') || arguments[0];",
+                confirmations[0],
+            )
+            if context is None:
+                return False
+
+        # Bring the relevant part into view before reading viewport-relative rects.
+        driver.execute_script(
+            "arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});",
+            option_fields[0],
+        )
+        geometry = driver.execute_script("""
+            const rect = (element) => {
+                const value = element.getBoundingClientRect();
+                return [value.left + window.scrollX, value.top + window.scrollY,
+                        value.width, value.height]
+                    .map((part) => Math.round(part));
+            };
+            const visible = (element) => {
+                const style = getComputedStyle(element);
+                const value = element.getBoundingClientRect();
+                return style.display !== 'none' && style.visibility !== 'hidden'
+                    && Number(style.opacity) !== 0 && value.width > 0 && value.height > 0;
+            };
+            return {
+                width: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
+                height: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight),
+                scrollX: Math.round(window.scrollX),
+                scrollY: Math.round(window.scrollY),
+                optionRect: rect(arguments[0]),
+                contextRect: rect(arguments[1]),
+                optionVisible: visible(arguments[0]),
+                contextVisible: visible(arguments[1]),
+            };
+        """, option_fields[0], context)
+        if not isinstance(geometry, dict):
+            return False
+        document_width = geometry.get('width')
+        document_height = geometry.get('height')
+        scroll_x = geometry.get('scrollX')
+        scroll_y = geometry.get('scrollY')
+        option_rect = geometry.get('optionRect')
+        context_rect = geometry.get('contextRect')
+        if (type(document_width) is not int or type(document_height) is not int
+                or not (320 <= document_width <= 10000 and 180 <= document_height <= 50000)
+                or type(scroll_x) is not int or type(scroll_y) is not int
+                or not (0 <= scroll_x <= 1_000_000 and 0 <= scroll_y <= 1_000_000)
+                or geometry.get('optionVisible') is not True
+                or geometry.get('contextVisible') is not True
+                or not _safe_document_rect(option_rect, document_width, document_height)
+                or not _safe_document_rect(context_rect, document_width, document_height)):
+            return False
+
+        rects = [option_rect, context_rect]
+        left = max(0, min(rect[0] for rect in rects) - 20)
+        top = max(0, min(rect[1] for rect in rects) - 20)
+        right = min(document_width, max(rect[0] + rect[2] for rect in rects) + 20)
+        bottom = min(document_height, max(rect[1] + rect[3] for rect in rects) + 20)
+        if right - left > 640:
+            left = max(0, min(document_width - 640, min(rect[0] for rect in rects) - 12))
+            right = min(document_width, left + 640)
+        if bottom - top > 480:
+            center_y = (min(rect[1] for rect in rects) + max(
+                rect[1] + rect[3] for rect in rects
+            )) // 2
+            top = max(0, min(document_height - 480, center_y - 240))
+            bottom = min(document_height, top + 480)
+        if right - left < 320 or bottom - top < 180:
+            center_x = option_rect[0] + option_rect[2] // 2
+            center_y = option_rect[1] + option_rect[3] // 2
+            left = max(0, min(document_width - 320, center_x - 160))
+            top = max(0, min(document_height - 180, center_y - 90))
+            right = min(document_width, left + 320)
+            bottom = min(document_height, top + 180)
+        if (right - left < 320 or bottom - top < 180
+                or right - left > 640 or bottom - top > 480):
+            return False
+
+        screenshot = driver.execute_cdp_cmd('Page.captureScreenshot', {
+            'format': 'png',
+            'fromSurface': True,
+            'captureBeyondViewport': True,
+            'clip': {
+                'x': left,
+                'y': top,
+                'width': right - left,
+                'height': bottom - top,
+                'scale': 1,
+            },
+        })
+        image_data = screenshot.get('data') if isinstance(screenshot, dict) else None
+        if not isinstance(image_data, str):
+            return False
+        image = base64.b64decode(image_data, validate=True)
+        if len(image) < 24 or not image.startswith(b'\x89PNG\r\n\x1a\n'):
+            return False
+        image_width, image_height = struct.unpack('!II', image[16:24])
+        if image_width < 320 or image_height < 180 or image_width > 640 or image_height > 480:
+            return False
+        path.write_bytes(image)
+        return path.is_file() and path.stat().st_size > 0
+    except Exception:
+        return False
+
+
+def _safe_document_rect(value, width, height):
+    if not isinstance(value, list) or len(value) != 4:
+        return False
+    if any(type(item) is not int for item in value):
+        return False
+    x, y, rect_width, rect_height = value
+    return (0 <= x <= width and 0 <= y <= height
+            and 0 < rect_width <= width and 0 < rect_height <= height
+            and x + rect_width <= width and y + rect_height <= height)
+
+
 def safe_catalog_import_browser_state(driver, state):
     """Return only fixed labels, booleans, and bounded counters from the isolated synthetic page."""
     stage = state.get('stage', 'launch')
@@ -394,6 +599,9 @@ def safe_catalog_import_browser_state(driver, state):
         last_completed_stage = 'unknown'
     if last_completed_substage not in ALLOWED_CLICK_SUBSTAGES | {'not_started', 'batch_complete', 'reject_status_readback', 'unknown'}:
         last_completed_substage = 'unknown'
+    current_substage = state.get('current_substage', 'not_started')
+    if current_substage not in ALLOWED_READBACK_SUBSTAGES:
+        current_substage = 'unknown'
 
     raw_click = state.get('click_diagnostics')
     click_diagnostics = None
@@ -441,6 +649,18 @@ def safe_catalog_import_browser_state(driver, state):
     )
     expected_admin_path = ADMIN_PATH.rstrip('/')
     admin_path_matches = parsed.path == expected_admin_path or parsed.path.startswith(expected_admin_path + '/')
+    manager_route_matches = (
+        current_origin == expected_origin
+        and parsed.path == expected_admin_path
+        and query.get('controller') == ['AdminOrdenowaProductManager']
+    )
+    expected_product_id = state.get('native_product_id')
+    expected_product_id_text = str(expected_product_id) if type(expected_product_id) is int and expected_product_id > 0 else ''
+    query_product_ids = query.get('id_product', [])
+    manager_product_id_parameter_present = 'id_product' in query
+    manager_product_id_parameter_matches = (
+        expected_product_id_text != '' and query_product_ids == [expected_product_id_text]
+    )
 
     page = {
         'document_ready_state': 'unknown',
@@ -462,6 +682,13 @@ def safe_catalog_import_browser_state(driver, state):
         'read_only_notice_visible': False,
         'access_denied_notice_visible': False,
         'queue_unavailable_notice_visible': False,
+        'manager_id_field_present': False,
+        'manager_id_field_hidden': False,
+        'manager_product_id_field_matches': False,
+        'manager_editor_visible': False,
+        'manager_load_failure_notice_visible': False,
+        'manager_permission_denied_notice_visible': False,
+        'manager_inactive_notice_visible': False,
     }
     if driver is not None:
         try:
@@ -488,6 +715,25 @@ def safe_catalog_import_browser_state(driver, state):
                 const responseStatus = navigation && Number.isInteger(navigation.responseStatus)
                     && navigation.responseStatus >= 100 && navigation.responseStatus <= 599
                     ? navigation.responseStatus : null;
+                const managerForm = Array.from(document.querySelectorAll('#content form')).find(
+                    (form) => form.querySelector('[name="submitKuraneaProductSave"]')) || null;
+                const managerSaveButton = managerForm
+                    ? managerForm.querySelector('[name="submitKuraneaProductSave"]') : null;
+                const managerIdField = managerForm
+                    ? managerForm.querySelector('input[name="id_product"]') : null;
+                const visibleElement = (element) => {
+                    if (!element) return false;
+                    const style = getComputedStyle(element);
+                    const rect = element.getBoundingClientRect();
+                    return style.display !== 'none' && style.visibility !== 'hidden'
+                        && rect.width > 0 && rect.height > 0;
+                };
+                const managerFormVisible = Boolean(managerForm && visibleElement(managerForm)
+                    && visibleElement(managerSaveButton));
+                const expectedProductId = arguments[0];
+                const managerLoadFailure = '상품 관리 화면을 불러오지 못했습니다. 쇼핑몰 설정과 권한을 확인해 주세요.';
+                const managerPermissionDenied = '상품을 조회할 권한이 없습니다.';
+                const managerInactiveNotice = '상품은 기본적으로 비활성·비노출·주문 불가 상태로 저장됩니다. 이 화면에는 판매 활성화 기능이 없습니다.';
                 const recognizedAlert = (text) => text === '관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.'
                     || text === '상품 수집·검수·등록 권한이 없습니다.'
                     || text === '상품 URL을 한 줄에 하나씩 입력해 주세요.'
@@ -495,6 +741,9 @@ def safe_catalog_import_browser_state(driver, state):
                     || text === '상품 수집 작업은 편집·등록 권한이 있는 직원만 수행할 수 있습니다.'
                     || text === '상품 검수 대기열을 조회할 권한이 없습니다.'
                     || text === '검수 대기열을 불러오지 못했습니다. 저장소 설정을 확인해 주세요.'
+                    || text === managerLoadFailure
+                    || text === managerPermissionDenied
+                    || text === managerInactiveNotice
                     || text === '상품 수집 항목을 반려했습니다. 사유와 담당자 기록을 보존했습니다.'
                     || text === '기존 TEST/DEMO 등록 경로는 별도 서버 게이트로 비활성화되어 있습니다.'
                     || /^(?:[1-9]|10)개 고유 상품 URL을 수집 대기열에 추가했습니다[.]$/.test(text);
@@ -519,9 +768,17 @@ def safe_catalog_import_browser_state(driver, state):
                     document_response_status: responseStatus,
                     read_only_notice_visible: visibleAlerts.includes('상품 수집 작업은 편집·등록 권한이 있는 직원만 수행할 수 있습니다.'),
                     access_denied_notice_visible: visibleAlerts.includes('상품 검수 대기열을 조회할 권한이 없습니다.'),
-                    queue_unavailable_notice_visible: visibleAlerts.includes('검수 대기열을 불러오지 못했습니다. 저장소 설정을 확인해 주세요.')
+                    queue_unavailable_notice_visible: visibleAlerts.includes('검수 대기열을 불러오지 못했습니다. 저장소 설정을 확인해 주세요.'),
+                    manager_id_field_present: Boolean(managerIdField),
+                    manager_id_field_hidden: Boolean(managerIdField && managerIdField.type === 'hidden'),
+                    manager_product_id_field_matches: Boolean(managerIdField && expectedProductId
+                        && managerIdField.value === expectedProductId),
+                    manager_editor_visible: managerFormVisible,
+                    manager_load_failure_notice_visible: visibleAlerts.includes(managerLoadFailure),
+                    manager_permission_denied_notice_visible: visibleAlerts.includes(managerPermissionDenied),
+                    manager_inactive_notice_visible: visibleAlerts.includes(managerInactiveNotice)
                 };
-            """)
+            """, expected_product_id_text)
             if not isinstance(page, dict):
                 page = {}
         except Exception:
@@ -554,7 +811,19 @@ def safe_catalog_import_browser_state(driver, state):
     batch_save_failed = bool(page.get('batch_save_failure_notice_visible'))
     batch_created = bool(page.get('batch_created_notice_visible'))
     unclassified_alert = bool(page.get('unclassified_alert_visible'))
-    if access_denied:
+    manager_load_failure = bool(page.get('manager_load_failure_notice_visible'))
+    manager_permission_denied = bool(page.get('manager_permission_denied_notice_visible'))
+    if manager_route_matches and manager_permission_denied:
+        page_class = 'manager_access_denied'
+    elif manager_route_matches and manager_load_failure:
+        page_class = 'manager_load_error'
+    elif manager_route_matches and bool(page.get('manager_editor_visible')):
+        page_class = 'manager_editor'
+    elif manager_route_matches and unclassified_alert:
+        page_class = 'unclassified_alert'
+    elif manager_route_matches:
+        page_class = 'manager_editor_missing'
+    elif access_denied:
         page_class = 'controller_access_denied'
     elif read_only:
         page_class = 'batch_capability_denied'
@@ -581,6 +850,7 @@ def safe_catalog_import_browser_state(driver, state):
         'stage': stage,
         'last_completed_stage': last_completed_stage,
         'last_completed_substage': last_completed_substage,
+        'current_substage': current_substage,
         'click_diagnostics': click_diagnostics,
         'same_admin_origin': current_origin == expected_origin,
         'admin_path_matches': admin_path_matches,
@@ -611,17 +881,107 @@ def safe_catalog_import_browser_state(driver, state):
         'read_only_notice_visible': read_only,
         'access_denied_notice_visible': access_denied,
         'queue_unavailable_notice_visible': queue_unavailable,
+        'manager_route_matches': manager_route_matches,
+        'manager_product_id_parameter_present': manager_product_id_parameter_present,
+        'manager_product_id_parameter_matches': manager_product_id_parameter_matches,
+        'manager_id_field_present': bool(page.get('manager_id_field_present')),
+        'manager_id_field_hidden': bool(page.get('manager_id_field_hidden')),
+        'manager_product_id_field_matches': bool(page.get('manager_product_id_field_matches')),
+        'manager_editor_visible': bool(page.get('manager_editor_visible')),
+        'manager_load_failure_notice_visible': manager_load_failure,
+        'manager_permission_denied_notice_visible': manager_permission_denied,
+        'manager_inactive_notice_visible': bool(page.get('manager_inactive_notice_visible')),
     }
+
+
+def capture_safe_manager_readback_crop(driver, path, state):
+    """Capture one allowlisted manager notice without surrounding product fields."""
+    try:
+        if not isinstance(state, dict) or state.get('stage') != 'native_readback':
+            return False
+        expected_id = state.get('native_product_id')
+        if type(expected_id) is not int or expected_id <= 0:
+            return False
+
+        parsed = urlparse(driver.current_url)
+        expected = urlparse(ADMIN_LOGIN)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        admin_path = ADMIN_PATH.rstrip('/')
+        same_origin = (parsed.scheme.lower(), parsed.netloc.lower()) == (
+            expected.scheme.lower(), expected.netloc.lower()
+        )
+        admin_path_matches = parsed.path == admin_path
+        if (not same_origin or not admin_path_matches
+                or query.get('controller') != ['AdminOrdenowaProductManager']
+                or query.get('id_product') != [str(expected_id)]):
+            return False
+
+        safe_messages = {
+            '상품 관리 화면을 불러오지 못했습니다. 쇼핑몰 설정과 권한을 확인해 주세요.',
+            '상품을 조회할 권한이 없습니다.',
+        }
+        notice = next((element for element in driver.find_elements(By.CSS_SELECTOR, '#content .alert-danger')
+                       if element.is_displayed() and element.text.strip() in safe_messages), None)
+        if notice is None:
+            forms = driver.find_elements(By.CSS_SELECTOR, '#content form')
+            form = next((candidate for candidate in forms
+                         if candidate.is_displayed()
+                         and candidate.find_elements(By.NAME, 'submitKuraneaProductSave')), None)
+            if form is None:
+                return False
+            panel = form.find_element(By.XPATH, './ancestor::section[contains(@class,"panel")]')
+            heading = panel.find_element(By.TAG_NAME, 'h3')
+            notice = panel.find_element(By.CSS_SELECTOR, '.alert-info')
+            if (heading.text.strip() != '상품 수정'
+                    or notice.text.strip() != (
+                        '상품은 기본적으로 비활성·비노출·주문 불가 상태로 저장됩니다. '
+                        '이 화면에는 판매 활성화 기능이 없습니다.'
+                    )):
+                return False
+
+        original_style = notice.get_attribute('style')
+        driver.execute_script("""
+            const notice = arguments[0];
+            notice.style.boxSizing = 'border-box';
+            notice.style.width = '640px';
+            notice.style.maxWidth = '640px';
+            notice.style.minHeight = '180px';
+            notice.style.padding = '24px';
+            notice.style.display = 'flex';
+            notice.style.alignItems = 'center';
+        """, notice)
+        try:
+            bounds = notice.size
+            if (type(bounds.get('width')) is not int or type(bounds.get('height')) is not int
+                    or not (320 <= bounds['width'] <= 640 and 180 <= bounds['height'] <= 480)):
+                return False
+            return bool(notice.screenshot(str(path))) and path.is_file() and path.stat().st_size > 0
+        finally:
+            if original_style:
+                driver.execute_script("arguments[0].setAttribute('style', arguments[1]);", notice, original_style)
+            else:
+                driver.execute_script("arguments[0].removeAttribute('style');", notice)
+    except Exception:
+        return False
 
 
 def save_safe_failure_screenshot(driver, path, state):
     """Capture synthetic batch progress, a fixed alert, or a scrubbed import form crop."""
     stage = state.get('stage', 'unknown') if isinstance(state, dict) else 'unknown'
     click = state.get('click_diagnostics') if isinstance(state, dict) else None
-    if (stage == 'approve_amazon' and isinstance(click, dict)
-            and click.get('attempted') is True and click.get('returned') is False):
+    if stage == 'native_readback':
+        return capture_safe_manager_readback_crop(driver, path, state)
+    if stage in {'approve_amazon', 'reject_rakuten'}:
+        source_url = RAKUTEN if stage == 'reject_rakuten' else AMAZON
+        if (isinstance(click, dict) and click.get('attempted') is True
+                and click.get('returned') is False):
+            try:
+                if capture_safe_click_crop(driver, path, state):
+                    return True
+            except Exception:
+                pass
         try:
-            return capture_safe_click_crop(driver, path, state)
+            return capture_safe_approval_context_crop(driver, path, state, source_url)
         except Exception:
             return False
 
@@ -737,8 +1097,32 @@ def manager_ids(driver):
     return sorted(set(ids))
 
 
-def read_native(driver, product_id, expected_category_ids):
-    assert visible(driver, '[name="id_product"]').get_attribute('value') == str(product_id)
+def read_native(driver, product_id, expected_category_ids, state):
+    is_reimport = state.get('last_completed_stage') == 'reimport'
+    state['current_substage'] = 'reimport_navigation' if is_reimport else 'manager_navigation'
+    assert validated_product_id_from_manager_link(driver.current_url) == product_id
+    state['current_substage'] = 'reimport_editor_form_check' if is_reimport else 'native_editor_form_check'
+    save_button = WebDriverWait(driver, 30).until(
+        EC.visibility_of_element_located((By.CSS_SELECTOR, '#content form [name="submitKuraneaProductSave"]'))
+    )
+    manager_form = save_button.find_element(By.XPATH, './ancestor::form')
+    assert manager_form.is_displayed()
+    state['current_substage'] = 'reimport_editor_id_presence' if is_reimport else 'native_editor_id_presence'
+    id_fields = manager_form.find_elements(By.NAME, 'id_product')
+    assert len(id_fields) == 1
+    id_field = id_fields[0]
+    state['current_substage'] = 'reimport_editor_readback' if is_reimport else 'native_editor_readback'
+    state['manager_product_id_field_matches'] = id_field.get_attribute('value') == str(product_id)
+    assert state['manager_product_id_field_matches']
+    manager_page = safe_catalog_import_browser_state(driver, state)
+    for field in (
+        'manager_route_matches', 'manager_product_id_parameter_matches',
+        'manager_id_field_present', 'manager_product_id_field_matches', 'manager_editor_visible',
+    ):
+        assert manager_page[field], field
+    assert manager_page['page_class'] == 'manager_editor'
+    assert not manager_page['manager_load_failure_notice_visible']
+    assert not manager_page['manager_permission_denied_notice_visible']
     category_ids = sorted(
         int(box.get_attribute('value'))
         for box in driver.find_elements(By.CSS_SELECTOR, 'input[name="category_ids[]"]')
@@ -762,7 +1146,20 @@ def read_native(driver, product_id, expected_category_ids):
     assert '비활성 · 비노출 · 주문 불가' in driver.find_element(By.TAG_NAME, 'body').text
     return {'linked_product_id': product_id, 'category_ids': category_ids,
             'image_count': len(images), 'combination_count': len(combinations),
-            'unique_product_ids': manager_ids(driver)}
+            'unique_product_ids': manager_ids(driver),
+            'manager_page': {
+                'same_admin_origin': manager_page['same_admin_origin'],
+                'admin_path_matches': manager_page['admin_path_matches'],
+                'controller': manager_page['admin_controller'],
+                'route_matches': manager_page['manager_route_matches'],
+                'query_id_matches': manager_page['manager_product_id_parameter_matches'],
+                'id_field_present': manager_page['manager_id_field_present'],
+                'id_field_hidden': manager_page['manager_id_field_hidden'],
+                'id_field_matches': manager_page['manager_product_id_field_matches'],
+                'editor_visible': manager_page['manager_editor_visible'],
+                'inactive_notice_visible': manager_page['manager_inactive_notice_visible'],
+                'unclassified_alert_visible': manager_page['unclassified_alert_visible'],
+            }}
 
 
 def run():
@@ -776,6 +1173,7 @@ def run():
         'stage': 'launch',
         'last_completed_stage': 'not_started',
         'last_completed_substage': 'not_started',
+        'current_substage': 'not_started',
         'click_diagnostics': None,
         'submit_attempted': False,
         'submit_returned': False,
@@ -806,8 +1204,69 @@ def run():
         assert '실패' in blocked_row.text and '판매처에서 상품 정보 접근을 제한했습니다.' in blocked_row.text
         driver.save_screenshot(str(DEST / 'catalog-import-batch.png'))
         state['stage'] = 'reject_rakuten'
+        state['review_source'] = RAKUTEN
         rejected = article(driver, RAKUTEN)
         assert rejected
+        rejected_form = rejected.find_element(By.CSS_SELECTOR, '.catalog-import-review-form')
+        rejected_options = rejected_form.find_element(By.NAME, 'options')
+        assert rejected_options.get_attribute('value') == '色:生成り\n容量:12L'
+        rejected_warnings = rejected_form.find_elements(By.CSS_SELECTOR, '.alert-warning')
+        assert len(rejected_warnings) == 1
+        assert '옵션 연결을 지원하지 않아 초안 등록이 차단됩니다.' in rejected_warnings[0].text
+        options_confirmations = rejected_form.find_elements(By.NAME, 'confirm_options_supported')
+        assert not options_confirmations
+        assert capture_safe_approval_context_crop(
+            driver, DEST / 'catalog-import-blocked-options.png', state, RAKUTEN
+        )
+
+        for name, value in {
+            'name_en': 'Synthetic Rakuten storage case',
+            'name_ko': '합성 라쿠텐 수납 케이스',
+            'description_en': 'Synthetic negative option fixture; no real product data.',
+            'description_ko': '실제 상품 정보가 아닌 합성 다중 옵션 차단 fixture입니다.',
+        }.items():
+            fill(rejected_form, name, value)
+        for name, substage, target in (
+            ('translation_reviewed_en', 'approve_translation_review_en', 'translation_en_checkbox'),
+            ('translation_reviewed_ko', 'approve_translation_review_ko', 'translation_ko_checkbox'),
+        ):
+            field = rejected_form.find_element(By.NAME, name)
+            if not field.is_selected():
+                click_with_safe_diagnostics(driver, field, state, substage, target)
+        fill(rejected_form, 'sale_price_jpy', '2480')
+        Select(rejected_form.find_element(By.NAME, 'tax_rules_group_id')).select_by_value(str(TAX_RULES_GROUP_ID))
+        Select(rejected_form.find_element(By.NAME, 'tax_treatment')).select_by_value('taxable')
+        fill(rejected_form, 'tax_evidence_reference', 'CI synthetic fixture; not a legal tax determination')
+        fill(rejected_form, 'own_quantity', '7')
+        rejected_categories = rejected_form.find_elements(By.CSS_SELECTOR, 'input[name="category_ids[]"]')
+        assert rejected_categories
+        rejected_category = next((box for box in rejected_categories if box.is_enabled()), None)
+        assert rejected_category is not None
+        if not rejected_category.is_selected():
+            click_with_safe_diagnostics(
+                driver, rejected_category, state, 'approve_category_checkbox', 'category_checkbox'
+            )
+        click_with_safe_diagnostics(
+            driver,
+            rejected_form.find_element(By.NAME, 'submitKuraneaCatalogImportedDraft'),
+            state,
+            'reject_rakuten_submit',
+            'native_draft_submit',
+        )
+        rejected = WebDriverWait(driver, 30).until(lambda d: article(d, RAKUTEN))
+        guard_message = (
+            '현재 수집기는 여러 옵션 그룹의 실제 조합·조합별 가격·재고를 검증할 수 없어 '
+            '이 상품 초안 등록을 지원하지 않습니다. 원본에서 확인된 단일 옵션 그룹만 사용해 주세요.'
+        )
+        assert any(
+            alert.is_displayed() and alert.text.strip() == guard_message
+            for alert in driver.find_elements(By.CSS_SELECTOR, '.alert-danger')
+        )
+        assert rejected.is_displayed()
+        assert rejected.find_elements(By.CSS_SELECTOR, '.catalog-import-review-form')
+        assert not driver.find_elements(By.CSS_SELECTOR, '[data-catalog-review-status="approved"]')
+        assert not rejected.find_elements(By.CSS_SELECTOR, 'a[href*="id_product="]')
+
         fill(rejected, 'rejection_reason', 'Synthetic CI rejection: operator declined this fixture.')
         rejected.find_element(By.NAME, 'submitKuraneaCatalogReject').click()
         visible(driver, '[data-catalog-review-status="rejected"]')
@@ -815,6 +1274,7 @@ def run():
         state['last_completed_substage'] = 'reject_status_readback'
         driver.save_screenshot(str(DEST / 'catalog-import-rejected.png'))
         state['stage'] = 'approve_amazon'
+        state['review_source'] = AMAZON
         state['click_diagnostics'] = None
         entry = WebDriverWait(driver, 30).until(lambda d: article(d, AMAZON))
         form = entry.find_element(By.CSS_SELECTOR, '.catalog-import-review-form')
@@ -872,6 +1332,9 @@ def run():
         else:
             state['last_completed_substage'] = 'approve_options_confirmation'
         assert options_confirmation.is_selected()
+        assert capture_safe_approval_context_crop(
+            driver, DEST / 'catalog-import-review-options.png', state, AMAZON
+        )
         with tempfile.TemporaryDirectory(prefix='ordenowa-import-') as temp:
             image = Path(temp) / 'original-synthetic.png'
             tiny_png(image)
@@ -896,10 +1359,14 @@ def run():
             approved = visible(driver, '[data-catalog-review-status="approved"]')
         state['last_completed_stage'] = state['stage']
         product_link = approved.find_element(By.CSS_SELECTOR, 'a[href*="id_product="]').get_attribute('href')
-        product_id = int(parse_qs(urlparse(product_link).query)['id_product'][0])
         state['stage'] = 'native_readback'
+        state['current_substage'] = 'approved_product_link'
+        product_id = validated_product_id_from_manager_link(product_link)
+        state['current_substage'] = 'approved_product_link'
+        state['native_product_id'] = product_id
+        state['current_substage'] = 'manager_navigation'
         driver.get(product_link)
-        readback = read_native(driver, product_id, expected_category_ids)
+        readback = read_native(driver, product_id, expected_category_ids, state)
         assert readback['unique_product_ids'] == sorted(before_ids + [product_id])
         state['last_completed_stage'] = state['stage']
         driver.save_screenshot(str(DEST / 'catalog-import-draft.png'))
@@ -910,12 +1377,17 @@ def run():
         state['stage'] = 'reimport'
         state['last_completed_stage'] = state['stage']
         driver.save_screenshot(str(DEST / 'catalog-import-reimport.png'))
+        state['stage'] = 'native_readback'
+        state['native_product_id'] = product_id
+        state['current_substage'] = 'reimport_navigation'
         driver.get(product_link)
-        after = read_native(driver, product_id, expected_category_ids)
-        assert after == readback
+        after = read_native(driver, product_id, expected_category_ids, state)
+        assert {key: value for key, value in after.items() if key != 'manager_page'} == {
+            key: value for key, value in readback.items() if key != 'manager_page'
+        }
         readback['reimport_same_product'] = True
         (DEST / 'catalog-import-readback.json').write_text(json.dumps(readback, sort_keys=True) + '\n')
-        print(f'PASS: synthetic batch, rejection, reviewed draft, local image and reimport; linked_product_id={product_id}')
+        print('PASS: synthetic batch, rejection, reviewed draft, local image and same-product reimport readback.')
     except Exception as error:
         diagnostics = safe_catalog_import_browser_state(driver, state)
         diagnostics['exception_class'] = safe_exception_class(error)

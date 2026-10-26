@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import binascii
 import json
 from pathlib import Path
+import struct
 from typing import Any
 
 
@@ -15,7 +17,12 @@ BOOLEAN_FIELDS = {
     'token_rejected_notice_visible', 'mutation_access_denied_notice_visible',
     'empty_url_notice_visible', 'batch_save_failure_notice_visible', 'batch_created_notice_visible',
     'unclassified_alert_visible', 'read_only_notice_visible', 'access_denied_notice_visible',
-    'queue_unavailable_notice_visible', 'failure_screenshot_captured',
+    'queue_unavailable_notice_visible', 'manager_route_matches',
+    'manager_product_id_parameter_present', 'manager_product_id_parameter_matches',
+    'manager_id_field_present', 'manager_id_field_hidden', 'manager_product_id_field_matches',
+    'manager_editor_visible', 'manager_load_failure_notice_visible',
+    'manager_permission_denied_notice_visible', 'manager_inactive_notice_visible',
+    'failure_screenshot_captured',
 }
 INTEGER_LIMITS = {
     'progress_value': 1_000_000, 'progress_max': 1_000_000, 'row_count': 1000,
@@ -67,7 +74,14 @@ STRING_ENUMS = {
         'controller_access_denied', 'batch_capability_denied', 'queue_unavailable',
         'mutation_token_rejected', 'mutation_capability_denied', 'batch_save_error',
         'batch_created_without_progress', 'unclassified_alert', 'login_form',
-        'catalog_import_form', 'other_admin',
+        'catalog_import_form', 'manager_access_denied', 'manager_load_error',
+        'manager_editor', 'manager_editor_missing', 'other_admin',
+    },
+    'current_substage': {
+        'not_started', 'approved_product_link', 'manager_navigation',
+        'native_editor_id_presence', 'native_editor_form_check', 'native_editor_readback',
+        'reimport_navigation', 'reimport_editor_id_presence', 'reimport_editor_form_check',
+        'reimport_editor_readback', 'unknown',
     },
     'document_ready_state': {'loading', 'interactive', 'complete', 'unknown'},
     'last_completed_substage': CLICK_SUBSTAGES | {'not_started', 'batch_complete', 'reject_status_readback', 'unknown'},
@@ -81,7 +95,7 @@ DIAGNOSTIC_FIELDS = (
     BOOLEAN_FIELDS
     | set(INTEGER_LIMITS)
     | {'stage', 'last_completed_stage', 'last_completed_substage', 'click_diagnostics',
-       'admin_controller', 'page_class', 'document_ready_state',
+       'admin_controller', 'page_class', 'document_ready_state', 'current_substage',
        *OPTIONAL_INTEGER_FIELDS, 'document_response_status', 'exception_class'}
 )
 
@@ -122,6 +136,50 @@ def _validate_click_diagnostics(value: Any) -> None:
         raise ValueError('catalog import click hit-test relation is invalid')
     if value['occluder_category'] not in OCCLUDER_CATEGORIES:
         raise ValueError('catalog import click occluder category is invalid')
+
+
+def _png_dimensions(path: Path) -> tuple[int, int]:
+    """Validate a bounded, complete PNG with checksummed chunks and image data."""
+    if path.stat().st_size > 32 * 1024 * 1024:
+        raise ValueError('catalog import safe failure screenshot exceeds the size limit')
+    image = path.read_bytes()
+    if not image.startswith(b'\x89PNG\r\n\x1a\n'):
+        raise ValueError('catalog import safe failure screenshot is not a PNG image')
+
+    offset = 8
+    width = height = None
+    saw_idat = False
+    saw_iend = False
+    while offset + 12 <= len(image):
+        length = struct.unpack('!I', image[offset:offset + 4])[0]
+        kind = image[offset + 4:offset + 8]
+        end = offset + 8 + length
+        crc_end = end + 4
+        if length > 32 * 1024 * 1024 or crc_end > len(image):
+            raise ValueError('catalog import safe failure screenshot has a malformed PNG chunk')
+        payload = image[offset + 8:end]
+        expected_crc = struct.unpack('!I', image[end:crc_end])[0]
+        if binascii.crc32(kind + payload) & 0xffffffff != expected_crc:
+            raise ValueError('catalog import safe failure screenshot has an invalid PNG checksum')
+        if offset == 8:
+            if kind != b'IHDR' or length != 13:
+                raise ValueError('catalog import safe failure screenshot has no valid IHDR')
+            width, height = struct.unpack('!II', payload[:8])
+        elif kind == b'IHDR':
+            raise ValueError('catalog import safe failure screenshot contains multiple IHDR chunks')
+        if kind == b'IDAT' and length > 0:
+            saw_idat = True
+        if kind == b'IEND':
+            if length != 0:
+                raise ValueError('catalog import safe failure screenshot has an invalid IEND')
+            saw_iend = True
+            offset = crc_end
+            break
+        offset = crc_end
+
+    if width is None or height is None or not saw_idat or not saw_iend or offset != len(image):
+        raise ValueError('catalog import safe failure screenshot is incomplete')
+    return width, height
 
 
 def validate(data: Any) -> dict[str, Any]:
@@ -168,6 +226,8 @@ def main() -> int:
         if args.validate:
             if data['stage'] in {'batch_completion_wait', 'reimport_completion_wait'} and not data['failure_screenshot_captured']:
                 raise ValueError('catalog import failure screenshot was not captured')
+            if data['stage'] in {'approve_amazon', 'reject_rakuten'} and not data['failure_screenshot_captured']:
+                raise ValueError('catalog import review form failure screenshot was not captured')
             click_diagnostics = data['click_diagnostics']
             if data['stage'] == 'approve_amazon' and data['exception_class'] == 'ElementClickInterceptedException':
                 if (
@@ -182,6 +242,20 @@ def main() -> int:
                 args.screenshot is None or not args.screenshot.is_file() or args.screenshot.stat().st_size == 0
             ):
                 raise ValueError('catalog import safe failure screenshot is missing')
+            if data['stage'] in {'approve_amazon', 'reject_rakuten'}:
+                screenshot_width, screenshot_height = _png_dimensions(args.screenshot)
+                if not (320 <= screenshot_width <= 640 and 180 <= screenshot_height <= 480):
+                    raise ValueError('catalog import review form failure screenshot crop is outside the safe bounds')
+            if (data['stage'] == 'native_readback'
+                    and data['manager_route_matches']
+                    and data['manager_product_id_parameter_matches']
+                    and (data['manager_editor_visible'] or data['manager_load_failure_notice_visible']
+                         or data['manager_permission_denied_notice_visible'])):
+                if not data['failure_screenshot_captured']:
+                    raise ValueError('catalog import manager readback failure screenshot was not captured')
+                screenshot_width, screenshot_height = _png_dimensions(args.screenshot)
+                if not (320 <= screenshot_width <= 640 and 180 <= screenshot_height <= 480):
+                    raise ValueError('catalog import manager readback screenshot crop is outside the safe bounds')
             print('PASS: catalog import failure diagnostics use an allowlisted safe schema.')
         else:
             print(json.dumps(data, sort_keys=True, separators=(',', ':')))

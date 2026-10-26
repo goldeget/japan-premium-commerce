@@ -2665,6 +2665,8 @@ jobs:
               catalog-import-e2e.log
               catalog-import-batch.png
               catalog-import-rejected.png
+              catalog-import-blocked-options.png
+              catalog-import-review-options.png
               catalog-import-draft.png
               catalog-import-reimport.png
               catalog-import-readback.json
