@@ -126,7 +126,9 @@ class Kuraneapush extends Module
     public function hookActionOrderHistoryAddAfter(array $params): void
     {
         if ($this->active) {
-            (new OrderHistoryPushProducer())->record($params['order_history'] ?? null);
+            $producer = new OrderHistoryPushProducer();
+            $producer->record($params['order_history'] ?? null);
+            $producer->recordDelivery($params['order_history'] ?? null);
         }
     }
 

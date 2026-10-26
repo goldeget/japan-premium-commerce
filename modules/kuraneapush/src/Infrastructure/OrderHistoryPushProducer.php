@@ -13,6 +13,16 @@ final class OrderHistoryPushProducer
 
     public function record(mixed $event): array
     {
+        return $this->recordEvent($event, 'order');
+    }
+
+    public function recordDelivery(mixed $event): array
+    {
+        return $this->recordEvent($event, 'delivery');
+    }
+
+    private function recordEvent(mixed $event, string $type): array
+    {
         try {
             if (!($event instanceof \OrderHistory) || (int)$event->id < 1) {
                 return ['status'=>'ignored'];
@@ -29,19 +39,28 @@ final class OrderHistoryPushProducer
                 || (int)$order->id_shop < 1 || (int)$order->id_customer < 1) {
                 return ['status'=>'ignored'];
             }
+            if ($type === 'delivery') {
+                $state = new \OrderState((int)$history->id_order_state);
+                if (!\Validate::isLoadedObject($state) || (int)$state->id !== (int)$history->id_order_state
+                    || !(bool)$state->shipped) {
+                    return ['status'=>'ignored'];
+                }
+            }
             $shop = (int)$order->id_shop;
+            $setting = $type === 'delivery' ? 'ORDENOWA_PUSH_EVENT_DELIVERY' : 'ORDENOWA_PUSH_EVENT_ORDER';
             $customer = new \Customer((int)$order->id_customer);
             if (!\Validate::isLoadedObject($customer) || (int)$customer->id !== (int)$order->id_customer
                 || (bool)$customer->is_guest || !(bool)$customer->active
-                || (string)\Configuration::get('ORDENOWA_PUSH_EVENT_ORDER', null, null, $shop) !== '1') {
+                || (string)\Configuration::get($setting, null, null, $shop) !== '1') {
                 return ['status'=>'ignored'];
             }
             $locale = (string)\Language::getIsoById((int)$order->id_lang);
             $locale = in_array($locale, PushSettings::LOCALES, true) ? $locale : 'ja';
             // Receipt creation needs no storage secret. No provider is bound in the native hook.
             $service = $this->service ?? new PushOutboxService(new PushOutboxRepository(), new SubscriptionRepository());
-            return $service->receive($shop, (int)$customer->id, 'order-history:' . (int)$history->id,
-                new DeliveryPayload('order', $locale));
+            $eventPrefix = $type === 'delivery' ? 'delivery-history:' : 'order-history:';
+            return $service->receive($shop, (int)$customer->id, $eventPrefix . (int)$history->id,
+                new DeliveryPayload($type, $locale));
         } catch (\Throwable $error) {
             // Optional notification recording must not break native order processing or leak its data.
             return ['status'=>'storage_unavailable'];

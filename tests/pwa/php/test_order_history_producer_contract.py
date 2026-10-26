@@ -23,7 +23,7 @@ class OrderHistoryProducerContract(unittest.TestCase):
         self.assertTrue(path.is_file(), 'native order event producer is missing')
         source = path.read_text()
         for value in ('new \\OrderHistory(', 'new \\Order(', 'new \\Customer(',
-                      "'ORDENOWA_PUSH_EVENT_ORDER'", "'order-history:'", "new DeliveryPayload('order'", 'current_state'):
+                      "'ORDENOWA_PUSH_EVENT_ORDER'", "'order-history:'", "recordEvent($event, 'order')", 'current_state'):
             self.assertIn(value, source)
         self.assertNotIn('getMessage(', source)
         self.assertNotIn('getenv(', source)
@@ -34,6 +34,17 @@ class OrderHistoryProducerContract(unittest.TestCase):
         source = (MODULE / 'src/Domain/PushOutboxService.php').read_text()
         self.assertIn('?SubscriptionCipher $cipher = null', source)
         self.assertIn('$this->cipher === null', source)
+
+    def test_shipped_history_records_an_independent_delivery_receipt(self):
+        source = (MODULE / 'src/Infrastructure/OrderHistoryPushProducer.php').read_text()
+        module = (MODULE / 'kuraneapush.php').read_text()
+        for value in ('function recordDelivery(', 'new \\OrderState(', '->shipped',
+                      "'ORDENOWA_PUSH_EVENT_DELIVERY'", "'delivery-history:'"):
+            self.assertIn(value, source)
+        hook = module.split('public function hookActionOrderHistoryAddAfter(', 1)[1].split(
+            'public function hookActionObjectCustomerMessageAddAfter(', 1
+        )[0]
+        self.assertIn('->recordDelivery(', hook)
 
     @unittest.skipUnless(shutil.which('php'), 'native producer PHP behavior requires Actions PHP runtime')
     def test_php_producer_behavior(self):
