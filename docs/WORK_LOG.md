@@ -1,5 +1,13 @@
 # ORDENOWA 작업 기록
 
+## 2026-10-26 — PWA lifecycle·synthetic push 전체 QA 통과
+
+- Source/work SHA `73e620a83c8383191df89023fb54301ddd13bb71`; `main` stayed at `ee02a3657448d563508687614a246e05ac61eecd`. Full isolated Actions [#40326297117](https://github.com/goldeget/japan-premium-commerce/actions/runs/40326297117) completed SUCCESS. Steps 8/9, PWA browser Step 57, provider-free push Step 58, aggregate Step 90, and run-only cleanup Step 93 all succeeded.
+- Step 57 passed PWA lifecycle, native logout, and private-route cache checks for Chromium desktop/mobile JA/EN/KO. This also confirms the hidden mobile hook screenshot fix from `0fb76ff`.
+- Previous source `0fb76ff` had only `pwa_push_qa=failure`: its dedicated Chrome driver lacked `goog:loggingPrefs`, although `create_session_customer` needs performance response logging. Adding that capability enabled Step 58. The raw log confirms subscribe/revoke persistence, idempotence, owner isolation and private/no-store with provider calls 0.
+- QA-CI-002 preflight Steps 8/9 also passed. Focused PWA suites were 120/120 locally before the isolated run.
+- Browser artifact [12653435937](https://github.com/goldeget/japan-premium-commerce/actions/runs/40326297117/artifacts/12653435937). This update verifies the CI logs and outcomes but does not claim visual inspection of artifact images, real provider delivery, or iOS/Android device behavior.
+
 ## 2026-10-26 — PWA 브라우저 성공 후 synthetic push 로그 설정 수정
 
 - Full run [#40323519623](https://github.com/goldeget/japan-premium-commerce/actions/runs/40323519623), source `0fb76ffcc95fbd17e30121ef140acf2926a9655c`, completed FAILURE with actual aggregate `pwa_push_qa=failure` only. Step 57 browser lifecycle/logout/cache checks passed for desktop/mobile JA/EN/KO; Step 58 PHP consent/API/repository contracts and fixture seed passed, then browser setup stopped before persistence.

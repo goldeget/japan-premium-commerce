@@ -1,23 +1,26 @@
 # ORDENOWA AI Browser QA Handoff
 
-## Latest isolated browser evidence and synthetic push follow-up
+## Latest isolated browser evidence
 
-- Latest full-QA source SHA: `0fb76ffcc95fbd17e30121ef140acf2926a9655c`; current `work` contains a synthetic push browser setup fix awaiting Actions runtime. `main` remains unchanged at `ee02a3657448d563508687614a246e05ac61eecd`.
-- Full isolated Actions [#40323519623](https://github.com/goldeget/japan-premium-commerce/actions/runs/40323519623) completed **FAILURE**. Actual aggregate: `pwa_push_qa=failure` only. Step 8/9 passed. PWA browser QA succeeded on desktop/mobile JA/EN/KO, including logout/private cache. Provider-free persistence failed before exercising the API because performance response logging was not enabled on its Chrome driver.
+- Latest tested source SHA and current local/remote `work` HEAD are `73e620a83c8383191df89023fb54301ddd13bb71`; no `work` run was in progress at 13:17 UTC. `main` remains `ee02a3657448d563508687614a246e05ac61eecd`.
+- Full isolated Actions [#40326297117](https://github.com/goldeget/japan-premium-commerce/actions/runs/40326297117) completed **SUCCESS**. Steps 8/9, PWA browser Step 57, provider-free synthetic push Step 58, aggregate Step 90 and isolated cleanup Step 93 passed. Aggregate PWA outcomes are both success.
 - QA-CI-002 is resolved in code commit `acbdc5e`: the contract now matches workflow's `grep` detail extraction. Step 9 passed in #40315517530. The original browser exit/outcome and sanitized stage/detail extraction remain enforced.
-- Artifacts: browser [12651415697](https://github.com/goldeget/japan-premium-commerce/actions/runs/40323519623/artifacts/12651415697), diagnostics [12650378929](https://github.com/goldeget/japan-premium-commerce/actions/runs/40323519623/artifacts/12650378929). The source runtime logs prove PWA browser success; the screenshots have not been visually inspected.
-- The previous #403203 mobile capture defect is resolved by `0fb76ff`: all six PWA browser locale/device cases passed. Current source review found the isolated push driver omitted `goog:loggingPrefs` although customer creation validates the authenticated account response through Chrome performance logs. The pending fix adds that capability and a regression contract. Local PWA suites are 120/120; runtime confirmation of API persistence is required.
-- Other aggregate outcomes at #403235 passed: account/address, catalog, product/cart, category locale, carrier and order/tracking, RMA, backup/restore and postal. Do not claim push persistence or a full QA pass. No real provider, seller data, shipment, payment or device was used.
+- Browser artifact [12653435937](https://github.com/goldeget/japan-premium-commerce/actions/runs/40326297117/artifacts/12653435937) contains the current screenshots and logs. This environment checked the automation logs but did not visually inspect the archive; keep any later screenshot review separate from automated interaction proof.
+- #40323519623's mobile capture defect is resolved by `0fb76ff`: all six Chromium desktop/mobile JA/EN/KO PWA cases passed. The subsequent synthetic push setup failure was fixed in `73e620a` by enabling Chrome performance response logging. #40326297117 confirmed synthetic subscribe/revoke persistence, idempotence, two-owner isolation and private/no-store; `provider calls=0`.
+- Other aggregate outcomes at #40326297117 passed: account/address, catalog, product/cart, category locale, carrier and order/tracking, RMA, backup/restore and postal. This is isolated CI evidence, not production provider delivery. Real iOS/Android installation, production data, shipment, payment and provider setup were not tested.
 
-## 다음 코드 변경의 독립 브라우저/시각 검수
+## 현재 독립 브라우저/시각 검수 handoff
 
-- Local code source SHA before push: `50d924fdf6923a551c49c0cee65fb5b428765bb1`; remote `origin/work` was still `a890c83f04b81240b07a338f9ed734f0a25caf78` at handoff update. `main` remains `ee02a3657448d563508687614a246e05ac61eecd`. Check the push-triggered Actions run and use its actual source SHA/artifact; no new run or artifact exists yet.
-- Run #40310232196 source a890c83 is **FAILURE**, with actual aggregate failures `cart_controls_browser_qa` (mobile `product_add_add_button_wait`) and `shipping_free_admin_configure` (`verify_admin_saved_carrier`). Account/address outcome is success. The account flow succeeded but old edit helper copy was semantically add-only.
-- New intended visual screen: `mobile-customer-address-edit-form.png` (390×701), expected neutral Korean helper `계정에 사용할 주소 정보를 입력해 주세요.`; verify its actual fresh artifact and corresponding desktop image before closing LOCALE-003. The old artifact 12644494181 has `계정에 새 주소를 등록할 수 있습니다.` and does not verify the new edit-context copy.
-- If a new carrier failure occurs, inspect `shipping-free-carrier-configure-failure.png` and the safe `FAIL: free shipping browser QA at verify_admin_saved_carrier.<allowlisted-stage>` / `carrier_state` line. The diagnostic records redacted booleans/enums only; report the exact stage and actual evidence. Do not infer a save failure from the old screenshot's successful update banner alone.
-- Cart button stale-readiness handling is code-tested only until a fresh Chromium result. Inspect `cart-controls-mobile-failure.png` only if uploaded by the new run; screenshots themselves do not prove click/cart persistence.
-- PWA-002 introduces these expected evidence names if each step succeeds: `pwa-desktop-ja/en/ko-push-consent.png`, `pwa-mobile-ja/en/ko-push-consent.png`, `pwa-push-owner-1.png`, `pwa-push-owner-2.png`, and `pwa-push-e2e.log`. Screens show the control only; logs establish synthetic API persistence. This QA intentionally never calls a real push provider or emits real notifications. Report the actual artifact's files and outcomes; do not assume an expected file exists.
-- No approved live QA hostname or connected/remote iOS/Android device is available. Keep physical device QA and whole-site visual review unverified. The CI browser is an isolated synthetic shop.
+- 검수 대상은 source `73e620a83c8383191df89023fb54301ddd13bb71`, 전체 격리 run [#40326297117](https://github.com/goldeget/japan-premium-commerce/actions/runs/40326297117), browser artifact [12653435937](https://github.com/goldeget/japan-premium-commerce/actions/runs/40326297117/artifacts/12653435937)다. CI 로그/aggregate는 SUCCESS지만 이 handoff 작성 환경에서는 PNG를 열어 시각 검수하지 않았다.
+- 독립 검수자는 artifact 안에 실제 존재하는 파일 목록을 먼저 확인한 뒤 PWA 동의·계정·로그아웃 관련 desktop/mobile JA·EN·KO 화면을 검수할 수 있다. 파일이 없는 화면은 미검증으로 남기고, 캡처의 외관 판정과 자동 상호작용 로그를 분리해 기록한다.
+- PWA lifecycle/logout/private-route cache와 provider-free synthetic persistence는 자동 QA에서 통과했다. synthetic push는 subscribe/revoke persistence, idempotence, owner isolation, private/no-store를 검사했으며 provider calls는 0이었다. 실제 알림 전달, 운영 도메인/HTTPS, iOS/Android 설치는 검증되지 않았다.
+- QA-CI-002는 `acbdc5e`에서 해결됐다. 최신 run의 Step 8/9가 통과했고 해당 계약 8/8이 로컬에서 통과했다. workflow의 `grep` 기반 마지막 안전 detail 추출, 단계 진단 및 원래 browser exit/outcome 판정은 유지됐다.
+- `work`에 진행 중인 Actions run은 2026-10-26 13:17 UTC 확인 시 없었다. 이후 코드 변경이 생기면 새 source SHA와 실제 push-triggered run/artifact를 다시 확인한다.
+- 실기기·실출고·실결제·운영 데이터 QA는 이번 격리 브라우저 실행 범위가 아니다.
+
+## 기록 해석
+
+아래 날짜별 섹션은 각 시점의 QA handoff와 실패를 보존한 이력이다. 그 안에 남은 `latest`, 실행 중, 또는 미검증 표시는 해당 섹션의 기록 시점에 한정하며 현재 상태는 이 문서 맨 위의 최신 handoff를 따른다.
 
 ## 이전 모바일 주소 화면 검수 (source a890c83, 2026-10-26)
 

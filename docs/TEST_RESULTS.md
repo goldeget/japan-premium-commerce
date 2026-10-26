@@ -1,15 +1,15 @@
 # ORDENOWA 테스트 결과
 
-## 현재 사전 검사와 실행 (2026-10-26 12:54 UTC)
+## 현재 사전 검사와 실행 (2026-10-26 13:17 UTC)
 
-- Latest completed full-QA source is `0fb76ffcc95fbd17e30121ef140acf2926a9655c`; the work follow-up adds missing Chrome performance logging to synthetic push persistence and awaits Actions runtime. `main` remains `ee02a3657448d563508687614a246e05ac61eecd`.
-- QA-CI-002: shipping admin contract suite 8/8 passed locally. In #40320300968, exact preflight Step 8 and Step 9 passed. Workflow detail extraction and actual browser outcome checks remain intact.
-- PWA focus suites `test_pwa_service_worker`, `test_pwa_logout_diagnostics_contract`, and `test_pwa_registration_diagnostics_contract`: 120 passed locally.
-- Full isolated run [#40323519623](https://github.com/goldeget/japan-premium-commerce/actions/runs/40323519623), source `0fb76ff`, completed **FAILURE**. Actual aggregate is `pwa_push_qa=failure` only. Step 57 PWA browser QA succeeded for desktop/mobile JA/EN/KO and private cache/logout checks. Step 58 synthetic persistence failed before API exercise: `UNVERIFIED: Chrome performance response logging is unavailable for authenticated account.`
-- Code review traced the failure to the synthetic persistence driver omitting `goog:loggingPrefs` while using `create_session_customer`, which requires performance response logging. The pending correction sets the same performance logging capability used in `run_viewport`; it does not alter test outcomes or API assertions.
-- Every other reported aggregate outcome in #40323519623 was success, including account/address, catalog, product/cart, category locale, carrier configure/restart/readback, checkout/order/tracking, RMA, backup/restore and postcode. The run remains failure until push persistence passes.
-- Browser artifact [12651415697](https://github.com/goldeget/japan-premium-commerce/actions/runs/40323519623/artifacts/12651415697), diagnostics [12650378929](https://github.com/goldeget/japan-premium-commerce/actions/runs/40323519623/artifacts/12650378929). The browser logs confirm the PWA flow; screenshots were not opened here.
-- QA-CI-002 remains resolved: Step 8/9 succeeded in #40320300968 and #40323519623; #40315517530 also passed Step 9. The grep contract does not appear in any current failure.
+- Current local/remote `work` source is `73e620a83c8383191df89023fb54301ddd13bb71`; no run was in progress at 13:17 UTC. `main` remains `ee02a3657448d563508687614a246e05ac61eecd`.
+- QA-CI-002: shipping admin contract suite 8/8 passed locally. Exact workflow preflight Steps 8/9 passed in #40315517530, #40320300968, #40323519623 and #40326297117. The workflow still extracts the last sanitized detail line and preserves actual browser outcomes.
+- PWA focused suites `test_pwa_service_worker`, `test_pwa_logout_diagnostics_contract`, and `test_pwa_registration_diagnostics_contract`: 120 passed locally before push.
+- Full isolated run [#40326297117](https://github.com/goldeget/japan-premium-commerce/actions/runs/40326297117), source `73e620a`, completed **SUCCESS**. Steps 57 PWA browser QA and 58 provider-free synthetic persistence passed; Step 90 aggregate printed `PASS: isolated browser QA and official postcode verification completed.`; Step 93 removed only this run's resources.
+- Raw PWA result lines report `PWA_BROWSER_QA_OUTCOME=success` and `PWA_PUSH_QA_OUTCOME=success`. Synthetic push log confirmed subscribe/revoke persistence, idempotence, two-owner isolation and private/no-store with provider calls 0.
+- Other required outcomes passed in the same aggregate: account/address, catalog import, product/cart, category locales, carrier configure/restart/readback, free-shipping checkout/orders/tracking, RMA lifecycle, backup/restore and Japan Post import/lookup. This is isolated CI evidence, not live provider delivery or production readiness.
+- Browser artifact [12653435937](https://github.com/goldeget/japan-premium-commerce/actions/runs/40326297117/artifacts/12653435937) is available. This environment verified the Actions logs; it did not visually inspect the screenshots.
+- The prior `0fb76ff` run failed only in synthetic push setup because its Chrome driver lacked `goog:loggingPrefs`; `73e620a` adds that capability. QA-CI-002 remains resolved and did not fail in any current run.
 
 ## 2026-10-26 — 카트/배송 진단과 PWA foundation의 로컬 검사 (Actions 대기)
 
