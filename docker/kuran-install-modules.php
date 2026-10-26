@@ -61,6 +61,17 @@ if (!$businessProfileModule || !$businessProfileModule->ensureBankTransferInfras
     throw new RuntimeException('Could not ensure the order-bound bank transfer infrastructure.');
 }
 
+// The official installer may pre-register a bundled module before project hooks are added.
+$backofficeModule = Module::getInstanceByName('kuraneabackoffice');
+if (!$backofficeModule || !$backofficeModule->installSupportContactPrivacy()) {
+    throw new RuntimeException('Could not ensure the account-owned contact privacy hook.');
+}
+
+$pushModule = Module::getInstanceByName('kuraneapush');
+if (!$pushModule || !$pushModule->ensureOrderHistoryPushHook()) {
+    throw new RuntimeException('Could not ensure the native order notification receipt hook.');
+}
+
 // Repair the Korean address/address-list default route collision.
 // The upstream Korean Shop.Navigation translations use "주소" for both route
 // keys. Dispatcher selects the first matching route, so a saved customer's
