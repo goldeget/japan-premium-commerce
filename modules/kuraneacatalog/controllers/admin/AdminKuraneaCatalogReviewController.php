@@ -1177,16 +1177,12 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
 
     private function canView(): bool
     {
-        $access = (array) ($this->tabAccess ?? []);
-
-        return !empty($access['view']);
+        return $this->viewAccess();
     }
 
     private function canApprove(): bool
     {
-        $access = (array) ($this->tabAccess ?? []);
-
-        return !empty($access['view']) && !empty($access['edit']) && !empty($access['add']);
+        return $this->canView() && $this->access('edit') && $this->access('add');
     }
 
     private function sourceLabel(string $source): string

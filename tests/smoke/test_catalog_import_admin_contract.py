@@ -110,6 +110,53 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         self.assertIn("!$this->canApprove()", validation)
         self.assertIn("elseif ($this->canApprove())", queue_renderer)
 
+    def test_review_capabilities_use_prestashop_lazy_access_api(self) -> None:
+        view = self.controller.split("private function canView(): bool", 1)[1].split(
+            "private function canApprove(): bool", 1
+        )[0]
+        approve = self.controller.split("private function canApprove(): bool", 1)[1].split(
+            "private function sourceLabel(", 1
+        )[0]
+
+        self.assertIn("return $this->viewAccess();", view)
+        self.assertNotIn("tabAccess", view)
+        self.assertIn("return $this->canView() && $this->access('edit') && $this->access('add');", approve)
+        self.assertNotIn("tabAccess", approve)
+
+    def test_ci_reads_catalog_review_access_for_the_same_synthetic_admin_without_identifiers(self) -> None:
+        probe = (ROOT / "tests" / "catalog" / "read_catalog_import_admin_access.php").read_text(encoding="utf-8")
+        for marker in (
+            "getenv('ADMIN_MAIL')",
+            "AdminKuraneaCatalogReview",
+            "employee_found",
+            "profile_is_superadmin",
+            "tab_found",
+            "failure_stage",
+            "exception_class",
+            "read_granted",
+            "create_granted",
+            "update_granted",
+            "ORDENOWA_CATALOG_ADMIN_ACCESS=",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, probe)
+        self.assertNotIn("'email' =>", probe)
+        self.assertNotIn("'id_employee' =>", probe)
+        self.assertNotIn("'id_profile' =>", probe)
+
+        workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
+        self.assertIn("id: catalog_import_admin_access_readback", workflow)
+        self.assertIn("read_catalog_import_admin_access.php", workflow)
+        self.assertIn("catalog-import-admin-access.log", workflow)
+        self.assertIn("if (($result['readback_available'] ?? false) !== true)", probe)
+        fixture_at = workflow.index("id: catalog_import_fixture")
+        readback_at = workflow.index("id: catalog_import_admin_access_readback")
+        browser_at = workflow.index("id: catalog_import_browser_qa")
+        restore_at = workflow.index("id: catalog_import_restore")
+        self.assertLess(fixture_at, readback_at)
+        self.assertLess(readback_at, browser_at)
+        self.assertLess(browser_at, restore_at)
+
     def test_isolated_ci_without_the_run_scoped_fixture_fails_closed_before_live_fetcher(self) -> None:
         service = self.controller.split("private function catalogImportService(", 1)[1].split(
             "private function isIsolatedCatalogCi(): bool", 1

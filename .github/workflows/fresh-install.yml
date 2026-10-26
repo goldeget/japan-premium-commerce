@@ -1122,6 +1122,40 @@ jobs:
             sh -c 'cat > /tmp/ordenowa-ci-catalog-import-rakuten.synthetic.html' \
             < tests/catalog/fixtures/rakuten-product.synthetic.html
 
+      - name: Read isolated catalog review tab access for the browser admin
+        id: catalog_import_admin_access_readback
+        if: always() && !cancelled() && steps.catalog_import_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          ADMIN_MAIL: ci-ordenowa@example.invalid
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+        run: |
+          set -euo pipefail
+          mkdir -p "$QA_ARTIFACT_DIR"
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/read_catalog_import_admin_access.php' \
+            < tests/catalog/read_catalog_import_admin_access.php
+          set +e
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
+            -e ADMIN_MAIL="$ADMIN_MAIL" prestashop \
+            runuser -g www-data -u www-data -- \
+            php -d display_errors=0 /tmp/read_catalog_import_admin_access.php 2>/dev/null \
+            > "$QA_ARTIFACT_DIR/catalog-import-admin-access.log" 2> /dev/null
+          readback_status=$?
+          set -e
+          cat "$QA_ARTIFACT_DIR/catalog-import-admin-access.log"
+          access_line=$(rg '^ORDENOWA_CATALOG_ADMIN_ACCESS=' "$QA_ARTIFACT_DIR/catalog-import-admin-access.log" | tail -n 1 || true)
+          if [[ -n "$access_line" ]]; then
+            printf '%s\n' "$access_line" >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf 'ORDENOWA_CATALOG_ADMIN_ACCESS={"readback_available":false,"failure_stage":"unknown"}\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [[ "$readback_status" -ne 0 ]]; then
+            printf '::error title=ORDENOWA catalog admin access readback::%s\n' "${access_line:-ORDENOWA_CATALOG_ADMIN_ACCESS readback unavailable}"
+            exit "$readback_status"
+          fi
+
       - name: Verify synthetic catalog import review and native draft in Chromium
         id: catalog_import_browser_qa
         if: always() && !cancelled() && steps.catalog_import_fixture.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
@@ -1134,8 +1168,30 @@ jobs:
           QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
         run: |
           set -euo pipefail
+          log_file="$QA_ARTIFACT_DIR/catalog-import-e2e.log"
+          set +e
           "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" tests/e2e/verify_catalog_import_browser.py \
-            2>&1 | tee "$QA_ARTIFACT_DIR/catalog-import-e2e.log"
+            2>&1 | tee "$log_file"
+          pipeline_status=("${PIPESTATUS[@]}")
+          set -e
+          browser_status="${pipeline_status[0]:-1}"
+          tee_status="${pipeline_status[1]:-1}"
+          if [[ "$browser_status" -ne 0 ]]; then
+            diagnostic_line=$(rg '^ORDENOWA_CATALOG_IMPORT_SAFE_DIAGNOSTICS=' "$log_file" | tail -n 1 || true)
+            if [[ -z "$diagnostic_line" ]]; then
+              diagnostic_line='ORDENOWA_CATALOG_IMPORT_SAFE_DIAGNOSTICS={"diagnostics":"unavailable"}'
+            fi
+            printf 'ORDENOWA catalog import browser QA failed: %s\n' "$diagnostic_line" >> "$GITHUB_STEP_SUMMARY"
+            annotation=${diagnostic_line//'%'/'%25'}
+            annotation=${annotation//$'\r'/'%0D'}
+            annotation=${annotation//$'\n'/'%0A'}
+            printf '::error title=ORDENOWA catalog import browser QA::%s\n' "$annotation"
+            exit "$browser_status"
+          fi
+          if [[ "$tee_status" -ne 0 ]]; then
+            printf 'ORDENOWA catalog import browser QA log capture failed; browser_status=0, tee_status=%s\n' "$tee_status" >> "$GITHUB_STEP_SUMMARY"
+            exit "$tee_status"
+          fi
           product_id=$(python3 -c 'import json,os; from pathlib import Path; print(int(json.loads((Path(os.environ["QA_ARTIFACT_DIR"])/"catalog-import-readback.json").read_text())["linked_product_id"]))')
           [[ "$product_id" =~ ^[1-9][0-9]*$ ]]
           # Read-only native persistence evidence, independent of the manager's status copy.
@@ -2242,6 +2298,7 @@ jobs:
           ACCOUNT_CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.account_checkout_override.outcome }}
           ACCOUNT_CHECKOUT_RESTORE_OUTCOME: ${{ steps.account_checkout_restore.outcome }}
           CATALOG_IMPORT_FIXTURE_OUTCOME: ${{ steps.catalog_import_fixture.outcome }}
+          CATALOG_IMPORT_ADMIN_ACCESS_READBACK_OUTCOME: ${{ steps.catalog_import_admin_access_readback.outcome }}
           CATALOG_IMPORT_BROWSER_QA_OUTCOME: ${{ steps.catalog_import_browser_qa.outcome }}
           CATALOG_IMPORT_RESTORE_OUTCOME: ${{ steps.catalog_import_restore.outcome }}
           PRODUCT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.product_admin_browser_qa.outcome }}
@@ -2529,6 +2586,67 @@ jobs:
               catalog-import-readback.json
               catalog-import-persistence.json
             )
+          fi
+          if [[ "$CATALOG_IMPORT_ADMIN_ACCESS_READBACK_OUTCOME" == success ]]; then
+            required_artifacts+=(catalog-import-admin-access.log)
+          fi
+          if [[ "$CATALOG_IMPORT_BROWSER_QA_OUTCOME" == failure ]]; then
+            diagnostic_file="$RUNNER_TEMP/ordenowa-browser-qa/catalog-import-failure-diagnostics.json"
+            screenshot_file="$RUNNER_TEMP/ordenowa-browser-qa/catalog-import-failure.png"
+            if [[ ! -s "$diagnostic_file" ]]; then
+              echo '::error title=ORDENOWA catalog import browser evidence::The sanitized failure diagnostic file is missing.'
+              exit 1
+            fi
+            python3 - "$diagnostic_file" "$screenshot_file" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          required = {
+              "stage", "last_completed_stage", "same_admin_origin", "admin_path_matches",
+              "controller_parameter_present", "controller_allowed", "admin_controller", "page_class",
+              "document_ready_state", "login_form_visible", "product_url_field_visible",
+              "submit_control_visible", "submit_attempted", "submit_returned", "progress_visible",
+              "progress_value", "progress_max", "row_count", "read_only_notice_visible",
+              "access_denied_notice_visible", "queue_unavailable_notice_visible", "exception_class",
+              "failure_screenshot_captured",
+          }
+          if not isinstance(data, dict) or set(data) != required:
+              raise SystemExit("catalog import failure diagnostic fields are not allowlisted")
+          for key in required - {"stage", "last_completed_stage", "admin_controller", "page_class", "document_ready_state", "exception_class", "progress_value", "progress_max", "row_count"}:
+              if not isinstance(data[key], bool):
+                  raise SystemExit("catalog import failure diagnostic boolean is invalid")
+          stages = {
+              "launch", "login", "review_menu_route", "manager_menu_route", "manager_navigation",
+              "batch_review_navigation", "batch_url_field", "batch_submit_control", "batch_submit_click",
+              "batch_completion_wait", "batch_progress_readback", "reject_rakuten", "approve_amazon",
+              "native_readback", "reimport_review_navigation", "reimport_url_field", "reimport_submit_control",
+              "reimport_submit_click", "reimport_completion_wait", "reimport_progress_readback", "reimport", "unknown",
+          }
+          if data["stage"] not in stages or data["last_completed_stage"] not in stages | {"not_started"}:
+              raise SystemExit("catalog import failure stage is not allowlisted")
+          enums = {
+              "admin_controller": {"AdminKuraneaCatalogReview", "AdminOrdenowaProductManager", "other_admin", "unknown"},
+              "page_class": {"controller_access_denied", "batch_capability_denied", "queue_unavailable", "login_form", "catalog_import_form", "other_admin"},
+              "document_ready_state": {"loading", "interactive", "complete", "unknown"},
+              "exception_class": {"AssertionError", "ElementClickInterceptedException", "ElementNotInteractableException", "NoSuchElementException", "OSError", "RuntimeError", "StaleElementReferenceException", "TimeoutException", "ValueError", "WebDriverException", "Exception"},
+          }
+          for key, allowed in enums.items():
+              if data[key] not in allowed:
+                  raise SystemExit("catalog import failure diagnostic enum is not allowlisted")
+          for key, maximum in (("progress_value", 1000000), ("progress_max", 1000000), ("row_count", 1000)):
+              value = data[key]
+              if value is not None and (type(value) is not int or not 0 <= value <= maximum):
+                  raise SystemExit("catalog import failure diagnostic counter is invalid")
+          if data["failure_screenshot_captured"] and not Path(sys.argv[2]).is_file():
+              raise SystemExit("catalog import safe failure screenshot is missing")
+          print("PASS: catalog import failure diagnostics use an allowlisted safe schema.")
+          PY
+            required_artifacts+=(catalog-import-e2e.log catalog-import-failure-diagnostics.json)
+            if [[ -s "$screenshot_file" ]]; then
+              required_artifacts+=(catalog-import-failure.png)
+            fi
           fi
           if [[ "$PRODUCT_ADMIN_BROWSER_QA_OUTCOME" == success ]]; then
             required_artifacts+=(
@@ -2890,6 +3008,7 @@ jobs:
           ACCOUNT_CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.account_checkout_override.outcome }}
           ACCOUNT_CHECKOUT_RESTORE_OUTCOME: ${{ steps.account_checkout_restore.outcome }}
           CATALOG_IMPORT_FIXTURE_OUTCOME: ${{ steps.catalog_import_fixture.outcome }}
+          CATALOG_IMPORT_ADMIN_ACCESS_READBACK_OUTCOME: ${{ steps.catalog_import_admin_access_readback.outcome }}
           CATALOG_IMPORT_BROWSER_QA_OUTCOME: ${{ steps.catalog_import_browser_qa.outcome }}
           CATALOG_IMPORT_RESTORE_OUTCOME: ${{ steps.catalog_import_restore.outcome }}
           PRODUCT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.product_admin_browser_qa.outcome }}
@@ -3005,6 +3124,7 @@ jobs:
             "account_checkout_override=$ACCOUNT_CHECKOUT_OVERRIDE_OUTCOME" \
             "account_checkout_restore=$ACCOUNT_CHECKOUT_RESTORE_OUTCOME" \
             "catalog_import_fixture=$CATALOG_IMPORT_FIXTURE_OUTCOME" \
+            "catalog_import_admin_access_readback=$CATALOG_IMPORT_ADMIN_ACCESS_READBACK_OUTCOME" \
             "catalog_import_browser_qa=$CATALOG_IMPORT_BROWSER_QA_OUTCOME" \
             "catalog_import_restore=$CATALOG_IMPORT_RESTORE_OUTCOME" \
             "product_admin=$PRODUCT_ADMIN_BROWSER_QA_OUTCOME" \

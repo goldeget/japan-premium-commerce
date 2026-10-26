@@ -28,7 +28,9 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
     def test_workflow_restores_base_and_aggregates_original_outcomes(self):
         source = (ROOT / '.github/workflows/fresh-install.yml').read_text()
         for marker in ('id: catalog_import_fixture', 'id: catalog_import_browser_qa',
-                       'id: catalog_import_restore', 'tests/e2e/verify_catalog_import_browser.py',
+                       'id: catalog_import_admin_access_readback', 'id: catalog_import_restore',
+                       'read_catalog_import_admin_access.php', 'catalog-import-admin-access.log',
+                       'tests/e2e/verify_catalog_import_browser.py',
                        'tests.smoke.test_catalog_import_browser_workflow_contract',
                        'tests.smoke.test_catalog_import_admin_contract',
                        "'tests/smoke/test_catalog_import_admin_contract.py'",
@@ -36,6 +38,7 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
                        'catalog-import-draft.png', 'catalog-import-reimport.png', 'catalog-import-readback.json'):
             self.assertTrue(marker in source, f"Missing integration marker: {marker}")
         for step, variable in (('catalog_import_fixture', 'CATALOG_IMPORT_FIXTURE_OUTCOME'),
+                               ('catalog_import_admin_access_readback', 'CATALOG_IMPORT_ADMIN_ACCESS_READBACK_OUTCOME'),
                                ('catalog_import_browser_qa', 'CATALOG_IMPORT_BROWSER_QA_OUTCOME'),
                                ('catalog_import_restore', 'CATALOG_IMPORT_RESTORE_OUTCOME')):
             self.assertIn(variable + ': ${{ steps.' + step + '.outcome }}', source)
@@ -92,6 +95,53 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertIn("driver.find_elements(By.CSS_SELECTOR, 'input[name=\"category_ids[]\"]')", source)
         self.assertIn('assert category_ids == expected_category_ids', source)
         self.assertIn('read_native(driver, product_id, expected_category_ids)', source)
+
+    def test_browser_batch_waits_and_failure_summary_expose_safe_substage_evidence(self):
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        for marker in (
+            'def safe_catalog_import_browser_state',
+            'batch_review_navigation',
+            'batch_url_field',
+            'batch_submit_control',
+            'batch_submit_click',
+            'batch_completion_wait',
+            'batch_progress_readback',
+            'same_admin_origin',
+            'admin_path_matches',
+            'controller_parameter_present',
+            'controller_allowed',
+            'login_form_visible',
+            'product_url_field_visible',
+            'submit_control_visible',
+            'submit_returned',
+            'progress_visible',
+            'progress_value',
+            'progress_max',
+            'row_count',
+            'read_only_notice_visible',
+            'access_denied_notice_visible',
+            'failure_screenshot_captured',
+            'save_safe_failure_screenshot',
+            'safe_messages',
+            'safe_exception_class(error)',
+            'catalog-import-failure-diagnostics.json',
+        ):
+            self.assertIn(marker, browser)
+        self.assertNotIn('print(driver.current_url', browser)
+        self.assertNotIn('page_source', browser)
+
+        workflow = self.read_required('.github/workflows/fresh-install.yml')
+        browser_step = workflow.split('id: catalog_import_browser_qa', 1)[1].split('\n      - name:', 1)[0]
+        self.assertIn('pipeline_status=("${PIPESTATUS[@]}")', browser_step)
+        self.assertIn('browser_status="${pipeline_status[0]:-1}"', browser_step)
+        self.assertIn('GITHUB_STEP_SUMMARY', browser_step)
+        self.assertIn('::error title=ORDENOWA catalog import browser QA::', browser_step)
+        self.assertIn("rg '^ORDENOWA_CATALOG_IMPORT_SAFE_DIAGNOSTICS='", browser_step)
+        self.assertNotIn('cat "$log_file"', browser_step)
+        self.assertIn('catalog-import-e2e.log', browser_step)
+        self.assertIn('catalog-import-failure-diagnostics.json', workflow)
+        self.assertIn('failure_screenshot_captured', workflow)
+        self.assertIn('catalog import failure diagnostic fields are not allowlisted', workflow)
 
     def test_retry_controls_stop_after_the_fixed_attempt_limit(self):
         controller = (ROOT / 'modules/kuraneacatalog/controllers/admin/AdminKuraneaCatalogReviewController.php').read_text()

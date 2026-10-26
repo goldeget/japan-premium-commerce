@@ -25,7 +25,11 @@ class ModuleAdminController
     public bool $bootstrap = false;
     public string $meta_title = '';
     public string $content = '';
-    public array $tabAccess = ['view' => 1, 'edit' => 1, 'add' => 1];
+    public array $tabAccess = [];
+    /** @var list<string> */
+    public array $accessCalls = [];
+    /** @var array<string, int> */
+    public array $defaultAccess = ['view' => 1, 'edit' => 1, 'add' => 1];
     public object $context;
 
     public function __construct()
@@ -39,6 +43,21 @@ class ModuleAdminController
 
     public function initContent(): void
     {
+    }
+
+    public function access(string $action): bool
+    {
+        $this->accessCalls[] = $action;
+        if (!array_key_exists($action, $this->tabAccess)) {
+            $this->tabAccess[$action] = $this->defaultAccess[$action] ?? 0;
+        }
+
+        return !empty($this->tabAccess[$action]);
+    }
+
+    public function viewAccess(): bool
+    {
+        return $this->access('view');
     }
 }
 
@@ -120,6 +139,10 @@ try {
     Tools::$values = [];
     $catalogAdminController = new AdminKuraneaCatalogReviewController();
     $catalogAdminController->initContent();
+    assertCatalogAdminTrue(str_contains($catalogAdminController->content, 'id="product_urls"'), 'The authorized import form should render when PrestaShop lazily resolves tab access.');
+    foreach (['view', 'edit', 'add'] as $permission) {
+        assertCatalogAdminTrue(in_array($permission, $catalogAdminController->accessCalls, true), 'The review controller should ask PrestaShop for the ' . $permission . ' grant.');
+    }
     assertCatalogAdminTrue(str_contains($catalogAdminController->content, '[TEST FIXTURE] 合成キッチンツール A'), 'The Korean admin controller should render a pending synthetic snapshot.');
     assertCatalogAdminTrue(str_contains($catalogAdminController->content, '아마존 일본'), 'The admin controller should localize Amazon Japan source names.');
     assertCatalogAdminTrue(str_contains($catalogAdminController->content, 'amazon_jp:B0KURANEA1'), 'The source-qualified deduplication key should retain its provider identity.');
@@ -193,7 +216,15 @@ try {
     $readOnlyController->tabAccess = ['view' => 1, 'edit' => 0, 'add' => 1];
     $readOnlyController->initContent();
     assertCatalogAdminTrue(str_contains($readOnlyController->content, '승인할 권한이 없습니다'), 'An employee without edit access must not approve a catalog item.');
+    assertCatalogAdminTrue(str_contains($readOnlyController->content, '상품 수집 작업은 편집·등록 권한이 있는 직원만 수행할 수 있습니다.'), 'A view-only employee should receive the read-only catalog message.');
+    assertCatalogAdminTrue(!str_contains($readOnlyController->content, 'id="product_urls"'), 'A view-only employee must not receive the batch import form.');
     assertCatalogAdminSame([], CatalogNativeRegistrarLockTestState::$events, 'A read-only employee must not invoke native product registration.');
+
+    $noViewController = new AdminKuraneaCatalogReviewController();
+    $noViewController->tabAccess = ['view' => 0, 'edit' => 1, 'add' => 1];
+    $noViewController->initContent();
+    assertCatalogAdminTrue(str_contains($noViewController->content, '상품 검수 대기열을 조회할 권한이 없습니다.'), 'An employee without view access must be denied the catalog queue.');
+    assertCatalogAdminTrue(!str_contains($noViewController->content, 'id="product_urls"'), 'An employee without view access must not receive the batch import form.');
 
     Db::$lockResult = 1;
     Db::$releaseResult = 1;
