@@ -130,6 +130,21 @@ class ResetEmailLocaleContract(unittest.TestCase):
         self.assertEqual('customer_secure_key_outside_reset_link', caught.exception.check)
         self.assertNotIn(secure_key, str(caught.exception))
 
+    def test_each_email_part_requires_a_native_reset_link_and_reports_only_its_part(self):
+        module = self.module()
+        missing_parts = (
+            ('HTML', '<html><body>password reset request</body></html>', 'html_reset_link_missing'),
+            ('Text', 'password reset request', 'text_reset_link_missing'),
+        )
+        for part, body, expected in missing_parts:
+            with self.subTest(part=part):
+                message = self.message()
+                message[part] = body
+                with self.assertRaises(module.MessageValidationError) as caught:
+                    module.assert_message(message, 'en', 'http://127.0.0.1:18080', '/reset', self.forbidden())
+                self.assertEqual(expected, caught.exception.check)
+                self.assertNotIn('synthetic-token', str(caught.exception))
+
     def test_all_named_secret_categories_are_required(self):
         module = self.module()
         forbidden = self.forbidden()
@@ -224,11 +239,12 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 for sensitive in ("token", "password", "email@example", "http://", "current_url"):
                     self.assertNotIn(sensitive, contents)
                 self.assertIn('"message_check": "none"', contents)
-                category_result = dict(result, message_check='customer_secure_key_outside_reset_link')
-                module.write_diagnostics(category_result)
-                contents = path.read_text(encoding="utf-8")
-                self.assertIn('"message_check": "customer_secure_key_outside_reset_link"', contents)
-                self.assertNotIn('synthetic-customer-secure-key', contents)
+                for check in ('customer_secure_key_outside_reset_link',
+                              'html_reset_link_missing', 'text_reset_link_missing'):
+                    module.write_diagnostics(dict(result, message_check=check))
+                    contents = path.read_text(encoding="utf-8")
+                    self.assertIn(f'"message_check": "{check}"', contents)
+                    self.assertNotIn('synthetic-customer-secure-key', contents)
                 module.write_diagnostics(dict(result, token="never-write"))
                 self.assertEqual(path.read_text(encoding="utf-8"), contents)
 

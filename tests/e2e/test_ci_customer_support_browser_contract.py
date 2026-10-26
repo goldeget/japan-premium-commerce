@@ -78,6 +78,45 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         fixture = FIXTURE.read_text(encoding="utf-8")
         self.assertIn('Tools::getMaxUploadSize() >= 4096', fixture)
 
+    def test_contact_controls_scroll_clear_and_keep_native_click_and_upload_assertions(self):
+        module = load_script()
+
+        class Driver:
+            def __init__(self, unobscured: bool) -> None:
+                self.unobscured = unobscured
+                self.scripts: list[str] = []
+
+            def execute_script(self, script: str, _element: object) -> object:
+                self.scripts.append(script)
+                return None if len(self.scripts) == 1 else self.unobscured
+
+        clear_driver = Driver(True)
+        element = object()
+        module.center_native_control(clear_driver, element, "message submit")
+        self.assertIn("scrollIntoView", clear_driver.scripts[0])
+        self.assertIn("block: 'center'", clear_driver.scripts[0])
+        self.assertIn("elementFromPoint", clear_driver.scripts[1])
+        self.assertNotIn(".click()", "\n".join(clear_driver.scripts))
+
+        obstructed_driver = Driver(False)
+        with self.assertRaisesRegex(AssertionError, "message submit control is obstructed"):
+            module.center_native_control(obstructed_driver, element, "message submit")
+
+        source = SCRIPT.read_text(encoding="utf-8")
+        submit_helper = source[source.index("def submit_contact_message("):source.index("def assert_support_denied_response")]
+        self.assertIn('select_contact_order(driver, order_selects[0], str(order["order_id"]))', submit_helper)
+        self.assertIn('select_contact_order(driver, order_selects[0], "")', submit_helper)
+        self.assertIn('submit = visible(driver, "button[name=\'submitMessage\']")', submit_helper)
+        self.assertIn("center_native_control(driver, submit, \"message submit\")", submit_helper)
+        self.assertIn("submit.click()", submit_helper)
+        self.assertIn('driver.find_elements(By.CSS_SELECTOR, ".contact-form .alert.alert-danger")', submit_helper)
+        self.assertNotIn("arguments[0].click()", submit_helper)
+        native_select = source[source.index("def select_contact_order("):source.index("def visit(")]
+        self.assertIn("select_element.click()", native_select)
+        self.assertIn("select_element.send_keys(Keys.HOME)", native_select)
+        self.assertIn("select_element.send_keys(Keys.ARROWDOWN)", native_select)
+        self.assertIn('select_element.get_attribute("value") != value', native_select)
+
     def test_native_reply_form_is_found_through_its_official_9_2_wrapper(self):
         source = SCRIPT.read_text(encoding="utf-8")
         self.assertIn('reply_card.find_element(By.XPATH, "./ancestor::form[1]")', source)

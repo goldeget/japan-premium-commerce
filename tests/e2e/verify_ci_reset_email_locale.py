@@ -41,7 +41,8 @@ SAFE_MESSAGE_CHECKS = {
     'none', 'parts_missing', 'locale_marker_missing', 'raw_password_disclosure',
     'password_hash_disclosure', 'customer_secure_key_outside_reset_link',
     'generic_bank_details', 'reset_credentials_invalid', 'reset_link_origin_mismatch',
-    'reset_link_path_mismatch', 'parts_credentials_mismatch', 'reset_link_missing',
+    'reset_link_path_mismatch', 'parts_credentials_mismatch',
+    'html_reset_link_missing', 'text_reset_link_missing',
 }
 
 
@@ -200,7 +201,7 @@ def assert_message(message: dict, language: str, base: str, reset_path: str,
             if query.get('token') == [secure_key] and candidate.count(secure_key) == 1:
                 allowed_secure_key_occurrences[part] += 1
         if not required_reset_link_found:
-            raise MessageValidationError('reset_link_missing')
+            raise MessageValidationError(f'{part.lower()}_reset_link_missing')
     for part, body in (('HTML', html), ('Text', text)):
         if body.count(secure_key) != allowed_secure_key_occurrences[part]:
             raise MessageValidationError('customer_secure_key_outside_reset_link')

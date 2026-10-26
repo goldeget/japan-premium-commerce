@@ -6,6 +6,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 PROFILE_CONTROLLER = ROOT / "modules" / "kuraneabusinessprofile" / "controllers" / "admin" / "AdminBusinessProfileController.php"
 BANKS_CONTROLLER = ROOT / "modules" / "kuraneabusinessprofile" / "controllers" / "admin" / "AdminBusinessProfileBanksController.php"
+TRANSFER_CONTROLLER = ROOT / "modules" / "kuraneabusinessprofile" / "controllers" / "admin" / "AdminBusinessProfileTransfersController.php"
 
 
 def init_content_source(path: Path, next_method: str) -> str:
@@ -107,6 +108,23 @@ class AdminAccessSourceContractTests(unittest.TestCase):
             access_expression="$bankAccess",
         )
         self.assert_form_output_reaches_smarty(source, "AdminBankAccountForm::render(")
+
+    def test_transfer_view_add_and_edit_permissions_are_initialized_before_queue_and_actions(self) -> None:
+        source = init_content_source(TRANSFER_CONTROLLER, "    private function processIssue(")
+        self.assert_lazy_access_is_initialized_before_policy(source, "canView", ("add", "edit"))
+        self.assert_denied_before_admin_work(
+            source,
+            "canView",
+            "주문 입금 정보를 조회할 권한이 없습니다.",
+            (
+                "new BankTransferInstructionRepository()",
+                "new BankTransferReceiptRepository()",
+                "$this->processIssue(",
+                "$this->processConfirm(",
+                "$orders = $this->unpaidJpyOrders($shopId);",
+            ),
+            access_expression="$tabAccess",
+        )
 
 
 if __name__ == "__main__":

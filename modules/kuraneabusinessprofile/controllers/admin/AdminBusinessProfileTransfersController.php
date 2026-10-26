@@ -39,6 +39,8 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
     public function initContent(): void
     {
         $this->viewAccess();
+        $this->access('add');
+        $this->access('edit');
 
         $tabAccess = (array) ($this->tabAccess ?? []);
         $canIssue = AdminAccessPolicy::canIssueBankTransferInstructions($tabAccess);

@@ -34,7 +34,7 @@ class CiProductSeoBrowserContractTests(unittest.TestCase):
             "application/ld+json",
             "h1.product__name",
             ".product__price",
-            "button[data-ps-ref='add-to-cart']",
+            "form#add-to-cart-or-refresh button[data-ps-ref='add-to-cart']",
             "input#product_page_product_id[name='id_product']",
             "link[rel='canonical']",
             "priceCurrency",
@@ -100,6 +100,20 @@ class CiProductSeoBrowserContractTests(unittest.TestCase):
         self.assertIn('class="product__price"', prices)
         self.assertIn('data-ps-ref="add-to-cart"', add_to_cart)
         self.assertIn('rel="canonical"', head)
+
+    def test_availability_control_is_scoped_to_primary_product_form(self) -> None:
+        source = SCRIPT.read_text(encoding="utf-8")
+        product = PRODUCT_TEMPLATE.read_text(encoding="utf-8")
+        miniature = (ROOT / "themes/hummingbird/templates/catalog/_partials/miniatures/product.tpl").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            'form#add-to-cart-or-refresh button[data-ps-ref=\'add-to-cart\']',
+            source,
+        )
+        self.assertIn('id="add-to-cart-or-refresh"', product)
+        self.assertIn('data-ps-ref="add-to-cart"', miniature)
 
     def test_availability_failure_reports_bounded_control_counts_and_keeps_assertions(self) -> None:
         source = SCRIPT.read_text(encoding="utf-8")

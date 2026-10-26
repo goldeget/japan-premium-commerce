@@ -214,7 +214,10 @@ def read_product_page(driver: webdriver.Chrome, result: dict[str, Any]) -> dict[
 
     result["stage"] = "visible_product_availability"
     result["substage"] = "add_button_controls"
-    add_buttons = driver.find_elements(By.CSS_SELECTOR, "button[data-ps-ref='add-to-cart']")
+    add_buttons = driver.find_elements(
+        By.CSS_SELECTOR,
+        "form#add-to-cart-or-refresh button[data-ps-ref='add-to-cart']",
+    )
     visible_add_buttons = [item for item in add_buttons if item.is_displayed()]
     result["matched_add_button_controls"] = bounded_control_count(len(add_buttons))
     result["visible_add_button_controls"] = bounded_control_count(len(visible_add_buttons))

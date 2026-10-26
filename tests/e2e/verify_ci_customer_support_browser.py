@@ -36,6 +36,7 @@ try:
     from selenium.common.exceptions import TimeoutException
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.common.by import By
+    from selenium.webdriver.common.keys import Keys
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.select import Select
     from selenium.webdriver.support.ui import WebDriverWait
@@ -44,6 +45,7 @@ except ModuleNotFoundError:  # Pure contract helpers remain importable without l
     TimeoutException = TimeoutError
     Options = None
     By = None
+    Keys = None
     EC = None
     Select = None
     WebDriverWait = None
@@ -420,6 +422,42 @@ def visible(driver, selector: str, timeout: int = 30):
     return WebDriverWait(driver, timeout).until(EC.visibility_of_element_located((By.CSS_SELECTOR, selector)))
 
 
+def center_native_control(driver, element, control_name: str) -> None:
+    """Scroll one exact native control clear of sticky viewport overlays."""
+    driver.execute_script(
+        "arguments[0].scrollIntoView({behavior: 'instant', block: 'center', inline: 'nearest'});",
+        element,
+    )
+    unobscured = driver.execute_script("""
+      const element = arguments[0];
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return false;
+      const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return target === element || element.contains(target);
+    """, element)
+    if unobscured is not True:
+        raise AssertionError(f"native support {control_name} control is obstructed")
+
+
+def select_contact_order(driver, select_element, value: str) -> None:
+    """Use the native select keyboard path and verify the exact selected value."""
+    options = select_element.find_elements(By.TAG_NAME, "option")
+    matching_indices = [
+        index for index, option in enumerate(options)
+        if option.get_attribute("value") == value
+    ]
+    if len(matching_indices) != 1 or not options[matching_indices[0]].is_enabled():
+        raise AssertionError("native contact form did not expose one selectable order option")
+    center_native_control(driver, select_element, "order selection")
+    select_element.click()
+    select_element.send_keys(Keys.HOME)
+    for _ in range(matching_indices[0]):
+        select_element.send_keys(Keys.ARROWDOWN)
+    select_element.send_keys(Keys.ENTER)
+    if select_element.get_attribute("value") != value:
+        raise AssertionError("native contact form did not select the exact requested order")
+
+
 def visit(driver, url: str) -> None:
     driver.get(url)
     WebDriverWait(driver, 35).until(lambda browser: browser.execute_script("return document.readyState") == "complete")
@@ -540,9 +578,9 @@ def submit_contact_message(
     if order_linked:
         if len(matching_options) != 1 or order["reference"] not in matching_options[0].text:
             raise AssertionError("native contact form did not offer the exact customer-owned order")
-        order_select.select_by_value(str(order["order_id"]))
+        select_contact_order(driver, order_selects[0], str(order["order_id"]))
     else:
-        order_select.select_by_value("")
+        select_contact_order(driver, order_selects[0], "")
 
     contact_fields = form.find_elements(By.NAME, "id_contact")
     if len(contact_fields) != 1:
@@ -567,7 +605,9 @@ def submit_contact_message(
                 or metadata.get("mime") != expected_mime or metadata.get("size") != attachment_path.stat().st_size):
                 raise AssertionError("native contact upload did not select the exact bounded synthetic fixture")
     visible(driver, "#contact-us-message-textarea").send_keys(marker)
-    visible(driver, "button[name='submitMessage']").click()
+    submit = visible(driver, "button[name='submitMessage']")
+    center_native_control(driver, submit, "message submit")
+    submit.click()
     WebDriverWait(driver, 35).until(lambda browser: bool(browser.find_elements(By.CSS_SELECTOR, ".contact-form .alert.alert-success, .contact-form .alert.alert-danger")))
     if expected_rejection:
         if (not driver.find_elements(By.CSS_SELECTOR, ".contact-form .alert.alert-danger")
