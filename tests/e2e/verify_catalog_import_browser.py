@@ -322,12 +322,20 @@ def capture_safe_click_crop(driver, path, state):
     blocker = click.get('occluder_rect')
     if not _safe_rect(target):
         return False
-    viewport = driver.execute_script('return {width: window.innerWidth, height: window.innerHeight};')
+    viewport = driver.execute_script(
+        'return {width: window.innerWidth, height: window.innerHeight, '
+        'scrollX: Math.round(window.scrollX), scrollY: Math.round(window.scrollY)};'
+    )
     if not isinstance(viewport, dict):
         return False
     width = viewport.get('width')
     height = viewport.get('height')
-    if type(width) is not int or type(height) is not int or not (0 < width <= 2000 and 0 < height <= 2000):
+    scroll_x = viewport.get('scrollX')
+    scroll_y = viewport.get('scrollY')
+    if (type(width) is not int or type(height) is not int
+            or not (0 < width <= 2000 and 0 < height <= 2000)
+            or type(scroll_x) is not int or type(scroll_y) is not int
+            or not (0 <= scroll_x <= 1_000_000 and 0 <= scroll_y <= 1_000_000)):
         return False
     rects = [target]
     if _safe_rect(blocker):
@@ -335,7 +343,7 @@ def capture_safe_click_crop(driver, path, state):
     left = max(0, min(rect[0] for rect in rects) - 12)
     top = max(0, min(rect[1] for rect in rects) - 12)
     right = min(width, max(rect[0] + rect[2] for rect in rects) + 12)
-    bottom = min(height, max(rect[1] + rect[3] for rect in rects) + 12)
+    bottom = min(height, max(rect[1] + rect[3] for rect in rects) + 220)
     if right - left > 640:
         center_x = target[0] + target[2] // 2
         left = max(0, min(width - 640, center_x - 320))
@@ -349,14 +357,27 @@ def capture_safe_click_crop(driver, path, state):
     screenshot = driver.execute_cdp_cmd('Page.captureScreenshot', {
         'format': 'png',
         'fromSurface': True,
-        'captureBeyondViewport': False,
-        'clip': {'x': left, 'y': top, 'width': right - left, 'height': bottom - top, 'scale': 1},
+        'captureBeyondViewport': True,
+        'clip': {
+            # getBoundingClientRect() and the click diagnostics are viewport-relative;
+            # Page.captureScreenshot clips in document coordinates.
+            'x': left + scroll_x,
+            'y': top + scroll_y,
+            'width': right - left,
+            'height': bottom - top,
+            'scale': 1,
+        },
     })
     image_data = screenshot.get('data') if isinstance(screenshot, dict) else None
     if not isinstance(image_data, str):
         return False
     image = base64.b64decode(image_data, validate=True)
     if not image.startswith(b'\x89PNG\r\n\x1a\n'):
+        return False
+    if len(image) < 24:
+        return False
+    image_width, image_height = struct.unpack('!II', image[16:24])
+    if image_width < 320 or image_height < 180 or image_width > 640 or image_height > 480:
         return False
     path.write_bytes(image)
     return path.is_file() and path.stat().st_size > 0
@@ -797,6 +818,30 @@ def run():
         state['click_diagnostics'] = None
         entry = WebDriverWait(driver, 30).until(lambda d: article(d, AMAZON))
         form = entry.find_element(By.CSS_SELECTOR, '.catalog-import-review-form')
+        for name, value in {
+            'name_en': 'ORDENOWA synthetic kitchen tool',
+            'name_ko': 'ORDENOWA 합성 주방 도구',
+            'description_en': 'Synthetic test data reviewed for English.',
+            'description_ko': '한국어 검수를 완료한 합성 테스트 데이터입니다.',
+        }.items():
+            fill(form, name, value)
+        translation_confirmations = {
+            'translation_reviewed_en': ('approve_translation_review_en', 'translation_en_checkbox'),
+            'translation_reviewed_ko': ('approve_translation_review_ko', 'translation_ko_checkbox'),
+        }
+        for name, (substage, target) in translation_confirmations.items():
+            field = form.find_element(By.NAME, name)
+            if not field.is_selected():
+                click_with_safe_diagnostics(driver, field, state, substage, target)
+            else:
+                state['last_completed_substage'] = substage
+
+        fill(form, 'sale_price_jpy', '6600')
+        Select(form.find_element(By.NAME, 'tax_rules_group_id')).select_by_value(str(TAX_RULES_GROUP_ID))
+        Select(form.find_element(By.NAME, 'tax_treatment')).select_by_value('taxable')
+        fill(form, 'tax_evidence_reference', 'CI synthetic taxable fixture; not a legal tax determination')
+        fill(form, 'own_quantity', '7')
+
         category_boxes = form.find_elements(By.CSS_SELECTOR, 'input[name="category_ids[]"]')
         if not category_boxes:
             raise AssertionError('No active shop category is available for the synthetic import fixture.')
@@ -814,32 +859,29 @@ def run():
         )
         if not expected_category_ids:
             raise AssertionError('The synthetic import fixture requires at least one selected category.')
-        for name, value in {'name_en': 'ORDENOWA synthetic kitchen tool', 'name_ko': 'ORDENOWA 합성 주방 도구',
-                            'description_en': 'Synthetic test data reviewed for English.',
-                            'description_ko': '한국어 검수를 완료한 합성 테스트 데이터입니다.',
-                            'sale_price_jpy': '6600', 'own_quantity': '7',
-                            'tax_evidence_reference': 'CI synthetic taxable fixture; not a legal tax determination',
-                            'image_rights_reference': 'CI locally generated original PNG; synthetic fixture only'}.items():
-            fill(form, name, value)
-        Select(form.find_element(By.NAME, 'tax_rules_group_id')).select_by_value(str(TAX_RULES_GROUP_ID))
-        Select(form.find_element(By.NAME, 'tax_treatment')).select_by_value('taxable')
-        Select(form.find_element(By.NAME, 'image_rights_basis')).select_by_value('synthetic_ci_fixture')
-        confirmation_targets = {
-            'translation_reviewed_en': ('approve_translation_review_en', 'translation_en_checkbox'),
-            'translation_reviewed_ko': ('approve_translation_review_ko', 'translation_ko_checkbox'),
-            'confirm_options_supported': ('approve_options_confirmation', 'options_confirmation_checkbox'),
-            'confirm_image_rights': ('approve_image_rights_confirmation', 'image_rights_confirmation_checkbox'),
-        }
-        for name, (substage, target) in confirmation_targets.items():
-            field = form.find_element(By.NAME, name)
-            if not field.is_selected():
-                click_with_safe_diagnostics(driver, field, state, substage, target)
-            else:
-                state['last_completed_substage'] = substage
+
+        options_confirmation = form.find_element(By.NAME, 'confirm_options_supported')
+        if not options_confirmation.is_selected():
+            click_with_safe_diagnostics(
+                driver, options_confirmation, state,
+                'approve_options_confirmation', 'options_confirmation_checkbox'
+            )
+        else:
+            state['last_completed_substage'] = 'approve_options_confirmation'
         with tempfile.TemporaryDirectory(prefix='ordenowa-import-') as temp:
             image = Path(temp) / 'original-synthetic.png'
             tiny_png(image)
             form.find_element(By.NAME, 'import_product_images[]').send_keys(str(image))
+            Select(form.find_element(By.NAME, 'image_rights_basis')).select_by_value('synthetic_ci_fixture')
+            fill(form, 'image_rights_reference', 'CI locally generated original PNG; synthetic fixture only')
+            rights_confirmation = form.find_element(By.NAME, 'confirm_image_rights')
+            if not rights_confirmation.is_selected():
+                click_with_safe_diagnostics(
+                    driver, rights_confirmation, state,
+                    'approve_image_rights_confirmation', 'image_rights_confirmation_checkbox'
+                )
+            else:
+                state['last_completed_substage'] = 'approve_image_rights_confirmation'
             click_with_safe_diagnostics(
                 driver,
                 form.find_element(By.NAME, 'submitKuraneaCatalogImportedDraft'),

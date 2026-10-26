@@ -214,6 +214,42 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertIn('상품 수집 항목을 반려했습니다. 사유와 담당자 기록을 보존했습니다.', browser)
         self.assertIn('기존 TEST/DEMO 등록 경로는 별도 서버 게이트로 비활성화되어 있습니다.', browser)
 
+    def test_approval_actions_follow_the_review_form_document_order(self):
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        approval = browser.split("state['stage'] = 'approve_amazon'", 1)[1].split(
+            "state['last_completed_stage'] = state['stage']", 1
+        )[0]
+        translation_confirmation = approval.index("'translation_reviewed_en':")
+        tax_selection = approval.index("Select(form.find_element(By.NAME, 'tax_rules_group_id'))")
+        quantity_input = approval.index('own_quantity')
+        category_confirmation = approval.index('approve_category_checkbox')
+        self.assertLess(
+            translation_confirmation,
+            tax_selection,
+            'The EN/KO translation confirmations are above tax controls and must be clicked before those controls scroll the form down.',
+        )
+        self.assertLess(
+            quantity_input,
+            category_confirmation,
+            'The category is below the own-quantity field and should be reached in document order.',
+        )
+
+    def test_obstruction_crop_translates_viewport_rectangles_to_document_coordinates(self):
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        crop = browser.split('def capture_safe_click_crop(', 1)[1].split(
+            'def safe_catalog_import_browser_state(', 1
+        )[0]
+        for marker in (
+            'window.scrollX',
+            'window.scrollY',
+            "'x': left + scroll_x",
+            "'y': top + scroll_y",
+            "'captureBeyondViewport': True",
+            "struct.unpack('!II', image[16:24])",
+            'image_width < 320 or image_height < 180',
+        ):
+            self.assertIn(marker, crop)
+
     def test_click_diagnostic_schema_rejects_unbounded_or_sensitive_target_data(self):
         valid_click = {
             'substage': 'approve_submit', 'target': 'native_draft_submit', 'action': 'native_click',
