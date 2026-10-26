@@ -3724,7 +3724,9 @@ def install_push_provider_guard(driver: webdriver.Chrome) -> None:
     """})
 
 
-def verify_push_account_control(driver: webdriver.Chrome, locale: str, *, blank_notice: bool) -> None:
+def verify_push_account_control(
+    driver: webdriver.Chrome, locale: str, *, blank_notice: bool
+) -> object:
     """Assert localized consent gating and zero implicit browser/provider calls."""
     expected_labels = {"ja": "通知", "en": "Browser notifications", "ko": "알림"}
     control = WebDriverWait(driver, 30).until(
@@ -3756,6 +3758,7 @@ def verify_push_account_control(driver: webdriver.Chrome, locale: str, *, blank_
         raise AssertionError("account load attempted implicit permission or provider subscription")
     if not control.is_displayed():
         raise AssertionError("push account control is not visible")
+    return control
 
 
 def push_api(driver: webdriver.Chrome, action: str, subscription: dict[str, object] | None = None) -> dict[str, object]:
@@ -3859,9 +3862,8 @@ def verify_synthetic_push_persistence(base_url: str, artifact_dir: Path) -> None
             raise AssertionError("second owner revoke failed")
         assert_push_status(second, active=False, can_subscribe=True)
         for index, driver in enumerate(drivers, 1):
-            verify_push_account_control(driver, "en", blank_notice=False)
-            driver.find_element(By.CSS_SELECTOR, "[data-ordenowa-push]").screenshot(
-                str(artifact_dir / f"pwa-push-owner-{index}.png"))
+            push_control = verify_push_account_control(driver, "en", blank_notice=False)
+            push_control.screenshot(str(artifact_dir / f"pwa-push-owner-{index}.png"))
             assert_empty_cache_storage(driver, "synthetic push API")
         print("PASS: synthetic push API saved/revoked readback, idempotence, two-owner isolation and private/no-store responses; provider calls=0.")
     finally:
@@ -4036,10 +4038,12 @@ def run_viewport(
         _assert_customer_account_chrome(driver, locale, device)
         stage = "customer_account_privacy_link"
         _assert_localized_privacy_link(driver, locale)
-        stage = "customer_push_consent"
-        verify_push_account_control(driver, locale, blank_notice=True)
+        stage = "customer_push_consent_ui"
+        push_control = verify_push_account_control(driver, locale, blank_notice=True)
+        stage = "customer_push_consent_status"
         assert_push_status(driver, active=False, can_subscribe=False)
-        driver.find_element(By.CSS_SELECTOR, "[data-ordenowa-push]").screenshot(
+        stage = "customer_push_consent_capture"
+        push_control.screenshot(
             str(artifact_dir / f"pwa-{label}-push-consent.png"))
         stage = "customer_account_screenshot"
         driver.save_screenshot(str(artifact_dir / f"pwa-{label}-account.png"))

@@ -1,5 +1,13 @@
 # ORDENOWA 작업 기록
 
+## 2026-10-26 — 모바일 PWA 동의 캡처 선택자 수정
+
+- Full run [#40320300968](https://github.com/goldeget/japan-premium-commerce/actions/runs/40320300968), source `c99896a60310c62b2e8c8874ccaa28ebafa0d5f4`, completed FAILURE; actual aggregate is `pwa_browser_qa=failure pwa_push_qa=skipped`. Step 8/9 and all other aggregate outcomes passed. Desktop JA/EN/KO PWA lifecycle passed; mobile JA/EN/KO failed with `WebDriverException` at the coarse `customer_push_consent` stage.
+- The browser flow returned the visible push hook after the mobile duplicate-selection fix, but then located the first hook again for its element screenshot. Hummingbird renders the hidden `.account-menu--sidebar` hook before the visible account page on mobile. This is the remaining code-path failure candidate; the prior stage did not distinguish UI checks, API status, and screenshot, so runtime confirmation of the exact operation is pending.
+- `verify_push_account_control` now returns the verified visible element. The viewport flow reuses that element for capture and reports separate `customer_push_consent_ui`, `customer_push_consent_status`, and `customer_push_consent_capture` stages. A regression test asserts the hidden-first/visible-second selection and that the returned visible element is used for capture.
+- Focused PWA lifecycle/logout/registration suites: 119 PASS. Artifact [12649751839](https://github.com/goldeget/japan-premium-commerce/actions/runs/40320300968/artifacts/12649751839) and diagnostics [12649976501](https://github.com/goldeget/japan-premium-commerce/actions/runs/40320300968/artifacts/12649976501) are available through GitHub, but direct artifact downloads were denied by the configured network policy; no visual inspection is claimed.
+- Do not treat Step 57's green displayed conclusion as success: it uses `continue-on-error`. The actual failure is in the aggregate, and provider-free persistence Step 58 was skipped. New isolated runtime is needed after the targeted patch.
+
 ## 2026-10-26 — PWA 계정 검사의 모바일 중복 훅과 로그아웃 클릭 보완
 
 - #40315517530 source `acbdc5e`의 실제 aggregate 실패는 `pwa_browser_qa=failure pwa_push_qa=skipped`였다. 모바일 JA/EN/KO는 `customer_push_consent` 대기, 데스크톱 JA/EN은 `click_signout`의 `ElementClickInterceptedException`에서 중단됐다. 원본 step의 초록 표시를 실제 outcome으로 사용하지 않았다.

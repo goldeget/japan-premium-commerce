@@ -1332,9 +1332,24 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
             patch.object(pwa_browser, "EC", SimpleNamespace(visibility_of_element_located=visible_first_element)),
         ):
             try:
-                pwa_browser.verify_push_account_control(driver, "ja", blank_notice=True)
+                selected_control = pwa_browser.verify_push_account_control(
+                    driver, "ja", blank_notice=True
+                )
             except FakeTimeout:
                 self.fail("mobile push consent check timed out on the hidden sidebar duplicate")
+        self.assertIs(selected_control, driver.roots[1])
+
+    def test_push_consent_screenshot_uses_the_visible_control_and_has_its_own_stage(self) -> None:
+        source = function_source(self.source, "run_viewport")
+
+        self.assertIn('stage = "customer_push_consent_ui"', source)
+        self.assertIn('stage = "customer_push_consent_status"', source)
+        self.assertIn('stage = "customer_push_consent_capture"', source)
+        self.assertIn("push_control.screenshot(", source)
+        self.assertNotIn(
+            'find_element(By.CSS_SELECTOR, "[data-ordenowa-push]").screenshot(',
+            source,
+        )
 
     def test_account_route_comes_from_authenticated_header_and_all_links_check_full_origin(self) -> None:
         create_customer = function_source(self.source, "create_session_customer")

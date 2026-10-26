@@ -1,15 +1,15 @@
 # ORDENOWA 테스트 결과
 
-## 현재 사전 검사와 실행 (2026-10-26 12:05 UTC)
+## 현재 사전 검사와 실행 (2026-10-26 12:32 UTC)
 
-- Latest completed full-QA code source is `acbdc5e78cb8a499a3885fe6dbcdc3ebf539cdcd`; the PWA follow-up patch in the current `work` update awaits Actions runtime. `main` remains `ee02a3657448d563508687614a246e05ac61eecd`.
-- `tests.smoke.test_admin_folder_install_order`와 PWA workflow contract를 포함한 좁은 검사 17개 PASS. Step 9 workflow에 수록된 checkout/Admin contract 147개를 `ORDENOWA_ADMIN_SECURITY_FOCUS=false`와 `true` 각각 실행해 모두 PASS. Cart/shipping/account/PWA/installer 영향 계약 86개 PASS, `git diff --check` PASS.
-- 격리 전체 실행 [#40315517530](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530)은 source `acbdc5e`에서 preflight, 이미지 빌드, 빈 볼륨 설치를 통과하고 completed **FAILURE**다. Actual aggregate 실패는 `pwa_browser_qa=failure pwa_push_qa=skipped`; Step 9는 성공했다. Desktop JA/EN logout click은 interception, mobile JA/EN/KO consent는 timeout이었고 desktop KO lifecycle은 통과했다.
-- 이전 run #40315042151은 obsolete module-list contract로 Step 6에서, #40315327770은 `rg`를 기대하는 stale shipping log contract로 Step 9에서 중단됐다. 두 run 모두 browser QA에 도달하지 않았다. 두 테스트 기대값을 각각 현재 installer/workflow와 일치시켰다.
-- Business-profile module workflow [#40315517831](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517831)은 SUCCESS다. 이는 격리 전체 QA나 브라우저 결과를 대신하지 않는다.
-
-- Browser artifact는 [12646464536](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530/artifacts/12646464536), diagnostics artifact는 [12647935305](https://github.com/goldeget/japan-premium-commerce/actions/runs/40315517530/artifacts/12647935305)다. 전체 QA는 PASS가 아니며 provider-free push persistence는 skipped다.
-- 이 PWA failure follow-up에서 `test_pwa_service_worker`, `test_pwa_logout_diagnostics_contract`, `test_pwa_registration_diagnostics_contract` 118개를 로컬 실행해 PASS했다. 모바일 중복 hook 선택을 고정하는 회귀검사와 logout click 진단/redaction 계약을 포함한다. 새 코드 push로 시작되는 Actions가 브라우저 runtime의 판정 수단이며 현재는 아직 실행 전이다.
+- Latest completed full-QA source is `c99896a60310c62b2e8c8874ccaa28ebafa0d5f4`; `work` has a follow-up mobile consent capture correction awaiting Actions runtime. `main` remains `ee02a3657448d563508687614a246e05ac61eecd`.
+- QA-CI-002: shipping admin contract suite 8/8 passed locally. In #40320300968, exact preflight Step 8 and Step 9 passed. Workflow detail extraction and actual browser outcome checks remain intact.
+- PWA focus suites `test_pwa_service_worker`, `test_pwa_logout_diagnostics_contract`, and `test_pwa_registration_diagnostics_contract`: 119 passed locally.
+- Full isolated run [#40320300968](https://github.com/goldeget/japan-premium-commerce/actions/runs/40320300968), source `c99896a`, completed **FAILURE**. Actual aggregate: `pwa_browser_qa=failure pwa_push_qa=skipped`. Step 57's displayed conclusion was success under `continue-on-error`; its actual failure is preserved in the aggregate, and Step 58 was skipped. Desktop JA/EN/KO lifecycle passed; mobile JA/EN/KO failed at the broad `customer_push_consent` stage with `WebDriverException`.
+- Code inspection narrowed the mobile failure to the capture flow: after checking the visible hook, the browser code reselected the first matching hook for its screenshot, while Hummingbird renders a hidden sidebar copy first. The pending correction captures the returned visible node and splits consent UI, status readback, and capture into separate stages. The exact failing sub-operation is awaiting runtime confirmation.
+- Other aggregate outcomes in #40320300968 were success, including account/address, catalog, product/cart, category locales, carrier configure/restart/readback, checkout/order/tracking, RMA, backup/restore, and postcode checks. The complete run remains failure, not QA PASS.
+- Browser artifact [12649751839](https://github.com/goldeget/japan-premium-commerce/actions/runs/40320300968/artifacts/12649751839), diagnostics [12649976501](https://github.com/goldeget/japan-premium-commerce/actions/runs/40320300968/artifacts/12649976501). Download was denied by the configured network policy, so visual inspection is not claimed.
+- #40315517530 provides prior QA-CI-002 evidence: Step 9 and install passed. The newer #40320300968 also passed Steps 8 and 9. Its unrelated PWA failure does not reopen the grep-contract fix.
 
 ## 2026-10-26 — 카트/배송 진단과 PWA foundation의 로컬 검사 (Actions 대기)
 
