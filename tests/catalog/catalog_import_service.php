@@ -214,7 +214,7 @@ try {
     assertCatalogImportSame(5990, $reimportedSnapshot?->priceJpy, 'Reimport should retain the changed source price in the normalized result.');
     assertCatalogImportSame($reimportedSnapshot?->contentHash, $reimportedEntry?->snapshot->contentHash,
         'The review queue should contain the exact successful reimport snapshot.');
-    assertCatalogImportSame(9, count($fetcher->requests), 'Each process call should fetch exactly one URL.');
+    assertCatalogImportSame(10, count($fetcher->requests), 'Each queued process call should fetch exactly one URL.');
 } finally {
     foreach (glob($privateDirectory . '/*') ?: [] as $path) {
         if (is_file($path) || is_link($path)) {

@@ -334,6 +334,17 @@ final class InMemoryReceiptInstructionRepository implements BankTransferInstruct
     {
         return $this->instructions[$shopId . ':' . $orderId] ?? null;
     }
+
+    public function insertIfAbsent(BankTransferInstruction $instruction): bool
+    {
+        $key = $instruction->shopId . ':' . $instruction->orderId;
+        if (isset($this->instructions[$key])) {
+            return false;
+        }
+
+        $this->instructions[$key] = $instruction;
+        return true;
+    }
 }
 
 final class InMemoryReceiptLedger implements BankTransferReceiptRepositoryInterface

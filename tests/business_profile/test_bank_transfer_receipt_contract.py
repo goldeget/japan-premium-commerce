@@ -127,6 +127,16 @@ class BankTransferReceiptContractTests(unittest.TestCase):
         self.assertLess(guard[1].index("throw new RuntimeException"), guard[1].index("final class FakeTransferReceiptDb"))
         self.assertNotIn("class_exists('Db', false)", fixture, "A fake Db class declared later in this fixture must not trip its own guard.")
 
+    def test_in_memory_instruction_repository_implements_immutable_insert_contract(self) -> None:
+        fixture = (ROOT / "tests/business_profile/bank_transfer_receipt_confirmation.php").read_text(encoding="utf-8")
+        repository = fixture.split("final class InMemoryReceiptInstructionRepository", 1)[1].split(
+            "final class InMemoryReceiptLedger", 1
+        )[0]
+        self.assertIn("insertIfAbsent(BankTransferInstruction $instruction): bool", repository)
+        self.assertIn("$instruction->shopId . ':' . $instruction->orderId", repository)
+        self.assertIn("isset($this->instructions[$key])", repository)
+        self.assertIn("$this->instructions[$key] = $instruction", repository)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -138,6 +138,13 @@ class CatalogFetcherContract(unittest.TestCase):
         self.assertEqual(workflow.count('tests.smoke.test_catalog_fetcher_contract'), 1)
         self.assertLess(workflow.index('tests.smoke.test_catalog_fetcher_contract'), workflow.index('id: image_build'))
 
+    def test_cross_product_redirect_fixture_expects_rejection_before_third_request(self):
+        fixture = (ROOT / 'tests/catalog/security_fetcher.php').read_text(encoding='utf-8')
+        scenario = fixture.split("new TransportResponse(302, '', '', '/dp/B012345679')", 1)[1]
+        self.assertIn('A retry must still reject a redirect to a different product identity.', scenario)
+        self.assertIn("fetchAssert(count($http->requests) === 2", scenario)
+        self.assertNotIn('=== 3', scenario.split('// Decoded streaming chunks', 1)[0])
+
 
 if __name__ == '__main__':
     unittest.main()

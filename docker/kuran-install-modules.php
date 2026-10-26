@@ -53,6 +53,14 @@ foreach (['kuraneapostcode', 'kuraneabackoffice', 'kuraneabusinessprofile', 'kur
     }
 }
 
+// The core installer can mark bundled modules installed before the project
+// bootstrap runs. Reapply only idempotent CREATE IF NOT EXISTS schema, hooks,
+// and the module-owned tab required by the order-bound bank transfer flow.
+$businessProfileModule = Module::getInstanceByName('kuraneabusinessprofile');
+if (!$businessProfileModule || !$businessProfileModule->ensureBankTransferInfrastructure()) {
+    throw new RuntimeException('Could not ensure the order-bound bank transfer infrastructure.');
+}
+
 // Repair the Korean address/address-list default route collision.
 // The upstream Korean Shop.Navigation translations use "주소" for both route
 // keys. Dispatcher selects the first matching route, so a saved customer's

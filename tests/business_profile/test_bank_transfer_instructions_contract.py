@@ -124,6 +124,18 @@ class BankTransferInstructionsContractTests(unittest.TestCase):
         self.assertIn("$module->installTransferInstructionsTab()", upgrade)
         self.assertNotIn("DROP TABLE", upgrade.upper())
 
+    def test_isolated_module_bootstrap_repairs_payment_schema_for_an_already_installed_module(self) -> None:
+        bootstrap = (ROOT / "docker/kuran-install-modules.php").read_text(encoding="utf-8")
+        module = (MODULE / "kuraneabusinessprofile.php").read_text(encoding="utf-8")
+        self.assertIn("$businessProfileModule->ensureBankTransferInfrastructure()", bootstrap)
+        self.assertLess(bootstrap.index("foreach (['kuraneapostcode'"), bootstrap.index("ensureBankTransferInfrastructure"))
+        self.assertIn("public function ensureBankTransferInfrastructure(): bool", module)
+        ensure = module.split("public function ensureBankTransferInfrastructure(): bool", 1)[1].split("public function uninstall()", 1)[0]
+        self.assertIn("(new VersionedProfileRepository())->install()", ensure)
+        self.assertIn("registerHook(['displayOrderConfirmation', 'displayOrderDetail'])", ensure)
+        self.assertIn("installTransferInstructionsTab()", ensure)
+        self.assertNotIn("DROP TABLE", ensure.upper())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -495,6 +495,14 @@ class Kuraneabusinessprofile extends Module
         return $this->upsertTab('AdminBusinessProfileTransfers', '주문 입금 안내', $ordersParentId) > 0;
     }
 
+    /** Reapply the non-destructive payment schema and hooks after a core installer pre-registers this module. */
+    public function ensureBankTransferInfrastructure(): bool
+    {
+        return (new VersionedProfileRepository())->install()
+            && $this->registerHook(['displayOrderConfirmation', 'displayOrderDetail'])
+            && $this->installTransferInstructionsTab();
+    }
+
     private function upsertTab(string $className, string $label, int $parentId): int
     {
         $tabId = (int) Tab::getIdFromClassName($className);
