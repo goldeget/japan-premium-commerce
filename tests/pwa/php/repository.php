@@ -10,9 +10,23 @@ final class RecordingPushDb
 {
     public array $queries = [];
     public array $reads = [];
+    public array $queryCache = [];
+    public array $cachedReads = [];
+    public bool $simulateQueryCache = false;
     public bool $writeResult = true;
     public function execute(string $query): bool { $this->queries[]=$query; return $this->writeResult; }
-    public function executeS(string $query): array|false { $this->queries[]=$query; return array_shift($this->reads) ?? []; }
+    public function executeS(string $query, bool $array = true, bool $useCache = true): array|false {
+        $this->queries[]=$query;
+        $this->queryCache[]=$useCache;
+        if ($this->simulateQueryCache && $useCache && array_key_exists($query, $this->cachedReads)) {
+            return $this->cachedReads[$query];
+        }
+        $result = array_shift($this->reads) ?? [];
+        if ($this->simulateQueryCache && $useCache) {
+            $this->cachedReads[$query] = $result;
+        }
+        return $result;
+    }
 }
 $db = new RecordingPushDb();
 $repository = new SubscriptionRepository($db, 'test_');
@@ -66,10 +80,22 @@ $db->queries=[];$db->reads=[[['id_shop'=>3,'id_customer'=>44,'endpoint_digest'=>
     'consent_notice_version'=>str_repeat('a',64),'consent_locale'=>'ja','consent_accepted_at'=>'2026-10-26 00:00:00']]];
 $targets=$repository->deliveryTargetsForOwner(3,44);
 check(count($targets)===1 && $targets[0]['id_shop']===3 && $targets[0]['id_customer']===44, 'delivery target read returns owner rows');
+check(end($db->queryCache)===false, 'fresh delivery lookup bypasses query cache so a revoked target cannot be reused');
 check(str_contains($db->queries[0], 'WHERE id_shop=3 AND id_customer=44')
     && str_contains($db->queries[0], 'consent_notice_version IS NOT NULL')
     && str_contains($db->queries[0], 'consent_accepted_at IS NOT NULL')
     && str_contains($db->queries[0], 'LIMIT 100'), 'delivery target query is owner scoped, consent gated and bounded');
+$cachedDb = new RecordingPushDb();
+$cachedDb->simulateQueryCache = true;
+$cachedRepository = new SubscriptionRepository($cachedDb, 'cache_');
+$cachedDb->reads = [[['id_subscription'=>9,'id_shop'=>3,'id_customer'=>44,'endpoint_digest'=>$digest,'encrypted_subscription'=>$envelope,
+    'consent_notice_version'=>str_repeat('a',64),'consent_locale'=>'ja','consent_accepted_at'=>'2026-10-26 00:00:00']]];
+check(count($cachedRepository->deliveryTargetsForOwner(3,44))===1, 'initial consent lookup sees the stored target');
+$cachedRepository->revoke(3,44);
+$cachedDb->reads = [[]];
+check($cachedRepository->deliveryTargetsForOwner(3,44)===[], 'delivery lookup sees revocation instead of cached consent');
+$cacheReads = array_slice($cachedDb->queryCache, 0, 2);
+check($cacheReads === [false, false], 'both consent reads bypass query cache');
 $db->queries=[];
 $repository->removeDeliveryTargetForOwner(3,44,$digest);
 check(str_contains($db->queries[0], 'DELETE FROM') && str_contains($db->queries[0], 'WHERE id_shop=3 AND id_customer=44')

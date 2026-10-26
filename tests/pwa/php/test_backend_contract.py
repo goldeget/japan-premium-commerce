@@ -4,6 +4,7 @@ import unittest
 
 from tests.pwa.php.test_delivery_outbox_contract import DeliveryOutboxContract
 from tests.pwa.php.test_order_history_producer_contract import OrderHistoryProducerContract
+from tests.pwa.php.test_support_message_producer_contract import SupportMessageProducerContract
 
 ROOT = Path(__file__).resolve().parents[3]
 MODULE = ROOT / 'modules/kuraneapush'
@@ -36,6 +37,13 @@ class BackendContract(unittest.TestCase):
         self.assertIn('endpoint_digest', source)
         self.assertNotIn('ON DUPLICATE KEY UPDATE', source)
         self.assertNotIn('REPLACE INTO', source)
+
+    def test_delivery_target_lookup_bypasses_query_cache_for_fresh_consent(self):
+        repository = self.source('src/Infrastructure/SubscriptionRepository.php')
+        delivery_lookup = repository.split('public function deliveryTargetsForOwner(', 1)[1].split(
+            'public function removeDeliveryTargetForOwner(', 1
+        )[0]
+        self.assertIn(', true, false);', delivery_lookup)
 
     def test_admin_access_and_lifecycle(self):
         source = self.source('controllers/admin/AdminKuraneaPushController.php')

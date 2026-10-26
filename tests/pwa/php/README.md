@@ -50,6 +50,11 @@ all shops. Module uninstall only removes its admin tab and preserves data.
 The standalone PHP contracts cover pure validation, crypto, request guards,
 readiness, API operations, owner-scoped consent-gated delivery, synthetic
 provider outcomes, invalid-row isolation, and the SQL repository contract.
+Native order-state and public staff support-message hooks create generic,
+owner-scoped outbox receipts only when the corresponding shop event toggle is
+enabled. Support message text, private notes, and attachment metadata never
+enter the receipt. The default provider remains disabled, so these checks
+record no customer delivery.
 Actual PrestaShop ACL, DB unique-key concurrency, lifecycle hooks and
 browser/runtime integration need the isolated workflow; source checks cannot
 establish those behaviors.

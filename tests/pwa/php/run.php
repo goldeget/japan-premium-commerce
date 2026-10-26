@@ -260,3 +260,4 @@ try {
 
 require __DIR__ . '/delivery_outbox.php';
 require __DIR__ . '/order_history_producer.php';
+require __DIR__ . '/support_message_producer.php';

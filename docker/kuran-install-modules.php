@@ -68,8 +68,10 @@ if (!$backofficeModule || !$backofficeModule->installSupportContactPrivacy()) {
 }
 
 $pushModule = Module::getInstanceByName('kuraneapush');
-if (!$pushModule || !$pushModule->ensureOrderHistoryPushHook()) {
-    throw new RuntimeException('Could not ensure the native order notification receipt hook.');
+if (!$pushModule
+    || !$pushModule->ensureOrderHistoryPushHook()
+    || !$pushModule->ensureSupportMessagePushHook()) {
+    throw new RuntimeException('Could not ensure native order and support notification receipt hooks.');
 }
 
 // Repair the Korean address/address-list default route collision.

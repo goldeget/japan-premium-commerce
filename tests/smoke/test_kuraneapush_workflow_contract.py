@@ -16,7 +16,9 @@ class PushWorkflowContractTests(unittest.TestCase):
         module = (ROOT / 'modules/kuraneapush/kuraneapush.php').read_text()
         self.assertIn("'kuraneapush'", bootstrap)
         self.assertIn("$pushModule->ensureOrderHistoryPushHook()", bootstrap)
+        self.assertIn("$pushModule->ensureSupportMessagePushHook()", bootstrap)
         self.assertIn('public function ensureOrderHistoryPushHook(): bool', module)
+        self.assertIn('public function ensureSupportMessagePushHook(): bool', module)
 
     def test_ci_copies_all_php_suite_entrypoints(self):
         workflow = (ROOT / '.github/workflows/fresh-install.yml').read_text()
@@ -24,11 +26,12 @@ class PushWorkflowContractTests(unittest.TestCase):
         for filename in ('run.php', 'repository.php'):
             self.assertIn('cat > /tmp/ordenowa-push-contracts/tests/pwa/php/' + filename, step)
             self.assertIn('< tests/pwa/php/' + filename, step)
-        for filename in ('delivery_outbox.php', 'outbox_repository.php', 'order_history_producer.php'):
+        for filename in ('delivery_outbox.php', 'outbox_repository.php', 'order_history_producer.php', 'support_message_producer.php'):
             self.assertIn('cat > /tmp/ordenowa-push-contracts/tests/pwa/php/' + filename, step)
             self.assertIn('< tests/pwa/php/' + filename, step)
         self.assertIn("require __DIR__ . '/delivery_outbox.php';", (ROOT / 'tests/pwa/php/run.php').read_text())
         self.assertIn("require __DIR__ . '/order_history_producer.php';", (ROOT / 'tests/pwa/php/run.php').read_text())
+        self.assertIn("require __DIR__ . '/support_message_producer.php';", (ROOT / 'tests/pwa/php/run.php').read_text())
 
     def test_ci_executes_isolated_mariadb_outbox_fixture(self):
         workflow = (ROOT / '.github/workflows/fresh-install.yml').read_text()

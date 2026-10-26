@@ -12,6 +12,7 @@ use Kuranea\Push\Infrastructure\SubscriptionCipher;
 use Kuranea\Push\Infrastructure\SubscriptionRepository;
 use Kuranea\Push\Infrastructure\PushOutboxRepository;
 use Kuranea\Push\Infrastructure\OrderHistoryPushProducer;
+use Kuranea\Push\Infrastructure\SupportMessagePushProducer;
 
 class Kuraneapush extends Module
 {
@@ -19,7 +20,7 @@ class Kuraneapush extends Module
     {
         $this->name = 'kuraneapush';
         $this->tab = 'administration';
-        $this->version = '1.0.3';
+        $this->version = '1.0.4';
         $this->author = 'ORDENOWA';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -41,6 +42,7 @@ class Kuraneapush extends Module
         }
         return $this->installTab() && $this->registerHook([
             'displayCustomerAccount', 'actionObjectCustomerDeleteAfter', 'actionOrderHistoryAddAfter',
+            'actionObjectCustomerMessageAddAfter',
         ]);
     }
 
@@ -58,6 +60,12 @@ class Kuraneapush extends Module
     public function ensureOrderHistoryPushHook(): bool
     {
         return $this->registerHook('actionOrderHistoryAddAfter');
+    }
+
+    /** Repair the additive native support-reply hook on already-installed stores. */
+    public function ensureSupportMessagePushHook(): bool
+    {
+        return $this->registerHook('actionObjectCustomerMessageAddAfter');
     }
 
     public function getContent(): string
@@ -119,6 +127,13 @@ class Kuraneapush extends Module
     {
         if ($this->active) {
             (new OrderHistoryPushProducer())->record($params['order_history'] ?? null);
+        }
+    }
+
+    public function hookActionObjectCustomerMessageAddAfter(array $params): void
+    {
+        if ($this->active) {
+            (new SupportMessagePushProducer())->record($params['object'] ?? null);
         }
     }
 

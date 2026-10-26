@@ -60,7 +60,7 @@ const windowClient = client => ({
   navigate: client.noNavigate ? undefined : async url => {
     clientActions.push({action: 'navigate', url});
     if (client.navigateFails) throw new Error('navigation failed');
-    return client.navigateNull ? null : windowClient({...client, url});
+    return client.navigateNull ? null : windowClient({...client, url: client.navigateResultUrl || url});
   },
   focus: async () => { clientActions.push({action: 'focus', url: client.url}); },
 });
@@ -307,6 +307,19 @@ class PublicServiceWorkerBehaviorTests(unittest.TestCase):
                 self.assertTrue(url == target or {"action": "navigate", "url": target} in actions)
                 self.assertEqual(0, result["fetchCalls"])
                 self.assertEqual(0, result["cacheOpenCalls"])
+
+    def test_notification_click_focuses_same_origin_redirect_without_opening_duplicate(self) -> None:
+        target = "http://localhost:18080/index.php?controller=my-account"
+        login = "http://localhost:18080/index.php?controller=authentication&back=my-account"
+        result = self.run_worker(
+            kind="notificationclick",
+            windows=[{"url": "http://localhost:18080/ja/category", "navigateResultUrl": login}],
+        )
+
+        actions = result["clientActions"]
+        self.assertIn({"action": "navigate", "url": target}, actions)
+        self.assertEqual([], [action for action in actions if action["action"] == "openWindow"])
+        self.assertEqual({"action": "focus", "url": login}, actions[-1])
 
     def test_notification_click_falls_back_when_same_origin_window_cannot_navigate(self) -> None:
         for options in ({"noNavigate": True}, {"navigateFails": True}, {"navigateNull": True}):

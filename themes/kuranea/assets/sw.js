@@ -246,9 +246,15 @@ self.addEventListener('notificationclick', (event) => {
         }
         if (typeof client.navigate !== 'function') continue;
         const navigated = await client.navigate(destination);
-        if (navigated && navigated.url === destination) {
-          await navigated.focus();
-          return;
+        if (navigated) {
+          try {
+            if (new URL(navigated.url, self.location.origin).origin === self.location.origin) {
+              await navigated.focus();
+              return;
+            }
+          } catch (_error) {
+            // An invalid navigation result must use the fixed same-origin fallback below.
+          }
         }
       } catch (_error) {
         // A closed or unavailable window must not prevent opening the fixed account route.
