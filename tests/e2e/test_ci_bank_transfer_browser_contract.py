@@ -175,11 +175,14 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
 
     def test_browser_uses_real_customer_and_staff_controls_not_database_mutation_or_js_clicks(self) -> None:
         self.require("find_transfer_menu_link", self.browser)
-        self.require('"#nav-sidebar a, #nav-sidebar button"', self.browser)
+        self.require('#nav-sidebar #subtab-AdminParentOrders > a.link', self.browser)
+        self.require('#nav-sidebar #subtab-AdminBusinessProfileTransfers > a[href]', self.browser)
+        self.require('query.get("controller") == ["AdminBusinessProfileTransfers"]', self.browser)
         self.require('orders_toggle.get_attribute("aria-expanded") != "true"', self.browser)
         self.require('orders_toggle.click()', self.browser)
         self.require('WebDriverWait(driver, 10).until(lambda _browser: bool(visible_transfer_links()))', self.browser)
         self.require('"the generated transfer menu link left the authenticated Back Office"', self.browser)
+        self.assertNotIn('"/transfer" in parsed.path.lower()', self.browser)
         self.require("issue_buttons[0].click()", self.browser)
         self.require("buttons[0].click()", self.browser)
         self.require('fields["submit"][0].click()', self.browser)

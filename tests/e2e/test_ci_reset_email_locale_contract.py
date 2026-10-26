@@ -115,7 +115,13 @@ class ResetEmailLocaleContract(unittest.TestCase):
         with patch.object(module, 'validate_context', side_effect=RuntimeError(secret)):
             with contextlib.redirect_stderr(output), contextlib.redirect_stdout(output):
                 self.assertFalse(module.run())
-        self.assertEqual(output.getvalue(), 'FAIL: isolated native reset email locale=none stage=context\n')
+        self.assertEqual(
+            output.getvalue(),
+            'FAIL: isolated native reset email locale=none stage=context exception=RuntimeError; '
+            'response_status=unavailable; same_origin=false; native_route=false; language_matches=false; '
+            'email_field=false; submit_control=false; submit_center_in_viewport=false; '
+            'submit_center_unobstructed=false; success_alert=false; reset_fields=false\n',
+        )
 
     def test_failure_artifact_keeps_only_bounded_browser_facts(self):
         module = self.module()
@@ -126,6 +132,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 "exception_type": "TimeoutException", "response_status": 404,
                 "same_origin": True, "native_route": True, "language_matches": False,
                 "email_field_present": False, "submit_control_present": False,
+                "submit_center_in_viewport": False, "submit_center_unobstructed": False,
                 "success_alert_present": False, "reset_fields_present": False,
             }
             with patch.dict(module.os.environ, {"RUNNER_TEMP": temp, "QA_ARTIFACT_DIR": str(artifact)}):
@@ -149,6 +156,14 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 self.assertIn(stage, source)
         self.assertIn("navigation_status(driver)", source)
         self.assertIn("native_password_route(driver.current_url", source)
+        self.assertIn("--window-size=1440,960", source)
+        self.assertIn("document.elementFromPoint(x, y)", source)
+        for exception in (
+            "ElementClickInterceptedException", "ElementNotInteractableException",
+            "StaleElementReferenceException",
+        ):
+            with self.subTest(exception=exception):
+                self.assertIn(exception, source)
 
     def test_context_rejects_unowned_project_before_any_fixture_or_network_access(self):
         module = self.module()

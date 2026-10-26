@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -273,6 +274,23 @@ def main() -> None:
                 result["screenshot_saved"] = False
             else:
                 result["screenshot_saved"] = True
+        check_summary = ";".join(
+            f"{name}={str(value).lower()}"
+            for name, value in sorted(result.get("checks", {}).items())
+            if type(value) is bool
+        ) or "none"
+        response_status = result.get("response_status")
+        if type(response_status) is not int or not 100 <= response_status <= 599:
+            response_status = "unavailable"
+        print(
+            "FAIL: synthetic product SEO browser "
+            f"stage={result.get('stage', 'unknown')} substage={result.get('substage', 'unknown')} "
+            f"exception={type(error).__name__} response_status={response_status} "
+            f"same_origin={str(result.get('same_origin', False)).lower()} "
+            f"japanese_document={str(result.get('japanese_document', False)).lower()} "
+            f"checks={check_summary}",
+            file=sys.stderr,
+        )
         raise AssertionError(
             f"synthetic product SEO browser failed at {result.get('stage', 'unknown')} ({type(error).__name__})"
         ) from None

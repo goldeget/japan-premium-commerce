@@ -322,34 +322,49 @@ def admin_login(driver: webdriver.Chrome, ctx: dict[str, object], email: str | N
     clear_passwords(driver)
 
 
-def find_transfer_menu_link(driver: webdriver.Chrome, admin_root: str) -> str:
+def find_transfer_menu_link(driver: webdriver.Chrome, admin_root: str, set_substage=None) -> str:
+    def mark(name: str) -> None:
+        if set_substage is not None:
+            set_substage(name)
+
     def visible_transfer_links() -> set[str]:
         matches = set()
-        for link in driver.find_elements(By.CSS_SELECTOR, "#nav-sidebar a[href]"):
-            if " ".join((link.text or "").split()) != "주문 입금 안내" or not link.is_displayed():
+        for link in driver.find_elements(
+            By.CSS_SELECTOR,
+            "#nav-sidebar #subtab-AdminBusinessProfileTransfers > a[href]",
+        ):
+            if not link.is_displayed() or not link.is_enabled():
                 continue
             href = link.get_attribute("href") or ""
             if not safe_admin_path(href, admin_root):
                 raise AssertionError("the generated transfer menu link left the authenticated Back Office")
             parsed = urlparse(href)
             query = parse_qs(parsed.query, keep_blank_values=True)
-            if query.get("controller") == ["AdminBusinessProfileTransfers"] or "/transfer" in parsed.path.lower():
+            if query.get("controller") == ["AdminBusinessProfileTransfers"]:
                 matches.add(href)
         return matches
 
+    mark("transfer_link_scan")
     candidates = visible_transfer_links()
     if not candidates:
+        mark("orders_toggle_scan")
         orders_toggles = [
-            item for item in driver.find_elements(By.CSS_SELECTOR, "#nav-sidebar a, #nav-sidebar button")
-            if " ".join((item.text or "").split()) == "주문" and item.is_displayed() and item.is_enabled()
+            item for item in driver.find_elements(
+                By.CSS_SELECTOR,
+                "#nav-sidebar #subtab-AdminParentOrders > a.link",
+            ) if item.is_displayed() and item.is_enabled()
         ]
         if len(orders_toggles) != 1:
             raise AssertionError("the authenticated Orders sidebar did not expose one native menu toggle")
         orders_toggle = orders_toggles[0]
         if orders_toggle.get_attribute("aria-expanded") != "true":
+            mark("orders_menu_expand")
             orders_toggle.click()
+        mark("orders_menu_link_wait")
         WebDriverWait(driver, 10).until(lambda _browser: bool(visible_transfer_links()))
+        mark("expanded_transfer_link_readback")
         candidates = visible_transfer_links()
+    mark("unique_transfer_link")
     if len(candidates) != 1:
         raise AssertionError("the authenticated Orders menu did not expose one native bank-transfer route")
     return next(iter(candidates))
@@ -627,6 +642,12 @@ def run() -> None:
     mobile_detail_url = ""
     account_number = "00001234"
     synthetic_statement = f"ORDENOWA-CI-RECEIPT-{ctx['run_id']}-{ctx['attempt']}"
+    substage = "native_unpaid_order_readback"
+
+    def set_substage(name: str) -> None:
+        nonlocal substage
+        substage = name
+
     try:
         stage = result["stage"] = "context"
         # The desktop checkout order is intentionally canceled by the preceding
@@ -643,9 +664,12 @@ def run() -> None:
         admin_login(admin, ctx)
 
         stage = result["stage"] = "transfer_menu"
-        transfer_url = find_transfer_menu_link(admin, str(ctx["admin"]))
+        transfer_url = find_transfer_menu_link(admin, str(ctx["admin"]), set_substage)
+        substage = "menu_link_token"
         admin_token = token_from_url(transfer_url)
+        substage = "transfer_route_navigation"
         visit(admin, transfer_url, str(ctx["shop"]))
+        substage = "transfer_order_row_readback"
         row = order_row(admin, order)
 
         stage = result["stage"] = "csrf_rejected"
@@ -835,7 +859,11 @@ def run() -> None:
         error_type = type(error).__name__
         result["exception_type"] = error_type if error_type in SAFE_EXCEPTION_TYPES else "OtherError"
         result["stage"] = stage if stage in SAFE_STAGES else "context"
-        print(f"FAIL: isolated bank-transfer browser QA; stage={result['stage']}; exception={result['exception_type']}", file=sys.stderr)
+        print(
+            f"FAIL: isolated bank-transfer browser QA; stage={result['stage']}; "
+            f"substage={substage}; exception={result['exception_type']}",
+            file=sys.stderr,
+        )
         for browser, filename in (
             (limited, "bank-transfer-limited-failure.png"),
             (foreign, "bank-transfer-foreign-failure.png"),

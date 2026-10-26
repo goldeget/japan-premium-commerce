@@ -52,6 +52,28 @@ class PushWorkflowContractTests(unittest.TestCase):
         self.assertIn('if(PHP_SAPI!==\'cli\'||!Readiness::isolated())', fixture)
         self.assertIn('finally {', fixture)
 
+    def test_ci_reuploads_temporary_push_helpers_after_compose_recreates_container(self):
+        workflow = (ROOT / '.github/workflows/fresh-install.yml').read_text()
+        step = workflow.split('id: pwa_push_qa', 1)[1].split('      - name:', 1)[0]
+        override_up = step.index('up -d --no-deps --wait --wait-timeout 300 prestashop')
+        outbox_upload = step.index(
+            "cat > /tmp/ordenowa-push-contracts/tests/pwa/php/outbox_database.php"
+        )
+        consent_upload = step.index("cat > /tmp/ordenowa-push-consent.php")
+        outbox_run = step.index('php /tmp/ordenowa-push-contracts/tests/pwa/php/outbox_database.php')
+        seed_flag = step.index('push_seed_attempted=1')
+        consent_seed = step.index('php /tmp/ordenowa-push-consent.php seed')
+        restore_guard = step.index('if [[ "$push_seed_attempted" == 1 ]]; then')
+        self.assertLess(override_up, outbox_upload)
+        self.assertLess(override_up, consent_upload)
+        self.assertLess(outbox_upload, outbox_run)
+        self.assertLess(consent_upload, consent_seed)
+        self.assertLess(outbox_run, seed_flag)
+        self.assertLess(seed_flag, consent_seed)
+        self.assertLess(restore_guard, seed_flag)
+        self.assertIn('push_seed_attempted=0', step)
+        self.assertIn('if [[ "$push_override_attempted" == 1 ]]; then', step)
+
     def test_local_compose_has_no_storage_key_and_disables_test_mode(self):
         compose = (ROOT / 'compose.yaml').read_text()
         self.assertIn('ORDENOWA_PUSH_TEST_MODE: "0"', compose)

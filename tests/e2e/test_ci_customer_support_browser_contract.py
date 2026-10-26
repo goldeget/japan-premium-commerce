@@ -298,6 +298,12 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 self.assertIn(required, browser)
         helper = browser[browser.index("def contact_page_evidence"):browser.index("def safe_admin_path")]
         self.assertNotIn('"current_url"', helper)
+        for safe_field in (
+            "contact_status={contact_status}", "same_origin=",
+            "native_route=", "form_count=", "form_visible=",
+        ):
+            with self.subTest(safe_field=safe_field):
+                self.assertIn(safe_field, browser)
 
 
 if __name__ == "__main__":

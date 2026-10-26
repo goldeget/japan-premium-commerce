@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from selenium import webdriver
@@ -67,13 +68,32 @@ def wait_document(driver) -> None:
     WebDriverWait(driver, 40).until(lambda browser: browser.execute_script('return document.readyState') == 'complete')
 
 
+def click_header_search_toggle(driver, element) -> None:
+    """Use a native click for the fixed header control without the cart helper's top margin."""
+    WebDriverWait(driver, 15, poll_frequency=0.25).until(
+        lambda browser: browser.execute_script(
+            """
+            const el = arguments[0], box = el.getBoundingClientRect();
+            const x = box.left + box.width / 2, y = box.top + box.height / 2;
+            if (!el.isConnected || box.width <= 0 || box.height <= 0
+                || x < 0 || x >= innerWidth || y < 0 || y >= innerHeight - 90) return false;
+            const target = document.elementFromPoint(x, y);
+            return target === el || el.contains(target);
+            """,
+            element,
+        ),
+        message="the fixed search toggle is outside the unobstructed viewport",
+    )
+    element.click()
+
+
 def search(driver, query: str, mobile: bool, result: dict) -> None:
     diagnostics = result["diagnostics"]
     if mobile:
         result["substage"] = "search_toggle"
         toggle = visible(driver, '[data-bs-target="#searchCanvas"]')
         diagnostics["search_toggle_visible"] = toggle.is_displayed()
-        click_at_center(driver, toggle)
+        click_header_search_toggle(driver, toggle)
     result["substage"] = "search_field"
     field = visible(driver, '#ps_searchbar_input[name="s"]')
     diagnostics["search_field_visible"] = field.is_displayed()
@@ -199,19 +219,24 @@ def run_viewport(label: str, width: int, height: int, run_id: str, attempt: str)
                 query_readback_matches=False, input_readback_matches=False,
             )
             search(driver, query, width < 768, result)
+            result["substage"] = "search_result_heading"
             header = visible(driver, '#js-product-list-header')
             assert_true(query in header.text, "Search heading omitted the Japanese query")
             if case == 'missing':
+                result["substage"] = "search_no_results"
                 assert_true(not driver.find_elements(By.CSS_SELECTOR, '#products article[data-id-product]'), "No-result query returned product cards")
                 assert_true('の商品は見つかりませんでした' in header.text, "Missing Japanese no-result heading")
                 assert_true('検索条件に一致する商品が見つかりませんでした。' in visible(driver, '#js-product-list').text,
                             "Missing Japanese no-result guidance")
                 assert_true(bool(driver.find_elements(By.CSS_SELECTOR, '#js-product-list a.btn-primary')), "No-result state has no recovery link")
             else:
+                result["substage"] = "search_result_title"
                 assert_true('の検索結果' in header.text, "Missing Japanese search result heading")
+                result["substage"] = "search_fixture_card"
                 card = visible(driver, f'#products article[data-id-product="{PRODUCT_ID}"]')
                 title = card.find_element(By.CSS_SELECTOR, 'a.product-miniature__title')
                 assert_true(title.text.strip() == expected_name, "Search card is not this run's Japanese fixture")
+                result["substage"] = "search_product_link"
                 assert_product_destination(title.get_attribute('href') or '')
                 if case == 'partial':
                     driver.save_screenshot(str(DEST / f'storefront-search-{label}-{case}.png'))
@@ -233,6 +258,15 @@ def run_viewport(label: str, width: int, height: int, run_id: str, attempt: str)
                 driver.save_screenshot(str(DEST / f'storefront-search-{label}-failure.png'))
             except Exception:
                 pass
+        details = "; ".join(
+            f"{name}={'unavailable' if value is None else str(value).lower() if type(value) is bool else value}"
+            for name, value in sorted(result['diagnostics'].items())
+        )
+        print(
+            f"FAIL: Japanese search at viewport={label} stage={result['stage']} "
+            f"substage={result['substage']}; {details}",
+            file=sys.stderr,
+        )
         raise AssertionError(f'Japanese search failed at {label}/{result["stage"]}; see bounded result artifact') from None
     finally:
         (DEST / f'storefront-search-{label}-result.json').write_text(json.dumps(result, ensure_ascii=False) + '\n', encoding='utf-8')

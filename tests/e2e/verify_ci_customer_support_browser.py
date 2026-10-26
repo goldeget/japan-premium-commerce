@@ -1214,7 +1214,18 @@ def run() -> None:
             "AssertionError", "TimeoutException", "ValueError", "RuntimeError", "URLError", "OSError",
             "StaleElementReferenceException", "ElementClickInterceptedException", "NoSuchElementException",
         } else "OtherError"
-        print(f"FAIL: isolated customer support QA; stage={stage}; exception={result['exception_type']}", file=sys.stderr)
+        contact_status = result.get("contact_document_status")
+        if type(contact_status) is not int or not 100 <= contact_status <= 599:
+            contact_status = "unavailable"
+        print(
+            f"FAIL: isolated customer support QA; stage={stage}; exception={result['exception_type']}; "
+            f"contact_status={contact_status}; "
+            f"same_origin={str(result['contact_same_origin']).lower()}; "
+            f"native_route={str(result['contact_native_route']).lower()}; "
+            f"form_count={result['contact_form_count']}; "
+            f"form_visible={str(result['contact_form_visible']).lower()}",
+            file=sys.stderr,
+        )
         try:
             target = ctx.artifact_dir / "customer-support-browser-result.json"
             write_result(target, result)

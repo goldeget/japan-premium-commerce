@@ -33,7 +33,9 @@ SAFE_STAGES = {
 }
 SAFE_EXCEPTION_TYPES = {
     'AssertionError', 'TimeoutException', 'ValueError', 'RuntimeError', 'URLError',
-    'OSError', 'WebDriverException', 'NoSuchElementException', 'OtherError',
+    'OSError', 'WebDriverException', 'ElementClickInterceptedException',
+    'ElementNotInteractableException', 'StaleElementReferenceException',
+    'NoSuchElementException', 'OtherError',
 }
 
 
@@ -51,7 +53,8 @@ def write_diagnostics(result: dict) -> None:
     if (set(result) != {
             'status', 'language', 'stage', 'exception_type', 'response_status',
             'same_origin', 'native_route', 'language_matches', 'email_field_present',
-            'submit_control_present', 'success_alert_present', 'reset_fields_present',
+            'submit_control_present', 'submit_center_in_viewport',
+            'submit_center_unobstructed', 'success_alert_present', 'reset_fields_present',
         }
             or result['status'] not in {'success', 'failure'}
             or result['language'] not in (*LANGUAGES, 'none')
@@ -62,7 +65,8 @@ def write_diagnostics(result: dict) -> None:
             ))
             or any(type(result[key]) is not bool for key in (
                 'same_origin', 'native_route', 'language_matches', 'email_field_present',
-                'submit_control_present', 'success_alert_present', 'reset_fields_present'))):
+                'submit_control_present', 'submit_center_in_viewport',
+                'submit_center_unobstructed', 'success_alert_present', 'reset_fields_present'))):
         return
     artifact_dir.mkdir(parents=True, exist_ok=True)
     (artifact_dir / 'reset-email-locale-result.json').write_text(
@@ -275,7 +279,8 @@ def run() -> bool:
         'status': 'failure', 'language': 'none', 'stage': 'context', 'exception_type': None,
         'response_status': None, 'same_origin': False, 'native_route': False,
         'language_matches': False, 'email_field_present': False,
-        'submit_control_present': False, 'success_alert_present': False,
+        'submit_control_present': False, 'submit_center_in_viewport': False,
+        'submit_center_unobstructed': False, 'success_alert_present': False,
         'reset_fields_present': False,
     }
     try:
@@ -290,6 +295,7 @@ def run() -> bool:
             diagnostic.update(language=language, stage=stage, response_status=None,
                               same_origin=False, native_route=False, language_matches=False,
                               email_field_present=False, submit_control_present=False,
+                              submit_center_in_viewport=False, submit_center_unobstructed=False,
                               success_alert_present=False, reset_fields_present=False)
             email = f'ordenowa-reset-locale-{os.environ["GITHUB_RUN_ID"]}-{os.environ["GITHUB_RUN_ATTEMPT"]}-{language}-{secrets.token_hex(4)}@example.invalid'
             fixture = seed(project, language, email)
@@ -298,6 +304,7 @@ def run() -> bool:
             options = Options()
             for flag in ('--headless=new', '--no-sandbox', '--disable-dev-shm-usage'):
                 options.add_argument(flag)
+            options.add_argument('--window-size=1440,960')
             driver = webdriver.Chrome(options=options)
             stage = 'native_request_document'
             driver.get(fixture['url'])
@@ -312,6 +319,22 @@ def run() -> bool:
             stage = 'native_request_submit_control'
             submit_control = wait.until(EC.element_to_be_clickable((By.ID, 'send-reset-link')))
             diagnostic['submit_control_present'] = True
+            hit_test = driver.execute_script("""
+              const element = arguments[0], box = element.getBoundingClientRect();
+              const x = box.left + box.width / 2, y = box.top + box.height / 2;
+              const inViewport = box.width > 0 && box.height > 0
+                && x >= 0 && x < innerWidth && y >= 0 && y < innerHeight;
+              const hit = inViewport ? document.elementFromPoint(x, y) : null;
+              return {
+                inViewport,
+                unobstructed: Boolean(hit && (hit === element || element.contains(hit)))
+              };
+            """, submit_control)
+            if isinstance(hit_test, dict):
+                diagnostic['submit_center_in_viewport'] = hit_test.get('inViewport') is True
+                diagnostic['submit_center_unobstructed'] = hit_test.get('unobstructed') is True
+            if not diagnostic['submit_center_in_viewport'] or not diagnostic['submit_center_unobstructed']:
+                raise AssertionError('native reset submit center is outside the unobstructed viewport')
             stage = 'native_request_submit'
             submit_control.click()
             stage = 'native_request_readback'
@@ -348,7 +371,23 @@ def run() -> bool:
         return True
     except Exception as error:
         diagnostic['exception_type'] = type(error).__name__ if type(error).__name__ in SAFE_EXCEPTION_TYPES else 'OtherError'
-        print(f'FAIL: isolated native reset email locale={language} stage={stage}', file=sys.stderr)
+        response_status = diagnostic['response_status']
+        if type(response_status) is not int or not 100 <= response_status <= 599:
+            response_status = 'unavailable'
+        print(
+            f'FAIL: isolated native reset email locale={language} stage={stage} '
+            f'exception={diagnostic["exception_type"]}; response_status={response_status}; '
+            f'same_origin={str(diagnostic["same_origin"]).lower()}; '
+            f'native_route={str(diagnostic["native_route"]).lower()}; '
+            f'language_matches={str(diagnostic["language_matches"]).lower()}; '
+            f'email_field={str(diagnostic["email_field_present"]).lower()}; '
+            f'submit_control={str(diagnostic["submit_control_present"]).lower()}; '
+            f'submit_center_in_viewport={str(diagnostic["submit_center_in_viewport"]).lower()}; '
+            f'submit_center_unobstructed={str(diagnostic["submit_center_unobstructed"]).lower()}; '
+            f'success_alert={str(diagnostic["success_alert_present"]).lower()}; '
+            f'reset_fields={str(diagnostic["reset_fields_present"]).lower()}',
+            file=sys.stderr,
+        )
         return False
     finally:
         diagnostic['language'], diagnostic['stage'] = language, stage

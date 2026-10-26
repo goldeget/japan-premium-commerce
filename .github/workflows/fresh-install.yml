@@ -1734,8 +1734,6 @@ jobs:
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             sh -c 'cat > /tmp/ordenowa-push-contracts/tests/pwa/php/outbox_repository.php' < tests/pwa/php/outbox_repository.php
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
-            sh -c 'cat > /tmp/ordenowa-push-contracts/tests/pwa/php/outbox_database.php' < tests/pwa/php/outbox_database.php
-          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             sh -c 'cat > /tmp/ordenowa-push-contracts/tests/pwa/php/order_history_producer.php' < tests/pwa/php/order_history_producer.php
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             sh -c 'cat > /tmp/ordenowa-push-contracts/tests/pwa/php/support_message_producer.php' < tests/pwa/php/support_message_producer.php
@@ -1744,15 +1742,18 @@ jobs:
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             php /tmp/ordenowa-push-contracts/tests/pwa/php/run.php
           push_override_attempted=0
+          push_seed_attempted=0
           restore_push_defaults() {
             push_status=$?
             trap - EXIT
-            if [[ "$push_override_attempted" == 1 ]]; then
+            if [[ "$push_seed_attempted" == 1 ]]; then
               if ! docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
                 php /tmp/ordenowa-push-consent.php restore; then
                 echo '::error title=ORDENOWA synthetic push QA::Could not restore blank synthetic consent configuration.'
                 push_status=1
               fi
+            fi
+            if [[ "$push_override_attempted" == 1 ]]; then
               if ! docker compose -p "$CI_COMPOSE_PROJECT_NAME" \
                 up -d --no-deps --force-recreate --wait --wait-timeout 300 prestashop; then
                 echo '::error title=ORDENOWA synthetic push QA::Could not restore the base environment.'
@@ -1769,9 +1770,14 @@ jobs:
             -f compose.yaml -f tests/pwa/fixtures/ci-push.compose.yaml \
             up -d --no-deps --wait --wait-timeout 300 prestashop
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
-            php /tmp/ordenowa-push-contracts/tests/pwa/php/outbox_database.php
+            mkdir -p /tmp/ordenowa-push-contracts/tests/pwa/php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            sh -c 'cat > /tmp/ordenowa-push-contracts/tests/pwa/php/outbox_database.php' < tests/pwa/php/outbox_database.php
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             sh -c 'cat > /tmp/ordenowa-push-consent.php' < tests/pwa/fixtures/push_consent.php
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
+            php /tmp/ordenowa-push-contracts/tests/pwa/php/outbox_database.php
+          push_seed_attempted=1
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             php /tmp/ordenowa-push-consent.php seed
           "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" tests/e2e/verify_pwa_browser.py \

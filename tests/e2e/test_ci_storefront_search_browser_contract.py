@@ -30,18 +30,36 @@ class StorefrontSearchBrowserContractTests(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertIn(required, source)
 
+    def test_post_search_assertions_report_their_own_bounded_substage(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        expected = (
+            'result["substage"] = "search_result_heading"',
+            'result["substage"] = "search_no_results"',
+            'result["substage"] = "search_result_title"',
+            'result["substage"] = "search_fixture_card"',
+            'result["substage"] = "search_product_link"',
+        )
+        positions = [source.index(stage) for stage in expected]
+        self.assertEqual(positions, sorted(positions))
+        self.assertNotIn('result["current_url"]', source)
+        self.assertNotIn('result["query"]', source)
+
     def test_search_uses_only_existing_variant_and_browser_safety_helpers(self):
         self.assertTrue(SCRIPT.is_file(), "Japanese storefront search browser verifier is missing")
         source = SCRIPT.read_text(encoding="utf-8")
         for required in (
             'from verify_cart_controls_browser import (',
             'validate_isolated_ci_compose_project', 'validate_loopback_shop',
-            'click_at_center', 'visible', 'CI_TEST_PRODUCT_ID',
+            'click_at_center', 'click_header_search_toggle(driver, toggle)', 'visible', 'CI_TEST_PRODUCT_ID',
             'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT',
             '[CI ONLY] ORDENOWA カートオプション {run_id}-{attempt}',
             'assert_same_origin', 'assert_product_destination',
         ):
             self.assertIn(required, source)
+        header_click = source[source.index('def click_header_search_toggle'):source.index('def search(')]
+        self.assertIn('document.elementFromPoint(x, y)', header_click)
+        self.assertNotIn('y < 70', header_click)
+        self.assertIn('element.click()', header_click)
         for forbidden in ('subprocess', 'requests.', 'add_to_cart.click', 'controller=order', 'PaymentModule'):
             self.assertNotIn(forbidden, source)
 
