@@ -14,6 +14,10 @@
         <source>Place Order</source>
         <target state="final">注文を確定する</target>
       </trans-unit>
+      <trans-unit id="order-detail-shipment-carrier-column">
+        <source>Carrier</source>
+        <target state="final">配送業者</target>
+      </trans-unit>
     </body>
   </file>
 </xliff>

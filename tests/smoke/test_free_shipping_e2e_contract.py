@@ -7,6 +7,7 @@ import importlib.util
 import io
 import json
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
@@ -991,8 +992,154 @@ class FreeShippingE2eContractTest(unittest.TestCase):
             "shipping-free-order-tracking-verified.json",
             "shipping-free-order-tracking-admin.png",
             "shipping-free-order-tracking-customer.png",
+            "shipping-free-order-tracking-customer-table.png",
         ):
             self.assertIn(artifact, artifact_gate)
+
+    def test_japanese_order_detail_translations_and_browser_capture_are_covered(self) -> None:
+        theme = ROOT / "themes" / "kuranea"
+        expected_catalogs = (
+            (
+                "Shop.Theme.Customeraccount",
+                "ShopThemeCustomeraccount.ja-JP.xlf",
+                {
+                    "Order Reference: %reference% - placed on %date%": (
+                        "注文番号: %reference% - 注文日: %date%"
+                    ),
+                    "Shipment tracking details": "配送追跡情報",
+                    "Order tracking": "注文の配送状況",
+                },
+            ),
+            (
+                "Shop.Theme.Catalog",
+                "ShopThemeCatalog.ja-JP.xlf",
+                {
+                    "Carrier: %carrier_name%": "配送業者: %carrier_name%",
+                    "Payment method: %payment_method%": "お支払い方法: %payment_method%",
+                },
+            ),
+            (
+                "Shop.Theme.Checkout",
+                "ShopThemeCheckout.ja-JP.xlf",
+                {"Carrier": "配送業者"},
+            ),
+        )
+        for domain, filename, expected_entries in expected_catalogs:
+            path = theme / "translations" / "ja-JP" / filename
+            with self.subTest(catalog=filename):
+                if not path.is_file():
+                    self.fail(f"missing Japanese child-theme catalog for {domain}")
+                catalog = ET.parse(path).getroot()
+                namespace = "{urn:oasis:names:tc:xliff:document:1.2}"
+                files = catalog.findall(f"{namespace}file")
+                self.assertEqual([domain], [node.get("original") for node in files])
+                translations = {
+                    unit.findtext(f"{namespace}source"): unit.findtext(f"{namespace}target")
+                    for unit in files[0].findall(f".//{namespace}trans-unit")
+                }
+                for source, expected_target in expected_entries.items():
+                    with self.subTest(source=source):
+                        target = translations.get(source)
+                        self.assertEqual(target, expected_target)
+                        self.assertEqual(
+                            re.findall(r"%[^%]+%", source),
+                            re.findall(r"%[^%]+%", target or ""),
+                            "translated order-detail labels must preserve their Hummingbird placeholders",
+                        )
+
+        template_calls = (
+            (
+                ROOT / "themes" / "hummingbird" / "templates" / "customer" / "order-detail.tpl",
+                "Order Reference: %reference% - placed on %date%",
+                "Shop.Theme.Customeraccount",
+            ),
+            (
+                ROOT / "themes" / "hummingbird" / "templates" / "customer" / "order-detail.tpl",
+                "Carrier: %carrier_name%",
+                "Shop.Theme.Catalog",
+            ),
+            (
+                ROOT / "themes" / "hummingbird" / "templates" / "customer" / "order-detail.tpl",
+                "Payment method: %payment_method%",
+                "Shop.Theme.Catalog",
+            ),
+            (
+                ROOT / "themes" / "hummingbird" / "templates" / "customer" / "_partials" / "order-shipments.tpl",
+                "Shipment tracking details",
+                "Shop.Theme.Customeraccount",
+            ),
+            (
+                ROOT / "themes" / "hummingbird" / "templates" / "customer" / "_partials" / "order-carrier.tpl",
+                "Shipment tracking details",
+                "Shop.Theme.Customeraccount",
+            ),
+            (
+                ROOT / "themes" / "hummingbird" / "templates" / "customer" / "_partials" / "order-shipments.tpl",
+                "Carrier",
+                "Shop.Theme.Checkout",
+            ),
+            (
+                ROOT / "themes" / "hummingbird" / "templates" / "customer" / "_partials" / "order-carrier.tpl",
+                "Carrier",
+                "Shop.Theme.Checkout",
+            ),
+        )
+        for path, source, domain in template_calls:
+            calls = re.findall(r"\{l\b.*?\}", path.read_text(encoding="utf-8"), re.DOTALL)
+            with self.subTest(template=path.name, source=source):
+                self.assertTrue(
+                    any(f"s='{source}'" in call and f"d='{domain}'" in call for call in calls),
+                    f"Hummingbird must keep {source!r} in translation domain {domain}",
+                )
+
+        browser = BROWSER.read_text(encoding="utf-8")
+        customer_detail = browser.split("def _verify_customer_order_tracking_detail(", 1)[1].split(
+            "\ndef _verify_customer_order_tracking(", 1
+        )[0]
+        self.assertIn("def _assert_japanese_order_detail_copy(driver)", browser)
+        self.assertIn("_assert_japanese_order_detail_copy(driver)", customer_detail)
+        japanese_copy = browser.split("def _assert_japanese_order_detail_copy(driver)", 1)[1].split(
+            "\ndef ", 1
+        )[0]
+        self.assertIn('"ja-JP"', japanese_copy)
+        self.assertTrue(
+            'get_attribute("lang")' in japanese_copy or "document.documentElement.lang" in japanese_copy,
+            "the same-order customer capture must verify the rendered document locale",
+        )
+        for marker in (
+            ".order-infos__reference",
+            ".order-infos__carrier",
+            ".order-infos__payment",
+            "#order_carriers_heading",
+            "注文番号:",
+            "注文日:",
+            "配送業者:",
+            "お支払い方法:",
+            "配送追跡情報",
+            "配送業者",
+            '.order-carriers [role="columnheader"]',
+        ):
+            with self.subTest(browser_marker=marker):
+                self.assertIn(marker, japanese_copy)
+
+        table_capture = '"shipping-free-order-tracking-customer-table.png"'
+        self.assertIn("scrollIntoView", customer_detail)
+        self.assertIn("tracking_cells[0]", customer_detail)
+        self.assertIn(
+            '_save_customer_tracking_screenshot(driver, "shipping-free-order-tracking-customer-table.png")',
+            customer_detail,
+        )
+        self.assertIn(table_capture, customer_detail)
+        self.assertLess(
+            customer_detail.index("scrollIntoView"),
+            customer_detail.index(table_capture),
+            "the second customer screenshot must be captured after scrolling to the tracking table",
+        )
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        tracking_artifacts = workflow.split(
+            'if [[ "$SHIPPING_FREE_ADMIN_BROWSER_QA_OUTCOME" == success ]]; then', 1
+        )[1].split("\n          fi", 1)[0]
+        self.assertIn(table_capture.strip('"'), tracking_artifacts)
 
     def test_tracking_acceptance_uses_native_admin_update_and_same_customer_order(self) -> None:
         browser = BROWSER.read_text(encoding="utf-8")

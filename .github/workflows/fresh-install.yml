@@ -3068,6 +3068,7 @@ jobs:
               shipping-free-order-tracking-verified.json
               shipping-free-order-tracking-admin.png
               shipping-free-order-tracking-customer.png
+              shipping-free-order-tracking-customer-table.png
             )
           fi
           if [[ "$SHIPPING_FREE_TRACKING_PERSISTENCE_OUTCOME" == success ]]; then

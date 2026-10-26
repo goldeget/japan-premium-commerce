@@ -10,6 +10,18 @@
         <source>My account navigation sidebar</source>
         <target state="final">マイアカウントメニュー</target>
       </trans-unit>
+      <trans-unit id="order-detail-reference-date">
+        <source>Order Reference: %reference% - placed on %date%</source>
+        <target state="final">注文番号: %reference% - 注文日: %date%</target>
+      </trans-unit>
+      <trans-unit id="order-detail-shipment-tracking-heading">
+        <source>Shipment tracking details</source>
+        <target state="final">配送追跡情報</target>
+      </trans-unit>
+      <trans-unit id="order-detail-tracking-table-label">
+        <source>Order tracking</source>
+        <target state="final">注文の配送状況</target>
+      </trans-unit>
     </body>
   </file>
 </xliff>

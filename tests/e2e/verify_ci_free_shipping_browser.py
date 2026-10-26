@@ -2209,6 +2209,38 @@ def _save_customer_tracking_screenshot(driver, filename: str) -> bool:
     return bool(driver.save_screenshot(str(QA_DIR / filename)))
 
 
+def _assert_japanese_order_detail_copy(driver) -> None:
+    """Check only the static Japanese labels on this same synthetic customer order page."""
+    expected_language = "ja-JP"
+    document_language = driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or ""
+    if not document_language.lower().startswith(expected_language.split("-")[0].lower()):
+        raise AssertionError("customer order detail did not render in Japanese")
+
+    reference = driver.find_element(By.CSS_SELECTOR, ".order-infos__reference").text.strip()
+    if not reference.startswith("注文番号:") or " - 注文日:" not in reference:
+        raise AssertionError("Japanese order detail reference labels are missing")
+
+    payment = driver.find_element(By.CSS_SELECTOR, ".order-infos__payment").text.strip()
+    if not payment.startswith("お支払い方法:"):
+        raise AssertionError("Japanese order detail payment label is missing")
+
+    for carrier in driver.find_elements(By.CSS_SELECTOR, ".order-infos__carrier"):
+        if not carrier.text.strip().startswith("配送業者:"):
+            raise AssertionError("Japanese order detail carrier label is missing")
+
+    tracking_heading = driver.find_element(By.CSS_SELECTOR, "#order_carriers_heading").text.strip()
+    if tracking_heading != "配送追跡情報":
+        raise AssertionError("Japanese shipment tracking heading is missing")
+
+    tracking_table = driver.find_element(By.CSS_SELECTOR, ".order-carriers [role='table']")
+    if tracking_table.get_attribute("aria-label") != "注文の配送状況":
+        raise AssertionError("Japanese order tracking table label is missing")
+
+    carrier_headers = driver.find_elements(By.CSS_SELECTOR, '.order-carriers [role="columnheader"]')
+    if not any(header.text.strip() == "配送業者" for header in carrier_headers):
+        raise AssertionError("Japanese tracking table carrier label is missing")
+
+
 def _verify_customer_order_tracking_detail(
     driver,
     order: dict[str, object],
@@ -2241,6 +2273,7 @@ def _verify_customer_order_tracking_detail(
     customer_route_class = _customer_order_detail_route_class(driver.current_url, order_id)
     if customer_route_class == "other_customer_route":
         raise AssertionError("customer order detail did not retain the matching native order identity")
+    _assert_japanese_order_detail_copy(driver)
 
     tracking_cells = [
         cell
@@ -2253,6 +2286,9 @@ def _verify_customer_order_tracking_detail(
         raise AssertionError("the CI-only carrier unexpectedly exposed an external tracking destination")
     if not _save_customer_tracking_screenshot(driver, "shipping-free-order-tracking-customer.png"):
         raise AssertionError("customer tracking screenshot could not be saved with password fields cleared")
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", tracking_cells[0])
+    if not _save_customer_tracking_screenshot(driver, "shipping-free-order-tracking-customer-table.png"):
+        raise AssertionError("customer tracking table screenshot could not be saved with password fields cleared")
     return customer_route_class
 
 

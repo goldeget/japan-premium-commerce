@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file source-language="en-US" target-language="ja-JP" datatype="plaintext" original="Shop.Theme.Catalog">
+    <body>
+      <trans-unit id="order-detail-carrier-label">
+        <source>Carrier: %carrier_name%</source>
+        <target state="final">配送業者: %carrier_name%</target>
+      </trans-unit>
+      <trans-unit id="order-detail-payment-method-label">
+        <source>Payment method: %payment_method%</source>
+        <target state="final">お支払い方法: %payment_method%</target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>
