@@ -549,6 +549,22 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertEqual("결제 수단", translations(path).get("Payment Methods"))
         self.assertEqual("결제 수단", translations(path).get("Payment methods"))
 
+    def test_mbo_boost_sales_overlay_uses_the_verified_source_and_id(self) -> None:
+        path = MODULE / "translations" / "ko-KR" / "ModulesMboRecommendedmodulesandservices.ko-KR.xlf"
+        self.assertTrue(path.is_file(), "missing module-owned MBO recommended-button overlay")
+        root = ET.parse(path).getroot()
+        units = root.findall(".//x:trans-unit", NAMESPACE)
+        self.assertEqual(1, len(units))
+        self.assertEqual("8c883385a642028c9366bb087618b216", units[0].attrib["id"])
+        self.assertEqual({"Boost sales": "매출 늘리기"}, translations(path))
+
+    def test_mbo_boost_sales_overlay_is_registered_and_lifecycle_checked(self) -> None:
+        subscriber = (MODULE / "src" / "AdminLocaleSubscriber.php").read_text(encoding="utf-8")
+        lifecycle = (ROOT / "tests" / "admin_locale" / "locale_lifecycle.php").read_text(encoding="utf-8")
+        self.assertIn("'Modules.Mbo.Recommendedmodulesandservices' => 'ModulesMboRecommendedmodulesandservices.ko-KR.xlf'", subscriber)
+        self.assertIn("$translator->trans('Boost sales', [], 'Modules.Mbo.Recommendedmodulesandservices', 'ko-KR')", lifecycle)
+        self.assertIn("$translator->trans('Boost sales', [], 'Modules.Mbo.Recommendedmodulesandservices')", lifecycle)
+
     def test_orders_locale_lifecycle_checks_the_runtime_admin_global_kpi_translation(self) -> None:
         lifecycle = (ROOT / "tests" / "admin_locale" / "locale_lifecycle.php").read_text(encoding="utf-8")
         self.assertIn("Average Order Value", lifecycle)

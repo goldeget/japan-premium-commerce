@@ -187,6 +187,7 @@ foreach ([
         same('데모 모드', $translator->trans('Demo mode', [], 'Admin.Dashboard.Feature', 'ko-KR'), $route . ' explicit Korean demo mode label');
         same('변경 사항을 저장했습니다.', $translator->trans('Successful update', [], 'Admin.Notifications.Success', 'ko-KR'), $route . ' explicit Korean update confirmation');
         same('변경 사항을 저장했습니다.', $translator->trans('Successful update.', [], 'Admin.Notifications.Success', 'ko-KR'), $route . ' explicit Korean punctuated update confirmation');
+        same('매출 늘리기', $translator->trans('Boost sales', [], 'Modules.Mbo.Recommendedmodulesandservices', 'ko-KR'), $route . ' explicit Korean recommended-module button');
         if ($route === 'admin_orders_index') {
             same('평균 주문 금액', $translator->trans('Average Order Value', [], 'Admin.Global', 'ko-KR'), $route . ' explicit Admin.Global KPI translation');
         }
@@ -199,6 +200,7 @@ foreach ([
         same('데모 모드', $translator->trans('Demo mode', [], 'Admin.Dashboard.Feature'), $route . ' default Korean demo mode label');
         same('변경 사항을 저장했습니다.', $translator->trans('Successful update', [], 'Admin.Notifications.Success'), $route . ' default Korean update confirmation');
         same('변경 사항을 저장했습니다.', $translator->trans('Successful update.', [], 'Admin.Notifications.Success'), $route . ' default Korean punctuated update confirmation');
+        same('매출 늘리기', $translator->trans('Boost sales', [], 'Modules.Mbo.Recommendedmodulesandservices'), $route . ' default Korean recommended-module button');
     }
     if ($activeModules !== [] && $route === 'admin_orders_index') {
         same('평균 주문 금액', $translator->trans('Average Order Value', [], 'Admin.Global'), $route . ' default Admin.Global KPI translation');

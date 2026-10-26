@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="ModulesMboRecommendedmodulesandservices.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="8c883385a642028c9366bb087618b216" approved="yes">
+        <source>Boost sales</source>
+        <target state="final">매출 늘리기</target>
+        <note>PrestaShop/ps_mbo commit 7f694df47340d1399dd4ad8cb395bc4fc91d2ab1, src/Traits/Hooks/UseDisplayDashboardTop.php: getRecommendedModulesButtonTitle(), AdminOrders case; source ID from translations/en-US/ModulesMboRecommendedmodulesandservices.en-US.xlf.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

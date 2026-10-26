@@ -343,6 +343,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
             'Admin.Navigation.Menu' => 'AdminNavigationMenu.ko-KR.xlf',
             'Admin.Notifications.Success' => 'AdminNotificationsSuccess.ko-KR.xlf',
             'Admin.Orderscustomers.Feature' => 'AdminOrderscustomersFeature.ko-KR.xlf',
+            'Modules.Mbo.Recommendedmodulesandservices' => 'ModulesMboRecommendedmodulesandservices.ko-KR.xlf',
             'messages' => 'messages.ko-KR.xlf',
         ] as $domain => $filename) {
             $translationFile = $this->modulePath . '/translations/' . $locale . '/' . $filename;
