@@ -12,6 +12,8 @@ on:
       - 'themes/hummingbird'
       - 'themes/hummingbird/**'
       - 'tests/catalog/**'
+      - 'tests/smoke/test_catalog_access_challenge_contract.py'
+      - 'tests/smoke/test_catalog_parser_workflow_contract.py'
       - 'tests/smoke/test_fresh_install_workflow_contract.py'
 
 permissions:
@@ -95,7 +97,10 @@ jobs:
             cat "$test_log"
           fi
 
+      - name: Reject synthetic marketplace access challenge pages
+        run: php tests/catalog/fetch_access_challenge.php
+
       - name: Validate fresh-install workflow contract
         env:
           PYTHONDONTWRITEBYTECODE: '1'
-        run: python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_catalog_parser_workflow_contract -v
+        run: python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_catalog_parser_workflow_contract tests.smoke.test_catalog_rakuten_identity_contract tests.smoke.test_catalog_access_challenge_contract -v

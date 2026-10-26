@@ -45,11 +45,23 @@ class CatalogFetcherContract(unittest.TestCase):
         fetcher = self.source('PublicProductFetcher')
         self.require(fetcher, '$redirects >= 2',
                      "ProductUrlPolicy::canonicalize(ProductUrlPolicy::redirectUrl($target['url'], $response->location))",
-                     "$next['provider'] !== $provider || isset($visited[$next['url']])",
+                     "$next['provider'] !== $provider", "$next['identity'] !== $identity",
+                     "isset($visited[$next['url']])",
                      'PublicAddressPolicy::validate($this->resolver->resolve(')
         loop = fetcher.split('while (true)', 1)[1]
         self.assertLess(loop.index('PublicAddressPolicy::validate'), loop.index('$this->transport->request'))
         self.assertLess(loop.index('$target = $next;'), loop.index('++$redirects;'))
+
+    def test_redirects_must_preserve_original_marketplace_product_identity_before_following(self):
+        fetcher = self.source('PublicProductFetcher')
+        self.assertIn("$identity = $target['identity']", fetcher)
+        self.assertIn("$next['identity'] !== $identity", fetcher)
+        redirect = fetcher.index("$next['identity'] !== $identity")
+        follow = fetcher.index('$target = $next;', redirect)
+        self.assertLess(redirect, follow, 'A different product must be rejected before the next resolver/HTTP iteration.')
+        self.assertIn("$next['provider'] !== $provider", fetcher)
+        policy = self.source('ProductUrlPolicy')
+        self.require(policy, "'identity' => 'amazon_jp:'", "'identity' => 'rakuten_ichiba:'")
 
     def test_tls_and_proxy_tunnel_keep_original_host_and_pin_validated_ip(self):
         source = self.source('CurlTransport')

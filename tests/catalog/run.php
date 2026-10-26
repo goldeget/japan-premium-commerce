@@ -107,6 +107,22 @@ assertCatalogSame(2480, $rakuten->priceJpy, 'An aggregate offer should use its m
 assertCatalogSame('生成り', $rakuten->options[0]->values[0], 'Rakuten options should normalize from structured properties.');
 assertCatalogSame([], $rakuten->reviews, 'Missing provider reviews should remain empty rather than fabricated.');
 
+// Merchant identifiers must not replace the URL identity used by batch imports.
+$rakutenMerchantIdentifiers = (new RakutenHtmlParser())->parse(
+    fixture('rakuten-merchant-identifiers.synthetic.html'),
+    'https://item.rakuten.co.jp/fixture-shop/synthetic-case-b/',
+    $fetchedAt
+);
+assertCatalogSame('fixture-shop:synthetic-case-b', $rakutenMerchantIdentifiers->sourceProductId, 'Rakuten URL identity must take precedence over unrelated JSON-LD productID and SKU.');
+assertCatalogSame('rakuten_ichiba:fixture-shop:synthetic-case-b', $rakutenMerchantIdentifiers->deduplicationKey, 'Merchant identifiers must not change the Rakuten deduplication key.');
+assertCatalogSame($rakuten->toArray(), $rakutenMerchantIdentifiers->toArray(), 'Changing merchant identifiers alone must preserve the normalized source metadata and content fingerprint.');
+$rakutenSkuOnly = (new RakutenHtmlParser())->parse(
+    str_replace('"productID": "SYNTHETIC-MERCHANT-PRODUCT-ID",', '', fixture('rakuten-merchant-identifiers.synthetic.html')),
+    'https://item.rakuten.co.jp/fixture-shop/synthetic-case-b/',
+    $fetchedAt
+);
+assertCatalogSame('fixture-shop:synthetic-case-b', $rakutenSkuOnly->sourceProductId, 'A merchant SKU without productID must not replace the Rakuten URL identity.');
+
 $ogFallback = $amazonParser->parse(
     fixture('amazon-jp-og-fallback.synthetic.html'),
     'https://www.amazon.co.jp/gp/product/B0KURANEA1',

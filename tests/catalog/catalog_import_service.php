@@ -118,6 +118,21 @@ try {
     assertCatalogImportSame(2, $batch->items[1]->attempts, 'Retry should increment the item attempt count exactly once.');
     assertCatalogImportSame(2, count($queue->pending()), 'Amazon and Rakuten snapshots should be separately reviewable.');
 
+    // A valid page can advertise merchant identifiers unrelated to its URL.
+    $merchantIdentifiersHtml = file_get_contents(__DIR__ . '/fixtures/rakuten-merchant-identifiers.synthetic.html');
+    if (!is_string($merchantIdentifiersHtml)) {
+        throw new RuntimeException('Could not read the synthetic Rakuten merchant identifier document.');
+    }
+    $fetcher->documents[$rakutenUrl] = $merchantIdentifiersHtml;
+    $merchantIdentifiersBatch = $service->createBatch([$rakutenUrl]);
+    $merchantIdentifiersBatch = $service->processNext($merchantIdentifiersBatch->id);
+    assertCatalogImportSame(CatalogImportBatchItem::STATUS_SUCCEEDED, $merchantIdentifiersBatch->items[0]->status,
+        'A Rakuten page with unrelated merchant productID and SKU should still import under its URL identity.');
+    assertCatalogImportSame('rakuten_ichiba:fixture-shop:synthetic-case-b', $merchantIdentifiersBatch->items[0]->snapshot?->deduplicationKey,
+        'A successful Rakuten import should retain its canonical provider and path identity.');
+    assertCatalogImportSame(2, count($queue->pending()), 'Merchant identifier metadata must not duplicate the existing source review.');
+    $fetcher->documents[$rakutenUrl] = $rakutenHtml;
+
     // A processing lease left by a stopped request must be recovered before
     // choosing work; the retried claim receives a new fenced attempt number.
     $recovery = $service->createBatch([$amazonUrl]);

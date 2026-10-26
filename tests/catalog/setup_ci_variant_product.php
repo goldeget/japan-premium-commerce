@@ -210,6 +210,9 @@ if ($existingId > 0) {
     }
 }
 
+$stage = 'index active Japanese option fixture in native storefront search';
+Search::indexation(false, $productId);
+
 $stage = 'native option and stock verification';
 $product = new Product($productId, false, $languageId, $shopId);
 $groups = $manager->optionGroups($productId, $languageId, $shopId);

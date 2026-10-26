@@ -44,6 +44,7 @@ final class PublicProductFetcher implements ProductPageFetcherInterface
         $deadline = $this->clock->now() + self::TOTAL_TIMEOUT_SECONDS;
         $target = ProductUrlPolicy::canonicalize($url);
         $provider = $target['provider'];
+        $identity = $target['identity'];
         $redirects = 0;
         $retried = false;
         $visited = [$target['url'] => true];
@@ -81,7 +82,8 @@ final class PublicProductFetcher implements ProductPageFetcherInterface
                     throw new FetchException('Product redirect limit exceeded.');
                 }
                 $next = ProductUrlPolicy::canonicalize(ProductUrlPolicy::redirectUrl($target['url'], $response->location));
-                if ($next['provider'] !== $provider || isset($visited[$next['url']])) {
+                if ($next['provider'] !== $provider || $next['identity'] !== $identity
+                    || isset($visited[$next['url']])) {
                     throw new FetchException('Product redirect is not permitted.');
                 }
                 $target = $next;
@@ -92,6 +94,13 @@ final class PublicProductFetcher implements ProductPageFetcherInterface
             $mediaType = strtolower(trim(explode(';', $response->contentType, 2)[0]));
             if ($response->status !== 200 || !in_array($mediaType, ['text/html', 'application/xhtml+xml'], true) || $response->body === '') {
                 throw new FetchException('Product response is not an HTML document.');
+            }
+            // A challenge can retain product metadata, so classify it before parsing.
+            if (preg_match(
+                '~(?:validateCaptcha|captchaContainer|captcha\.amazon\.com|robot\s+check|画像認証|アクセスを確認してください|不正なアクセスを検知)~iu',
+                $response->body
+            ) === 1) {
+                throw new FetchException('Marketplace access was blocked.', FetchException::FAILURE_ACCESS_BLOCKED);
             }
             return new FetchedProduct($target['url'], $response->body, new \DateTimeImmutable('now', new \DateTimeZone('UTC')), $redirects);
         }

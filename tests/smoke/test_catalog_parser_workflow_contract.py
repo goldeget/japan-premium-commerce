@@ -67,6 +67,19 @@ class CatalogParserWorkflowContract(unittest.TestCase):
         self.assertEqual("", no_failure_type)
         self.assertIn("*) failure_type='UNKNOWN' ;;", failure_branch)
 
+    def test_rakuten_url_identity_guard_runs_with_the_php_parser_fixture(self):
+        source = (ROOT / ".github/workflows/catalog-parser.yml").read_text(encoding="utf-8")
+        validation = source.split("- name: Validate fresh-install workflow contract", 1)[1]
+        self.assertIn("tests.smoke.test_catalog_rakuten_identity_contract", validation)
+
+    def test_access_challenge_fixture_runs_with_the_php_fetcher(self):
+        source = (ROOT / ".github/workflows/catalog-parser.yml").read_text(encoding="utf-8")
+        self.assertIn("php tests/catalog/fetch_access_challenge.php", source)
+        lint = source.split("- name: Lint parser and test PHP files", 1)[1].split(
+            "\n      - name:", 1
+        )[0]
+        self.assertIn("find modules/kuraneacatalog tests/catalog -name '*.php'", lint)
+
 
 if __name__ == "__main__":
     unittest.main()

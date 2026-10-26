@@ -121,10 +121,32 @@ fetchAssert($fetcher->fetch($amazon)->body !== '', 'Public IPv6 must be supporte
 
 [$fetcher, $dns, $http] = fetchFixture([
     new TransportResponse(302, '', '', '/gp/product/B012345679?tag=SECRET'),
-    new TransportResponse(301, '', '', 'https://amazon.co.jp/dp/B012345670'),
-    new TransportResponse(200, '<html>redirected</html>', 'text/html'),
+    new TransportResponse(200, '<html>wrong item</html>', 'text/html'),
 ]);
-fetchAssert($fetcher->fetch($amazon)->redirectCount === 2 && count($dns->calls) === 3, 'Each allowed redirect must be independently resolved and validated.');
+fetchRejects(fn () => $fetcher->fetch($amazon), 'A same-provider redirect to a different Amazon item must be rejected.');
+fetchAssert(count($http->requests) === 1 && count($dns->calls) === 1, 'A different Amazon item must be rejected before its DNS lookup and request.');
+fetchAssert($http->requests[0]->canonicalUrl === $amazon, 'The first request must remain bound to the originally requested item.');
+
+[$fetcher, $dns, $http] = fetchFixture([
+    new TransportResponse(302, '', '', 'https://item.rakuten.co.jp/shop/other-item/'),
+    new TransportResponse(200, '<html>wrong item</html>', 'text/html'),
+]);
+fetchRejects(fn () => $fetcher->fetch('https://item.rakuten.co.jp/shop/item/'), 'A same-provider redirect to a different Rakuten item must be rejected.');
+fetchAssert(count($http->requests) === 1 && count($dns->calls) === 1, 'A different Rakuten item must be rejected before its DNS lookup and request.');
+
+// Same-item aliases normalize to one stable identity even when the marketplace
+// changes the route form. The canonical request URL is still the single
+// allowlisted path, so a self-redirect is treated as a loop below.
+fetchAssert(
+    \Kuranea\Catalog\Fetching\ProductUrlPolicy::canonicalize('https://amazon.co.jp/gp/product/B012345678?tag=SECRET')['identity']
+        === \Kuranea\Catalog\Fetching\ProductUrlPolicy::canonicalize($amazon)['identity'],
+    'Amazon route aliases must retain the same stable product identity.'
+);
+fetchAssert(
+    \Kuranea\Catalog\Fetching\ProductUrlPolicy::canonicalize('https://item.rakuten.co.jp/shop/item/?scid=SECRET')['identity']
+        === \Kuranea\Catalog\Fetching\ProductUrlPolicy::canonicalize('https://item.rakuten.co.jp/shop/item/')['identity'],
+    'Rakuten route aliases must retain the same stable product identity.'
+);
 foreach ([
     'https://item.rakuten.co.jp/shop/item/',
     'https://127.0.0.1/private',
@@ -136,12 +158,11 @@ foreach ([
     fetchAssert(count($http->requests) === 1, 'Unsafe redirect must not issue a second request.');
 }
 [$fetcher, $dns, $http] = fetchFixture([
-    new TransportResponse(302, '', '', '/dp/B012345679'),
-    new TransportResponse(302, '', '', '/dp/B012345670'),
-    new TransportResponse(302, '', '', '/dp/B012345671'),
+    new TransportResponse(302, '', '', '/gp/product/B012345678?tag=SECRET'),
+    new TransportResponse(302, '', '', '/dp/B012345678'),
 ]);
-fetchRejects(fn () => $fetcher->fetch($amazon), 'More than two redirects must fail.');
-fetchAssert(count($http->requests) === 3, 'Redirect limit must prevent the fourth HTTP request.');
+fetchRejects(fn () => $fetcher->fetch($amazon), 'A same-product redirect loop must fail closed.');
+fetchAssert(count($http->requests) === 1 && count($dns->calls) === 1, 'A canonical redirect loop must not repeat the same product request.');
 
 foreach ([
     new TransportResponse(200, 'SECRET', 'application/json'),
