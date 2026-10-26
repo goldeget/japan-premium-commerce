@@ -1053,7 +1053,7 @@ def search_for_product(
     search_term: str = "postcode",
 ) -> None:
     visit(driver, BASE + "/")
-    if label == "mobile" or label.endswith("-mobile"):
+    if label in {"mobile", "bank"} or label.endswith("-mobile"):
         search_toggle = visible(driver, '.ps-searchbar--mobile [data-bs-target="#searchCanvas"]')
         search_toggle.click()
     enter_product_search_query(driver, search_term)

@@ -519,8 +519,21 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
         )[0]
 
         self.assertIn("search_toggle.click()", search_flow)
-        self.assertIn('label == "mobile" or label.endswith("-mobile")', search_flow)
+        self.assertIn('label in {"mobile", "bank"} or label.endswith("-mobile")', search_flow)
         self.assertNotIn("click_at_center(driver, search_toggle)", search_flow)
+
+    def test_bank_transfer_checkout_opens_responsive_mobile_search(self) -> None:
+        flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        search_flow = flow.split("def search_for_product", 1)[1].split(
+            "def add_product_and_open_checkout", 1
+        )[0]
+        bank_entrypoint = flow.split('elif sys.argv[1:] == ["customer-bank"]:', 1)[1].split(
+            'elif sys.argv[1:] == ["admin"]:', 1
+        )[0]
+
+        self.assertIn('label in {"mobile", "bank"}', search_flow)
+        self.assertIn('run_customer_checkout(390, 844, "bank")', bank_entrypoint)
+        self.assertIn("search_toggle.click()", search_flow)
 
     def test_product_search_selects_the_exact_hummingbird_autocomplete_result(self) -> None:
         flow = CHECKOUT_FLOW.read_text(encoding="utf-8")

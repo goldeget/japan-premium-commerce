@@ -1566,6 +1566,23 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "restoration should run after a failed or successful override, but not when checkout QA never started",
         )
 
+    def test_optional_order_route_diagnostic_runs_after_order_consumers(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        diagnostic = workflow.index("- name: Diagnose Japanese order rewrite in the isolated database")
+        for name in (
+            "Verify saved browser orders are unpaid and retain Japan addresses",
+            "Prepare isolated native customer support settings",
+            "Verify native customer support lifecycle in Chromium",
+            "Prepare synthetic bank transfer account for the persisted unpaid browser order",
+            "Verify order-bound bank transfer issue, rejection, and receipt confirmation in Chromium",
+        ):
+            with self.subTest(step=name):
+                self.assertLess(
+                    workflow.index(f"- name: {name}"),
+                    diagnostic,
+                    "a failure-only diagnostic must not precede normal checkout consumers",
+                )
+
     def test_bank_transfer_browser_qa_uses_unpaid_checkout_orders_and_is_aggregated(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         step8 = workflow.split("- name: Verify fresh-install workflow contracts", 1)[1].split("- name:", 1)[0]

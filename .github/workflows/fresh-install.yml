@@ -2099,29 +2099,6 @@ jobs:
             tests/e2e/verify_ci_checkout_admin_browser.py customer-bank \
             2>&1 | tee "$QA_ARTIFACT_DIR/ci-checkout-bank-e2e.log"
 
-      - name: Diagnose Japanese order rewrite in the isolated database
-        if: always() && steps.checkout_override.outcome == 'success' && (steps.checkout_customer_browser_qa.outcome == 'failure' || steps.account_browser_qa.outcome == 'failure') && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf 'Route settings (hex encoded values):\n'
-          route_settings_hex=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
-            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT name, HEX(\`value\`) FROM ps_configuration WHERE name IN ('\''PS_REWRITING_SETTINGS'\'', '\''PS_CANONICAL_REDIRECT'\'', '\''PS_LANG_DEFAULT'\'', '\''PS_DEFAULT_LANGUAGE_URL_PREFIX'\'') ORDER BY name"'
-          )
-          printf 'Japanese order and identity rewrites (hex encoded values):\n'
-          japanese_order_rewrite_hex=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
-            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT ml.id_shop, ml.id_lang, HEX(ml.url_rewrite) FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta = ml.id_meta JOIN ps_lang l ON l.id_lang = ml.id_lang WHERE m.page = '\''order'\'' AND l.iso_code = '\''ja'\'' ORDER BY ml.id_shop, ml.id_lang LIMIT 5"'
-          )
-          japanese_identity_rewrite_hex=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
-            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT ml.id_shop, ml.id_lang, HEX(ml.url_rewrite) FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta = ml.id_meta JOIN ps_lang l ON l.id_lang = ml.id_lang WHERE m.page = '\''identity'\'' AND l.iso_code = '\''ja'\'' ORDER BY ml.id_shop, ml.id_lang LIMIT 5"'
-          )
-          route_settings_hex=${route_settings_hex//$'\n'/;}
-          japanese_order_rewrite_hex=${japanese_order_rewrite_hex//$'\n'/;}
-          japanese_identity_rewrite_hex=${japanese_identity_rewrite_hex//$'\n'/;}
-          printf '::notice title=ORDENOWA static route rewrite database::route_settings_hex=%s; japanese_order_rewrite_hex=%s; japanese_identity_rewrite_hex=%s\n' \
-            "$route_settings_hex" "$japanese_order_rewrite_hex" "$japanese_identity_rewrite_hex"
-
       - name: Verify saved browser orders are unpaid and retain Japan addresses
         id: checkout_order_persistence
         if: steps.checkout_customer_browser_qa.outcome == 'success' && (env.ORDENOWA_ADMIN_QA_FOCUS == 'true' || steps.checkout_bank_customer_browser_qa.outcome == 'success') && (env.ORDENOWA_ADMIN_QA_FOCUS != 'true' || env.ORDENOWA_ADMIN_RETURN_FOCUS == 'true')
@@ -2834,6 +2811,29 @@ jobs:
           mkdir -p "$QA_ARTIFACT_DIR"
           "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" tests/e2e/verify_ci_bank_transfer_browser.py \
             2>&1 | tee "$QA_ARTIFACT_DIR/bank-transfer-e2e.log"
+
+      - name: Diagnose Japanese order rewrite in the isolated database
+        if: always() && steps.checkout_override.outcome == 'success' && (steps.checkout_customer_browser_qa.outcome == 'failure' || steps.account_browser_qa.outcome == 'failure') && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'Route settings (hex encoded values):\n'
+          route_settings_hex=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
+            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT name, HEX(\`value\`) FROM ps_configuration WHERE name IN ('\''PS_REWRITING_SETTINGS'\'', '\''PS_CANONICAL_REDIRECT'\'', '\''PS_LANG_DEFAULT'\'', '\''PS_DEFAULT_LANGUAGE_URL_PREFIX'\'') ORDER BY name"'
+          )
+          printf 'Japanese order and identity rewrites (hex encoded values):\n'
+          japanese_order_rewrite_hex=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
+            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT ml.id_shop, ml.id_lang, HEX(ml.url_rewrite) FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta = ml.id_meta JOIN ps_lang l ON l.id_lang = ml.id_lang WHERE m.page = '\''order'\'' AND l.iso_code = '\''ja'\'' ORDER BY ml.id_shop, ml.id_lang LIMIT 5"'
+          )
+          japanese_identity_rewrite_hex=$(docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T mariadb \
+            sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" -e "SELECT ml.id_shop, ml.id_lang, HEX(ml.url_rewrite) FROM ps_meta_lang ml JOIN ps_meta m ON m.id_meta = ml.id_meta JOIN ps_lang l ON l.id_lang = ml.id_lang WHERE m.page = '\''identity'\'' AND l.iso_code = '\''ja'\'' ORDER BY ml.id_shop, ml.id_lang LIMIT 5"'
+          )
+          route_settings_hex=${route_settings_hex//$'\n'/;}
+          japanese_order_rewrite_hex=${japanese_order_rewrite_hex//$'\n'/;}
+          japanese_identity_rewrite_hex=${japanese_identity_rewrite_hex//$'\n'/;}
+          printf '::notice title=ORDENOWA static route rewrite database::route_settings_hex=%s; japanese_order_rewrite_hex=%s; japanese_identity_rewrite_hex=%s\n' \
+            "$route_settings_hex" "$japanese_order_rewrite_hex" "$japanese_identity_rewrite_hex"
 
       - name: Verify run-scoped CI backup and isolated restore
         id: backup_restore_drill
