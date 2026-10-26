@@ -1,15 +1,15 @@
 # ORDENOWA 테스트 결과
 
-## 현재 사전 검사와 실행 (2026-10-26 12:32 UTC)
+## 현재 사전 검사와 실행 (2026-10-26 12:54 UTC)
 
-- Latest completed full-QA source is `c99896a60310c62b2e8c8874ccaa28ebafa0d5f4`; `work` has a follow-up mobile consent capture correction awaiting Actions runtime. `main` remains `ee02a3657448d563508687614a246e05ac61eecd`.
+- Latest completed full-QA source is `0fb76ffcc95fbd17e30121ef140acf2926a9655c`; the work follow-up adds missing Chrome performance logging to synthetic push persistence and awaits Actions runtime. `main` remains `ee02a3657448d563508687614a246e05ac61eecd`.
 - QA-CI-002: shipping admin contract suite 8/8 passed locally. In #40320300968, exact preflight Step 8 and Step 9 passed. Workflow detail extraction and actual browser outcome checks remain intact.
-- PWA focus suites `test_pwa_service_worker`, `test_pwa_logout_diagnostics_contract`, and `test_pwa_registration_diagnostics_contract`: 119 passed locally.
-- Full isolated run [#40320300968](https://github.com/goldeget/japan-premium-commerce/actions/runs/40320300968), source `c99896a`, completed **FAILURE**. Actual aggregate: `pwa_browser_qa=failure pwa_push_qa=skipped`. Step 57's displayed conclusion was success under `continue-on-error`; its actual failure is preserved in the aggregate, and Step 58 was skipped. Desktop JA/EN/KO lifecycle passed; mobile JA/EN/KO failed at the broad `customer_push_consent` stage with `WebDriverException`.
-- Code inspection narrowed the mobile failure to the capture flow: after checking the visible hook, the browser code reselected the first matching hook for its screenshot, while Hummingbird renders a hidden sidebar copy first. The pending correction captures the returned visible node and splits consent UI, status readback, and capture into separate stages. The exact failing sub-operation is awaiting runtime confirmation.
-- Other aggregate outcomes in #40320300968 were success, including account/address, catalog, product/cart, category locales, carrier configure/restart/readback, checkout/order/tracking, RMA, backup/restore, and postcode checks. The complete run remains failure, not QA PASS.
-- Browser artifact [12649751839](https://github.com/goldeget/japan-premium-commerce/actions/runs/40320300968/artifacts/12649751839), diagnostics [12649976501](https://github.com/goldeget/japan-premium-commerce/actions/runs/40320300968/artifacts/12649976501). Download was denied by the configured network policy, so visual inspection is not claimed.
-- #40315517530 provides prior QA-CI-002 evidence: Step 9 and install passed. The newer #40320300968 also passed Steps 8 and 9. Its unrelated PWA failure does not reopen the grep-contract fix.
+- PWA focus suites `test_pwa_service_worker`, `test_pwa_logout_diagnostics_contract`, and `test_pwa_registration_diagnostics_contract`: 120 passed locally.
+- Full isolated run [#40323519623](https://github.com/goldeget/japan-premium-commerce/actions/runs/40323519623), source `0fb76ff`, completed **FAILURE**. Actual aggregate is `pwa_push_qa=failure` only. Step 57 PWA browser QA succeeded for desktop/mobile JA/EN/KO and private cache/logout checks. Step 58 synthetic persistence failed before API exercise: `UNVERIFIED: Chrome performance response logging is unavailable for authenticated account.`
+- Code review traced the failure to the synthetic persistence driver omitting `goog:loggingPrefs` while using `create_session_customer`, which requires performance response logging. The pending correction sets the same performance logging capability used in `run_viewport`; it does not alter test outcomes or API assertions.
+- Every other reported aggregate outcome in #40323519623 was success, including account/address, catalog, product/cart, category locale, carrier configure/restart/readback, checkout/order/tracking, RMA, backup/restore and postcode. The run remains failure until push persistence passes.
+- Browser artifact [12651415697](https://github.com/goldeget/japan-premium-commerce/actions/runs/40323519623/artifacts/12651415697), diagnostics [12650378929](https://github.com/goldeget/japan-premium-commerce/actions/runs/40323519623/artifacts/12650378929). The browser logs confirm the PWA flow; screenshots were not opened here.
+- QA-CI-002 remains resolved: Step 8/9 succeeded in #40320300968 and #40323519623; #40315517530 also passed Step 9. The grep contract does not appear in any current failure.
 
 ## 2026-10-26 — 카트/배송 진단과 PWA foundation의 로컬 검사 (Actions 대기)
 

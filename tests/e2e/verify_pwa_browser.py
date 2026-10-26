@@ -3828,6 +3828,7 @@ def verify_synthetic_push_persistence(base_url: str, artifact_dir: Path) -> None
             options = Options()
             for option in ("--headless=new", "--no-sandbox", "--disable-dev-shm-usage", "--window-size=1280,900", "--lang=en-US"):
                 options.add_argument(option)
+            options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
             driver = webdriver.Chrome(options=options)
             drivers.append(driver)
             driver.set_script_timeout(30)

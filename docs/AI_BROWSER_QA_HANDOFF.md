@@ -1,13 +1,13 @@
 # ORDENOWA AI Browser QA Handoff
 
-## Latest isolated browser evidence and PWA follow-up
+## Latest isolated browser evidence and synthetic push follow-up
 
-- Latest full-QA source SHA: `c99896a60310c62b2e8c8874ccaa28ebafa0d5f4`; the current `work` update contains a targeted mobile PWA capture fix awaiting Actions runtime. `main` remains unchanged at `ee02a3657448d563508687614a246e05ac61eecd`.
-- Full isolated Actions [#40320300968](https://github.com/goldeget/japan-premium-commerce/actions/runs/40320300968) completed **FAILURE**. Actual aggregate: `pwa_browser_qa=failure pwa_push_qa=skipped`. Step 8/9 and install passed. Desktop JA/EN/KO lifecycle passed; mobile JA/EN/KO failed at `customer_push_consent` with `WebDriverException`. The previous desktop logout interception did not recur. Do not infer push persistence or a full QA pass.
+- Latest full-QA source SHA: `0fb76ffcc95fbd17e30121ef140acf2926a9655c`; current `work` contains a synthetic push browser setup fix awaiting Actions runtime. `main` remains unchanged at `ee02a3657448d563508687614a246e05ac61eecd`.
+- Full isolated Actions [#40323519623](https://github.com/goldeget/japan-premium-commerce/actions/runs/40323519623) completed **FAILURE**. Actual aggregate: `pwa_push_qa=failure` only. Step 8/9 passed. PWA browser QA succeeded on desktop/mobile JA/EN/KO, including logout/private cache. Provider-free persistence failed before exercising the API because performance response logging was not enabled on its Chrome driver.
 - QA-CI-002 is resolved in code commit `acbdc5e`: the contract now matches workflow's `grep` detail extraction. Step 9 passed in #40315517530. The original browser exit/outcome and sanitized stage/detail extraction remain enforced.
-- Artifact [12649751839](https://github.com/goldeget/japan-premium-commerce/actions/runs/40320300968/artifacts/12649751839), diagnostics [12649976501](https://github.com/goldeget/japan-premium-commerce/actions/runs/40320300968/artifacts/12649976501). Downloads were denied by the configured network policy, so there is no visual artifact review for this run.
-- Source inspection found the mobile consent check selects a visible hook but the following screenshot reselected the first, hidden sidebar duplicate. The pending fix returns the selected visible element, uses it for screenshot capture, and splits UI/status/capture stages. Local PWA focused tests are 119/119; runtime confirmation is still required.
-- Other aggregate outcomes at c998 passed: account/address, catalog, product/cart, category locale, carrier and order/tracking, RMA, backup/restore and postal checks. PWA push persistence was skipped; no real provider, seller data, shipment, payment or device was used.
+- Artifacts: browser [12651415697](https://github.com/goldeget/japan-premium-commerce/actions/runs/40323519623/artifacts/12651415697), diagnostics [12650378929](https://github.com/goldeget/japan-premium-commerce/actions/runs/40323519623/artifacts/12650378929). The source runtime logs prove PWA browser success; the screenshots have not been visually inspected.
+- The previous #403203 mobile capture defect is resolved by `0fb76ff`: all six PWA browser locale/device cases passed. Current source review found the isolated push driver omitted `goog:loggingPrefs` although customer creation validates the authenticated account response through Chrome performance logs. The pending fix adds that capability and a regression contract. Local PWA suites are 120/120; runtime confirmation of API persistence is required.
+- Other aggregate outcomes at #403235 passed: account/address, catalog, product/cart, category locale, carrier and order/tracking, RMA, backup/restore and postal. Do not claim push persistence or a full QA pass. No real provider, seller data, shipment, payment or device was used.
 
 ## 다음 코드 변경의 독립 브라우저/시각 검수
 

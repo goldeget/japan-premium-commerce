@@ -1351,6 +1351,14 @@ class PwaBrowserLifecycleContractTests(unittest.TestCase):
             source,
         )
 
+    def test_synthetic_push_browser_enables_performance_response_logging(self) -> None:
+        source = function_source(self.source, "verify_synthetic_push_persistence")
+
+        self.assertIn(
+            'options.set_capability("goog:loggingPrefs", {"performance": "ALL"})',
+            source,
+        )
+
     def test_account_route_comes_from_authenticated_header_and_all_links_check_full_origin(self) -> None:
         create_customer = function_source(self.source, "create_session_customer")
         account_link = function_source(self.source, "authenticated_account_url")

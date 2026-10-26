@@ -1,5 +1,13 @@
 # ORDENOWA 작업 기록
 
+## 2026-10-26 — PWA 브라우저 성공 후 synthetic push 로그 설정 수정
+
+- Full run [#40323519623](https://github.com/goldeget/japan-premium-commerce/actions/runs/40323519623), source `0fb76ffcc95fbd17e30121ef140acf2926a9655c`, completed FAILURE with actual aggregate `pwa_push_qa=failure` only. Step 57 browser lifecycle/logout/cache checks passed for desktop/mobile JA/EN/KO; Step 58 PHP consent/API/repository contracts and fixture seed passed, then browser setup stopped before persistence.
+- Exact raw failure: `UNVERIFIED: Chrome performance response logging is unavailable for authenticated account.` Code review found `verify_synthetic_push_persistence` creates Chrome options without `goog:loggingPrefs`, then calls `create_session_customer`, whose account response verifier depends on performance logs. `run_viewport` already enables that capability.
+- The isolated synthetic push browser now sets the same `goog:loggingPrefs` capability. A source regression assertion covers the requirement. PWA lifecycle/logout/registration suites: 120 PASS; `git diff --check` PASS. The next Actions run must verify persistence; no API success is claimed from this run.
+- Browser artifact [12651415697](https://github.com/goldeget/japan-premium-commerce/actions/runs/40323519623/artifacts/12651415697), diagnostics [12650378929](https://github.com/goldeget/japan-premium-commerce/actions/runs/40323519623/artifacts/12650378929). Runtime logs establish the browser checks; screenshots were not opened. No production sender/provider or real notification was used.
+- QA-CI-002 Step 8 and Step 9 passed in this full run; it is not a current failure.
+
 ## 2026-10-26 — 모바일 PWA 동의 캡처 선택자 수정
 
 - Full run [#40320300968](https://github.com/goldeget/japan-premium-commerce/actions/runs/40320300968), source `c99896a60310c62b2e8c8874ccaa28ebafa0d5f4`, completed FAILURE; actual aggregate is `pwa_browser_qa=failure pwa_push_qa=skipped`. Step 8/9 and all other aggregate outcomes passed. Desktop JA/EN/KO PWA lifecycle passed; mobile JA/EN/KO failed with `WebDriverException` at the coarse `customer_push_consent` stage.
