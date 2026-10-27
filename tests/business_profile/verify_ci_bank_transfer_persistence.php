@@ -119,7 +119,7 @@ ordenowaBankReadbackRequire(
 $history = $database->getRow(
     'SELECT `id_order_history`, `id_order_state`, `id_employee` FROM `' . $prefix . 'order_history`'
     . ' WHERE `id_order_history` = ' . (int) $receipt['id_order_history']
-    . ' AND `id_order` = ' . (int) $orderId . ' LIMIT 1'
+    . ' AND `id_order` = ' . (int) $orderId
 );
 $paidHistoryRows = $database->executeS(
     'SELECT `id_order_history`, `id_employee` FROM `' . $prefix . 'order_history`'

@@ -436,6 +436,12 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         ):
             self.require(expected, self.paid_readback)
 
+        self.require("$history = $database->getRow(", self.paid_readback)
+        history_query = self.paid_readback.split("$history = $database->getRow(", 1)[1].split(");", 1)[0]
+        self.require("WHERE `id_order_history` = ", history_query)
+        self.require("AND `id_order` = ", history_query)
+        self.assertNotIn("LIMIT", history_query.upper(), "PrestaShop Db::getRow() adds its own LIMIT clause")
+
     def test_confirmed_order_is_removed_from_the_admin_unpaid_queue(self) -> None:
         confirm_index = self.controller.index("$this->processConfirm(")
         after_confirmation = self.controller[confirm_index:]
