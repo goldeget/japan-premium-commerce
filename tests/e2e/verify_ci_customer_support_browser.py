@@ -68,6 +68,8 @@ SAFE_RESULT_KEYS = {
     "customer_followup_same_thread", "foreign_customer_denied", "limited_employee_denied",
     "mailpit_provider", "paid", "payment_provider_called", "assignment_created",
     "assignment_reassigned", "assignment_actor_history", "assignment_limited_employee_denied",
+    "assignment_create_feedback", "assignment_reassign_feedback",
+    "assignment_create_persisted", "assignment_reassign_persisted",
     "image_attachment_admin_readback", "image_attachment_foreign_denied", "disallowed_attachment_rejected",
     "foreign_valid_thread_denied", "foreign_orderless_post_denied", "orderless_thread_unchanged",
     "admin_public_reply_persisted",
@@ -101,6 +103,7 @@ SAFE_RESULT_KEYS = {
 }
 RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {
     "status", "stage", "exception_type", "mailpit_provider",
+    "assignment_create_feedback", "assignment_reassign_feedback",
     "contact_document_status", "contact_form_count", "support_denial_status",
     "support_denial_form_count", "customer_service_route_candidate_count",
     "customer_service_route_safe_count", "customer_service_route_modern_count",
@@ -142,6 +145,14 @@ SAFE_BROWSER_SUBSTAGES = {
     "image_attachment_link_lookup", "image_attachment_filename_readback",
     "image_attachment_response_readback", "image_attachment_response_validation",
     "image_attachment_foreign_session_probe",
+    "assignment_create_row_lookup", "assignment_create_form_readback",
+    "assignment_create_submit", "assignment_create_submit_timeout_readback",
+    "assignment_create_feedback_readback", "assignment_create_fresh_readback",
+    "assignment_create_persisted_readback",
+    "assignment_reassign_row_lookup", "assignment_reassign_form_readback",
+    "assignment_reassign_submit", "assignment_reassign_submit_timeout_readback",
+    "assignment_reassign_feedback_readback", "assignment_reassign_fresh_readback",
+    "assignment_reassign_persisted_readback",
     "attachment_page_thread_readback", "attachment_link_lookup",
     "attachment_link_presence_readback", "attachment_link_origin_readback",
     "attachment_link_route_readback",
@@ -1814,8 +1825,31 @@ def assignment_row(driver, thread_id: int):
     return matches[0]
 
 
-def assign_thread(driver, thread_id: int, employee_id: str) -> None:
+ASSIGNMENT_FEEDBACK_OUTCOMES = {
+    "not_started", "success", "rejected", "timeout", "click_timeout", "ambiguous",
+}
+
+
+def support_assignment_feedback_state(driver) -> str | None:
+    visible_states = set()
+    for state, selector in (("success", ".alert.alert-success"), ("rejected", ".alert.alert-danger")):
+        for feedback in driver.find_elements(By.CSS_SELECTOR, selector):
+            if feedback.is_displayed():
+                visible_states.add(state)
+    if not visible_states:
+        return None
+    return next(iter(visible_states)) if len(visible_states) == 1 else "ambiguous"
+
+
+def assign_thread(
+    driver, thread_id: int, employee_id: str, diagnostic_result: dict[str, Any], operation: str,
+) -> str:
+    if operation not in {"create", "reassign"}:
+        raise ValueError("support assignment operation is not allowlisted")
+    outcome_key = f"assignment_{operation}_feedback"
+    mark_browser_substage(diagnostic_result, f"assignment_{operation}_row_lookup")
     row = assignment_row(driver, thread_id)
+    mark_browser_substage(diagnostic_result, f"assignment_{operation}_form_readback")
     selects = row.find_elements(By.CSS_SELECTOR, "select[name='id_employee']")
     if len(selects) != 1 or not any(option.get_attribute("value") == employee_id for option in Select(selects[0]).options):
         raise AssertionError("support assignment did not offer the selected active employee")
@@ -1823,8 +1857,28 @@ def assign_thread(driver, thread_id: int, employee_id: str) -> None:
     submit = row.find_element(By.CSS_SELECTOR, "button[name='submitOrdenowaSupportAssignment']")
     if not submit.is_displayed() or not submit.is_enabled():
         raise AssertionError("support assignment save control is not available to the administrator")
-    submit.click()
-    visible(driver, ".alert.alert-success", timeout=20)
+    mark_browser_substage(diagnostic_result, f"assignment_{operation}_submit")
+    try:
+        submit.click()
+    except TimeoutException:
+        # Selenium may time out waiting for navigation after the POST has already
+        # been submitted. Read the current response once; never replay the mutation.
+        mark_browser_substage(diagnostic_result, f"assignment_{operation}_submit_timeout_readback")
+        feedback_state = support_assignment_feedback_state(driver)
+        outcome = feedback_state if feedback_state is not None else "click_timeout"
+        diagnostic_result[outcome_key] = outcome
+        return outcome
+
+    mark_browser_substage(diagnostic_result, f"assignment_{operation}_feedback_readback")
+    try:
+        feedback_state = WebDriverWait(driver, 20).until(
+            lambda browser: support_assignment_feedback_state(browser) or False
+        )
+    except TimeoutException:
+        diagnostic_result[outcome_key] = "timeout"
+        return "timeout"
+    diagnostic_result[outcome_key] = feedback_state
+    return feedback_state
 
 
 def selected_assignment_employee(driver, thread_id: int) -> str:
@@ -1898,6 +1952,8 @@ def write_result(path: Path, result: dict[str, Any]) -> None:
         or not 0 <= result["customer_service_route_invalid_count"] <= 20
         or not isinstance(result.get("browser_substage"), str)
         or result["browser_substage"] not in SAFE_BROWSER_SUBSTAGES
+        or result.get("assignment_create_feedback") not in ASSIGNMENT_FEEDBACK_OUTCOMES
+        or result.get("assignment_reassign_feedback") not in ASSIGNMENT_FEEDBACK_OUTCOMES
         or result.get("mailpit_provider") != "isolated_only"
         or (result.get("exception_type") is not None and result.get("exception_type") not in SAFE_EXCEPTION_TYPES)
         or (result.get("status") == "success" and (
@@ -1911,6 +1967,8 @@ def write_result(path: Path, result: dict[str, Any]) -> None:
             or result.get("support_denial_form_count") != 0
             or result.get("support_denial_redirected") is not False
             or result.get("support_denial_same_origin") is not True
+            or result.get("assignment_create_feedback") != "success"
+            or result.get("assignment_reassign_feedback") != "success"
         ))
     ):
         raise ValueError("customer support diagnostics did not match the allowlisted result schema")
@@ -1966,6 +2024,8 @@ def run() -> None:
         "paid": False, "payment_provider_called": False, "assignment_created": False,
         "assignment_reassigned": False, "assignment_actor_history": False,
         "assignment_limited_employee_denied": False,
+        "assignment_create_feedback": "not_started", "assignment_reassign_feedback": "not_started",
+        "assignment_create_persisted": False, "assignment_reassign_persisted": False,
         "image_attachment_admin_readback": False, "image_attachment_foreign_denied": False,
         "disallowed_attachment_rejected": False,
         "foreign_valid_thread_denied": False, "foreign_orderless_post_denied": False,
@@ -2307,19 +2367,33 @@ def run() -> None:
         second_employee_id, second_employee_name = distinct_options[1]
 
         stage = result["stage"] = "assignment_create"
-        assign_thread(admin, thread_id, first_employee_id)
+        result["assignment_create_feedback"] = assign_thread(
+            admin, thread_id, first_employee_id, result, "create"
+        )
+        mark_browser_substage(result, "assignment_create_fresh_readback")
+        visit(admin, assignment_url)
+        mark_browser_substage(result, "assignment_create_persisted_readback")
+        result["assignment_create_persisted"] = (
+            selected_assignment_employee(admin, thread_id) == first_employee_id
+        )
+        if not result["assignment_create_persisted"]:
+            raise AssertionError("fresh support assignment GET did not persist the first employee")
         result["assignment_created"] = True
         admin.save_screenshot(str(ctx.artifact_dir / "customer-support-assignment-created.png"))
-        visit(admin, assignment_url)
-        if selected_assignment_employee(admin, thread_id) != first_employee_id:
-            raise AssertionError("fresh support assignment GET did not persist the first employee")
 
         stage = result["stage"] = "assignment_reassign"
-        assign_thread(admin, thread_id, second_employee_id)
-        result["assignment_reassigned"] = True
+        result["assignment_reassign_feedback"] = assign_thread(
+            admin, thread_id, second_employee_id, result, "reassign"
+        )
+        mark_browser_substage(result, "assignment_reassign_fresh_readback")
         visit(admin, assignment_url)
-        if selected_assignment_employee(admin, thread_id) != second_employee_id:
+        mark_browser_substage(result, "assignment_reassign_persisted_readback")
+        result["assignment_reassign_persisted"] = (
+            selected_assignment_employee(admin, thread_id) == second_employee_id
+        )
+        if not result["assignment_reassign_persisted"]:
             raise AssertionError("fresh support assignment GET did not persist the reassigned employee")
+        result["assignment_reassigned"] = True
 
         stage = result["stage"] = "assignment_history_readback"
         history_url = assignment_history_link(admin, thread_id, ctx.admin)
@@ -2356,6 +2430,9 @@ def run() -> None:
         ):
             raise AssertionError("limited-privilege employee could view or modify support assignment data")
         result["assignment_limited_employee_denied"] = True
+        if (result["assignment_create_feedback"] != "success"
+                or result["assignment_reassign_feedback"] != "success"):
+            raise AssertionError("native support assignment saved but did not return affirmative feedback")
         result["status"] = "success"
         result["stage"] = "complete"
         print("PASS: native order-linked support inquiry, attachment, private note, reply, status, and access gates verified")
@@ -2370,6 +2447,10 @@ def run() -> None:
         print(
             f"FAIL: isolated customer support QA; stage={stage}; exception={result['exception_type']}; "
             f"browser_substage={result['browser_substage']}; "
+            f"assignment_create_feedback={result['assignment_create_feedback']}; "
+            f"assignment_reassign_feedback={result['assignment_reassign_feedback']}; "
+            f"assignment_create_persisted={str(result['assignment_create_persisted']).lower()}; "
+            f"assignment_reassign_persisted={str(result['assignment_reassign_persisted']).lower()}; "
             f"contact_status={contact_status}; "
             f"support_denial_status={result['support_denial_status'] or 'unavailable'}; "
             f"support_denial_form_count={result['support_denial_form_count']}; "

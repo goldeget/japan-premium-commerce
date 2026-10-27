@@ -432,16 +432,64 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
     def test_assignment_lifecycle_is_same_thread_persistent_and_role_gated(self):
         source = SCRIPT.read_text(encoding="utf-8")
         for expected in (
-            "AdminKuraneaSupportAssignments", "assign_thread(admin, thread_id, first_employee_id)",
-            "assign_thread(admin, thread_id, second_employee_id)",
-            "selected_assignment_employee(admin, thread_id) != first_employee_id",
-            "selected_assignment_employee(admin, thread_id) != second_employee_id",
+            "AdminKuraneaSupportAssignments",
+            'result["assignment_create_feedback"] = assign_thread(',
+            'admin, thread_id, first_employee_id, result, "create"',
+            'result["assignment_reassign_feedback"] = assign_thread(',
+            'admin, thread_id, second_employee_id, result, "reassign"',
+            "selected_assignment_employee(admin, thread_id) == first_employee_id",
+            "selected_assignment_employee(admin, thread_id) == second_employee_id",
             "assert_assignment_history(admin, thread_id, first_employee_name, second_employee_name)",
             "assignment_limited_employee_denied",
+            'mark_browser_substage(result, "assignment_create_persisted_readback")',
+            'mark_browser_substage(result, "assignment_reassign_persisted_readback")',
+            'result["assignment_create_persisted"]',
+            'result["assignment_reassign_persisted"]',
             "latest support assignment history did not retain prior, new, and acting employees",
+            'mark_browser_substage(diagnostic_result, f"assignment_{operation}_feedback_readback")',
+            'lambda browser: support_assignment_feedback_state(browser) or False',
+            'diagnostic_result[outcome_key] = "timeout"',
+            'outcome = feedback_state if feedback_state is not None else "click_timeout"',
+            "support_assignment_feedback_state",
         ):
             with self.subTest(contract=expected):
                 self.assertIn(expected, source)
+
+    def test_support_assignment_feedback_is_classified_without_message_content(self):
+        module = load_script()
+        module.By = SimpleNamespace(CSS_SELECTOR="css selector")
+
+        class Alert:
+            def __init__(self, visible: bool = True) -> None:
+                self.visible = visible
+
+            def is_displayed(self) -> bool:
+                return self.visible
+
+            @property
+            def text(self) -> str:
+                return "private controller feedback must never be emitted"
+
+        class Driver:
+            def __init__(self, successes=(), rejections=()) -> None:
+                self.by_selector = {
+                    ".alert.alert-success": list(successes),
+                    ".alert.alert-danger": list(rejections),
+                }
+
+            def find_elements(self, _by: str, selector: str):
+                return self.by_selector[selector]
+
+        for driver, expected in (
+            (Driver(successes=[Alert()]), "success"),
+            (Driver(successes=[Alert(), Alert()]), "success"),
+            (Driver(rejections=[Alert()]), "rejected"),
+            (Driver(successes=[Alert()], rejections=[Alert()]), "ambiguous"),
+            (Driver(successes=[Alert(False)]), None),
+        ):
+            with self.subTest(outcome=expected):
+                self.assertEqual(expected, module.support_assignment_feedback_state(driver))
+                self.assertNotIn("private controller feedback", repr(module.support_assignment_feedback_state(driver)))
 
     def test_thread_identity_and_customer_reply_links_fail_closed(self):
         module = load_script()
@@ -937,6 +985,8 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 "paid": False, "payment_provider_called": False, "assignment_created": True,
                 "assignment_reassigned": True, "assignment_actor_history": True,
                 "assignment_limited_employee_denied": True,
+                "assignment_create_feedback": "success", "assignment_reassign_feedback": "success",
+                "assignment_create_persisted": True, "assignment_reassign_persisted": True,
                 "image_attachment_admin_readback": True, "image_attachment_foreign_denied": True,
                 "disallowed_attachment_rejected": True,
                 "foreign_valid_thread_denied": True, "foreign_orderless_post_denied": True,

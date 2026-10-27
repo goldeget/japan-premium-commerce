@@ -686,6 +686,14 @@ class Kuraneabusinessprofile extends Module
             );
             $headers->addTextHeader('X-ORDENOWA-CI-Reset-Text-Getter-Match-Reason', $textGetterMatchReason);
             $headers->addTextHeader('X-ORDENOWA-CI-Reset-Text-Mime-Match-Reason', $textMimeMatchReason);
+            $headers->addTextHeader(
+                'X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Tokenizer-Delimiter',
+                $textGetterEvidence['expected_url_tokenizer_delimiter'] ?? 'unavailable'
+            );
+            $headers->addTextHeader(
+                'X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Tokenizer-Delimiter',
+                $textMimeEvidence['expected_url_tokenizer_delimiter'] ?? 'unavailable'
+            );
             foreach ([
                 'message_is_symfony_email' => 'Symfony-Email-Object',
                 'text_setter_returned_same_message' => 'Text-Setter-Returned-Same-Message',
@@ -697,10 +705,12 @@ class Kuraneabusinessprofile extends Module
                 'text_getter_expected_url_candidate_present' => 'Text-Getter-Expected-URL-Candidate-Present',
                 'text_getter_expected_url_candidate_exact' => 'Text-Getter-Expected-URL-Candidate-Exact',
                 'text_getter_expected_url_candidate_credentials_complete' => 'Text-Getter-Expected-URL-Candidate-Credentials-Complete',
+                'text_getter_expected_url_tokenizer_shape_valid' => 'Text-Getter-Expected-URL-Tokenizer-Shape-Valid',
                 'text_mime_expected_url_literal_present' => 'Text-Mime-Expected-URL-Literal-Present',
                 'text_mime_expected_url_candidate_present' => 'Text-Mime-Expected-URL-Candidate-Present',
                 'text_mime_expected_url_candidate_exact' => 'Text-Mime-Expected-URL-Candidate-Exact',
                 'text_mime_expected_url_candidate_credentials_complete' => 'Text-Mime-Expected-URL-Candidate-Credentials-Complete',
+                'text_mime_expected_url_tokenizer_shape_valid' => 'Text-Mime-Expected-URL-Tokenizer-Shape-Valid',
                 'text_mime_body_read_succeeded' => 'Text-Mime-Body-Read-Succeeded',
                 'text_mime_body_identity_same_after_setter' => 'Text-Mime-Body-Identity-Same-After-Setter',
                 'text_mime_body_reset_retry_attempted' => 'Text-Mime-Body-Reset-Retry-Attempted',
@@ -718,10 +728,12 @@ class Kuraneabusinessprofile extends Module
                     'text_getter_expected_url_candidate_present' => $textGetterEvidence['expected_url_candidate_present'] ?? false,
                     'text_getter_expected_url_candidate_exact' => $textGetterEvidence['expected_url_candidate_exact'] ?? false,
                     'text_getter_expected_url_candidate_credentials_complete' => $textGetterEvidence['expected_url_candidate_credentials_complete'] ?? false,
+                    'text_getter_expected_url_tokenizer_shape_valid' => $textGetterEvidence['expected_url_tokenizer_shape_valid'] ?? false,
                     'text_mime_expected_url_literal_present' => $textMimeEvidence['expected_url_literal_present'] ?? false,
                     'text_mime_expected_url_candidate_present' => $textMimeEvidence['expected_url_candidate_present'] ?? false,
                     'text_mime_expected_url_candidate_exact' => $textMimeEvidence['expected_url_candidate_exact'] ?? false,
                     'text_mime_expected_url_candidate_credentials_complete' => $textMimeEvidence['expected_url_candidate_credentials_complete'] ?? false,
+                    'text_mime_expected_url_tokenizer_shape_valid' => $textMimeEvidence['expected_url_tokenizer_shape_valid'] ?? false,
                     'text_mime_body_read_succeeded' => $textMimeBodyReadSucceeded,
                     'text_mime_body_identity_same_after_setter' => $textMimeBodyIdentitySameAfterSetter,
                     'text_mime_body_reset_retry_attempted' => $textMimeBodyResetRetryAttempted,
@@ -874,6 +886,8 @@ class Kuraneabusinessprofile extends Module
             'expected_url_candidate_present' => false,
             'expected_url_candidate_exact' => false,
             'expected_url_candidate_credentials_complete' => false,
+            'expected_url_tokenizer_delimiter' => 'unavailable',
+            'expected_url_tokenizer_shape_valid' => false,
         ];
         if ($body === '' || !is_object($this->context->link) || !method_exists($this->context->link, 'getPageLink')) {
             return null;
@@ -887,6 +901,14 @@ class Kuraneabusinessprofile extends Module
         }
 
         $decoded = html_entity_decode($body, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $evidence['expected_url_tokenizer_delimiter'] = $this->resetUrlTokenizerDelimiter($expectedUrl);
+        $expectedUrlMatchesTokenizer = $expectedUrl !== null
+            && preg_match('~\\Ahttps?://[^\\s<>]+\\z~i', $expectedUrl) === 1;
+        $tokenizedExpectedUrl = $expectedUrl === null
+            ? ''
+            : rtrim($expectedUrl, '.,;)]>' . chr(34) . chr(39));
+        $evidence['expected_url_tokenizer_shape_valid'] = $expectedUrlMatchesTokenizer
+            && hash_equals($expectedUrl, $tokenizedExpectedUrl);
         $evidence['expected_url_literal_present'] = $expectedUrl !== null
             && str_contains($decoded, $expectedUrl);
         if (preg_match_all('~https?://[^\s<>]+~i', $decoded, $matches) < 1) {
@@ -1078,6 +1100,8 @@ class Kuraneabusinessprofile extends Module
             'expected_url_candidate_present' => false,
             'expected_url_candidate_exact' => false,
             'expected_url_candidate_credentials_complete' => false,
+            'expected_url_tokenizer_delimiter' => 'unavailable',
+            'expected_url_tokenizer_shape_valid' => false,
             'match_reason' => 'candidate_absent',
         ];
         if ($body === '') {
@@ -1110,6 +1134,7 @@ class Kuraneabusinessprofile extends Module
             'credentials_complete', 'scheme_host_port_match', 'path_match', 'candidate_selected',
             'expected_url_literal_present', 'expected_url_candidate_present',
             'expected_url_candidate_exact', 'expected_url_candidate_credentials_complete',
+            'expected_url_tokenizer_delimiter', 'expected_url_tokenizer_shape_valid',
         ] as $key) {
             $evidence[$key] = $candidateEvidence[$key] ?? false;
         }
@@ -1139,6 +1164,26 @@ class Kuraneabusinessprofile extends Module
         }
 
         return false;
+    }
+
+    private function resetUrlTokenizerDelimiter(?string $url): string
+    {
+        if ($url === null) {
+            return 'unavailable';
+        }
+        $hasWhitespace = preg_match('/\\s/', $url) === 1;
+        $hasAngle = strpbrk($url, '<>') !== false;
+        if ($hasWhitespace && $hasAngle) {
+            return 'multiple';
+        }
+        if ($hasWhitespace) {
+            return 'whitespace';
+        }
+        if ($hasAngle) {
+            return 'angle';
+        }
+
+        return 'none';
     }
 
     /** @param array<string, mixed>|false|null $candidate @param array<string, mixed>|false|null $expected */

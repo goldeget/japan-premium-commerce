@@ -524,10 +524,12 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             'set_substage("csrf_confirmation_unpaid_db_readback")',
             'ctx, order, "issued", set_substage=set_substage',
             'substage_prefix="csrf_confirmation_unpaid"',
-            'set_substage("none")',
+            'substage = "none"',
         )
         positions = [csrf_flow.index(marker) for marker in flow_markers]
         self.assertEqual(positions, sorted(positions))
+        self.assertNotIn('set_substage("none")', csrf_flow)
+        self.assertIn('name not in SAFE_SUBSTAGES - {"none"}', self.browser)
 
         helper = self.browser.split("def fill_and_submit_confirmation", 1)[1].split(
             "def submit_hidden_admin_post", 1

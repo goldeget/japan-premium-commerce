@@ -1307,7 +1307,9 @@ def run() -> None:
             substage_prefix="csrf_confirmation_unpaid",
         )
         result["csrf_rejected"] = True
-        set_substage("none")
+        # "none" is a failure-diagnostic sentinel, not an action stage accepted
+        # by set_substage(). Reset the local marker after the strict readback.
+        substage = "none"
 
         stage = result["stage"] = "wrong_amount_rejected"
         visit(admin, transfer_url, str(ctx["shop"]))

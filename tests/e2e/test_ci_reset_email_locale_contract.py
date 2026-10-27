@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 VERIFIER = Path(__file__).with_name('verify_ci_reset_email_locale.py')
 WORKFLOW = Path(__file__).resolve().parents[2] / '.github/workflows/fresh-install.yml'
+MODULE = Path(__file__).resolve().parents[2] / 'modules/kuraneabusinessprofile/kuraneabusinessprofile.php'
 
 
 class ResetEmailLocaleContract(unittest.TestCase):
@@ -110,10 +111,14 @@ class ResetEmailLocaleContract(unittest.TestCase):
         mail['X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Candidate-Exact'] = 'false'
         mail['X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Literal-Present'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Candidate-Credentials-Complete'] = 'false'
+        mail['X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Tokenizer-Shape-Valid'] = 'false'
+        mail['X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Tokenizer-Delimiter'] = 'whitespace'
         mail['X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Literal-Present'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Candidate-Present'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Candidate-Exact'] = 'false'
         mail['X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Candidate-Credentials-Complete'] = 'false'
+        mail['X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Tokenizer-Shape-Valid'] = 'false'
+        mail['X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Tokenizer-Delimiter'] = 'whitespace'
         mail['X-ORDENOWA-CI-Reset-Text-Mime-Body-Read-Succeeded'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Text-Mime-Body-Identity-Same-After-Setter'] = 'false'
         mail['X-ORDENOWA-CI-Reset-Text-Mime-Body-Reset-Retry-Attempted'] = 'false'
@@ -154,10 +159,14 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'pre_smtp_text_getter_expected_url_candidate_present': True,
             'pre_smtp_text_getter_expected_url_candidate_exact': False,
             'pre_smtp_text_getter_expected_url_candidate_credentials_complete': False,
+            'pre_smtp_text_getter_expected_url_tokenizer_shape_valid': False,
+            'pre_smtp_text_getter_expected_url_tokenizer_delimiter': 'whitespace',
             'pre_smtp_text_mime_expected_url_literal_present': True,
             'pre_smtp_text_mime_expected_url_candidate_present': True,
             'pre_smtp_text_mime_expected_url_candidate_exact': False,
             'pre_smtp_text_mime_expected_url_candidate_credentials_complete': False,
+            'pre_smtp_text_mime_expected_url_tokenizer_shape_valid': False,
+            'pre_smtp_text_mime_expected_url_tokenizer_delimiter': 'whitespace',
             'pre_smtp_text_mime_body_read_succeeded': True,
             'pre_smtp_text_mime_body_identity_same_after_setter': False,
             'pre_smtp_text_mime_body_reset_retry_attempted': False,
@@ -182,6 +191,22 @@ class ResetEmailLocaleContract(unittest.TestCase):
         }, evidence)
         self.assertNotIn('synthetic body', repr(evidence))
 
+    def test_expected_reset_url_diagnostics_expose_only_bounded_tokenizer_evidence(self):
+        module = self.module()
+        source = MODULE.read_text(encoding='utf-8')
+        for marker in (
+            "'expected_url_tokenizer_delimiter' => 'unavailable'",
+            'resetUrlTokenizerDelimiter($expectedUrl)',
+            "'expected_url_tokenizer_shape_valid'",
+            'Reset-Text-Getter-Expected-URL-Tokenizer-Delimiter',
+            'Reset-Text-Mime-Expected-URL-Tokenizer-Delimiter',
+            "return 'whitespace'",
+            "return 'angle'",
+            "return 'none'",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, source)
+
         duplicate = EmailMessage()
         duplicate['X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link'] = 'true'
         duplicate['X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link'] = 'false'
@@ -193,6 +218,14 @@ class ResetEmailLocaleContract(unittest.TestCase):
         malformed_reason = EmailMessage()
         malformed_reason['X-ORDENOWA-CI-Reset-Text-Getter-Match-Reason'] = 'https://private.invalid/token=secret'
         self.assertIsNone(module.pre_smtp_message_shape_headers(malformed_reason.as_bytes())['pre_smtp_text_getter_match_reason'])
+        malformed_delimiter = EmailMessage()
+        malformed_delimiter['X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Tokenizer-Delimiter'] = 'private-value'
+        self.assertEqual(
+            'unavailable',
+            module.pre_smtp_message_shape_headers(malformed_delimiter.as_bytes())[
+                'pre_smtp_text_getter_expected_url_tokenizer_delimiter'
+            ],
+        )
 
     def test_acceptance_requires_immediate_getter_and_mime_text_readback(self):
         module = self.module()
@@ -461,6 +494,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'pre_smtp_html_native_link=none; pre_smtp_text_native_link=none; '
             'pre_smtp_text_mime_link=none; '
             'pre_smtp_text_getter_match_reason=none; pre_smtp_text_mime_match_reason=none; '
+            'pre_smtp_getter_url_tokenizer=none/unavailable; pre_smtp_mime_url_tokenizer=none/unavailable; '
             'pre_smtp_email_object=none; pre_smtp_setter_same_object=none; '
             'pre_smtp_getter_string=none; '
             'pre_smtp_replacement_expected_url=none; pre_smtp_getter_expected_url=none; '
@@ -512,10 +546,14 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 "pre_smtp_text_getter_expected_url_candidate_present": None,
                 "pre_smtp_text_getter_expected_url_candidate_exact": None,
                 "pre_smtp_text_getter_expected_url_candidate_credentials_complete": None,
+                "pre_smtp_text_getter_expected_url_tokenizer_shape_valid": None,
+                "pre_smtp_text_getter_expected_url_tokenizer_delimiter": "unavailable",
                 "pre_smtp_text_mime_expected_url_literal_present": None,
                 "pre_smtp_text_mime_expected_url_candidate_present": None,
                 "pre_smtp_text_mime_expected_url_candidate_exact": None,
                 "pre_smtp_text_mime_expected_url_candidate_credentials_complete": None,
+                "pre_smtp_text_mime_expected_url_tokenizer_shape_valid": None,
+                "pre_smtp_text_mime_expected_url_tokenizer_delimiter": "unavailable",
                 "pre_smtp_text_mime_body_read_succeeded": None,
                 "pre_smtp_text_mime_body_identity_same_after_setter": None,
                 "pre_smtp_text_mime_body_reset_retry_attempted": None,

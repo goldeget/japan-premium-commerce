@@ -64,6 +64,7 @@ SAFE_RESET_TEXT_MATCH_REASONS = {
     'origin_mismatch', 'path_mismatch', 'native_candidate_missing',
     'expected_url_mismatch', 'expected_url_invalid', 'plain_text_part_missing', 'unavailable',
 }
+SAFE_RESET_URL_TOKENIZER_DELIMITERS = {"none", "whitespace", "angle", "multiple", "unavailable"}
 PART_EVIDENCE_KEYS = {'required_link_candidate_count', 'native_route_candidate_count',
                       'reset_credential_candidate_count', 'native_reset_link_shape'}
 
@@ -183,10 +184,14 @@ def write_diagnostics(result: dict) -> None:
             'pre_smtp_text_getter_expected_url_candidate_present',
             'pre_smtp_text_getter_expected_url_candidate_exact',
             'pre_smtp_text_getter_expected_url_candidate_credentials_complete',
+            'pre_smtp_text_getter_expected_url_tokenizer_shape_valid',
+            'pre_smtp_text_getter_expected_url_tokenizer_delimiter',
             'pre_smtp_text_mime_expected_url_literal_present',
             'pre_smtp_text_mime_expected_url_candidate_present',
             'pre_smtp_text_mime_expected_url_candidate_exact',
             'pre_smtp_text_mime_expected_url_candidate_credentials_complete',
+            'pre_smtp_text_mime_expected_url_tokenizer_shape_valid',
+            'pre_smtp_text_mime_expected_url_tokenizer_delimiter',
             'pre_smtp_text_mime_body_identity_same_after_setter',
             'pre_smtp_text_mime_body_reset_retry_attempted',
             'pre_smtp_text_mime_body_changed_after_reset', 'pre_smtp_text_plain_part_present',
@@ -220,6 +225,9 @@ def write_diagnostics(result: dict) -> None:
                 and result['pre_smtp_text_getter_match_reason'] not in SAFE_RESET_TEXT_MATCH_REASONS)
             or (result['pre_smtp_text_mime_match_reason'] is not None
                 and result['pre_smtp_text_mime_match_reason'] not in SAFE_RESET_TEXT_MATCH_REASONS)
+            or any(result[key] not in SAFE_RESET_URL_TOKENIZER_DELIMITERS for key in (
+                'pre_smtp_text_getter_expected_url_tokenizer_delimiter',
+                'pre_smtp_text_mime_expected_url_tokenizer_delimiter'))
             or any(result[key] is not None and type(result[key]) is not bool for key in (
                 'raw_text_native_link_shape', 'mailpit_preview_text_native_link_shape',
                 'mailpit_preview_text_shape_match', 'pre_smtp_html_native_link_shape',
@@ -233,10 +241,12 @@ def write_diagnostics(result: dict) -> None:
                 'pre_smtp_text_getter_expected_url_candidate_present',
                 'pre_smtp_text_getter_expected_url_candidate_exact',
                 'pre_smtp_text_getter_expected_url_candidate_credentials_complete',
+                'pre_smtp_text_getter_expected_url_tokenizer_shape_valid',
                 'pre_smtp_text_mime_expected_url_literal_present',
                 'pre_smtp_text_mime_expected_url_candidate_present',
                 'pre_smtp_text_mime_expected_url_candidate_exact',
                 'pre_smtp_text_mime_expected_url_candidate_credentials_complete',
+                'pre_smtp_text_mime_expected_url_tokenizer_shape_valid',
                 'pre_smtp_text_mime_body_identity_same_after_setter',
                 'pre_smtp_text_mime_body_reset_retry_attempted',
                 'pre_smtp_text_mime_body_changed_after_reset', 'pre_smtp_text_plain_part_present',
@@ -370,8 +380,8 @@ def read_raw_mime_parts(api: str, message: dict, diagnostic: dict | None = None)
     return parse_raw_mime_parts(source)
 
 
-def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
-    result: dict[str, bool | None] = {
+def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | str | None]:
+    result: dict[str, bool | str | None] = {
         'pre_smtp_html_native_link_shape': None,
         'pre_smtp_text_native_link_shape': None,
         'pre_smtp_text_mime_native_link_shape': None,
@@ -387,10 +397,14 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
         'pre_smtp_text_getter_expected_url_candidate_present': None,
         'pre_smtp_text_getter_expected_url_candidate_exact': None,
         'pre_smtp_text_getter_expected_url_candidate_credentials_complete': None,
+        'pre_smtp_text_getter_expected_url_tokenizer_shape_valid': None,
+        'pre_smtp_text_getter_expected_url_tokenizer_delimiter': 'unavailable',
         'pre_smtp_text_mime_expected_url_literal_present': None,
         'pre_smtp_text_mime_expected_url_candidate_present': None,
         'pre_smtp_text_mime_expected_url_candidate_exact': None,
         'pre_smtp_text_mime_expected_url_candidate_credentials_complete': None,
+        'pre_smtp_text_mime_expected_url_tokenizer_shape_valid': None,
+        'pre_smtp_text_mime_expected_url_tokenizer_delimiter': 'unavailable',
         'pre_smtp_text_mime_body_read_succeeded': None,
         'pre_smtp_text_mime_body_identity_same_after_setter': None,
         'pre_smtp_text_mime_body_reset_retry_attempted': None,
@@ -433,10 +447,12 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
         ('X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Candidate-Present', 'pre_smtp_text_getter_expected_url_candidate_present'),
         ('X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Candidate-Exact', 'pre_smtp_text_getter_expected_url_candidate_exact'),
         ('X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Candidate-Credentials-Complete', 'pre_smtp_text_getter_expected_url_candidate_credentials_complete'),
+        ('X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Tokenizer-Shape-Valid', 'pre_smtp_text_getter_expected_url_tokenizer_shape_valid'),
         ('X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Literal-Present', 'pre_smtp_text_mime_expected_url_literal_present'),
         ('X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Candidate-Present', 'pre_smtp_text_mime_expected_url_candidate_present'),
         ('X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Candidate-Exact', 'pre_smtp_text_mime_expected_url_candidate_exact'),
         ('X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Candidate-Credentials-Complete', 'pre_smtp_text_mime_expected_url_candidate_credentials_complete'),
+        ('X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Tokenizer-Shape-Valid', 'pre_smtp_text_mime_expected_url_tokenizer_shape_valid'),
         ('X-ORDENOWA-CI-Reset-Text-Mime-Body-Read-Succeeded', 'pre_smtp_text_mime_body_read_succeeded'),
         ('X-ORDENOWA-CI-Reset-Text-Mime-Body-Identity-Same-After-Setter', 'pre_smtp_text_mime_body_identity_same_after_setter'),
         ('X-ORDENOWA-CI-Reset-Text-Mime-Body-Reset-Retry-Attempted', 'pre_smtp_text_mime_body_reset_retry_attempted'),
@@ -465,6 +481,17 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
         elif len(values) == 1 and key.endswith('_match_reason'):
             value = str(values[0]).strip().lower()
             if value in SAFE_RESET_TEXT_MATCH_REASONS:
+                result[key] = value
+    for name, key in (
+        ('X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Tokenizer-Delimiter',
+         'pre_smtp_text_getter_expected_url_tokenizer_delimiter'),
+        ('X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Tokenizer-Delimiter',
+         'pre_smtp_text_mime_expected_url_tokenizer_delimiter'),
+    ):
+        values = message.get_all(name, [])
+        if len(values) == 1:
+            value = str(values[0]).strip().lower()
+            if value in SAFE_RESET_URL_TOKENIZER_DELIMITERS:
                 result[key] = value
     return result
 
@@ -781,10 +808,14 @@ def run() -> bool:
         'pre_smtp_text_getter_expected_url_candidate_present': None,
         'pre_smtp_text_getter_expected_url_candidate_exact': None,
         'pre_smtp_text_getter_expected_url_candidate_credentials_complete': None,
+        'pre_smtp_text_getter_expected_url_tokenizer_shape_valid': None,
+        'pre_smtp_text_getter_expected_url_tokenizer_delimiter': 'unavailable',
         'pre_smtp_text_mime_expected_url_literal_present': None,
         'pre_smtp_text_mime_expected_url_candidate_present': None,
         'pre_smtp_text_mime_expected_url_candidate_exact': None,
         'pre_smtp_text_mime_expected_url_candidate_credentials_complete': None,
+        'pre_smtp_text_mime_expected_url_tokenizer_shape_valid': None,
+        'pre_smtp_text_mime_expected_url_tokenizer_delimiter': 'unavailable',
         'pre_smtp_text_mime_body_read_succeeded': None,
         'pre_smtp_text_mime_body_identity_same_after_setter': None,
         'pre_smtp_text_mime_body_reset_retry_attempted': None,
@@ -845,10 +876,14 @@ def run() -> bool:
                               pre_smtp_text_getter_expected_url_candidate_present=None,
                               pre_smtp_text_getter_expected_url_candidate_exact=None,
                               pre_smtp_text_getter_expected_url_candidate_credentials_complete=None,
+                              pre_smtp_text_getter_expected_url_tokenizer_shape_valid=None,
+                              pre_smtp_text_getter_expected_url_tokenizer_delimiter='unavailable',
                               pre_smtp_text_mime_expected_url_literal_present=None,
                               pre_smtp_text_mime_expected_url_candidate_present=None,
                               pre_smtp_text_mime_expected_url_candidate_exact=None,
                               pre_smtp_text_mime_expected_url_candidate_credentials_complete=None,
+                              pre_smtp_text_mime_expected_url_tokenizer_shape_valid=None,
+                              pre_smtp_text_mime_expected_url_tokenizer_delimiter='unavailable',
                               pre_smtp_text_mime_body_read_succeeded=None,
                               pre_smtp_text_mime_body_identity_same_after_setter=None,
                               pre_smtp_text_mime_body_reset_retry_attempted=None,
@@ -1040,6 +1075,10 @@ def run() -> bool:
             f'pre_smtp_text_mime_link={str(diagnostic["pre_smtp_text_mime_native_link_shape"]).lower()}; '
             f'pre_smtp_text_getter_match_reason={diagnostic["pre_smtp_text_getter_match_reason"] or "none"}; '
             f'pre_smtp_text_mime_match_reason={diagnostic["pre_smtp_text_mime_match_reason"] or "none"}; '
+            f'pre_smtp_getter_url_tokenizer={str(diagnostic["pre_smtp_text_getter_expected_url_tokenizer_shape_valid"]).lower()}/'
+            f'{diagnostic["pre_smtp_text_getter_expected_url_tokenizer_delimiter"]}; '
+            f'pre_smtp_mime_url_tokenizer={str(diagnostic["pre_smtp_text_mime_expected_url_tokenizer_shape_valid"]).lower()}/'
+            f'{diagnostic["pre_smtp_text_mime_expected_url_tokenizer_delimiter"]}; '
             f'pre_smtp_email_object={str(diagnostic["pre_smtp_message_is_symfony_email"]).lower()}; '
             f'pre_smtp_setter_same_object={str(diagnostic["pre_smtp_text_setter_returned_same_message"]).lower()}; '
             f'pre_smtp_getter_string={str(diagnostic["pre_smtp_text_getter_returned_string"]).lower()}; '
