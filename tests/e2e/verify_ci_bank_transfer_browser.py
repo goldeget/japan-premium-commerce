@@ -1446,7 +1446,7 @@ def run() -> None:
             },
             str(ctx["admin"]),
         )
-        if "이미 확인된 동일 입금 기록을 유지했습니다." not in replay_body:
+        if "격리 QA용 동일 입금 확인 기록을 유지했습니다. 추가 결제 내역은 만들지 않았습니다." not in replay_body:
             raise AssertionError("the identical receipt retry did not return the existing confirmation")
         verify_native_readback(ctx, order)
         result["idempotent_replay"] = True

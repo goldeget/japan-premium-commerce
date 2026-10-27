@@ -406,6 +406,24 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
     def test_replay_is_idempotent_and_native_order_payment_history_are_unique(self) -> None:
         self.require('"receipt_replay"', self.browser)
         self.require("idempotent_replay", self.browser)
+        synthetic_feedback = self.controller.split(
+            "if ($result->receipt->synthetic)", 1
+        )[1].split("} else {", 1)[0]
+        production_feedback = self.controller.split("} else {", 1)[1].split(
+            "} catch (Throwable $exception)", 1
+        )[0]
+        self.require(
+            "격리 QA용 동일 입금 확인 기록을 유지했습니다. 추가 결제 내역은 만들지 않았습니다.",
+            synthetic_feedback,
+        )
+        self.require(
+            "이미 확인된 동일 입금 기록을 유지했습니다. 추가 결제 내역은 만들지 않았습니다.",
+            production_feedback,
+        )
+        self.require(
+            'if "격리 QA용 동일 입금 확인 기록을 유지했습니다. 추가 결제 내역은 만들지 않았습니다." not in replay_body:',
+            self.browser,
+        )
         for expected in (
             "count($instructionRows) === 1",
             "count($receiptRows) === 1",

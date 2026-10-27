@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -62,7 +64,9 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
                 self.assertNotIn("innerHTML", script)
                 return {
                     "ready_state": "complete",
+                    "document_locale": "ja",
                     "contact_form_count": 0,
+                    "visible_contact_form_count": 0,
                     "contact_form_visible": False,
                     "login_form_count": 1,
                     "login_form_visible": True,
@@ -430,7 +434,9 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
                 self.assertIn(".contact-form form", script)
                 return {
                     "ready_state": "complete",
+                    "document_locale": "ja",
                     "contact_form_count": 0,
+                    "visible_contact_form_count": 0,
                     "contact_form_visible": False,
                     "login_form_count": 1,
                     "login_form_visible": True,
@@ -468,7 +474,8 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
              patch.object(pwa_browser, "wait_visible", return_value=object()) as wait_visible:
             with self.assertRaises(pwa_browser.PwaDiagnosticAssertionError) as raised:
                 pwa_browser.verify_logged_out_private_routes(
-                    Driver(), "http://localhost:18080", substages.append
+                    Driver(), "http://localhost:18080", substages.append,
+                    expected_locale="ja", case_label="desktop-ja",
                 )
 
         self.assertEqual("public_route_status_mismatch", raised.exception.diagnostic_code)
@@ -476,9 +483,13 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
             {
                 "expected_status": 200,
                 "response_status": 404,
+                "expected_locale": "ja",
+                "case_label": "desktop-ja",
+                "observed_locale": "ja",
                 "route_class": "contact",
                 "ready_state": "complete",
                 "contact_form_count": 0,
+                "visible_contact_form_count": 0,
                 "contact_form_visible": False,
                 "login_form_count": 1,
                 "login_form_visible": True,
@@ -494,12 +505,15 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         self.assertNotIn("private-token-sentinel", repr(raised.exception.safe_metadata))
         self.assertNotIn(".contact-form form", str(wait_visible.call_args_list))
 
-    def test_contact_http_200_still_waits_for_the_visible_form(self) -> None:
+    def test_contact_http_200_requires_exactly_one_visible_form_without_timeout_wait(self) -> None:
         class Driver:
             current_url = "http://localhost:18080/index.php?controller=contact"
 
             def find_element(self, *_args: object) -> object:
                 return SimpleNamespace(get_attribute=lambda _name: "ja-JP")
+
+            def find_elements(self, *_args: object) -> list[object]:
+                return [SimpleNamespace(is_displayed=lambda: True)]
 
         statuses = {
             "logged-out addresses": 302,
@@ -517,17 +531,80 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
              patch.object(pwa_browser, "navigate_private_document", side_effect=navigate), \
              patch.object(pwa_browser, "wait_visible", return_value=object()) as wait_visible:
             pwa_browser.verify_logged_out_private_routes(
-                Driver(), "http://localhost:18080", lambda _stage: None
+                Driver(), "http://localhost:18080", lambda _stage: None,
+                expected_locale="ja", case_label="desktop-ja",
             )
 
-        self.assertIn(".contact-form form", str(wait_visible.call_args_list))
+        self.assertNotIn(".contact-form form", str(wait_visible.call_args_list))
 
-    def test_contact_http_200_without_a_form_still_fails_at_form_wait(self) -> None:
+    def test_contact_route_uses_case_locale_instead_of_prior_document_locale(self) -> None:
         class Driver:
             current_url = "http://localhost:18080/index.php?controller=contact"
+            document_language = "ja-JP"
+
+            def find_element(self, *_args: object) -> object:
+                return SimpleNamespace(get_attribute=lambda _name: self.document_language)
+
+            def find_elements(self, *_args: object) -> list[object]:
+                return [SimpleNamespace(is_displayed=lambda: True)]
+
+        driver = Driver()
+        navigations: list[tuple[str, str]] = []
+        probe_locales: list[str] = []
+
+        def navigate(_driver: object, requested: str, _shop: str, route: str, **_kwargs: object) -> dict[str, object]:
+            navigations.append((route, requested))
+            if route == "logged-out contact form":
+                driver.document_language = "en-US" if "/en/contact-us" in requested else "ja-JP"
+            return {
+                "status": 200 if route in {"logged-out guest tracking", "logged-out contact form"} else 302,
+                "from_service_worker": False,
+                "from_disk_cache": False,
+            }
+
+        def probe(_driver: object, url: str, _shop: str, **kwargs: object) -> dict[str, object]:
+            probe_locales.append(str(kwargs.get("locale", "")))
+            return fake_contact_probe(_driver, url, _shop, **kwargs)
+
+        output = StringIO()
+        with redirect_stdout(output), \
+             patch.object(pwa_browser, "read_contact_route_fixture", return_value=CONTACT_ROUTE_FIXTURE), \
+             patch.object(pwa_browser, "probe_contact_route", side_effect=probe), \
+             patch.object(pwa_browser, "navigate_private_document", side_effect=navigate), \
+             patch.object(pwa_browser, "wait_visible", return_value=object()):
+            pwa_browser.verify_logged_out_private_routes(
+                driver, "http://localhost:18080", lambda _stage: None,
+                expected_locale="en", case_label="desktop-en",
+            )
+
+        self.assertEqual(["en", "en"], probe_locales)
+        self.assertEqual(
+            "http://localhost:18080/en/contact-us",
+            next(url for route, url in navigations if route == "logged-out contact form"),
+        )
+        self.assertIn(
+            "PASS: PWA contact route case=desktop-en expected_locale=en observed_locale=en status=200 form_count=1 visible_form_count=1",
+            output.getvalue(),
+        )
+
+    def test_contact_route_rejects_wrong_rendered_locale_with_safe_evidence(self) -> None:
+        class Driver:
+            current_url = "http://localhost:18080/ja/contact-us"
 
             def find_element(self, *_args: object) -> object:
                 return SimpleNamespace(get_attribute=lambda _name: "ja-JP")
+
+            def find_elements(self, *_args: object) -> list[object]:
+                return [SimpleNamespace(is_displayed=lambda: True)]
+
+            def execute_script(self, _script: str) -> dict[str, object]:
+                return {
+                    "ready_state": "complete", "document_locale": "ja",
+                    "contact_form_count": 1, "visible_contact_form_count": 1,
+                    "contact_form_visible": True, "login_form_count": 0,
+                    "login_form_visible": False, "guest_tracking_form_count": 0,
+                    "guest_tracking_form_visible": False,
+                }
 
         statuses = {
             "logged-out addresses": 302,
@@ -540,22 +617,124 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         def navigate(_driver: object, _requested: str, _shop: str, route: str, **_kwargs: object) -> dict[str, object]:
             return {"status": statuses[route], "from_service_worker": False, "from_disk_cache": False}
 
-        def wait_for_selector(_driver: object, selector: str) -> object:
-            if selector == ".contact-form form":
-                raise pwa_browser.TimeoutException("form was not visible")
-            return object()
+        with (
+            patch.object(pwa_browser, "read_contact_route_fixture", return_value=CONTACT_ROUTE_FIXTURE),
+            patch.object(pwa_browser, "probe_contact_route", side_effect=fake_contact_probe),
+            patch.object(pwa_browser, "navigate_private_document", side_effect=navigate),
+            patch.object(pwa_browser, "wait_visible", return_value=object()),
+        ):
+            with self.assertRaises(pwa_browser.PwaDiagnosticAssertionError) as raised:
+                pwa_browser.verify_logged_out_private_routes(
+                    Driver(), "http://localhost:18080", lambda _stage: None,
+                    expected_locale="en", case_label="desktop-en",
+                )
+
+        self.assertEqual("localized_contact_form_mismatch", raised.exception.diagnostic_code)
+        self.assertEqual("en", raised.exception.safe_metadata["expected_locale"])
+        self.assertEqual("en", raised.exception.safe_metadata["case_label"].rsplit("-", 1)[-1])
+        self.assertEqual("ja", raised.exception.safe_metadata["observed_locale"])
+
+    def test_contact_route_rejects_duplicate_visible_forms_after_document_ready(self) -> None:
+        class Driver:
+            current_url = "http://localhost:18080/contact-us"
+
+            def find_element(self, *_args: object) -> object:
+                return SimpleNamespace(get_attribute=lambda _name: "ja-JP")
+
+            def find_elements(self, *_args: object) -> list[object]:
+                return [
+                    SimpleNamespace(is_displayed=lambda: True),
+                    SimpleNamespace(is_displayed=lambda: True),
+                ]
+
+            def execute_script(self, _script: str) -> dict[str, object]:
+                return {
+                    "ready_state": "complete", "document_locale": "ja",
+                    "contact_form_count": 2, "visible_contact_form_count": 2,
+                    "contact_form_visible": True, "login_form_count": 0,
+                    "login_form_visible": False, "guest_tracking_form_count": 0,
+                    "guest_tracking_form_visible": False,
+                }
+
+        statuses = {
+            "logged-out addresses": 302,
+            "logged-out history": 302,
+            "logged-out order detail": 302,
+            "logged-out guest tracking": 200,
+            "logged-out contact form": 200,
+        }
+
+        def navigate(_driver: object, _requested: str, _shop: str, route: str, **_kwargs: object) -> dict[str, object]:
+            return {"status": statuses[route], "from_service_worker": False, "from_disk_cache": False}
+
+        with patch.object(pwa_browser, "read_contact_route_fixture", return_value=CONTACT_ROUTE_FIXTURE), \
+             patch.object(pwa_browser, "probe_contact_route", side_effect=fake_contact_probe), \
+             patch.object(pwa_browser, "navigate_private_document", side_effect=navigate), \
+             patch.object(pwa_browser, "wait_visible", return_value=object()):
+            with self.assertRaises(pwa_browser.PwaDiagnosticAssertionError) as raised:
+                pwa_browser.verify_logged_out_private_routes(
+                    Driver(), "http://localhost:18080", lambda _stage: None,
+                    expected_locale="ja", case_label="desktop-ja",
+                )
+
+        self.assertEqual("localized_contact_form_mismatch", raised.exception.diagnostic_code)
+        self.assertEqual(2, raised.exception.safe_metadata["contact_form_count"])
+        self.assertEqual(2, raised.exception.safe_metadata["visible_contact_form_count"])
+
+    def test_contact_http_200_without_a_form_fails_with_bounded_form_diagnostics(self) -> None:
+        class Driver:
+            current_url = "http://localhost:18080/index.php?controller=contact"
+
+            def find_element(self, *_args: object) -> object:
+                return SimpleNamespace(get_attribute=lambda _name: "ja-JP")
+
+            def find_elements(self, *_args: object) -> list[object]:
+                return []
+
+            def execute_script(self, _script: str) -> dict[str, object]:
+                return {
+                    "ready_state": "complete", "document_locale": "ja",
+                    "contact_form_count": 0, "visible_contact_form_count": 0,
+                    "contact_form_visible": False, "login_form_count": 0,
+                    "login_form_visible": False, "guest_tracking_form_count": 0,
+                    "guest_tracking_form_visible": False,
+                }
+
+        statuses = {
+            "logged-out addresses": 302,
+            "logged-out history": 302,
+            "logged-out order detail": 302,
+            "logged-out guest tracking": 200,
+            "logged-out contact form": 200,
+        }
+
+        def navigate(_driver: object, _requested: str, _shop: str, route: str, **_kwargs: object) -> dict[str, object]:
+            return {"status": statuses[route], "from_service_worker": False, "from_disk_cache": False}
 
         substages: list[str] = []
         with patch.object(pwa_browser, "read_contact_route_fixture", return_value=CONTACT_ROUTE_FIXTURE), \
              patch.object(pwa_browser, "probe_contact_route", side_effect=fake_contact_probe), \
              patch.object(pwa_browser, "navigate_private_document", side_effect=navigate), \
-             patch.object(pwa_browser, "wait_visible", side_effect=wait_for_selector):
-            with self.assertRaises(pwa_browser.TimeoutException):
+             patch.object(pwa_browser, "wait_visible", return_value=object()) as wait_visible:
+            with self.assertRaises(pwa_browser.PwaDiagnosticAssertionError) as raised:
                 pwa_browser.verify_logged_out_private_routes(
-                    Driver(), "http://localhost:18080", substages.append
+                    Driver(), "http://localhost:18080", substages.append,
+                    expected_locale="ja", case_label="desktop-ja",
                 )
 
+        self.assertEqual("localized_contact_form_mismatch", raised.exception.diagnostic_code)
+        self.assertEqual(0, raised.exception.safe_metadata["contact_form_count"])
+        self.assertEqual(0, raised.exception.safe_metadata["visible_contact_form_count"])
+        self.assertEqual("ja", raised.exception.safe_metadata["observed_locale"])
+        self.assertNotIn(".contact-form form", str(wait_visible.call_args_list))
         self.assertEqual("require_contact_form", substages[-1])
+
+    def test_contact_route_case_label_must_match_expected_locale(self) -> None:
+        with self.assertRaisesRegex(ValueError, "supported viewport/locale case"):
+            pwa_browser.verify_logged_out_private_routes(
+                object(), "http://localhost:18080", lambda _stage: None,
+                expected_locale="en", case_label="desktop-ja",
+            )
 
     def test_off_origin_contact_destination_keeps_status_but_does_not_inspect_dom(self) -> None:
         class Driver:
@@ -598,7 +777,9 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
                 self.assertIn(".contact-form form", script)
                 return {
                     "ready_state": "complete",
+                    "document_locale": "ja",
                     "contact_form_count": 0,
+                    "visible_contact_form_count": 0,
                     "contact_form_visible": False,
                     "login_form_count": 1,
                     "login_form_visible": True,
@@ -634,7 +815,8 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
              patch.object(pwa_browser, "wait_visible", return_value=object()) as wait_visible:
             with self.assertRaises(pwa_browser.PwaDiagnosticAssertionError) as raised:
                 pwa_browser.verify_logged_out_private_routes(
-                    Driver(), "http://localhost:18080", substages.append
+                    Driver(), "http://localhost:18080", substages.append,
+                    expected_locale="ja", case_label="desktop-ja",
                 )
 
         self.assertEqual("public_route_status_mismatch", raised.exception.diagnostic_code)
@@ -642,9 +824,13 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
             {
                 "expected_status": 200,
                 "response_status": 404,
+                "expected_locale": "ja",
+                "case_label": "desktop-ja",
+                "observed_locale": "ja",
                 "route_class": "contact",
                 "ready_state": "complete",
                 "contact_form_count": 0,
+                "visible_contact_form_count": 0,
                 "contact_form_visible": False,
                 "login_form_count": 1,
                 "login_form_visible": True,
@@ -664,6 +850,10 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         diagnostic = pwa_browser.format_logged_out_route_status_diagnostic({
             "expected_status": 200,
             "response_status": 404,
+            "expected_locale": "ko",
+            "observed_locale": "ja",
+            "case_label": "mobile-ko",
+            "visible_contact_form_count": 0,
             "route_class": "private-token-sentinel",
             "ready_state": "complete",
             "contact_form_count": 1_000_000,
@@ -679,6 +869,10 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
 
         self.assertIn("expected_status=200", diagnostic)
         self.assertIn("response_status=404", diagnostic)
+        self.assertIn("case_label=mobile-ko", diagnostic)
+        self.assertIn("expected_locale=ko", diagnostic)
+        self.assertIn("observed_locale=ja", diagnostic)
+        self.assertIn("visible_contact_form_count=0", diagnostic)
         self.assertIn("final_route_class=other", diagnostic)
         self.assertIn("contact_form_count=20", diagnostic)
         self.assertIn("login_form_count=0", diagnostic)
@@ -1801,6 +1995,9 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
         class FakeBody:
             text = "Sign in"
 
+            def get_attribute(self, _name: str) -> str:
+                return "ja-JP"
+
         class FakeDriver:
             current_url = "http://localhost:18080/ja/identity"
 
@@ -1957,6 +2154,8 @@ class PwaLogoutDiagnosticsTests(unittest.TestCase):
                     "qa@example.invalid",
                     Path("/tmp/pwa-logged-out.png"),
                     set_substage=lambda _stage: None,
+                    expected_locale="ja",
+                    case_label="desktop-ja",
                 )
 
         self.assertEqual([True, False], driver.bypass_calls)

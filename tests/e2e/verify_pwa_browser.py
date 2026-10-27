@@ -196,6 +196,12 @@ PWA_VIEWPORTS = (
     ("desktop", 1440, 960),
     ("mobile", 390, 844),
 )
+PWA_DIAGNOSTIC_CASE_LOCALES = {
+    f"{device}-{locale}": locale
+    for device, _, _ in PWA_VIEWPORTS
+    for locale in PWA_SUPPORTED_LOCALES
+}
+PWA_DIAGNOSTIC_CASE_LABELS = set(PWA_DIAGNOSTIC_CASE_LOCALES)
 PWA_OFFLINE_FALLBACKS = {
     "ja": ("Japanese", "インターネットに接続できません"),
     "en": ("English", "You are offline"),
@@ -663,6 +669,9 @@ def safe_logged_out_route_status_metadata(
     route_stage: str,
     expected_status: int,
     observed: dict[str, object],
+    *,
+    expected_locale: str | None = None,
+    case_label: str | None = None,
 ) -> dict[str, object]:
     """Capture bounded same-origin route/form metadata without reading page text or URL values."""
     status = observed.get("status")
@@ -692,6 +701,10 @@ def safe_logged_out_route_status_metadata(
             else None
         ),
     }
+    if expected_locale in PWA_SUPPORTED_LOCALES:
+        metadata["expected_locale"] = expected_locale
+    if isinstance(case_label, str) and case_label in PWA_DIAGNOSTIC_CASE_LABELS:
+        metadata["case_label"] = case_label
     try:
         current_url = driver.current_url
     except Exception:
@@ -714,7 +727,9 @@ def safe_logged_out_route_status_metadata(
           const tracking = Array.from(document.querySelectorAll('#guestOrderTrackingForm'));
           return {
             ready_state: document.readyState,
+            document_locale: (document.documentElement.lang || '').toLowerCase().split('-')[0],
             contact_form_count: contact.length,
+            visible_contact_form_count: contact.filter(visible).length,
             contact_form_visible: contact.some(visible),
             login_form_count: login.length,
             login_form_visible: login.some(visible),
@@ -732,6 +747,16 @@ def safe_logged_out_route_status_metadata(
         metadata["ready_state"] = ready_state
     for key in ("contact_form_count", "login_form_count", "guest_tracking_form_count"):
         metadata[key] = _bounded_logout_element_count(raw.get(key))
+    if expected_locale in PWA_SUPPORTED_LOCALES:
+        observed_locale = raw.get("document_locale")
+        metadata["observed_locale"] = (
+            observed_locale
+            if isinstance(observed_locale, str) and observed_locale in PWA_SUPPORTED_LOCALES
+            else "other"
+        )
+        metadata["visible_contact_form_count"] = _bounded_logout_element_count(
+            raw.get("visible_contact_form_count")
+        )
     for key in ("contact_form_visible", "login_form_visible", "guest_tracking_form_visible"):
         value = raw.get(key)
         metadata[key] = value if type(value) is bool else None
@@ -755,6 +780,19 @@ def format_logged_out_route_status_diagnostic(metadata: dict[str, object]) -> st
         f"final_route_class={route_class}",
         f"ready_state={ready_state}",
     ]
+    expected_locale = metadata.get("expected_locale")
+    if expected_locale in PWA_SUPPORTED_LOCALES:
+        case_label = metadata.get("case_label")
+        observed_locale = metadata.get("observed_locale")
+        visible_count = _bounded_logout_element_count(
+            metadata.get("visible_contact_form_count")
+        )
+        fields.extend((
+            f"case_label={case_label if isinstance(case_label, str) and case_label in PWA_DIAGNOSTIC_CASE_LABELS else 'unknown'}",
+            f"expected_locale={expected_locale}",
+            f"observed_locale={observed_locale if isinstance(observed_locale, str) and (observed_locale in PWA_SUPPORTED_LOCALES or observed_locale == 'other') else 'unknown'}",
+            f"visible_contact_form_count={visible_count if visible_count is not None else 'unavailable'}",
+        ))
     for key in (
         "contact_form_count",
         "contact_form_visible",
@@ -3478,8 +3516,17 @@ def verify_logged_out_private_routes(
     driver: webdriver.Chrome,
     shop_url: str,
     set_substage: Callable[[str], None],
+    *,
+    expected_locale: str,
+    case_label: str,
 ) -> None:
     """Check private redirects and public lookup/contact pages without logging URLs."""
+    if (
+        expected_locale not in PWA_SUPPORTED_LOCALES
+        or not isinstance(case_label, str)
+        or PWA_DIAGNOSTIC_CASE_LOCALES.get(case_label) != expected_locale
+    ):
+        raise ValueError("PWA contact route check requires a supported viewport/locale case")
     route_cases = (
         ("addresses", "addresses", 302),
         ("history", "history", 302),
@@ -3521,8 +3568,7 @@ def verify_logged_out_private_routes(
             set_substage(f"require_{route_stage}_login_form")
             wait_visible(driver, "#login-form input[name='email']")
 
-    locale_value = driver.find_element("tag name", "html").get_attribute("lang") or ""
-    locale = locale_value.lower().split("-")[0]
+    locale = expected_locale
     fixture_path = os.environ.get("CONTACT_ROUTE_FIXTURE", "")
     route_fixture = read_contact_route_fixture(fixture_path, shop_url)
     contact_url = route_fixture["urls_by_iso"][locale]
@@ -3536,7 +3582,7 @@ def verify_logged_out_private_routes(
     )
     print(
         "PWA_CONTACT_ROUTE_DIAGNOSTIC "
-        f"locale={locale} meta_present={str(route_fixture['contact_meta_present']).lower()} "
+        f"case={case_label} expected_locale={locale} meta_present={str(route_fixture['contact_meta_present']).lower()} "
         f"rewrite_enabled={str(route_fixture['rewriting_enabled']).lower()} "
         f"canonical_mode={route_fixture['canonical_redirect_mode']} "
         f"contactform_enabled={str(route_fixture['contactform_enabled']).lower()} "
@@ -3559,10 +3605,47 @@ def verify_logged_out_private_routes(
         raise PwaDiagnosticAssertionError(
             "logged-out contact form did not return the expected status",
             "public_route_status_mismatch",
-            safe_logged_out_route_status_metadata(driver, shop_url, "contact_form", 200, observed),
+            safe_logged_out_route_status_metadata(
+                driver, shop_url, "contact_form", 200, observed,
+                expected_locale=expected_locale, case_label=case_label,
+            ),
+        )
+    document_locale = (
+        driver.find_element("tag name", "html").get_attribute("lang") or ""
+    ).casefold().split("-", 1)[0]
+    if document_locale != expected_locale:
+        metadata = safe_logged_out_route_status_metadata(
+            driver, shop_url, "contact_form", 200, observed,
+            expected_locale=expected_locale, case_label=case_label,
+        )
+        raise PwaDiagnosticAssertionError(
+            "logged-out contact form did not match the expected locale and single visible form",
+            "localized_contact_form_mismatch",
+            metadata,
         )
     set_substage("require_contact_form")
-    wait_visible(driver, ".contact-form form")
+    forms = driver.find_elements("css selector", ".contact-form form")
+    visible_form_count = sum(1 for form in forms if form.is_displayed())
+    if len(forms) != 1 or visible_form_count != 1:
+        metadata = safe_logged_out_route_status_metadata(
+            driver, shop_url, "contact_form", 200, observed,
+            expected_locale=expected_locale, case_label=case_label,
+        )
+        raise PwaDiagnosticAssertionError(
+            "logged-out contact form did not render exactly one visible form",
+            "localized_contact_form_mismatch",
+            metadata,
+        )
+    service_worker = observed.get("from_service_worker")
+    service_worker_value = (
+        str(service_worker).lower() if type(service_worker) is bool else "unknown"
+    )
+    print(
+        "PASS: PWA contact route "
+        f"case={case_label} expected_locale={expected_locale} observed_locale={document_locale} "
+        f"status=200 form_count={len(forms)} "
+        f"visible_form_count={visible_form_count} from_service_worker={service_worker_value}"
+    )
 
 
 def safe_selected_signout_metadata(signout: object, shop_url: str) -> dict[str, object]:
@@ -3678,8 +3761,10 @@ def verify_logout_protection(
     email: str,
     screenshot: Path,
     set_substage: Callable[[str], None],
+    *,
+    expected_locale: str,
+    case_label: str,
     expected_login_url: str | None = None,
-    expected_locale: str | None = None,
 ) -> None:
     logout_substage = ""
 
@@ -4092,6 +4177,8 @@ def verify_logout_protection(
         driver,
         shop_url,
         set_substage=mark_stage,
+        expected_locale=expected_locale,
+        case_label=case_label,
     )
 
     for history_stage in ("browser_history_first_back", "browser_history_second_back"):
@@ -4517,6 +4604,7 @@ def run_viewport(
             set_substage=update_logout_substage,
             expected_login_url=signin_url,
             expected_locale=locale,
+            case_label=label,
         )
         logout_substage = ""
         for route_stage, route_url in (
@@ -4657,7 +4745,7 @@ def run_viewport(
                         diagnostic += f"; navigation_trace={_format_navigation_trace(navigation_trace)}"
                 elif code == "service_worker_registration":
                     diagnostic += format_service_worker_registration_diagnostic(metadata)
-                elif code == "public_route_status_mismatch":
+                elif code in {"public_route_status_mismatch", "localized_contact_form_mismatch"}:
                     diagnostic += format_logged_out_route_status_diagnostic(metadata)
                 elif code == "main_frame_missing":
                     diagnostic += format_main_frame_failure_diagnostic(metadata)

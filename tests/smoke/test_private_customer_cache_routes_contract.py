@@ -118,6 +118,9 @@ class PrivateCustomerCacheRouteContractTests(unittest.TestCase):
             with self.subTest(controller=controller):
                 self.assertIn(f'"{controller}"', route_check)
         self.assertIn("expected_status", route_check)
+        self.assertIn("expected_locale: str", route_check)
+        self.assertIn("case_label: str", route_check)
+        self.assertIn("locale = expected_locale", route_check)
         self.assertIn("navigate_private_document(", route_check)
         for route_case in (
             '("addresses", "addresses", 302)',
@@ -139,8 +142,11 @@ class PrivateCustomerCacheRouteContractTests(unittest.TestCase):
             with self.subTest(contact_check=contact_check):
                 self.assertIn(contact_check, route_check)
         self.assertIn('observed.get("status") != 200', route_check)
+        self.assertIn("document_locale != expected_locale", route_check)
+        self.assertIn("PWA_DIAGNOSTIC_CASE_LOCALES.get(case_label) != expected_locale", route_check)
+        self.assertIn("len(forms) != 1 or visible_form_count != 1", route_check)
         self.assertIn('wait_visible(driver, "#guestOrderTrackingForm")', route_check)
-        self.assertIn('wait_visible(driver, ".contact-form form")', route_check)
+        self.assertNotIn('wait_visible(driver, ".contact-form form")', route_check)
         navigate_start = self.pwa.index("def navigate_private_document(")
         navigate_end = self.pwa.find("\ndef ", navigate_start + 1)
         navigate = self.pwa[navigate_start:navigate_end]
