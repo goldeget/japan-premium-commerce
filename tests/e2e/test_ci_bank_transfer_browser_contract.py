@@ -153,7 +153,8 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.require("ordenowaLimitedRouteResult", self.limited_route)
         for stage in (
             "scope_validation", "bootstrap", "employee_lookup", "employee_active",
-            "transfer_tab_acl", "admin_link_generation", "route_validation",
+            "transfer_tab_acl", "admin_directory_validation", "admin_context_validation",
+            "admin_link_generation", "route_validation",
         ):
             self.require(f"'{stage}'", self.limited_route)
         for check_key in module.LIMITED_ROUTE_CHECK_KEYS:
@@ -169,6 +170,20 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.require("limited_route_helper_execution", self.browser)
         self.require("limited_route_helper_json_parse", self.browser)
         self.require("limited_route_helper_json_shape", self.browser)
+
+    def test_limited_route_cli_bootstrap_defines_only_the_exact_isolated_admin_directory(self) -> None:
+        self.require("$expectedAdminDirectory = '/var/www/html/admin-kuranea';", self.limited_route)
+        self.require("realpath($expectedAdminDirectory)", self.limited_route)
+        self.require("$adminDirectory === $expectedAdminDirectory", self.limited_route)
+        self.assertNotIn("KURANEA_ADMIN_FOLDER", self.limited_route)
+        self.require("define('_PS_ADMIN_DIR_', $adminDirectory)", self.limited_route)
+        self.require("realpath((string) _PS_ADMIN_DIR_) === $adminDirectory", self.limited_route)
+        self.assertLess(
+            self.limited_route.index("define('_PS_ADMIN_DIR_', $adminDirectory)"),
+            self.limited_route.index("->getAdminLink('AdminBusinessProfileTransfers')"),
+        )
+        self.assertIn("limited_route_admin_directory_valid", self.browser)
+        self.assertIn("limited_route_admin_context_ready", self.browser)
 
     def test_fixture_is_bound_to_a_run_scoped_unpaid_native_jpy_order(self) -> None:
         for expected in (

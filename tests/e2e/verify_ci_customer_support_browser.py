@@ -100,6 +100,7 @@ SAFE_BROWSER_SUBSTAGES = {
     "admin_route_candidate_navigation", "admin_route_exact_thread_readback",
     "admin_thread_detail_navigation", "admin_thread_detail_readback",
     "admin_thread_message_readback", "admin_thread_order_association_readback",
+    "status_action_lookup", "status_action_click", "status_action_readback",
     "contact_field_lookup", "contact_id_readback", "attachment_control_lookup", "attachment_send_keys",
     "accepted_attachment_fixture_validation", "accepted_attachment_file_readback", "message_field_lookup",
     "message_send_keys", "submit_control_lookup", "submit_control_scroll", "submit_control_hit_test",
@@ -1342,9 +1343,14 @@ def status_action_form(driver, status: str, route_kind: str, expected_thread_id:
 
 def update_thread_status(
     driver, status: str, expected_next_action: str, route_kind: str, expected_thread_id: int, admin_url: str,
+    diagnostic_result: dict[str, Any] | None = None,
 ) -> None:
+    mark_browser_substage(diagnostic_result, "status_action_lookup")
     _form, button = status_action_form(driver, status, route_kind, expected_thread_id, admin_url)
+    # This is the sole mutating action. Never replay it if the click or navigation is stale.
+    mark_browser_substage(diagnostic_result, "status_action_click")
     button.click()
+    mark_browser_substage(diagnostic_result, "status_action_readback")
 
     def next_action_visible(browser):
         identity = thread_route_identity(browser.current_url, admin_url)
@@ -1352,6 +1358,10 @@ def update_thread_status(
             return False
         try:
             status_action_form(browser, expected_next_action, route_kind, expected_thread_id, admin_url)
+        except StaleElementReferenceException:
+            # The native status action replaces the thread DOM after its POST. A stale
+            # element during this read-only poll means reacquire within the existing wait.
+            return False
         except AssertionError:
             return False
         return True
@@ -1803,9 +1813,9 @@ def run() -> None:
         result["private_note_admin_only"] = True
 
         stage = result["stage"] = "close_thread"
-        update_thread_status(admin, "closed", "open", thread_route_kind, thread_id, ctx.admin)
+        update_thread_status(admin, "closed", "open", thread_route_kind, thread_id, ctx.admin, result)
         stage = result["stage"] = "reopen_thread"
-        update_thread_status(admin, "open", "closed", thread_route_kind, thread_id, ctx.admin)
+        update_thread_status(admin, "open", "closed", thread_route_kind, thread_id, ctx.admin, result)
         result["status_close_reopen"] = True
 
         stage = result["stage"] = "admin_public_reply"

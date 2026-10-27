@@ -878,6 +878,80 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "exact customer thread route"):
             module.customer_thread_reply_form(driver, "legacy_thread_view", 47, admin_root)
 
+    def test_status_readback_reacquires_after_stale_poll_without_replaying_mutation(self):
+        module = load_script()
+        admin_root = "http://127.0.0.1:18080/admin-test"
+        current = admin_root + "/index.php?controller=AdminCustomerThreads&id_customer_thread=47&viewcustomer_thread=1&token=safe"
+
+        class Button:
+            def __init__(self, *, stale_on_click=False):
+                self.click_count = 0
+                self.stale_on_click = stale_on_click
+
+            def click(self):
+                self.click_count += 1
+                if self.stale_on_click:
+                    raise module.StaleElementReferenceException("the status control detached before click")
+
+        class Driver:
+            current_url = current
+
+        driver = Driver()
+        button = Button()
+        readback_calls = 0
+
+        def status_action_form(_driver, status, _route_kind, _thread_id, _admin_url):
+            nonlocal readback_calls
+            if status == "closed":
+                return object(), button
+            readback_calls += 1
+            if readback_calls == 1:
+                raise module.StaleElementReferenceException("native thread DOM is being replaced")
+            return object(), object()
+
+        module.status_action_form = status_action_form
+
+        wait_timeouts = []
+
+        class ImmediateRetryWait:
+            def __init__(self, _driver, timeout):
+                self.timeout = timeout
+                wait_timeouts.append(timeout)
+
+            def until(self, predicate):
+                for _ in range(3):
+                    if predicate(driver):
+                        return True
+                raise AssertionError("the unchanged status readback wait did not resolve")
+
+        module.WebDriverWait = ImmediateRetryWait
+        diagnostic = {}
+        module.update_thread_status(
+            driver, "closed", "open", "legacy_thread_view", 47, admin_root, diagnostic
+        )
+        self.assertEqual(1, button.click_count)
+        self.assertEqual(2, readback_calls)
+        self.assertEqual([25], wait_timeouts)
+        self.assertEqual("status_action_readback", diagnostic["browser_substage"])
+
+        stale_button = Button(stale_on_click=True)
+        lookup_calls = 0
+
+        def stale_status_action_form(_driver, _status, _route_kind, _thread_id, _admin_url):
+            nonlocal lookup_calls
+            lookup_calls += 1
+            return object(), stale_button
+
+        module.status_action_form = stale_status_action_form
+        diagnostic.clear()
+        with self.assertRaises(module.StaleElementReferenceException):
+            module.update_thread_status(
+                driver, "open", "closed", "legacy_thread_view", 47, admin_root, diagnostic
+            )
+        self.assertEqual(1, lookup_calls)
+        self.assertEqual(1, stale_button.click_count)
+        self.assertEqual("status_action_click", diagnostic["browser_substage"])
+
     def test_equivalent_legacy_customer_threads_aliases_ignore_query_order_and_path_alias(self):
         module = load_script()
         module.By = SimpleNamespace(CSS_SELECTOR="css selector")

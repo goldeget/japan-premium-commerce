@@ -439,19 +439,28 @@ class Kuraneabusinessprofile extends Module
                 $contextShopId = (int) ($this->context->shop->id ?? 0);
                 $mailShopId = $contextShopId > 0 ? $contextShopId : null;
             }
-            // Use the credential-complete link that survived template rendering. The
-            // pre-send {url} value can be valid for the route but stale for this body.
+            // Prefer a credential-complete link visible in the rendered HTML body.
+            // The mailer may expose a different HTML snapshot here than the one it
+            // eventually serializes, so a validated same-send template URL remains
+            // the safe text fallback when this snapshot omits the link.
             $mailTemplate = $sendContext['template'] ?? $this->activeMailTemplate;
             $nativeResetUrl = $sendContext['native_reset_url'] ?? $this->activeNativeResetUrl;
             $htmlUrlEvidence = [];
             $resetUrl = $mailTemplate === 'password_query'
                 ? $this->extractNativeResetUrl($htmlBody, $mailLangId, $mailShopId, $htmlUrlEvidence)
                 : null;
-            if ($resetUrl === null
-                && $mailTemplate === 'password_query'
-                && is_string($nativeResetUrl)
-                && $this->hasNativeResetLink($htmlBody, $nativeResetUrl)) {
-                $resetUrl = $nativeResetUrl;
+            if ($resetUrl === null && $mailTemplate === 'password_query' && is_string($nativeResetUrl)) {
+                // Revalidate against this message's mail language and shop. This
+                // preserves the canonical route and all three credential checks;
+                // the raw-MIME integration check independently verifies that the
+                // serialized HTML and Text parts carry the same reset credentials.
+                $templateUrlEvidence = [];
+                $resetUrl = $this->validatedNativeResetUrl(
+                    $nativeResetUrl,
+                    $mailLangId,
+                    $mailShopId,
+                    $templateUrlEvidence
+                );
             }
             $textSetterAvailable = method_exists($message, 'text');
             $textSetterInvoked = false;

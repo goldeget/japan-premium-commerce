@@ -40,6 +40,8 @@ $checks = [
     'view_allowed' => false,
     'issue_denied' => false,
     'confirm_denied' => false,
+    'admin_directory_valid' => false,
+    'admin_context_ready' => false,
     'admin_link_generated' => false,
     'route_path_valid' => false,
     'route_controller_valid' => false,
@@ -85,6 +87,25 @@ try {
     $checks['issue_denied'] = ($tabAccess['add'] ?? '0') !== '1';
     $checks['confirm_denied'] = ($tabAccess['edit'] ?? '0') !== '1';
     if (!$checks['view_allowed'] || !$checks['issue_denied'] || !$checks['confirm_denied']) {
+        ordenowaLimitedRouteResult('failure', $failureStage, $checks);
+    }
+
+    $failureStage = 'admin_directory_validation';
+    $expectedAdminDirectory = '/var/www/html/admin-kuranea';
+    $adminDirectory = realpath($expectedAdminDirectory);
+    $checks['admin_directory_valid'] = $adminDirectory === $expectedAdminDirectory
+        && is_dir($adminDirectory);
+    if (!$checks['admin_directory_valid']) {
+        ordenowaLimitedRouteResult('failure', $failureStage, $checks);
+    }
+
+    $failureStage = 'admin_context_validation';
+    if (!defined('_PS_ADMIN_DIR_')) {
+        define('_PS_ADMIN_DIR_', $adminDirectory);
+    }
+    $checks['admin_context_ready'] = defined('_PS_ADMIN_DIR_')
+        && realpath((string) _PS_ADMIN_DIR_) === $adminDirectory;
+    if (!$checks['admin_context_ready']) {
         ordenowaLimitedRouteResult('failure', $failureStage, $checks);
     }
 

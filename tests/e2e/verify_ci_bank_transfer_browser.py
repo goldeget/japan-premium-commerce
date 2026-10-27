@@ -44,7 +44,8 @@ SAFE_SUBSTAGES = {
     "limited_route_helper_execution", "limited_route_helper_json_parse", "limited_route_helper_json_shape",
     "limited_route_helper_result_contract", "limited_route_scope_validation",
     "limited_route_bootstrap", "limited_route_employee_lookup", "limited_route_employee_active",
-    "limited_route_transfer_tab_acl", "limited_route_admin_link_generation",
+    "limited_route_transfer_tab_acl", "limited_route_admin_directory_validation",
+    "limited_route_admin_context_validation", "limited_route_admin_link_generation",
     "limited_route_route_validation", "limited_route_contract_readback",
     "limited_route_identity_validation", "limited_order_row_readback", "limited_issue_post",
     "limited_issue_denial_readback", "limited_issue_unpaid_db_readback", "limited_confirmation_post",
@@ -72,6 +73,7 @@ SAFE_RESULT_KEYS = {
     "limited_route_employee_found", "limited_route_employee_active",
     "limited_route_transfer_tab_present", "limited_route_view_allowed",
     "limited_route_issue_denied", "limited_route_confirm_denied",
+    "limited_route_admin_directory_valid", "limited_route_admin_context_ready",
     "limited_route_admin_link_generated", "limited_route_path_valid",
     "limited_route_controller_valid", "limited_route_credential_present",
     "limited_route_credential_bounded", "limited_route_credential_whitespace_free",
@@ -98,6 +100,8 @@ LIMITED_ROUTE_CHECK_KEYS = {
     "view_allowed": "limited_route_view_allowed",
     "issue_denied": "limited_route_issue_denied",
     "confirm_denied": "limited_route_confirm_denied",
+    "admin_directory_valid": "limited_route_admin_directory_valid",
+    "admin_context_ready": "limited_route_admin_context_ready",
     "admin_link_generated": "limited_route_admin_link_generated",
     "route_path_valid": "limited_route_path_valid",
     "route_controller_valid": "limited_route_controller_valid",
@@ -111,6 +115,8 @@ LIMITED_ROUTE_FAILURE_SUBSTAGES = {
     "employee_lookup": "limited_route_employee_lookup",
     "employee_active": "limited_route_employee_active",
     "transfer_tab_acl": "limited_route_transfer_tab_acl",
+    "admin_directory_validation": "limited_route_admin_directory_validation",
+    "admin_context_validation": "limited_route_admin_context_validation",
     "admin_link_generation": "limited_route_admin_link_generation",
     "route_validation": "limited_route_route_validation",
 }
@@ -1254,6 +1260,8 @@ def run() -> None:
             f"limited_route_view_allowed={str(result['limited_route_view_allowed']).lower()}; "
             f"limited_route_issue_denied={str(result['limited_route_issue_denied']).lower()}; "
             f"limited_route_confirm_denied={str(result['limited_route_confirm_denied']).lower()}; "
+            f"limited_route_admin_directory_valid={str(result['limited_route_admin_directory_valid']).lower()}; "
+            f"limited_route_admin_context_ready={str(result['limited_route_admin_context_ready']).lower()}; "
             f"limited_route_admin_link_generated={str(result['limited_route_admin_link_generated']).lower()}; "
             f"limited_route_path_valid={str(result['limited_route_path_valid']).lower()}; "
             f"limited_route_controller_valid={str(result['limited_route_controller_valid']).lower()}; "

@@ -131,7 +131,10 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         fallback = alter.split("if ($resetUrl === null", 1)[1].split("$textSetterAvailable", 1)[0]
         self.assertIn("$mailTemplate === 'password_query'", fallback)
         self.assertIn("$nativeResetUrl", fallback)
-        self.assertIn("$this->hasNativeResetLink($htmlBody, $nativeResetUrl)", fallback)
+        self.assertIn("$this->validatedNativeResetUrl(", fallback)
+        self.assertIn("$mailLangId", fallback)
+        self.assertIn("$mailShopId", fallback)
+        self.assertNotIn("$this->hasNativeResetLink($htmlBody, $nativeResetUrl)", fallback)
         self.assertIn("$this->extractNativeResetUrl($htmlBody, $mailLangId, $mailShopId, $htmlUrlEvidence)", alter)
         self.assertIn("$textSetterAvailable = method_exists($message, 'text')", alter)
         self.assertIn("$textSetterInvoked = true", alter)
