@@ -88,18 +88,24 @@ class ResetEmailLocaleContract(unittest.TestCase):
         )
         self.assertEqual(url, reset_url)
 
-    def test_pre_smtp_reset_mail_diagnostics_accept_only_two_bounded_boolean_headers(self):
+    def test_pre_smtp_reset_mail_diagnostics_accept_only_bounded_boolean_headers(self):
         module = self.module()
         mail = EmailMessage()
         mail['Subject'] = 'synthetic reset diagnostic'
         mail['X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link'] = 'true'
         mail['X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link'] = 'false'
+        mail['X-ORDENOWA-CI-Reset-URL-Candidate-Found'] = 'true'
+        mail['X-ORDENOWA-CI-Text-Setter-Available'] = 'true'
+        mail['X-ORDENOWA-CI-Text-Setter-Invoked'] = 'true'
         mail.set_content('synthetic body is never returned by the header parser')
 
         evidence = module.pre_smtp_message_shape_headers(mail.as_bytes())
         self.assertEqual({
             'pre_smtp_html_native_link_shape': True,
             'pre_smtp_text_native_link_shape': False,
+            'pre_smtp_reset_url_candidate_found': True,
+            'pre_smtp_text_setter_available': True,
+            'pre_smtp_text_setter_invoked': True,
         }, evidence)
         self.assertNotIn('synthetic body', repr(evidence))
 
@@ -337,6 +343,8 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'raw_text_native_link=none; mailpit_preview_text_native_link=none; '
             'mailpit_preview_text_shape_match=none; '
             'pre_smtp_html_native_link=none; pre_smtp_text_native_link=none; '
+            'pre_smtp_url_candidate=none; pre_smtp_text_setter_available=none; '
+            'pre_smtp_text_setter_invoked=none; '
             'mail_type=unavailable; template_candidate=unavailable; '
             'template_iso=none; text_source=unavailable; '
             'text_template_present=false; text_template_has_url=false; '
@@ -359,6 +367,9 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 "mailpit_preview_text_shape_match": None,
                 "pre_smtp_html_native_link_shape": None,
                 "pre_smtp_text_native_link_shape": None,
+                "pre_smtp_reset_url_candidate_found": None,
+                "pre_smtp_text_setter_available": None,
+                "pre_smtp_text_setter_invoked": None,
                 "mail_type": None, "template_candidate": "unavailable",
                 "template_iso": "none", "text_source": "unavailable",
                 "text_template_present": False, "text_template_has_url": False,

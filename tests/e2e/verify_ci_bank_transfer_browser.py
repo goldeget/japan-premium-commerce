@@ -50,6 +50,7 @@ SAFE_RESULT_KEYS = {
     "issue_persistence_diagnostic", "issue_failure_category", "issue_form_csrf_consistent",
     "issue_server_csrf_evidence_present", "issue_post_value_present", "issue_post_matches_controller",
     "issue_query_matches_controller", "issue_post_matches_query", "issue_controller_matches_admin_link",
+    "issue_post_native_csrf_valid",
     "issue_left_order_unpaid", "instruction_immutable", "customer_instruction_visible",
     "order_identity_match", "order_product_line_match", "amount_match", "account_match", "foreign_customer_denied",
     "limited_staff_denied", "view_only_confirmation_denied", "issue_csrf_rejected", "csrf_rejected", "wrong_amount_rejected", "receipt_confirmed",
@@ -70,6 +71,10 @@ RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {
     "status", "stage", "exception_type", "failure_substage", "issue_persistence_diagnostic",
     "issue_failure_category",
 }
+CSRF_DIAGNOSTIC_BOOLEAN_KEYS = {
+    "issue_post_matches_controller", "issue_query_matches_controller", "issue_controller_matches_admin_link",
+}
+SUCCESS_REQUIRED_BOOLEAN_KEYS = RESULT_BOOLEAN_KEYS - CSRF_DIAGNOSTIC_BOOLEAN_KEYS
 
 
 def assert_true(condition: object, message: str) -> None:
@@ -472,6 +477,7 @@ def read_issue_csrf_server_evidence(driver) -> dict[str, bool]:
         "issue_query_matches_controller": False,
         "issue_post_matches_query": False,
         "issue_controller_matches_admin_link": False,
+        "issue_post_native_csrf_valid": False,
     }
     if len(elements) != 1:
         return evidence
@@ -482,6 +488,7 @@ def read_issue_csrf_server_evidence(driver) -> dict[str, bool]:
         ("issue_query_matches_controller", "data-query-matches-controller"),
         ("issue_post_matches_query", "data-post-matches-query"),
         ("issue_controller_matches_admin_link", "data-controller-matches-admin-link"),
+        ("issue_post_native_csrf_valid", "data-post-native-csrf-valid"),
     ):
         evidence[key] = element.get_attribute(attribute) == "true"
     return evidence
@@ -757,7 +764,8 @@ def write_result(path: Path, result: dict[str, object]) -> None:
             or (result.get("exception_type") is not None and result.get("exception_type") not in SAFE_EXCEPTION_TYPES)
             or any(type(result.get(key)) is not bool for key in RESULT_BOOLEAN_KEYS)
             or (result.get("status") == "success" and (
-                result.get("exception_type") is not None or any(result.get(key) is not True for key in RESULT_BOOLEAN_KEYS)
+                result.get("exception_type") is not None
+                or any(result.get(key) is not True for key in SUCCESS_REQUIRED_BOOLEAN_KEYS)
             ))):
         raise ValueError("bank-transfer browser result does not match its allowlisted schema")
     path.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8")
@@ -803,6 +811,7 @@ def run() -> None:
         "issue_server_csrf_evidence_present": False, "issue_post_value_present": False,
         "issue_post_matches_controller": False, "issue_query_matches_controller": False,
         "issue_post_matches_query": False, "issue_controller_matches_admin_link": False,
+        "issue_post_native_csrf_valid": False,
         "fixture_bound": False, "instruction_issued": False, "issue_left_order_unpaid": False,
         "instruction_immutable": False, "customer_instruction_visible": False,
         "order_identity_match": False, "order_product_line_match": False, "amount_match": False, "account_match": False,
@@ -1069,7 +1078,8 @@ def run() -> None:
             f"issue_post_matches_controller={str(result['issue_post_matches_controller']).lower()}; "
             f"issue_query_matches_controller={str(result['issue_query_matches_controller']).lower()}; "
             f"issue_post_matches_query={str(result['issue_post_matches_query']).lower()}; "
-            f"issue_controller_matches_admin_link={str(result['issue_controller_matches_admin_link']).lower()}",
+            f"issue_controller_matches_admin_link={str(result['issue_controller_matches_admin_link']).lower()}; "
+            f"issue_post_native_csrf_valid={str(result['issue_post_native_csrf_valid']).lower()}",
             file=sys.stderr,
         )
         for browser, filename in (

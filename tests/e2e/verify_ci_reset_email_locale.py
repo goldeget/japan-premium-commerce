@@ -163,7 +163,8 @@ def write_diagnostics(result: dict) -> None:
             'message_check', 'message_part_evidence',
             'raw_text_native_link_shape', 'mailpit_preview_text_native_link_shape',
             'mailpit_preview_text_shape_match', 'pre_smtp_html_native_link_shape',
-            'pre_smtp_text_native_link_shape',
+            'pre_smtp_text_native_link_shape', 'pre_smtp_reset_url_candidate_found',
+            'pre_smtp_text_setter_available', 'pre_smtp_text_setter_invoked',
             'mail_type', 'template_candidate', 'template_iso', 'text_source',
             'text_template_present', 'text_template_has_url',
             'html_template_present', 'html_template_has_url',
@@ -183,7 +184,8 @@ def write_diagnostics(result: dict) -> None:
             or any(result[key] is not None and type(result[key]) is not bool for key in (
                 'raw_text_native_link_shape', 'mailpit_preview_text_native_link_shape',
                 'mailpit_preview_text_shape_match', 'pre_smtp_html_native_link_shape',
-                'pre_smtp_text_native_link_shape'))
+                'pre_smtp_text_native_link_shape', 'pre_smtp_reset_url_candidate_found',
+                'pre_smtp_text_setter_available', 'pre_smtp_text_setter_invoked'))
             or (result['exception_type'] is not None and result['exception_type'] not in SAFE_EXCEPTION_TYPES)
             or (result['response_status'] is not None and (
                 type(result['response_status']) is not int or not 100 <= result['response_status'] <= 599
@@ -308,6 +310,9 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
     result: dict[str, bool | None] = {
         'pre_smtp_html_native_link_shape': None,
         'pre_smtp_text_native_link_shape': None,
+        'pre_smtp_reset_url_candidate_found': None,
+        'pre_smtp_text_setter_available': None,
+        'pre_smtp_text_setter_invoked': None,
     }
     try:
         message = BytesParser(policy=policy.default).parsebytes(source)
@@ -316,6 +321,9 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
     for name, key in (
         ('X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link', 'pre_smtp_html_native_link_shape'),
         ('X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link', 'pre_smtp_text_native_link_shape'),
+        ('X-ORDENOWA-CI-Reset-URL-Candidate-Found', 'pre_smtp_reset_url_candidate_found'),
+        ('X-ORDENOWA-CI-Text-Setter-Available', 'pre_smtp_text_setter_available'),
+        ('X-ORDENOWA-CI-Text-Setter-Invoked', 'pre_smtp_text_setter_invoked'),
     ):
         values = message.get_all(name, [])
         if len(values) == 1 and str(values[0]).strip().lower() in {'true', 'false'}:
@@ -600,6 +608,9 @@ def run() -> bool:
         'mailpit_preview_text_shape_match': None,
         'pre_smtp_html_native_link_shape': None,
         'pre_smtp_text_native_link_shape': None,
+        'pre_smtp_reset_url_candidate_found': None,
+        'pre_smtp_text_setter_available': None,
+        'pre_smtp_text_setter_invoked': None,
         'mail_type': None, 'template_candidate': 'unavailable',
         'template_iso': 'none', 'text_source': 'unavailable',
         'text_template_present': False, 'text_template_has_url': False,
@@ -626,6 +637,9 @@ def run() -> bool:
                               mailpit_preview_text_shape_match=None,
                               pre_smtp_html_native_link_shape=None,
                               pre_smtp_text_native_link_shape=None,
+                              pre_smtp_reset_url_candidate_found=None,
+                              pre_smtp_text_setter_available=None,
+                              pre_smtp_text_setter_invoked=None,
                               same_origin=False, native_route=False, language_matches=False,
                               email_field_present=False, submit_control_present=False,
                               submit_center_in_viewport=False, submit_center_unobstructed=False,
@@ -732,7 +746,10 @@ def run() -> bool:
                 f'mailpit_preview_text_native_link={str(preview_text_shape).lower()}; '
                 f'mailpit_preview_text_shape_match={str(diagnostic["mailpit_preview_text_shape_match"]).lower()}; '
                 f'pre_smtp_html_native_link={str(diagnostic["pre_smtp_html_native_link_shape"]).lower()}; '
-                f'pre_smtp_text_native_link={str(diagnostic["pre_smtp_text_native_link_shape"]).lower()}'
+                f'pre_smtp_text_native_link={str(diagnostic["pre_smtp_text_native_link_shape"]).lower()}; '
+                f'pre_smtp_url_candidate={str(diagnostic["pre_smtp_reset_url_candidate_found"]).lower()}; '
+                f'pre_smtp_text_setter_available={str(diagnostic["pre_smtp_text_setter_available"]).lower()}; '
+                f'pre_smtp_text_setter_invoked={str(diagnostic["pre_smtp_text_setter_invoked"]).lower()}'
             )
         stage = 'complete'
         diagnostic.update(status='success', language='ko', stage=stage, exception_type=None)
@@ -755,6 +772,9 @@ def run() -> bool:
             f'mailpit_preview_text_shape_match={str(diagnostic["mailpit_preview_text_shape_match"]).lower()}; '
             f'pre_smtp_html_native_link={str(diagnostic["pre_smtp_html_native_link_shape"]).lower()}; '
             f'pre_smtp_text_native_link={str(diagnostic["pre_smtp_text_native_link_shape"]).lower()}; '
+            f'pre_smtp_url_candidate={str(diagnostic["pre_smtp_reset_url_candidate_found"]).lower()}; '
+            f'pre_smtp_text_setter_available={str(diagnostic["pre_smtp_text_setter_available"]).lower()}; '
+            f'pre_smtp_text_setter_invoked={str(diagnostic["pre_smtp_text_setter_invoked"]).lower()}; '
             f'mail_type={diagnostic["mail_type"] if diagnostic["mail_type"] in (1, 2, 3, 4) else "unavailable"}; '
             f'template_candidate={diagnostic["template_candidate"]}; '
             f'template_iso={diagnostic["template_iso"]}; '

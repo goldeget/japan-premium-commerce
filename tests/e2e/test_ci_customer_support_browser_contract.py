@@ -473,6 +473,14 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         self.assertIn("candidate_budget = remaining / (len(candidates) - candidate_index)", resolver)
         self.assertIn("navigation_budget = min(10.0, max(0.1, candidate_budget / 2))", resolver)
         self.assertIn("timeout=readback_budget", resolver)
+        detail = browser[browser.index("def visit_exact_customer_thread_detail("):browser.index("def assert_thread_order_link(")]
+        self.assertIn('"admin_thread_detail_navigation"', detail)
+        self.assertIn('"admin_thread_detail_readback"', detail)
+        self.assertIn("except TimeoutException:", detail)
+        self.assertIn("thread_route_identity(browser.current_url, admin_url)", detail)
+        self.assertIn("identity[1] != expected_thread_id", detail)
+        self.assertIn('"[data-role=\'messages-thread\']"', detail)
+        self.assertIn("visit_exact_customer_thread_detail(", browser)
         identity_helper = browser[browser.index("def customer_threads_navigation_identity("):browser.index("def thread_route_identity(")]
         self.assertIn('parse_qsl(candidate.query, keep_blank_values=True, strict_parsing=True)', identity_helper)
         self.assertIn('if key in query:', identity_helper)
@@ -580,6 +588,69 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         )
         self.assertEqual([first, second], attempts)
         self.assertEqual((second, expected_thread, 47), (selected, thread_url, thread_id))
+
+    def test_detail_readback_continues_after_navigation_timeout_only_for_exact_thread(self):
+        module = load_script()
+        module.By = SimpleNamespace(CSS_SELECTOR="css selector")
+
+        class Thread:
+            text = "isolated inquiry"
+
+            def is_displayed(self) -> bool:
+                return True
+
+        class Driver:
+            def __init__(self, current_thread_id: int) -> None:
+                self.current_thread_id = current_thread_id
+                self.current_url = "about:blank"
+                self.page_load_timeouts: list[float] = []
+
+            def set_page_load_timeout(self, timeout: float) -> None:
+                self.page_load_timeouts.append(timeout)
+
+            def get(self, _url: str) -> None:
+                self.current_url = (
+                    "http://127.0.0.1:18080/admin-test/index.php?controller=AdminCustomerThreads"
+                    f"&id_customer_thread={self.current_thread_id}&viewcustomer_thread=1&token=safe"
+                )
+                raise module.TimeoutException("document load continued after Selenium timeout")
+
+            def execute_script(self, _script: str) -> str:
+                return "complete"
+
+            def find_elements(self, _by: str, _selector: str) -> list[Thread]:
+                return [Thread()]
+
+        class ImmediateWait:
+            def __init__(self, driver: Driver, _timeout: float) -> None:
+                self.driver = driver
+
+            def until(self, predicate):
+                result = predicate(self.driver)
+                if not result:
+                    raise module.TimeoutException("exact thread DOM was not available")
+                return result
+
+        module.WebDriverWait = ImmediateWait
+        admin_root = "http://127.0.0.1:18080/admin-test"
+        thread_url = admin_root + "/index.php?controller=AdminCustomerThreads&id_customer_thread=47&viewcustomer_thread=1&token=safe"
+        diagnostic: dict[str, object] = {}
+
+        exact_driver = Driver(47)
+        thread = module.visit_exact_customer_thread_detail(
+            exact_driver, thread_url, admin_root, 47, diagnostic, timeout=35
+        )
+        self.assertEqual("isolated inquiry", thread.text)
+        self.assertLessEqual(exact_driver.page_load_timeouts[0], 17.5)
+        self.assertEqual("admin_thread_detail_readback", diagnostic["browser_substage"])
+
+        wrong_thread_driver = Driver(48)
+        diagnostic.clear()
+        with self.assertRaises(module.TimeoutException):
+            module.visit_exact_customer_thread_detail(
+                wrong_thread_driver, thread_url, admin_root, 47, diagnostic, timeout=35
+            )
+        self.assertEqual("admin_thread_detail_readback", diagnostic["browser_substage"])
 
     def test_equivalent_legacy_customer_threads_aliases_ignore_query_order_and_path_alias(self):
         module = load_script()

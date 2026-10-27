@@ -97,7 +97,7 @@ class BankTransferReceiptContractTests(unittest.TestCase):
         self.assertIn("CommerceGate::isIsolatedCiCheckoutEnabled()", controller)
         self.assertIn("CommerceGate::isEnabled(", controller)
         confirm = controller.split("private function processConfirm", 1)[1].split("private function unpaidJpyOrders", 1)[0]
-        self.assertLess(confirm.index("hash_equals"), confirm.index("->confirm("))
+        self.assertLess(confirm.index("hasValidAdminMutationToken"), confirm.index("->confirm("))
         self.assertLess(confirm.index("canConfirmBankTransferReceipt"), confirm.index("->confirm("))
         self.assertLess(confirm.index("!$verifiedTransfer"), confirm.index("->confirm("))
         self.assertIn("입금 사실을 확인해야 합니다", confirm)

@@ -411,19 +411,34 @@ class Kuraneabusinessprofile extends Module
             $resetUrl = $this->activeMailTemplate === 'password_query'
                 ? $this->activeNativeResetUrl
                 : null;
-            if ($resetUrl === null && $this->activeMailTemplate === 'password_query') {
+            $mailLangId = (int) ($params['id_lang'] ?? 0);
+            if ($mailLangId < 1) {
+                $mailLangId = $this->activeMailLangId ?? (int) ($this->context->language->id ?? 0);
+            }
+            $mailShopId = (int) ($params['id_shop'] ?? $params['idShop'] ?? 0);
+            if ($mailShopId < 1) {
+                $mailShopId = $this->activeMailShopId;
+            }
+            if (($mailShopId ?? 0) < 1) {
+                $contextShopId = (int) ($this->context->shop->id ?? 0);
+                $mailShopId = $contextShopId > 0 ? $contextShopId : null;
+            }
+            if ($resetUrl === null) {
                 $resetUrl = $this->extractNativeResetUrl(
                     $htmlBody,
-                    $this->activeMailLangId ?? 0,
-                    $this->activeMailShopId
+                    $mailLangId,
+                    $mailShopId
                 );
             }
-            if ($resetUrl !== null && method_exists($message, 'text')) {
+            $textSetterAvailable = method_exists($message, 'text');
+            $textSetterInvoked = false;
+            if ($resetUrl !== null && $textSetterAvailable) {
                 $textBody = (string) ($message->getTextBody() ?? '');
                 if (!$this->hasNativeResetLink($textBody, $resetUrl)) {
                     $replacement = ($textBody === '' ? '' : rtrim($textBody) . "\n\n") . $resetUrl;
                     try {
                         $message->text($replacement);
+                        $textSetterInvoked = true;
                     } catch (\Throwable) {
                         // Keep mail delivery available if a compatible mailer cannot replace its text body.
                     }
@@ -445,6 +460,9 @@ class Kuraneabusinessprofile extends Module
                 && $this->hasNativeResetLink((string) ($message->getTextBody() ?? ''), $resetUrl);
             $headers->addTextHeader('X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link', $htmlHasLink ? 'true' : 'false');
             $headers->addTextHeader('X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link', $textHasLink ? 'true' : 'false');
+            $headers->addTextHeader('X-ORDENOWA-CI-Reset-URL-Candidate-Found', $resetUrl !== null ? 'true' : 'false');
+            $headers->addTextHeader('X-ORDENOWA-CI-Text-Setter-Available', $textSetterAvailable ? 'true' : 'false');
+            $headers->addTextHeader('X-ORDENOWA-CI-Text-Setter-Invoked', $textSetterInvoked ? 'true' : 'false');
         } finally {
             $this->activeMailTemplate = null;
             $this->activeNativeResetUrl = null;

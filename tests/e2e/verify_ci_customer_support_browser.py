@@ -96,6 +96,7 @@ SAFE_BROWSER_SUBSTAGES = {
     "foreign_invalid_token_probe", "foreign_owned_thread_probe", "foreign_orderless_thread_probe",
     "foreign_orderless_post_probe",
     "admin_route_candidate_navigation", "admin_route_exact_thread_readback",
+    "admin_thread_detail_navigation", "admin_thread_detail_readback",
     "contact_field_lookup", "contact_id_readback", "attachment_control_lookup", "attachment_send_keys",
     "accepted_attachment_fixture_validation", "accepted_attachment_file_readback", "message_field_lookup",
     "message_send_keys", "submit_control_lookup", "submit_control_scroll", "submit_control_hit_test",
@@ -985,6 +986,44 @@ def resolve_customer_threads_index(
     raise AssertionError("no safe native Customer service route linked the exact expected thread within the existing lookup timeout")
 
 
+def visit_exact_customer_thread_detail(
+    driver, thread_url: str, admin_url: str, expected_thread_id: int,
+    diagnostic_result: dict[str, Any] | None = None, timeout: float = 35,
+):
+    """Read the exact thread page within one bounded navigation and DOM-readback budget."""
+    requested_identity = thread_route_identity(thread_url, admin_url)
+    if requested_identity is None or requested_identity[1] != expected_thread_id:
+        raise AssertionError("the selected native customer thread route did not match the expected thread")
+
+    deadline = time.monotonic() + max(0.1, float(timeout))
+    navigation_budget = max(0.1, min(17.5, float(timeout) / 2))
+    mark_browser_substage(diagnostic_result, "admin_thread_detail_navigation")
+    if hasattr(driver, "set_page_load_timeout"):
+        driver.set_page_load_timeout(navigation_budget)
+    try:
+        driver.get(thread_url)
+    except TimeoutException:
+        # Chromium may complete the exact document after Selenium's page-load wait;
+        # the remaining shared budget must still prove route identity and thread DOM.
+        pass
+
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutException("the exact customer thread page exhausted its bounded navigation budget")
+    mark_browser_substage(diagnostic_result, "admin_thread_detail_readback")
+
+    def exact_thread_loaded(browser):
+        identity = thread_route_identity(browser.current_url, admin_url)
+        if identity is None or identity[1] != expected_thread_id:
+            return False
+        if browser.execute_script("return document.readyState") not in {"interactive", "complete"}:
+            return False
+        elements = browser.find_elements(By.CSS_SELECTOR, "[data-role='messages-thread']")
+        return elements[0] if len(elements) == 1 and elements[0].is_displayed() else False
+
+    return WebDriverWait(driver, max(0.1, remaining)).until(exact_thread_loaded)
+
+
 def assert_thread_order_link(driver, expected_order_id: int) -> None:
     for link in driver.find_elements(By.CSS_SELECTOR, "a[href]"):
         href = link.get_attribute("href") or ""
@@ -1442,9 +1481,10 @@ def run() -> None:
         )
         if thread_id != first_thread_id:
             raise AssertionError("native customer service page did not open the confirmation's same thread")
-        visit(admin, thread_view_url)
-        visible(admin, "[data-role='messages-thread']")
-        thread_body = admin.find_element(By.CSS_SELECTOR, "[data-role='messages-thread']").text
+        thread_element = visit_exact_customer_thread_detail(
+            admin, thread_view_url, ctx.admin, thread_id, result
+        )
+        thread_body = thread_element.text
         if buyer_marker not in thread_body:
             raise AssertionError("native administrator thread did not show the submitted customer inquiry")
         assert_thread_order_link(admin, int(ctx.buyer["order_id"]))

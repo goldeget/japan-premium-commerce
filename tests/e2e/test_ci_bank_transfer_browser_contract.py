@@ -226,11 +226,29 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         issue = self.controller.split("private function processIssue", 1)[1].split(
             "private function processConfirm", 1
         )[0]
-        self.assertLess(issue.index("REQUEST_METHOD"), issue.index("hash_equals"))
+        self.assertLess(issue.index("REQUEST_METHOD"), issue.index("hasValidAdminMutationToken"))
         self.require("입금 안내 발급 요청 방식이 올바르지 않습니다.", issue)
         self.require("관리자 보안 토큰이 현재 관리자 세션과 다릅니다.", issue)
-        self.require('hash_equals((string) $this->token, $submittedToken)', issue)
+        self.require("$this->hasValidAdminMutationToken()", issue)
+        self.assertNotIn('hash_equals((string) $this->token, $submittedToken)', issue)
         self.require('요청에 관리자 보안 토큰이 누락되었습니다.', issue)
+
+        confirm = self.controller.split("private function processConfirm", 1)[1].split(
+            "private function unpaidJpyOrders", 1
+        )[0]
+        self.require("$this->hasValidAdminMutationToken()", confirm)
+        self.assertNotIn('hash_equals((string) $this->token, $submittedToken)', confirm)
+
+        token_validator = self.controller.split("private function hasValidAdminMutationToken", 1)[1].split(
+            "private function isIsolatedCiDiagnosticRun", 1
+        )[0]
+        for marker in (
+            "$_POST['token']", "$_GET['token']", "hash_equals($queryToken, $submittedToken)",
+            "SymfonyContainer::getInstance()", "UserTokenManager::class", "isTokenValid() === true",
+            "catch (Throwable)", "return false;",
+        ):
+            self.require(marker, token_validator)
+        self.assertNotIn("$this->token", token_validator)
 
         helper = self.browser.split("def issue_form_token_matches_action", 1)[1].split(
             "def read_visible_notice", 1
@@ -250,6 +268,7 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             "hash_equals($controllerToken, $queryToken)",
             "hash_equals($queryToken, $submittedToken)",
             "hash_equals($controllerToken, $adminLinkToken)",
+            "hasValidAdminMutationToken()",
             "ordenowa-ci-transfer-csrf-evidence",
             "'post-matches-controller'",
         ):
@@ -265,8 +284,10 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         )[0]
         self.require('By.ID, "ordenowa-ci-transfer-csrf-evidence"', browser_evidence)
         self.require('"issue_post_matches_controller", "data-post-matches-controller"', browser_evidence)
+        self.require('"issue_post_native_csrf_valid", "data-post-native-csrf-valid"', browser_evidence)
         self.assertNotIn('get_attribute("value")', browser_evidence)
         self.require('result.update(read_issue_csrf_server_evidence(admin))', self.browser)
+        self.require('"issue_post_native_csrf_valid"', self.browser)
 
     def test_instruction_issue_notice_uses_fresh_snapshot_before_persistence_readback(self) -> None:
         issue_flow = self.browser.split('stage = result["stage"] = "instruction_issue"', 1)[1].split(

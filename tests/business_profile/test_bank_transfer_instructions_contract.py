@@ -14,8 +14,10 @@ class BankTransferInstructionsContractTests(unittest.TestCase):
         self.assertIn("'add'", policy)
         self.assertIn("AdminAccessPolicy::canIssueBankTransferInstructions", controller)
         self.assertIn("$token = (string) $this->token;", controller)
-        self.assertIn("hash_equals((string) $this->token, $submittedToken)", controller)
-        self.assertIn("hash_equals", controller)
+        self.assertIn("$this->hasValidAdminMutationToken()", controller)
+        self.assertIn("hash_equals($queryToken, $submittedToken)", controller)
+        self.assertIn("UserTokenManager::class", controller)
+        self.assertIn("isTokenValid() === true", controller)
 
     def test_issue_action_requires_the_live_seller_gate_or_exact_isolated_ci_gate(self) -> None:
         controller = (MODULE / "controllers/admin/AdminBusinessProfileTransfersController.php").read_text(encoding="utf-8")

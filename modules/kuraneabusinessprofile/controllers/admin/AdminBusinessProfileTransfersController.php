@@ -97,7 +97,7 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
             $this->fail('요청에 관리자 보안 토큰이 누락되었습니다. 페이지를 새로고침한 후 다시 시도해 주세요.');
             return;
         }
-        if (!hash_equals((string) $this->token, $submittedToken)) {
+        if (!$this->hasValidAdminMutationToken()) {
             $this->fail('관리자 보안 토큰이 현재 관리자 세션과 다릅니다. 페이지를 새로고침한 후 다시 시도해 주세요.');
             return;
         }
@@ -193,7 +193,7 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
             $this->fail('요청에 관리자 보안 토큰이 누락되었습니다. 페이지를 새로고침한 후 다시 시도해 주세요.');
             return;
         }
-        if (!hash_equals((string) $this->token, $submittedToken)) {
+        if (!$this->hasValidAdminMutationToken()) {
             $this->fail('관리자 보안 토큰이 현재 관리자 세션과 다릅니다. 페이지를 새로고침한 후 다시 시도해 주세요.');
             return;
         }
@@ -387,6 +387,7 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
             'query-matches-controller' => $queryToken !== '' && hash_equals($controllerToken, $queryToken),
             'post-matches-query' => $queryToken !== '' && hash_equals($queryToken, $submittedToken),
             'controller-matches-admin-link' => hash_equals($controllerToken, $adminLinkToken),
+            'post-native-csrf-valid' => $this->hasValidAdminMutationToken(),
         ];
         $attributes = '';
         foreach ($evidence as $name => $matches) {
@@ -394,6 +395,30 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
         }
 
         return '<span id="ordenowa-ci-transfer-csrf-evidence" hidden' . $attributes . '></span>';
+    }
+
+    private function hasValidAdminMutationToken(): bool
+    {
+        $submittedToken = isset($_POST['token']) && is_string($_POST['token']) ? $_POST['token'] : '';
+        $queryToken = isset($_GET['token']) && is_string($_GET['token']) ? $_GET['token'] : '';
+        if ($submittedToken === '' || $queryToken === '' || !hash_equals($queryToken, $submittedToken)) {
+            return false;
+        }
+
+        try {
+            $container = \PrestaShop\PrestaShop\Adapter\SymfonyContainer::getInstance();
+            if ($container === null) {
+                return false;
+            }
+
+            $tokenManager = $container->get(\PrestaShopBundle\Security\Admin\UserTokenManager::class);
+
+            return is_object($tokenManager)
+                && method_exists($tokenManager, 'isTokenValid')
+                && $tokenManager->isTokenValid() === true;
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private function isIsolatedCiDiagnosticRun(): bool
