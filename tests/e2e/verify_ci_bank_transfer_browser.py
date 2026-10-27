@@ -47,7 +47,9 @@ SAFE_SUBSTAGES = {
     "limited_route_transfer_tab_acl", "limited_route_admin_directory_validation",
     "limited_route_admin_context_validation", "limited_route_admin_link_generation",
     "limited_route_route_validation", "limited_route_contract_readback",
-    "limited_route_identity_validation", "limited_order_row_readback", "limited_issue_post",
+    "limited_route_identity_validation", "limited_route_orders_read_acl",
+    "limited_page_navigation", "limited_page_route_readback", "limited_page_content_readback",
+    "limited_order_row_readback", "limited_issue_post",
     "limited_issue_denial_readback", "limited_issue_unpaid_db_readback", "limited_confirmation_post",
     "limited_confirmation_denial_readback", "limited_confirmation_unpaid_db_readback",
 }
@@ -72,6 +74,15 @@ SAFE_RESULT_KEYS = {
     "limited_route_ci_scope_valid", "limited_route_identity_shape_valid",
     "limited_route_employee_found", "limited_route_employee_active",
     "limited_route_transfer_tab_present", "limited_route_view_allowed",
+    "limited_route_orders_tab_present", "limited_route_orders_view_allowed",
+    "limited_page_same_admin_origin", "limited_page_admin_path_valid",
+    "limited_page_controller_valid", "limited_page_route_credential_matches",
+    "limited_page_login_redirect_absent", "limited_page_transfer_heading_present",
+    "limited_page_transfer_denial_absent", "limited_page_same_shop_denial_absent",
+    "limited_page_orders_table_present", "limited_order_rows_present",
+    "limited_order_reference_column_match", "limited_order_id_column_match",
+    "limited_order_exact_row_match", "limited_order_amount_matches",
+    "limited_mutation_controls_absent",
     "limited_route_issue_denied", "limited_route_confirm_denied",
     "limited_route_admin_directory_valid", "limited_route_admin_context_ready",
     "limited_route_admin_link_generated", "limited_route_path_directory_root",
@@ -99,6 +110,8 @@ LIMITED_ROUTE_CHECK_KEYS = {
     "employee_active": "limited_route_employee_active",
     "transfer_tab_present": "limited_route_transfer_tab_present",
     "view_allowed": "limited_route_view_allowed",
+    "orders_tab_present": "limited_route_orders_tab_present",
+    "orders_view_allowed": "limited_route_orders_view_allowed",
     "issue_denied": "limited_route_issue_denied",
     "confirm_denied": "limited_route_confirm_denied",
     "admin_directory_valid": "limited_route_admin_directory_valid",
@@ -118,10 +131,26 @@ LIMITED_ROUTE_FAILURE_SUBSTAGES = {
     "employee_lookup": "limited_route_employee_lookup",
     "employee_active": "limited_route_employee_active",
     "transfer_tab_acl": "limited_route_transfer_tab_acl",
+    "orders_read_acl": "limited_route_orders_read_acl",
     "admin_directory_validation": "limited_route_admin_directory_validation",
     "admin_context_validation": "limited_route_admin_context_validation",
     "admin_link_generation": "limited_route_admin_link_generation",
     "route_validation": "limited_route_route_validation",
+}
+LIMITED_PAGE_DIAGNOSTIC_KEYS = {
+    "limited_page_same_admin_origin", "limited_page_admin_path_valid",
+    "limited_page_controller_valid", "limited_page_route_credential_matches",
+    "limited_page_login_redirect_absent", "limited_page_transfer_heading_present",
+    "limited_page_transfer_denial_absent", "limited_page_same_shop_denial_absent",
+    "limited_page_orders_table_present", "limited_order_rows_present",
+    "limited_order_reference_column_match", "limited_order_id_column_match",
+    "limited_order_exact_row_match", "limited_order_amount_matches",
+    "limited_mutation_controls_absent",
+}
+LIMITED_PAGE_REQUIRED_KEYS = LIMITED_PAGE_DIAGNOSTIC_KEYS - {
+    "limited_order_rows_present", "limited_order_reference_column_match",
+    "limited_order_id_column_match", "limited_order_exact_row_match",
+    "limited_order_amount_matches", "limited_mutation_controls_absent",
 }
 RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {
     "status", "stage", "exception_type", "failure_substage", "issue_persistence_diagnostic",
@@ -555,18 +584,69 @@ def find_transfer_menu_link(driver: webdriver.Chrome, admin_root: str, set_subst
     return next(iter(candidates))
 
 
-def order_row(driver: webdriver.Chrome, order: dict[str, object]):
+def limited_transfer_page_evidence(
+    driver: webdriver.Chrome, admin_root: str, expected_token: str
+) -> dict[str, bool]:
+    current_url = driver.current_url
+    current = urlparse(current_url)
+    query = parse_qs(current.query, keep_blank_values=True)
+    body_text = driver.find_element(By.TAG_NAME, "body").text
+    return {
+        "limited_page_same_admin_origin": same_origin(current_url, admin_root),
+        "limited_page_admin_path_valid": (
+            safe_admin_path(current_url, admin_root)
+            and current.path in {"/admin-kuranea/", "/admin-kuranea/index.php"}
+        ),
+        "limited_page_controller_valid": query.get("controller") == ["AdminBusinessProfileTransfers"],
+        "limited_page_route_credential_matches": query.get("token") == [expected_token],
+        "limited_page_login_redirect_absent": (
+            "/login" not in current.path.lower()
+            and query.get("controller") != ["AdminLogin"]
+            and not driver.find_elements(By.CSS_SELECTOR, "#login_form")
+        ),
+        "limited_page_transfer_heading_present": "미결제 엔화 주문" in body_text,
+        "limited_page_transfer_denial_absent": "주문 입금 정보를 조회할 권한이 없습니다." not in body_text,
+        "limited_page_same_shop_denial_absent": "단일 쇼핑몰을 선택한 후 이용해 주세요." not in body_text,
+        "limited_page_orders_table_present": bool(driver.find_elements(By.CSS_SELECTOR, ".table tbody")),
+    }
+
+
+def order_row(
+    driver: webdriver.Chrome,
+    order: dict[str, object],
+    diagnostics: dict[str, object] | None = None,
+):
+    rows = driver.find_elements(By.CSS_SELECTOR, ".table tbody tr")
     matches = []
-    for row in driver.find_elements(By.CSS_SELECTOR, ".table tbody tr"):
+    reference_match = False
+    order_id_match = False
+    for row in rows:
         cells = row.find_elements(By.CSS_SELECTOR, "td")
-        if len(cells) >= 2 and cells[0].text.strip() == str(order["reference"]) and cells[1].text.strip() == str(order["order_id"]):
+        row_reference_matches = len(cells) >= 1 and cells[0].text.strip() == str(order["reference"])
+        row_order_id_matches = len(cells) >= 2 and cells[1].text.strip() == str(order["order_id"])
+        reference_match = reference_match or row_reference_matches
+        order_id_match = order_id_match or row_order_id_matches
+        if row_reference_matches and row_order_id_matches:
             matches.append(row)
+    if diagnostics is not None:
+        diagnostics.update({
+            "limited_order_rows_present": bool(rows),
+            "limited_order_reference_column_match": reference_match,
+            "limited_order_id_column_match": order_id_match,
+            "limited_order_exact_row_match": len(matches) == 1,
+            "limited_order_amount_matches": False,
+        })
     if len(matches) != 1:
         raise AssertionError("the transfer screen did not identify the exact isolated order row")
     cells = matches[0].find_elements(By.CSS_SELECTOR, "td")
     if "amount" in order:
         shown_amount = cells[2].text if len(cells) > 2 else ""
-        if "JPY" not in shown_amount or not displayed_jpy_amount_matches(shown_amount, str(order["amount"])):
+        amount_matches = "JPY" in shown_amount and displayed_jpy_amount_matches(
+            shown_amount, str(order["amount"])
+        )
+        if diagnostics is not None:
+            diagnostics["limited_order_amount_matches"] = amount_matches
+        if not amount_matches:
             raise AssertionError("the staff order row did not show the exact native JPY amount")
     return matches[0]
 
@@ -976,6 +1056,7 @@ def run() -> None:
         "view_only_issue_denied": False, "view_only_issue_order_unpaid": False,
         "view_only_confirmation_denied": False, "view_only_confirmation_order_unpaid": False,
         **{result_key: False for result_key in LIMITED_ROUTE_CHECK_KEYS.values()},
+        **{result_key: False for result_key in LIMITED_PAGE_DIAGNOSTIC_KEYS},
         "issue_csrf_rejected": False, "csrf_rejected": False, "wrong_amount_rejected": False, "receipt_confirmed": False,
         "idempotent_replay": False, "customer_paid_state_changed": False,
         "instruction_hidden_after_payment": False, "native_readback": False,
@@ -1124,11 +1205,20 @@ def run() -> None:
         set_substage("limited_staff_login")
         admin_login(limited, ctx, str(ctx["view_email"]))
         limited_url, limited_token = limited_transfer_route(ctx, set_substage, result)
-        set_substage("limited_order_row_readback")
+        set_substage("limited_page_navigation")
         visit(limited, limited_url, str(ctx["shop"]))
-        limited_row = order_row(limited, order)
-        if (limited_row.find_elements(By.CSS_SELECTOR, 'button[name="submitOrdenowaIssueTransfer"]')
-                or limited_row.find_elements(By.CSS_SELECTOR, 'button[name="submitOrdenowaConfirmBankTransfer"]')):
+        set_substage("limited_page_route_readback")
+        result.update(limited_transfer_page_evidence(limited, str(ctx["admin"]), limited_token))
+        set_substage("limited_page_content_readback")
+        if not all(result[key] is True for key in LIMITED_PAGE_REQUIRED_KEYS):
+            raise AssertionError("the view-only employee did not receive the exact same-shop transfer read page")
+        set_substage("limited_order_row_readback")
+        limited_row = order_row(limited, order, result)
+        result["limited_mutation_controls_absent"] = not bool(
+            limited_row.find_elements(By.CSS_SELECTOR, 'button[name="submitOrdenowaIssueTransfer"]')
+            or limited_row.find_elements(By.CSS_SELECTOR, 'button[name="submitOrdenowaConfirmBankTransfer"]')
+        )
+        if not result["limited_mutation_controls_absent"]:
             raise AssertionError("the native view-only employee received a transfer mutation control")
         for submit_name, fields in (
             ("submitOrdenowaIssueTransfer", {"id_order": str(order["order_id"])}),
@@ -1282,6 +1372,8 @@ def run() -> None:
             f"limited_route_employee_active={str(result['limited_route_employee_active']).lower()}; "
             f"limited_route_transfer_tab_present={str(result['limited_route_transfer_tab_present']).lower()}; "
             f"limited_route_view_allowed={str(result['limited_route_view_allowed']).lower()}; "
+            f"limited_route_orders_tab_present={str(result['limited_route_orders_tab_present']).lower()}; "
+            f"limited_route_orders_view_allowed={str(result['limited_route_orders_view_allowed']).lower()}; "
             f"limited_route_issue_denied={str(result['limited_route_issue_denied']).lower()}; "
             f"limited_route_confirm_denied={str(result['limited_route_confirm_denied']).lower()}; "
             f"limited_route_admin_directory_valid={str(result['limited_route_admin_directory_valid']).lower()}; "
@@ -1293,7 +1385,22 @@ def run() -> None:
             f"limited_route_controller_valid={str(result['limited_route_controller_valid']).lower()}; "
             f"limited_route_credential_present={str(result['limited_route_credential_present']).lower()}; "
             f"limited_route_credential_bounded={str(result['limited_route_credential_bounded']).lower()}; "
-            f"limited_route_credential_whitespace_free={str(result['limited_route_credential_whitespace_free']).lower()}",
+            f"limited_route_credential_whitespace_free={str(result['limited_route_credential_whitespace_free']).lower()}; "
+            f"limited_page_same_admin_origin={str(result['limited_page_same_admin_origin']).lower()}; "
+            f"limited_page_admin_path_valid={str(result['limited_page_admin_path_valid']).lower()}; "
+            f"limited_page_controller_valid={str(result['limited_page_controller_valid']).lower()}; "
+            f"limited_page_route_credential_matches={str(result['limited_page_route_credential_matches']).lower()}; "
+            f"limited_page_login_redirect_absent={str(result['limited_page_login_redirect_absent']).lower()}; "
+            f"limited_page_transfer_heading_present={str(result['limited_page_transfer_heading_present']).lower()}; "
+            f"limited_page_transfer_denial_absent={str(result['limited_page_transfer_denial_absent']).lower()}; "
+            f"limited_page_same_shop_denial_absent={str(result['limited_page_same_shop_denial_absent']).lower()}; "
+            f"limited_page_orders_table_present={str(result['limited_page_orders_table_present']).lower()}; "
+            f"limited_order_rows_present={str(result['limited_order_rows_present']).lower()}; "
+            f"limited_order_reference_column_match={str(result['limited_order_reference_column_match']).lower()}; "
+            f"limited_order_id_column_match={str(result['limited_order_id_column_match']).lower()}; "
+            f"limited_order_exact_row_match={str(result['limited_order_exact_row_match']).lower()}; "
+            f"limited_order_amount_matches={str(result['limited_order_amount_matches']).lower()}; "
+            f"limited_mutation_controls_absent={str(result['limited_mutation_controls_absent']).lower()}",
             file=sys.stderr,
         )
         for browser, filename in (

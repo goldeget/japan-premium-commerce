@@ -75,6 +75,9 @@ SAFE_RESULT_KEYS = {
     "admin_public_reply_thread_id_matches", "admin_public_reply_token_valid",
     "admin_public_reply_email_marker_present", "admin_public_reply_private_note_absent",
     "admin_public_reply_link_present", "admin_public_reply_link_route_valid",
+    "admin_public_reply_link_safe_url_shape", "admin_public_reply_link_same_shop",
+    "admin_public_reply_link_contact_route", "admin_public_reply_link_thread_id_matches",
+    "admin_public_reply_link_token_valid",
     "admin_public_reply_link_token_matches",
     "contact_document_status", "contact_same_origin", "contact_native_route",
     "contact_form_count", "contact_form_visible", "support_denial_status",
@@ -436,30 +439,92 @@ def parse_thread_email_subject(subject: object) -> tuple[int, str] | None:
 def validate_customer_thread_url(
     candidate: str, shop_url: str, expected_thread_id: int, *,
     locale: str | None = None, localized_rewrite: str | None = None,
+    localized_rewrites: dict[str, str | None] | None = None,
 ) -> bool:
+    evidence = customer_thread_url_evidence(
+        candidate, shop_url, expected_thread_id,
+        locale=locale, localized_rewrite=localized_rewrite,
+        localized_rewrites=localized_rewrites,
+    )
+    return all(evidence[key] for key in (
+        "safe_url_shape", "same_shop", "contact_route", "thread_id_matches", "token_valid",
+    ))
+
+
+def customer_thread_url_evidence(
+    candidate: str, shop_url: str, expected_thread_id: int, *,
+    locale: str | None = None, localized_rewrite: str | None = None,
+    localized_rewrites: dict[str, str | None] | None = None,
+    expected_token: str | None = None,
+) -> dict[str, bool]:
+    """Classify a candidate without retaining or returning any URL components."""
+    evidence = {
+        "safe_url_shape": False,
+        "same_shop": False,
+        "contact_route": False,
+        "thread_id_matches": False,
+        "token_valid": False,
+        "token_matches": False,
+    }
     try:
         destination = urljoin(shop_url.rstrip("/") + "/", candidate)
         parsed = urlparse(destination)
         expected = urlparse(shop_url)
         query = parse_qs(parsed.query, keep_blank_values=True)
+        # An absolute URL in the native template must have a parseable HTTP(S)
+        # authority, and no credentials or fragment. Relative links are resolved
+        # against the configured shop URL before this shape check.
+        destination_port = parsed.port
+        expected_port = expected.port
+        evidence["safe_url_shape"] = (
+            parsed.scheme.lower() in {"http", "https"}
+            and bool(parsed.hostname)
+            and parsed.username is None and parsed.password is None
+            and not parsed.fragment
+            and (destination_port is None or 1 <= destination_port <= 65535)
+        )
+        evidence["same_shop"] = (
+            (parsed.scheme, parsed.hostname, destination_port)
+            == (expected.scheme, expected.hostname, expected_port)
+        )
+        evidence["thread_id_matches"] = query.get("id_customer_thread") == [str(expected_thread_id)]
+        token_values = query.get("token", [])
+        evidence["token_valid"] = (
+            len(token_values) == 1
+            and re.fullmatch(r"[A-Za-z0-9]{12}", token_values[0]) is not None
+        )
+        evidence["token_matches"] = (
+            expected_token is not None
+            and evidence["token_valid"]
+            and token_values == [expected_token]
+        )
         route_query = [
             (key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True)
             if key not in {"id_customer_thread", "token"}
         ]
-        route = urlunparse(parsed._replace(query=urlencode(route_query)))
-        native_contact_route = contact_route_class(
-            route, shop_url, locale=locale, localized_rewrite=localized_rewrite
-        ) == "contact"
-        same_shop = (parsed.scheme, parsed.hostname, parsed.port) == (expected.scheme, expected.hostname, expected.port)
+        # Test only the route against the shop origin so diagnostics can report
+        # path validity separately from a host/origin mismatch.
+        route = urlunparse(expected._replace(
+            path=parsed.path, query=urlencode(route_query), fragment=""
+        ))
+        route_options: list[tuple[str | None, str | None]] = []
+        if locale is not None or localized_rewrite is not None:
+            route_options.append((locale, localized_rewrite))
+        if localized_rewrites is not None:
+            route_options.extend(
+                (language, localized_rewrites.get(language)) for language in ("ja", "en", "ko")
+            )
+        route_options.append((None, None))
+        route_options = list(dict.fromkeys(route_options))
+        evidence["contact_route"] = any(
+            contact_route_class(
+                route, shop_url, locale=route_locale, localized_rewrite=rewrite
+            ) == "contact"
+            for route_locale, rewrite in route_options
+        )
     except (TypeError, ValueError):
-        return False
-    return (
-        same_shop and native_contact_route
-        and query.get("id_customer_thread") == [str(expected_thread_id)]
-        and len(query.get("token", [])) == 1
-        and re.fullmatch(r"[A-Za-z0-9]{12}", query["token"][0]) is not None
-        and parsed.username is None and parsed.password is None and not parsed.fragment
-    )
+        pass
+    return evidence
 
 
 def native_customer_thread_url(
@@ -567,6 +632,8 @@ def wait_for_thread_email(
 def thread_link_from_email(
     message: dict[str, Any], shop_url: str, expected_thread_id: int, *,
     locale: str | None = None, localized_rewrite: str | None = None,
+    localized_rewrites: dict[str, str | None] | None = None,
+    expected_token: str | None = None,
     diagnostic_result: dict[str, Any] | None = None,
 ) -> str:
     # Pinned PrestaShop 9.2 legacy and modern reply handlers pass `{link}` from
@@ -585,12 +652,26 @@ def thread_link_from_email(
         diagnostic_result["admin_public_reply_link_present"] = bool(candidates)
     for candidate in candidates:
         candidate = candidate.strip().rstrip(".,);]")
-        if validate_customer_thread_url(
+        evidence = customer_thread_url_evidence(
             candidate, shop_url, expected_thread_id,
             locale=locale, localized_rewrite=localized_rewrite,
-        ):
+            localized_rewrites=localized_rewrites,
+            expected_token=expected_token,
+        )
+        if diagnostic_result is not None:
+            diagnostic_result["admin_public_reply_link_safe_url_shape"] |= evidence["safe_url_shape"]
+            diagnostic_result["admin_public_reply_link_same_shop"] |= evidence["same_shop"]
+            diagnostic_result["admin_public_reply_link_contact_route"] |= evidence["contact_route"]
+            diagnostic_result["admin_public_reply_link_thread_id_matches"] |= evidence["thread_id_matches"]
+            diagnostic_result["admin_public_reply_link_token_valid"] |= evidence["token_valid"]
+            diagnostic_result["admin_public_reply_link_token_matches"] |= evidence["token_matches"]
+        route_is_valid = all(evidence[key] for key in (
+            "safe_url_shape", "same_shop", "contact_route", "thread_id_matches", "token_valid",
+        ))
+        if route_is_valid:
             if diagnostic_result is not None:
                 diagnostic_result["admin_public_reply_link_route_valid"] = True
+                mark_browser_substage(diagnostic_result, "admin_public_reply_link_token_readback")
             return urljoin(shop_url.rstrip("/") + "/", candidate)
     raise ValueError("the native customer reply email did not contain a valid same-shop thread link")
 
@@ -1656,6 +1737,11 @@ def run() -> None:
         "admin_public_reply_private_note_absent": False,
         "admin_public_reply_link_present": False,
         "admin_public_reply_link_route_valid": False,
+        "admin_public_reply_link_safe_url_shape": False,
+        "admin_public_reply_link_same_shop": False,
+        "admin_public_reply_link_contact_route": False,
+        "admin_public_reply_link_thread_id_matches": False,
+        "admin_public_reply_link_token_valid": False,
         "admin_public_reply_link_token_matches": False,
         "customer_followup_same_thread": False, "foreign_customer_denied": False,
         "limited_employee_denied": False, "mailpit_provider": "isolated_only",
@@ -1936,8 +2022,8 @@ def run() -> None:
             raise AssertionError("the customer-facing reply email exposed an administrator-only note")
         customer_reply_url = thread_link_from_email(
             reply_message, ctx.shop, first_thread_id,
-            locale="ja",
-            localized_rewrite=ctx.contact_route_metadata["localized_rewrite_by_iso"]["ja"],
+            localized_rewrites=ctx.contact_route_metadata["localized_rewrite_by_iso"],
+            expected_token=reply_token,
             diagnostic_result=result,
         )
         mark_browser_substage(result, "admin_public_reply_link_token_readback")
@@ -2080,6 +2166,11 @@ def run() -> None:
             f"admin_public_reply_private_note_absent={str(result['admin_public_reply_private_note_absent']).lower()}; "
             f"admin_public_reply_link_present={str(result['admin_public_reply_link_present']).lower()}; "
             f"admin_public_reply_link_route_valid={str(result['admin_public_reply_link_route_valid']).lower()}; "
+            f"admin_public_reply_link_safe_url_shape={str(result['admin_public_reply_link_safe_url_shape']).lower()}; "
+            f"admin_public_reply_link_same_shop={str(result['admin_public_reply_link_same_shop']).lower()}; "
+            f"admin_public_reply_link_contact_route={str(result['admin_public_reply_link_contact_route']).lower()}; "
+            f"admin_public_reply_link_thread_id_matches={str(result['admin_public_reply_link_thread_id_matches']).lower()}; "
+            f"admin_public_reply_link_token_valid={str(result['admin_public_reply_link_token_valid']).lower()}; "
             f"admin_public_reply_link_token_matches={str(result['admin_public_reply_link_token_matches']).lower()}; "
             f"same_origin={str(result['contact_same_origin']).lower()}; "
             f"native_route={str(result['contact_native_route']).lower()}; "

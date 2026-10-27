@@ -59,6 +59,11 @@ SAFE_TEMPLATE_CANDIDATES = {
 }
 SAFE_TEMPLATE_ISOS = {'ja', 'en', 'ko', 'other', 'none'}
 SAFE_TEMPLATE_TEXT_SOURCES = {'text_template', 'html_to_text', 'none', 'unavailable'}
+SAFE_RESET_TEXT_MATCH_REASONS = {
+    'not_checked', 'matched', 'candidate_absent', 'credentials_incomplete',
+    'origin_mismatch', 'path_mismatch', 'native_candidate_missing',
+    'expected_url_mismatch', 'expected_url_invalid', 'plain_text_part_missing', 'unavailable',
+}
 PART_EVIDENCE_KEYS = {'required_link_candidate_count', 'native_route_candidate_count',
                       'reset_credential_candidate_count', 'native_reset_link_shape'}
 
@@ -168,6 +173,7 @@ def write_diagnostics(result: dict) -> None:
             'raw_text_native_link_shape', 'mailpit_preview_text_native_link_shape',
             'mailpit_preview_text_shape_match', 'pre_smtp_html_native_link_shape',
             'pre_smtp_text_native_link_shape', 'pre_smtp_text_mime_native_link_shape',
+            'pre_smtp_text_getter_match_reason', 'pre_smtp_text_mime_match_reason',
             'pre_smtp_message_is_symfony_email', 'pre_smtp_text_setter_returned_same_message',
             'pre_smtp_text_getter_returned_string', 'pre_smtp_text_mime_body_read_succeeded',
             'pre_smtp_text_mime_body_identity_same_after_setter',
@@ -198,6 +204,10 @@ def write_diagnostics(result: dict) -> None:
             or result['template_candidate'] not in SAFE_TEMPLATE_CANDIDATES
             or result['template_iso'] not in SAFE_TEMPLATE_ISOS
             or result['text_source'] not in SAFE_TEMPLATE_TEXT_SOURCES
+            or (result['pre_smtp_text_getter_match_reason'] is not None
+                and result['pre_smtp_text_getter_match_reason'] not in SAFE_RESET_TEXT_MATCH_REASONS)
+            or (result['pre_smtp_text_mime_match_reason'] is not None
+                and result['pre_smtp_text_mime_match_reason'] not in SAFE_RESET_TEXT_MATCH_REASONS)
             or any(result[key] is not None and type(result[key]) is not bool for key in (
                 'raw_text_native_link_shape', 'mailpit_preview_text_native_link_shape',
                 'mailpit_preview_text_shape_match', 'pre_smtp_html_native_link_shape',
@@ -341,6 +351,8 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
         'pre_smtp_html_native_link_shape': None,
         'pre_smtp_text_native_link_shape': None,
         'pre_smtp_text_mime_native_link_shape': None,
+        'pre_smtp_text_getter_match_reason': None,
+        'pre_smtp_text_mime_match_reason': None,
         'pre_smtp_message_is_symfony_email': None,
         'pre_smtp_text_setter_returned_same_message': None,
         'pre_smtp_text_getter_returned_string': None,
@@ -373,6 +385,8 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
         ('X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link', 'pre_smtp_html_native_link_shape'),
         ('X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link', 'pre_smtp_text_native_link_shape'),
         ('X-ORDENOWA-CI-Pre-SMTP-Text-Mime-Native-Reset-Link', 'pre_smtp_text_mime_native_link_shape'),
+        ('X-ORDENOWA-CI-Reset-Text-Getter-Match-Reason', 'pre_smtp_text_getter_match_reason'),
+        ('X-ORDENOWA-CI-Reset-Text-Mime-Match-Reason', 'pre_smtp_text_mime_match_reason'),
         ('X-ORDENOWA-CI-Reset-Symfony-Email-Object', 'pre_smtp_message_is_symfony_email'),
         ('X-ORDENOWA-CI-Reset-Text-Setter-Returned-Same-Message', 'pre_smtp_text_setter_returned_same_message'),
         ('X-ORDENOWA-CI-Reset-Text-Getter-Returned-String', 'pre_smtp_text_getter_returned_string'),
@@ -400,6 +414,10 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
         values = message.get_all(name, [])
         if len(values) == 1 and str(values[0]).strip().lower() in {'true', 'false'}:
             result[key] = str(values[0]).strip().lower() == 'true'
+        elif len(values) == 1 and key.endswith('_match_reason'):
+            value = str(values[0]).strip().lower()
+            if value in SAFE_RESET_TEXT_MATCH_REASONS:
+                result[key] = value
     return result
 
 
@@ -491,7 +509,11 @@ def assert_pre_smtp_text_mutation(diagnostic: dict) -> None:
         raise MessageValidationError('pre_smtp_plain_text_part_missing')
     if diagnostic.get('pre_smtp_text_native_link_shape') is not True:
         raise MessageValidationError('pre_smtp_text_getter_readback_missing')
+    if diagnostic.get('pre_smtp_text_getter_match_reason') != 'matched':
+        raise MessageValidationError('pre_smtp_text_getter_readback_missing')
     if diagnostic.get('pre_smtp_text_mime_native_link_shape') is not True:
+        raise MessageValidationError('pre_smtp_text_mime_link_missing')
+    if diagnostic.get('pre_smtp_text_mime_match_reason') != 'matched':
         raise MessageValidationError('pre_smtp_text_mime_link_missing')
 
 
@@ -699,6 +721,8 @@ def run() -> bool:
         'pre_smtp_html_native_link_shape': None,
         'pre_smtp_text_native_link_shape': None,
         'pre_smtp_text_mime_native_link_shape': None,
+        'pre_smtp_text_getter_match_reason': None,
+        'pre_smtp_text_mime_match_reason': None,
         'pre_smtp_message_is_symfony_email': None,
         'pre_smtp_text_setter_returned_same_message': None,
         'pre_smtp_text_getter_returned_string': None,
@@ -749,6 +773,8 @@ def run() -> bool:
                               pre_smtp_html_native_link_shape=None,
                               pre_smtp_text_native_link_shape=None,
                               pre_smtp_text_mime_native_link_shape=None,
+                              pre_smtp_text_getter_match_reason=None,
+                              pre_smtp_text_mime_match_reason=None,
                               pre_smtp_message_is_symfony_email=None,
                               pre_smtp_text_setter_returned_same_message=None,
                               pre_smtp_text_getter_returned_string=None,
@@ -881,6 +907,8 @@ def run() -> bool:
                 f'pre_smtp_html_native_link={str(diagnostic["pre_smtp_html_native_link_shape"]).lower()}; '
                 f'pre_smtp_text_native_link={str(diagnostic["pre_smtp_text_native_link_shape"]).lower()}; '
                 f'pre_smtp_text_mime_link={str(diagnostic["pre_smtp_text_mime_native_link_shape"]).lower()}; '
+                f'pre_smtp_text_getter_match_reason={diagnostic["pre_smtp_text_getter_match_reason"] or "none"}; '
+                f'pre_smtp_text_mime_match_reason={diagnostic["pre_smtp_text_mime_match_reason"] or "none"}; '
                 f'pre_smtp_email_object={str(diagnostic["pre_smtp_message_is_symfony_email"]).lower()}; '
                 f'pre_smtp_setter_same_object={str(diagnostic["pre_smtp_text_setter_returned_same_message"]).lower()}; '
                 f'pre_smtp_getter_string={str(diagnostic["pre_smtp_text_getter_returned_string"]).lower()}; '
@@ -926,6 +954,8 @@ def run() -> bool:
             f'pre_smtp_html_native_link={str(diagnostic["pre_smtp_html_native_link_shape"]).lower()}; '
             f'pre_smtp_text_native_link={str(diagnostic["pre_smtp_text_native_link_shape"]).lower()}; '
             f'pre_smtp_text_mime_link={str(diagnostic["pre_smtp_text_mime_native_link_shape"]).lower()}; '
+            f'pre_smtp_text_getter_match_reason={diagnostic["pre_smtp_text_getter_match_reason"] or "none"}; '
+            f'pre_smtp_text_mime_match_reason={diagnostic["pre_smtp_text_mime_match_reason"] or "none"}; '
             f'pre_smtp_email_object={str(diagnostic["pre_smtp_message_is_symfony_email"]).lower()}; '
             f'pre_smtp_setter_same_object={str(diagnostic["pre_smtp_text_setter_returned_same_message"]).lower()}; '
             f'pre_smtp_getter_string={str(diagnostic["pre_smtp_text_getter_returned_string"]).lower()}; '

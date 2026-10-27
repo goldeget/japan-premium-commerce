@@ -54,6 +54,8 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
             "X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link",
             "X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link",
             "X-ORDENOWA-CI-Pre-SMTP-Text-Mime-Native-Reset-Link",
+            "X-ORDENOWA-CI-Reset-Text-Getter-Match-Reason",
+            "X-ORDENOWA-CI-Reset-Text-Mime-Match-Reason",
             "'message_is_symfony_email' => 'Symfony-Email-Object'",
             "'text_setter_returned_same_message' => 'Text-Setter-Returned-Same-Message'",
             "'text_getter_returned_string' => 'Text-Getter-Returned-String'",
@@ -149,7 +151,7 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         self.assertIn("$textSetterInvoked = true", alter)
         self.assertIn("$resetUrl !== null", alter)
         self.assertIn("$message->text($replacement, 'utf-8')", alter)
-        self.assertIn("$this->hasNativeResetLink($textBody, $resetUrl)", alter)
+        self.assertIn("$this->hasExactValidatedNativeResetUrl(", alter)
         self.assertIn("$message instanceof \\Symfony\\Component\\Mime\\Email", alter)
         self.assertIn("$setterResult === $message", alter)
         self.assertIn("$textGetterReturnedString = is_string($textReadback)", alter)
@@ -157,10 +159,9 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         self.assertIn("$textMimeBodyResetRetryAttempted = true", alter)
         self.assertIn("$textMimeBodyChangedAfterReset = $textMimeBody !== $rebuiltMimeBody", alter)
         self.assertIn("$message->setBody(null)", alter)
-        self.assertIn("$this->hasNativeResetLinkInMimeBody($textMimeBody, $resetUrl)", alter)
-        self.assertIn("$this->hasNativeResetLinkInMimeBody($rebuiltMimeBody, $resetUrl)", alter)
+        self.assertIn("$this->hasExactNativeResetUrlInMimeBody(", alter)
         self.assertIn("X-ORDENOWA-CI-Pre-SMTP-Text-Mime-Native-Reset-Link", alter)
-        self.assertIn("$textGetterHasLink = $this->hasNativeResetLink(", alter)
+        self.assertIn("$textGetterHasLink = $this->hasExactValidatedNativeResetUrl(", alter)
         self.assertIn("if (!$textGetterHasLink || !$textMimeHasLink)", alter)
         self.assertIn("getPageLink(", extractor)
         self.assertIn("resetRouteEvidence($parts, $native)", extractor)
@@ -201,11 +202,22 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         self.assertIn("$this->resetCredentialEvidence($expected)", module)
         self.assertNotIn("error_log", extractor + validator)
 
-        mime_verifier = module.split("private function hasNativeResetLinkInMimeBody", 1)[1].split(
+        exact_verifier = module.split("private function hasExactValidatedNativeResetUrl", 1)[1].split(
+            "private function sameNativeResetRoute", 1
+        )[0]
+        self.assertIn("$this->validatedNativeResetUrl(", exact_verifier)
+        self.assertIn("$this->extractNativeResetUrl(", exact_verifier)
+        self.assertIn("$candidateEvidence['credentials_complete']", exact_verifier)
+        self.assertIn("$candidateEvidence['candidate_selected']", exact_verifier)
+        self.assertIn("$candidateEvidence['scheme_host_port_match']", exact_verifier)
+        self.assertIn("$candidateEvidence['path_match']", exact_verifier)
+        self.assertIn("hash_equals($validatedExpectedUrl, $candidateUrl)", exact_verifier)
+        self.assertIn("'expected_url_match'", exact_verifier)
+        mime_verifier = module.split("private function hasExactNativeResetUrlInMimeBody", 1)[1].split(
             "public function publicProfile", 1
         )[0]
         self.assertIn("\\Symfony\\Component\\Mime\\Part\\TextPart", mime_verifier)
-        self.assertIn("getMediaSubtype() === 'plain'", mime_verifier)
+        self.assertIn("getMediaSubtype() !== 'plain'", mime_verifier)
         self.assertIn("\\Symfony\\Component\\Mime\\Part\\AbstractMultipartPart", mime_verifier)
         self.assertIn("getParts()", mime_verifier)
 

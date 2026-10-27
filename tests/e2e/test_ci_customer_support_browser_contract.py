@@ -282,42 +282,126 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         module = load_script()
         shop = "http://localhost:18080"
         token = "AbC123xYz890"
-        href = f"{shop}/ja/special-contact?id_customer_thread=47&token={token}"
+        href = f"{shop}/ko/special-contact-ko?id_customer_thread=47&token={token}"
         message = {"HTML": f'<a href="{href}">reply</a>', "Text": ""}
+        locale_rewrites = {
+            "ja": "special-contact-ja", "en": "special-contact-en", "ko": "special-contact-ko",
+        }
         diagnostic = {
             "browser_substage": "admin_public_reply_email_content_readback",
             "admin_public_reply_link_present": False,
             "admin_public_reply_link_route_valid": False,
+            "admin_public_reply_link_safe_url_shape": False,
+            "admin_public_reply_link_same_shop": False,
+            "admin_public_reply_link_contact_route": False,
+            "admin_public_reply_link_thread_id_matches": False,
+            "admin_public_reply_link_token_valid": False,
+            "admin_public_reply_link_token_matches": False,
         }
 
         accepted = module.thread_link_from_email(
-            message, shop, 47, locale="ja", localized_rewrite="special-contact",
+            message, shop, 47, localized_rewrites=locale_rewrites,
+            expected_token=token,
             diagnostic_result=diagnostic,
         )
         self.assertEqual(href, accepted)
         self.assertTrue(diagnostic["admin_public_reply_link_present"])
         self.assertTrue(diagnostic["admin_public_reply_link_route_valid"])
-        self.assertEqual("admin_public_reply_link_validation", diagnostic["browser_substage"])
+        self.assertTrue(diagnostic["admin_public_reply_link_safe_url_shape"])
+        self.assertTrue(diagnostic["admin_public_reply_link_same_shop"])
+        self.assertTrue(diagnostic["admin_public_reply_link_contact_route"])
+        self.assertTrue(diagnostic["admin_public_reply_link_thread_id_matches"])
+        self.assertTrue(diagnostic["admin_public_reply_link_token_valid"])
+        self.assertTrue(diagnostic["admin_public_reply_link_token_matches"])
+        self.assertEqual("admin_public_reply_link_token_readback", diagnostic["browser_substage"])
 
-        # A legitimate locale-specific rewrite must not fail under the generic slug allowlist.
+        # The native handler uses the Back Office context language, which can differ
+        # from the buyer's locale; any fixture route remains constrained to this shop.
         with self.assertRaises(ValueError):
             module.thread_link_from_email(message, shop, 47)
 
-        for body, expected_present in (
-            ({"HTML": '<a href="https://outside.example/contact">reply</a>', "Text": ""}, True),
-            ({"HTML": "<p>reply without an href</p>", "Text": ""}, False),
-        ):
+        mismatched_token = {
+            "browser_substage": "admin_public_reply_email_content_readback",
+            "admin_public_reply_link_present": False,
+            "admin_public_reply_link_route_valid": False,
+            "admin_public_reply_link_safe_url_shape": False,
+            "admin_public_reply_link_same_shop": False,
+            "admin_public_reply_link_contact_route": False,
+            "admin_public_reply_link_thread_id_matches": False,
+            "admin_public_reply_link_token_valid": False,
+            "admin_public_reply_link_token_matches": False,
+        }
+        mismatch_href = href.replace(token, "XyZ987wVu654")
+        module.thread_link_from_email(
+            {"HTML": f'<a href="{mismatch_href}">reply</a>', "Text": ""},
+            shop, 47, localized_rewrites=locale_rewrites, expected_token=token,
+            diagnostic_result=mismatched_token,
+        )
+        self.assertTrue(mismatched_token["admin_public_reply_link_route_valid"])
+        self.assertTrue(mismatched_token["admin_public_reply_link_token_valid"])
+        self.assertFalse(mismatched_token["admin_public_reply_link_token_matches"])
+
+        base_route = "/ko/special-contact-ko?id_customer_thread=47&token=AbC123xYz890"
+        cases = (
+            (
+                {"HTML": f'<a href="https://outside.example{base_route}">reply</a>', "Text": ""},
+                {"link_present": True, "safe_url_shape": True, "same_shop": False,
+                 "contact_route": True, "thread_id_matches": True, "token_valid": True,
+                 "token_matches": True},
+            ),
+            (
+                {"HTML": '<a href="/ko/special-contact-ko?id_customer_thread=48&token=AbC123xYz890">reply</a>', "Text": ""},
+                {"link_present": True, "safe_url_shape": True, "same_shop": True,
+                 "contact_route": True, "thread_id_matches": False, "token_valid": True,
+                 "token_matches": True},
+            ),
+            (
+                {"HTML": '<a href="/ko/special-contact-ko?id_customer_thread=47&token=short">reply</a>', "Text": ""},
+                {"link_present": True, "safe_url_shape": True, "same_shop": True,
+                 "contact_route": True, "thread_id_matches": True, "token_valid": False,
+                 "token_matches": False},
+            ),
+            (
+                {"HTML": '<a href="javascript:alert(1)">reply</a>', "Text": ""},
+                {"link_present": True, "safe_url_shape": False, "same_shop": False,
+                 "contact_route": False, "thread_id_matches": False, "token_valid": False,
+                 "token_matches": False},
+            ),
+            (
+                {"HTML": "<p>reply without an href</p>", "Text": ""},
+                {"link_present": False, "safe_url_shape": False, "same_shop": False,
+                 "contact_route": False, "thread_id_matches": False, "token_valid": False,
+                 "token_matches": False},
+            ),
+        )
+        key_map = {
+            "link_present": "admin_public_reply_link_present",
+            "safe_url_shape": "admin_public_reply_link_safe_url_shape",
+            "same_shop": "admin_public_reply_link_same_shop",
+            "contact_route": "admin_public_reply_link_contact_route",
+            "thread_id_matches": "admin_public_reply_link_thread_id_matches",
+            "token_valid": "admin_public_reply_link_token_valid",
+            "token_matches": "admin_public_reply_link_token_matches",
+        }
+        for body, expected in cases:
             safe = {
                 "browser_substage": "admin_public_reply_email_content_readback",
                 "admin_public_reply_link_present": False,
                 "admin_public_reply_link_route_valid": False,
+                "admin_public_reply_link_safe_url_shape": False,
+                "admin_public_reply_link_same_shop": False,
+                "admin_public_reply_link_contact_route": False,
+                "admin_public_reply_link_thread_id_matches": False,
+                "admin_public_reply_link_token_valid": False,
+                "admin_public_reply_link_token_matches": False,
             }
             with self.assertRaises(ValueError):
                 module.thread_link_from_email(
-                    body, shop, 47, locale="ja", localized_rewrite="special-contact",
+                    body, shop, 47, localized_rewrites=locale_rewrites, expected_token=token,
                     diagnostic_result=safe,
                 )
-            self.assertEqual(expected_present, safe["admin_public_reply_link_present"])
+            for component, field in key_map.items():
+                self.assertEqual(expected[component], safe[field], component)
             self.assertFalse(safe["admin_public_reply_link_route_valid"])
 
     def test_public_reply_mailbox_diagnostics_keep_exact_identity_private(self):
@@ -598,6 +682,11 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 "admin_public_reply_private_note_absent": True,
                 "admin_public_reply_link_present": True,
                 "admin_public_reply_link_route_valid": True,
+                "admin_public_reply_link_safe_url_shape": True,
+                "admin_public_reply_link_same_shop": True,
+                "admin_public_reply_link_contact_route": True,
+                "admin_public_reply_link_thread_id_matches": True,
+                "admin_public_reply_link_token_valid": True,
                 "admin_public_reply_link_token_matches": True,
                 "customer_followup_same_thread": True, "foreign_customer_denied": True,
                 "limited_employee_denied": True, "mailpit_provider": "isolated_only",
@@ -1200,7 +1289,8 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             'mark_browser_substage(result, "admin_public_reply_mailbox_poll")',
             "diagnostic_result=result, expected_thread_id=first_thread_id",
             'mark_browser_substage(result, "admin_public_reply_email_content_readback")',
-            'localized_rewrite=ctx.contact_route_metadata["localized_rewrite_by_iso"]["ja"]',
+            'localized_rewrites=ctx.contact_route_metadata["localized_rewrite_by_iso"]',
+            "expected_token=reply_token",
         )
         positions = [run.index(stage) for stage in stages]
         self.assertEqual(sorted(positions), positions)

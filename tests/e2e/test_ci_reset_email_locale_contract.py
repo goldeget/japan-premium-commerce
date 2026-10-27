@@ -98,6 +98,8 @@ class ResetEmailLocaleContract(unittest.TestCase):
         mail['X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link'] = 'true'
         mail['X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link'] = 'false'
         mail['X-ORDENOWA-CI-Pre-SMTP-Text-Mime-Native-Reset-Link'] = 'false'
+        mail['X-ORDENOWA-CI-Reset-Text-Getter-Match-Reason'] = 'candidate_absent'
+        mail['X-ORDENOWA-CI-Reset-Text-Mime-Match-Reason'] = 'candidate_absent'
         mail['X-ORDENOWA-CI-Reset-Symfony-Email-Object'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Text-Setter-Returned-Same-Message'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Text-Getter-Returned-String'] = 'true'
@@ -128,6 +130,8 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'pre_smtp_html_native_link_shape': True,
             'pre_smtp_text_native_link_shape': False,
             'pre_smtp_text_mime_native_link_shape': False,
+            'pre_smtp_text_getter_match_reason': 'candidate_absent',
+            'pre_smtp_text_mime_match_reason': 'candidate_absent',
             'pre_smtp_message_is_symfony_email': True,
             'pre_smtp_text_setter_returned_same_message': True,
             'pre_smtp_text_getter_returned_string': True,
@@ -162,6 +166,9 @@ class ResetEmailLocaleContract(unittest.TestCase):
         malformed = EmailMessage()
         malformed['X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link'] = 'https://private.invalid/token=secret'
         self.assertIsNone(module.pre_smtp_message_shape_headers(malformed.as_bytes())['pre_smtp_html_native_link_shape'])
+        malformed_reason = EmailMessage()
+        malformed_reason['X-ORDENOWA-CI-Reset-Text-Getter-Match-Reason'] = 'https://private.invalid/token=secret'
+        self.assertIsNone(module.pre_smtp_message_shape_headers(malformed_reason.as_bytes())['pre_smtp_text_getter_match_reason'])
 
     def test_acceptance_requires_immediate_getter_and_mime_text_readback(self):
         module = self.module()
@@ -170,15 +177,20 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'pre_smtp_text_setter_invoked': True,
             'pre_smtp_text_setter_returned_same_message': True,
             'pre_smtp_text_getter_returned_string': True,
+            'pre_smtp_text_getter_match_reason': 'matched',
             'pre_smtp_text_mime_body_read_succeeded': True,
             'pre_smtp_text_plain_part_present': True,
             'pre_smtp_text_native_link_shape': True,
             'pre_smtp_text_mime_native_link_shape': True,
+            'pre_smtp_text_mime_match_reason': 'matched',
         }
         module.assert_pre_smtp_text_mutation(healthy)
         for diagnostic, check in (
             (dict(healthy, pre_smtp_text_native_link_shape=False), 'pre_smtp_text_getter_readback_missing'),
+            (dict(healthy, pre_smtp_text_getter_match_reason='expected_url_mismatch'),
+             'pre_smtp_text_getter_readback_missing'),
             (dict(healthy, pre_smtp_text_mime_native_link_shape=False), 'pre_smtp_text_mime_link_missing'),
+            (dict(healthy, pre_smtp_text_mime_match_reason='path_mismatch'), 'pre_smtp_text_mime_link_missing'),
             (dict(healthy, pre_smtp_message_is_symfony_email=False), 'pre_smtp_text_message_api_unexpected'),
             (dict(healthy, pre_smtp_text_setter_returned_same_message=False), 'pre_smtp_text_setter_receiver_mismatch'),
             (dict(healthy, pre_smtp_text_getter_returned_string=False), 'pre_smtp_text_getter_type_unexpected'),
@@ -421,6 +433,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'mailpit_preview_text_shape_match=none; '
             'pre_smtp_html_native_link=none; pre_smtp_text_native_link=none; '
             'pre_smtp_text_mime_link=none; '
+            'pre_smtp_text_getter_match_reason=none; pre_smtp_text_mime_match_reason=none; '
             'pre_smtp_email_object=none; pre_smtp_setter_same_object=none; '
             'pre_smtp_getter_string=none; pre_smtp_mime_body_read=none; '
             'pre_smtp_body_same_after_setter=none; pre_smtp_body_reset_retry=none; '
@@ -454,6 +467,8 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 "pre_smtp_html_native_link_shape": None,
                 "pre_smtp_text_native_link_shape": None,
                 "pre_smtp_text_mime_native_link_shape": None,
+                "pre_smtp_text_getter_match_reason": None,
+                "pre_smtp_text_mime_match_reason": None,
                 "pre_smtp_message_is_symfony_email": None,
                 "pre_smtp_text_setter_returned_same_message": None,
                 "pre_smtp_text_getter_returned_string": None,

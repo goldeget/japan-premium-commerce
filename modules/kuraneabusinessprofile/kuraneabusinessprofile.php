@@ -469,6 +469,8 @@ class Kuraneabusinessprofile extends Module
             $textGetterReturnedString = false;
             $textGetterHasLink = false;
             $textMimeHasLink = false;
+            $textGetterMatchReason = 'not_checked';
+            $textMimeMatchReason = 'not_checked';
             $textMimeBodyReadSucceeded = false;
             $textMimeBodyIdentitySameAfterSetter = false;
             $textMimeBodyChangedAfterReset = false;
@@ -484,11 +486,20 @@ class Kuraneabusinessprofile extends Module
             }
             if ($resetUrl !== null && $textSetterAvailable) {
                 $textBody = (string) ($message->getTextBody() ?? '');
-                $replacement = $this->hasNativeResetLink($textBody, $resetUrl)
+                $textBodyEvidence = [];
+                $textGetterHasLink = $this->hasExactValidatedNativeResetUrl(
+                    $textBody,
+                    $resetUrl,
+                    $mailLangId,
+                    $mailShopId,
+                    $textBodyEvidence
+                );
+                $textGetterMatchReason = $textBodyEvidence['match_reason'] ?? 'unavailable';
+                $replacement = $textGetterHasLink
                     ? $textBody
                     : ($textBody === '' ? '' : rtrim($textBody) . "\n\n") . $resetUrl;
                 try {
-                    if (!$this->hasNativeResetLink($textBody, $resetUrl)) {
+                    if (!$textGetterHasLink) {
                         $setterResult = $message->text($replacement, 'utf-8');
                         $textSetterInvoked = true;
                         $textSetterReturnedSameMessage = $setterResult === $message;
@@ -498,13 +509,29 @@ class Kuraneabusinessprofile extends Module
                     // public getter and the MIME tree that Mailer will serialize.
                     $textReadback = $message->getTextBody();
                     $textGetterReturnedString = is_string($textReadback);
-                    $textGetterHasLink = $this->hasNativeResetLink((string) ($textReadback ?? ''), $resetUrl);
+                    $textGetterEvidence = [];
+                    $textGetterHasLink = $this->hasExactValidatedNativeResetUrl(
+                        (string) ($textReadback ?? ''),
+                        $resetUrl,
+                        $mailLangId,
+                        $mailShopId,
+                        $textGetterEvidence
+                    );
+                    $textGetterMatchReason = $textGetterEvidence['match_reason'] ?? 'unavailable';
                     if ($messageIsSymfonyEmail) {
                         $textMimeBody = $message->getBody();
                         $textMimeBodyReadSucceeded = true;
                         $textMimeBodyIdentitySameAfterSetter = $textMimeBodyBeforeSetter === $textMimeBody;
                         $textPlainTextPartPresent = $this->hasPlainTextMimePart($textMimeBody);
-                        $textMimeHasLink = $this->hasNativeResetLinkInMimeBody($textMimeBody, $resetUrl);
+                        $textMimeEvidence = [];
+                        $textMimeHasLink = $this->hasExactNativeResetUrlInMimeBody(
+                            $textMimeBody,
+                            $resetUrl,
+                            $mailLangId,
+                            $mailShopId,
+                            $textMimeEvidence
+                        );
+                        $textMimeMatchReason = $textMimeEvidence['match_reason'] ?? 'unavailable';
                         if (!$textGetterHasLink || !$textMimeHasLink) {
                             // Symfony Email can retain an explicit base Message body,
                             // which takes precedence over its lazily generated parts.
@@ -518,12 +545,28 @@ class Kuraneabusinessprofile extends Module
                                 || $setterResult === $message;
                             $textReadback = $message->getTextBody();
                             $textGetterReturnedString = is_string($textReadback);
-                            $textGetterHasLink = $this->hasNativeResetLink((string) ($textReadback ?? ''), $resetUrl);
+                            $textGetterEvidence = [];
+                            $textGetterHasLink = $this->hasExactValidatedNativeResetUrl(
+                                (string) ($textReadback ?? ''),
+                                $resetUrl,
+                                $mailLangId,
+                                $mailShopId,
+                                $textGetterEvidence
+                            );
+                            $textGetterMatchReason = $textGetterEvidence['match_reason'] ?? 'unavailable';
                             $rebuiltMimeBody = $message->getBody();
                             $textMimeBodyReadSucceeded = true;
                             $textMimeBodyChangedAfterReset = $textMimeBody !== $rebuiltMimeBody;
                             $textPlainTextPartPresent = $this->hasPlainTextMimePart($rebuiltMimeBody);
-                            $textMimeHasLink = $this->hasNativeResetLinkInMimeBody($rebuiltMimeBody, $resetUrl);
+                            $textMimeEvidence = [];
+                            $textMimeHasLink = $this->hasExactNativeResetUrlInMimeBody(
+                                $rebuiltMimeBody,
+                                $resetUrl,
+                                $mailLangId,
+                                $mailShopId,
+                                $textMimeEvidence
+                            );
+                            $textMimeMatchReason = $textMimeEvidence['match_reason'] ?? 'unavailable';
                         }
                     }
                 } catch (\Throwable) {
@@ -551,6 +594,8 @@ class Kuraneabusinessprofile extends Module
                 'X-ORDENOWA-CI-Pre-SMTP-Text-Mime-Native-Reset-Link',
                 $textMimeHasLink ? 'true' : 'false'
             );
+            $headers->addTextHeader('X-ORDENOWA-CI-Reset-Text-Getter-Match-Reason', $textGetterMatchReason);
+            $headers->addTextHeader('X-ORDENOWA-CI-Reset-Text-Mime-Match-Reason', $textMimeMatchReason);
             foreach ([
                 'message_is_symfony_email' => 'Symfony-Email-Object',
                 'text_setter_returned_same_message' => 'Text-Setter-Returned-Same-Message',
@@ -869,6 +914,86 @@ class Kuraneabusinessprofile extends Module
         return false;
     }
 
+    /**
+     * Require the body candidate itself to pass native route and credential checks,
+     * then require its complete URL to equal this message's validated template URL.
+     * This avoids comparing parsed query arrays that may normalize equivalent
+     * query encodings differently while preserving all reset-link guards.
+     *
+     * @param array<string, mixed>|null $evidence
+     */
+    private function hasExactValidatedNativeResetUrl(
+        string $body,
+        string $expectedUrl,
+        int $idLang,
+        ?int $shopId,
+        ?array &$evidence = null
+    ): bool {
+        $evidence = [
+            'candidate_present' => false,
+            'token_present' => false,
+            'reset_token_present' => false,
+            'id_customer_present' => false,
+            'credentials_complete' => false,
+            'scheme_host_port_match' => false,
+            'path_match' => false,
+            'candidate_selected' => false,
+            'expected_url_match' => false,
+            'match_reason' => 'candidate_absent',
+        ];
+        if ($body === '') {
+            return false;
+        }
+
+        $expectedEvidence = [];
+        $validatedExpectedUrl = $this->validatedNativeResetUrl(
+            $expectedUrl,
+            $idLang,
+            $shopId,
+            $expectedEvidence
+        );
+        if ($validatedExpectedUrl === null) {
+            $evidence['match_reason'] = 'expected_url_invalid';
+
+            return false;
+        }
+
+        $candidateEvidence = [];
+        $candidateUrl = $this->extractNativeResetUrl($body, $idLang, $shopId, $candidateEvidence);
+        foreach ([
+            'candidate_present', 'token_present', 'reset_token_present', 'id_customer_present',
+            'credentials_complete', 'scheme_host_port_match', 'path_match', 'candidate_selected',
+        ] as $key) {
+            $evidence[$key] = $candidateEvidence[$key] ?? false;
+        }
+        $evidence['expected_url_match'] = is_string($candidateUrl)
+            && ($candidateEvidence['credentials_complete'] ?? false)
+            && ($candidateEvidence['candidate_selected'] ?? false)
+            && ($candidateEvidence['scheme_host_port_match'] ?? false)
+            && ($candidateEvidence['path_match'] ?? false)
+            && hash_equals($validatedExpectedUrl, $candidateUrl);
+        if ($evidence['expected_url_match']) {
+            $evidence['match_reason'] = 'matched';
+
+            return true;
+        }
+        if (!($evidence['candidate_present'] ?? false)) {
+            $evidence['match_reason'] = 'candidate_absent';
+        } elseif (!($evidence['credentials_complete'] ?? false)) {
+            $evidence['match_reason'] = 'credentials_incomplete';
+        } elseif (!($evidence['scheme_host_port_match'] ?? false)) {
+            $evidence['match_reason'] = 'origin_mismatch';
+        } elseif (!($evidence['path_match'] ?? false)) {
+            $evidence['match_reason'] = 'path_mismatch';
+        } elseif (!($evidence['candidate_selected'] ?? false)) {
+            $evidence['match_reason'] = 'native_candidate_missing';
+        } else {
+            $evidence['match_reason'] = 'expected_url_mismatch';
+        }
+
+        return false;
+    }
+
     /** @param array<string, mixed>|false|null $candidate @param array<string, mixed>|false|null $expected */
     private function sameNativeResetRoute(mixed $candidate, mixed $expected): bool
     {
@@ -891,19 +1016,54 @@ class Kuraneabusinessprofile extends Module
         return false;
     }
 
-    private function hasNativeResetLinkInMimeBody(mixed $part, string $expectedUrl): bool
+    private function hasExactNativeResetUrlInMimeBody(
+        mixed $part,
+        string $expectedUrl,
+        int $idLang,
+        ?int $shopId,
+        ?array &$evidence = null
+    ): bool
     {
         if ($part instanceof \Symfony\Component\Mime\Part\TextPart) {
-            return $part->getMediaSubtype() === 'plain'
-                && $this->hasNativeResetLink($part->getBody(), $expectedUrl);
+            if ($part->getMediaSubtype() !== 'plain') {
+                $evidence = ['match_reason' => 'plain_text_part_missing'];
+
+                return false;
+            }
+
+            return $this->hasExactValidatedNativeResetUrl(
+                $part->getBody(),
+                $expectedUrl,
+                $idLang,
+                $shopId,
+                $evidence
+            );
         }
         if ($part instanceof \Symfony\Component\Mime\Part\AbstractMultipartPart) {
+            $lastEvidence = null;
             foreach ($part->getParts() as $child) {
-                if ($this->hasNativeResetLinkInMimeBody($child, $expectedUrl)) {
+                $childEvidence = [];
+                if ($this->hasExactNativeResetUrlInMimeBody(
+                    $child,
+                    $expectedUrl,
+                    $idLang,
+                    $shopId,
+                    $childEvidence
+                )) {
+                    $evidence = $childEvidence;
+
                     return true;
                 }
+                if ($childEvidence !== []) {
+                    $lastEvidence = $childEvidence;
+                }
             }
+            $evidence = $lastEvidence ?? ['match_reason' => 'plain_text_part_missing'];
+
+            return false;
         }
+
+        $evidence = ['match_reason' => 'plain_text_part_missing'];
 
         return false;
     }

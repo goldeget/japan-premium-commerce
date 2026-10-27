@@ -48,7 +48,10 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             return value
 
         webdriver = stub("selenium.webdriver", Chrome=object)
-        by = stub("selenium.webdriver.common.by", By=SimpleNamespace(ID="id", CSS_SELECTOR="css selector"))
+        by = stub(
+            "selenium.webdriver.common.by",
+            By=SimpleNamespace(ID="id", CSS_SELECTOR="css selector", TAG_NAME="tag name"),
+        )
         exceptions = stub(
             "selenium.common.exceptions",
             StaleElementReferenceException=type("StaleElementReferenceException", (Exception,), {}),
@@ -153,6 +156,68 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.assertFalse(diagnostics["limited_route_employee_found"])
         self.assertNotIn("opaque@example.invalid", str(diagnostics))
 
+    def test_limited_page_and_order_row_diagnostics_are_boolean_only(self) -> None:
+        module = self.load_browser_module()
+        secret_reference = "PRIVATE-ORDER-REFERENCE"
+        secret_token = "PRIVATE-ADMIN-CREDENTIAL"
+
+        class Cell:
+            def __init__(self, value: str) -> None:
+                self.text = value
+
+        class Row:
+            def __init__(self, values: list[str]) -> None:
+                self.cells = [Cell(value) for value in values]
+
+            def find_elements(self, by: str, selector: str):
+                return self.cells if selector == "td" else []
+
+        class Driver:
+            def __init__(self) -> None:
+                self.current_url = (
+                    "http://localhost:18080/admin-kuranea/?controller="
+                    f"AdminBusinessProfileTransfers&token={secret_token}"
+                )
+                self.rows = [Row([secret_reference, "7001", "1000 JPY"])]
+                self.body = Cell("未決済")
+                self.body.text = "未決済 엔화 주문"
+
+            def find_elements(self, by: str, selector: str):
+                if selector == ".table tbody tr":
+                    return self.rows
+                if selector == ".table tbody":
+                    return [object()]
+                return []
+
+            def find_element(self, by: str, selector: str):
+                self.assert_body_selector = (by, selector)
+                return self.body
+
+        driver = Driver()
+        evidence = module.limited_transfer_page_evidence(
+            driver, "http://localhost:18080/admin-kuranea", secret_token,
+        )
+        module.order_row(
+            driver,
+            {"reference": secret_reference, "order_id": 7001, "amount": "1000"},
+            evidence,
+        )
+        self.assertEqual(
+            module.LIMITED_PAGE_DIAGNOSTIC_KEYS - {"limited_mutation_controls_absent"},
+            set(evidence),
+        )
+        self.assertTrue(all(type(value) is bool for value in evidence.values()))
+        self.assertNotIn(secret_reference, str(evidence))
+        self.assertNotIn(secret_token, str(evidence))
+        self.assertTrue(evidence["limited_page_same_admin_origin"])
+        self.assertTrue(evidence["limited_page_admin_path_valid"])
+        self.assertTrue(evidence["limited_page_controller_valid"])
+        self.assertTrue(evidence["limited_page_route_credential_matches"])
+        self.assertTrue(evidence["limited_order_exact_row_match"])
+        self.assertTrue(evidence["limited_order_amount_matches"])
+        self.assertTrue(module.LIMITED_PAGE_REQUIRED_KEYS.issubset(module.SAFE_RESULT_KEYS))
+        self.require("all(result[key] is True for key in LIMITED_PAGE_REQUIRED_KEYS)", self.browser)
+
     def test_limited_route_accepts_only_native_dispatcher_paths_inside_exact_admin_folder(self) -> None:
         module = self.load_browser_module()
         self.assertIn("'route_path_directory_root'", self.limited_route)
@@ -216,7 +281,7 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.require("ordenowaLimitedRouteResult", self.limited_route)
         for stage in (
             "scope_validation", "bootstrap", "employee_lookup", "employee_active",
-            "transfer_tab_acl", "admin_directory_validation", "admin_context_validation",
+            "transfer_tab_acl", "orders_read_acl", "admin_directory_validation", "admin_context_validation",
             "admin_link_generation", "route_validation",
         ):
             self.require(f"'{stage}'", self.limited_route)
@@ -342,6 +407,8 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.require("view_allowed", self.limited_route)
         self.require("issue_denied", self.limited_route)
         self.require("confirm_denied", self.limited_route)
+        self.require("$ordersTabId = (int) Tab::getIdFromClassName('AdminOrders')", self.limited_route)
+        self.require("$checks['orders_view_allowed']", self.limited_route)
         self.require("view_only_confirmation_denied", self.browser)
         self.require("view_only_issue_denied", self.browser)
         self.require("view_only_issue_order_unpaid", self.browser)

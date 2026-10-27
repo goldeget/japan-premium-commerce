@@ -38,6 +38,8 @@ $checks = [
     'employee_active' => false,
     'transfer_tab_present' => false,
     'view_allowed' => false,
+    'orders_tab_present' => false,
+    'orders_view_allowed' => false,
     'issue_denied' => false,
     'confirm_denied' => false,
     'admin_directory_valid' => false,
@@ -89,6 +91,16 @@ try {
     $checks['issue_denied'] = ($tabAccess['add'] ?? '0') !== '1';
     $checks['confirm_denied'] = ($tabAccess['edit'] ?? '0') !== '1';
     if (!$checks['view_allowed'] || !$checks['issue_denied'] || !$checks['confirm_denied']) {
+        ordenowaLimitedRouteResult('failure', $failureStage, $checks);
+    }
+
+    $failureStage = 'orders_read_acl';
+    $ordersTabId = (int) Tab::getIdFromClassName('AdminOrders');
+    $checks['orders_tab_present'] = $ordersTabId > 0;
+    $checks['orders_view_allowed'] = $ordersTabId > 0
+        && is_array($profileAccess)
+        && ($profileAccess[$ordersTabId]['view'] ?? '0') === '1';
+    if (!$checks['orders_tab_present'] || !$checks['orders_view_allowed']) {
         ordenowaLimitedRouteResult('failure', $failureStage, $checks);
     }
 
