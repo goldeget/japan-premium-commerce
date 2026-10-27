@@ -591,6 +591,72 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
                          'manager_edit_fresh_readback'):
             self.assertIn(substage, diagnostics)
 
+    def test_imported_product_publication_uses_native_ui_and_same_id_storefront_readback(self):
+        browser = self.read_required("tests/e2e/verify_catalog_import_browser.py")
+        publication = browser.split("def verify_imported_product_publication(", 1)[1].split(
+            "\ndef manager_save_confirmation", 1
+        )[0]
+        native_editor = browser.split("def native_product_editor_url(", 1)[1].split(
+            "\ndef manager_save_confirmation", 1
+        )[0]
+        for marker in (
+            "NATIVE_PRODUCT_DRAFT_FLAGS",
+            "NATIVE_PRODUCT_PUBLISHED_FLAGS",
+            "read_native_product_publication_flags",
+            "controller",
+            "id_product",
+            "h1.product__name",
+            ".product__price",
+            'button[data-button-action="add-to-cart"]',
+            "fresh_buttons[0].click()",
+            "storefront_cart_readback",
+            "same_id_cart_readback",
+            "finally:",
+            "native_unpublish_cleanup",
+            "NATIVE_PRODUCT_DRAFT_FLAGS",
+        ):
+            self.assertIn(marker, publication)
+        for marker in (
+            "sell/catalog/products/{product_id}/edit",
+            "form.product-form[data-product-id]",
+            "data-shop-id",
+            "Select(field).select_by_value(value)",
+            "button.product-form-save-button",
+        ):
+            self.assertIn(marker, native_editor)
+        self.assertNotIn("execute_script", publication)
+        self.assertNotIn("send_keys", publication)
+        self.assertIn("readback['publication'] = verify_imported_product_publication(driver, product_id, state)", browser)
+        run_body = browser.split("def run():", 1)[1]
+        approval = run_body.index("""approved = visible(driver, '[data-catalog-review-status="approved"]')""")
+        same_id_readback = run_body.index("after = read_native(")
+        publication_call = run_body.index(
+            "readback['publication'] = verify_imported_product_publication(driver, product_id, state)"
+        )
+        self.assertLess(approval, same_id_readback)
+        self.assertLess(same_id_readback, publication_call)
+        self.assertIn("native_publication", browser)
+        self.assertIn("sell/catalog/products/{product_id}/edit", browser)
+        for marker in (
+            'select[name$="[header][active]"]',
+            'select[name$="[options][visibility][visibility]"]',
+            'select[name$="[options][visibility][available_for_order]"]',
+            'select[name$="[options][visibility][show_price]"]',
+        ):
+            self.assertIn(marker, browser)
+
+        diagnostics = self.read_required("tests/e2e/catalog_import_diagnostics.py")
+        self.assertIn("'native_publication'", diagnostics)
+        self.assertIn("'native_publish_fresh_field_readback'", diagnostics)
+        self.assertIn("'native_publish_fresh_readback'", diagnostics)
+        self.assertIn("'storefront_cart_readback'", diagnostics)
+        self.assertIn("'native_unpublish_cleanup'", diagnostics)
+
+        workflow = self.read_required(".github/workflows/fresh-install.yml")
+        self.assertIn("catalog-import-published-product.png", workflow)
+        self.assertIn("catalog-import-published-cart.png", workflow)
+        self.assertIn("catalog-import-persistence.json", workflow)
+
     def test_manager_save_confirmation_reads_visible_success_alert_from_one_dom_snapshot(self):
         browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
         helper_start = browser.find('def manager_save_confirmation(')
@@ -698,6 +764,19 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         self.assertLess(browser.index('progress_panel.screenshot(str(path))'), browser.index('alert.screenshot(str(path))'))
         self.assertLess(browser.index('alert.screenshot(str(path))'), browser.index('form.screenshot(str(path))'))
         self.assertIn("state.get('stage', 'unknown')", browser)
+
+    def test_batch_completion_wait_requires_visible_progress_and_container_together(self):
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        submit = browser.split('def submit_batch(', 1)[1].split('\ndef reject_unsupported_product_url(', 1)[0]
+        self.assertIn('def visible_completed_progress(current_driver):', submit)
+        self.assertIn("current_driver.find_elements(By.CSS_SELECTOR, '#catalog-import-progress')", submit)
+        self.assertIn('if not container.is_displayed():', submit)
+        self.assertIn("f'progress[value=\"{len(urls)}\"]'", submit)
+        self.assertIn('if any(progress.is_displayed() for progress in progress_bars):', submit)
+        self.assertIn('container.text', submit)
+        self.assertIn('driver, 60, ignored_exceptions=(StaleElementReferenceException,)', submit)
+        self.assertIn('.until(visible_completed_progress)', submit)
+        self.assertNotIn("WebDriverWait(driver, 60).until(lambda d: d.find_elements(", submit)
 
     def test_approval_clicks_capture_allowlisted_native_target_and_safe_obstruction_crop(self):
         browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')

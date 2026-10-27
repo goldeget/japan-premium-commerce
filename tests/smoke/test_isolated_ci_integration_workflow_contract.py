@@ -17,6 +17,8 @@ NEW_STEP_IDS = (
     "postcode_fixture", "tax_fixture", "shipping_product_fixture",
     "exemption_product_fixture",
     "variant_fixture", "cart_controls_browser_qa",
+    "perf_accessibility_node", "perf_accessibility_deps", "perf_accessibility_qa",
+    "seo_sitemap_http", "catalog_import_scale_acceptance",
     "security_fixture", "admin_security_browser_qa", "reset_token_browser_qa",
     "pwa_browser_qa", "shipping_free_fixture", "shipping_free_admin_access", "shipping_free_admin_configure",
     "security_locale_restore",
@@ -119,13 +121,14 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             "test_free_shipping_exemption_contract",
             "test_isolated_browser_target_guards", "test_isolated_ci_integration_workflow_contract",
             "test_currency_bootstrap_contract", "test_saved_order_tax_contract",
-            "test_product_admin_browser_guard",
+            "test_product_admin_browser_guard", "test_perf_accessibility_acceptance_contract",
         )
         before_build = workflow.split("      - name: Build the PrestaShop image", 1)[0]
         for contract in contracts:
             with self.subTest(contract=contract):
                 self.assertEqual(before_build.count(f"- 'tests/smoke/{contract}.py'"), 2)
                 self.assertIn(f"tests.smoke.{contract}", before_build)
+        self.assertIn("tests.e2e.test_ci_sitemap_routes_contract", before_build)
 
     def test_free_shipping_product_fixture_is_aggregated_and_retains_evidence(self) -> None:
         product_fixture = step("Prepare isolated active product for storefront and free-shipping QA")

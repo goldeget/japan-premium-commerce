@@ -86,6 +86,63 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         self.assertIn("f.requestSubmit(button)", self.batch_renderer)
         self.assertNotIn("f.requestSubmit();", self.batch_renderer)
 
+    def test_queue_pagination_is_rendered_for_populated_pages_only_at_queue_level(self) -> None:
+        queue_renderer = self.controller.split("private function renderQueue(", 1)[1].split(
+            "private function renderLinkedDraftReviewForm(", 1
+        )[0]
+        linked_draft_form = self.controller.split("private function renderLinkedDraftReviewForm(", 1)[1].split(
+            "private function renderQueuePagination(", 1
+        )[0]
+        populated_page = queue_renderer.split("foreach ($pending as $entry)", 1)[1]
+
+        self.assertIn("$html .= $this->renderQueuePagination($page, $pageCount, $pendingCount, $actionUrl);", populated_page)
+        self.assertLess(populated_page.index("$html .= '</article>';"), populated_page.index("$this->renderQueuePagination("))
+        self.assertNotIn("renderQueuePagination", linked_draft_form)
+        self.assertIn("return $html;", linked_draft_form)
+
+    def test_catalog_database_storage_migrates_legacy_json_and_has_indexed_scale_acceptance(self) -> None:
+        persistence = ROOT / "modules" / "kuraneacatalog" / "src" / "Infrastructure" / "Persistence"
+        tables = (persistence / "CatalogDatabaseTables.php").read_text(encoding="utf-8")
+        importer = (persistence / "CatalogDatabaseLegacyImporter.php").read_text(encoding="utf-8")
+        queue = (persistence / "DatabaseProductReviewQueueRepository.php").read_text(encoding="utf-8")
+        batches = (persistence / "DatabaseCatalogImportBatchRepository.php").read_text(encoding="utf-8")
+        transaction = (persistence / "CatalogDatabaseTransaction.php").read_text(encoding="utf-8")
+        acceptance = (ROOT / "tests" / "catalog" / "database_scale_acceptance.php").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
+
+        for marker in (
+            "ENGINE=InnoDB",
+            "PRIMARY KEY (id_shop, id_batch)",
+            "idx_catalog_batch_recent",
+            "PRIMARY KEY (id_shop, idempotency_key)",
+            "COLLATE utf8mb4_bin",
+            "uq_catalog_source",
+            "idx_catalog_review_pending",
+            "idx_catalog_review_recent",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, tables)
+        for marker in ("catalog-import-batches.json", "review-queue.json", "INSERT IGNORE", "'verified'", "source files were retained"):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, importer)
+        for marker in ("FOR UPDATE", "id_shop = ' . $this->shopId", "LIMIT ", "COUNT(*)", "payload_sha256"):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, queue + batches)
+        self.assertIn("START TRANSACTION", transaction)
+        self.assertIn("ROLLBACK", transaction)
+        self.assertIn("COMMIT", transaction)
+        self.assertIn("[1000, 10000, 100000]", acceptance)
+        self.assertIn("FAILURE_SOURCE_UNAVAILABLE", acceptance)
+        self.assertIn("$afterFailure === $editReadback", acceptance)
+        self.assertIn("getenv('KURANEA_ISOLATED_CI') !== '1'", acceptance)
+        browser_at = workflow.index("id: catalog_import_browser_qa")
+        scale_at = workflow.index("id: catalog_import_scale_acceptance")
+        restore_at = workflow.index("id: catalog_import_restore")
+        self.assertLess(browser_at, scale_at)
+        self.assertLess(scale_at, restore_at)
+        self.assertIn("catalog-scale-acceptance.log", workflow)
+        self.assertIn("catalog_import_scale_acceptance=$CATALOG_IMPORT_SCALE_ACCEPTANCE_OUTCOME", workflow)
+
     def test_unsupported_product_urls_use_safe_korean_feedback(self) -> None:
         self.assertIn(
             "$this->fail('상품 URL을 등록할 수 없습니다. 아마존 일본 또는 라쿠텐의 지원 상품 주소를 1~10개 입력해 주세요.');",

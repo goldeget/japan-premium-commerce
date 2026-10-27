@@ -23,7 +23,7 @@ $workflow = catalogContractSource('.github/workflows/fresh-install.yml');
 
 assertCatalogTrue(str_contains($moduleEntry, "'AdminKuraneaCatalogReview'") && str_contains($moduleEntry, "'상품 검수 대기열'"), 'The catalog module should install a Korean Back Office review tab.');
 assertCatalogTrue(str_contains($moduleEntry, 'removeTab') && str_contains($moduleEntry, 'preserved on uninstall'), 'Catalog tab lifecycle should preserve the review queue when the module is uninstalled.');
-assertCatalogTrue(str_contains($controller, 'ProductApprovalService') && str_contains($controller, '->pending()'), 'The admin controller should use the persistent queue and approval service.');
+assertCatalogTrue(str_contains($controller, 'ProductApprovalService') && str_contains($controller, '->pending($pendingPageSize') && str_contains($controller, '->countPending()'), 'The admin controller should use the persistent queue and approval service.');
 assertCatalogTrue(
     str_contains($controller, 'return $this->viewAccess();')
         && str_contains($controller, 'return $this->canView() && $this->access(\'edit\') && $this->access(\'add\');')

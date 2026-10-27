@@ -16,7 +16,7 @@ class Kuraneacatalog extends Module
     {
         $this->name = 'kuraneacatalog';
         $this->tab = 'administration';
-        $this->version = '0.1.0';
+        $this->version = '0.2.0';
         $this->author = 'KURANEA';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -35,6 +35,7 @@ class Kuraneacatalog extends Module
         }
 
         try {
+            \Kuranea\Catalog\Infrastructure\Persistence\CatalogDatabaseBootstrap::installAndMigrate(_PS_ROOT_DIR_);
             CatalogQueueRepositoryFactory::fromEnvironment(_PS_ROOT_DIR_);
         } catch (Throwable) {
             parent::uninstall();
@@ -58,7 +59,7 @@ class Kuraneacatalog extends Module
         $this->removeTab('AdminKuraneaCatalogReview');
         $this->removeTab('AdminOrdenowaProductManager');
 
-        // The review queue lives in its own persistent volume and is preserved on uninstall.
+        // Catalog SQL tables and legacy JSON sources are preserved on uninstall.
         return parent::uninstall();
     }
 

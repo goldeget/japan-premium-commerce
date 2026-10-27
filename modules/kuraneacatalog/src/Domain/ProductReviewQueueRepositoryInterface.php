@@ -60,7 +60,9 @@ interface ProductReviewQueueRepositoryInterface
     ): ?ProductReviewQueueEntry;
 
     /** @return list<ProductReviewQueueEntry> */
-    public function pending(): array;
+    public function pending(int $limit = 50, int $offset = 0): array;
+
+    public function countPending(): int;
 
     /** @return list<ProductReviewQueueEntry> terminal approval/rejection decisions, newest first */
     public function recentReviewed(int $limit = 20): array;

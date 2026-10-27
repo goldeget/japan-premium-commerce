@@ -13,11 +13,13 @@ use Kuranea\BusinessProfile\Customer\PublishedProfileProvider;
 use Kuranea\BusinessProfile\Customer\PublicFooterBuilder;
 use Kuranea\BusinessProfile\Customer\StructuredDataBrandEnricher;
 use Kuranea\BusinessProfile\Customer\CommerceGate;
+use Kuranea\BusinessProfile\Customer\RobotsSitemapDirective;
 use Kuranea\BusinessProfile\Customer\PublishedLegalPageBuilder;
 use Kuranea\BusinessProfile\Customer\OrderConfirmationMailContent;
 use Kuranea\BusinessProfile\Customer\BankTransferInstructionPresenter;
 use Kuranea\BusinessProfile\Infrastructure\VersionedProfileRepository;
 use Kuranea\BusinessProfile\Infrastructure\BankTransferInstructionRepository;
+use Kuranea\BusinessProfile\Infrastructure\ConfiguredShopUrlProvider;
 
 class Kuraneabusinessprofile extends Module
 {
@@ -33,7 +35,7 @@ class Kuraneabusinessprofile extends Module
     {
         $this->name = 'kuraneabusinessprofile';
         $this->tab = 'administration';
-        $this->version = '1.0.5';
+        $this->version = '1.0.6';
         $this->author = 'ORDENOWA';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -59,7 +61,7 @@ class Kuraneabusinessprofile extends Module
             return false;
         }
 
-        return $this->registerHook([
+        $hooksRegistered = $this->registerHook([
             'actionAdminControllerSetMedia',
             'displayHeader',
             'displayFooter',
@@ -71,17 +73,95 @@ class Kuraneabusinessprofile extends Module
             'actionMailAlterMessageBeforeSend',
             'displayOrderConfirmation',
             'displayOrderDetail',
+            'moduleRoutes',
+            'actionAdminMetaAfterWriteRobotsFile',
         ]);
+        if (!$hooksRegistered) {
+            return false;
+        }
+
+        return $this->refreshRobotsSitemapDirective();
     }
 
     public function uninstall(): bool
     {
+        if (!RobotsSitemapDirective::rewriteExistingFile(_PS_ROOT_DIR_ . '/robots.txt', null)) {
+            return false;
+        }
+
         $this->removeTab('AdminBusinessProfileBanks');
         $this->removeTab('AdminBusinessProfile');
         $this->removeTab('AdminBusinessProfileTransfers');
 
         // Keep profile versions and account data when disabling or uninstalling the module.
         return parent::uninstall();
+    }
+
+    /** @param array<string, mixed> $params
+     *  @return array<string, array<string, mixed>>
+     */
+    public function hookModuleRoutes(array $params): array
+    {
+        if ((int) ($params['id_shop'] ?? 0) < 1) {
+            return [];
+        }
+
+        return [
+            'module-kuraneabusinessprofile-sitemap' => [
+                'controller' => 'sitemap',
+                'rule' => 'sitemap.xml',
+                'keywords' => [],
+                'params' => ['fc' => 'module', 'module' => $this->name],
+            ],
+            'module-kuraneabusinessprofile-sitemappage' => [
+                'controller' => 'sitemappage',
+                'rule' => 'sitemap-{iso}-{page}.xml',
+                'keywords' => [
+                    'iso' => ['regexp' => '(?:ja|en|ko)', 'param' => 'iso'],
+                    'page' => ['regexp' => '[1-9][0-9]{0,4}', 'param' => 'page'],
+                ],
+                'params' => ['fc' => 'module', 'module' => $this->name],
+            ],
+        ];
+    }
+
+    /** @param array<string, mixed> $params */
+    public function hookActionAdminMetaAfterWriteRobotsFile(array $params): void
+    {
+        $shopId = (int) ($this->context->shop->id ?? 0);
+        $baseUrl = $shopId > 0 && $this->urlRewritingEnabled()
+            ? (new ConfiguredShopUrlProvider())->baseUrl($shopId)
+            : null;
+        $robotsPath = _PS_ROOT_DIR_ . '/robots.txt';
+        RobotsSitemapDirective::rewriteStream(
+            $params['write_fd'] ?? null,
+            $robotsPath,
+            $baseUrl === null ? null : $baseUrl . 'sitemap.xml'
+        );
+    }
+
+    public function refreshRobotsSitemapDirective(): bool
+    {
+        $shopId = $this->shopId();
+        $baseUrl = $this->urlRewritingEnabled() ? (new ConfiguredShopUrlProvider())->baseUrl($shopId) : null;
+        $robotsPath = _PS_ROOT_DIR_ . '/robots.txt';
+        $sitemapUrl = $baseUrl === null ? null : $baseUrl . 'sitemap.xml';
+
+        if (is_file($robotsPath)) {
+            return RobotsSitemapDirective::rewriteExistingFile($robotsPath, $sitemapUrl);
+        }
+
+        if (!method_exists('Tools', 'generateRobotsFile') || !(bool) \Tools::generateRobotsFile(true)) {
+            return false;
+        }
+
+        return is_file($robotsPath)
+            && RobotsSitemapDirective::rewriteExistingFile($robotsPath, $sitemapUrl);
+    }
+
+    private function urlRewritingEnabled(): bool
+    {
+        return (bool) \Configuration::get('PS_REWRITING_SETTINGS', null, null, $this->shopId());
     }
 
     public function getContent(): string

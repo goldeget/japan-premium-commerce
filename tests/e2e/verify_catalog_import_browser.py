@@ -15,7 +15,7 @@ import sys
 import tempfile
 import zlib
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from catalog_import_diagnostics import (
     READBACK_CHECKS,
@@ -66,11 +66,19 @@ ALLOWED_READBACK_SUBSTAGES = {
     'manager_edit_fresh_navigation', 'manager_edit_fresh_readback',
     'reimport_navigation', 'reimport_editor_id_presence', 'reimport_editor_form_check',
     'reimport_editor_readback', 'reject_guard_readback', 'reject_status_readback',
+    'publication_precondition', 'publication_before_editor_route', 'publication_before_field_readback',
+    'native_publish_editor_route', 'native_publish_field_update', 'native_publish_save',
+    'native_publish_fresh_editor_route', 'native_publish_fresh_field_readback',
+    'storefront_product_identity', 'storefront_add_to_cart', 'storefront_cart_readback',
+    'native_unpublish_cleanup', 'native_unpublish_editor_route', 'native_unpublish_field_update',
+    'native_unpublish_save', 'native_unpublish_fresh_editor_route', 'native_unpublish_fresh_field_readback',
 }
 ALLOWED_COMPLETED_SUBSTAGES = {
     'not_started', 'batch_complete', 'reject_guard_readback', 'reject_status_readback',
     'manager_edit_fields', 'manager_edit_save_click', 'manager_edit_save_confirmation',
-    'manager_edit_fresh_readback', 'unknown',
+    'manager_edit_fresh_readback', 'publication_precondition', 'native_publish_save',
+    'native_publish_fresh_readback', 'storefront_product_identity', 'storefront_add_to_cart',
+    'storefront_cart_readback', 'native_unpublish_cleanup', 'unknown',
 }
 CLICK_TARGETS = {
     'category_checkbox': 'approve_category_checkbox',
@@ -322,11 +330,26 @@ def submit_batch(driver, review_url, urls, state, prefix='batch'):
     state['submitted_url_count'] = min(len(urls), 10)
     state['last_completed_stage'] = state['stage']
     state['stage'] = f'{prefix}_completion_wait'
-    WebDriverWait(driver, 60).until(lambda d: d.find_elements(
-        By.CSS_SELECTOR, '#catalog-import-progress progress[value="' + str(len(urls)) + '"]'))
+
+    def visible_completed_progress(current_driver):
+        try:
+            for container in current_driver.find_elements(By.CSS_SELECTOR, '#catalog-import-progress'):
+                if not container.is_displayed():
+                    continue
+                progress_bars = container.find_elements(
+                    By.CSS_SELECTOR, f'progress[value="{len(urls)}"]')
+                if any(progress.is_displayed() for progress in progress_bars):
+                    progress_text = container.text
+                    return progress_text if progress_text.strip() else False
+        except StaleElementReferenceException:
+            return False
+        return False
+
+    progress_text = WebDriverWait(
+        driver, 60, ignored_exceptions=(StaleElementReferenceException,)
+    ).until(visible_completed_progress)
     state['last_completed_stage'] = state['stage']
     state['stage'] = f'{prefix}_progress_readback'
-    progress_text = visible(driver, '#catalog-import-progress').text
     state['last_completed_stage'] = state['stage']
     return progress_text
 
@@ -1650,6 +1673,317 @@ def read_native(
             }}
 
 
+NATIVE_PRODUCT_DRAFT_FLAGS = {
+    'active': '0',
+    'visibility': 'none',
+    'available_for_order': '0',
+    'show_price': '0',
+}
+NATIVE_PRODUCT_PUBLISHED_FLAGS = {
+    'active': '1',
+    'visibility': 'both',
+    'available_for_order': '1',
+    'show_price': '1',
+}
+NATIVE_PRODUCT_FIELD_SELECTORS = {
+    'active': 'select[name$="[header][active]"]',
+    'visibility': 'select[name$="[options][visibility][visibility]"]',
+    'available_for_order': 'select[name$="[options][visibility][available_for_order]"]',
+    'show_price': 'select[name$="[options][visibility][show_price]"]',
+}
+
+
+def native_product_editor_url(product_id):
+    if type(product_id) is not int or product_id < 1:
+        raise AssertionError("native product editor requires a verified positive synthetic product ID")
+    login = urlparse(ADMIN_LOGIN)
+    if login.scheme not in {'http', 'https'} or not login.netloc or ADMIN_PATH.rstrip('/') != '/admin-kuranea':
+        raise AssertionError("native product editor does not use the isolated Back Office path")
+    return f"{login.scheme}://{login.netloc}{ADMIN_PATH.rstrip('/')}/sell/catalog/products/{product_id}/edit"
+
+
+def native_product_editor_form(driver, product_id, state, substage):
+    state['current_substage'] = substage
+    url = native_product_editor_url(product_id)
+    parsed_target = urlparse(url)
+    parsed_admin = urlparse(ADMIN_LOGIN)
+    if (parsed_target.scheme, parsed_target.netloc) != (parsed_admin.scheme, parsed_admin.netloc):
+        raise AssertionError("native product editor escaped the isolated admin origin")
+
+    driver.get(url)
+    expected_path = f"{ADMIN_PATH.rstrip('/')}/sell/catalog/products/{product_id}/edit"
+    def matching_form(current_driver):
+        current = urlparse(current_driver.current_url)
+        if (current.scheme, current.netloc, current.path) != (
+            parsed_admin.scheme, parsed_admin.netloc, expected_path
+        ):
+            return False
+        forms = current_driver.find_elements(By.CSS_SELECTOR, 'form.product-form[data-product-id]')
+        return forms[0] if len(forms) == 1 and forms[0].is_displayed() else False
+
+    form = WebDriverWait(driver, 30).until(matching_form)
+    if form.get_attribute('data-product-id') != str(product_id):
+        raise AssertionError("native product editor identity does not match the imported draft")
+    if form.get_attribute('data-shop-id') != '1':
+        raise AssertionError("native product editor is not in the isolated CI shop")
+    state['last_completed_substage'] = substage
+    return form
+
+
+def native_product_field(driver, form, field_name, state, substage):
+    selector = NATIVE_PRODUCT_FIELD_SELECTORS.get(field_name)
+    if selector is None:
+        raise AssertionError("native product publication field is not allowlisted")
+    current_forms = driver.find_elements(By.CSS_SELECTOR, 'form.product-form[data-product-id]')
+    if len(current_forms) != 1:
+        raise AssertionError("native product editor form is missing or ambiguous")
+    form = current_forms[0]
+    fields = form.find_elements(By.CSS_SELECTOR, selector)
+    if len(fields) != 1:
+        raise AssertionError("native product publication field is missing or ambiguous")
+    field = fields[0]
+    if not field.is_displayed():
+        panes = field.find_elements(
+            By.XPATH,
+            "./ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' tab-pane ')][1]",
+        )
+        if len(panes) != 1:
+            raise AssertionError("native product publication field has no native tab pane")
+        pane_id = panes[0].get_attribute('id') or ''
+        if not pane_id:
+            raise AssertionError("native product publication tab has no stable pane ID")
+        tabs = [
+            item for item in driver.find_elements(By.CSS_SELECTOR, 'a[href]')
+            if (item.get_attribute('href') or '').endswith('#' + pane_id) and item.is_displayed()
+        ]
+        if len(tabs) != 1:
+            raise AssertionError("native product publication tab is missing or ambiguous")
+        state['current_substage'] = substage
+        tabs[0].click()
+        WebDriverWait(driver, 30).until(
+            lambda current_driver: len(current_driver.find_elements(By.CSS_SELECTOR, selector)) == 1
+            and current_driver.find_elements(By.CSS_SELECTOR, selector)[0].is_displayed()
+        )
+        refreshed_forms = driver.find_elements(By.CSS_SELECTOR, 'form.product-form[data-product-id]')
+        if len(refreshed_forms) != 1:
+            raise AssertionError("native product editor changed during tab navigation")
+        form = refreshed_forms[0]
+        fields = form.find_elements(By.CSS_SELECTOR, selector)
+        if len(fields) != 1:
+            raise AssertionError("native product publication field changed during tab navigation")
+        field = fields[0]
+    if not field.is_enabled():
+        raise AssertionError("native product publication field is disabled")
+    return field
+
+
+def read_native_product_publication_flags(driver, product_id, state, prefix):
+    form = native_product_editor_form(
+        driver, product_id, state, prefix + '_editor_route'
+    )
+    flags = {}
+    for key in ('active', 'visibility', 'available_for_order', 'show_price'):
+        field = native_product_field(
+            driver, form, key, state, prefix + '_field_readback'
+        )
+        flags[key] = Select(field).first_selected_option.get_attribute('value')
+    return flags
+
+
+def set_native_product_publication_flags(driver, product_id, target_flags, state, prefix):
+    if target_flags not in (NATIVE_PRODUCT_DRAFT_FLAGS, NATIVE_PRODUCT_PUBLISHED_FLAGS):
+        raise AssertionError("native product publication target is not allowlisted")
+    form = native_product_editor_form(
+        driver, product_id, state, prefix + '_editor_route'
+    )
+    for key, value in target_flags.items():
+        field = native_product_field(
+            driver, form, key, state, prefix + '_field_update'
+        )
+        Select(field).select_by_value(value)
+        if Select(field).first_selected_option.get_attribute('value') != value:
+            raise AssertionError("native product publication selection did not take effect")
+
+    current_forms = driver.find_elements(By.CSS_SELECTOR, 'form.product-form[data-product-id]')
+    if len(current_forms) != 1 or current_forms[0].get_attribute('data-product-id') != str(product_id):
+        raise AssertionError("native product editor changed before publication save")
+    form = current_forms[0]
+    save_buttons = form.find_elements(By.CSS_SELECTOR, 'button.product-form-save-button')
+    if len(save_buttons) != 1 or not save_buttons[0].is_displayed() or not save_buttons[0].is_enabled():
+        raise AssertionError("native product editor save control is missing or disabled")
+    state['current_substage'] = prefix + '_save'
+    save_buttons[0].click()
+    state['last_completed_substage'] = prefix + '_save'
+
+    flags = read_native_product_publication_flags(
+        driver, product_id, state, prefix + '_fresh'
+    )
+    if flags != target_flags:
+        raise AssertionError("native product publication flags did not persist on a fresh editor read")
+    return flags
+
+
+def select_customer_default_combination(driver, form):
+    product_attribute = form.find_elements(By.CSS_SELECTOR, 'input[name="id_product_attribute"]')
+    if len(product_attribute) == 1:
+        value = (product_attribute[0].get_attribute('value') or '').strip()
+        if value.isdecimal() and int(value) > 0:
+            return
+
+    for select in form.find_elements(By.CSS_SELECTOR, 'select[name^="group["]'):
+        if not select.is_displayed() or not select.is_enabled():
+            continue
+        selected = Select(select).first_selected_option
+        value = (selected.get_attribute('value') or '').strip()
+        if value:
+            continue
+        choices = [
+            option for option in Select(select).options
+            if (option.get_attribute('value') or '').strip()
+            and option.is_enabled()
+        ]
+        if not choices:
+            raise AssertionError("synthetic product option is missing")
+        Select(select).select_by_value(choices[0].get_attribute('value'))
+
+    WebDriverWait(driver, 30).until(lambda current_driver: (
+        len(current_driver.find_elements(
+            By.CSS_SELECTOR, 'form#add-to-cart-or-refresh input[name="id_product_attribute"]'
+        )) == 1
+        and (current_driver.find_elements(
+            By.CSS_SELECTOR, 'form#add-to-cart-or-refresh input[name="id_product_attribute"]'
+        )[0].get_attribute('value') or '').isdecimal()
+        and int(current_driver.find_elements(
+            By.CSS_SELECTOR, 'form#add-to-cart-or-refresh input[name="id_product_attribute"]'
+        )[0].get_attribute('value') or '0') > 0
+    ))
+
+
+def verify_imported_product_publication(driver, product_id, state):
+    """Publish only the synthetic approved draft through the native Back Office form, then restore it."""
+    state['stage'] = 'native_publication'
+    state['current_substage'] = 'publication_precondition'
+    initial = read_native_product_publication_flags(
+        driver, product_id, state, 'publication_before'
+    )
+    if initial != NATIVE_PRODUCT_DRAFT_FLAGS:
+        raise AssertionError("imported product must start inactive, hidden, and non-orderable")
+    state['last_completed_substage'] = 'publication_precondition'
+
+    changed = False
+    result = {}
+    try:
+        changed = True
+        set_native_product_publication_flags(
+            driver, product_id, NATIVE_PRODUCT_PUBLISHED_FLAGS, state, 'native_publish'
+        )
+        state['last_completed_substage'] = 'native_publish_fresh_readback'
+        state['current_substage'] = 'storefront_product_identity'
+
+        product_url = BASE + '/index.php?' + urlencode({
+            'controller': 'product',
+            'id_product': str(product_id),
+        })
+        product_target = urlparse(product_url)
+        shop_origin = urlparse(BASE)
+        if (product_target.scheme, product_target.netloc) != (shop_origin.scheme, shop_origin.netloc):
+            raise AssertionError("published synthetic product escaped the isolated shop origin")
+        driver.get(BASE + '/index.php?controller=cart&action=show')
+        if driver.find_elements(
+            By.CSS_SELECTOR, '.cart__item [data-link-action="delete-from-cart"][data-id-product]'
+        ):
+            raise AssertionError("synthetic publication browser did not start with an empty customer cart")
+        driver.get(product_url)
+        WebDriverWait(driver, 30).until(
+            lambda current_driver: current_driver.find_elements(
+                By.CSS_SELECTOR, 'body#product form#add-to-cart-or-refresh'
+            )
+        )
+        storefront_form = visible(driver, 'body#product form#add-to-cart-or-refresh')
+        product_ids = storefront_form.find_elements(
+            By.CSS_SELECTOR, 'input#product_page_product_id[name="id_product"]'
+        )
+        if len(product_ids) != 1 or product_ids[0].get_attribute('value') != str(product_id):
+            raise AssertionError("customer storefront product ID does not match the native imported product")
+        headings = [item for item in driver.find_elements(By.CSS_SELECTOR, 'h1.product__name') if item.is_displayed()]
+        prices = [item for item in driver.find_elements(By.CSS_SELECTOR, '.product__price') if item.is_displayed()]
+        if len(headings) != 1 or not headings[0].text.strip():
+            raise AssertionError("published synthetic product is not customer-visible")
+        if len(prices) != 1 or not prices[0].text.strip() or not any(
+            marker in prices[0].text for marker in ('JPY', '¥')
+        ) or int(re.sub(r'[^0-9]', '', prices[0].text) or '0') < 1:
+            raise AssertionError("published synthetic product price is not customer-visible in JPY")
+        buttons = [
+            item for item in storefront_form.find_elements(
+                By.CSS_SELECTOR, 'button[data-button-action="add-to-cart"], .add-to-cart'
+            ) if item.is_displayed() and item.is_enabled()
+        ]
+        if len(buttons) != 1:
+            raise AssertionError("published synthetic product is not available for add-to-cart")
+        select_customer_default_combination(driver, storefront_form)
+        driver.save_screenshot(str(DEST / 'catalog-import-published-product.png'))
+        state['last_completed_substage'] = 'storefront_product_identity'
+        state['current_substage'] = 'storefront_add_to_cart'
+        fresh_buttons = [
+            item for item in driver.find_elements(
+                By.CSS_SELECTOR, 'form#add-to-cart-or-refresh button[data-button-action="add-to-cart"], form#add-to-cart-or-refresh .add-to-cart'
+            ) if item.is_displayed() and item.is_enabled()
+        ]
+        if len(fresh_buttons) != 1:
+            raise AssertionError("published synthetic product add-to-cart control became unavailable")
+        fresh_buttons[0].click()
+        state['last_completed_substage'] = 'storefront_add_to_cart'
+
+        def customer_cart_badge_updated(current_driver):
+            for badge in current_driver.find_elements(By.CSS_SELECTOR, '.header-block__badge'):
+                digits = re.sub(r'[^0-9]', '', badge.text or '')
+                if digits and int(digits) > 0:
+                    return True
+            return False
+
+        WebDriverWait(driver, 30).until(customer_cart_badge_updated)
+        driver.get(BASE + '/index.php?controller=cart&action=show')
+        WebDriverWait(driver, 30).until(
+            lambda current_driver: current_driver.find_elements(
+                By.CSS_SELECTOR, '.cart__item [data-link-action="delete-from-cart"][data-id-product]'
+            )
+        )
+        cart_product_ids = [
+            item.get_attribute('data-id-product')
+            for item in driver.find_elements(
+                By.CSS_SELECTOR, '.cart__item [data-link-action="delete-from-cart"][data-id-product]'
+            )
+        ]
+        if cart_product_ids != [str(product_id)]:
+            raise AssertionError("customer cart does not contain only the same approved synthetic product ID")
+        driver.save_screenshot(str(DEST / 'catalog-import-published-cart.png'))
+        state['last_completed_substage'] = 'storefront_cart_readback'
+        result = {
+            'same_native_product_id': True,
+            'native_active_fresh_readback': True,
+            'native_visible_fresh_readback': True,
+            'native_orderable_fresh_readback': True,
+            'native_price_visible_fresh_readback': True,
+            'storefront_product_id_matches': True,
+            'storefront_price_visible_in_jpy': True,
+            'add_to_cart_enabled': True,
+            'same_id_cart_readback': True,
+        }
+        return result
+    finally:
+        if changed:
+            state['current_substage'] = 'native_unpublish_cleanup'
+            cleanup_flags = set_native_product_publication_flags(
+                driver, product_id, NATIVE_PRODUCT_DRAFT_FLAGS, state, 'native_unpublish'
+            )
+            if cleanup_flags != NATIVE_PRODUCT_DRAFT_FLAGS:
+                raise AssertionError("synthetic imported product publication cleanup failed")
+            state['last_completed_substage'] = 'native_unpublish_cleanup'
+            if result:
+                result['restored_to_inactive_draft'] = True
+                state['last_completed_stage'] = 'native_publication'
+
+
 def manager_save_confirmation(browser, expected_notice):
     """Read visible save alerts from one DOM snapshot so a postback cannot stale element handles."""
     return browser.execute_script("""
@@ -2050,10 +2384,11 @@ def run():
             'combination_identity_preserved': readback['combination_identity_preserved'],
             'inactive_notice_visible': readback['manager_page']['inactive_notice_visible'],
         }
+        readback['publication'] = verify_imported_product_publication(driver, product_id, state)
         readback.pop('_image_ids')
         readback.pop('_combination_field_names')
         (DEST / 'catalog-import-readback.json').write_text(json.dumps(readback, sort_keys=True) + '\n')
-        print('PASS: synthetic batch, rejection, manager edit save, fresh readback and edit-preserving reimport.')
+        print('PASS: synthetic batch, rejection, manager edit/reimport readback and explicit native publication/storefront/cart readback; draft restored.')
     except Exception as error:
         diagnostics = safe_catalog_import_browser_state(driver, state)
         diagnostics['exception_class'] = safe_exception_class(error)

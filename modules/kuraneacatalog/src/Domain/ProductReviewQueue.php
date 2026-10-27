@@ -9,7 +9,7 @@ use DateTimeZone;
 
 /**
  * In-memory implementation retained for isolated domain tests. Production
- * persistence is provided separately by the JSON queue repository.
+ * persistence is provided separately by the database queue repository.
  */
 final class ProductReviewQueue implements ProductReviewQueueRepositoryInterface
 {
@@ -133,9 +133,21 @@ final class ProductReviewQueue implements ProductReviewQueueRepositoryInterface
     }
 
     /** @return list<ProductReviewQueueEntry> */
-    public function pending(): array
+    public function pending(int $limit = 50, int $offset = 0): array
     {
-        return array_values(array_filter(
+        if ($limit < 1 || $limit > 1000 || $offset < 0) {
+            throw new \InvalidArgumentException('Catalog review page is outside the supported range.');
+        }
+
+        return array_slice(array_values(array_filter(
+            $this->entries,
+            static fn (ProductReviewQueueEntry $entry): bool => $entry->status === ProductReviewQueueEntry::STATUS_PENDING
+        )), $offset, $limit);
+    }
+
+    public function countPending(): int
+    {
+        return count(array_filter(
             $this->entries,
             static fn (ProductReviewQueueEntry $entry): bool => $entry->status === ProductReviewQueueEntry::STATUS_PENDING
         ));

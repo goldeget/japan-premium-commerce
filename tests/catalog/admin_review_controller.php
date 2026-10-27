@@ -172,6 +172,10 @@ if (!defined('__PS_BASE_URI__')) {
     define('__PS_BASE_URI__', '/');
 }
 putenv('KURANEA_CATALOG_QUEUE_DIR=' . $catalogAdminStorage);
+putenv('CI=true');
+putenv('GITHUB_ACTIONS=true');
+putenv('KURANEA_ISOLATED_CI=1');
+putenv('KURANEA_CATALOG_STORAGE_ADAPTER=json');
 putenv('KURANEA_CATALOG_TEST_DEMO_APPROVAL=0');
 
 require_once __DIR__ . '/../../modules/kuraneacatalog/controllers/admin/AdminKuraneaCatalogReviewController.php';

@@ -103,6 +103,14 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python3 -m unittest discover -s tests/business_profile -p 'test_brand_publish_guard_contract.py' -v
 
+      - name: Verify configured sitemap URL, robots preservation and XML limits
+        run: php tests/business_profile/sitemap_policy.php
+
+      - name: Check sitemap routing, shop isolation and commerce gate contracts
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -m unittest discover -s tests/business_profile -p 'test_sitemap_source_contract.py' -v
+
       - name: Verify published customer output and PWA manifest
         run: php tests/business_profile/published_output.php
 

@@ -32,6 +32,7 @@ CUSTOMER_ADDRESS_ISOLATION_RESULT_KEYS = (
     "foreign_write_post_target_matched",
     "foreign_write_post_method_matched",
     "foreign_write_response_denied",
+    "foreign_write_address_content_absent",
     "foreign_address_readback_unchanged",
     "foreign_address_readback_network_backed",
     "owner_fresh_readback_unchanged",

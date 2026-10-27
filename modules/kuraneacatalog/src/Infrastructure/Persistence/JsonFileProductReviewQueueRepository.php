@@ -194,15 +194,31 @@ final class JsonFileProductReviewQueueRepository implements ProductReviewQueueRe
     }
 
     /** @return list<ProductReviewQueueEntry> */
-    public function pending(): array
+    public function pending(int $limit = 50, int $offset = 0): array
     {
-        return $this->access(static function (array &$entries): array {
+        if ($limit < 1 || $limit > 1000 || $offset < 0) {
+            throw new \InvalidArgumentException('Catalog review page is outside the supported range.');
+        }
+
+        return $this->access(static function (array &$entries) use ($limit, $offset): array {
             $pending = array_values(array_filter(
                 $entries,
                 static fn (ProductReviewQueueEntry $entry): bool => $entry->status === ProductReviewQueueEntry::STATUS_PENDING
             ));
 
-            return [$pending, false];
+            return [array_slice($pending, $offset, $limit), false];
+        });
+    }
+
+    public function countPending(): int
+    {
+        return $this->access(static function (array &$entries): array {
+            $count = count(array_filter(
+                $entries,
+                static fn (ProductReviewQueueEntry $entry): bool => $entry->status === ProductReviewQueueEntry::STATUS_PENDING
+            ));
+
+            return [$count, false];
         });
     }
 

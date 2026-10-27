@@ -2852,6 +2852,8 @@ def create_customer_address(
         driver, form, label, substage_callback=mark_substage
     )
     form = visible(driver, ".js-address-form form")
+    mark_substage("address_required_consent")
+    accept_required_customer_address_checkboxes(form)
     mark_substage("address_native_validation")
     assert_native_form_valid(driver, form, "customer address")
     save_redacted_customer_address_screenshot(
@@ -3392,6 +3394,47 @@ def save_customer_address_edit(
         driver, DEST / f"{label}-customer-address-edit-form.png"
     )
     click_centered(driver, visible(driver, ".js-address-form button.form-control-submit"))
+
+
+def accept_required_customer_address_checkboxes(form) -> None:
+    """Accept required address-form consent with native customer interactions."""
+    for checkbox in form.find_elements(By.CSS_SELECTOR, 'input[type="checkbox"][required]'):
+        if checkbox.is_selected():
+            continue
+        if not checkbox.is_enabled():
+            raise AssertionError("required customer address consent is disabled")
+
+        checkbox_id = checkbox.get_attribute("id") or ""
+        labels = form.find_elements(By.CSS_SELECTOR, "label[for]") if checkbox_id else []
+        label = next(
+            (
+                candidate
+                for candidate in labels
+                if candidate.get_attribute("for") == checkbox_id and candidate.is_displayed()
+            ),
+            None,
+        )
+        if label is None:
+            wrapping_labels = checkbox.find_elements(By.XPATH, "./ancestor::label[1]")
+            label = next((candidate for candidate in wrapping_labels if candidate.is_displayed()), None)
+
+        if label is not None:
+            try:
+                label.click()
+            except ElementClickInterceptedException:
+                if not checkbox.is_displayed() or not checkbox.is_enabled():
+                    raise
+                checkbox.send_keys(Keys.SPACE)
+        elif checkbox.is_displayed():
+            try:
+                checkbox.click()
+            except ElementClickInterceptedException:
+                checkbox.send_keys(Keys.SPACE)
+        else:
+            raise AssertionError("required customer address consent has no usable native control")
+
+        if not checkbox.is_selected():
+            raise AssertionError("required customer address consent was not accepted by the CI customer")
 
 
 def click_required_checkbox_label(form, checkbox) -> None:
@@ -4704,10 +4747,34 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         address_isolation_result["foreign_write_target_id_exact"] = True
         if driver.find_elements(By.CSS_SELECTOR, ".js-address-form form"):
             raise AssertionError("a foreign customer received an owner address edit form after POST")
+        post_body_text = driver.find_element(By.TAG_NAME, "body").text
+        post_field_values = driver.execute_script(
+            """
+            return Array.from(document.querySelectorAll('input, textarea, select, option'))
+              .flatMap((element) => [String(element.value || ''), String(element.textContent || '')]);
+            """
+        )
+        if not isinstance(post_field_values, list):
+            raise AssertionError("cross-owner POST response fields could not be checked safely")
+        post_document_markup = driver.execute_script(
+            "return document.documentElement ? document.documentElement.outerHTML : '';"
+        )
+        if not isinstance(post_document_markup, str):
+            raise AssertionError("cross-owner POST response markup could not be checked safely")
+        post_address_content = "\n".join(
+            [post_body_text.casefold(), post_document_markup.casefold()]
+            + [value.casefold() for value in post_field_values if isinstance(value, str)]
+        )
+        if any(
+            value and value.casefold() in post_address_content
+            for value in private_address_values
+        ):
+            raise AssertionError("a foreign customer received owner address content after POST")
         address_isolation_result["foreign_write_post_network_backed"] = True
         address_isolation_result["foreign_write_post_target_matched"] = True
         address_isolation_result["foreign_write_post_method_matched"] = True
         address_isolation_result["foreign_write_response_denied"] = True
+        address_isolation_result["foreign_write_address_content_absent"] = True
 
         stage = "customer_address_cross_owner_foreign_post_readback"
         address_isolation_substage = "foreign_account_readback_after_write"

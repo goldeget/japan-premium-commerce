@@ -12,3 +12,6 @@
 # Local logs and caches
 *.log
 .cache/
+# Test-tool caches
+node_modules/
+__pycache__/

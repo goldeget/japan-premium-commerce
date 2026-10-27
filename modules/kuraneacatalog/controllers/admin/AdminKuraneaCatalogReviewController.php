@@ -70,13 +70,18 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
             $batchRepository = CatalogImportBatchRepositoryFactory::fromEnvironment(_PS_ROOT_DIR_);
             $this->processImportRequests($queue, $batchRepository);
             $this->processApproval($queue);
-            $pending = $queue->pending();
+            $pendingCount = $queue->countPending();
+            $pendingPageSize = 50;
+            $pendingPageCount = max(1, (int) ceil($pendingCount / $pendingPageSize));
+            $requestedPendingPage = Tools::getValue('catalog_page', 1);
+            $pendingPage = max(1, min($pendingPageCount, is_scalar($requestedPendingPage) ? (int) $requestedPendingPage : 1));
+            $pending = $queue->pending($pendingPageSize, ($pendingPage - 1) * $pendingPageSize);
             $this->content .= $this->renderFeedback();
             $this->content .= $this->renderImportForm();
             $this->activeBatch ??= $this->loadRequestedBatch($batchRepository);
             $this->content .= $this->renderBatch($batchRepository);
             $this->content .= $this->renderCatalogImportHistory($batchRepository, $queue);
-            $this->content .= $this->renderQueue($pending, new PrestaShopNativeProductManager());
+            $this->content .= $this->renderQueue($pending, new PrestaShopNativeProductManager(), $pendingPage, $pendingPageCount, $pendingCount);
         } catch (Throwable) {
             http_response_code(503);
             $this->content .= '<div class="alert alert-danger">검수 대기열을 불러오지 못했습니다. 저장소 설정을 확인해 주세요.</div>';
@@ -814,7 +819,7 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
     }
 
     /** @param list<ProductReviewQueueEntry> $pending */
-    private function renderQueue(array $pending, PrestaShopNativeProductManager $manager): string
+    private function renderQueue(array $pending, PrestaShopNativeProductManager $manager, int $page, int $pageCount, int $pendingCount): string
     {
         $actionUrl = (string) $this->context->link->getAdminLink('AdminKuraneaCatalogReview');
         $token = (string) Tools::getAdminTokenLite('AdminKuraneaCatalogReview');
@@ -826,7 +831,7 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
         }
         $html .= $this->renderReviewedStatus();
         if ($pending === []) {
-            return $html . '<p>검수 대기 항목이 없습니다.</p></section>';
+            return $html . '<p>검수 대기 항목이 없습니다.</p>' . $this->renderQueuePagination($page, $pageCount, $pendingCount, $actionUrl) . '</section>';
         }
         $categories = [];
         $taxRulesGroups = [];
@@ -924,6 +929,8 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
             $html .= '</article>';
         }
 
+        $html .= $this->renderQueuePagination($page, $pageCount, $pendingCount, $actionUrl);
+
         return $html . '</section>';
     }
 
@@ -999,6 +1006,21 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
         $html .= '<button class="btn btn-primary" type="submit" name="submitKuraneaCatalogImportedDraft" value="1">최신 출처 검수 · 기존 초안 유지</button></form>';
 
         return $html;
+    }
+
+    private function renderQueuePagination(int $page, int $pageCount, int $pendingCount, string $actionUrl): string
+    {
+        $html = '<nav aria-label="상품 검수 대기열 페이지"><p>대기 항목 ' . $pendingCount . '개 · ' . $page . ' / ' . $pageCount . '페이지</p>';
+        if ($page > 1) {
+            $separator = str_contains($actionUrl, '?') ? '&' : '?';
+            $html .= '<a class="btn btn-default" href="' . $this->escape($actionUrl . $separator . 'catalog_page=' . ($page - 1)) . '">이전</a> ';
+        }
+        if ($page < $pageCount) {
+            $separator = str_contains($actionUrl, '?') ? '&' : '?';
+            $html .= '<a class="btn btn-default" href="' . $this->escape($actionUrl . $separator . 'catalog_page=' . ($page + 1)) . '">다음</a>';
+        }
+
+        return $html . '</nav>';
     }
 
     private function renderCatalogImportHistory(

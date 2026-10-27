@@ -151,6 +151,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
                 "foreign_write_post_target_matched",
                 "foreign_write_post_method_matched",
                 "foreign_write_response_denied",
+                "foreign_write_address_content_absent",
                 "foreign_address_readback_unchanged",
                 "foreign_address_readback_network_backed",
                 "owner_fresh_readback_unchanged",
@@ -609,6 +610,15 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn("request_matches_expected", foreign_write_post)
         self.assertIn("request_method_matches_expected", foreign_write_post)
         self.assertIn("foreign_write_response_denied", foreign_write_post)
+        self.assertIn("post_body_text", foreign_write_post)
+        self.assertIn("post_field_values", foreign_write_post)
+        self.assertIn("post_document_markup", foreign_write_post)
+        self.assertIn("post_address_content", foreign_write_post)
+        self.assertIn("private_address_values", foreign_write_post)
+        self.assertIn("foreign_write_address_content_absent", foreign_write_post)
+        self.assertNotIn("print(post_body_text", foreign_write_post)
+        self.assertNotIn("print(post_field_values", foreign_write_post)
+        self.assertNotIn("print(post_document_markup", foreign_write_post)
         self.assertIn("ORDENOWA_CUSTOMER_ADDRESS_FOREIGN_WRITE_SAFE_TRACE=", foreign_write_post)
 
         foreign_post_readback = self.blocks[
@@ -710,6 +720,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             "foreign_write_target_id_exact",
             "foreign_write_post_method_matched",
             "foreign_write_response_denied",
+            "foreign_write_address_content_absent",
             "foreign_address_readback_unchanged",
         ):
             self.assertIn(write_check, result_keys)
@@ -759,6 +770,32 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertLess(persist_substage, saved_card_wait)
         self.assertLess(saved_card_wait, return_address)
 
+    def test_customer_address_creation_uses_native_interaction_for_required_consent(self) -> None:
+        create_address = self.source.split("def create_customer_address", 1)[1].split(
+            "def collect_customer_address_diagnostics", 1
+        )[0]
+        consent = create_address.index("accept_required_customer_address_checkboxes(form)")
+        validation = create_address.index('assert_native_form_valid(driver, form, "customer address")')
+        self.assertLess(consent, validation)
+        self.assertIn('mark_substage("address_required_consent")', create_address)
+
+        helper = self.source.split("def accept_required_customer_address_checkboxes", 1)[1].split(
+            "def click_required_checkbox_label", 1
+        )[0]
+        for marker in (
+            'input[type="checkbox"][required]',
+            "checkbox.is_selected()",
+            "if not checkbox.is_enabled():",
+            'raise AssertionError("required customer address consent is disabled")',
+            'form.find_elements(By.CSS_SELECTOR, "label[for]")',
+            'checkbox.find_elements(By.XPATH, "./ancestor::label[1]")',
+            "label.click()",
+            "checkbox.click()",
+            "checkbox.send_keys(Keys.SPACE)",
+        ):
+            self.assertIn(marker, helper)
+        self.assertNotIn("execute_script", helper)
+
     def test_customer_address_failure_reports_redacted_substage_state(self) -> None:
         address = self.source.split("def populate_japan_customer_address", 1)[1].split(
             "def assert_customer_address_line", 1
@@ -771,6 +808,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             "address_postcode_lookup",
             "address_postcode_candidate",
             "address_field_population",
+            "address_required_consent",
             "address_native_validation",
             "address_submit",
         ):
