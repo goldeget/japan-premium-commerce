@@ -84,10 +84,15 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             "issue_failure_category": "not_run",
             "issue_seller_commerce_gate_enabled": False,
         })
+        result["limited_route_path_index_php"] = False
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "bank-transfer-result.json"
             module.write_result(output, result)
             self.assertTrue(output.is_file())
+            result["limited_route_path_directory_root"] = False
+            with self.assertRaisesRegex(ValueError, "allowlisted schema"):
+                module.write_result(output, result)
+            result["limited_route_path_directory_root"] = True
             result["issue_effective_commerce_gate_enabled"] = False
             with self.assertRaisesRegex(ValueError, "allowlisted schema"):
                 module.write_result(output, result)
@@ -147,6 +152,64 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.assertFalse(diagnostics["limited_route_ci_scope_valid"])
         self.assertFalse(diagnostics["limited_route_employee_found"])
         self.assertNotIn("opaque@example.invalid", str(diagnostics))
+
+    def test_limited_route_accepts_only_native_dispatcher_paths_inside_exact_admin_folder(self) -> None:
+        module = self.load_browser_module()
+        self.assertIn("'route_path_directory_root'", self.limited_route)
+        self.assertIn("'route_path_index_php'", self.limited_route)
+        self.assertIn('path_directory_root = internal.path == "/admin-kuranea/"', self.browser)
+        self.assertIn('path_index_php = internal.path == "/admin-kuranea/index.php"', self.browser)
+        self.assertIn("path_valid = path_directory_root or path_index_php", self.browser)
+
+        for route, expected_directory_root, expected_index_php in (
+            ("/admin-kuranea/?controller=AdminBusinessProfileTransfers&token=opaque", True, False),
+            ("/admin-kuranea/index.php?controller=AdminBusinessProfileTransfers&token=opaque", False, True),
+        ):
+            checks = {key: True for key in module.LIMITED_ROUTE_CHECK_KEYS}
+            checks.update({
+                "route_path_directory_root": expected_directory_root,
+                "route_path_index_php": expected_index_php,
+            })
+            payload = {"status": "success", "failure_stage": "none", "checks": checks, "route": route}
+            diagnostics: dict[str, object] = {}
+            with patch.object(module, "docker_php_json", return_value=payload):
+                url, token = module.limited_transfer_route(
+                    {"admin": "http://localhost:18080/admin-kuranea", "view_email": "opaque@example.invalid"},
+                    diagnostics=diagnostics,
+                )
+            self.assertEqual(expected_directory_root, diagnostics["limited_route_path_directory_root"])
+            self.assertEqual(expected_index_php, diagnostics["limited_route_path_index_php"])
+            self.assertTrue(diagnostics["limited_route_path_valid"])
+            self.assertEqual("opaque", token)
+            self.assertEqual(route.split("?", 1)[0], module.urlparse(url).path)
+            self.assertEqual(route.split("?", 1)[1], module.urlparse(url).query)
+            self.assertNotIn("opaque@example.invalid", str(diagnostics))
+
+        for route, expected_path_valid in (
+            ("/admin-kuranea/other/index.php?controller=AdminBusinessProfileTransfers&token=opaque", False),
+            ("/admin-kuranea/index.php/extra?controller=AdminBusinessProfileTransfers&token=opaque", False),
+            ("/admin-kuranea/?controller=AdminBusinessProfileTransfers&token=opaque&controller=AdminBusinessProfileTransfers", True),
+            ("/admin-kuranea/?controller=AdminBusinessProfileTransfers&token=", True),
+        ):
+            checks = {key: True for key in module.LIMITED_ROUTE_CHECK_KEYS}
+            # Keep the helper's route check at success so this layer's own URL
+            # validation rejects the independently supplied malformed route.
+            checks.update({"route_path_directory_root": True, "route_path_index_php": False})
+            payload = {"status": "success", "failure_stage": "none", "checks": checks, "route": route}
+            diagnostics: dict[str, object] = {}
+            with patch.object(module, "docker_php_json", return_value=payload):
+                with self.assertRaisesRegex(RuntimeError, "exact expected Back Office route"):
+                    module.limited_transfer_route(
+                        {"admin": "http://localhost:18080/admin-kuranea", "view_email": "opaque@example.invalid"},
+                        diagnostics=diagnostics,
+                    )
+            self.assertEqual(expected_path_valid, diagnostics["limited_route_path_valid"])
+
+        self.assertIn("$checks['route_path_directory_root'] = $path === '/admin-kuranea/'", self.limited_route)
+        self.assertIn("$checks['route_path_index_php'] = $path === '/admin-kuranea/index.php'", self.limited_route)
+        self.assertIn("getAdminLink('AdminBusinessProfileTransfers')", self.limited_route)
+        self.assertIn("$checks['route_controller_valid'] = $controllerValues === 'AdminBusinessProfileTransfers'", self.limited_route)
+        self.assertNotIn("getAdminLink('AdminBusinessProfileTransfers', false)", self.limited_route)
 
     def test_limited_route_helper_emits_only_allowlisted_stage_and_boolean_failure_evidence(self) -> None:
         module = self.load_browser_module()

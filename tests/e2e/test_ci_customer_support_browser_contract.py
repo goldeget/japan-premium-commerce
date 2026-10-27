@@ -278,6 +278,111 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             with self.subTest(candidate=candidate):
                 self.assertIsNone(module.thread_route_identity(candidate, admin))
 
+    def test_public_reply_email_link_validation_uses_native_locale_fixture(self):
+        module = load_script()
+        shop = "http://localhost:18080"
+        token = "AbC123xYz890"
+        href = f"{shop}/ja/special-contact?id_customer_thread=47&token={token}"
+        message = {"HTML": f'<a href="{href}">reply</a>', "Text": ""}
+        diagnostic = {
+            "browser_substage": "admin_public_reply_email_content_readback",
+            "admin_public_reply_link_present": False,
+            "admin_public_reply_link_route_valid": False,
+        }
+
+        accepted = module.thread_link_from_email(
+            message, shop, 47, locale="ja", localized_rewrite="special-contact",
+            diagnostic_result=diagnostic,
+        )
+        self.assertEqual(href, accepted)
+        self.assertTrue(diagnostic["admin_public_reply_link_present"])
+        self.assertTrue(diagnostic["admin_public_reply_link_route_valid"])
+        self.assertEqual("admin_public_reply_link_validation", diagnostic["browser_substage"])
+
+        # A legitimate locale-specific rewrite must not fail under the generic slug allowlist.
+        with self.assertRaises(ValueError):
+            module.thread_link_from_email(message, shop, 47)
+
+        for body, expected_present in (
+            ({"HTML": '<a href="https://outside.example/contact">reply</a>', "Text": ""}, True),
+            ({"HTML": "<p>reply without an href</p>", "Text": ""}, False),
+        ):
+            safe = {
+                "browser_substage": "admin_public_reply_email_content_readback",
+                "admin_public_reply_link_present": False,
+                "admin_public_reply_link_route_valid": False,
+            }
+            with self.assertRaises(ValueError):
+                module.thread_link_from_email(
+                    body, shop, 47, locale="ja", localized_rewrite="special-contact",
+                    diagnostic_result=safe,
+                )
+            self.assertEqual(expected_present, safe["admin_public_reply_link_present"])
+            self.assertFalse(safe["admin_public_reply_link_route_valid"])
+
+    def test_public_reply_mailbox_diagnostics_keep_exact_identity_private(self):
+        module = load_script()
+        summary = {"ID": "mailpit-id-sentinel", "To": [{"Address": "buyer@example.invalid"}]}
+        detail = {"Subject": "reply #ct47 #tcAbC123xYz890"}
+
+        def fake_mailpit_json(url):
+            if url.endswith("/api/v1/messages?start=0&limit=100"):
+                return {"messages": [summary]}
+            return detail
+
+        module.mailpit_json = fake_mailpit_json
+        diagnostic = {
+            "browser_substage": "admin_public_reply_mailbox_poll",
+            "admin_public_reply_mailbox_received": False,
+            "admin_public_reply_subject_identity_valid": False,
+            "admin_public_reply_thread_id_matches": False,
+            "admin_public_reply_token_valid": False,
+        }
+        thread_id, thread_token, _mail = module.wait_for_thread_email(
+            "http://localhost:8025", "buyer@example.invalid", set(),
+            diagnostic_result=diagnostic, expected_thread_id=47,
+        )
+        self.assertEqual((47, "AbC123xYz890"), (thread_id, thread_token))
+        self.assertTrue(diagnostic["admin_public_reply_mailbox_received"])
+        self.assertTrue(diagnostic["admin_public_reply_subject_identity_valid"])
+        self.assertTrue(diagnostic["admin_public_reply_thread_id_matches"])
+        self.assertTrue(diagnostic["admin_public_reply_token_valid"])
+        self.assertEqual("admin_public_reply_thread_id_readback", diagnostic["browser_substage"])
+
+        wrong_thread_diagnostic = dict(diagnostic, admin_public_reply_thread_id_matches=False)
+        thread_id, _thread_token, _mail = module.wait_for_thread_email(
+            "http://localhost:8025", "buyer@example.invalid", set(),
+            diagnostic_result=wrong_thread_diagnostic, expected_thread_id=48,
+        )
+        self.assertEqual(47, thread_id)
+        self.assertFalse(wrong_thread_diagnostic["admin_public_reply_thread_id_matches"])
+        self.assertNotIn("email", diagnostic)
+        self.assertNotIn("thread_token", diagnostic)
+        self.assertNotIn("message_id", diagnostic)
+
+        malformed = dict(detail, Subject="reply with an invalid thread marker")
+        module.mailpit_json = lambda url: (
+            {"messages": [summary]} if url.endswith("/api/v1/messages?start=0&limit=100") else malformed
+        )
+        clock = iter((0.0, 0.0, 2.0))
+        module.time = SimpleNamespace(monotonic=lambda: next(clock), sleep=lambda _seconds: None)
+        invalid_diagnostic = {
+            "browser_substage": "admin_public_reply_mailbox_poll",
+            "admin_public_reply_mailbox_received": False,
+            "admin_public_reply_subject_identity_valid": False,
+            "admin_public_reply_thread_id_matches": False,
+            "admin_public_reply_token_valid": False,
+        }
+        with self.assertRaises(TimeoutError):
+            module.wait_for_thread_email(
+                "http://localhost:8025", "buyer@example.invalid", set(), timeout_seconds=1,
+                diagnostic_result=invalid_diagnostic, expected_thread_id=47,
+            )
+        self.assertTrue(invalid_diagnostic["admin_public_reply_mailbox_received"])
+        self.assertFalse(invalid_diagnostic["admin_public_reply_subject_identity_valid"])
+        self.assertFalse(invalid_diagnostic["admin_public_reply_token_valid"])
+        self.assertEqual("admin_public_reply_subject_identity_readback", invalid_diagnostic["browser_substage"])
+
     def test_order_association_uses_exact_native_route_specific_evidence(self):
         module = load_script()
         module.By = SimpleNamespace(CSS_SELECTOR="a[href]")
@@ -485,6 +590,15 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 "attachment_admin_readback": True, "private_note_admin_only": True,
                 "status_close_reopen": True, "admin_public_reply": True,
                 "admin_public_reply_persisted": True,
+                "admin_public_reply_mailbox_received": True,
+                "admin_public_reply_subject_identity_valid": True,
+                "admin_public_reply_thread_id_matches": True,
+                "admin_public_reply_token_valid": True,
+                "admin_public_reply_email_marker_present": True,
+                "admin_public_reply_private_note_absent": True,
+                "admin_public_reply_link_present": True,
+                "admin_public_reply_link_route_valid": True,
+                "admin_public_reply_link_token_matches": True,
                 "customer_followup_same_thread": True, "foreign_customer_denied": True,
                 "limited_employee_denied": True, "mailpit_provider": "isolated_only",
                 "paid": False, "payment_provider_called": False, "assignment_created": True,
@@ -1077,13 +1191,16 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
     def test_public_reply_run_stages_native_lookup_submit_and_email_readback(self):
         browser = SCRIPT.read_text(encoding="utf-8")
         start = browser.index('stage = result["stage"] = "admin_public_reply"')
-        end = browser.index("if reply_thread_id != first_thread_id:", start)
+        end = browser.index('stage = result["stage"] = "customer_followup"', start)
         run = browser[start:end]
         stages = (
             'mark_browser_substage(result, "admin_public_reply_form_lookup")',
             "customer_thread_reply_form(",
             "submit_public_reply_once(",
-            'mark_browser_substage(result, "admin_public_reply_email_readback")',
+            'mark_browser_substage(result, "admin_public_reply_mailbox_poll")',
+            "diagnostic_result=result, expected_thread_id=first_thread_id",
+            'mark_browser_substage(result, "admin_public_reply_email_content_readback")',
+            'localized_rewrite=ctx.contact_route_metadata["localized_rewrite_by_iso"]["ja"]',
         )
         positions = [run.index(stage) for stage in stages]
         self.assertEqual(sorted(positions), positions)

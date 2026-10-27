@@ -71,6 +71,11 @@ SAFE_RESULT_KEYS = {
     "image_attachment_admin_readback", "image_attachment_foreign_denied", "disallowed_attachment_rejected",
     "foreign_valid_thread_denied", "foreign_orderless_post_denied", "orderless_thread_unchanged",
     "admin_public_reply_persisted",
+    "admin_public_reply_mailbox_received", "admin_public_reply_subject_identity_valid",
+    "admin_public_reply_thread_id_matches", "admin_public_reply_token_valid",
+    "admin_public_reply_email_marker_present", "admin_public_reply_private_note_absent",
+    "admin_public_reply_link_present", "admin_public_reply_link_route_valid",
+    "admin_public_reply_link_token_matches",
     "contact_document_status", "contact_same_origin", "contact_native_route",
     "contact_form_count", "contact_form_visible", "support_denial_status",
     "support_denial_form_count", "support_denial_redirected", "support_denial_same_origin",
@@ -104,7 +109,9 @@ SAFE_BROWSER_SUBSTAGES = {
     "status_action_lookup", "status_action_click", "status_action_readback",
     "admin_public_reply_form_lookup", "admin_public_reply_form_fill",
     "admin_public_reply_submit", "admin_public_reply_readback",
-    "admin_public_reply_email_readback",
+    "admin_public_reply_mailbox_poll", "admin_public_reply_subject_identity_readback",
+    "admin_public_reply_thread_id_readback", "admin_public_reply_email_content_readback",
+    "admin_public_reply_link_validation", "admin_public_reply_link_token_readback",
     "contact_field_lookup", "contact_id_readback", "attachment_control_lookup", "attachment_send_keys",
     "accepted_attachment_fixture_validation", "accepted_attachment_file_readback", "message_field_lookup",
     "message_send_keys", "submit_control_lookup", "submit_control_scroll", "submit_control_hit_test",
@@ -522,7 +529,8 @@ def mail_ids(mailpit_url: str) -> set[str]:
 
 
 def wait_for_thread_email(
-    mailpit_url: str, expected_recipient: str, previous_ids: set[str], timeout_seconds: int = 45
+    mailpit_url: str, expected_recipient: str, previous_ids: set[str], timeout_seconds: int = 45,
+    *, diagnostic_result: dict[str, Any] | None = None, expected_thread_id: int | None = None,
 ) -> tuple[int, str, dict[str, Any]]:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
@@ -534,9 +542,21 @@ def wait_for_thread_email(
                 message_id = summary.get("ID") or summary.get("Id")
                 if not isinstance(message_id, str) or message_id in previous_ids or expected_recipient.lower() not in recipients(summary):
                     continue
+                if diagnostic_result is not None:
+                    diagnostic_result["admin_public_reply_mailbox_received"] = True
+                    mark_browser_substage(diagnostic_result, "admin_public_reply_subject_identity_readback")
                 detail = mailpit_json(f"{mailpit_url}/api/v1/message/{message_id}")
                 identity = parse_thread_email_subject(detail.get("Subject"))
                 if identity:
+                    if diagnostic_result is not None:
+                        diagnostic_result["admin_public_reply_subject_identity_valid"] = True
+                        diagnostic_result["admin_public_reply_thread_id_matches"] = (
+                            expected_thread_id is None or identity[0] == expected_thread_id
+                        )
+                        diagnostic_result["admin_public_reply_token_valid"] = (
+                            re.fullmatch(r"[A-Za-z0-9]{12}", identity[1]) is not None
+                        )
+                        mark_browser_substage(diagnostic_result, "admin_public_reply_thread_id_readback")
                     return identity[0], identity[1], detail
         except (OSError, URLError, ValueError, json.JSONDecodeError):
             pass
@@ -544,7 +564,14 @@ def wait_for_thread_email(
     raise TimeoutError("the isolated customer-thread email did not arrive in Mailpit")
 
 
-def thread_link_from_email(message: dict[str, Any], shop_url: str, expected_thread_id: int) -> str:
+def thread_link_from_email(
+    message: dict[str, Any], shop_url: str, expected_thread_id: int, *,
+    locale: str | None = None, localized_rewrite: str | None = None,
+    diagnostic_result: dict[str, Any] | None = None,
+) -> str:
+    # Pinned PrestaShop 9.2 legacy and modern reply handlers pass `{link}` from
+    # native getPageLink('contact'); their reply_msg templates render that link.
+    # Validate it against the already-read locale fixture instead of synthesizing a route.
     parser = MessageLinks()
     html_body = message.get("HTML")
     if isinstance(html_body, str):
@@ -553,9 +580,17 @@ def thread_link_from_email(message: dict[str, Any], shop_url: str, expected_thre
     text_body = message.get("Text")
     if isinstance(text_body, str):
         candidates.extend(re.findall(r"https?://[^\s<>\"']+", text_body))
+    if diagnostic_result is not None:
+        mark_browser_substage(diagnostic_result, "admin_public_reply_link_validation")
+        diagnostic_result["admin_public_reply_link_present"] = bool(candidates)
     for candidate in candidates:
         candidate = candidate.strip().rstrip(".,);]")
-        if validate_customer_thread_url(candidate, shop_url, expected_thread_id):
+        if validate_customer_thread_url(
+            candidate, shop_url, expected_thread_id,
+            locale=locale, localized_rewrite=localized_rewrite,
+        ):
+            if diagnostic_result is not None:
+                diagnostic_result["admin_public_reply_link_route_valid"] = True
             return urljoin(shop_url.rstrip("/") + "/", candidate)
     raise ValueError("the native customer reply email did not contain a valid same-shop thread link")
 
@@ -1613,6 +1648,15 @@ def run() -> None:
         "attachment_admin_readback": False, "private_note_admin_only": False,
         "status_close_reopen": False, "admin_public_reply": False,
         "admin_public_reply_persisted": False,
+        "admin_public_reply_mailbox_received": False,
+        "admin_public_reply_subject_identity_valid": False,
+        "admin_public_reply_thread_id_matches": False,
+        "admin_public_reply_token_valid": False,
+        "admin_public_reply_email_marker_present": False,
+        "admin_public_reply_private_note_absent": False,
+        "admin_public_reply_link_present": False,
+        "admin_public_reply_link_route_valid": False,
+        "admin_public_reply_link_token_matches": False,
         "customer_followup_same_thread": False, "foreign_customer_denied": False,
         "limited_employee_denied": False, "mailpit_provider": "isolated_only",
         "paid": False, "payment_provider_called": False, "assignment_created": False,
@@ -1874,18 +1918,32 @@ def run() -> None:
             thread_route_kind, thread_id, ctx.admin, result,
         )
         stage = result["stage"] = "mailpit_public_reply"
-        mark_browser_substage(result, "admin_public_reply_email_readback")
-        reply_thread_id, reply_token, reply_message = wait_for_thread_email(ctx.mailpit, ctx.buyer["email"], before_reply)
+        mark_browser_substage(result, "admin_public_reply_mailbox_poll")
+        reply_thread_id, reply_token, reply_message = wait_for_thread_email(
+            ctx.mailpit, ctx.buyer["email"], before_reply,
+            diagnostic_result=result, expected_thread_id=first_thread_id,
+        )
+        mark_browser_substage(result, "admin_public_reply_thread_id_readback")
         if reply_thread_id != first_thread_id:
             raise AssertionError("native admin reply email did not retain the original thread identity")
+        mark_browser_substage(result, "admin_public_reply_email_content_readback")
         reply_body = str(reply_message.get("HTML") or "") + str(reply_message.get("Text") or "")
-        if reply_marker not in reply_body:
+        result["admin_public_reply_email_marker_present"] = reply_marker in reply_body
+        if not result["admin_public_reply_email_marker_present"]:
             raise AssertionError("the customer-facing native reply email did not contain its public reply")
-        if private_marker in reply_body:
+        result["admin_public_reply_private_note_absent"] = private_marker not in reply_body
+        if not result["admin_public_reply_private_note_absent"]:
             raise AssertionError("the customer-facing reply email exposed an administrator-only note")
-        customer_reply_url = thread_link_from_email(reply_message, ctx.shop, first_thread_id)
+        customer_reply_url = thread_link_from_email(
+            reply_message, ctx.shop, first_thread_id,
+            locale="ja",
+            localized_rewrite=ctx.contact_route_metadata["localized_rewrite_by_iso"]["ja"],
+            diagnostic_result=result,
+        )
+        mark_browser_substage(result, "admin_public_reply_link_token_readback")
         query = parse_qs(urlparse(customer_reply_url).query)
-        if query.get("token") != [reply_token]:
+        result["admin_public_reply_link_token_matches"] = query.get("token") == [reply_token]
+        if not result["admin_public_reply_link_token_matches"]:
             raise AssertionError("native admin reply link and message identity disagree")
         result["admin_public_reply"] = True
 
@@ -2014,6 +2072,15 @@ def run() -> None:
             f"admin_thread_message_marker_present={str(result['admin_thread_message_marker_present']).lower()}; "
             f"admin_thread_order_association_present={str(result['admin_thread_order_association_present']).lower()}; "
             f"admin_public_reply_persisted={str(result['admin_public_reply_persisted']).lower()}; "
+            f"admin_public_reply_mailbox_received={str(result['admin_public_reply_mailbox_received']).lower()}; "
+            f"admin_public_reply_subject_identity_valid={str(result['admin_public_reply_subject_identity_valid']).lower()}; "
+            f"admin_public_reply_thread_id_matches={str(result['admin_public_reply_thread_id_matches']).lower()}; "
+            f"admin_public_reply_token_valid={str(result['admin_public_reply_token_valid']).lower()}; "
+            f"admin_public_reply_email_marker_present={str(result['admin_public_reply_email_marker_present']).lower()}; "
+            f"admin_public_reply_private_note_absent={str(result['admin_public_reply_private_note_absent']).lower()}; "
+            f"admin_public_reply_link_present={str(result['admin_public_reply_link_present']).lower()}; "
+            f"admin_public_reply_link_route_valid={str(result['admin_public_reply_link_route_valid']).lower()}; "
+            f"admin_public_reply_link_token_matches={str(result['admin_public_reply_link_token_matches']).lower()}; "
             f"same_origin={str(result['contact_same_origin']).lower()}; "
             f"native_route={str(result['contact_native_route']).lower()}; "
             f"form_count={result['contact_form_count']}; "

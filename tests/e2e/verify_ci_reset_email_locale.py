@@ -46,6 +46,9 @@ SAFE_MESSAGE_CHECKS = {
     'reset_link_path_mismatch', 'parts_credentials_mismatch',
     'html_reset_link_missing', 'text_reset_link_missing', 'raw_message_unavailable',
     'pre_smtp_text_getter_readback_missing', 'pre_smtp_text_mime_link_missing',
+    'pre_smtp_text_message_api_unexpected', 'pre_smtp_text_setter_receiver_mismatch',
+    'pre_smtp_text_getter_type_unexpected', 'pre_smtp_text_mime_body_unavailable',
+    'pre_smtp_plain_text_part_missing',
     'html_mime_part_missing', 'html_mime_part_ambiguous',
     'text_mime_part_missing', 'text_mime_part_ambiguous', 'mime_part_decode_failed',
 }
@@ -165,6 +168,11 @@ def write_diagnostics(result: dict) -> None:
             'raw_text_native_link_shape', 'mailpit_preview_text_native_link_shape',
             'mailpit_preview_text_shape_match', 'pre_smtp_html_native_link_shape',
             'pre_smtp_text_native_link_shape', 'pre_smtp_text_mime_native_link_shape',
+            'pre_smtp_message_is_symfony_email', 'pre_smtp_text_setter_returned_same_message',
+            'pre_smtp_text_getter_returned_string', 'pre_smtp_text_mime_body_read_succeeded',
+            'pre_smtp_text_mime_body_identity_same_after_setter',
+            'pre_smtp_text_mime_body_reset_retry_attempted',
+            'pre_smtp_text_mime_body_changed_after_reset', 'pre_smtp_text_plain_part_present',
             'pre_smtp_reset_url_candidate_found',
             'pre_smtp_reset_template_context_recognized',
             'pre_smtp_template_url_candidate_present', 'pre_smtp_template_url_credentials_complete',
@@ -194,6 +202,11 @@ def write_diagnostics(result: dict) -> None:
                 'raw_text_native_link_shape', 'mailpit_preview_text_native_link_shape',
                 'mailpit_preview_text_shape_match', 'pre_smtp_html_native_link_shape',
                 'pre_smtp_text_native_link_shape', 'pre_smtp_text_mime_native_link_shape',
+                'pre_smtp_message_is_symfony_email', 'pre_smtp_text_setter_returned_same_message',
+                'pre_smtp_text_getter_returned_string', 'pre_smtp_text_mime_body_read_succeeded',
+                'pre_smtp_text_mime_body_identity_same_after_setter',
+                'pre_smtp_text_mime_body_reset_retry_attempted',
+                'pre_smtp_text_mime_body_changed_after_reset', 'pre_smtp_text_plain_part_present',
                 'pre_smtp_reset_url_candidate_found',
                 'pre_smtp_reset_template_context_recognized',
                 'pre_smtp_template_url_candidate_present', 'pre_smtp_template_url_credentials_complete',
@@ -328,6 +341,14 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
         'pre_smtp_html_native_link_shape': None,
         'pre_smtp_text_native_link_shape': None,
         'pre_smtp_text_mime_native_link_shape': None,
+        'pre_smtp_message_is_symfony_email': None,
+        'pre_smtp_text_setter_returned_same_message': None,
+        'pre_smtp_text_getter_returned_string': None,
+        'pre_smtp_text_mime_body_read_succeeded': None,
+        'pre_smtp_text_mime_body_identity_same_after_setter': None,
+        'pre_smtp_text_mime_body_reset_retry_attempted': None,
+        'pre_smtp_text_mime_body_changed_after_reset': None,
+        'pre_smtp_text_plain_part_present': None,
         'pre_smtp_reset_url_candidate_found': None,
         'pre_smtp_reset_template_context_recognized': None,
         'pre_smtp_template_url_candidate_present': None,
@@ -352,6 +373,14 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
         ('X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link', 'pre_smtp_html_native_link_shape'),
         ('X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link', 'pre_smtp_text_native_link_shape'),
         ('X-ORDENOWA-CI-Pre-SMTP-Text-Mime-Native-Reset-Link', 'pre_smtp_text_mime_native_link_shape'),
+        ('X-ORDENOWA-CI-Reset-Symfony-Email-Object', 'pre_smtp_message_is_symfony_email'),
+        ('X-ORDENOWA-CI-Reset-Text-Setter-Returned-Same-Message', 'pre_smtp_text_setter_returned_same_message'),
+        ('X-ORDENOWA-CI-Reset-Text-Getter-Returned-String', 'pre_smtp_text_getter_returned_string'),
+        ('X-ORDENOWA-CI-Reset-Text-Mime-Body-Read-Succeeded', 'pre_smtp_text_mime_body_read_succeeded'),
+        ('X-ORDENOWA-CI-Reset-Text-Mime-Body-Identity-Same-After-Setter', 'pre_smtp_text_mime_body_identity_same_after_setter'),
+        ('X-ORDENOWA-CI-Reset-Text-Mime-Body-Reset-Retry-Attempted', 'pre_smtp_text_mime_body_reset_retry_attempted'),
+        ('X-ORDENOWA-CI-Reset-Text-Mime-Body-Changed-After-Reset', 'pre_smtp_text_mime_body_changed_after_reset'),
+        ('X-ORDENOWA-CI-Reset-Text-Plain-Part-Present', 'pre_smtp_text_plain_part_present'),
         ('X-ORDENOWA-CI-Reset-URL-Candidate-Found', 'pre_smtp_reset_url_candidate_found'),
         ('X-ORDENOWA-CI-Reset-Template-Context-Recognized', 'pre_smtp_reset_template_context_recognized'),
         ('X-ORDENOWA-CI-Reset-Template-URL-Candidate-Present', 'pre_smtp_template_url_candidate_present'),
@@ -449,6 +478,17 @@ def assert_message(message: dict, language: str, base: str, reset_path: str,
 
 
 def assert_pre_smtp_text_mutation(diagnostic: dict) -> None:
+    if diagnostic.get('pre_smtp_message_is_symfony_email') is not True:
+        raise MessageValidationError('pre_smtp_text_message_api_unexpected')
+    if (diagnostic.get('pre_smtp_text_setter_invoked') is True
+            and diagnostic.get('pre_smtp_text_setter_returned_same_message') is not True):
+        raise MessageValidationError('pre_smtp_text_setter_receiver_mismatch')
+    if diagnostic.get('pre_smtp_text_getter_returned_string') is not True:
+        raise MessageValidationError('pre_smtp_text_getter_type_unexpected')
+    if diagnostic.get('pre_smtp_text_mime_body_read_succeeded') is not True:
+        raise MessageValidationError('pre_smtp_text_mime_body_unavailable')
+    if diagnostic.get('pre_smtp_text_plain_part_present') is not True:
+        raise MessageValidationError('pre_smtp_plain_text_part_missing')
     if diagnostic.get('pre_smtp_text_native_link_shape') is not True:
         raise MessageValidationError('pre_smtp_text_getter_readback_missing')
     if diagnostic.get('pre_smtp_text_mime_native_link_shape') is not True:
@@ -659,6 +699,14 @@ def run() -> bool:
         'pre_smtp_html_native_link_shape': None,
         'pre_smtp_text_native_link_shape': None,
         'pre_smtp_text_mime_native_link_shape': None,
+        'pre_smtp_message_is_symfony_email': None,
+        'pre_smtp_text_setter_returned_same_message': None,
+        'pre_smtp_text_getter_returned_string': None,
+        'pre_smtp_text_mime_body_read_succeeded': None,
+        'pre_smtp_text_mime_body_identity_same_after_setter': None,
+        'pre_smtp_text_mime_body_reset_retry_attempted': None,
+        'pre_smtp_text_mime_body_changed_after_reset': None,
+        'pre_smtp_text_plain_part_present': None,
         'pre_smtp_reset_url_candidate_found': None,
         'pre_smtp_reset_template_context_recognized': None,
         'pre_smtp_template_url_candidate_present': None,
@@ -701,6 +749,14 @@ def run() -> bool:
                               pre_smtp_html_native_link_shape=None,
                               pre_smtp_text_native_link_shape=None,
                               pre_smtp_text_mime_native_link_shape=None,
+                              pre_smtp_message_is_symfony_email=None,
+                              pre_smtp_text_setter_returned_same_message=None,
+                              pre_smtp_text_getter_returned_string=None,
+                              pre_smtp_text_mime_body_read_succeeded=None,
+                              pre_smtp_text_mime_body_identity_same_after_setter=None,
+                              pre_smtp_text_mime_body_reset_retry_attempted=None,
+                              pre_smtp_text_mime_body_changed_after_reset=None,
+                              pre_smtp_text_plain_part_present=None,
                               pre_smtp_reset_url_candidate_found=None,
                               pre_smtp_reset_template_context_recognized=None,
                               pre_smtp_template_url_candidate_present=None,
@@ -825,6 +881,14 @@ def run() -> bool:
                 f'pre_smtp_html_native_link={str(diagnostic["pre_smtp_html_native_link_shape"]).lower()}; '
                 f'pre_smtp_text_native_link={str(diagnostic["pre_smtp_text_native_link_shape"]).lower()}; '
                 f'pre_smtp_text_mime_link={str(diagnostic["pre_smtp_text_mime_native_link_shape"]).lower()}; '
+                f'pre_smtp_email_object={str(diagnostic["pre_smtp_message_is_symfony_email"]).lower()}; '
+                f'pre_smtp_setter_same_object={str(diagnostic["pre_smtp_text_setter_returned_same_message"]).lower()}; '
+                f'pre_smtp_getter_string={str(diagnostic["pre_smtp_text_getter_returned_string"]).lower()}; '
+                f'pre_smtp_mime_body_read={str(diagnostic["pre_smtp_text_mime_body_read_succeeded"]).lower()}; '
+                f'pre_smtp_body_same_after_setter={str(diagnostic["pre_smtp_text_mime_body_identity_same_after_setter"]).lower()}; '
+                f'pre_smtp_body_reset_retry={str(diagnostic["pre_smtp_text_mime_body_reset_retry_attempted"]).lower()}; '
+                f'pre_smtp_body_changed_after_reset={str(diagnostic["pre_smtp_text_mime_body_changed_after_reset"]).lower()}; '
+                f'pre_smtp_plain_part={str(diagnostic["pre_smtp_text_plain_part_present"]).lower()}; '
                 f'pre_smtp_url_candidate={str(diagnostic["pre_smtp_reset_url_candidate_found"]).lower()}; '
                 f'pre_smtp_reset_template_context={str(diagnostic["pre_smtp_reset_template_context_recognized"]).lower()}; '
                 f'pre_smtp_template_url={str(diagnostic["pre_smtp_template_url_candidate_present"]).lower()}; '
@@ -862,6 +926,14 @@ def run() -> bool:
             f'pre_smtp_html_native_link={str(diagnostic["pre_smtp_html_native_link_shape"]).lower()}; '
             f'pre_smtp_text_native_link={str(diagnostic["pre_smtp_text_native_link_shape"]).lower()}; '
             f'pre_smtp_text_mime_link={str(diagnostic["pre_smtp_text_mime_native_link_shape"]).lower()}; '
+            f'pre_smtp_email_object={str(diagnostic["pre_smtp_message_is_symfony_email"]).lower()}; '
+            f'pre_smtp_setter_same_object={str(diagnostic["pre_smtp_text_setter_returned_same_message"]).lower()}; '
+            f'pre_smtp_getter_string={str(diagnostic["pre_smtp_text_getter_returned_string"]).lower()}; '
+            f'pre_smtp_mime_body_read={str(diagnostic["pre_smtp_text_mime_body_read_succeeded"]).lower()}; '
+            f'pre_smtp_body_same_after_setter={str(diagnostic["pre_smtp_text_mime_body_identity_same_after_setter"]).lower()}; '
+            f'pre_smtp_body_reset_retry={str(diagnostic["pre_smtp_text_mime_body_reset_retry_attempted"]).lower()}; '
+            f'pre_smtp_body_changed_after_reset={str(diagnostic["pre_smtp_text_mime_body_changed_after_reset"]).lower()}; '
+            f'pre_smtp_plain_part={str(diagnostic["pre_smtp_text_plain_part_present"]).lower()}; '
             f'pre_smtp_url_candidate={str(diagnostic["pre_smtp_reset_url_candidate_found"]).lower()}; '
             f'pre_smtp_reset_template_context={str(diagnostic["pre_smtp_reset_template_context_recognized"]).lower()}; '
             f'pre_smtp_template_url={str(diagnostic["pre_smtp_template_url_candidate_present"]).lower()}; '

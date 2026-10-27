@@ -98,6 +98,14 @@ class ResetEmailLocaleContract(unittest.TestCase):
         mail['X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link'] = 'true'
         mail['X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link'] = 'false'
         mail['X-ORDENOWA-CI-Pre-SMTP-Text-Mime-Native-Reset-Link'] = 'false'
+        mail['X-ORDENOWA-CI-Reset-Symfony-Email-Object'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-Text-Setter-Returned-Same-Message'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-Text-Getter-Returned-String'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-Text-Mime-Body-Read-Succeeded'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-Text-Mime-Body-Identity-Same-After-Setter'] = 'false'
+        mail['X-ORDENOWA-CI-Reset-Text-Mime-Body-Reset-Retry-Attempted'] = 'false'
+        mail['X-ORDENOWA-CI-Reset-Text-Mime-Body-Changed-After-Reset'] = 'false'
+        mail['X-ORDENOWA-CI-Reset-Text-Plain-Part-Present'] = 'true'
         mail['X-ORDENOWA-CI-Reset-URL-Candidate-Found'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Template-Context-Recognized'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Template-URL-Candidate-Present'] = 'true'
@@ -120,6 +128,14 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'pre_smtp_html_native_link_shape': True,
             'pre_smtp_text_native_link_shape': False,
             'pre_smtp_text_mime_native_link_shape': False,
+            'pre_smtp_message_is_symfony_email': True,
+            'pre_smtp_text_setter_returned_same_message': True,
+            'pre_smtp_text_getter_returned_string': True,
+            'pre_smtp_text_mime_body_read_succeeded': True,
+            'pre_smtp_text_mime_body_identity_same_after_setter': False,
+            'pre_smtp_text_mime_body_reset_retry_attempted': False,
+            'pre_smtp_text_mime_body_changed_after_reset': False,
+            'pre_smtp_text_plain_part_present': True,
             'pre_smtp_reset_url_candidate_found': True,
             'pre_smtp_reset_template_context_recognized': True,
             'pre_smtp_template_url_candidate_present': True,
@@ -149,17 +165,25 @@ class ResetEmailLocaleContract(unittest.TestCase):
 
     def test_acceptance_requires_immediate_getter_and_mime_text_readback(self):
         module = self.module()
-        module.assert_pre_smtp_text_mutation({
+        healthy = {
+            'pre_smtp_message_is_symfony_email': True,
+            'pre_smtp_text_setter_invoked': True,
+            'pre_smtp_text_setter_returned_same_message': True,
+            'pre_smtp_text_getter_returned_string': True,
+            'pre_smtp_text_mime_body_read_succeeded': True,
+            'pre_smtp_text_plain_part_present': True,
             'pre_smtp_text_native_link_shape': True,
             'pre_smtp_text_mime_native_link_shape': True,
-        })
+        }
+        module.assert_pre_smtp_text_mutation(healthy)
         for diagnostic, check in (
-            ({'pre_smtp_text_native_link_shape': False,
-              'pre_smtp_text_mime_native_link_shape': True}, 'pre_smtp_text_getter_readback_missing'),
-            ({'pre_smtp_text_native_link_shape': True,
-              'pre_smtp_text_mime_native_link_shape': False}, 'pre_smtp_text_mime_link_missing'),
-            ({'pre_smtp_text_native_link_shape': None,
-              'pre_smtp_text_mime_native_link_shape': True}, 'pre_smtp_text_getter_readback_missing'),
+            (dict(healthy, pre_smtp_text_native_link_shape=False), 'pre_smtp_text_getter_readback_missing'),
+            (dict(healthy, pre_smtp_text_mime_native_link_shape=False), 'pre_smtp_text_mime_link_missing'),
+            (dict(healthy, pre_smtp_message_is_symfony_email=False), 'pre_smtp_text_message_api_unexpected'),
+            (dict(healthy, pre_smtp_text_setter_returned_same_message=False), 'pre_smtp_text_setter_receiver_mismatch'),
+            (dict(healthy, pre_smtp_text_getter_returned_string=False), 'pre_smtp_text_getter_type_unexpected'),
+            (dict(healthy, pre_smtp_text_mime_body_read_succeeded=False), 'pre_smtp_text_mime_body_unavailable'),
+            (dict(healthy, pre_smtp_text_plain_part_present=False), 'pre_smtp_plain_text_part_missing'),
         ):
             with self.assertRaises(module.MessageValidationError) as caught:
                 module.assert_pre_smtp_text_mutation(diagnostic)
@@ -397,6 +421,10 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'mailpit_preview_text_shape_match=none; '
             'pre_smtp_html_native_link=none; pre_smtp_text_native_link=none; '
             'pre_smtp_text_mime_link=none; '
+            'pre_smtp_email_object=none; pre_smtp_setter_same_object=none; '
+            'pre_smtp_getter_string=none; pre_smtp_mime_body_read=none; '
+            'pre_smtp_body_same_after_setter=none; pre_smtp_body_reset_retry=none; '
+            'pre_smtp_body_changed_after_reset=none; pre_smtp_plain_part=none; '
             'pre_smtp_url_candidate=none; pre_smtp_reset_template_context=none; '
             'pre_smtp_template_url=none; pre_smtp_template_credentials=none; pre_smtp_template_route=none; '
             'pre_smtp_html_candidate=none; pre_smtp_html_credentials=none/none/none; '
@@ -426,6 +454,14 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 "pre_smtp_html_native_link_shape": None,
                 "pre_smtp_text_native_link_shape": None,
                 "pre_smtp_text_mime_native_link_shape": None,
+                "pre_smtp_message_is_symfony_email": None,
+                "pre_smtp_text_setter_returned_same_message": None,
+                "pre_smtp_text_getter_returned_string": None,
+                "pre_smtp_text_mime_body_read_succeeded": None,
+                "pre_smtp_text_mime_body_identity_same_after_setter": None,
+                "pre_smtp_text_mime_body_reset_retry_attempted": None,
+                "pre_smtp_text_mime_body_changed_after_reset": None,
+                "pre_smtp_text_plain_part_present": None,
                 "pre_smtp_reset_url_candidate_found": None,
                 "pre_smtp_reset_template_context_recognized": None,
                 "pre_smtp_template_url_candidate_present": None,

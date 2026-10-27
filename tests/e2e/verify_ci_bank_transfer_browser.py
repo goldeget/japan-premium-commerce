@@ -74,7 +74,8 @@ SAFE_RESULT_KEYS = {
     "limited_route_transfer_tab_present", "limited_route_view_allowed",
     "limited_route_issue_denied", "limited_route_confirm_denied",
     "limited_route_admin_directory_valid", "limited_route_admin_context_ready",
-    "limited_route_admin_link_generated", "limited_route_path_valid",
+    "limited_route_admin_link_generated", "limited_route_path_directory_root",
+    "limited_route_path_index_php", "limited_route_path_valid",
     "limited_route_controller_valid", "limited_route_credential_present",
     "limited_route_credential_bounded", "limited_route_credential_whitespace_free",
     "issue_csrf_rejected", "csrf_rejected", "wrong_amount_rejected", "receipt_confirmed",
@@ -103,6 +104,8 @@ LIMITED_ROUTE_CHECK_KEYS = {
     "admin_directory_valid": "limited_route_admin_directory_valid",
     "admin_context_ready": "limited_route_admin_context_ready",
     "admin_link_generated": "limited_route_admin_link_generated",
+    "route_path_directory_root": "limited_route_path_directory_root",
+    "route_path_index_php": "limited_route_path_index_php",
     "route_path_valid": "limited_route_path_valid",
     "route_controller_valid": "limited_route_controller_valid",
     "route_credential_present": "limited_route_credential_present",
@@ -131,6 +134,9 @@ OPTIONAL_SUCCESS_DIAGNOSTIC_BOOLEAN_KEYS = CSRF_DIAGNOSTIC_BOOLEAN_KEYS | {
     # The seller authorization gate can remain closed while the exact run-scoped
     # isolated checkout gate authorizes this synthetic acceptance.
     "issue_seller_commerce_gate_enabled",
+    # Exactly one of the two native Dispatcher path shapes is valid per run.
+    "limited_route_path_directory_root",
+    "limited_route_path_index_php",
 }
 SUCCESS_REQUIRED_BOOLEAN_KEYS = RESULT_BOOLEAN_KEYS - OPTIONAL_SUCCESS_DIAGNOSTIC_BOOLEAN_KEYS
 
@@ -448,11 +454,17 @@ def limited_transfer_route(
             set_substage(LIMITED_ROUTE_FAILURE_SUBSTAGES[helper_stage])
         raise RuntimeError("the isolated limited employee route helper failed a bounded acceptance check")
 
+    path_shape_check_keys = {"route_path_directory_root", "route_path_index_php"}
+    checks_are_valid_success = (
+        valid_checks
+        and checks.get("route_path_valid") is True
+        and sum(checks.get(key) is True for key in path_shape_check_keys) == 1
+        and all(value is True for key, value in checks.items() if key not in path_shape_check_keys)
+    )
     if (set(payload) != {"status", "failure_stage", "checks", "route"}
             or payload.get("status") != "success"
             or helper_stage != "none"
-            or not valid_checks
-            or any(value is not True for value in checks.values())
+            or not checks_are_valid_success
             or not isinstance(payload.get("route"), str)):
         if set_substage is not None:
             set_substage("limited_route_helper_result_contract")
@@ -462,7 +474,16 @@ def limited_transfer_route(
     internal = urlparse("http://localhost:18080" + str(payload["route"]))
     query = parse_qs(internal.query, keep_blank_values=True)
     token_values = query.get("token", [])
-    if (internal.path != "/admin-kuranea/index.php"
+    path_directory_root = internal.path == "/admin-kuranea/"
+    path_index_php = internal.path == "/admin-kuranea/index.php"
+    path_valid = path_directory_root or path_index_php
+    if diagnostics is not None:
+        diagnostics.update({
+            "limited_route_path_directory_root": path_directory_root,
+            "limited_route_path_index_php": path_index_php,
+            "limited_route_path_valid": path_valid,
+        })
+    if (not path_valid
             or query.get("controller") != ["AdminBusinessProfileTransfers"]
             or len(token_values) != 1
             or not token_values[0].strip()
@@ -893,6 +914,9 @@ def write_result(path: Path, result: dict[str, object]) -> None:
             or any(type(result.get(key)) is not bool for key in RESULT_BOOLEAN_KEYS)
             or (result.get("status") == "success" and (
                 result.get("exception_type") is not None
+                or sum(result.get(key) is True for key in (
+                    "limited_route_path_directory_root", "limited_route_path_index_php",
+                )) != 1
                 or any(result.get(key) is not True for key in SUCCESS_REQUIRED_BOOLEAN_KEYS)
             ))):
         raise ValueError("bank-transfer browser result does not match its allowlisted schema")
@@ -1263,6 +1287,8 @@ def run() -> None:
             f"limited_route_admin_directory_valid={str(result['limited_route_admin_directory_valid']).lower()}; "
             f"limited_route_admin_context_ready={str(result['limited_route_admin_context_ready']).lower()}; "
             f"limited_route_admin_link_generated={str(result['limited_route_admin_link_generated']).lower()}; "
+            f"limited_route_path_directory_root={str(result['limited_route_path_directory_root']).lower()}; "
+            f"limited_route_path_index_php={str(result['limited_route_path_index_php']).lower()}; "
             f"limited_route_path_valid={str(result['limited_route_path_valid']).lower()}; "
             f"limited_route_controller_valid={str(result['limited_route_controller_valid']).lower()}; "
             f"limited_route_credential_present={str(result['limited_route_credential_present']).lower()}; "

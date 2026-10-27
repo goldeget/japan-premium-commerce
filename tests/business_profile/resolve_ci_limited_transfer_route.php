@@ -43,6 +43,8 @@ $checks = [
     'admin_directory_valid' => false,
     'admin_context_ready' => false,
     'admin_link_generated' => false,
+    'route_path_directory_root' => false,
+    'route_path_index_php' => false,
     'route_path_valid' => false,
     'route_controller_valid' => false,
     'route_credential_present' => false,
@@ -126,7 +128,12 @@ try {
     $controllerValues = $query['controller'] ?? null;
     $credentialValues = $query['token'] ?? null;
     $path = (string) ($parts['path'] ?? '');
-    $checks['route_path_valid'] = preg_match('/\A\/admin-kuranea\/index\.php\z/D', $path) === 1;
+    // The native Link/Dispatcher fallback emits either index.php when URL
+    // rewriting is disabled or the admin directory root when it is enabled.
+    // Both remain pinned to this exact isolated admin directory.
+    $checks['route_path_directory_root'] = $path === '/admin-kuranea/';
+    $checks['route_path_index_php'] = $path === '/admin-kuranea/index.php';
+    $checks['route_path_valid'] = $checks['route_path_directory_root'] || $checks['route_path_index_php'];
     $checks['route_controller_valid'] = $controllerValues === 'AdminBusinessProfileTransfers';
     $checks['route_credential_present'] = is_string($credentialValues) && $credentialValues !== '';
     $checks['route_credential_bounded'] = is_string($credentialValues)

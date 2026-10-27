@@ -464,8 +464,24 @@ class Kuraneabusinessprofile extends Module
             }
             $textSetterAvailable = method_exists($message, 'text');
             $textSetterInvoked = false;
+            $messageIsSymfonyEmail = $message instanceof \Symfony\Component\Mime\Email;
+            $textSetterReturnedSameMessage = false;
+            $textGetterReturnedString = false;
             $textGetterHasLink = false;
             $textMimeHasLink = false;
+            $textMimeBodyReadSucceeded = false;
+            $textMimeBodyIdentitySameAfterSetter = false;
+            $textMimeBodyChangedAfterReset = false;
+            $textMimeBodyResetRetryAttempted = false;
+            $textPlainTextPartPresent = false;
+            $textMimeBodyBeforeSetter = null;
+            if ($messageIsSymfonyEmail && $resetUrl !== null && $textSetterAvailable) {
+                try {
+                    $textMimeBodyBeforeSetter = $message->getBody();
+                } catch (\Throwable) {
+                    // The same boolean diagnostics below record a failed body read.
+                }
+            }
             if ($resetUrl !== null && $textSetterAvailable) {
                 $textBody = (string) ($message->getTextBody() ?? '');
                 $replacement = $this->hasNativeResetLink($textBody, $resetUrl)
@@ -473,34 +489,41 @@ class Kuraneabusinessprofile extends Module
                     : ($textBody === '' ? '' : rtrim($textBody) . "\n\n") . $resetUrl;
                 try {
                     if (!$this->hasNativeResetLink($textBody, $resetUrl)) {
-                        $message->text($replacement, 'utf-8');
+                        $setterResult = $message->text($replacement, 'utf-8');
                         $textSetterInvoked = true;
+                        $textSetterReturnedSameMessage = $setterResult === $message;
                     }
 
                     // Symfony Email::text() is the supported setter. Verify both its
                     // public getter and the MIME tree that Mailer will serialize.
-                    $textGetterHasLink = $this->hasNativeResetLink(
-                        (string) ($message->getTextBody() ?? ''),
-                        $resetUrl
-                    );
-                    if ($message instanceof \Symfony\Component\Mime\Email) {
-                        $textMimeHasLink = $this->hasNativeResetLinkInMimeBody($message->getBody(), $resetUrl);
+                    $textReadback = $message->getTextBody();
+                    $textGetterReturnedString = is_string($textReadback);
+                    $textGetterHasLink = $this->hasNativeResetLink((string) ($textReadback ?? ''), $resetUrl);
+                    if ($messageIsSymfonyEmail) {
+                        $textMimeBody = $message->getBody();
+                        $textMimeBodyReadSucceeded = true;
+                        $textMimeBodyIdentitySameAfterSetter = $textMimeBodyBeforeSetter === $textMimeBody;
+                        $textPlainTextPartPresent = $this->hasPlainTextMimePart($textMimeBody);
+                        $textMimeHasLink = $this->hasNativeResetLinkInMimeBody($textMimeBody, $resetUrl);
                         if (!$textGetterHasLink || !$textMimeHasLink) {
                             // Symfony Email can retain an explicit base Message body,
                             // which takes precedence over its lazily generated parts.
                             // Clear only that explicit body, then rebuild from Email's
                             // HTML/Text/attachment fields using its public APIs.
+                            $textMimeBodyResetRetryAttempted = true;
                             $message->setBody(null);
-                            $message->text($replacement, 'utf-8');
+                            $setterResult = $message->text($replacement, 'utf-8');
                             $textSetterInvoked = true;
-                            $textGetterHasLink = $this->hasNativeResetLink(
-                                (string) ($message->getTextBody() ?? ''),
-                                $resetUrl
-                            );
-                            $textMimeHasLink = $this->hasNativeResetLinkInMimeBody(
-                                $message->getBody(),
-                                $resetUrl
-                            );
+                            $textSetterReturnedSameMessage = $textSetterReturnedSameMessage
+                                || $setterResult === $message;
+                            $textReadback = $message->getTextBody();
+                            $textGetterReturnedString = is_string($textReadback);
+                            $textGetterHasLink = $this->hasNativeResetLink((string) ($textReadback ?? ''), $resetUrl);
+                            $rebuiltMimeBody = $message->getBody();
+                            $textMimeBodyReadSucceeded = true;
+                            $textMimeBodyChangedAfterReset = $textMimeBody !== $rebuiltMimeBody;
+                            $textPlainTextPartPresent = $this->hasPlainTextMimePart($rebuiltMimeBody);
+                            $textMimeHasLink = $this->hasNativeResetLinkInMimeBody($rebuiltMimeBody, $resetUrl);
                         }
                     }
                 } catch (\Throwable) {
@@ -528,6 +551,31 @@ class Kuraneabusinessprofile extends Module
                 'X-ORDENOWA-CI-Pre-SMTP-Text-Mime-Native-Reset-Link',
                 $textMimeHasLink ? 'true' : 'false'
             );
+            foreach ([
+                'message_is_symfony_email' => 'Symfony-Email-Object',
+                'text_setter_returned_same_message' => 'Text-Setter-Returned-Same-Message',
+                'text_getter_returned_string' => 'Text-Getter-Returned-String',
+                'text_mime_body_read_succeeded' => 'Text-Mime-Body-Read-Succeeded',
+                'text_mime_body_identity_same_after_setter' => 'Text-Mime-Body-Identity-Same-After-Setter',
+                'text_mime_body_reset_retry_attempted' => 'Text-Mime-Body-Reset-Retry-Attempted',
+                'text_mime_body_changed_after_reset' => 'Text-Mime-Body-Changed-After-Reset',
+                'text_plain_text_part_present' => 'Text-Plain-Part-Present',
+            ] as $key => $suffix) {
+                $evidence = match ($key) {
+                    'message_is_symfony_email' => $messageIsSymfonyEmail,
+                    'text_setter_returned_same_message' => $textSetterReturnedSameMessage,
+                    'text_getter_returned_string' => $textGetterReturnedString,
+                    'text_mime_body_read_succeeded' => $textMimeBodyReadSucceeded,
+                    'text_mime_body_identity_same_after_setter' => $textMimeBodyIdentitySameAfterSetter,
+                    'text_mime_body_reset_retry_attempted' => $textMimeBodyResetRetryAttempted,
+                    'text_mime_body_changed_after_reset' => $textMimeBodyChangedAfterReset,
+                    'text_plain_text_part_present' => $textPlainTextPartPresent,
+                };
+                $headers->addTextHeader(
+                    'X-ORDENOWA-CI-Reset-' . $suffix,
+                    $evidence ? 'true' : 'false'
+                );
+            }
             $headers->addTextHeader('X-ORDENOWA-CI-Reset-URL-Candidate-Found', $resetUrl !== null ? 'true' : 'false');
             $headers->addTextHeader(
                 'X-ORDENOWA-CI-Reset-Template-Context-Recognized',
@@ -825,6 +873,22 @@ class Kuraneabusinessprofile extends Module
     private function sameNativeResetRoute(mixed $candidate, mixed $expected): bool
     {
         return $this->resetRouteEvidence($candidate, $expected)['native_route'];
+    }
+
+    private function hasPlainTextMimePart(mixed $part): bool
+    {
+        if ($part instanceof \Symfony\Component\Mime\Part\TextPart) {
+            return $part->getMediaSubtype() === 'plain';
+        }
+        if ($part instanceof \Symfony\Component\Mime\Part\AbstractMultipartPart) {
+            foreach ($part->getParts() as $child) {
+                if ($this->hasPlainTextMimePart($child)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private function hasNativeResetLinkInMimeBody(mixed $part, string $expectedUrl): bool

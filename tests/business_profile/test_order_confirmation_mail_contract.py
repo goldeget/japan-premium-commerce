@@ -53,6 +53,15 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
             "'actionMailAlterMessageBeforeSend'",
             "X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link",
             "X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link",
+            "X-ORDENOWA-CI-Pre-SMTP-Text-Mime-Native-Reset-Link",
+            "'message_is_symfony_email' => 'Symfony-Email-Object'",
+            "'text_setter_returned_same_message' => 'Text-Setter-Returned-Same-Message'",
+            "'text_getter_returned_string' => 'Text-Getter-Returned-String'",
+            "'text_mime_body_read_succeeded' => 'Text-Mime-Body-Read-Succeeded'",
+            "'text_mime_body_identity_same_after_setter' => 'Text-Mime-Body-Identity-Same-After-Setter'",
+            "'text_mime_body_reset_retry_attempted' => 'Text-Mime-Body-Reset-Retry-Attempted'",
+            "'text_mime_body_changed_after_reset' => 'Text-Mime-Body-Changed-After-Reset'",
+            "'text_plain_text_part_present' => 'Text-Plain-Part-Present'",
             "X-ORDENOWA-CI-Reset-URL-Candidate-Found",
             "X-ORDENOWA-CI-Reset-Template-Context-Recognized",
             "X-ORDENOWA-CI-Reset-Template-URL-Candidate-Present",
@@ -142,8 +151,14 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         self.assertIn("$message->text($replacement, 'utf-8')", alter)
         self.assertIn("$this->hasNativeResetLink($textBody, $resetUrl)", alter)
         self.assertIn("$message instanceof \\Symfony\\Component\\Mime\\Email", alter)
+        self.assertIn("$setterResult === $message", alter)
+        self.assertIn("$textGetterReturnedString = is_string($textReadback)", alter)
+        self.assertIn("$textMimeBodyIdentitySameAfterSetter = $textMimeBodyBeforeSetter === $textMimeBody", alter)
+        self.assertIn("$textMimeBodyResetRetryAttempted = true", alter)
+        self.assertIn("$textMimeBodyChangedAfterReset = $textMimeBody !== $rebuiltMimeBody", alter)
         self.assertIn("$message->setBody(null)", alter)
-        self.assertIn("$this->hasNativeResetLinkInMimeBody($message->getBody(), $resetUrl)", alter)
+        self.assertIn("$this->hasNativeResetLinkInMimeBody($textMimeBody, $resetUrl)", alter)
+        self.assertIn("$this->hasNativeResetLinkInMimeBody($rebuiltMimeBody, $resetUrl)", alter)
         self.assertIn("X-ORDENOWA-CI-Pre-SMTP-Text-Mime-Native-Reset-Link", alter)
         self.assertIn("$textGetterHasLink = $this->hasNativeResetLink(", alter)
         self.assertIn("if (!$textGetterHasLink || !$textMimeHasLink)", alter)
