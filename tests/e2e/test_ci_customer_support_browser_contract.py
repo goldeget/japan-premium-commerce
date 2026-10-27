@@ -269,6 +269,11 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             ("legacy_thread_view", 47),
             module.thread_route_identity(f"{admin}/index.php?controller=AdminCustomerThreads&id_customer_thread=47&viewcustomer_thread=1&token=workerToken", admin),
         )
+        modern_detail = module.modern_customer_thread_detail_url(admin, 47)
+        self.assertEqual(f"{admin}/sell/customer-service/customer-threads/47/view", modern_detail)
+        self.assertEqual(("modern_thread_view", 47), module.thread_route_identity(modern_detail, admin))
+        with self.assertRaisesRegex(ValueError, "positive native customer thread identity"):
+            module.modern_customer_thread_detail_url(admin, 0)
         for candidate in (
             f"{admin}-evil/sell/customer-service/customer-threads/47/view",
             f"{admin}/sell/customer-service/customer-threads/47/view/extra",
@@ -277,6 +282,30 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         ):
             with self.subTest(candidate=candidate):
                 self.assertIsNone(module.thread_route_identity(candidate, admin))
+
+    def test_order_association_must_link_the_exact_native_order_id(self):
+        module = load_script()
+        module.By = SimpleNamespace(CSS_SELECTOR="a[href]")
+
+        class Link:
+            def __init__(self, href):
+                self.href = href
+
+            def get_attribute(self, name):
+                return self.href if name == "href" else None
+
+        class Driver:
+            def __init__(self, links):
+                self.links = links
+
+            def find_elements(self, *_args):
+                return self.links
+
+        exact = Driver([Link("http://127.0.0.1:18080/admin-kuranea/index.php?controller=AdminOrders&id_order=42")])
+        other = Driver([Link("http://127.0.0.1:18080/admin-kuranea/index.php?controller=AdminOrders&id_order=43")])
+        self.assertTrue(module.has_thread_order_link(exact, 42))
+        self.assertFalse(module.has_thread_order_link(exact, 43))
+        self.assertFalse(module.has_thread_order_link(other, 42))
 
     def test_employee_scoped_routes_keep_native_session_tokens_separate(self):
         module = load_script()
@@ -416,6 +445,8 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 "customer_service_route_modern_count": 0,
                 "customer_service_route_legacy_count": 1,
                 "customer_service_route_invalid_count": 0,
+                "admin_thread_message_marker_present": True,
+                "admin_thread_order_link_present": True,
             }
             module.write_result(path, result)
             content = path.read_text(encoding="utf-8")
@@ -487,6 +518,11 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         self.assertIn('return ".message-item-initial"', selector_helper)
         self.assertIn("native legacy customer_threads view renders the original", selector_helper)
         self.assertIn("visit_exact_customer_thread_detail(", browser)
+        self.assertIn("modern_customer_thread_detail_url(ctx.admin, thread_id)", browser)
+        self.assertIn('mark_browser_substage(result, "admin_thread_message_readback")', browser)
+        self.assertIn('mark_browser_substage(result, "admin_thread_order_link_readback")', browser)
+        self.assertIn('"admin_thread_message_marker_present"', browser)
+        self.assertIn('"admin_thread_order_link_present"', browser)
         identity_helper = browser[browser.index("def customer_threads_navigation_identity("):browser.index("def thread_route_identity(")]
         self.assertIn('parse_qsl(candidate.query, keep_blank_values=True, strict_parsing=True)', identity_helper)
         self.assertIn('if key in query:', identity_helper)

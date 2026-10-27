@@ -40,6 +40,10 @@ SAFE_SUBSTAGES = {
     "instruction_issue_notice_unpaid_present_danger", "instruction_issue_notice_unpaid_missing_danger",
     "instruction_issue_notice_unpaid_present_missing", "instruction_issue_notice_unpaid_missing_missing",
     "instruction_issue_notice_unpaid_present_other", "instruction_issue_notice_unpaid_missing_other",
+    "limited_staff_login", "limited_route_fixture_readback", "limited_route_contract_readback",
+    "limited_route_identity_validation", "limited_order_row_readback", "limited_issue_post",
+    "limited_issue_denial_readback", "limited_issue_unpaid_db_readback", "limited_confirmation_post",
+    "limited_confirmation_denial_readback", "limited_confirmation_unpaid_db_readback",
 }
 SAFE_EXCEPTION_TYPES = {
     "AssertionError", "TimeoutException", "ValueError", "RuntimeError", "OSError",
@@ -57,7 +61,9 @@ SAFE_RESULT_KEYS = {
     "issue_seller_commerce_gate_enabled", "issue_effective_commerce_gate_enabled",
     "issue_left_order_unpaid", "instruction_immutable", "customer_instruction_visible",
     "order_identity_match", "order_product_line_match", "amount_match", "account_match", "foreign_customer_denied",
-    "limited_staff_denied", "view_only_confirmation_denied", "issue_csrf_rejected", "csrf_rejected", "wrong_amount_rejected", "receipt_confirmed",
+    "limited_staff_denied", "view_only_issue_denied", "view_only_issue_order_unpaid",
+    "view_only_confirmation_denied", "view_only_confirmation_order_unpaid",
+    "issue_csrf_rejected", "csrf_rejected", "wrong_amount_rejected", "receipt_confirmed",
     "idempotent_replay", "customer_paid_state_changed", "instruction_hidden_after_payment",
     "native_readback",
 }
@@ -355,19 +361,25 @@ def diagnose_unpaid_issue_persistence(ctx: dict[str, object], order: dict[str, o
     return "unpaid_instruction_persisted" if payload["instruction_persisted"] else "unpaid_instruction_absent"
 
 
-def limited_transfer_route(ctx: dict[str, object]) -> tuple[str, str]:
+def limited_transfer_route(ctx: dict[str, object], set_substage=None) -> tuple[str, str]:
     source_path = Path(__file__).resolve().parents[1] / "business_profile" / "resolve_ci_limited_transfer_route.php"
+    if set_substage is not None:
+        set_substage("limited_route_fixture_readback")
     payload = docker_php_json(
         ctx,
         source_path,
         "/tmp/resolve_ci_limited_transfer_route.php",
         {"VIEW_ONLY_EMAIL": str(ctx["view_email"])},
     )
+    if set_substage is not None:
+        set_substage("limited_route_contract_readback")
     if (set(payload) != {"status", "route", "employee_found", "view_allowed", "issue_denied", "confirm_denied"}
             or payload.get("status") != "success"
             or any(payload.get(key) is not True for key in ("employee_found", "view_allowed", "issue_denied", "confirm_denied"))
             or not isinstance(payload.get("route"), str)):
         raise RuntimeError("the isolated limited employee permission fixture was not read back safely")
+    if set_substage is not None:
+        set_substage("limited_route_identity_validation")
     internal = urlparse("http://localhost:18080" + str(payload["route"]))
     query = parse_qs(internal.query, keep_blank_values=True)
     token_values = query.get("token", [])
@@ -857,7 +869,9 @@ def run() -> None:
         "fixture_bound": False, "instruction_issued": False, "issue_left_order_unpaid": False,
         "instruction_immutable": False, "customer_instruction_visible": False,
         "order_identity_match": False, "order_product_line_match": False, "amount_match": False, "account_match": False,
-        "foreign_customer_denied": False, "limited_staff_denied": False, "view_only_confirmation_denied": False,
+        "foreign_customer_denied": False, "limited_staff_denied": False,
+        "view_only_issue_denied": False, "view_only_issue_order_unpaid": False,
+        "view_only_confirmation_denied": False, "view_only_confirmation_order_unpaid": False,
         "issue_csrf_rejected": False, "csrf_rejected": False, "wrong_amount_rejected": False, "receipt_confirmed": False,
         "idempotent_replay": False, "customer_paid_state_changed": False,
         "instruction_hidden_after_payment": False, "native_readback": False,
@@ -1003,8 +1017,10 @@ def run() -> None:
 
         stage = result["stage"] = "limited_staff_denial"
         limited = new_driver(1440, 960)
+        set_substage("limited_staff_login")
         admin_login(limited, ctx, str(ctx["view_email"]))
-        limited_url, limited_token = limited_transfer_route(ctx)
+        limited_url, limited_token = limited_transfer_route(ctx, set_substage)
+        set_substage("limited_order_row_readback")
         visit(limited, limited_url, str(ctx["shop"]))
         limited_row = order_row(limited, order)
         if (limited_row.find_elements(By.CSS_SELECTOR, 'button[name="submitOrdenowaIssueTransfer"]')
@@ -1017,16 +1033,27 @@ def run() -> None:
                 "bank_statement_reference": synthetic_statement, "verified_transfer": "1",
             }),
         ):
+            set_substage("limited_issue_post" if submit_name == "submitOrdenowaIssueTransfer" else "limited_confirmation_post")
             body = submit_hidden_admin_post(
                 limited, limited_url, limited_token, {**fields, submit_name: "1"}, str(ctx["admin"])
             )
             if submit_name == "submitOrdenowaConfirmBankTransfer":
+                set_substage("limited_confirmation_denial_readback")
                 if "주문 입금 확인 권한이 없습니다." not in body:
                     raise AssertionError("a view-only employee's valid-token receipt confirmation was not denied explicitly")
                 result["view_only_confirmation_denied"] = True
+                set_substage("limited_confirmation_unpaid_db_readback")
+                verify_unpaid_native_order(ctx, order, "issued")
+                result["view_only_confirmation_order_unpaid"] = True
             elif "주문 입금 안내를 발급할 권한이 없습니다." not in body:
+                set_substage("limited_issue_denial_readback")
                 raise AssertionError("a view-only employee's valid-token instruction issue was not denied explicitly")
-            verify_unpaid_native_order(ctx, order, "issued")
+            else:
+                set_substage("limited_issue_denial_readback")
+                result["view_only_issue_denied"] = True
+                set_substage("limited_issue_unpaid_db_readback")
+                verify_unpaid_native_order(ctx, order, "issued")
+                result["view_only_issue_order_unpaid"] = True
         result["limited_staff_denied"] = True
         limited.save_screenshot(str(Path(ctx["artifact_dir"]) / "bank-transfer-limited-denied-desktop.png"))
 
@@ -1134,6 +1161,10 @@ def run() -> None:
             f"issue_post_matches_query={str(result['issue_post_matches_query']).lower()}; "
             f"issue_controller_matches_admin_link={str(result['issue_controller_matches_admin_link']).lower()}; "
             f"issue_post_native_csrf_valid={str(result['issue_post_native_csrf_valid']).lower()}; "
+            f"view_only_issue_denied={str(result['view_only_issue_denied']).lower()}; "
+            f"view_only_issue_order_unpaid={str(result['view_only_issue_order_unpaid']).lower()}; "
+            f"view_only_confirmation_denied={str(result['view_only_confirmation_denied']).lower()}; "
+            f"view_only_confirmation_order_unpaid={str(result['view_only_confirmation_order_unpaid']).lower()}; "
             f"issue_profile_readback_succeeded={str(result['issue_profile_readback_succeeded']).lower()}; "
             f"issue_published_profile_present={str(result['issue_published_profile_present']).lower()}; "
             f"issue_bank_transfer_enabled={str(result['issue_bank_transfer_enabled']).lower()}; "

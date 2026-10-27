@@ -40,6 +40,9 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
     def test_pre_smtp_reset_diagnostic_is_run_scoped_and_contains_only_link_shape_booleans(self):
         module = MODULE_PATH.read_text(encoding="utf-8")
         install = module.split("public function install()", 1)[1].split("public function uninstall()", 1)[0]
+        before = module.split("public function hookActionEmailSendBefore", 1)[1].split(
+            "public function hookActionMailAlterMessageBeforeSend", 1
+        )[0]
         hook = module.split("public function hookActionMailAlterMessageBeforeSend", 1)[1].split(
             "private function isIsolatedResetFixtureMessage", 1
         )[0]
@@ -51,11 +54,15 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
             "X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link",
             "X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link",
             "X-ORDENOWA-CI-Reset-URL-Candidate-Found",
+            "X-ORDENOWA-CI-Reset-Template-Context-Recognized",
             "X-ORDENOWA-CI-Text-Setter-Available",
             "X-ORDENOWA-CI-Text-Setter-Invoked",
         ):
             self.assertIn(marker, install + hook)
         self.assertIn("function hookActionMailAlterMessageBeforeSend(array $params)", module)
+        self.assertIn("private static ?array $pendingMailSendContext = null", module)
+        self.assertIn("self::$pendingMailSendContext = [", before)
+        self.assertIn("$sendContext = self::$pendingMailSendContext", hook)
         for marker in (
             "getenv('GITHUB_ACTIONS') !== 'true'",
             "getenv('KURANEA_CI_PROJECT_NAME') !== $project",
@@ -93,16 +100,16 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         for key in ("'token'", "'reset_token'", "'id_customer'"):
             self.assertIn(key, validator)
             self.assertIn(key, link_matcher)
-        self.assertIn("$this->activeMailTemplate === 'password_query'", alter)
+        self.assertIn("$mailTemplate === 'password_query'", alter)
         self.assertIn(
-            "$resetUrl = $this->activeMailTemplate === 'password_query'\n"
+            "$resetUrl = $mailTemplate === 'password_query'\n"
             "                ? $this->extractNativeResetUrl($htmlBody, $mailLangId, $mailShopId)\n"
             "                : null;",
             alter,
         )
         self.assertLess(
-            alter.index("$resetUrl = $this->activeMailTemplate === 'password_query'"),
-            alter.index("$this->activeNativeResetUrl"),
+            alter.index("$resetUrl = $mailTemplate === 'password_query'"),
+            alter.index("if ($resetUrl === null"),
         )
         self.assertIn("$htmlBody", alter)
         self.assertIn("$params['id_lang']", alter)
@@ -110,9 +117,9 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         self.assertIn("$this->context->language->id", alter)
         self.assertIn("$this->context->shop->id", alter)
         fallback = alter.split("if ($resetUrl === null", 1)[1].split("$textSetterAvailable", 1)[0]
-        self.assertIn("$this->activeMailTemplate === 'password_query'", fallback)
-        self.assertIn("$this->activeNativeResetUrl", fallback)
-        self.assertIn("$this->hasNativeResetLink($htmlBody, $this->activeNativeResetUrl)", fallback)
+        self.assertIn("$mailTemplate === 'password_query'", fallback)
+        self.assertIn("$nativeResetUrl", fallback)
+        self.assertIn("$this->hasNativeResetLink($htmlBody, $nativeResetUrl)", fallback)
         self.assertIn("$this->extractNativeResetUrl($htmlBody, $mailLangId, $mailShopId)", alter)
         self.assertIn("$textSetterAvailable = method_exists($message, 'text')", alter)
         self.assertIn("$textSetterInvoked = true", alter)

@@ -21,6 +21,9 @@ use Kuranea\BusinessProfile\Infrastructure\BankTransferInstructionRepository;
 
 class Kuraneabusinessprofile extends Module
 {
+    /** @var array{template: ?string, shop_id: ?int, lang_id: ?int, native_reset_url: ?string}|null */
+    private static ?array $pendingMailSendContext = null;
+
     private ?int $activeMailShopId = null;
     private ?int $activeMailLangId = null;
     private ?string $activeMailTemplate = null;
@@ -386,6 +389,7 @@ class Kuraneabusinessprofile extends Module
 
         if ($this->activeMailTemplate !== 'password_query'
             || !isset($params['templateVars']) || !is_array($params['templateVars'])) {
+            self::$pendingMailSendContext = null;
             return;
         }
 
@@ -394,12 +398,21 @@ class Kuraneabusinessprofile extends Module
             $this->activeMailLangId ?? 0,
             $this->activeMailShopId
         );
+        // The mail-alter hook can run on another instance of this module. Keep the
+        // request-scoped native template context available until that message is sent.
+        self::$pendingMailSendContext = [
+            'template' => $this->activeMailTemplate,
+            'shop_id' => $this->activeMailShopId,
+            'lang_id' => $this->activeMailLangId,
+            'native_reset_url' => $this->activeNativeResetUrl,
+        ];
     }
 
     /** @param array<string, mixed> $params */
     public function hookActionMailAlterMessageBeforeSend(array $params): void
     {
         $message = $params['message'] ?? null;
+        $sendContext = self::$pendingMailSendContext;
         try {
             if (!is_object($message)
                 || !method_exists($message, 'getHtmlBody')
@@ -410,11 +423,12 @@ class Kuraneabusinessprofile extends Module
             $htmlBody = (string) ($message->getHtmlBody() ?? '');
             $mailLangId = (int) ($params['id_lang'] ?? 0);
             if ($mailLangId < 1) {
-                $mailLangId = $this->activeMailLangId ?? (int) ($this->context->language->id ?? 0);
+                $mailLangId = $sendContext['lang_id'] ?? $this->activeMailLangId
+                    ?? (int) ($this->context->language->id ?? 0);
             }
             $mailShopId = (int) ($params['id_shop'] ?? $params['idShop'] ?? 0);
             if ($mailShopId < 1) {
-                $mailShopId = $this->activeMailShopId;
+                $mailShopId = $sendContext['shop_id'] ?? $this->activeMailShopId;
             }
             if (($mailShopId ?? 0) < 1) {
                 $contextShopId = (int) ($this->context->shop->id ?? 0);
@@ -422,14 +436,16 @@ class Kuraneabusinessprofile extends Module
             }
             // Use the credential-complete link that survived template rendering. The
             // pre-send {url} value can be valid for the route but stale for this body.
-            $resetUrl = $this->activeMailTemplate === 'password_query'
+            $mailTemplate = $sendContext['template'] ?? $this->activeMailTemplate;
+            $nativeResetUrl = $sendContext['native_reset_url'] ?? $this->activeNativeResetUrl;
+            $resetUrl = $mailTemplate === 'password_query'
                 ? $this->extractNativeResetUrl($htmlBody, $mailLangId, $mailShopId)
                 : null;
             if ($resetUrl === null
-                && $this->activeMailTemplate === 'password_query'
-                && is_string($this->activeNativeResetUrl)
-                && $this->hasNativeResetLink($htmlBody, $this->activeNativeResetUrl)) {
-                $resetUrl = $this->activeNativeResetUrl;
+                && $mailTemplate === 'password_query'
+                && is_string($nativeResetUrl)
+                && $this->hasNativeResetLink($htmlBody, $nativeResetUrl)) {
+                $resetUrl = $nativeResetUrl;
             }
             $textSetterAvailable = method_exists($message, 'text');
             $textSetterInvoked = false;
@@ -462,6 +478,10 @@ class Kuraneabusinessprofile extends Module
             $headers->addTextHeader('X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link', $htmlHasLink ? 'true' : 'false');
             $headers->addTextHeader('X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link', $textHasLink ? 'true' : 'false');
             $headers->addTextHeader('X-ORDENOWA-CI-Reset-URL-Candidate-Found', $resetUrl !== null ? 'true' : 'false');
+            $headers->addTextHeader(
+                'X-ORDENOWA-CI-Reset-Template-Context-Recognized',
+                $mailTemplate === 'password_query' ? 'true' : 'false'
+            );
             $headers->addTextHeader('X-ORDENOWA-CI-Text-Setter-Available', $textSetterAvailable ? 'true' : 'false');
             $headers->addTextHeader('X-ORDENOWA-CI-Text-Setter-Invoked', $textSetterInvoked ? 'true' : 'false');
         } finally {
@@ -469,6 +489,7 @@ class Kuraneabusinessprofile extends Module
             $this->activeNativeResetUrl = null;
             $this->activeMailShopId = null;
             $this->activeMailLangId = null;
+            self::$pendingMailSendContext = null;
         }
     }
 

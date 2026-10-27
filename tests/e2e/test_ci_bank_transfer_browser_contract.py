@@ -181,6 +181,9 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.require("issue_denied", self.limited_route)
         self.require("confirm_denied", self.limited_route)
         self.require("view_only_confirmation_denied", self.browser)
+        self.require("view_only_issue_denied", self.browser)
+        self.require("view_only_issue_order_unpaid", self.browser)
+        self.require("view_only_confirmation_order_unpaid", self.browser)
         self.require("confirmation form", self.browser)
         self.require("주문 입금 확인 권한이 없습니다.", self.browser)
         self.require('verify_unpaid_native_order(ctx, order, "issued")', self.browser)
@@ -224,6 +227,13 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             '"csrf_invalid_token_submit"',
             '"csrf_rejection_readback"',
             '"csrf_unissued_db_readback"',
+            '"limited_route_fixture_readback"',
+            '"limited_route_contract_readback"',
+            '"limited_route_identity_validation"',
+            '"limited_issue_denial_readback"',
+            '"limited_issue_unpaid_db_readback"',
+            '"limited_confirmation_denial_readback"',
+            '"limited_confirmation_unpaid_db_readback"',
             "write_result",
             "bank-transfer-browser-result.json",
             "bank-transfer-customer-instructions-mobile.png",

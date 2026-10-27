@@ -76,6 +76,7 @@ SAFE_RESULT_KEYS = {
     "customer_service_route_candidate_count", "customer_service_route_safe_count",
     "customer_service_route_modern_count", "customer_service_route_legacy_count",
     "customer_service_route_invalid_count",
+    "admin_thread_message_marker_present", "admin_thread_order_link_present",
     "browser_substage",
 }
 RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {
@@ -98,6 +99,7 @@ SAFE_BROWSER_SUBSTAGES = {
     "foreign_orderless_post_probe",
     "admin_route_candidate_navigation", "admin_route_exact_thread_readback",
     "admin_thread_detail_navigation", "admin_thread_detail_readback",
+    "admin_thread_message_readback", "admin_thread_order_link_readback",
     "contact_field_lookup", "contact_id_readback", "attachment_control_lookup", "attachment_send_keys",
     "accepted_attachment_fixture_validation", "accepted_attachment_file_readback", "message_field_lookup",
     "message_send_keys", "submit_control_lookup", "submit_control_scroll", "submit_control_hit_test",
@@ -372,6 +374,19 @@ def thread_route_identity(value: str, admin_url: str) -> tuple[str, int] | None:
     if thread_id is not None:
         return "modern_thread_view", thread_id
     return None
+
+
+def modern_customer_thread_detail_url(admin_url: str, thread_id: int) -> str:
+    """Build the native modern detail route after the list proves the exact thread identity."""
+    if type(thread_id) is not int or thread_id < 1:
+        raise ValueError("a positive native customer thread identity is required")
+    candidate = urljoin(
+        admin_url.rstrip("/") + "/",
+        f"sell/customer-service/customer-threads/{thread_id}/view",
+    )
+    if thread_route_identity(candidate, admin_url) != ("modern_thread_view", thread_id):
+        raise ValueError("the modern customer thread route did not match the exact Back Office identity")
+    return candidate
 
 
 def thread_action_route_identity(value: str, admin_url: str) -> tuple[str, int] | None:
@@ -1169,7 +1184,7 @@ def customer_thread_reply_form(driver, route_kind: str, expected_thread_id: int,
     return reply_form, textarea, button
 
 
-def assert_thread_order_link(driver, expected_order_id: int) -> None:
+def has_thread_order_link(driver, expected_order_id: int) -> bool:
     for link in driver.find_elements(By.CSS_SELECTOR, "a[href]"):
         href = link.get_attribute("href") or ""
         parsed = urlparse(href)
@@ -1179,8 +1194,13 @@ def assert_thread_order_link(driver, expected_order_id: int) -> None:
             match = re.search(r"/sell/orders/([1-9][0-9]*)/?$", parsed.path)
             candidates = [match.group(1)] if match else []
         if candidates == [str(expected_order_id)]:
-            return
-    raise AssertionError("native customer thread did not link to the same associated order")
+            return True
+    return False
+
+
+def assert_thread_order_link(driver, expected_order_id: int) -> None:
+    if not has_thread_order_link(driver, expected_order_id):
+        raise AssertionError("native customer thread did not link to the same associated order")
 
 
 def find_attachment_link(driver, admin_url: str, buyer_marker: str, route_kind: str) -> str:
@@ -1532,6 +1552,7 @@ def run() -> None:
         "customer_service_route_candidate_count": 0, "customer_service_route_safe_count": 0,
         "customer_service_route_modern_count": 0, "customer_service_route_legacy_count": 0,
         "customer_service_route_invalid_count": 0,
+        "admin_thread_message_marker_present": False, "admin_thread_order_link_present": False,
     }
     customer = admin = foreign = limited = None
     buyer_marker = f"[CI ONLY] ORDENOWA support inquiry {ctx.run_id}-{ctx.attempt}-{secrets.token_hex(5)}"
@@ -1664,22 +1685,35 @@ def run() -> None:
         stage = result["stage"] = "admin_thread_lookup"
         mark_browser_substage(result, "admin_service_route_discovery")
         index_candidates = generated_customer_threads_links(admin, ctx.admin, result)
-        index_link, thread_view_url, thread_id = resolve_customer_threads_index(
+        index_link, index_thread_view_url, thread_id = resolve_customer_threads_index(
             admin, ctx, ctx.buyer, first_thread_id, index_candidates, result
         )
         if thread_id != first_thread_id:
             raise AssertionError("native customer service page did not open the confirmation's same thread")
+        if thread_route_identity(index_thread_view_url, ctx.admin) not in {
+            ("legacy_thread_view", thread_id), ("modern_thread_view", thread_id),
+        }:
+            raise AssertionError("the selected Customer service row lost its exact native thread identity")
+        # The legacy view can show messages without linking its associated order.
+        # Read the same exact thread from the native modern detail timeline, which
+        # exposes the order association used by this acceptance check.
+        thread_view_url = modern_customer_thread_detail_url(ctx.admin, thread_id)
         thread_element = visit_exact_customer_thread_detail(
             admin, thread_view_url, ctx.admin, thread_id, result
         )
-        thread_identity = thread_route_identity(thread_view_url, ctx.admin)
+        thread_identity = thread_route_identity(admin.current_url, ctx.admin)
         if thread_identity is None or thread_identity[1] != thread_id:
             raise AssertionError("native customer thread detail route lost its validated identity")
         thread_route_kind = thread_identity[0]
         thread_body = read_customer_thread_text(admin, thread_route_kind, thread_id, ctx.admin)
-        if buyer_marker not in thread_body:
+        mark_browser_substage(result, "admin_thread_message_readback")
+        result["admin_thread_message_marker_present"] = buyer_marker in thread_body
+        if not result["admin_thread_message_marker_present"]:
             raise AssertionError("native administrator thread did not show the submitted customer inquiry")
-        assert_thread_order_link(admin, int(ctx.buyer["order_id"]))
+        mark_browser_substage(result, "admin_thread_order_link_readback")
+        result["admin_thread_order_link_present"] = has_thread_order_link(admin, int(ctx.buyer["order_id"]))
+        if not result["admin_thread_order_link_present"]:
+            raise AssertionError("native customer thread did not link to the same associated order")
         result["order_association_verified"] = True
         admin.save_screenshot(str(ctx.artifact_dir / "customer-support-admin-thread.png"))
 
@@ -1897,6 +1931,8 @@ def run() -> None:
             f"admin_route_modern={result['customer_service_route_modern_count']}; "
             f"admin_route_legacy={result['customer_service_route_legacy_count']}; "
             f"admin_route_invalid={result['customer_service_route_invalid_count']}; "
+            f"admin_thread_message_marker_present={str(result['admin_thread_message_marker_present']).lower()}; "
+            f"admin_thread_order_link_present={str(result['admin_thread_order_link_present']).lower()}; "
             f"same_origin={str(result['contact_same_origin']).lower()}; "
             f"native_route={str(result['contact_native_route']).lower()}; "
             f"form_count={result['contact_form_count']}; "

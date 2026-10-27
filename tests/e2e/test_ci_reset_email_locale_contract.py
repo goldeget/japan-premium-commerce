@@ -95,6 +95,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
         mail['X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link'] = 'true'
         mail['X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link'] = 'false'
         mail['X-ORDENOWA-CI-Reset-URL-Candidate-Found'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-Template-Context-Recognized'] = 'true'
         mail['X-ORDENOWA-CI-Text-Setter-Available'] = 'true'
         mail['X-ORDENOWA-CI-Text-Setter-Invoked'] = 'true'
         mail.set_content('synthetic body is never returned by the header parser')
@@ -104,6 +105,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'pre_smtp_html_native_link_shape': True,
             'pre_smtp_text_native_link_shape': False,
             'pre_smtp_reset_url_candidate_found': True,
+            'pre_smtp_reset_template_context_recognized': True,
             'pre_smtp_text_setter_available': True,
             'pre_smtp_text_setter_invoked': True,
         }, evidence)
@@ -343,7 +345,8 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'raw_text_native_link=none; mailpit_preview_text_native_link=none; '
             'mailpit_preview_text_shape_match=none; '
             'pre_smtp_html_native_link=none; pre_smtp_text_native_link=none; '
-            'pre_smtp_url_candidate=none; pre_smtp_text_setter_available=none; '
+            'pre_smtp_url_candidate=none; pre_smtp_reset_template_context=none; '
+            'pre_smtp_text_setter_available=none; '
             'pre_smtp_text_setter_invoked=none; '
             'mail_type=unavailable; template_candidate=unavailable; '
             'template_iso=none; text_source=unavailable; '
@@ -368,6 +371,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 "pre_smtp_html_native_link_shape": None,
                 "pre_smtp_text_native_link_shape": None,
                 "pre_smtp_reset_url_candidate_found": None,
+                "pre_smtp_reset_template_context_recognized": None,
                 "pre_smtp_text_setter_available": None,
                 "pre_smtp_text_setter_invoked": None,
                 "mail_type": None, "template_candidate": "unavailable",
