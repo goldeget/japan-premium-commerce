@@ -55,6 +55,8 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             "[name='newStatus'][value='{status}']", "#forwardThreadModal",
             "VIEW_ONLY_EMAIL", "customer_reply_url", "attachment_admin_readback",
             "payment_provider_called",
+            "admin_login_completed", "admin_service_route_discovery",
+            "customer_service_route_candidate_count", "customer_service_route_safe_count",
         ):
             with self.subTest(contract=expected):
                 self.assertIn(expected, source)
@@ -407,6 +409,8 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 "contact_form_visible": True,
                 "support_denial_status": 403, "support_denial_form_count": 0,
                 "support_denial_redirected": False, "support_denial_same_origin": True,
+                "customer_service_route_candidate_count": 1,
+                "customer_service_route_safe_count": 1,
             }
             module.write_result(path, result)
             content = path.read_text(encoding="utf-8")
@@ -448,6 +452,19 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         ):
             with self.subTest(safe_field=safe_field):
                 self.assertIn(safe_field, browser)
+
+        route_helper = browser[browser.index("def generated_customer_threads_link("):browser.index("def admin_login(")]
+        self.assertIn("diagnostic_result: dict[str, Any] | None = None", route_helper)
+        self.assertIn('diagnostic_result["customer_service_route_candidate_count"]', route_helper)
+        self.assertIn('diagnostic_result["customer_service_route_safe_count"]', route_helper)
+        self.assertNotIn("print(", route_helper)
+        run = browser[browser.index("stage = result[\"stage\"] = \"admin_login\"", browser.index("def run()")):]
+        self.assertLess(run.index('mark_browser_substage(result, "admin_login_completed")'),
+                        run.index('stage = result["stage"] = "admin_thread_lookup"'))
+        self.assertLess(run.index('stage = result["stage"] = "admin_thread_lookup"'),
+                        run.index('mark_browser_substage(result, "admin_service_route_discovery")'))
+        self.assertIn("generated_customer_threads_link(admin, ctx.admin, result)", run)
+        self.assertIn('admin_route_candidates={result[\'customer_service_route_candidate_count\']}', run)
 
     def test_contact_uses_shop_generated_locale_routes_and_probes_legacy_query_route(self):
         browser = SCRIPT.read_text(encoding="utf-8")

@@ -289,6 +289,31 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         })
         self.assertTrue(observed <= safe_substages)
 
+        category_helper = self.browser.split("def issue_notice_failure_category", 1)[1].split(
+            "def reject_issue_with_invalid_csrf", 1
+        )[0]
+        self.require('"unclassified_notice"', category_helper)
+        self.require('"csrf_rejected"', category_helper)
+        self.require('"instruction_persistence_error"', category_helper)
+        self.assertNotIn("print(", category_helper)
+        tree = ast.parse(self.browser)
+        category_function = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "issue_notice_failure_category"
+        )
+        category_namespace: dict[str, object] = {}
+        exec(compile(ast.Module(body=[category_function], type_ignores=[]), str(BROWSER), "exec"), category_namespace)
+        classify_category = category_namespace["issue_notice_failure_category"]
+        self.assertEqual(
+            classify_category("관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요."),
+            "csrf_rejected",
+        )
+        self.assertEqual(classify_category("주문 입금 안내를 저장하지 못했습니다."), "instruction_persistence_error")
+        self.assertEqual(classify_category("private order error sentinel"), "unclassified_notice")
+        self.require('"issue_failure_category"', self.browser)
+        self.require('issue_failure_category={result[\'issue_failure_category\']}', self.browser)
+        self.require('issue_persistence_diagnostic={result[\'issue_persistence_diagnostic\']}', self.browser)
+
     def test_failed_issue_notice_reads_only_scoped_unpaid_persistence_flags(self) -> None:
         diagnostic = self.browser.split("def diagnose_unpaid_issue_persistence", 1)[1].split(
             "def limited_transfer_route", 1

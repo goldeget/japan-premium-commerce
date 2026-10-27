@@ -72,12 +72,14 @@ SAFE_RESULT_KEYS = {
     "contact_document_status", "contact_same_origin", "contact_native_route",
     "contact_form_count", "contact_form_visible", "support_denial_status",
     "support_denial_form_count", "support_denial_redirected", "support_denial_same_origin",
+    "customer_service_route_candidate_count", "customer_service_route_safe_count",
     "browser_substage",
 }
 RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {
     "status", "stage", "exception_type", "mailpit_provider",
     "contact_document_status", "contact_form_count", "support_denial_status",
-    "support_denial_form_count", "browser_substage",
+    "support_denial_form_count", "customer_service_route_candidate_count",
+    "customer_service_route_safe_count", "browser_substage",
 }
 SAFE_EXCEPTION_TYPES = {
     "AssertionError", "TimeoutException", "ValueError", "RuntimeError", "URLError", "OSError",
@@ -85,6 +87,7 @@ SAFE_EXCEPTION_TYPES = {
 }
 SAFE_BROWSER_SUBSTAGES = {
     "not_applicable", "contact_form_navigation", "order_select_lookup", "order_option_scan",
+    "admin_login_completed", "admin_service_route_discovery",
     "order_owner_assertion", "order_select_scroll", "order_select_hit_test",
     "order_select_native_option", "order_select_readback",
     "foreign_invalid_token_probe", "foreign_owned_thread_probe", "foreign_orderless_thread_probe",
@@ -798,8 +801,11 @@ def assert_foreign_orderless_post_denied(
     assert_support_denied_response(response, diagnostic_result)
 
 
-def generated_customer_threads_link(driver, admin_url: str) -> str:
+def generated_customer_threads_link(
+    driver, admin_url: str, diagnostic_result: dict[str, Any] | None = None
+) -> str:
     candidates = []
+    safe_candidates = []
     for link in driver.find_elements(By.CSS_SELECTOR, "a[href]"):
         href = link.get_attribute("href") or ""
         parsed = urlparse(href)
@@ -809,9 +815,14 @@ def generated_customer_threads_link(driver, admin_url: str) -> str:
             or "/sell/customer-service/customer-threads" in parsed.path
         )
         if route_match:
-            if not safe_admin_path(href, admin_url):
-                raise AssertionError("native Customer service navigation left the isolated Back Office")
             candidates.append(href)
+            if safe_admin_path(href, admin_url):
+                safe_candidates.append(href)
+    if diagnostic_result is not None:
+        diagnostic_result["customer_service_route_candidate_count"] = min(len(set(candidates)), 20)
+        diagnostic_result["customer_service_route_safe_count"] = min(len(set(safe_candidates)), 20)
+    if len(safe_candidates) != len(candidates):
+        raise AssertionError("native Customer service navigation left the isolated Back Office")
     if len(set(candidates)) != 1:
         raise AssertionError("the authenticated administrator did not expose one native Customer service route")
     return candidates[0]
@@ -1115,6 +1126,10 @@ def write_result(path: Path, result: dict[str, Any]) -> None:
         ))
         or type(result.get("contact_form_count")) is not int or result["contact_form_count"] < 0
         or type(result.get("support_denial_form_count")) is not int or result["support_denial_form_count"] < 0
+        or type(result.get("customer_service_route_candidate_count")) is not int
+        or not 0 <= result["customer_service_route_candidate_count"] <= 20
+        or type(result.get("customer_service_route_safe_count")) is not int
+        or not 0 <= result["customer_service_route_safe_count"] <= 20
         or not isinstance(result.get("browser_substage"), str)
         or result["browser_substage"] not in SAFE_BROWSER_SUBSTAGES
         or result.get("mailpit_provider") != "isolated_only"
@@ -1158,6 +1173,7 @@ def run() -> None:
         "contact_form_count": 0, "contact_form_visible": False,
         "support_denial_status": None, "support_denial_form_count": 0,
         "support_denial_redirected": True, "support_denial_same_origin": False,
+        "customer_service_route_candidate_count": 0, "customer_service_route_safe_count": 0,
     }
     customer = admin = foreign = limited = None
     buyer_marker = f"[CI ONLY] ORDENOWA support inquiry {ctx.run_id}-{ctx.attempt}-{secrets.token_hex(5)}"
@@ -1286,8 +1302,10 @@ def run() -> None:
         download_dir = Path(tempfile.mkdtemp(prefix="ordenowa-support-download-"))
         admin = new_driver(download_dir=download_dir)
         admin_login(admin, ctx, ctx.admin_email)
-        index_link = generated_customer_threads_link(admin, ctx.admin)
+        mark_browser_substage(result, "admin_login_completed")
         stage = result["stage"] = "admin_thread_lookup"
+        mark_browser_substage(result, "admin_service_route_discovery")
+        index_link = generated_customer_threads_link(admin, ctx.admin, result)
         visit(admin, index_link)
         thread_view_url, thread_id = view_link_from_index(admin, ctx, ctx.buyer, first_thread_id)
         if thread_id != first_thread_id:
@@ -1489,6 +1507,8 @@ def run() -> None:
             f"support_denial_form_count={result['support_denial_form_count']}; "
             f"support_denial_redirected={str(result['support_denial_redirected']).lower()}; "
             f"support_denial_same_origin={str(result['support_denial_same_origin']).lower()}; "
+            f"admin_route_candidates={result['customer_service_route_candidate_count']}; "
+            f"admin_route_safe={result['customer_service_route_safe_count']}; "
             f"same_origin={str(result['contact_same_origin']).lower()}; "
             f"native_route={str(result['contact_native_route']).lower()}; "
             f"form_count={result['contact_form_count']}; "

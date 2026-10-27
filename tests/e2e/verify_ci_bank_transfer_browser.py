@@ -47,7 +47,7 @@ SAFE_EXCEPTION_TYPES = {
 }
 SAFE_RESULT_KEYS = {
     "status", "stage", "exception_type", "failure_substage", "fixture_bound", "instruction_issued",
-    "issue_persistence_diagnostic",
+    "issue_persistence_diagnostic", "issue_failure_category",
     "issue_left_order_unpaid", "instruction_immutable", "customer_instruction_visible",
     "order_identity_match", "order_product_line_match", "amount_match", "account_match", "foreign_customer_denied",
     "limited_staff_denied", "view_only_confirmation_denied", "issue_csrf_rejected", "csrf_rejected", "wrong_amount_rejected", "receipt_confirmed",
@@ -57,8 +57,15 @@ SAFE_RESULT_KEYS = {
 SAFE_ISSUE_PERSISTENCE_DIAGNOSTICS = {
     "not_run", "unpaid_instruction_absent", "unpaid_instruction_persisted", "unexpected_state", "unavailable",
 }
+SAFE_ISSUE_FAILURE_CATEGORIES = {
+    "not_run", "csrf_rejected", "issue_permission_denied", "order_scope_rejected",
+    "wrong_payment_module", "invalid_unpaid_order", "profile_account_gate",
+    "employee_missing", "issuer_validation_error", "instruction_persistence_error",
+    "existing_instruction_mismatch", "unclassified_notice",
+}
 RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {
     "status", "stage", "exception_type", "failure_substage", "issue_persistence_diagnostic",
+    "issue_failure_category",
 }
 
 
@@ -473,6 +480,32 @@ def issue_notice_failure_substage(notice_text: str, notice_class: str) -> str:
     return f"instruction_issue_notice_{unpaid_state}_{class_state}"
 
 
+def issue_notice_failure_category(notice_text: str) -> str:
+    """Map exact known feedback to a fixed category without logging message content."""
+    normalized = " ".join(notice_text.split())
+    known_feedback = {
+        "관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.": "csrf_rejected",
+        "주문 입금 안내를 발급할 권한이 없습니다.": "issue_permission_denied",
+        "선택한 쇼핑몰의 주문을 찾을 수 없습니다.": "order_scope_rejected",
+        "입금 안내는 미결제 계좌이체 주문에만 발급할 수 있습니다.": "wrong_payment_module",
+        "미결제 상태의 유효한 엔화 주문만 안내할 수 있습니다.": "invalid_unpaid_order",
+        "판매자 승인과 게시된 계좌 안내를 먼저 확인해 주세요.": "profile_account_gate",
+        "관리자 계정을 확인할 수 없습니다.": "employee_missing",
+        "게시된 은행 계좌 설정을 찾을 수 없습니다.": "profile_account_gate",
+        "엔화 주문에만 입금 안내를 발급할 수 있습니다.": "invalid_unpaid_order",
+        "게시된 은행 계좌가 비활성 상태이거나 선택되지 않았습니다.": "profile_account_gate",
+        "주문 입금 안내를 저장하지 못했습니다.": "instruction_persistence_error",
+        "이미 발급된 입금 안내와 현재 주문 정보가 다릅니다.": "existing_instruction_mismatch",
+        "주문 계좌 안내의 연결 정보가 올바르지 않습니다.": "issuer_validation_error",
+        "주문 번호 형식이 올바르지 않습니다.": "issuer_validation_error",
+        "주문 금액 형식이 올바르지 않습니다.": "issuer_validation_error",
+        "통화 형식이 올바르지 않습니다.": "issuer_validation_error",
+        "은행 계좌 연결 정보가 올바르지 않습니다.": "issuer_validation_error",
+        "발급 시각 형식이 올바르지 않습니다.": "issuer_validation_error",
+    }
+    return known_feedback.get(normalized, "unclassified_notice")
+
+
 def reject_issue_with_invalid_csrf(driver: webdriver.Chrome, row, admin_root: str, set_substage) -> None:
     forms = row.find_elements(By.CSS_SELECTOR, "form")
     if len(forms) != 1:
@@ -673,6 +706,7 @@ def write_result(path: Path, result: dict[str, object]) -> None:
             or result.get("stage") not in SAFE_STAGES
             or result.get("failure_substage") not in SAFE_SUBSTAGES
             or result.get("issue_persistence_diagnostic") not in SAFE_ISSUE_PERSISTENCE_DIAGNOSTICS
+            or result.get("issue_failure_category") not in SAFE_ISSUE_FAILURE_CATEGORIES
             or (result.get("exception_type") is not None and result.get("exception_type") not in SAFE_EXCEPTION_TYPES)
             or any(type(result.get(key)) is not bool for key in RESULT_BOOLEAN_KEYS)
             or (result.get("status") == "success" and (
@@ -717,6 +751,7 @@ def run() -> None:
         "status": "failure", "stage": stage, "exception_type": None,
         "failure_substage": "none",
         "issue_persistence_diagnostic": "not_run",
+        "issue_failure_category": "not_run",
         "fixture_bound": False, "instruction_issued": False, "issue_left_order_unpaid": False,
         "instruction_immutable": False, "customer_instruction_visible": False,
         "order_identity_match": False, "order_product_line_match": False, "amount_match": False, "account_match": False,
@@ -786,6 +821,7 @@ def run() -> None:
         notice_text, notice_class = read_visible_notice_snapshot(admin)
         if ("미결제" not in notice_text or "alert-success" not in notice_class.split()):
             set_substage(issue_notice_failure_substage(notice_text, notice_class))
+            result["issue_failure_category"] = issue_notice_failure_category(notice_text)
             try:
                 result["issue_persistence_diagnostic"] = diagnose_unpaid_issue_persistence(ctx, order)
             except Exception:
@@ -969,7 +1005,9 @@ def run() -> None:
         result["failure_substage"] = substage if substage in SAFE_SUBSTAGES else "none"
         print(
             f"FAIL: isolated bank-transfer browser QA; stage={result['stage']}; "
-            f"substage={substage}; exception={result['exception_type']}",
+            f"substage={substage}; exception={result['exception_type']}; "
+            f"issue_failure_category={result['issue_failure_category']}; "
+            f"issue_persistence_diagnostic={result['issue_persistence_diagnostic']}",
             file=sys.stderr,
         )
         for browser, filename in (

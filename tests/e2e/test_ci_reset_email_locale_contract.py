@@ -250,6 +250,10 @@ class ResetEmailLocaleContract(unittest.TestCase):
             output.getvalue(),
             'FAIL: isolated native reset email locale=none stage=context exception=RuntimeError; '
             'response_status=unavailable; message_check=none; message_parts=unavailable; '
+            'mail_type=unavailable; template_candidate=unavailable; '
+            'template_iso=none; text_source=unavailable; '
+            'text_template_present=false; text_template_has_url=false; '
+            'html_template_present=false; html_template_has_url=false; '
             'same_origin=false; native_route=false; language_matches=false; '
             'email_field=false; submit_control=false; submit_center_in_viewport=false; '
             'submit_center_unobstructed=false; success_alert=false; reset_fields=false\n',
@@ -263,6 +267,10 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 "status": "failure", "language": "ja", "stage": "native_request_email_field",
                 "exception_type": "TimeoutException", "response_status": 404,
                 "message_check": "none", "message_part_evidence": None,
+                "mail_type": None, "template_candidate": "unavailable",
+                "template_iso": "none", "text_source": "unavailable",
+                "text_template_present": False, "text_template_has_url": False,
+                "html_template_present": False, "html_template_has_url": False,
                 "same_origin": True, "native_route": True, "language_matches": False,
                 "email_field_present": False, "submit_control_present": False,
                 "submit_center_in_viewport": False, "submit_center_unobstructed": False,
@@ -380,6 +388,25 @@ class ResetEmailLocaleContract(unittest.TestCase):
         self.assertIn("test -s /var/www/html/mails/ko/password_query.html", smoke)
         self.assertIn("grep -Fq '{url}' /var/www/html/mails/ko/password_query.txt", smoke)
         self.assertIn("grep -Fq '비밀번호' /var/www/html/mails/ko/password_query.txt", smoke)
+
+        verifier = VERIFIER.read_text(encoding="utf-8")
+        for expected in (
+            "new ReflectionMethod(Mail::class, 'getTemplateBasePath')",
+            "'mail_type' => (int) Configuration::get('PS_MAIL_TYPE')",
+            "'template_candidate' => 'unavailable'",
+            "'/themes/' . $context->shop->theme->getName() . '/mails'",
+            "'/themes/' . $parentName . '/mails'",
+            "realpath(_PS_ROOT_DIR_ . '/mails')",
+            "'text_source'",
+            "'template_iso'",
+            "'text_template_has_url'",
+            "'html_template_has_url'",
+            'mail_type={diagnostic["mail_type"]',
+            'template_candidate={diagnostic["template_candidate"]}',
+        ):
+            self.assertIn(expected, verifier)
+        for forbidden in ("$templateBasePath}", "print($templateBasePath", "echo $templateBasePath"):
+            self.assertNotIn(forbidden, verifier)
 
     def test_korean_text_only_precedence_candidate_gets_a_native_html_pair(self):
         root = VERIFIER.parents[2]

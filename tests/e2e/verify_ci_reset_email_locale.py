@@ -45,6 +45,11 @@ SAFE_MESSAGE_CHECKS = {
     'html_reset_link_missing', 'text_reset_link_missing',
 }
 MAX_LINK_DIAGNOSTIC_COUNT = 20
+SAFE_TEMPLATE_CANDIDATES = {
+    'active_theme', 'parent_theme', 'shop_root', 'module_fallback', 'other', 'missing', 'unavailable',
+}
+SAFE_TEMPLATE_ISOS = {'ja', 'en', 'ko', 'other', 'none'}
+SAFE_TEMPLATE_TEXT_SOURCES = {'text_template', 'html_to_text', 'none', 'unavailable'}
 PART_EVIDENCE_KEYS = {'required_link_candidate_count', 'native_route_candidate_count',
                       'reset_credential_candidate_count', 'native_reset_link_shape'}
 
@@ -145,6 +150,9 @@ def write_diagnostics(result: dict) -> None:
     if (set(result) != {
             'status', 'language', 'stage', 'exception_type', 'response_status',
             'message_check', 'message_part_evidence',
+            'mail_type', 'template_candidate', 'template_iso', 'text_source',
+            'text_template_present', 'text_template_has_url',
+            'html_template_present', 'html_template_has_url',
             'same_origin', 'native_route', 'language_matches', 'email_field_present',
             'submit_control_present', 'submit_center_in_viewport',
             'submit_center_unobstructed', 'success_alert_present', 'reset_fields_present',
@@ -154,11 +162,17 @@ def write_diagnostics(result: dict) -> None:
             or result['language'] not in (*LANGUAGES, 'none')
             or result['stage'] not in SAFE_STAGES
             or result['message_check'] not in SAFE_MESSAGE_CHECKS
+            or result['mail_type'] not in (None, 1, 2, 3, 4)
+            or result['template_candidate'] not in SAFE_TEMPLATE_CANDIDATES
+            or result['template_iso'] not in SAFE_TEMPLATE_ISOS
+            or result['text_source'] not in SAFE_TEMPLATE_TEXT_SOURCES
             or (result['exception_type'] is not None and result['exception_type'] not in SAFE_EXCEPTION_TYPES)
             or (result['response_status'] is not None and (
                 type(result['response_status']) is not int or not 100 <= result['response_status'] <= 599
             ))
             or any(type(result[key]) is not bool for key in (
+                'text_template_present', 'text_template_has_url',
+                'html_template_present', 'html_template_has_url',
                 'same_origin', 'native_route', 'language_matches', 'email_field_present',
                 'submit_control_present', 'submit_center_in_viewport',
                 'submit_center_unobstructed', 'success_alert_present', 'reset_fields_present'))):
@@ -350,6 +364,92 @@ if (!$idLang || !Validate::isLoadedObject($language) || !$language->active) {
 }
 $context = Context::getContext();
 $context->language = $language;
+$templateEvidence = [
+    'mail_type' => (int) Configuration::get('PS_MAIL_TYPE'),
+    'template_candidate' => 'unavailable',
+    'template_iso' => 'none',
+    'text_source' => 'unavailable',
+    'text_template_present' => false,
+    'text_template_has_url' => false,
+    'html_template_present' => false,
+    'html_template_has_url' => false,
+];
+try {
+    $getTemplateBasePath = new ReflectionMethod(Mail::class, 'getTemplateBasePath');
+    $getTemplateBasePath->setAccessible(true);
+    $mailType = $templateEvidence['mail_type'];
+    $defaultIso = Language::getIsoById((int) Configuration::get('PS_LANG_DEFAULT'));
+    $templateIsos = [$iso];
+    if ($defaultIso && $iso !== $defaultIso) {
+        $templateIsos[] = $defaultIso;
+    }
+    if (!in_array('en', $templateIsos, true)) {
+        $templateIsos[] = 'en';
+    }
+    $templateEvidence['text_source'] = $mailType === Mail::TYPE_BOTH_AUTOMATIC_TEXT
+        ? 'html_to_text'
+        : (in_array($mailType, [Mail::TYPE_BOTH, Mail::TYPE_TEXT], true) ? 'text_template' : 'none');
+    $requiredText = in_array($mailType, [Mail::TYPE_BOTH, Mail::TYPE_TEXT], true);
+    $requiredHtml = in_array($mailType, [Mail::TYPE_HTML, Mail::TYPE_BOTH, Mail::TYPE_BOTH_AUTOMATIC_TEXT], true);
+    $foundTemplate = false;
+    foreach ($templateIsos as $templateIso) {
+        $templateBasePath = (string) $getTemplateBasePath->invoke(
+            null,
+            $templateIso . '/password_query',
+            false,
+            $context->shop->theme
+        );
+        if ($templateBasePath === '') {
+            continue;
+        }
+        $resolvedBase = realpath($templateBasePath);
+        $activeThemeBase = realpath(_PS_ROOT_DIR_ . '/themes/' . $context->shop->theme->getName() . '/mails');
+        $parentName = (string) $context->shop->theme->get('parent');
+        $parentThemeBase = $parentName !== ''
+            ? realpath(_PS_ROOT_DIR_ . '/themes/' . $parentName . '/mails')
+            : false;
+        $shopRoot = realpath(_PS_ROOT_DIR_ . '/mails');
+        $moduleRoot = realpath(_PS_MODULE_DIR_);
+        if ($resolvedBase !== false && $resolvedBase === $activeThemeBase) {
+            $templateEvidence['template_candidate'] = 'active_theme';
+        } elseif ($resolvedBase !== false && $parentThemeBase !== false && $resolvedBase === $parentThemeBase) {
+            $templateEvidence['template_candidate'] = 'parent_theme';
+        } elseif ($resolvedBase !== false && $shopRoot !== false && $resolvedBase === $shopRoot) {
+            $templateEvidence['template_candidate'] = 'shop_root';
+        } elseif ($resolvedBase !== false && $moduleRoot !== false
+            && str_starts_with($resolvedBase, $moduleRoot . DIRECTORY_SEPARATOR)) {
+            $templateEvidence['template_candidate'] = 'module_fallback';
+        } else {
+            $templateEvidence['template_candidate'] = 'other';
+        }
+        $textTemplatePath = rtrim($templateBasePath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR
+            . $templateIso . '/password_query.txt';
+        $htmlTemplatePath = rtrim($templateBasePath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR
+            . $templateIso . '/password_query.html';
+        $textTemplate = is_file($textTemplatePath) ? file_get_contents($textTemplatePath) : false;
+        $htmlTemplate = is_file($htmlTemplatePath) ? file_get_contents($htmlTemplatePath) : false;
+        $templateEvidence['text_template_present'] = is_string($textTemplate);
+        $templateEvidence['html_template_present'] = is_string($htmlTemplate);
+        if (($requiredText && !is_string($textTemplate)) || ($requiredHtml && !is_string($htmlTemplate))) {
+            continue;
+        }
+        $templateEvidence['template_iso'] = in_array($templateIso, ['ja', 'en', 'ko'], true)
+            ? $templateIso
+            : 'other';
+        $templateEvidence['text_template_present'] = is_string($textTemplate);
+        $templateEvidence['text_template_has_url'] = is_string($textTemplate) && str_contains($textTemplate, '{url}');
+        $templateEvidence['html_template_present'] = is_string($htmlTemplate);
+        $templateEvidence['html_template_has_url'] = is_string($htmlTemplate) && str_contains($htmlTemplate, '{url}');
+        $foundTemplate = true;
+        break;
+    }
+    if (!$foundTemplate) {
+        $templateEvidence['template_candidate'] = 'missing';
+        $templateEvidence['template_iso'] = 'none';
+    }
+} catch (Throwable $exception) {
+    // Keep the diagnostic bounded; the live reset request and email assertions remain authoritative.
+}
 $customer = new Customer();
 $customer->firstname = 'ORDENOWA';
 $customer->lastname = 'CI Reset Locale';
@@ -363,6 +463,7 @@ $customer->id_shop = (int) $context->shop->id;
 $customer->active = 1;
 if (!$customer->add()) { throw new RuntimeException('isolated reset fixture creation failed'); }
 echo json_encode(['url' => $context->link->getPageLink('password', null, $idLang),
+                  'template_evidence' => $templateEvidence,
                   'forbidden' => ['raw_password' => $rawPassword,
                                   'password_hash' => $customer->passwd,
                                   'customer_secure_key' => $customer->secure_key]], JSON_THROW_ON_ERROR);
@@ -404,6 +505,10 @@ def run() -> bool:
     diagnostic = {
         'status': 'failure', 'language': 'none', 'stage': 'context', 'exception_type': None,
         'message_check': 'none', 'message_part_evidence': None,
+        'mail_type': None, 'template_candidate': 'unavailable',
+        'template_iso': 'none', 'text_source': 'unavailable',
+        'text_template_present': False, 'text_template_has_url': False,
+        'html_template_present': False, 'html_template_has_url': False,
         'response_status': None, 'same_origin': False, 'native_route': False,
         'language_matches': False, 'email_field_present': False,
         'submit_control_present': False, 'submit_center_in_viewport': False,
@@ -427,6 +532,21 @@ def run() -> bool:
                               success_alert_present=False, reset_fields_present=False)
             email = f'ordenowa-reset-locale-{os.environ["GITHUB_RUN_ID"]}-{os.environ["GITHUB_RUN_ATTEMPT"]}-{language}-{secrets.token_hex(4)}@example.invalid'
             fixture = seed(project, language, email)
+            template_evidence = fixture.get('template_evidence')
+            if (isinstance(template_evidence, dict)
+                    and set(template_evidence) == {
+                        'mail_type', 'template_candidate', 'text_template_present', 'text_template_has_url',
+                        'template_iso', 'text_source', 'html_template_present', 'html_template_has_url',
+                    }
+                    and type(template_evidence.get('mail_type')) is int
+                    and template_evidence['template_candidate'] in SAFE_TEMPLATE_CANDIDATES
+                    and template_evidence['template_iso'] in SAFE_TEMPLATE_ISOS
+                    and template_evidence['text_source'] in SAFE_TEMPLATE_TEXT_SOURCES
+                    and all(type(template_evidence.get(key)) is bool for key in (
+                        'text_template_present', 'text_template_has_url',
+                        'html_template_present', 'html_template_has_url',
+                    ))):
+                diagnostic.update(template_evidence)
             if not same_origin(fixture['url'], base):
                 raise AssertionError('native recovery route left isolated origin')
             options = Options()
@@ -510,6 +630,14 @@ def run() -> bool:
             f'exception={diagnostic["exception_type"]}; response_status={response_status}; '
             f'message_check={diagnostic["message_check"]}; '
             f'message_parts={format_part_evidence(diagnostic["message_part_evidence"])}; '
+            f'mail_type={diagnostic["mail_type"] if diagnostic["mail_type"] in (1, 2, 3, 4) else "unavailable"}; '
+            f'template_candidate={diagnostic["template_candidate"]}; '
+            f'template_iso={diagnostic["template_iso"]}; '
+            f'text_source={diagnostic["text_source"]}; '
+            f'text_template_present={str(diagnostic["text_template_present"]).lower()}; '
+            f'text_template_has_url={str(diagnostic["text_template_has_url"]).lower()}; '
+            f'html_template_present={str(diagnostic["html_template_present"]).lower()}; '
+            f'html_template_has_url={str(diagnostic["html_template_has_url"]).lower()}; '
             f'same_origin={str(diagnostic["same_origin"]).lower()}; '
             f'native_route={str(diagnostic["native_route"]).lower()}; '
             f'language_matches={str(diagnostic["language_matches"]).lower()}; '
