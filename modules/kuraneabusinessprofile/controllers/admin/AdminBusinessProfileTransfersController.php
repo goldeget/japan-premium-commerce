@@ -365,8 +365,35 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
             return '';
         }
         $class = $this->ordenowaFeedbackIsError ? 'alert-danger' : 'alert-success';
+        $ciCsrfEvidence = $this->renderIsolatedCiCsrfEvidence();
 
-        return '<div class="alert ' . $class . '">' . $this->escape($this->ordenowaFeedback) . '</div>';
+        return '<div class="alert ' . $class . '">' . $this->escape($this->ordenowaFeedback) . '</div>'
+            . $ciCsrfEvidence;
+    }
+
+    private function renderIsolatedCiCsrfEvidence(): string
+    {
+        if (!CommerceGate::isIsolatedCiCheckoutEnabled()) {
+            return '';
+        }
+
+        $submittedToken = isset($_POST['token']) && is_string($_POST['token']) ? $_POST['token'] : '';
+        $queryToken = isset($_GET['token']) && is_string($_GET['token']) ? $_GET['token'] : '';
+        $controllerToken = (string) $this->token;
+        $adminLinkToken = (string) Tools::getAdminTokenLite('AdminBusinessProfileTransfers');
+        $evidence = [
+            'post-value-present' => $submittedToken !== '',
+            'post-matches-controller' => hash_equals($controllerToken, $submittedToken),
+            'query-matches-controller' => $queryToken !== '' && hash_equals($controllerToken, $queryToken),
+            'post-matches-query' => $queryToken !== '' && hash_equals($queryToken, $submittedToken),
+            'controller-matches-admin-link' => hash_equals($controllerToken, $adminLinkToken),
+        ];
+        $attributes = '';
+        foreach ($evidence as $name => $matches) {
+            $attributes .= ' data-' . $name . '="' . ($matches ? 'true' : 'false') . '"';
+        }
+
+        return '<span id="ordenowa-ci-transfer-csrf-evidence" hidden' . $attributes . '></span>';
     }
 
     private function escape(string $value): string

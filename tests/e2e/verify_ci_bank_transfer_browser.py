@@ -48,6 +48,8 @@ SAFE_EXCEPTION_TYPES = {
 SAFE_RESULT_KEYS = {
     "status", "stage", "exception_type", "failure_substage", "fixture_bound", "instruction_issued",
     "issue_persistence_diagnostic", "issue_failure_category", "issue_form_csrf_consistent",
+    "issue_server_csrf_evidence_present", "issue_post_value_present", "issue_post_matches_controller",
+    "issue_query_matches_controller", "issue_post_matches_query", "issue_controller_matches_admin_link",
     "issue_left_order_unpaid", "instruction_immutable", "customer_instruction_visible",
     "order_identity_match", "order_product_line_match", "amount_match", "account_match", "foreign_customer_denied",
     "limited_staff_denied", "view_only_confirmation_denied", "issue_csrf_rejected", "csrf_rejected", "wrong_amount_rejected", "receipt_confirmed",
@@ -461,6 +463,30 @@ def issue_form_token_matches_action(row, admin_root: str) -> bool:
     )
 
 
+def read_issue_csrf_server_evidence(driver) -> dict[str, bool]:
+    elements = driver.find_elements(By.ID, "ordenowa-ci-transfer-csrf-evidence")
+    evidence = {
+        "issue_server_csrf_evidence_present": len(elements) == 1,
+        "issue_post_value_present": False,
+        "issue_post_matches_controller": False,
+        "issue_query_matches_controller": False,
+        "issue_post_matches_query": False,
+        "issue_controller_matches_admin_link": False,
+    }
+    if len(elements) != 1:
+        return evidence
+    element = elements[0]
+    for key, attribute in (
+        ("issue_post_value_present", "data-post-value-present"),
+        ("issue_post_matches_controller", "data-post-matches-controller"),
+        ("issue_query_matches_controller", "data-query-matches-controller"),
+        ("issue_post_matches_query", "data-post-matches-query"),
+        ("issue_controller_matches_admin_link", "data-controller-matches-admin-link"),
+    ):
+        evidence[key] = element.get_attribute(attribute) == "true"
+    return evidence
+
+
 def read_visible_notice(driver: webdriver.Chrome):
     return WebDriverWait(driver, 35).until(lambda browser: next((
         notice for notice in browser.find_elements(By.CSS_SELECTOR, ".alert.alert-success, .alert.alert-danger")
@@ -774,6 +800,9 @@ def run() -> None:
         "issue_persistence_diagnostic": "not_run",
         "issue_failure_category": "not_run",
         "issue_form_csrf_consistent": False,
+        "issue_server_csrf_evidence_present": False, "issue_post_value_present": False,
+        "issue_post_matches_controller": False, "issue_query_matches_controller": False,
+        "issue_post_matches_query": False, "issue_controller_matches_admin_link": False,
         "fixture_bound": False, "instruction_issued": False, "issue_left_order_unpaid": False,
         "instruction_immutable": False, "customer_instruction_visible": False,
         "order_identity_match": False, "order_product_line_match": False, "amount_match": False, "account_match": False,
@@ -844,6 +873,7 @@ def run() -> None:
         issue_buttons[0].click()
         set_substage("instruction_issue_notice_readback")
         notice_text, notice_class = read_visible_notice_snapshot(admin)
+        result.update(read_issue_csrf_server_evidence(admin))
         if ("미결제" not in notice_text or "alert-success" not in notice_class.split()):
             set_substage(issue_notice_failure_substage(notice_text, notice_class))
             result["issue_failure_category"] = issue_notice_failure_category(notice_text)
@@ -1033,7 +1063,13 @@ def run() -> None:
             f"substage={substage}; exception={result['exception_type']}; "
             f"issue_failure_category={result['issue_failure_category']}; "
             f"issue_persistence_diagnostic={result['issue_persistence_diagnostic']}; "
-            f"issue_form_csrf_consistent={str(result['issue_form_csrf_consistent']).lower()}",
+            f"issue_form_csrf_consistent={str(result['issue_form_csrf_consistent']).lower()}; "
+            f"issue_server_csrf_evidence_present={str(result['issue_server_csrf_evidence_present']).lower()}; "
+            f"issue_post_value_present={str(result['issue_post_value_present']).lower()}; "
+            f"issue_post_matches_controller={str(result['issue_post_matches_controller']).lower()}; "
+            f"issue_query_matches_controller={str(result['issue_query_matches_controller']).lower()}; "
+            f"issue_post_matches_query={str(result['issue_post_matches_query']).lower()}; "
+            f"issue_controller_matches_admin_link={str(result['issue_controller_matches_admin_link']).lower()}",
             file=sys.stderr,
         )
         for browser, filename in (

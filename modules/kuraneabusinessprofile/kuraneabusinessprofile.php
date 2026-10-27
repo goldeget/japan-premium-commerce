@@ -62,6 +62,7 @@ class Kuraneabusinessprofile extends Module
             'actionGetExtraMailTemplateVars',
             'actionEmailSendBefore',
             'actionEmailAddAfterContent',
+            'actionMailAlterMessageBeforeSend',
             'displayOrderConfirmation',
             'displayOrderDetail',
         ]);
@@ -375,6 +376,100 @@ class Kuraneabusinessprofile extends Module
     {
         $shopId = (int) ($params['idShop'] ?? 0);
         $this->activeMailShopId = $shopId > 0 ? $shopId : null;
+    }
+
+    /** @param array<string, mixed> $params */
+    public function hookActionMailAlterMessageBeforeSend(array $params): void
+    {
+        $message = $params['message'] ?? null;
+        if (!$this->isIsolatedResetFixtureMessage($message)
+            || !is_object($message)
+            || !method_exists($message, 'getHeaders')
+            || !method_exists($message, 'getHtmlBody')
+            || !method_exists($message, 'getTextBody')) {
+            return;
+        }
+
+        $headers = $message->getHeaders();
+        if (!is_object($headers) || !method_exists($headers, 'addTextHeader')) {
+            return;
+        }
+        $idLang = (int) ($params['id_lang'] ?? $this->context->language->id ?? 0);
+        $htmlHasLink = $this->hasNativeResetLink((string) ($message->getHtmlBody() ?? ''), $idLang);
+        $textHasLink = $this->hasNativeResetLink((string) ($message->getTextBody() ?? ''), $idLang);
+        $headers->addTextHeader('X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link', $htmlHasLink ? 'true' : 'false');
+        $headers->addTextHeader('X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link', $textHasLink ? 'true' : 'false');
+    }
+
+    private function isIsolatedResetFixtureMessage(mixed $message): bool
+    {
+        $runId = (string) getenv('GITHUB_RUN_ID');
+        $attempt = (string) getenv('GITHUB_RUN_ATTEMPT');
+        $project = 'kuranea-ci-' . $runId . '-' . $attempt;
+        if (getenv('CI') !== 'true'
+            || getenv('GITHUB_ACTIONS') !== 'true'
+            || getenv('KURANEA_CI_PROJECT_NAME') !== $project
+            || preg_match('/\\A[0-9]+\\z/D', $runId) !== 1
+            || preg_match('/\\A[0-9]+\\z/D', $attempt) !== 1
+            || !is_object($message)
+            || !method_exists($message, 'getTo')) {
+            return false;
+        }
+
+        $recipients = $message->getTo();
+        if (!is_array($recipients)) {
+            return false;
+        }
+        $pattern = '/\\Aordenowa-reset-locale-' . preg_quote($runId, '/') . '-'
+            . preg_quote($attempt, '/') . '-(?:ja|en|ko)-[a-f0-9]{8}@example\\.invalid\\z/D';
+        foreach ($recipients as $recipient) {
+            if (!is_object($recipient) || !method_exists($recipient, 'getAddress')) {
+                continue;
+            }
+            if (preg_match($pattern, strtolower((string) $recipient->getAddress())) === 1) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function hasNativeResetLink(string $body, int $idLang): bool
+    {
+        if ($body === '' || !is_object($this->context->link) || !method_exists($this->context->link, 'getPageLink')) {
+            return false;
+        }
+        $idShop = (int) ($this->activeMailShopId ?? $this->context->shop->id ?? 0);
+        $nativeUrl = (string) $this->context->link->getPageLink(
+            'password', null, $idLang > 0 ? $idLang : null, null, false, $idShop > 0 ? $idShop : null
+        );
+        $native = parse_url($nativeUrl);
+        if (!is_array($native) || !isset($native['scheme'], $native['host'], $native['path'])) {
+            return false;
+        }
+
+        $decoded = html_entity_decode($body, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        if (preg_match_all("~https?://[^\\s<>\"']+~i", $decoded, $matches) < 1) {
+            return false;
+        }
+        foreach ($matches[0] as $candidate) {
+            $candidate = rtrim($candidate, '.,;)]');
+            $parts = parse_url($candidate);
+            if (!is_array($parts)
+                || !isset($parts['scheme'], $parts['host'], $parts['path'])
+                || strtolower($parts['scheme']) !== strtolower((string) $native['scheme'])
+                || strtolower($parts['host']) !== strtolower((string) $native['host'])
+                || (int) ($parts['port'] ?? 0) !== (int) ($native['port'] ?? 0)
+                || rawurldecode((string) $parts['path']) !== rawurldecode((string) $native['path'])) {
+                continue;
+            }
+            parse_str((string) ($parts['query'] ?? ''), $query);
+            if (is_string($query['token'] ?? null) && trim($query['token']) !== ''
+                && is_string($query['reset_token'] ?? null) && trim($query['reset_token']) !== ''
+                && is_string($query['id_customer'] ?? null) && trim($query['id_customer']) !== '') {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** @return array<string, mixed>|null */

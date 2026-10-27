@@ -37,6 +37,32 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         self.assertTrue((ROOT / "modules/kuraneabusinessprofile/upgrade/upgrade-1.0.3.php").is_file())
         self.assertTrue((ROOT / "modules/kuraneabusinessprofile/upgrade/upgrade-1.0.4.php").is_file())
 
+    def test_pre_smtp_reset_diagnostic_is_run_scoped_and_contains_only_link_shape_booleans(self):
+        module = MODULE_PATH.read_text(encoding="utf-8")
+        install = module.split("public function install()", 1)[1].split("public function uninstall()", 1)[0]
+        hook = module.split("public function hookActionMailAlterMessageBeforeSend", 1)[1].split(
+            "private function isIsolatedResetFixtureMessage", 1
+        )[0]
+        recipient_guard = module.split("private function isIsolatedResetFixtureMessage", 1)[1].split(
+            "private function hasNativeResetLink", 1
+        )[0]
+        for marker in (
+            "'actionMailAlterMessageBeforeSend'",
+            "X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link",
+            "X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link",
+        ):
+            self.assertIn(marker, install + hook)
+        self.assertIn("function hookActionMailAlterMessageBeforeSend(array $params)", module)
+        for marker in (
+            "getenv('GITHUB_ACTIONS') !== 'true'",
+            "getenv('KURANEA_CI_PROJECT_NAME') !== $project",
+            "ordenowa-reset-locale-",
+            "@example\\\\.invalid",
+        ):
+            self.assertIn(marker, recipient_guard)
+        self.assertNotIn("getHtmlBody() .", hook)
+        self.assertNotIn("getTextBody() .", hook)
+
     def test_mail_shop_context_reaches_both_content_and_extra_vars_before_cleanup(self):
         module = MODULE_PATH.read_text(encoding="utf-8")
 

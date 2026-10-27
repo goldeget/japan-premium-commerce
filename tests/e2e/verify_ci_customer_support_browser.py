@@ -301,6 +301,46 @@ def safe_admin_path(value: str, admin_url: str) -> bool:
     )
 
 
+def customer_threads_navigation_identity(value: str, admin_url: str) -> tuple[str, str] | None:
+    """Identify one exact native route while treating query order and path aliases as equivalent."""
+    if not safe_admin_path(value, admin_url):
+        return None
+    expected = urlparse(admin_url)
+    root = expected.path.rstrip("/")
+    candidate = urlparse(urljoin(admin_url.rstrip("/") + "/", value))
+    try:
+        pairs = parse_qsl(candidate.query, keep_blank_values=True, strict_parsing=True)
+    except ValueError:
+        return None
+    if not pairs or any(not key for key, _value in pairs):
+        return None
+    query: dict[str, str] = {}
+    for key, query_value in pairs:
+        if key in query:
+            return None
+        query[key] = query_value
+
+    token = query.get("token", "")
+    if not token.strip():
+        return None
+    path = candidate.path.rstrip("/")
+    modern_paths = {
+        root + "/sell/customer-service/customer-threads",
+        root + "/index.php/sell/customer-service/customer-threads",
+    }
+    if path in modern_paths and set(query) == {"token"}:
+        return "modern", token
+
+    legacy_paths = {root, root + "/index.php"}
+    if (
+        path in legacy_paths
+        and set(query) == {"controller", "token"}
+        and query.get("controller") == "AdminCustomerThreads"
+    ):
+        return "legacy", token
+    return None
+
+
 def thread_route_identity(value: str, admin_url: str) -> tuple[str, int] | None:
     if not safe_admin_path(value, admin_url):
         return None
@@ -809,21 +849,16 @@ def generated_customer_threads_link(
 ) -> str:
     expected = urlparse(admin_url)
     root = expected.path.rstrip("/")
-    modern_paths = {
-        root + "/sell/customer-service/customer-threads",
-        root + "/index.php/sell/customer-service/customer-threads",
-    }
-    legacy_paths = {root, root + "/index.php"}
     candidates: set[str] = set()
     safe_candidates: set[str] = set()
-    modern_candidates: set[str] = set()
-    legacy_candidates: set[str] = set()
+    modern_candidates: dict[tuple[str, str], str] = {}
+    legacy_candidates: dict[tuple[str, str], str] = {}
     invalid_candidates: set[str] = set()
     for link in driver.find_elements(By.CSS_SELECTOR, "a[href]"):
         href = link.get_attribute("href") or ""
         parsed = urlparse(href)
         query = parse_qs(parsed.query, keep_blank_values=True)
-        legacy_marker = query.get("controller") == ["AdminCustomerThreads"]
+        legacy_marker = "AdminCustomerThreads" in query.get("controller", [])
         modern_suffix = re.search(r"/sell/customer-service/customer-threads/?$", parsed.path) is not None
         route_match = legacy_marker or modern_suffix
         if route_match:
@@ -831,12 +866,19 @@ def generated_customer_threads_link(
             if not safe_admin_path(href, admin_url):
                 continue
             safe_candidates.add(href)
-            is_modern = parsed.path.rstrip("/") in modern_paths
-            is_legacy = legacy_marker and parsed.path.rstrip("/") in legacy_paths
-            if is_modern and not legacy_marker:
-                modern_candidates.add(href)
-            elif is_legacy and not modern_suffix:
-                legacy_candidates.add(href)
+            identity = customer_threads_navigation_identity(href, admin_url)
+            if identity is not None and identity[0] == "modern" and not legacy_marker:
+                existing = modern_candidates.get(identity)
+                if existing is None or (urlparse(href).path.endswith("/index.php/sell/customer-service/customer-threads"), href) < (
+                    urlparse(existing).path.endswith("/index.php/sell/customer-service/customer-threads"), existing
+                ):
+                    modern_candidates[identity] = href
+            elif identity is not None and identity[0] == "legacy" and legacy_marker and not modern_suffix:
+                existing = legacy_candidates.get(identity)
+                if existing is None or (urlparse(href).path != root + "/index.php", href) < (
+                    urlparse(existing).path != root + "/index.php", existing
+                ):
+                    legacy_candidates[identity] = href
             else:
                 invalid_candidates.add(href)
     if diagnostic_result is not None:
@@ -852,9 +894,9 @@ def generated_customer_threads_link(
     if len(modern_candidates) > 1 or len(legacy_candidates) > 1:
         raise AssertionError("native Customer service navigation exposed ambiguous route aliases")
     if len(modern_candidates) == 1:
-        return next(iter(modern_candidates))
+        return next(iter(modern_candidates.values()))
     if len(legacy_candidates) == 1:
-        return next(iter(legacy_candidates))
+        return next(iter(legacy_candidates.values()))
     if not safe_candidates:
         raise AssertionError("the authenticated administrator did not expose a native Customer service route")
     raise AssertionError("native Customer service navigation did not expose one unambiguous route")

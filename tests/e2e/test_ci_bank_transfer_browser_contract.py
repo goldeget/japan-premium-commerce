@@ -235,6 +235,30 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.require('result["issue_form_csrf_consistent"] = issue_form_token_matches_action(', self.browser)
         self.require("issue_form_csrf_consistent=", self.browser)
 
+        ci_evidence = self.controller.split("private function renderIsolatedCiCsrfEvidence", 1)[1].split(
+            "private function escape", 1
+        )[0]
+        for marker in (
+            "CommerceGate::isIsolatedCiCheckoutEnabled()",
+            "hash_equals($controllerToken, $submittedToken)",
+            "hash_equals($controllerToken, $queryToken)",
+            "hash_equals($queryToken, $submittedToken)",
+            "hash_equals($controllerToken, $adminLinkToken)",
+            "ordenowa-ci-transfer-csrf-evidence",
+            "'post-matches-controller'",
+        ):
+            self.require(marker, ci_evidence)
+        self.assertNotIn("$submittedToken .", ci_evidence)
+        self.assertNotIn("$queryToken .", ci_evidence)
+
+        browser_evidence = self.browser.split("def read_issue_csrf_server_evidence", 1)[1].split(
+            "def read_visible_notice", 1
+        )[0]
+        self.require('By.ID, "ordenowa-ci-transfer-csrf-evidence"', browser_evidence)
+        self.require('"issue_post_matches_controller", "data-post-matches-controller"', browser_evidence)
+        self.assertNotIn('get_attribute("value")', browser_evidence)
+        self.require('result.update(read_issue_csrf_server_evidence(admin))', self.browser)
+
     def test_instruction_issue_notice_uses_fresh_snapshot_before_persistence_readback(self) -> None:
         issue_flow = self.browser.split('stage = result["stage"] = "instruction_issue"', 1)[1].split(
             'stage = result["stage"] = "instruction_readback"', 1
