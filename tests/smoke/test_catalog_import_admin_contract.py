@@ -106,6 +106,7 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         importer = (persistence / "CatalogDatabaseLegacyImporter.php").read_text(encoding="utf-8")
         queue = (persistence / "DatabaseProductReviewQueueRepository.php").read_text(encoding="utf-8")
         batches = (persistence / "DatabaseCatalogImportBatchRepository.php").read_text(encoding="utf-8")
+        sql = (persistence / "CatalogDatabaseSql.php").read_text(encoding="utf-8")
         transaction = (persistence / "CatalogDatabaseTransaction.php").read_text(encoding="utf-8")
         acceptance = (ROOT / "tests" / "catalog" / "database_scale_acceptance.php").read_text(encoding="utf-8")
         workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
@@ -127,7 +128,7 @@ class CatalogImportAdminContractTests(unittest.TestCase):
                 self.assertIn(marker, importer)
         for marker in ("FOR UPDATE", "id_shop = ' . $this->shopId", "LIMIT ", "COUNT(*)", "payload_sha256"):
             with self.subTest(marker=marker):
-                self.assertIn(marker, queue + batches)
+                self.assertIn(marker, queue + batches + sql)
         self.assertIn("START TRANSACTION", transaction)
         self.assertIn("ROLLBACK", transaction)
         self.assertIn("COMMIT", transaction)
@@ -142,6 +143,16 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         self.assertLess(scale_at, restore_at)
         self.assertIn("catalog-scale-acceptance.log", workflow)
         self.assertIn("catalog_import_scale_acceptance=$CATALOG_IMPORT_SCALE_ACCEPTANCE_OUTCOME", workflow)
+
+    def test_catalog_row_locks_use_pre_stashop_limit_and_lock_order_without_query_cache(self) -> None:
+        persistence = ROOT / "modules" / "kuraneacatalog" / "src" / "Infrastructure" / "Persistence"
+        sql = (persistence / "CatalogDatabaseSql.php").read_text(encoding="utf-8")
+        queue = (persistence / "DatabaseProductReviewQueueRepository.php").read_text(encoding="utf-8")
+        batches = (persistence / "DatabaseCatalogImportBatchRepository.php").read_text(encoding="utf-8")
+
+        self.assertIn("$database->executeS($query . ' LIMIT 1 FOR UPDATE', true, false)", sql)
+        self.assertIn("CatalogDatabaseSql::selectOneForUpdate($this->database", queue + batches)
+        self.assertNotRegex(queue + batches, r"getRow\([\s\S]{0,500}FOR UPDATE")
 
     def test_unsupported_product_urls_use_safe_korean_feedback(self) -> None:
         self.assertIn(

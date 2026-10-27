@@ -146,9 +146,9 @@ final class DatabaseCatalogImportBatchRepository implements CatalogImportBatchRe
         }
 
         return CatalogDatabaseTransaction::run($this->database, function () use ($batchId, $change): CatalogImportBatch {
-            $row = $this->database->getRow(
+            $row = CatalogDatabaseSql::selectOneForUpdate($this->database,
                 'SELECT payload, payload_sha256 FROM ' . $this->table . ' WHERE id_shop = ' . $this->shopId
-                . ' AND id_batch = ' . CatalogDatabaseSql::quote($batchId) . ' FOR UPDATE'
+                . ' AND id_batch = ' . CatalogDatabaseSql::quote($batchId)
             );
             if (!is_array($row) || !is_string($row['payload'] ?? null) || !is_string($row['payload_sha256'] ?? null)) {
                 throw new RuntimeException('Catalog import batch was not found.');

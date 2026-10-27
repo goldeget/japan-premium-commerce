@@ -229,10 +229,10 @@ final class DatabaseProductReviewQueueRepository implements ProductReviewQueueRe
         if ($key === '' || strlen($key) > 512) {
             return null;
         }
-        $row = $this->database->getRow(
+        $row = CatalogDatabaseSql::selectOneForUpdate($this->database,
             'SELECT payload, payload_sha256 FROM ' . $this->table
             . ' WHERE id_shop = ' . $this->shopId
-            . ' AND idempotency_key = ' . CatalogDatabaseSql::quote($key) . ' FOR UPDATE'
+            . ' AND idempotency_key = ' . CatalogDatabaseSql::quote($key)
         );
 
         return is_array($row) && is_string($row['payload'] ?? null) && is_string($row['payload_sha256'] ?? null)
@@ -246,10 +246,10 @@ final class DatabaseProductReviewQueueRepository implements ProductReviewQueueRe
             throw new RuntimeException('Catalog review identity is invalid.');
         }
         $row = CatalogDatabaseRowMapper::review($entry);
-        $existing = $this->database->getRow(
+        $existing = CatalogDatabaseSql::selectOneForUpdate($this->database,
             'SELECT source_identity_hash FROM ' . $this->table
             . ' WHERE id_shop = ' . $this->shopId
-            . ' AND idempotency_key = ' . CatalogDatabaseSql::quote($entry->idempotencyKey) . ' FOR UPDATE'
+            . ' AND idempotency_key = ' . CatalogDatabaseSql::quote($entry->idempotencyKey)
         );
         if (!is_array($existing)) {
             throw new RuntimeException('Cannot update a catalog review entry that is not queued.');
@@ -292,10 +292,10 @@ final class DatabaseProductReviewQueueRepository implements ProductReviewQueueRe
             throw new RuntimeException('Catalog review record could not be stored.');
         }
 
-        $stored = $this->database->getRow(
+        $stored = CatalogDatabaseSql::selectOneForUpdate($this->database,
             'SELECT source_identity_hash, payload_sha256, payload FROM ' . $this->table
             . ' WHERE id_shop = ' . $this->shopId
-            . ' AND idempotency_key = ' . CatalogDatabaseSql::quote($entry->idempotencyKey) . ' FOR UPDATE'
+            . ' AND idempotency_key = ' . CatalogDatabaseSql::quote($entry->idempotencyKey)
         );
         if (!is_array($stored) || !is_string($stored['payload'] ?? null) || !is_string($stored['payload_sha256'] ?? null)) {
             throw new RuntimeException('Catalog review insert could not be verified.');

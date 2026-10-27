@@ -11,6 +11,34 @@ use RuntimeException;
 
 final class CatalogDatabaseSql
 {
+    /**
+     * Read one row under a write lock without Db::getRow()'s trailing LIMIT 1.
+     * PrestaShop appends that clause after the supplied SQL, which makes a
+     * trailing FOR UPDATE invalid on MariaDB/MySQL.
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function selectOneForUpdate(object $database, string $select): ?array
+    {
+        $query = rtrim($select, " \t\n\r\0\x0B;");
+        if (preg_match('/\\A\\s*SELECT\\s/i', $query) !== 1
+            || preg_match('/\\b(?:LIMIT|FOR\\s+UPDATE)\\b/i', $query) === 1) {
+            throw new RuntimeException('Catalog database lock query is invalid.');
+        }
+        $rows = $database->executeS($query . ' LIMIT 1 FOR UPDATE', true, false);
+        if (!is_array($rows)) {
+            throw new RuntimeException('Catalog database row could not be locked.');
+        }
+        if (!isset($rows[0])) {
+            return null;
+        }
+        if (!is_array($rows[0])) {
+            throw new RuntimeException('Catalog database row is invalid.');
+        }
+
+        return $rows[0];
+    }
+
     public static function quote(string $value): string
     {
         if (!function_exists('pSQL')) {
