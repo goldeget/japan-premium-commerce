@@ -116,10 +116,13 @@ assertBusinessProfileTrue(str_contains($previewHtml, '관리자 전용'), 'Admin
 $imagePreviewProfile = $initial;
 $imagePreviewProfile['brand']['assets']['header_desktop'] = 'img/ordenowa/versions/' . str_repeat('c', 64) . '/header-desktop.png';
 $imagePreviewProfile['brand']['assets']['admin_login'] = 'img/ordenowa/versions/' . str_repeat('d', 64) . '/admin-login.png';
+$imagePreviewProfile['brand']['assets']['apple_touch'] = 'img/ordenowa/versions/' . str_repeat('e', 64) . '/apple-touch-icon.png';
 $imagePreviewHtml = \Kuranea\BusinessProfile\Admin\AdminProfileForm::renderPreview($imagePreviewProfile, 'https://shop.example/');
 assertBusinessProfileTrue(str_contains($imagePreviewHtml, 'https://shop.example/img/ordenowa/versions/'), 'Uploaded brand derivatives should be visible in the authenticated preview.');
 assertBusinessProfileTrue(str_contains($imagePreviewHtml, '<figcaption>관리자 로그인 로고</figcaption>'), 'The authenticated brand preview should include the admin-login derivative.');
 assertBusinessProfileTrue(str_contains($imagePreviewHtml, '<figcaption>이메일 로고</figcaption>'), 'The authenticated brand preview should include the email logo derivative.');
+assertBusinessProfileTrue(str_contains($imagePreviewHtml, '<figcaption>애플 터치 아이콘</figcaption>'), 'The authenticated brand preview should label the Apple touch icon in Korean.');
+assertBusinessProfileTrue(!str_contains($imagePreviewHtml, 'Apple Touch Icon'), 'The authenticated brand preview must not render the untranslated English icon label.');
 
 $secretProfile = $initial;
 $secretProfile['bank_accounts'] = [['account_number' => '9988776655', 'account_holder' => 'PRIVATE HOLDER']];
@@ -130,8 +133,11 @@ $historyHtml = \Kuranea\BusinessProfile\Admin\AdminProfileForm::renderHistory([$
 assertBusinessProfileTrue(str_contains($historyHtml, '현재 초안'), 'The history should identify the active draft.');
 assertBusinessProfileTrue(str_contains($historyHtml, '이 버전을 초안으로 복원'), 'The history should expose restore as a new draft action.');
 assertBusinessProfileTrue(!str_contains($historyHtml, '9988776655') && !str_contains($historyHtml, 'PRIVATE HOLDER'), 'Profile history must never render full bank details.');
-$previousHistoryVersion = new \Kuranea\BusinessProfile\Domain\ProfileVersion(98, 1, $initial, 9, null, '2026-10-21 10:00:00');
+$previousHistoryProfile = $initial;
+$previousHistoryProfile['brand']['assets']['apple_touch'] = 'img/ordenowa/versions/' . str_repeat('a', 64) . '/apple-touch-icon.png';
+$previousHistoryVersion = new \Kuranea\BusinessProfile\Domain\ProfileVersion(98, 1, $previousHistoryProfile, 9, null, '2026-10-21 10:00:00');
 $changedHistoryProfile = $secretProfile;
+$changedHistoryProfile['brand']['assets']['apple_touch'] = 'img/ordenowa/versions/' . str_repeat('b', 64) . '/apple-touch-icon.png';
 $changedHistoryProfile['brand']['name']['ko-KR'] = '<script>ORDENOWA history sentinel</script>';
 $changedHistoryProfile['localization']['default_locale'] = 'en-US';
 $changedHistoryProfile['company_reference']['verification_status'] = 'unverified';
@@ -151,10 +157,39 @@ assertBusinessProfileTrue(!str_contains($changedHistoryHtml, '<script>ORDENOWA h
 assertBusinessProfileTrue(str_contains($changedHistoryHtml, '은행 계좌 정보 변경 후'), 'The history may summarize a bank change without exposing its values.');
 assertBusinessProfileTrue(str_contains($changedHistoryHtml, '이전 값</th>'), 'The history should label prior values in Korean.');
 assertBusinessProfileTrue(str_contains($changedHistoryHtml, '회사 참고정보 · 검증 상태'), 'The history should label the company-reference verification field in Korean.');
+assertBusinessProfileTrue(str_contains($changedHistoryHtml, '브랜드 · 브랜드 이미지 · 애플 터치 아이콘'), 'The change list should label Apple touch icon changes in Korean.');
+assertBusinessProfileTrue(!str_contains($changedHistoryHtml, 'Apple Touch Icon'), 'The profile history must not render the untranslated English icon label.');
 assertBusinessProfileTrue(str_contains($changedHistoryHtml, '사용자 제공 참고정보'), 'The history should render the previous verification state in Korean.');
 assertBusinessProfileTrue(str_contains($changedHistoryHtml, '미확인'), 'The history should render the current verification state in Korean.');
 assertBusinessProfileTrue(str_contains($changedHistoryHtml, '일본어') && str_contains($changedHistoryHtml, '영어'), 'The history should render default locale codes as Korean language names.');
 assertBusinessProfileTrue(!str_contains($changedHistoryHtml, '9988776655') && !str_contains($changedHistoryHtml, 'PRIVATE HOLDER'), 'Field-level history must continue to conceal bank secrets.');
+
+$englishAdminException = new RuntimeException('PrestaShop database service is not available.');
+$mixedInternalAdminException = new RuntimeException('입금 확인 실패: SQLSTATE[HY000] private-token-123');
+$safeTransferRuntimeException = new RuntimeException('은행 거래내역에서 입금 사실을 확인한 뒤 처리해 주세요.');
+$localizedAdminException = new InvalidArgumentException('선택한 주문의 입금 금액이 올바르지 않습니다.');
+$adminErrorFallback = '주문 입금을 확인하지 못했습니다. 주문 상태와 결제 기록을 다시 확인해 주세요.';
+assertBusinessProfileSame(
+    $adminErrorFallback,
+    \Kuranea\BusinessProfile\Admin\AdminErrorMessage::fromException($englishAdminException, $adminErrorFallback),
+    'English infrastructure exception text must use the Korean admin fallback.'
+);
+assertBusinessProfileSame(
+    $adminErrorFallback,
+    \Kuranea\BusinessProfile\Admin\AdminErrorMessage::fromException($mixedInternalAdminException, $adminErrorFallback),
+    'Mixed-language infrastructure errors must not expose query or token details.'
+);
+assertBusinessProfileSame(
+    '은행 거래내역에서 입금 사실을 확인한 뒤 처리해 주세요.',
+    \Kuranea\BusinessProfile\Admin\AdminErrorMessage::fromException($safeTransferRuntimeException, $adminErrorFallback),
+    'An explicitly allowlisted transfer-domain reason should remain visible.'
+);
+assertBusinessProfileSame(
+    '선택한 주문의 입금 금액이 올바르지 않습니다.',
+    \Kuranea\BusinessProfile\Admin\AdminErrorMessage::fromException($localizedAdminException, $adminErrorFallback),
+    'An existing Korean validation message must remain visible.'
+);
+
 $viewOnlyHistory = \Kuranea\BusinessProfile\Admin\AdminProfileForm::renderHistory([$secretVersion], 99, 0, '/admin-test', 'csrf-token', false);
 assertBusinessProfileTrue(!str_contains($viewOnlyHistory, 'submitOrdenowaRestore'), 'View-only employees must not receive a restore control.');
 

@@ -10,6 +10,8 @@ from typing import Any
 
 
 CUSTOMER_ADDRESS_ISOLATION_RESULT_KEYS = (
+    "foreign_response_status_allowed",
+    "foreign_response_same_shop",
     "owner_session_authenticated",
     "foreign_session_authenticated",
     "foreign_edit_form_absent",

@@ -40,7 +40,7 @@ final class ProfileChangeSet
         'favicon' => '파비콘',
         'favicon_16' => '16px 파비콘',
         'favicon_32' => '32px 파비콘',
-        'apple_touch' => 'Apple Touch Icon',
+        'apple_touch' => '애플 터치 아이콘',
         'pwa_192' => '192px PWA 아이콘',
         'pwa_512' => '512px PWA 아이콘',
         'pwa_maskable_512' => '마스크형 PWA 아이콘',

@@ -23,9 +23,9 @@ from checkout_admin_routes import is_legacy_admin_order_detail_url, is_modern_ad
 
 
 BASE = os.environ["SHOP_BASE_URL"].rstrip("/")
-ADMIN_LOGIN = os.environ["ADMIN_LOGIN_URL"].rstrip("/")
-ADMIN_EMAIL = os.environ["ADMIN_MAIL"]
-ADMIN_PASSWORD = os.environ["ADMIN_PASSWD"]
+ADMIN_LOGIN = os.environ.get("ADMIN_LOGIN_URL", "").rstrip("/")
+ADMIN_EMAIL = os.environ.get("ADMIN_MAIL", "")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWD", "")
 PRODUCT_ID = int(os.environ["CI_TEST_PRODUCT_ID"])
 RUN_ID = re.sub(r"[^0-9]", "", os.environ["GITHUB_RUN_ID"])
 RUN_ATTEMPT = re.sub(r"[^0-9]", "", os.environ["GITHUB_RUN_ATTEMPT"])
@@ -1047,12 +1047,37 @@ def prepare_required_customer_fields(
             select.select_by_value(option.get_attribute("value"))
 
 
+def select_storefront_language(driver: webdriver.Chrome, language_iso: str) -> None:
+    if language_iso not in {"ja", "en", "ko"}:
+        raise ValueError("unsupported isolated storefront language")
+    option = WebDriverWait(driver, 30).until(
+        EC.presence_of_element_located(
+            (By.CSS_SELECTOR, f'select.js-language-selector option[data-iso-code="{language_iso}"]')
+        )
+    )
+    destination = urljoin(driver.current_url, option.get_attribute("value") or "")
+    parsed, base = urlparse(destination), urlparse(BASE)
+    if (
+        parsed.scheme.lower(), parsed.hostname, parsed.port
+    ) != (
+        base.scheme.lower(), base.hostname, base.port
+    ):
+        raise AssertionError("the native storefront locale selector left the isolated shop")
+    visit(driver, destination)
+    document_language = (driver.find_element(By.TAG_NAME, "html").get_attribute("lang") or "")
+    if document_language.lower().split("-")[0] != language_iso:
+        raise AssertionError("the native storefront locale selector did not render the requested language")
+
+
 def search_for_product(
     driver: webdriver.Chrome,
     label: str,
     search_term: str = "postcode",
+    language_iso: str | None = None,
 ) -> None:
     visit(driver, BASE + "/")
+    if language_iso is not None:
+        select_storefront_language(driver, language_iso)
     if label in {"mobile", "bank"} or label.endswith("-mobile"):
         search_toggle = visible(driver, '.ps-searchbar--mobile [data-bs-target="#searchCanvas"]')
         search_toggle.click()
@@ -1244,7 +1269,7 @@ def select_japan_address(driver: webdriver.Chrome, label: str) -> None:
                 option
                 for option in country_select.options
                 if option.get_attribute("value")
-                and ("japan" in option.text.lower() or "日本" in option.text)
+                and any(marker in option.text.casefold() for marker in ("japan", "日本", "일본"))
             ),
             None,
         )
@@ -1527,7 +1552,12 @@ def choose_delivery_and_offline_payment(driver: webdriver.Chrome, label: str) ->
         raise
 
 
-def place_unpaid_order(driver: webdriver.Chrome, label: str, email: str) -> dict:
+def place_unpaid_order(
+    driver: webdriver.Chrome,
+    label: str,
+    email: str,
+    language_iso: str | None = None,
+) -> dict:
     place_order = visible(driver, "#payment-confirmation button", timeout=35)
     click_at_center(driver, place_order)
     WebDriverWait(driver, 60).until(
@@ -1564,10 +1594,13 @@ def place_unpaid_order(driver: webdriver.Chrome, label: str, email: str) -> dict
         "viewport": label,
         "order_id": int(order_ids[0]),
         "reference": reference,
-        "email": email,
         "product_id": PRODUCT_ID,
         "payment_module": "ps_checkpayment",
     }
+    if language_iso is not None:
+        result["locale"] = language_iso
+    else:
+        result["email"] = email
     (DEST / f"ci-checkout-{label}.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -1902,6 +1935,8 @@ def cancel_unpaid_desktop_order_through_admin(
 
 
 def run_admin_order_view() -> None:
+    if not ADMIN_LOGIN or not ADMIN_EMAIL or not ADMIN_PASSWORD:
+        raise SystemExit("admin checkout verification requires its isolated administrator credentials")
     options = browser_options(1440, 960)
     driver = webdriver.Chrome(options=options)
     stage = "administrator_login"

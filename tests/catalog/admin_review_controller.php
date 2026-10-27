@@ -245,14 +245,14 @@ try {
     $unsupportedUrlController = new AdminKuraneaCatalogReviewController();
     $unsupportedUrlController->initContent();
     assertCatalogAdminTrue(
-        str_contains($unsupportedUrlController->content, '상품 URL을 등록할 수 없습니다. Amazon Japan 또는 Rakuten의 지원 상품 주소를 1~10개 입력해 주세요.'),
+        str_contains($unsupportedUrlController->content, '상품 URL을 등록할 수 없습니다. 아마존 일본 또는 라쿠텐의 지원 상품 주소를 1~10개 입력해 주세요.'),
         'An unsupported URL should display the fixed Korean validation message.'
     );
     assertCatalogAdminTrue(!str_contains($unsupportedUrlController->content, 'not a supported marketplace product URL'), 'An unsupported URL must not expose the exception message.');
     assertCatalogAdminTrue(!str_contains($unsupportedUrlController->content, $unsupportedUrl), 'An unsupported URL must not be reflected into the response.');
     assertCatalogAdminTrue(!str_contains($unsupportedUrlController->content, 'id="catalog-import-progress"'), 'An unsupported URL must not create or render a batch.');
 
-    $urlInputError = '상품 URL을 등록할 수 없습니다. Amazon Japan 또는 Rakuten의 지원 상품 주소를 1~10개 입력해 주세요.';
+    $urlInputError = '상품 URL을 등록할 수 없습니다. 아마존 일본 또는 라쿠텐의 지원 상품 주소를 1~10개 입력해 주세요.';
     $invalidUrlInputs = [
         ['value' => '', 'label' => 'An empty URL list should display safe Korean validation feedback.'],
         [

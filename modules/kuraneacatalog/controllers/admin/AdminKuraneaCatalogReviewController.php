@@ -108,7 +108,7 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
                 $this->activeBatchCanAutoAdvance = true;
                 $this->succeed(sprintf('%d개 고유 상품 URL을 수집 대기열에 추가했습니다.', count($this->activeBatch->items)));
             } catch (\InvalidArgumentException) {
-                $this->fail('상품 URL을 등록할 수 없습니다. Amazon Japan 또는 Rakuten의 지원 상품 주소를 1~10개 입력해 주세요.');
+                $this->fail('상품 URL을 등록할 수 없습니다. 아마존 일본 또는 라쿠텐의 지원 상품 주소를 1~10개 입력해 주세요.');
             } catch (Throwable) {
                 $this->fail('상품 URL 일괄 등록을 저장하지 못했습니다. URL과 저장 공간을 확인해 주세요.');
             }
@@ -489,7 +489,10 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
                 $result->productId
             ));
         } catch (\InvalidArgumentException $exception) {
-            $this->fail($exception->getMessage());
+            $message = trim($exception->getMessage());
+            $this->fail(preg_match('/[가-힣]/u', $message) === 1
+                ? $message
+                : '비활성 상품 초안을 저장하지 못했습니다. 가격·세금·카테고리·옵션·이미지 입력을 확인해 주세요.');
         } catch (Throwable) {
             $this->fail('비활성 상품 초안을 저장하지 못했습니다. 가격·세금·카테고리·옵션·이미지 입력을 확인해 주세요.');
         }
@@ -713,7 +716,7 @@ class AdminKuraneaCatalogReviewController extends ModuleAdminController
     {
         $action = (string) $this->context->link->getAdminLink('AdminKuraneaCatalogReview');
         $token = (string) Tools::getAdminTokenLite('AdminKuraneaCatalogReview');
-        $html = '<section class="panel"><h3>Amazon Japan·Rakuten 상품 URL 수집</h3>'
+        $html = '<section class="panel"><h3>아마존 일본·라쿠텐 상품 URL 수집</h3>'
             . '<p>공개 상품 페이지 URL을 한 줄에 하나씩 입력합니다. HTTPS 상품 경로만 허용하며 최대 10개를 한 번에 처리합니다. 로그인·CAPTCHA·접근 제한은 우회하지 않습니다.</p>'
             . '<p>수집 가격은 출처 참고값이며 실제 판매가격이 아닙니다. 출처 재고는 ORDENOWA 재고와 별도입니다.</p>';
         if (!$this->canApprove()) {

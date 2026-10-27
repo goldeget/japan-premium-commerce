@@ -204,10 +204,19 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             "ORDENOWA_ADMIN_RETURN_FOCUS": "false",
             "ORDENOWA_CUSTOMER_ACCOUNT_FOCUS": "false",
             "ORDENOWA_ADMIN_QA_FOCUS": "false",
+            "CATALOG_IMPORT_ADMIN_ACCESS_READY": "true",
             "SECURITY_ADMIN_LOCALE_MUTATED": "1",
         }
         command = shell_body(aggregate)
         self.assertEqual(subprocess.run(["bash", "-c", command], env=env, capture_output=True).returncode, 0)
+        missing_catalog_access = subprocess.run(
+            ["bash", "-c", command],
+            env={**env, "CATALOG_IMPORT_ADMIN_ACCESS_READY": "false"},
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(missing_catalog_access.returncode, 0)
+        self.assertIn("catalog_import_admin_access_ready=false", missing_catalog_access.stdout)
         for step_id in NEW_STEP_IDS:
             for outcome in ("failure", "skipped"):
                 with self.subTest(step=step_id, outcome=outcome):
@@ -288,6 +297,7 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             "ORDENOWA_ADMIN_RETURN_FOCUS": "false",
             "ORDENOWA_CUSTOMER_ACCOUNT_FOCUS": "false",
             "ORDENOWA_ADMIN_QA_FOCUS": "false",
+            "CATALOG_IMPORT_ADMIN_ACCESS_READY": "true",
             "SECURITY_ADMIN_LOCALE_MUTATED": "",
         }
         env["SECURITY_LOCALE_RESTORE_OUTCOME"] = "skipped"
@@ -425,6 +435,8 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             address_isolation_result = {
                 key: True
                 for key in (
+                    "foreign_response_status_allowed",
+                    "foreign_response_same_shop",
                     "owner_session_authenticated",
                     "foreign_session_authenticated",
                     "foreign_edit_form_absent",

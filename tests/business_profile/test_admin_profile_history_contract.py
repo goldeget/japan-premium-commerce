@@ -9,6 +9,14 @@ MODULE = ROOT / "modules" / "kuraneabusinessprofile"
 
 
 class AdminProfileHistoryContractTests(unittest.TestCase):
+    def test_admin_brand_asset_labels_are_korean_in_preview_and_history(self) -> None:
+        form = (MODULE / "src" / "Admin" / "AdminProfileForm.php").read_text(encoding="utf-8")
+        change_set = (MODULE / "src" / "Admin" / "ProfileChangeSet.php").read_text(encoding="utf-8")
+        self.assertIn("'apple_touch' => '애플 터치 아이콘'", form)
+        self.assertIn("'apple_touch' => '애플 터치 아이콘'", change_set)
+        self.assertNotIn("'apple_touch' => 'Apple Touch Icon'", form)
+        self.assertNotIn("'apple_touch' => 'Apple Touch Icon'", change_set)
+
     def test_admin_history_uses_parent_version_diff_and_escapes_values(self) -> None:
         form = (MODULE / "src" / "Admin" / "AdminProfileForm.php").read_text(encoding="utf-8")
         change_set_path = MODULE / "src" / "Admin" / "ProfileChangeSet.php"

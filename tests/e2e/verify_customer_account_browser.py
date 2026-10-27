@@ -2667,6 +2667,50 @@ def wait_for_customer_address_card(driver: webdriver.Chrome, alias: str):
     )
 
 
+def save_redacted_customer_address_screenshot(
+    driver: webdriver.Chrome,
+    destination: Path,
+) -> None:
+    """Capture address-page layout evidence while hiding every saved address value."""
+    style_id = "ordenowa-ci-address-redaction"
+    driver.execute_script(
+        r"""
+        const style = document.createElement('style');
+        style.id = arguments[0];
+        style.textContent = `
+          .js-address-form form input,
+          .js-address-form form select,
+          .js-address-form form textarea,
+          article.address-card .address-card__alias,
+          article.address-card address.address-card__content,
+          article.address-card address.address-card__content * {
+            color: transparent !important;
+            -webkit-text-fill-color: transparent !important;
+            text-shadow: none !important;
+          }
+          article.address-card .address-card__alias::after,
+          article.address-card address.address-card__content::after {
+            color: #555 !important;
+            -webkit-text-fill-color: #555 !important;
+            text-shadow: none !important;
+          }
+          article.address-card .address-card__alias::after { content: '가림'; }
+          article.address-card address.address-card__content::after { content: '주소 내용 가림'; }
+        `;
+        document.head.appendChild(style);
+        """,
+        style_id,
+    )
+    try:
+        if not driver.save_screenshot(str(destination)):
+            raise RuntimeError("redacted customer address screenshot could not be saved")
+    finally:
+        driver.execute_script(
+            "document.getElementById(arguments[0])?.remove();",
+            style_id,
+        )
+
+
 def choose_japan_country(driver: webdriver.Chrome, form) -> None:
     country_select = form.find_element(By.CSS_SELECTOR, 'select[name="id_country"]')
     japan_option = next(
@@ -2778,7 +2822,9 @@ def create_customer_address(
     form = visible(driver, ".js-address-form form")
     mark_substage("address_native_validation")
     assert_native_form_valid(driver, form, "customer address")
-    driver.save_screenshot(str(DEST / f"{label}-customer-address-new.png"))
+    save_redacted_customer_address_screenshot(
+        driver, DEST / f"{label}-customer-address-new.png"
+    )
     mark_substage("address_submit")
     click_centered(driver, visible(driver, ".js-address-form button.form-control-submit"))
     mark_substage("address_submit_persistence")
@@ -3310,7 +3356,9 @@ def save_customer_address_edit(
     address_field.clear()
     address_field.send_keys(edited_address_line)
     assert_native_form_valid(driver, form, "customer address update")
-    driver.save_screenshot(str(DEST / f"{label}-customer-address-edit-form.png"))
+    save_redacted_customer_address_screenshot(
+        driver, DEST / f"{label}-customer-address-edit-form.png"
+    )
     click_centered(driver, visible(driver, ".js-address-form button.form-control-submit"))
 
 
@@ -3497,13 +3545,27 @@ def assert_native_form_valid(driver: webdriver.Chrome, form, form_label: str) ->
         raise AssertionError(f"{form_label} form has invalid controls: {detail}")
 
 
-def submit_login(driver: webdriver.Chrome, email_address: str, password: str) -> None:
+def submit_login(
+    driver: webdriver.Chrome,
+    email_address: str,
+    password: str,
+    substage_callback: Callable[[str], None] | None = None,
+) -> None:
+    def mark_substage(value: str) -> None:
+        if substage_callback is not None:
+            substage_callback(value)
+
+    mark_substage("fill_email")
     fill(driver, '#login-form input[name="email"]', email_address)
+    mark_substage("fill_password")
     fill(driver, '#login-form input[name="password"]', password)
+    mark_substage("submit_click")
     visible(driver, "#submit-login").click()
+    mark_substage("auth_result_wait")
     login_result = WebDriverWait(driver, 30).until(collect_email_login_result)
     if login_result == "rejected":
         raise AssertionError("customer email login was rejected")
+    mark_substage("auth_result_complete")
 
 
 def assert_login_rejected(driver: webdriver.Chrome, email_address: str, password: str) -> None:
@@ -3958,6 +4020,10 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         elif safe_value == "address_edit_native_click_returned" and completed:
             address_edit_state["native_click_returned"] = True
 
+    def mark_address_isolation_substage(value: str) -> None:
+        nonlocal address_isolation_substage
+        address_isolation_substage = safe_diagnostic_name(value)
+
     try:
         validate_isolated_ci_compose_project()
         validate_loopback_endpoints()
@@ -4178,7 +4244,9 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         if korean_address_description not in driver.find_element(By.TAG_NAME, "body").text:
             raise AssertionError("the Korean customer address list omitted its localized description")
         assert_customer_address_line(driver, address_alias, address_id, initial_address_line)
-        driver.save_screenshot(str(DEST / f"{label}-customer-address-saved.png"))
+        save_redacted_customer_address_screenshot(
+            driver, DEST / f"{label}-customer-address-saved.png"
+        )
 
         edited_address_line = f"大手町4-5-6 {label.upper()} CI EDITED"
         stage = "customer_address_edit"
@@ -4201,7 +4269,9 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             edited_address_line,
             previous_line=initial_address_line,
         )
-        driver.save_screenshot(str(DEST / f"{label}-customer-address-edited.png"))
+        save_redacted_customer_address_screenshot(
+            driver, DEST / f"{label}-customer-address-edited.png"
+        )
         driver.refresh()
         assert_customer_address_line(
             driver,
@@ -4210,7 +4280,9 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             edited_address_line,
             previous_line=initial_address_line,
         )
-        driver.save_screenshot(str(DEST / f"{label}-customer-address-edited-after-refresh.png"))
+        save_redacted_customer_address_screenshot(
+            driver, DEST / f"{label}-customer-address-edited-after-refresh.png"
+        )
 
         address_isolation_started = True
         stage = "customer_address_cross_owner_owner_logout"
@@ -4266,6 +4338,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         final_event = top_level_events[-1]
         if final_event.get("status_code") not in {200, 401, 403, 404}:
             raise AssertionError("foreign address access did not resolve to a successful or denied response")
+        address_isolation_result["foreign_response_status_allowed"] = True
         current_location = urlparse(driver.current_url)
         shop_location = urlparse(BASE)
         current_origin = (
@@ -4280,6 +4353,16 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         )
         if current_origin != shop_origin:
             raise AssertionError("foreign address access left the isolated shop origin")
+        address_isolation_result["foreign_response_same_shop"] = True
+        print(
+            "ORDENOWA_CUSTOMER_ADDRESS_FOREIGN_RESPONSE_SAFE_TRACE="
+            + json.dumps(
+                safe_registration_navigation_summary(top_level_events),
+                ensure_ascii=True,
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
         body_text = driver.find_element(By.TAG_NAME, "body").text
         address_forms = driver.find_elements(By.CSS_SELECTOR, ".js-address-form form")
         if address_forms:
@@ -4334,10 +4417,27 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         logout(driver, login_url=login_url)
         stage = "customer_address_cross_owner_owner_relogin"
         address_isolation_substage = "owner_relogin"
+        clear_document_navigation_events(driver)
+        address_isolation_substage = "owner_login_navigation"
         driver.get(login_url)
+        address_isolation_substage = "owner_login_form"
         visible(driver, '#login-form input[name="email"]')
-        submit_login(driver, account_email, initial_password)
-        assert_my_page(driver, expected_first_name)
+        clear_document_navigation_events(driver)
+        submit_login(
+            driver,
+            account_email,
+            initial_password,
+            substage_callback=lambda value: mark_address_isolation_substage(
+                f"owner_login_submit_{value}"
+            ),
+        )
+        assert_my_page(
+            driver,
+            expected_first_name,
+            substage_callback=lambda value: mark_address_isolation_substage(
+                f"owner_{value}"
+            ),
+        )
         # Partial failure evidence must not treat the pre-logout session as a relogin.
         address_isolation_result["owner_session_authenticated"] = True
 
@@ -4454,7 +4554,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         success = True
     except Exception as error:
         if driver is not None:
-            privacy_sensitive_address_stage = stage.startswith("customer_address_cross_owner_") or stage == "customer_address_foreign_access"
+            privacy_sensitive_address_stage = stage.startswith("customer_address_")
             if not privacy_sensitive_address_stage:
                 try:
                     driver.save_screenshot(str(DEST / f"{label}-customer-account-failure.png"))
@@ -4504,6 +4604,19 @@ def run_viewport(width: int, height: int, label: str) -> bool:
                         error_type if error_type in allowed_error_types else "other"
                     )
                     emit_customer_address_edit_diagnostics(driver, address_edit_state, label)
+                except Exception:
+                    pass
+            elif stage == "customer_address_cross_owner_owner_relogin":
+                try:
+                    emit_email_login_diagnostics(driver, address_isolation_substage)
+                    safe_trace = safe_registration_navigation_summary(
+                        document_navigation_events(driver, expected_login_url=login_url)
+                    )
+                    print(
+                        "ORDENOWA_CUSTOMER_ADDRESS_OWNER_RELOGIN_SAFE_TRACE="
+                        + json.dumps(safe_trace, ensure_ascii=True, sort_keys=True),
+                        file=sys.stderr,
+                    )
                 except Exception:
                     pass
             elif stage in {"email_login", "password_reset_login"}:
@@ -4583,3 +4696,7 @@ if __name__ == "__main__":
             failed_viewports.append(viewport[2])
     if failed_viewports:
         raise SystemExit(f"isolated customer account browser flow failed for: {', '.join(failed_viewports)}")
+    if os.environ.get("ORDENOWA_ADMIN_QA_FOCUS") != "true":
+        from verify_ci_checkout_email_locale import run_acceptance
+
+        run_acceptance()

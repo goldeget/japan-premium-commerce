@@ -58,6 +58,42 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         cls.source = ACCOUNT_FLOW.read_text(encoding="utf-8")
         cls.stages, cls.blocks = stage_blocks(cls.source)
 
+    def test_address_screenshots_mask_saved_values_and_address_failures_are_not_captured(self) -> None:
+        helper = self.source.split(
+            "def save_redacted_customer_address_screenshot(", 1
+        )[1].split("def choose_japan_country", 1)[0]
+        for selector in (
+            ".js-address-form form input",
+            ".js-address-form form select",
+            ".js-address-form form textarea",
+            "article.address-card .address-card__alias",
+            "article.address-card address.address-card__content",
+            "article.address-card address.address-card__content *",
+            "-webkit-text-fill-color: transparent !important",
+            "document.getElementById(arguments[0])?.remove()",
+        ):
+            with self.subTest(selector=selector):
+                self.assertIn(selector, helper)
+
+        for artifact_name in (
+            "customer-address-new.png",
+            "customer-address-edit-form.png",
+            "customer-address-saved.png",
+            "customer-address-edited.png",
+            "customer-address-edited-after-refresh.png",
+        ):
+            with self.subTest(artifact_name=artifact_name):
+                self.assertIn(artifact_name, self.source)
+                direct_screenshot = re.compile(
+                    rf"driver\.save_screenshot\([^\n]*{re.escape(artifact_name)}"
+                )
+                self.assertNotRegex(self.source, direct_screenshot)
+
+        handler = self.source.split("except Exception as error:", 1)[1].split(
+            "inner_stage = (", 1
+        )[0]
+        self.assertIn('privacy_sensitive_address_stage = stage.startswith("customer_address_")', handler)
+
     def test_focused_evidence_accepts_boolean_success_and_private_failure_without_screenshot(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         evidence_start = workflow.index("      - name: Verify focused customer account browser evidence")
@@ -86,6 +122,8 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
                 (artifact_dir / filename).write_bytes(b"synthetic capture")
 
             result_keys = (
+                "foreign_response_status_allowed",
+                "foreign_response_same_shop",
                 "owner_session_authenticated",
                 "foreign_session_authenticated",
                 "foreign_edit_form_absent",
@@ -474,6 +512,9 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn("document_navigation_events(driver)", foreign_access)
         self.assertIn("final_event.get(\"status_code\") not in {200, 401, 403, 404}", foreign_access)
         self.assertIn("current_origin != shop_origin", foreign_access)
+        self.assertIn('address_isolation_result["foreign_response_status_allowed"] = True', foreign_access)
+        self.assertIn('address_isolation_result["foreign_response_same_shop"] = True', foreign_access)
+        self.assertIn("ORDENOWA_CUSTOMER_ADDRESS_FOREIGN_RESPONSE_SAFE_TRACE=", foreign_access)
         self.assertIn('driver.find_elements(By.CSS_SELECTOR, ".js-address-form form")', foreign_access)
         self.assertIn("document.documentElement.outerHTML", foreign_access)
         self.assertIn("foreign_address_content_absent", foreign_access)
@@ -506,10 +547,33 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         )
         owner_session_check = 'address_isolation_result["owner_session_authenticated"] = True'
         self.assertEqual(run_viewport.count(owner_session_check), 1)
-        self.assertGreater(
-            run_viewport.index(owner_session_check),
-            run_viewport.index("submit_login(driver, account_email, initial_password)"),
+        owner_relogin = run_viewport.split(
+            'stage = "customer_address_cross_owner_owner_relogin"', 1
+        )[1].split('stage = "customer_address_cross_owner_owner_readback"', 1)[0]
+        owner_assertion = owner_relogin.index(
+            "assert_my_page(\n            driver,\n            expected_first_name,"
         )
+        self.assertGreater(run_viewport.index(owner_session_check), owner_assertion)
+        for substage in (
+            "owner_login_navigation",
+            "owner_login_form",
+        ):
+            self.assertIn(substage, owner_relogin)
+        self.assertIn('f"owner_login_submit_{value}"', owner_relogin)
+        self.assertIn('f"owner_{value}"', owner_relogin)
+
+        login_helper = self.source.split("def submit_login(", 1)[1].split(
+            "def assert_login_rejected", 1
+        )[0]
+        self.assertIn("substage_callback: Callable[[str], None] | None = None", login_helper)
+        self.assertIn("WebDriverWait(driver, 30).until(collect_email_login_result)", login_helper)
+        for substage in ("fill_email", "fill_password", "submit_click", "auth_result_wait", "auth_result_complete"):
+            self.assertIn(f'mark_substage("{substage}")', login_helper)
+        account_assertion = self.source.split("def assert_my_page(", 1)[1].split(
+            "def prepare_required_registration_fields", 1
+        )[0]
+        for substage in ("account_page_identity_link", "account_page_signout_link", "account_page_saved_name"):
+            self.assertIn(f'substage_callback("{substage}")', account_assertion)
 
         owner_readback = self.blocks["customer_address_cross_owner_owner_readback"]
         self.assertIn("driver.get(account_url)", owner_readback)
@@ -519,7 +583,10 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         handler = run_viewport.split("except Exception as error:", 1)[1].split(
             "inner_stage = (", 1
         )[0]
-        self.assertIn('stage == "customer_address_foreign_access"', handler)
+        self.assertIn('stage.startswith("customer_address_")', handler)
+        self.assertIn('"customer_address_foreign_access"', self.source)
+        self.assertIn('"customer_address_cross_owner_owner_relogin"', self.source)
+        self.assertIn("ORDENOWA_CUSTOMER_ADDRESS_OWNER_RELOGIN_SAFE_TRACE=", handler)
         self.assertIn("if not privacy_sensitive_address_stage:", handler)
         self.assertIn("address_isolation_substage_detail", run_viewport)
         self.assertIn("write_customer_address_isolation_result", run_viewport)

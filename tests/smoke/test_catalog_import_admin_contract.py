@@ -88,7 +88,7 @@ class CatalogImportAdminContractTests(unittest.TestCase):
 
     def test_unsupported_product_urls_use_safe_korean_feedback(self) -> None:
         self.assertIn(
-            "$this->fail('상품 URL을 등록할 수 없습니다. Amazon Japan 또는 Rakuten의 지원 상품 주소를 1~10개 입력해 주세요.');",
+            "$this->fail('상품 URL을 등록할 수 없습니다. 아마존 일본 또는 라쿠텐의 지원 상품 주소를 1~10개 입력해 주세요.');",
             self.batch_submission,
         )
         self.assertNotIn("$this->fail($exception->getMessage());", self.batch_submission)
@@ -96,13 +96,27 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         for marker in (
             "submitKuraneaCatalogImportBatch",
             "https://example.invalid/not-a-supported-product",
-            "상품 URL을 등록할 수 없습니다. Amazon Japan 또는 Rakuten의 지원 상품 주소를 1~10개 입력해 주세요.",
+            "상품 URL을 등록할 수 없습니다. 아마존 일본 또는 라쿠텐의 지원 상품 주소를 1~10개 입력해 주세요.",
             "not a supported marketplace product URL",
             "A catalog import batch must contain between one and ten URLs.",
             'id="catalog-import-progress"',
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, harness)
+
+    def test_admin_marketplace_heading_uses_korean_names_while_source_identifiers_remain_stable(self) -> None:
+        render_form = self.controller.split("private function renderImportForm(", 1)[1].split(
+            "private function renderBatch(", 1
+        )[0]
+        source_labels = self.controller.split("private function sourceLabel(", 1)[1].split(
+            "private function fail(", 1
+        )[0]
+
+        self.assertIn("<h3>아마존 일본·라쿠텐 상품 URL 수집</h3>", render_form)
+        self.assertNotIn("Amazon Japan", render_form)
+        self.assertNotIn("Rakuten", render_form)
+        self.assertIn("'amazon_jp' => '아마존 일본'", source_labels)
+        self.assertIn("'rakuten_ichiba' => '라쿠텐 이치바'", source_labels)
 
     def test_existing_product_link_uses_the_product_managers_own_admin_token(self) -> None:
         self.assertIn("getAdminLink('AdminOrdenowaProductManager')", self.controller)
@@ -244,6 +258,9 @@ class CatalogImportAdminContractTests(unittest.TestCase):
         self.assertIn("read_catalog_import_admin_access.php", workflow)
         self.assertIn("catalog-import-admin-access.log", workflow)
         self.assertIn("if (($result['authorization_ready'] ?? false) !== true)", probe)
+        self.assertIn("CATALOG_IMPORT_ADMIN_ACCESS_READY: ${{ steps.catalog_import_admin_access_readback.outputs.authorization_ready }}", workflow)
+        self.assertIn('"catalog_import_admin_access_ready=$CATALOG_IMPORT_ADMIN_ACCESS_READY"', workflow)
+        self.assertIn('if [[ "$CATALOG_IMPORT_FIXTURE_OUTCOME" == success ]]; then\n            required_artifacts+=(catalog-import-admin-access.log)', workflow)
         fixture_at = workflow.index("id: catalog_import_fixture")
         readback_at = workflow.index("id: catalog_import_admin_access_readback")
         browser_at = workflow.index("id: catalog_import_browser_qa")

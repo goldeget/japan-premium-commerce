@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
 
-use Kuranea\Backoffice\Infrastructure\EmployeeProfileAuditRepository;
-use Kuranea\Backoffice\Infrastructure\OrderHistoryAuditRepository;
+use Kuranea\Backoffice\Infrastructure\AdminAuditEventRepository;
 use PrestaShop\PrestaShop\Core\Security\Permission;
 
 class AdminKuraneaEmployeeProfileAuditController extends ModuleAdminController
@@ -51,29 +50,26 @@ class AdminKuraneaEmployeeProfileAuditController extends ModuleAdminController
         parent::initContent();
         try {
             $page = $this->requestedPage();
-            $profileResult = (new EmployeeProfileAuditRepository())->pageForShop($shopId, $page);
-            $languageId = (int) ($this->context->language->id ?? 0);
-            $canViewOrderHistory = $this->canViewOrderHistory();
-            $orderResult = ['rows' => [], 'has_next' => false];
-            if ($canViewOrderHistory) {
-                $orderResult = (new OrderHistoryAuditRepository())->pageForShop($shopId, $languageId, $page);
+            $authorizedSources = ['employee_profile'];
+            if ($this->canViewOrderHistory()) {
+                $authorizedSources[] = 'order_history';
             }
+            if ($this->canViewSourceTab('ADMINKURANEASUPPORTASSIGNMENTS')) {
+                $authorizedSources[] = 'support_assignment';
+            }
+            if ($this->canViewSourceTab('ADMINBUSINESSPROFILETRANSFERS')) {
+                $authorizedSources[] = 'bank_transfer_instruction';
+                $authorizedSources[] = 'bank_transfer_receipt';
+            }
+            $result = (new AdminAuditEventRepository())->pageForShop($shopId, $page, $authorizedSources);
             $baseUrl = (string) $this->context->link->getAdminLink('AdminKuraneaEmployeeProfileAudit');
             $this->content .= '<div class="panel"><h3>관리자 감사 기록</h3>'
-                . '<section><h4>직원 프로필 변경 이력</h4>'
-                . '<p>처리 관리자, 대상 관리자, 이전·새 프로필과 변경 시각을 표시합니다. 권한 설정 표의 개별 접근 권한 변경은 이 화면에 포함되지 않습니다.</p>'
-                . $this->renderRows($profileResult['rows']) . '</section>';
-            if ($canViewOrderHistory) {
-                $this->content .= '<section><h4>주문 상태 변경 이력</h4>'
-                    . '<p>PrestaShop에 저장된 주문 상태 변경, 처리 관리자와 기록 시각입니다. 주문 메모나 고객 개인정보는 포함하지 않습니다.</p>'
-                    . $this->renderOrderHistoryRows($orderResult['rows']) . '</section>';
-            } else {
-                $this->content .= '<p>주문 상태 변경 이력은 주문 조회 권한이 있는 관리자에게만 표시됩니다.</p>';
-            }
+                . '<p>이 화면은 현재 계정이 조회할 수 있는 기존 기록만 출처별로 표시합니다. 권한 설정 표의 개별 접근 권한 변경이나 기록되지 않은 작업은 포함되지 않습니다.</p>'
+                . $this->renderEvents($result['rows']);
             $this->content .= $this->renderPagination(
                 $baseUrl,
                 $page,
-                $profileResult['has_next'] || ($canViewOrderHistory && $orderResult['has_next'])
+                $result['has_next']
             )
                 . '</div>';
         } catch (Throwable) {
@@ -84,56 +80,67 @@ class AdminKuraneaEmployeeProfileAuditController extends ModuleAdminController
         $this->context->smarty->assign('content', $this->content);
     }
 
-    /** @param list<array{id_event:int,actor_employee_id:?int,target_employee_id:int,old_profile_id:int,new_profile_id:int,changed_at_utc:string}> $rows */
-    private function renderRows(array $rows): string
+    /** @param list<array{source:string,event_id:int,event_at:string,time_basis:string,actor_employee_id:?int,action:string,target_type:string,target_id:int}> $rows */
+    private function renderEvents(array $rows): string
     {
         if ($rows === []) {
-            return '<p>표시할 관리자 프로필 변경 이력이 없습니다.</p>';
+            return '<p>현재 권한으로 조회할 수 있는 기록이 없습니다.</p>';
         }
 
         $html = '<div class="table-responsive"><table class="table"><thead><tr>'
-            . '<th>기록 번호</th><th>처리 관리자 ID</th><th>대상 관리자 ID</th>'
-            . '<th>이전 프로필 ID</th><th>새 프로필 ID</th><th>변경 시각 (UTC)</th>'
+            . '<th>기록 시각</th><th>출처</th><th>작업</th><th>처리 관리자</th><th>대상</th>'
             . '</tr></thead><tbody>';
         foreach ($rows as $row) {
             $actorId = $row['actor_employee_id'];
-            $html .= '<tr><td>' . (int) $row['id_event'] . '</td>'
-                . '<td>' . ($actorId === null ? '확인할 수 없음' : (string) $actorId) . '</td>'
-                . '<td>' . (int) $row['target_employee_id'] . '</td>'
-                . '<td>' . (int) $row['old_profile_id'] . '</td>'
-                . '<td>' . (int) $row['new_profile_id'] . '</td>'
-                . '<td>' . $this->escape((string) $row['changed_at_utc']) . '</td></tr>';
+            $sourceLabel = self::sourceLabel($row['source']);
+            $actionLabel = self::actionLabel($row['action']);
+            $targetLabel = self::targetLabel($row['target_type']);
+            $timeLabel = $row['time_basis'] === 'UTC' ? 'UTC' : '저장값';
+            $actorLabel = $actorId === null ? '시스템 또는 확인할 수 없음' : '관리자 #' . $actorId;
+            $html .= '<tr><td>' . $this->escape($row['event_at'] . ' (' . $timeLabel . ')') . '</td>'
+                . '<td>' . $this->escape($sourceLabel) . '</td>'
+                . '<td>' . $this->escape($actionLabel) . '</td>'
+                . '<td>' . $this->escape($actorLabel) . '</td>'
+                . '<td>' . $this->escape($targetLabel . ' #' . $row['target_id']) . '</td></tr>';
         }
         $html .= '</tbody></table></div>';
 
         return $html;
     }
 
-    /** @param list<array{id_order_history:int,id_order:int,reference:string,id_order_state:int,state_name:string,id_employee:?int,date_add:string}> $rows */
-    private function renderOrderHistoryRows(array $rows): string
+    private static function sourceLabel(string $source): string
     {
-        if ($rows === []) {
-            return '<p>표시할 주문 상태 변경 이력이 없습니다.</p>';
-        }
+        return match ($source) {
+            'employee_profile' => '관리자 프로필',
+            'order_history' => '주문 상태',
+            'support_assignment' => '상담 배정',
+            'bank_transfer_instruction' => '입금 안내',
+            'bank_transfer_receipt' => '입금 확인',
+            default => '기타',
+        };
+    }
 
-        $html = '<div class="table-responsive"><table class="table"><thead><tr>'
-            . '<th>이력 ID</th><th>주문 ID</th><th>주문 번호</th><th>상태</th>'
-            . '<th>처리 관리자 ID</th><th>기록 시각 (저장값)</th></tr></thead><tbody>';
-        foreach ($rows as $row) {
-            $stateLabel = trim($row['state_name']) !== ''
-                ? $row['state_name']
-                : '상태 ID ' . $row['id_order_state'];
-            $actorId = $row['id_employee'];
-            $html .= '<tr><td>' . (int) $row['id_order_history'] . '</td>'
-                . '<td>' . (int) $row['id_order'] . '</td>'
-                . '<td>' . $this->escape($row['reference']) . '</td>'
-                . '<td>' . $this->escape($stateLabel) . '</td>'
-                . '<td>' . ($actorId === null ? '시스템 또는 확인할 수 없음' : (string) $actorId) . '</td>'
-                . '<td>' . $this->escape($row['date_add']) . '</td></tr>';
-        }
-        $html .= '</tbody></table></div>';
+    private static function actionLabel(string $action): string
+    {
+        return match ($action) {
+            'employee_profile_changed' => '관리자 프로필 변경',
+            'order_status_changed' => '주문 상태 변경',
+            'support_assigned' => '담당자 지정',
+            'support_reassigned' => '담당자 변경',
+            'bank_transfer_instruction_issued' => '입금 안내 발급',
+            'bank_transfer_receipt_confirmed' => '입금 확인 기록',
+            default => '확인할 수 없는 작업',
+        };
+    }
 
-        return $html;
+    private static function targetLabel(string $targetType): string
+    {
+        return match ($targetType) {
+            'employee' => '관리자',
+            'order' => '주문',
+            'support_thread' => '문의',
+            default => '대상',
+        };
     }
 
     private function renderPagination(string $baseUrl, int $page, bool $hasNext): string
@@ -173,9 +180,15 @@ class AdminKuraneaEmployeeProfileAuditController extends ModuleAdminController
 
     private function canViewOrderHistory(): bool
     {
+        return $this->canViewSourceTab('ADMINORDERS');
+    }
+
+    private function canViewSourceTab(string $tabClass): bool
+    {
         $profileId = (int) ($this->context->employee->id_profile ?? 0);
 
-        return $profileId > 0 && Access::isGranted(Permission::PREFIX_TAB . 'ADMINORDERS_READ', $profileId);
+        return $profileId > 0
+            && Access::isGranted(Permission::PREFIX_TAB . strtoupper($tabClass) . '_READ', $profileId);
     }
 
     private function escape(string $value): string

@@ -71,10 +71,12 @@ class EmployeeProfileAuditContractTests(unittest.TestCase):
         self.assertIn("$this->viewAccess()", controller)
         self.assertIn("$this->tabAccess['view']", controller)
         self.assertIn("Shop::CONTEXT_SHOP", controller)
-        self.assertIn("pageForShop($shopId, $page)", controller)
-        self.assertIn("PAGE_SIZE = 50", controller)
+        self.assertIn("AdminAuditEventRepository", controller)
+        self.assertIn("pageForShop($shopId, $page, $authorizedSources)", controller)
+        self.assertIn("canViewSourceTab('ADMINKURANEASUPPORTASSIGNMENTS')", controller)
+        self.assertIn("canViewSourceTab('ADMINBUSINESSPROFILETRANSFERS')", controller)
         self.assertNotRegex(controller, re.compile(r"<form|<input|method=[\"']post|submit[A-Za-z]", re.I))
-        for field in ("actor_employee_id", "target_employee_id", "old_profile_id", "new_profile_id", "changed_at_utc"):
+        for field in ("actor_employee_id", "event_at", "source", "action", "target_id"):
             self.assertIn(field, controller)
         self.assertNotRegex(controller, re.compile(r"\b(?:email|firstname|lastname|password|token|address1|address2)\b", re.I))
         self.assertNotIn("AdminAccessController", controller)
@@ -94,15 +96,51 @@ class EmployeeProfileAuditContractTests(unittest.TestCase):
         self.assertNotRegex(repository, re.compile(r"\b(?:email|firstname|lastname|passwd|password|token|address1|address2)\b", re.I))
 
         controller = (MODULE / "controllers" / "admin" / "AdminKuraneaEmployeeProfileAuditController.php").read_text(encoding="utf-8")
-        self.assertIn("OrderHistoryAuditRepository", controller)
-        self.assertIn("pageForShop($shopId, $languageId, $page)", controller)
         self.assertIn("canViewOrderHistory()", controller)
-        self.assertIn("Access::isGranted(Permission::PREFIX_TAB . 'ADMINORDERS_READ'", controller)
-        self.assertIn("if ($canViewOrderHistory)", controller)
+        self.assertIn("return $this->canViewSourceTab('ADMINORDERS');", controller)
+        self.assertIn("Permission::PREFIX_TAB . strtoupper($tabClass) . '_READ'", controller)
+        self.assertIn("$authorizedSources[] = 'order_history'", controller)
         self.assertIn("use PrestaShop\\PrestaShop\\Core\\Security\\Permission;", controller)
-        self.assertIn("renderOrderHistoryRows", controller)
-        self.assertIn("주문 상태 변경 이력", controller)
+        self.assertIn("renderEvents", controller)
+        self.assertIn("주문 상태 변경", controller)
         self.assertNotRegex(controller, re.compile(r"<form|<input|method=[\"']post", re.I))
+
+    def test_activity_repository_is_bounded_scoped_read_only_and_allowlists_safe_fields(self) -> None:
+        repository_path = MODULE / "src" / "Infrastructure" / "AdminAuditEventRepository.php"
+        self.assertTrue(repository_path.is_file(), "missing unified read-only audit feed repository")
+        repository = repository_path.read_text(encoding="utf-8")
+        self.assertIn("PAGE_SIZE = 50", repository)
+        self.assertIn("ORDER BY `event_at` DESC, `event_source` ASC, `event_id` DESC", repository)
+        self.assertIn("LIMIT ' . (self::PAGE_SIZE + 1) . ' OFFSET ' . $offset", repository)
+        for source in (
+            "employee_profile", "order_history", "support_assignment",
+            "bank_transfer_instruction", "bank_transfer_receipt",
+        ):
+            self.assertIn(f"'{source}'", repository)
+        self.assertIn("WHERE (`id_shop` = ' . $shopId . ' OR `id_shop` = 0)", repository)
+        self.assertIn("WHERE o.`id_shop` = ' . $shopId", repository)
+        self.assertIn("WHERE `id_shop` = ' . $shopId", repository)
+        self.assertIn("// Copy only allowlisted audit fields", repository)
+        self.assertIn("'source' => $source", repository)
+        self.assertIn("'target_id' => $targetId", repository)
+        self.assertNotRegex(repository, re.compile(r"\b(?:email|message|profile_json|bank_account_id|receipt_reference_sha256|order_reference|received_amount)\b", re.I))
+        self.assertNotRegex(repository, re.compile(r"\b(?:INSERT|UPDATE|DELETE|REPLACE)\b", re.I))
+
+    def test_activity_fixture_covers_global_ordering_acl_escape_and_sensitive_exclusion(self) -> None:
+        fixture = (ROOT / "tests" / "admin_audit" / "employee_profile_audit.php").read_text(encoding="utf-8")
+        for expected in (
+            "The combined activity feed should cap rows at fifty.",
+            "The combined feed should order timestamp ties deterministically across sources.",
+            "ADMINKURANEASUPPORTASSIGNMENTS_READ:2",
+            "ADMINBUSINESSPROFILETRANSFERS_READ:2",
+            "PRIVATE-CONTACT",
+            "PRIVATE-REFERENCE-DIGEST",
+            "&lt;script&gt;alert(1)&lt;/script&gt;",
+            "A reader without native view permission must not query audit rows.",
+            "The page should reject all-shop context before querying audit events.",
+        ):
+            self.assertIn(expected, fixture)
+        self.assertIn("'source', 'event_id', 'event_at', 'time_basis', 'actor_employee_id', 'action', 'target_type', 'target_id'", fixture)
 
     def test_order_history_php_fixture_parses_the_production_shop_alias_format(self) -> None:
         fixture = (ROOT / "tests" / "admin_audit" / "employee_profile_audit.php").read_text(encoding="utf-8")

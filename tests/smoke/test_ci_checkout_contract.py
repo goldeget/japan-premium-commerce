@@ -8,12 +8,15 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import textwrap
 import unittest
+from email.message import EmailMessage
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
+from urllib.request import Request
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,6 +29,10 @@ STOREFRONT_PRODUCT_CONTRACT = ROOT / "tests" / "e2e" / "storefront_product_contr
 GATE = ROOT / "modules" / "kuraneabusinessprofile" / "src" / "Customer" / "CommerceGate.php"
 SHOP_MODULE = ROOT / "modules" / "kuraneabusinessprofile" / "kuraneabusinessprofile.php"
 ORDER_VERIFIER = ROOT / "tests" / "postcode" / "verify_ci_browser_checkout_order.php"
+MAIL_ACCEPTANCE = ROOT / "tests" / "e2e" / "verify_ci_checkout_email_locale.py"
+MAIL_MIME_HELPER = ROOT / "tests" / "e2e" / "ci_mailpit_acceptance.py"
+MAIL_ORDER_VERIFIER = ROOT / "tests" / "postcode" / "verify_ci_customer_mail_locale_order.php"
+ACCOUNT_FLOW = ROOT / "tests" / "e2e" / "verify_customer_account_browser.py"
 
 
 class IsolatedCheckoutContractTests(unittest.TestCase):
@@ -328,6 +335,7 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
                         "ORDENOWA_ADMIN_RETURN_FOCUS": "false",
                         "ORDENOWA_CUSTOMER_ACCOUNT_FOCUS": "false",
                         "ORDENOWA_ADMIN_QA_FOCUS": "false",
+                        "CATALOG_IMPORT_ADMIN_ACCESS_READY": "true",
                         **environment,
                         variable: outcome,
                         "SECURITY_ADMIN_LOCALE_MUTATED": "",
@@ -1977,6 +1985,143 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             "def register_checkout_account", 1
         )[1].split("def select_japan_address", 1)[0]
         self.assertIn("email = checkout_registration_email(label, RUN_ID, RUN_ATTEMPT)", registration)
+
+    def test_native_account_and_order_mail_acceptance_parses_raw_mime_and_requires_locale(self) -> None:
+        spec = spec_from_file_location("ordenowa_ci_mail_mime_helper", MAIL_MIME_HELPER)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        account = EmailMessage()
+        account.set_content("계정이 생성되었습니다.\n")
+        account.add_alternative("<html><body><p>회원 계정이 생성되었습니다.</p></body></html>", subtype="html")
+        html_body, text_body = module.parse_raw_mime_parts(account.as_bytes())
+        module.assert_native_mail_locale("ko", "account", html_body, text_body)
+
+        confirmation = EmailMessage()
+        confirmation.set_content("ご注文の確認 ABCD12345\n")
+        confirmation.add_alternative(
+            "<html><body><p>ご注文の確認 ABCD12345</p><a href=\"https://shop.invalid/order\">order</a></body></html>",
+            subtype="html",
+        )
+        html_body, text_body = module.parse_raw_mime_parts(confirmation.as_bytes())
+        module.assert_native_mail_locale("ja", "order_conf", html_body, text_body, "ABCD12345")
+
+        with self.assertRaises(module.MailpitMimeError) as missing_locale:
+            module.assert_native_mail_locale(
+                "ko", "account", "<p>Welcome to the account</p>", "Welcome to the account"
+            )
+        self.assertEqual(missing_locale.exception.reason, "locale_marker_missing")
+        with self.assertRaises(module.MailpitMimeError) as missing_reference:
+            module.assert_native_mail_locale(
+                "en", "order_conf", "<p>Order confirmed</p>", "Order confirmed", "ABCD12345"
+            )
+        self.assertEqual(missing_reference.exception.reason, "order_reference_missing")
+
+    def test_mailpit_responses_cannot_redirect_requests_outside_the_loopback_service(self) -> None:
+        spec = spec_from_file_location("ordenowa_ci_native_mail", MAIL_ACCEPTANCE)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = module_from_spec(spec)
+        mail_directory = str(MAIL_ACCEPTANCE.parent)
+        sys.path.insert(0, mail_directory)
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            if sys.path and sys.path[0] == mail_directory:
+                sys.path.pop(0)
+
+        handler = module._RejectRedirects()
+        self.assertIsNone(
+            handler.redirect_request(
+                Request("http://127.0.0.1:8025/api/v1/messages"),
+                None,
+                302,
+                "Found",
+                {},
+                "https://example.invalid/collect",
+            )
+        )
+        self.assertIn("_mailpit_open(Request(url", MAIL_ACCEPTANCE.read_text(encoding="utf-8"))
+        self.assertNotIn("urlopen(", MAIL_ACCEPTANCE.read_text(encoding="utf-8"))
+
+    def test_locale_mail_e2e_is_exact_isolated_and_uses_only_the_configured_mailpit(self) -> None:
+        helper = MAIL_ACCEPTANCE.read_text(encoding="utf-8")
+        account_flow = ACCOUNT_FLOW.read_text(encoding="utf-8")
+        checkout_flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        mail_step = workflow.split(
+            "id: account_browser_qa", 1
+        )[1].split("- name:", 1)[0]
+        account_step = workflow.split(
+            "- name: Verify customer registration, email login, logout, password reset, and my page in Chromium",
+            1,
+        )[1].split("- name:", 1)[0]
+
+        for guard in (
+            'os.environ.get("CI") != "true"',
+            'os.environ.get("GITHUB_ACTIONS") != "true"',
+            'os.environ.get("KURANEA_ISOLATED_CI") != "1"',
+            'project != f"kuranea-ci-{run_id}-{attempt}"',
+            'mailpit = os.environ.get("MAILPIT_API_URL", "")',
+            'os.environ["MAILPIT_API_URL"]',
+            'api + "/api/v1/message/"',
+            '+ "/raw"',
+            "assert_native_mail_locale(language, template, html_body, text_body, order_reference)",
+            'LANGUAGES = ("ja", "en", "ko")',
+            "account_before_ids = recipient_message_ids(api, email)",
+            "order_before_ids = recipient_message_ids(api, email)",
+            "verify_persisted_order(run_id, attempt, project, order, language)",
+            '"KURANEA_CI_EXPECTED_ORDER_REFERENCE": str(order["reference"])',
+            "_install_php_verifier(project)",
+        ):
+            with self.subTest(guard=guard):
+                self.assertIn(guard, helper)
+        self.assertNotIn('os.environ.get("MAILPIT_API_URL", "http://', helper)
+        self.assertNotIn("PS_MAIL_", helper)
+        self.assertIn("run_acceptance()", account_flow)
+        self.assertIn('os.environ.get("ORDENOWA_ADMIN_QA_FOCUS") != "true"', account_flow)
+        self.assertLess(account_flow.rindex("if failed_viewports:"), account_flow.rindex("run_acceptance()"))
+        self.assertIn("MAILPIT_API_URL: http://127.0.0.1:8025", mail_step)
+        self.assertIn("steps.account_checkout_override.outcome == 'success'", account_step)
+        self.assertLess(
+            WORKFLOW.read_text(encoding="utf-8").index("id: shipping_product_fixture"),
+            WORKFLOW.read_text(encoding="utf-8").index("id: account_browser_qa"),
+        )
+        self.assertIn("CI_TEST_PRODUCT_ID", checkout_flow)
+        self.assertIn("select_storefront_language(driver, language_iso)", checkout_flow)
+        self.assertIn('("japan","日本","일본")', checkout_flow.replace(" ", ""))
+
+    def test_locale_mail_order_readback_checks_saved_customer_order_language_and_unpaid_state(self) -> None:
+        helper = MAIL_ACCEPTANCE.read_text(encoding="utf-8")
+        verifier = MAIL_ORDER_VERIFIER.read_text(encoding="utf-8")
+        for condition in (
+            "$localeByLabel = ['mail-ja' => 'ja', 'mail-en' => 'en', 'mail-ko' => 'ko']",
+            "$localeByLabel[$label] !== $expectedIso",
+            "$expectedShopId = (int) Configuration::get('PS_SHOP_DEFAULT')",
+            "(int) $order->id_shop !== $expectedShopId",
+            "(int) $customer->id_shop !== $expectedShopId",
+            "$customerLanguage->iso_code !== $expectedIso",
+            "$orderLanguage->iso_code !== $expectedIso",
+            "(string) $order->reference !== $expectedReference",
+            "(string) $order->module !== 'ps_checkpayment'",
+            "(bool) $state->paid",
+            "(float) $order->total_paid_real !== 0.0",
+            "count($orderDetails) !== 1",
+            "(int) $orderDetails[0]['product_quantity'] !== 1",
+            "'customer_persisted' => true",
+            "'order_persisted' => true",
+            "'language_iso' => $expectedIso",
+        ):
+            with self.subTest(condition=condition):
+                self.assertIn(condition, verifier)
+        self.assertIn('"customer_and_order_locale_persisted": True', helper)
+        self.assertIn('"account_creation_raw_mime_locale_verified": True', helper)
+        self.assertIn('"order_confirmation_raw_mime_locale_verified": True', helper)
+        locale_result = helper.split("result = {", 1)[1].split("result_path.write_text", 1)[0]
+        self.assertNotIn('"email":', locale_result)
+        self.assertIn('"KURANEA_CI_EXPECTED_ORDER_REFERENCE": str(order["reference"])', helper)
 
 
 if __name__ == "__main__":

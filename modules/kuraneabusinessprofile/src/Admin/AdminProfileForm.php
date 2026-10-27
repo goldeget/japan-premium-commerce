@@ -356,7 +356,7 @@ final class AdminProfileForm
             'admin_login' => '관리자 로그인 로고',
             'email_logo' => '이메일 로고',
             'favicon_32' => '브라우저 파비콘',
-            'apple_touch' => 'Apple Touch Icon',
+            'apple_touch' => '애플 터치 아이콘',
             'pwa_512' => 'PWA 아이콘',
             'og_image' => '공유용 OG 이미지',
         ] as $assetKey => $label) {

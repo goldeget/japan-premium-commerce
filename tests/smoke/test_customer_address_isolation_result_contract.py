@@ -22,7 +22,7 @@ class CustomerAddressIsolationResultContractTests(unittest.TestCase):
         self.assertTrue(RESULTS.validate_payload(self.passed, require_passed=True))
 
         missing = dict(self.passed)
-        missing.pop("foreign_address_content_absent")
+        missing.pop("foreign_response_status_allowed")
         self.assertFalse(RESULTS.validate_payload(missing, require_passed=False))
 
         extra = dict(self.passed, email="customer@example.invalid")

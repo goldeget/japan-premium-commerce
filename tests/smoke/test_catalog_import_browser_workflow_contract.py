@@ -72,6 +72,8 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
                                ('catalog_import_restore', 'CATALOG_IMPORT_RESTORE_OUTCOME')):
             self.assertIn(variable + ': ${{ steps.' + step + '.outcome }}', source)
             self.assertIn('=$' + variable + '"', source)
+        self.assertIn('CATALOG_IMPORT_ADMIN_ACCESS_READY: ${{ steps.catalog_import_admin_access_readback.outputs.authorization_ready }}', source)
+        self.assertIn('"catalog_import_admin_access_ready=$CATALOG_IMPORT_ADMIN_ACCESS_READY"', source)
         restore = source.split('id: catalog_import_restore', 1)[1].split('\n      - name:', 1)[0]
         self.assertIn('if: always()', restore)
         self.assertIn('up -d --no-deps --force-recreate --wait', restore)
@@ -661,9 +663,12 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
 
         workflow = self.read_required('.github/workflows/fresh-install.yml')
         access_step = workflow.split('id: catalog_import_admin_access_readback', 1)[1].split('\n      - name:', 1)[0]
-        self.assertIn('if [[ -z "$access_line" && "$readback_status" -eq 0 ]]', access_step)
+        self.assertIn('if [[ -z "$access_line" ]]; then', access_step)
         self.assertIn('if [[ "$access_line" != *\'"authorization_ready":true\'* ]]', access_step)
-        self.assertNotIn('cat "$QA_ARTIFACT_DIR/catalog-import-admin-access.log"', access_step)
+        self.assertIn('raw_log="$RUNNER_TEMP/ordenowa-catalog-admin-access-', access_step)
+        self.assertIn('sanitized_log="$QA_ARTIFACT_DIR/catalog-import-admin-access.log"', access_step)
+        self.assertIn("GITHUB_OUTPUT", access_step)
+        self.assertNotIn('cat "$raw_log"', access_step)
         browser_step = workflow.split('id: catalog_import_browser_qa', 1)[1].split('\n      - name:', 1)[0]
         self.assertIn('pipeline_status=("${PIPESTATUS[@]}")', browser_step)
         self.assertIn('browser_status="${pipeline_status[0]:-1}"', browser_step)
@@ -681,7 +686,8 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
         readback_step = workflow.split('id: catalog_import_admin_access_readback', 1)[1].split('\n      - name:', 1)[0]
         self.assertIn('access_line=$(python3 -', readback_step)
         self.assertNotIn('rg ', readback_step)
-        self.assertIn('\"authorization_ready\":false,\"failure_stage\":\"unknown\",\"exception_class\":\"Exception\"', readback_step)
+        self.assertIn('\"authorization_ready\":false,\"failure_stage\":\"probe_execution\",\"exception_class\":\"ProcessFailure\"', readback_step)
+        self.assertIn('\"failure_stage\":\"result_encoding\",\"exception_class\":\"ResultMissing\"', readback_step)
 
         self.assertIn("ancestor::form", browser)
         self.assertIn("a, table, img, select, iframe, canvas, svg", browser)

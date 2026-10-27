@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once dirname(__FILE__, 3) . '/autoload.php';
 
 use Kuranea\BusinessProfile\Admin\AdminAccessPolicy;
+use Kuranea\BusinessProfile\Admin\AdminErrorMessage;
 use Kuranea\BusinessProfile\Customer\CommerceGate;
 use Kuranea\BusinessProfile\Domain\BankTransferInstructionIssuer;
 use Kuranea\BusinessProfile\Domain\BankTransferPayment;
@@ -169,9 +170,10 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
                 ? '선택한 주문에 입금 안내를 발급했습니다. 고객 주문 상세에 같은 안내가 표시됩니다. 주문은 미결제 상태입니다.'
                 : '이미 발급된 주문 안내를 유지했습니다. 기존 계좌와 금액은 변경하지 않았습니다.';
         } catch (Throwable $exception) {
-            $this->fail($exception instanceof \InvalidArgumentException || $exception instanceof \RuntimeException
-                ? $exception->getMessage()
-                : '주문 입금 안내를 발급하지 못했습니다.');
+            $this->fail(AdminErrorMessage::fromException(
+                $exception,
+                '주문 입금 안내를 발급하지 못했습니다.'
+            ));
         }
     }
 
@@ -247,9 +249,10 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
                     : '이미 확인된 동일 입금 기록을 유지했습니다. 추가 결제 내역은 만들지 않았습니다.';
             }
         } catch (Throwable $exception) {
-            $this->fail($exception instanceof \InvalidArgumentException || $exception instanceof \RuntimeException
-                ? $exception->getMessage()
-                : '주문 입금을 확인하지 못했습니다. 주문 상태와 결제 기록을 다시 확인해 주세요.');
+            $this->fail(AdminErrorMessage::fromException(
+                $exception,
+                '주문 입금을 확인하지 못했습니다. 주문 상태와 결제 기록을 다시 확인해 주세요.'
+            ));
         }
     }
 

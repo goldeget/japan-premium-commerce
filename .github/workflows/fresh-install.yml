@@ -1317,6 +1317,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$QA_ARTIFACT_DIR"
+          raw_log="$RUNNER_TEMP/ordenowa-catalog-admin-access-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.raw.log"
+          sanitized_log="$QA_ARTIFACT_DIR/catalog-import-admin-access.log"
+          trap 'rm -f -- "$raw_log"' EXIT
+          printf '%s\n' 'ORDENOWA_CATALOG_ADMIN_ACCESS={"readback_available":false,"authorization_ready":false,"failure_stage":"probe_execution","exception_class":"ProcessFailure"}' > "$sanitized_log"
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T prestashop \
             sh -c 'cat > /tmp/read_catalog_import_admin_access.php' \
             < tests/catalog/read_catalog_import_admin_access.php
@@ -1325,10 +1329,10 @@ jobs:
             -e ADMIN_MAIL="$ADMIN_MAIL" prestashop \
             runuser -g www-data -u www-data -- \
             php -d display_errors=0 /tmp/read_catalog_import_admin_access.php 2>/dev/null \
-            > "$QA_ARTIFACT_DIR/catalog-import-admin-access.log" 2> /dev/null
+            > "$raw_log" 2> /dev/null
           readback_status=$?
           set -e
-          if access_line=$(python3 - "$QA_ARTIFACT_DIR/catalog-import-admin-access.log" <<'PY'
+          if access_line=$(python3 - "$raw_log" <<'PY'
           import json
           import sys
           from pathlib import Path
@@ -1371,11 +1375,12 @@ jobs:
                   if data['failure_stage'] not in {
                       'config_load', 'fixture_employee_selector', 'employee_profile_lookup',
                       'tab_lookup', 'permission_role_readback', 'effective_profile_access_readback',
-                      'result_encoding', 'unknown',
+                      'result_encoding', 'probe_execution', 'unknown',
                   }:
                       raise ValueError()
                   if data['exception_class'] not in {
                       'Error', 'Exception', 'PDOException', 'PrestaShopException', 'RuntimeException',
+                      'ProcessFailure', 'ResultMissing',
                   }:
                       raise ValueError()
               else:
@@ -1389,22 +1394,26 @@ jobs:
           else
             access_line=''
           fi
-          if [[ -z "$access_line" && "$readback_status" -eq 0 ]]; then
+          if [[ -z "$access_line" ]]; then
+            if [[ "$readback_status" -eq 0 ]]; then
+              access_line='ORDENOWA_CATALOG_ADMIN_ACCESS={"readback_available":false,"authorization_ready":false,"failure_stage":"result_encoding","exception_class":"ResultMissing"}'
+            else
+              access_line='ORDENOWA_CATALOG_ADMIN_ACCESS={"readback_available":false,"authorization_ready":false,"failure_stage":"probe_execution","exception_class":"ProcessFailure"}'
+            fi
             readback_status=2
           fi
           if [[ "$access_line" != *'"authorization_ready":true'* ]]; then
             readback_status=2
           fi
+          printf '%s\n' "$access_line" > "$sanitized_log"
           if [[ -n "$access_line" ]]; then
-            printf '%s\n' "$access_line" >> "$GITHUB_STEP_SUMMARY"
-          else
-            access_line='ORDENOWA_CATALOG_ADMIN_ACCESS={"readback_available":false,"authorization_ready":false,"failure_stage":"unknown","exception_class":"Exception"}'
             printf '%s\n' "$access_line" >> "$GITHUB_STEP_SUMMARY"
           fi
           if [[ "$readback_status" -ne 0 ]]; then
             printf '::error title=ORDENOWA catalog admin access readback::%s\n' "${access_line:-ORDENOWA_CATALOG_ADMIN_ACCESS readback unavailable}"
             exit "$readback_status"
           fi
+          printf 'authorization_ready=true\n' >> "$GITHUB_OUTPUT"
 
       - name: Verify synthetic catalog import review and native draft in Chromium
         id: catalog_import_browser_qa
@@ -3088,6 +3097,7 @@ jobs:
           ACCOUNT_CHECKOUT_RESTORE_OUTCOME: ${{ steps.account_checkout_restore.outcome }}
           CATALOG_IMPORT_FIXTURE_OUTCOME: ${{ steps.catalog_import_fixture.outcome }}
           CATALOG_IMPORT_ADMIN_ACCESS_READBACK_OUTCOME: ${{ steps.catalog_import_admin_access_readback.outcome }}
+          CATALOG_IMPORT_ADMIN_ACCESS_READY: ${{ steps.catalog_import_admin_access_readback.outputs.authorization_ready }}
           CATALOG_IMPORT_BROWSER_QA_OUTCOME: ${{ steps.catalog_import_browser_qa.outcome }}
           CATALOG_IMPORT_RESTORE_OUTCOME: ${{ steps.catalog_import_restore.outcome }}
           PRODUCT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.product_admin_browser_qa.outcome }}
@@ -3469,7 +3479,7 @@ jobs:
               catalog-import-persistence.json
             )
           fi
-          if [[ "$CATALOG_IMPORT_ADMIN_ACCESS_READBACK_OUTCOME" == success ]]; then
+          if [[ "$CATALOG_IMPORT_FIXTURE_OUTCOME" == success ]]; then
             required_artifacts+=(catalog-import-admin-access.log)
           fi
           if [[ "$CATALOG_IMPORT_BROWSER_QA_OUTCOME" == failure ]]; then
@@ -3892,6 +3902,7 @@ jobs:
           ACCOUNT_CHECKOUT_RESTORE_OUTCOME: ${{ steps.account_checkout_restore.outcome }}
           CATALOG_IMPORT_FIXTURE_OUTCOME: ${{ steps.catalog_import_fixture.outcome }}
           CATALOG_IMPORT_ADMIN_ACCESS_READBACK_OUTCOME: ${{ steps.catalog_import_admin_access_readback.outcome }}
+          CATALOG_IMPORT_ADMIN_ACCESS_READY: ${{ steps.catalog_import_admin_access_readback.outputs.authorization_ready }}
           CATALOG_IMPORT_BROWSER_QA_OUTCOME: ${{ steps.catalog_import_browser_qa.outcome }}
           CATALOG_IMPORT_RESTORE_OUTCOME: ${{ steps.catalog_import_restore.outcome }}
           PRODUCT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.product_admin_browser_qa.outcome }}
@@ -4075,6 +4086,9 @@ jobs:
               failed_steps+=("$entry")
             fi
           done
+          if [[ "$CATALOG_IMPORT_ADMIN_ACCESS_READY" != true ]]; then
+            failed_steps+=("catalog_import_admin_access_ready=$CATALOG_IMPORT_ADMIN_ACCESS_READY")
+          fi
           if [[ "$SHIPPING_FREE_ADMIN_BROWSER_QA_OUTCOME" == success \
             && "$SHIPPING_FREE_TRACKING_PERSISTENCE_OUTCOME" != success ]]; then
             failed_steps+=("shipping_free_tracking_persistence=$SHIPPING_FREE_TRACKING_PERSISTENCE_OUTCOME")

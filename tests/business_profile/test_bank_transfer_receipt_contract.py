@@ -106,6 +106,25 @@ class BankTransferReceiptContractTests(unittest.TestCase):
         self.assertLess(confirm.index("!$verifiedTransfer"), confirm.index("->confirm("))
         self.assertIn("입금 사실을 확인해야 합니다", confirm)
 
+    def test_admin_transfer_errors_do_not_expose_untranslated_exception_text(self) -> None:
+        controller = (MODULE / "controllers/admin/AdminBusinessProfileTransfersController.php").read_text(encoding="utf-8")
+        presenter = (MODULE / "src/Admin/AdminErrorMessage.php").read_text(encoding="utf-8")
+        issue = controller.split("private function processIssue", 1)[1].split(
+            "private function processConfirm", 1
+        )[0]
+        confirm = controller.split("private function processConfirm", 1)[1].split(
+            "private function unpaidJpyOrders", 1
+        )[0]
+        self.assertIn("AdminErrorMessage::fromException(", issue)
+        self.assertIn("AdminErrorMessage::fromException(", confirm)
+        self.assertIn("주문 입금 안내를 발급하지 못했습니다.", issue)
+        self.assertIn("주문 입금을 확인하지 못했습니다.", confirm)
+        self.assertIn("preg_match('/[가-힣]/u', $message) === 1", presenter)
+        self.assertIn("$exception instanceof \\InvalidArgumentException", presenter)
+        self.assertIn("SAFE_TRANSFER_RUNTIME_MESSAGES", presenter)
+        self.assertIn("in_array($message, self::SAFE_TRANSFER_RUNTIME_MESSAGES, true)", presenter)
+        self.assertIn("return $fallback;", presenter)
+
     def test_issue_and_customer_rendering_reject_fractional_yen(self) -> None:
         instruction = (MODULE / "src/Domain/BankTransferInstruction.php").read_text(encoding="utf-8")
         controller = (MODULE / "controllers/admin/AdminBusinessProfileTransfersController.php").read_text(encoding="utf-8")
