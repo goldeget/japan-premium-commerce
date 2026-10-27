@@ -179,10 +179,14 @@ def write_diagnostics(result: dict) -> None:
             'pre_smtp_text_replacement_contains_expected_url',
             'pre_smtp_text_getter_contains_expected_url',
             'pre_smtp_text_mime_contains_expected_url',
+            'pre_smtp_text_getter_expected_url_literal_present',
             'pre_smtp_text_getter_expected_url_candidate_present',
             'pre_smtp_text_getter_expected_url_candidate_exact',
+            'pre_smtp_text_getter_expected_url_candidate_credentials_complete',
+            'pre_smtp_text_mime_expected_url_literal_present',
             'pre_smtp_text_mime_expected_url_candidate_present',
             'pre_smtp_text_mime_expected_url_candidate_exact',
+            'pre_smtp_text_mime_expected_url_candidate_credentials_complete',
             'pre_smtp_text_mime_body_identity_same_after_setter',
             'pre_smtp_text_mime_body_reset_retry_attempted',
             'pre_smtp_text_mime_body_changed_after_reset', 'pre_smtp_text_plain_part_present',
@@ -225,10 +229,14 @@ def write_diagnostics(result: dict) -> None:
                 'pre_smtp_text_replacement_contains_expected_url',
                 'pre_smtp_text_getter_contains_expected_url',
                 'pre_smtp_text_mime_contains_expected_url',
+                'pre_smtp_text_getter_expected_url_literal_present',
                 'pre_smtp_text_getter_expected_url_candidate_present',
                 'pre_smtp_text_getter_expected_url_candidate_exact',
+                'pre_smtp_text_getter_expected_url_candidate_credentials_complete',
+                'pre_smtp_text_mime_expected_url_literal_present',
                 'pre_smtp_text_mime_expected_url_candidate_present',
                 'pre_smtp_text_mime_expected_url_candidate_exact',
+                'pre_smtp_text_mime_expected_url_candidate_credentials_complete',
                 'pre_smtp_text_mime_body_identity_same_after_setter',
                 'pre_smtp_text_mime_body_reset_retry_attempted',
                 'pre_smtp_text_mime_body_changed_after_reset', 'pre_smtp_text_plain_part_present',
@@ -375,10 +383,14 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
         'pre_smtp_text_replacement_contains_expected_url': None,
         'pre_smtp_text_getter_contains_expected_url': None,
         'pre_smtp_text_mime_contains_expected_url': None,
+        'pre_smtp_text_getter_expected_url_literal_present': None,
         'pre_smtp_text_getter_expected_url_candidate_present': None,
         'pre_smtp_text_getter_expected_url_candidate_exact': None,
+        'pre_smtp_text_getter_expected_url_candidate_credentials_complete': None,
+        'pre_smtp_text_mime_expected_url_literal_present': None,
         'pre_smtp_text_mime_expected_url_candidate_present': None,
         'pre_smtp_text_mime_expected_url_candidate_exact': None,
+        'pre_smtp_text_mime_expected_url_candidate_credentials_complete': None,
         'pre_smtp_text_mime_body_read_succeeded': None,
         'pre_smtp_text_mime_body_identity_same_after_setter': None,
         'pre_smtp_text_mime_body_reset_retry_attempted': None,
@@ -417,10 +429,14 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
         ('X-ORDENOWA-CI-Reset-Text-Replacement-Contains-Expected-URL', 'pre_smtp_text_replacement_contains_expected_url'),
         ('X-ORDENOWA-CI-Reset-Text-Getter-Contains-Expected-URL', 'pre_smtp_text_getter_contains_expected_url'),
         ('X-ORDENOWA-CI-Reset-Text-Mime-Contains-Expected-URL', 'pre_smtp_text_mime_contains_expected_url'),
+        ('X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Literal-Present', 'pre_smtp_text_getter_expected_url_literal_present'),
         ('X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Candidate-Present', 'pre_smtp_text_getter_expected_url_candidate_present'),
         ('X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Candidate-Exact', 'pre_smtp_text_getter_expected_url_candidate_exact'),
+        ('X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Candidate-Credentials-Complete', 'pre_smtp_text_getter_expected_url_candidate_credentials_complete'),
+        ('X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Literal-Present', 'pre_smtp_text_mime_expected_url_literal_present'),
         ('X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Candidate-Present', 'pre_smtp_text_mime_expected_url_candidate_present'),
         ('X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Candidate-Exact', 'pre_smtp_text_mime_expected_url_candidate_exact'),
+        ('X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Candidate-Credentials-Complete', 'pre_smtp_text_mime_expected_url_candidate_credentials_complete'),
         ('X-ORDENOWA-CI-Reset-Text-Mime-Body-Read-Succeeded', 'pre_smtp_text_mime_body_read_succeeded'),
         ('X-ORDENOWA-CI-Reset-Text-Mime-Body-Identity-Same-After-Setter', 'pre_smtp_text_mime_body_identity_same_after_setter'),
         ('X-ORDENOWA-CI-Reset-Text-Mime-Body-Reset-Retry-Attempted', 'pre_smtp_text_mime_body_reset_retry_attempted'),
@@ -761,10 +777,14 @@ def run() -> bool:
         'pre_smtp_text_replacement_contains_expected_url': None,
         'pre_smtp_text_getter_contains_expected_url': None,
         'pre_smtp_text_mime_contains_expected_url': None,
+        'pre_smtp_text_getter_expected_url_literal_present': None,
         'pre_smtp_text_getter_expected_url_candidate_present': None,
         'pre_smtp_text_getter_expected_url_candidate_exact': None,
+        'pre_smtp_text_getter_expected_url_candidate_credentials_complete': None,
+        'pre_smtp_text_mime_expected_url_literal_present': None,
         'pre_smtp_text_mime_expected_url_candidate_present': None,
         'pre_smtp_text_mime_expected_url_candidate_exact': None,
+        'pre_smtp_text_mime_expected_url_candidate_credentials_complete': None,
         'pre_smtp_text_mime_body_read_succeeded': None,
         'pre_smtp_text_mime_body_identity_same_after_setter': None,
         'pre_smtp_text_mime_body_reset_retry_attempted': None,
@@ -821,10 +841,14 @@ def run() -> bool:
                               pre_smtp_text_replacement_contains_expected_url=None,
                               pre_smtp_text_getter_contains_expected_url=None,
                               pre_smtp_text_mime_contains_expected_url=None,
+                              pre_smtp_text_getter_expected_url_literal_present=None,
                               pre_smtp_text_getter_expected_url_candidate_present=None,
                               pre_smtp_text_getter_expected_url_candidate_exact=None,
+                              pre_smtp_text_getter_expected_url_candidate_credentials_complete=None,
+                              pre_smtp_text_mime_expected_url_literal_present=None,
                               pre_smtp_text_mime_expected_url_candidate_present=None,
                               pre_smtp_text_mime_expected_url_candidate_exact=None,
+                              pre_smtp_text_mime_expected_url_candidate_credentials_complete=None,
                               pre_smtp_text_mime_body_read_succeeded=None,
                               pre_smtp_text_mime_body_identity_same_after_setter=None,
                               pre_smtp_text_mime_body_reset_retry_attempted=None,
@@ -963,10 +987,14 @@ def run() -> bool:
                 f'pre_smtp_replacement_expected_url={str(diagnostic["pre_smtp_text_replacement_contains_expected_url"]).lower()}; '
                 f'pre_smtp_getter_expected_url={str(diagnostic["pre_smtp_text_getter_contains_expected_url"]).lower()}; '
                 f'pre_smtp_mime_expected_url={str(diagnostic["pre_smtp_text_mime_contains_expected_url"]).lower()}; '
+                f'pre_smtp_getter_url_literal={str(diagnostic["pre_smtp_text_getter_expected_url_literal_present"]).lower()}; '
                 f'pre_smtp_getter_url_candidate={str(diagnostic["pre_smtp_text_getter_expected_url_candidate_present"]).lower()}/'
-                f'{str(diagnostic["pre_smtp_text_getter_expected_url_candidate_exact"]).lower()}; '
+                f'{str(diagnostic["pre_smtp_text_getter_expected_url_candidate_exact"]).lower()}/'
+                f'{str(diagnostic["pre_smtp_text_getter_expected_url_candidate_credentials_complete"]).lower()}; '
+                f'pre_smtp_mime_url_literal={str(diagnostic["pre_smtp_text_mime_expected_url_literal_present"]).lower()}; '
                 f'pre_smtp_mime_url_candidate={str(diagnostic["pre_smtp_text_mime_expected_url_candidate_present"]).lower()}/'
-                f'{str(diagnostic["pre_smtp_text_mime_expected_url_candidate_exact"]).lower()}; '
+                f'{str(diagnostic["pre_smtp_text_mime_expected_url_candidate_exact"]).lower()}/'
+                f'{str(diagnostic["pre_smtp_text_mime_expected_url_candidate_credentials_complete"]).lower()}; '
                 f'pre_smtp_mime_body_read={str(diagnostic["pre_smtp_text_mime_body_read_succeeded"]).lower()}; '
                 f'pre_smtp_body_same_after_setter={str(diagnostic["pre_smtp_text_mime_body_identity_same_after_setter"]).lower()}; '
                 f'pre_smtp_body_reset_retry={str(diagnostic["pre_smtp_text_mime_body_reset_retry_attempted"]).lower()}; '
@@ -1018,10 +1046,14 @@ def run() -> bool:
             f'pre_smtp_replacement_expected_url={str(diagnostic["pre_smtp_text_replacement_contains_expected_url"]).lower()}; '
             f'pre_smtp_getter_expected_url={str(diagnostic["pre_smtp_text_getter_contains_expected_url"]).lower()}; '
             f'pre_smtp_mime_expected_url={str(diagnostic["pre_smtp_text_mime_contains_expected_url"]).lower()}; '
+            f'pre_smtp_getter_url_literal={str(diagnostic["pre_smtp_text_getter_expected_url_literal_present"]).lower()}; '
             f'pre_smtp_getter_url_candidate={str(diagnostic["pre_smtp_text_getter_expected_url_candidate_present"]).lower()}/'
-            f'{str(diagnostic["pre_smtp_text_getter_expected_url_candidate_exact"]).lower()}; '
+            f'{str(diagnostic["pre_smtp_text_getter_expected_url_candidate_exact"]).lower()}/'
+            f'{str(diagnostic["pre_smtp_text_getter_expected_url_candidate_credentials_complete"]).lower()}; '
+            f'pre_smtp_mime_url_literal={str(diagnostic["pre_smtp_text_mime_expected_url_literal_present"]).lower()}; '
             f'pre_smtp_mime_url_candidate={str(diagnostic["pre_smtp_text_mime_expected_url_candidate_present"]).lower()}/'
-            f'{str(diagnostic["pre_smtp_text_mime_expected_url_candidate_exact"]).lower()}; '
+            f'{str(diagnostic["pre_smtp_text_mime_expected_url_candidate_exact"]).lower()}/'
+            f'{str(diagnostic["pre_smtp_text_mime_expected_url_candidate_credentials_complete"]).lower()}; '
             f'pre_smtp_mime_body_read={str(diagnostic["pre_smtp_text_mime_body_read_succeeded"]).lower()}; '
             f'pre_smtp_body_same_after_setter={str(diagnostic["pre_smtp_text_mime_body_identity_same_after_setter"]).lower()}; '
             f'pre_smtp_body_reset_retry={str(diagnostic["pre_smtp_text_mime_body_reset_retry_attempted"]).lower()}; '

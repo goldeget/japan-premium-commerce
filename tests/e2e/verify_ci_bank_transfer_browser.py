@@ -38,6 +38,9 @@ SAFE_SUBSTAGES = {
     "csrf_confirmation_invalid_token_submit", "csrf_confirmation_submit",
     "csrf_confirmation_notice_wait", "csrf_confirmation_notice_assertion",
     "csrf_confirmation_unpaid_db_readback",
+    "csrf_confirmation_unpaid_helper_copy", "csrf_confirmation_unpaid_input_validation",
+    "csrf_confirmation_unpaid_execution", "csrf_confirmation_unpaid_json_parse",
+    "csrf_confirmation_unpaid_json_shape", "csrf_confirmation_unpaid_result_contract",
     "instruction_issue_navigation", "instruction_issue_order_row_readback", "instruction_issue_action_controls",
     "instruction_issue_submit", "instruction_issue_notice_readback", "instruction_issue_db_readback",
     "instruction_issue_profile_gate_evidence",
@@ -46,7 +49,8 @@ SAFE_SUBSTAGES = {
     "instruction_issue_notice_unpaid_present_missing", "instruction_issue_notice_unpaid_missing_missing",
     "instruction_issue_notice_unpaid_present_other", "instruction_issue_notice_unpaid_missing_other",
     "limited_staff_login", "limited_access_fixture_readback", "limited_access_helper_copy",
-    "limited_access_helper_execution", "limited_access_helper_json_parse", "limited_access_helper_json_shape",
+    "limited_access_helper_input_validation", "limited_access_helper_execution",
+    "limited_access_helper_json_parse", "limited_access_helper_json_shape",
     "limited_access_helper_result_contract", "limited_access_scope_validation",
     "limited_access_bootstrap", "limited_access_employee_lookup", "limited_access_employee_active",
     "limited_access_transfer_tab_acl", "limited_access_orders_read_acl", "limited_access_contract_readback",
@@ -315,21 +319,24 @@ def customer_login(driver: webdriver.Chrome, ctx: dict[str, object], email: str)
 
 
 def docker_php_json(
-    ctx: dict[str, object], source_path: Path, container_path: str, values: dict[str, str], set_substage=None
+    ctx: dict[str, object], source_path: Path, container_path: str, values: dict[str, str],
+    set_substage=None, substage_prefix: str | None = None,
 ) -> dict[str, object]:
     def mark(name: str) -> None:
         if set_substage is not None:
             set_substage(name)
 
+    def helper_stage(suffix: str, default_name: str) -> str:
+        return f"{substage_prefix}_{suffix}" if substage_prefix else default_name
+
     project = str(ctx["project"])
-    mark("limited_access_helper_copy")
+    mark(helper_stage("helper_copy", "limited_access_helper_copy"))
     copy = subprocess.run(
         ["docker", "compose", "-p", project, "exec", "-T", "prestashop", "sh", "-c", f"cat > {container_path}"],
         input=source_path.read_text(encoding="utf-8"), capture_output=True, text=True, timeout=30, check=False,
     )
     if copy.returncode != 0:
         raise RuntimeError("could not stage a bounded transfer acceptance helper in the disposable shop")
-    mark("limited_access_helper_execution")
     command = ["docker", "compose", "-p", project, "exec", "-T", "--user", "www-data"]
     defaults = {
         "CI": "true", "GITHUB_ACTIONS": "true", "KURANEA_ISOLATED_CI": "1",
@@ -337,27 +344,32 @@ def docker_php_json(
         "CI_COMPOSE_PROJECT_NAME": project, "KURANEA_CI_PROJECT_NAME": project,
     }
     defaults.update(values)
+    mark(helper_stage("input_validation", "limited_access_helper_input_validation"))
     for key, value in defaults.items():
         if not re.fullmatch(r"[A-Z0-9_]+", key) or not isinstance(value, str) or "\x00" in value:
             raise ValueError("transfer helper inputs did not match the bounded environment contract")
         command += ["--env", f"{key}={value}"]
     command += ["prestashop", "php", container_path]
+    mark(helper_stage("execution", "limited_access_helper_execution"))
     completed = subprocess.run(command, capture_output=True, text=True, timeout=45, check=False)
     if completed.returncode != 0:
         raise RuntimeError("the isolated native transfer acceptance readback did not pass")
     lines = completed.stdout.splitlines()
-    mark("limited_access_helper_json_parse")
+    mark(helper_stage("json_parse", "limited_access_helper_json_parse"))
     try:
         payload = json.loads(lines[-1])
     except (IndexError, TypeError, ValueError):
         raise RuntimeError("the isolated native transfer helper did not return bounded JSON") from None
-    mark("limited_access_helper_json_shape")
+    mark(helper_stage("json_shape", "limited_access_helper_json_shape"))
     if not isinstance(payload, dict):
         raise RuntimeError("the isolated native transfer helper returned an invalid result shape")
     return payload
 
 
-def verify_unpaid_native_order(ctx: dict[str, object], order: dict[str, object], expectation: str) -> None:
+def verify_unpaid_native_order(
+    ctx: dict[str, object], order: dict[str, object], expectation: str,
+    set_substage=None, substage_prefix: str | None = None,
+) -> None:
     source_path = Path(__file__).resolve().parents[1] / "business_profile" / "verify_ci_bank_transfer_unpaid_order.php"
     payload = docker_php_json(
         ctx,
@@ -370,7 +382,11 @@ def verify_unpaid_native_order(ctx: dict[str, object], order: dict[str, object],
             "KURANEA_CI_VIEWPORT": str(order["viewport"]),
             "KURANEA_CI_TRANSFER_EXPECTATION": expectation,
         },
+        set_substage=set_substage,
+        substage_prefix=substage_prefix,
     )
+    if set_substage is not None and substage_prefix:
+        set_substage(f"{substage_prefix}_result_contract")
     expected_keys = {
         "status", "order_id", "product_id", "product_name", "product_quantity", "product_total",
         "reference_match", "owner_matches", "amount", "unpaid",
@@ -1286,7 +1302,10 @@ def run() -> None:
                 or "alert-danger" not in notice_class.split()):
             raise AssertionError("an invalid confirmation CSRF token was not rejected by the native controller")
         set_substage("csrf_confirmation_unpaid_db_readback")
-        verify_unpaid_native_order(ctx, order, "issued")
+        verify_unpaid_native_order(
+            ctx, order, "issued", set_substage=set_substage,
+            substage_prefix="csrf_confirmation_unpaid",
+        )
         result["csrf_rejected"] = True
         set_substage("none")
 

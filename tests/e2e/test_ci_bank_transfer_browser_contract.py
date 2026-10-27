@@ -108,12 +108,17 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
 
         scenarios = (
             ([completed(1)], ["limited_access_helper_copy"]),
-            ([completed(0), completed(1)], ["limited_access_helper_copy", "limited_access_helper_execution"]),
+            ([completed(0), completed(1)], [
+                "limited_access_helper_copy", "limited_access_helper_input_validation",
+                "limited_access_helper_execution",
+            ]),
             ([completed(0), completed(0, "not-json\n")], [
-                "limited_access_helper_copy", "limited_access_helper_execution", "limited_access_helper_json_parse",
+                "limited_access_helper_copy", "limited_access_helper_input_validation",
+                "limited_access_helper_execution", "limited_access_helper_json_parse",
             ]),
             ([completed(0), completed(0, "[]\n")], [
-                "limited_access_helper_copy", "limited_access_helper_execution", "limited_access_helper_json_parse",
+                "limited_access_helper_copy", "limited_access_helper_input_validation",
+                "limited_access_helper_execution", "limited_access_helper_json_parse",
                 "limited_access_helper_json_shape",
             ]),
         )
@@ -517,7 +522,8 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             'tamper_token=True, set_substage=set_substage',
             'set_substage("csrf_confirmation_notice_assertion")',
             'set_substage("csrf_confirmation_unpaid_db_readback")',
-            'verify_unpaid_native_order(ctx, order, "issued")',
+            'ctx, order, "issued", set_substage=set_substage',
+            'substage_prefix="csrf_confirmation_unpaid"',
             'set_substage("none")',
         )
         positions = [csrf_flow.index(marker) for marker in flow_markers]
@@ -547,6 +553,10 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.require('fields["submit"][0].click()', self.browser)
         self.require('driver.execute_script("arguments[0].value = \'invalid\';", fields["token"][0])', self.browser)
         self.assertNotIn("submit_hidden_admin_post(", csrf_flow)
+        for substage in (
+            "helper_copy", "input_validation", "execution", "json_parse", "json_shape", "result_contract",
+        ):
+            self.require(f'"csrf_confirmation_unpaid_{substage}"', self.browser)
 
         tree = ast.parse(self.browser)
         substage_assignment = next(

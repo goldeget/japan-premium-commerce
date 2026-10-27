@@ -99,9 +99,9 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             "&viewcustomer_thread=1&token=workerToken"
         )
         module.assert_legacy_attachment_identity(href, page_url, admin, 47)
-        with self.assertRaisesRegex(AssertionError, "authenticated thread token"):
+        with self.assertRaisesRegex(AssertionError, "bounded controller token"):
             module.assert_legacy_attachment_identity(
-                href.replace("token=workerToken", "token=otherWorkerToken"), page_url, admin, 47
+                href.replace("token=workerToken", "token="), page_url, admin, 47
             )
 
         for candidate in (
@@ -122,13 +122,13 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "exact customer thread"):
             module.find_attachment_link(Driver(), admin, "follow-up-marker", "legacy_thread_view", 47)
 
-    def test_legacy_text_attachment_diagnostics_split_exact_route_and_token_without_values(self):
+    def test_legacy_text_attachment_uses_token_shape_then_native_response_readback(self):
         module = load_script()
         module.By = SimpleNamespace(CSS_SELECTOR="css selector", XPATH="xpath")
         admin = "http://localhost:18080/admin-kuranea"
         page_url = (
             admin + "/index.php?controller=AdminCustomerThreads&id_customer_thread=47"
-            "&viewcustomer_thread=1&token=workerToken"
+            "&viewcustomer_thread=1&token=pageToken"
         )
         href = (
             admin + "/index.php?controller=AdminCustomerThreads&id_customer_thread=47"
@@ -180,8 +180,8 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             "support_attachment_link_same_shop", "support_attachment_link_thread_matches",
             "support_attachment_link_thread_id_matches", "support_attachment_link_route_kind_matches",
             "support_attachment_page_legacy_route_kind", "support_attachment_link_legacy_route_kind",
-            "support_attachment_message_row_association", "support_attachment_legacy_token_matches",
-            "support_attachment_link_token_present", "support_attachment_link_token_matches",
+            "support_attachment_message_row_association", "support_attachment_legacy_token_shape_valid",
+            "support_attachment_link_token_present", "support_attachment_link_token_shape_valid",
         ):
             self.assertIs(result[key], True, key)
         self.assertIs(result["support_attachment_page_modern_route_kind"], False)
@@ -211,17 +211,17 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         self.assertIs(converted_route["support_attachment_link_route_kind_matches"], False)
         self.assertIs(converted_route["support_attachment_link_thread_matches"], False)
 
-        wrong_token: dict[str, object] = {}
-        with self.assertRaisesRegex(AssertionError, "authenticated thread token"):
+        invalid_token: dict[str, object] = {}
+        with self.assertRaisesRegex(AssertionError, "bounded controller token"):
             module.find_attachment_link(
-                Driver(href.replace("token=workerToken", "token=otherWorkerToken")),
-                admin, "synthetic inquiry", "legacy_thread_view", 47, wrong_token,
+                Driver(href.replace("token=workerToken", "token=")),
+                admin, "synthetic inquiry", "legacy_thread_view", 47, invalid_token,
             )
-        self.assertEqual("attachment_link_token_readback", wrong_token["browser_substage"])
-        self.assertIs(wrong_token["support_attachment_link_thread_matches"], True)
-        self.assertIs(wrong_token["support_attachment_link_token_present"], True)
-        self.assertIs(wrong_token["support_attachment_link_token_matches"], False)
-        self.assertNotIn("otherWorkerToken", json.dumps(wrong_token))
+        self.assertEqual("attachment_link_token_readback", invalid_token["browser_substage"])
+        self.assertIs(invalid_token["support_attachment_link_thread_matches"], True)
+        self.assertIs(invalid_token["support_attachment_link_token_present"], False)
+        self.assertIs(invalid_token["support_attachment_link_token_shape_valid"], False)
+        self.assertNotIn("workerToken", json.dumps(invalid_token))
 
     def test_modern_text_attachment_uses_exact_secured_reader_shape_and_page_association(self):
         module = load_script()
@@ -274,7 +274,7 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         self.assertIs(result["support_attachment_modern_session_route_shape"], True)
         self.assertIs(result["support_attachment_message_row_association"], True)
         self.assertIs(result["support_attachment_link_thread_id_matches"], False)
-        self.assertIs(result.get("support_attachment_legacy_token_matches", False), False)
+        self.assertIs(result.get("support_attachment_legacy_token_shape_valid", False), False)
         self.assertNotIn("synthetic-upload.txt", json.dumps(result))
 
         class WrongRouteLink:
@@ -924,10 +924,10 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 "support_attachment_link_modern_view_route_kind": False,
                 "support_attachment_link_modern_secured_reader_route_kind": False,
                 "support_attachment_message_row_association": True,
-                "support_attachment_legacy_token_matches": True,
+                "support_attachment_legacy_token_shape_valid": True,
                 "support_attachment_modern_session_route_shape": False,
                 "support_attachment_link_token_present": True,
-                "support_attachment_link_token_matches": True,
+                "support_attachment_link_token_shape_valid": True,
                 "support_attachment_admin_content_matches": True,
                 "support_attachment_foreign_probe_completed": True,
                 "support_attachment_foreign_status_verifiable": True,

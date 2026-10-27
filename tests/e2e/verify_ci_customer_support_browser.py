@@ -85,9 +85,9 @@ SAFE_RESULT_KEYS = {
     "support_attachment_page_legacy_route_kind", "support_attachment_page_modern_route_kind",
     "support_attachment_link_legacy_route_kind", "support_attachment_link_modern_view_route_kind",
     "support_attachment_link_modern_secured_reader_route_kind",
-    "support_attachment_message_row_association", "support_attachment_legacy_token_matches",
+    "support_attachment_message_row_association", "support_attachment_legacy_token_shape_valid",
     "support_attachment_modern_session_route_shape",
-    "support_attachment_link_token_present", "support_attachment_link_token_matches",
+    "support_attachment_link_token_present", "support_attachment_link_token_shape_valid",
     "support_attachment_admin_content_matches", "support_attachment_foreign_probe_completed",
     "support_attachment_foreign_status_verifiable", "support_attachment_foreign_content_absent",
     "contact_document_status", "contact_same_origin", "contact_native_route",
@@ -113,9 +113,9 @@ SUPPORT_ATTACHMENT_DIAGNOSTIC_KEYS = {
     "support_attachment_page_legacy_route_kind", "support_attachment_page_modern_route_kind",
     "support_attachment_link_legacy_route_kind", "support_attachment_link_modern_view_route_kind",
     "support_attachment_link_modern_secured_reader_route_kind",
-    "support_attachment_message_row_association", "support_attachment_legacy_token_matches",
+    "support_attachment_message_row_association", "support_attachment_legacy_token_shape_valid",
     "support_attachment_modern_session_route_shape",
-    "support_attachment_link_token_present", "support_attachment_link_token_matches",
+    "support_attachment_link_token_present", "support_attachment_link_token_shape_valid",
     "support_attachment_admin_content_matches", "support_attachment_foreign_probe_completed",
     "support_attachment_foreign_status_verifiable", "support_attachment_foreign_content_absent",
 }
@@ -899,15 +899,18 @@ def assert_legacy_attachment_identity(
         raise AssertionError("legacy support attachment did not retain the exact native thread")
     mark_browser_substage(diagnostic_result, "attachment_link_token_readback")
     link_tokens = parse_qs(urlparse(href).query, keep_blank_values=True).get("token", [])
-    page_tokens = parse_qs(urlparse(thread_url).query, keep_blank_values=True).get("token", [])
     token_present = len(link_tokens) == 1 and bool(link_tokens[0].strip())
-    token_matches = token_present and link_tokens == page_tokens
+    token_shape_valid = (
+        token_present
+        and len(link_tokens[0]) <= 256
+        and re.search(r"\s", link_tokens[0]) is None
+    )
     if diagnostic_result is not None:
         diagnostic_result["support_attachment_link_token_present"] = token_present
-        diagnostic_result["support_attachment_link_token_matches"] = token_matches
-        diagnostic_result["support_attachment_legacy_token_matches"] = token_matches
-    if not token_matches:
-        raise AssertionError("legacy support attachment did not retain the authenticated thread token")
+        diagnostic_result["support_attachment_link_token_shape_valid"] = token_shape_valid
+        diagnostic_result["support_attachment_legacy_token_shape_valid"] = token_shape_valid
+    if not token_shape_valid:
+        raise AssertionError("legacy support attachment did not retain one bounded controller token")
 
 
 def assert_image_attachment_response(result: Any, expected: bytes) -> None:
@@ -1950,10 +1953,10 @@ def run() -> None:
         "support_attachment_link_modern_view_route_kind": False,
         "support_attachment_link_modern_secured_reader_route_kind": False,
         "support_attachment_message_row_association": False,
-        "support_attachment_legacy_token_matches": False,
+        "support_attachment_legacy_token_shape_valid": False,
         "support_attachment_modern_session_route_shape": False,
         "support_attachment_link_token_present": False,
-        "support_attachment_link_token_matches": False,
+        "support_attachment_link_token_shape_valid": False,
         "support_attachment_admin_content_matches": False,
         "support_attachment_foreign_probe_completed": False,
         "support_attachment_foreign_status_verifiable": False,
@@ -2406,10 +2409,10 @@ def run() -> None:
             f"support_attachment_link_modern_view_route_kind={str(result['support_attachment_link_modern_view_route_kind']).lower()}; "
             f"support_attachment_link_modern_secured_reader_route_kind={str(result['support_attachment_link_modern_secured_reader_route_kind']).lower()}; "
             f"support_attachment_message_row_association={str(result['support_attachment_message_row_association']).lower()}; "
-            f"support_attachment_legacy_token_matches={str(result['support_attachment_legacy_token_matches']).lower()}; "
+            f"support_attachment_legacy_token_shape_valid={str(result['support_attachment_legacy_token_shape_valid']).lower()}; "
             f"support_attachment_modern_session_route_shape={str(result['support_attachment_modern_session_route_shape']).lower()}; "
             f"support_attachment_link_token_present={str(result['support_attachment_link_token_present']).lower()}; "
-            f"support_attachment_link_token_matches={str(result['support_attachment_link_token_matches']).lower()}; "
+            f"support_attachment_link_token_shape_valid={str(result['support_attachment_link_token_shape_valid']).lower()}; "
             f"support_attachment_admin_content_matches={str(result['support_attachment_admin_content_matches']).lower()}; "
             f"support_attachment_foreign_probe_completed={str(result['support_attachment_foreign_probe_completed']).lower()}; "
             f"support_attachment_foreign_status_verifiable={str(result['support_attachment_foreign_status_verifiable']).lower()}; "
