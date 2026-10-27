@@ -373,7 +373,7 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
 
     private function renderIsolatedCiCsrfEvidence(): string
     {
-        if (!CommerceGate::isIsolatedCiCheckoutEnabled()) {
+        if (!$this->isIsolatedCiDiagnosticRun()) {
             return '';
         }
 
@@ -394,6 +394,17 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
         }
 
         return '<span id="ordenowa-ci-transfer-csrf-evidence" hidden' . $attributes . '></span>';
+    }
+
+    private function isIsolatedCiDiagnosticRun(): bool
+    {
+        $runId = (string) getenv('GITHUB_RUN_ID');
+        $runAttempt = (string) getenv('GITHUB_RUN_ATTEMPT');
+        return getenv('CI') === 'true'
+            && getenv('GITHUB_ACTIONS') === 'true'
+            && preg_match('/\\A[0-9]+\\z/D', $runId) === 1
+            && preg_match('/\\A[0-9]+\\z/D', $runAttempt) === 1
+            && getenv('KURANEA_CI_PROJECT_NAME') === 'kuranea-ci-' . $runId . '-' . $runAttempt;
     }
 
     private function escape(string $value): string

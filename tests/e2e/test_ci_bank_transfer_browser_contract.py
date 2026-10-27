@@ -239,7 +239,7 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             "private function escape", 1
         )[0]
         for marker in (
-            "CommerceGate::isIsolatedCiCheckoutEnabled()",
+            "isIsolatedCiDiagnosticRun()",
             "hash_equals($controllerToken, $submittedToken)",
             "hash_equals($controllerToken, $queryToken)",
             "hash_equals($queryToken, $submittedToken)",
@@ -248,6 +248,9 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             "'post-matches-controller'",
         ):
             self.require(marker, ci_evidence)
+        self.require("getenv('GITHUB_ACTIONS') === 'true'", ci_evidence)
+        self.require("getenv('KURANEA_CI_PROJECT_NAME') === 'kuranea-ci-' . $runId . '-' . $runAttempt", ci_evidence)
+        self.assertNotIn("CommerceGate::isIsolatedCiCheckoutEnabled()", ci_evidence)
         self.assertNotIn("$submittedToken .", ci_evidence)
         self.assertNotIn("$queryToken .", ci_evidence)
 

@@ -63,6 +63,37 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         self.assertNotIn("getHtmlBody() .", hook)
         self.assertNotIn("getTextBody() .", hook)
 
+    def test_password_reset_text_fallback_uses_the_native_same_shop_reset_url(self):
+        module = MODULE_PATH.read_text(encoding="utf-8")
+        before = module.split("public function hookActionEmailSendBefore", 1)[1].split(
+            "public function hookActionMailAlterMessageBeforeSend", 1
+        )[0]
+        alter = module.split("public function hookActionMailAlterMessageBeforeSend", 1)[1].split(
+            "private function isIsolatedResetFixtureMessage", 1
+        )[0]
+        validator = module.split("private function validatedNativeResetUrl", 1)[1].split(
+            "private function hasNativeResetLink", 1
+        )[0]
+        link_matcher = module.split("private function hasNativeResetLink", 1)[1].split(
+            "private function sameNativeResetRoute", 1
+        )[0]
+
+        self.assertIn("$this->activeMailTemplate !== 'password_query'", before)
+        self.assertIn("$params['templateVars']['{url}']", before)
+        self.assertIn("$params['idLang']", before)
+        self.assertIn("$this->activeMailShopId", before)
+        self.assertIn("$this->context->link->getPageLink(", validator)
+        self.assertIn("sameNativeResetRoute($parts, $native)", validator)
+        for key in ("'token'", "'reset_token'", "'id_customer'"):
+            self.assertIn(key, validator)
+            self.assertIn(key, link_matcher)
+        self.assertIn("$this->activeMailTemplate === 'password_query'", alter)
+        self.assertIn("$message->text($replacement)", alter)
+        self.assertIn("$this->hasNativeResetLink($textBody, $resetUrl)", alter)
+        self.assertIn("finally", alter)
+        self.assertIn("$this->activeNativeResetUrl = null", alter)
+        self.assertNotIn("error_log", alter)
+
     def test_mail_shop_context_reaches_both_content_and_extra_vars_before_cleanup(self):
         module = MODULE_PATH.read_text(encoding="utf-8")
 

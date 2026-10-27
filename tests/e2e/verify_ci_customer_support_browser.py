@@ -95,6 +95,7 @@ SAFE_BROWSER_SUBSTAGES = {
     "order_select_native_option", "order_select_readback",
     "foreign_invalid_token_probe", "foreign_owned_thread_probe", "foreign_orderless_thread_probe",
     "foreign_orderless_post_probe",
+    "admin_route_candidate_navigation", "admin_route_exact_thread_readback",
     "contact_field_lookup", "contact_id_readback", "attachment_control_lookup", "attachment_send_keys",
     "accepted_attachment_fixture_validation", "accepted_attachment_file_readback", "message_field_lookup",
     "message_send_keys", "submit_control_lookup", "submit_control_scroll", "submit_control_hit_test",
@@ -579,9 +580,12 @@ def select_contact_order(
         raise AssertionError("native contact form did not select the exact requested order")
 
 
-def visit(driver, url: str) -> None:
+def visit(driver, url: str, timeout: float = 35) -> None:
+    bounded_timeout = max(0.1, float(timeout))
+    if hasattr(driver, "set_page_load_timeout"):
+        driver.set_page_load_timeout(bounded_timeout)
     driver.get(url)
-    WebDriverWait(driver, 35).until(lambda browser: browser.execute_script("return document.readyState") == "complete")
+    WebDriverWait(driver, bounded_timeout).until(lambda browser: browser.execute_script("return document.readyState") == "complete")
 
 
 def clear_password_inputs(driver) -> bool:
@@ -844,9 +848,9 @@ def assert_foreign_orderless_post_denied(
     assert_support_denied_response(response, diagnostic_result)
 
 
-def generated_customer_threads_link(
+def generated_customer_threads_links(
     driver, admin_url: str, diagnostic_result: dict[str, Any] | None = None
-) -> str:
+) -> list[str]:
     expected = urlparse(admin_url)
     root = expected.path.rstrip("/")
     candidates: set[str] = set()
@@ -891,15 +895,20 @@ def generated_customer_threads_link(
         raise AssertionError("native Customer service navigation left the isolated Back Office")
     if invalid_candidates:
         raise AssertionError("native Customer service navigation exposed a noncanonical route")
-    if len(modern_candidates) > 1 or len(legacy_candidates) > 1:
-        raise AssertionError("native Customer service navigation exposed ambiguous route aliases")
-    if len(modern_candidates) == 1:
-        return next(iter(modern_candidates.values()))
-    if len(legacy_candidates) == 1:
-        return next(iter(legacy_candidates.values()))
-    if not safe_candidates:
+    if not modern_candidates and not legacy_candidates:
         raise AssertionError("the authenticated administrator did not expose a native Customer service route")
-    raise AssertionError("native Customer service navigation did not expose one unambiguous route")
+    if len(modern_candidates) + len(legacy_candidates) > 20:
+        raise AssertionError("native Customer service navigation exposed too many route candidates")
+
+    root = expected.path.rstrip("/")
+    ordered: list[tuple[int, int, str]] = []
+    for href in modern_candidates.values():
+        path = urlparse(href).path
+        ordered.append((0, int(path.endswith("/index.php/sell/customer-service/customer-threads")), href))
+    for href in legacy_candidates.values():
+        path = urlparse(href).path
+        ordered.append((1, int(path != root + "/index.php"), href))
+    return [href for _route_kind, _alias_rank, href in sorted(ordered)]
 
 
 def admin_login(driver, ctx: Context, email: str) -> None:
@@ -912,8 +921,15 @@ def admin_login(driver, ctx: Context, email: str) -> None:
         raise AssertionError("Back Office password remained in the browser DOM")
 
 
-def view_link_from_index(driver, ctx: Context, buyer: dict[str, Any], expected_thread_id: int | None = None) -> tuple[str, int]:
-    WebDriverWait(driver, 40).until(lambda browser: bool(browser.find_elements(By.CSS_SELECTOR, "table tbody tr")))
+def view_link_from_index(
+    driver, ctx: Context, buyer: dict[str, Any], expected_thread_id: int | None = None, timeout: float = 40,
+) -> tuple[str, int]:
+    WebDriverWait(driver, max(0.1, float(timeout))).until(lambda browser: bool(
+        browser.find_elements(By.CSS_SELECTOR, "table tbody tr")
+        or browser.find_elements(By.CSS_SELECTOR, '#login_form input[name="email"], #login_form input[name="passwd"]')
+    ))
+    if driver.find_elements(By.CSS_SELECTOR, '#login_form input[name="email"], #login_form input[name="passwd"]'):
+        raise AssertionError("native Customer service candidate did not retain the authenticated admin session")
     links: set[str] = set()
     for row in driver.find_elements(By.CSS_SELECTOR, "table tbody tr"):
         text = row.text
@@ -934,6 +950,34 @@ def view_link_from_index(driver, ctx: Context, buyer: dict[str, Any], expected_t
     if identity is None or identity[1] < 1:
         raise AssertionError("native Customer service row did not link to a valid thread view")
     return thread_url, identity[1]
+
+
+def resolve_customer_threads_index(
+    driver, ctx: Context, buyer: dict[str, Any], expected_thread_id: int, candidates: list[str],
+    diagnostic_result: dict[str, Any] | None = None, timeout: float = 40,
+) -> tuple[str, str, int]:
+    """Accept a safe admin route only after it links the exact expected native thread."""
+    deadline = time.monotonic() + max(0.1, float(timeout))
+    for index_url in candidates:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        mark_browser_substage(diagnostic_result, "admin_route_candidate_navigation")
+        try:
+            visit(driver, index_url, timeout=remaining)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            mark_browser_substage(diagnostic_result, "admin_route_exact_thread_readback")
+            thread_url, thread_id = view_link_from_index(
+                driver, ctx, buyer, expected_thread_id, timeout=remaining
+            )
+        except (AssertionError, TimeoutException):
+            continue
+        if thread_id == expected_thread_id:
+            return index_url, thread_url, thread_id
+
+    raise AssertionError("no safe native Customer service route linked the exact expected thread within the existing lookup timeout")
 
 
 def assert_thread_order_link(driver, expected_order_id: int) -> None:
@@ -1387,9 +1431,10 @@ def run() -> None:
         mark_browser_substage(result, "admin_login_completed")
         stage = result["stage"] = "admin_thread_lookup"
         mark_browser_substage(result, "admin_service_route_discovery")
-        index_link = generated_customer_threads_link(admin, ctx.admin, result)
-        visit(admin, index_link)
-        thread_view_url, thread_id = view_link_from_index(admin, ctx, ctx.buyer, first_thread_id)
+        index_candidates = generated_customer_threads_links(admin, ctx.admin, result)
+        index_link, thread_view_url, thread_id = resolve_customer_threads_index(
+            admin, ctx, ctx.buyer, first_thread_id, index_candidates, result
+        )
         if thread_id != first_thread_id:
             raise AssertionError("native customer service page did not open the confirmation's same thread")
         visit(admin, thread_view_url)

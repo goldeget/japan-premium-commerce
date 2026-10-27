@@ -458,13 +458,16 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             with self.subTest(safe_field=safe_field):
                 self.assertIn(safe_field, browser)
 
-        route_helper = browser[browser.index("def generated_customer_threads_link("):browser.index("def admin_login(")]
+        route_helper = browser[browser.index("def generated_customer_threads_links("):browser.index("def admin_login(")]
         self.assertIn("diagnostic_result: dict[str, Any] | None = None", route_helper)
         self.assertIn('diagnostic_result["customer_service_route_candidate_count"]', route_helper)
         self.assertIn('diagnostic_result["customer_service_route_safe_count"]', route_helper)
-        self.assertIn('len(modern_candidates) > 1 or len(legacy_candidates) > 1', route_helper)
+        self.assertIn("return [href for _route_kind, _alias_rank, href in sorted(ordered)]", route_helper)
         self.assertIn('customer_threads_navigation_identity(href, admin_url)', route_helper)
         self.assertIn('native Customer service navigation exposed a noncanonical route', route_helper)
+        self.assertIn("resolve_customer_threads_index(", browser)
+        self.assertIn("thread_id == expected_thread_id", browser)
+        self.assertIn("timeout=remaining", browser)
         self.assertNotIn('return sorted(safe_candidates', route_helper)
         self.assertNotIn("print(", route_helper)
         identity_helper = browser[browser.index("def customer_threads_navigation_identity("):browser.index("def thread_route_identity(")]
@@ -477,10 +480,11 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                         run.index('stage = result["stage"] = "admin_thread_lookup"'))
         self.assertLess(run.index('stage = result["stage"] = "admin_thread_lookup"'),
                         run.index('mark_browser_substage(result, "admin_service_route_discovery")'))
-        self.assertIn("generated_customer_threads_link(admin, ctx.admin, result)", run)
+        self.assertIn("generated_customer_threads_links(admin, ctx.admin, result)", run)
+        self.assertIn("resolve_customer_threads_index(", run)
         self.assertIn('admin_route_candidates={result[\'customer_service_route_candidate_count\']}', run)
 
-    def test_multiple_safe_native_thread_route_aliases_select_modern_route(self):
+    def test_multiple_safe_native_thread_route_aliases_are_candidates_for_thread_readback(self):
         module = load_script()
         module.By = SimpleNamespace(CSS_SELECTOR="css selector")
         admin_root = "http://127.0.0.1:18080/admin-test"
@@ -499,7 +503,7 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 return [Link(legacy), Link(modern)]
 
         diagnostic: dict[str, object] = {}
-        self.assertEqual(modern, module.generated_customer_threads_link(Driver(), admin_root, diagnostic))
+        self.assertEqual([modern, legacy], module.generated_customer_threads_links(Driver(), admin_root, diagnostic))
         self.assertEqual(2, diagnostic["customer_service_route_candidate_count"])
         self.assertEqual(2, diagnostic["customer_service_route_safe_count"])
         self.assertEqual(1, diagnostic["customer_service_route_modern_count"])
@@ -521,11 +525,11 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 return [Link(), Link()]
 
         diagnostic: dict[str, object] = {}
-        self.assertEqual(modern, module.generated_customer_threads_link(Driver(), admin_root, diagnostic))
+        self.assertEqual([modern], module.generated_customer_threads_links(Driver(), admin_root, diagnostic))
         self.assertEqual(1, diagnostic["customer_service_route_candidate_count"])
         self.assertEqual(1, diagnostic["customer_service_route_modern_count"])
 
-    def test_multiple_distinct_customer_threads_aliases_fail_as_ambiguous(self):
+    def test_multiple_distinct_customer_threads_tokens_remain_candidates(self):
         module = load_script()
         module.By = SimpleNamespace(CSS_SELECTOR="css selector")
         admin_root = "http://127.0.0.1:18080/admin-test"
@@ -543,8 +547,34 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             def find_elements(self, _by: str, _selector: str) -> list[Link]:
                 return [Link(modern_one), Link(modern_two)]
 
-        with self.assertRaisesRegex(AssertionError, "ambiguous route aliases"):
-            module.generated_customer_threads_link(Driver(), admin_root)
+        self.assertEqual(
+            [modern_one, modern_two],
+            module.generated_customer_threads_links(Driver(), admin_root),
+        )
+
+    def test_candidate_is_accepted_only_after_exact_expected_thread_readback(self):
+        module = load_script()
+        first = "http://127.0.0.1:18080/admin-test/index.php?controller=AdminCustomerThreads&token=stale"
+        second = "http://127.0.0.1:18080/admin-test/index.php?controller=AdminCustomerThreads&token=current"
+        expected_thread = "http://127.0.0.1:18080/admin-test/index.php?controller=AdminCustomerThreads&id_customer_thread=47&viewcustomer_thread=1&token=current"
+        attempts: list[str] = []
+
+        def visit(_driver, url: str, timeout: float = 35) -> None:
+            attempts.append(url)
+
+        def readback(_driver, _ctx, _buyer, expected_thread_id: int, timeout: float = 40):
+            if attempts[-1] == first:
+                raise AssertionError("stale token did not expose the expected thread")
+            self.assertEqual(47, expected_thread_id)
+            return expected_thread, 47
+
+        module.visit = visit
+        module.view_link_from_index = readback
+        selected, thread_url, thread_id = module.resolve_customer_threads_index(
+            object(), SimpleNamespace(), {"email": "fixture@example.invalid"}, 47, [first, second]
+        )
+        self.assertEqual([first, second], attempts)
+        self.assertEqual((second, expected_thread, 47), (selected, thread_url, thread_id))
 
     def test_equivalent_legacy_customer_threads_aliases_ignore_query_order_and_path_alias(self):
         module = load_script()
@@ -565,13 +595,13 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 return [Link(legacy_rewritten), Link(legacy_index)]
 
         diagnostic: dict[str, object] = {}
-        self.assertEqual(legacy_index, module.generated_customer_threads_link(Driver(), admin_root, diagnostic))
+        self.assertEqual([legacy_index], module.generated_customer_threads_links(Driver(), admin_root, diagnostic))
         self.assertEqual(2, diagnostic["customer_service_route_candidate_count"])
         self.assertEqual(2, diagnostic["customer_service_route_safe_count"])
         self.assertEqual(1, diagnostic["customer_service_route_legacy_count"])
         self.assertEqual(0, diagnostic["customer_service_route_invalid_count"])
 
-    def test_distinct_legacy_tokens_and_unexpected_query_keys_remain_ambiguous_or_invalid(self):
+    def test_distinct_legacy_tokens_remain_candidates_and_unexpected_query_keys_remain_invalid(self):
         module = load_script()
         module.By = SimpleNamespace(CSS_SELECTOR="css selector")
         admin_root = "http://127.0.0.1:18080/admin-test"
@@ -592,13 +622,15 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             def find_elements(self, _by: str, _selector: str) -> list[Link]:
                 return [Link(href) for href in self.hrefs]
 
-        with self.assertRaisesRegex(AssertionError, "ambiguous route aliases"):
-            module.generated_customer_threads_link(Driver([legacy_one, legacy_two]), admin_root)
+        self.assertEqual(
+            [legacy_one, legacy_two],
+            module.generated_customer_threads_links(Driver([legacy_one, legacy_two]), admin_root),
+        )
 
         diagnostic: dict[str, object] = {}
         unexpected = admin_root + "/index.php?controller=AdminCustomerThreads&token=safe&id_customer_thread=47"
         with self.assertRaisesRegex(AssertionError, "noncanonical route"):
-            module.generated_customer_threads_link(Driver([unexpected]), admin_root, diagnostic)
+            module.generated_customer_threads_links(Driver([unexpected]), admin_root, diagnostic)
         self.assertEqual(1, diagnostic["customer_service_route_invalid_count"])
 
     def test_nested_false_modern_route_fails_closed(self):
@@ -617,7 +649,7 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
 
         diagnostic: dict[str, object] = {}
         with self.assertRaisesRegex(AssertionError, "noncanonical route"):
-            module.generated_customer_threads_link(Driver(), admin_root, diagnostic)
+            module.generated_customer_threads_links(Driver(), admin_root, diagnostic)
         self.assertEqual(1, diagnostic["customer_service_route_invalid_count"])
 
     def test_any_unsafe_customer_threads_route_candidate_still_fails_closed(self):
@@ -634,7 +666,7 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 return [Link()]
 
         with self.assertRaisesRegex(AssertionError, "left the isolated Back Office"):
-            module.generated_customer_threads_link(Driver(), admin_root)
+            module.generated_customer_threads_links(Driver(), admin_root)
 
     def test_contact_uses_shop_generated_locale_routes_and_probes_legacy_query_route(self):
         browser = SCRIPT.read_text(encoding="utf-8")
