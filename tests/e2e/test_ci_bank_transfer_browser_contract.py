@@ -16,7 +16,7 @@ BROWSER = ROOT / "tests" / "e2e" / "verify_ci_bank_transfer_browser.py"
 PREPARE = ROOT / "tests" / "business_profile" / "prepare_ci_bank_transfer_fixture.php"
 UNPAID_READBACK = ROOT / "tests" / "business_profile" / "verify_ci_bank_transfer_unpaid_order.php"
 PAID_READBACK = ROOT / "tests" / "business_profile" / "verify_ci_bank_transfer_persistence.php"
-LIMITED_ROUTE = ROOT / "tests" / "business_profile" / "resolve_ci_limited_transfer_route.php"
+LIMITED_ACCESS = ROOT / "tests" / "business_profile" / "verify_ci_limited_transfer_access.php"
 SECURITY_FIXTURE = ROOT / "tests" / "business_profile" / "seed_security_fixtures.php"
 TRANSFER_CONTROLLER = ROOT / "modules" / "kuraneabusinessprofile" / "controllers" / "admin" / "AdminBusinessProfileTransfersController.php"
 
@@ -28,7 +28,7 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         cls.prepare = PREPARE.read_text(encoding="utf-8")
         cls.unpaid_readback = UNPAID_READBACK.read_text(encoding="utf-8") if UNPAID_READBACK.exists() else ""
         cls.paid_readback = PAID_READBACK.read_text(encoding="utf-8")
-        cls.limited_route = LIMITED_ROUTE.read_text(encoding="utf-8") if LIMITED_ROUTE.exists() else ""
+        cls.limited_access = LIMITED_ACCESS.read_text(encoding="utf-8") if LIMITED_ACCESS.exists() else ""
         cls.security_fixture = SECURITY_FIXTURE.read_text(encoding="utf-8")
         cls.controller = TRANSFER_CONTROLLER.read_text(encoding="utf-8")
 
@@ -87,34 +87,34 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             "issue_failure_category": "not_run",
             "issue_seller_commerce_gate_enabled": False,
         })
-        result["limited_route_path_index_php"] = False
+        result["limited_session_route_path_index_php"] = False
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "bank-transfer-result.json"
             module.write_result(output, result)
             self.assertTrue(output.is_file())
-            result["limited_route_path_directory_root"] = False
+            result["limited_session_route_path_directory_root"] = False
             with self.assertRaisesRegex(ValueError, "allowlisted schema"):
                 module.write_result(output, result)
-            result["limited_route_path_directory_root"] = True
+            result["limited_session_route_path_directory_root"] = True
             result["issue_effective_commerce_gate_enabled"] = False
             with self.assertRaisesRegex(ValueError, "allowlisted schema"):
                 module.write_result(output, result)
 
-    def test_limited_route_helper_wrapper_reports_safe_copy_execution_and_json_stages(self) -> None:
+    def test_limited_access_helper_wrapper_reports_safe_copy_execution_and_json_stages(self) -> None:
         module = self.load_browser_module()
 
         def completed(returncode, stdout="", stderr="private diagnostic"):
             return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
 
         scenarios = (
-            ([completed(1)], ["limited_route_helper_copy"]),
-            ([completed(0), completed(1)], ["limited_route_helper_copy", "limited_route_helper_execution"]),
+            ([completed(1)], ["limited_access_helper_copy"]),
+            ([completed(0), completed(1)], ["limited_access_helper_copy", "limited_access_helper_execution"]),
             ([completed(0), completed(0, "not-json\n")], [
-                "limited_route_helper_copy", "limited_route_helper_execution", "limited_route_helper_json_parse",
+                "limited_access_helper_copy", "limited_access_helper_execution", "limited_access_helper_json_parse",
             ]),
             ([completed(0), completed(0, "[]\n")], [
-                "limited_route_helper_copy", "limited_route_helper_execution", "limited_route_helper_json_parse",
-                "limited_route_helper_json_shape",
+                "limited_access_helper_copy", "limited_access_helper_execution", "limited_access_helper_json_parse",
+                "limited_access_helper_json_shape",
             ]),
         )
         with tempfile.TemporaryDirectory() as directory:
@@ -137,23 +137,23 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
                 self.assertEqual(expected_stages, stages)
                 self.assertNotIn("private diagnostic", output.getvalue() + error_output.getvalue())
 
-    def test_limited_route_helper_maps_php_failure_stage_to_safe_result_booleans(self) -> None:
+    def test_limited_access_helper_maps_php_failure_stage_to_safe_result_booleans(self) -> None:
         module = self.load_browser_module()
-        checks = {key: False for key in module.LIMITED_ROUTE_CHECK_KEYS}
+        checks = {key: False for key in module.LIMITED_ACCESS_CHECK_KEYS}
         checks["ci_scope_valid"] = False
         payload = {"status": "failure", "failure_stage": "scope_validation", "checks": checks}
         stages: list[str] = []
         diagnostics: dict[str, object] = {}
         with patch.object(module, "docker_php_json", return_value=payload):
             with self.assertRaises(RuntimeError):
-                module.limited_transfer_route(
+                module.verify_limited_staff_access(
                     {"project": "kuranea-ci-1-1", "view_email": "opaque@example.invalid"},
                     stages.append,
                     diagnostics,
                 )
-        self.assertEqual("limited_route_scope_validation", stages[-1])
-        self.assertFalse(diagnostics["limited_route_ci_scope_valid"])
-        self.assertFalse(diagnostics["limited_route_employee_found"])
+        self.assertEqual("limited_access_scope_validation", stages[-1])
+        self.assertFalse(diagnostics["limited_staff_ci_scope_valid"])
+        self.assertFalse(diagnostics["limited_staff_employee_found"])
         self.assertNotIn("opaque@example.invalid", str(diagnostics))
 
     def test_limited_page_and_order_row_diagnostics_are_boolean_only(self) -> None:
@@ -218,100 +218,78 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.assertTrue(module.LIMITED_PAGE_REQUIRED_KEYS.issubset(module.SAFE_RESULT_KEYS))
         self.require("all(result[key] is True for key in LIMITED_PAGE_REQUIRED_KEYS)", self.browser)
 
-    def test_limited_route_accepts_only_native_dispatcher_paths_inside_exact_admin_folder(self) -> None:
+    def test_limited_session_menu_route_is_exact_and_bounded(self) -> None:
         module = self.load_browser_module()
-        self.assertIn("'route_path_directory_root'", self.limited_route)
-        self.assertIn("'route_path_index_php'", self.limited_route)
-        self.assertIn('path_directory_root = internal.path == "/admin-kuranea/"', self.browser)
-        self.assertIn('path_index_php = internal.path == "/admin-kuranea/index.php"', self.browser)
-        self.assertIn("path_valid = path_directory_root or path_index_php", self.browser)
-
-        for route, expected_directory_root, expected_index_php in (
-            ("/admin-kuranea/?controller=AdminBusinessProfileTransfers&token=opaque", True, False),
-            ("/admin-kuranea/index.php?controller=AdminBusinessProfileTransfers&token=opaque", False, True),
-        ):
-            checks = {key: True for key in module.LIMITED_ROUTE_CHECK_KEYS}
-            checks.update({
-                "route_path_directory_root": expected_directory_root,
-                "route_path_index_php": expected_index_php,
-            })
-            payload = {"status": "success", "failure_stage": "none", "checks": checks, "route": route}
+        admin_root = "http://localhost:18080/admin-kuranea"
+        valid_routes = (
+            "http://localhost:18080/admin-kuranea/?controller=AdminBusinessProfileTransfers&token=opaque",
+            "http://localhost:18080/admin-kuranea/index.php?controller=AdminBusinessProfileTransfers&token=opaque",
+        )
+        for href in valid_routes:
             diagnostics: dict[str, object] = {}
-            with patch.object(module, "docker_php_json", return_value=payload):
-                url, token = module.limited_transfer_route(
-                    {"admin": "http://localhost:18080/admin-kuranea", "view_email": "opaque@example.invalid"},
-                    diagnostics=diagnostics,
-                )
-            self.assertEqual(expected_directory_root, diagnostics["limited_route_path_directory_root"])
-            self.assertEqual(expected_index_php, diagnostics["limited_route_path_index_php"])
-            self.assertTrue(diagnostics["limited_route_path_valid"])
-            self.assertEqual("opaque", token)
-            self.assertEqual(route.split("?", 1)[0], module.urlparse(url).path)
-            self.assertEqual(route.split("?", 1)[1], module.urlparse(url).query)
-            self.assertNotIn("opaque@example.invalid", str(diagnostics))
+            route, credential = module.validate_limited_session_route(href, admin_root, diagnostics)
+            self.assertEqual(href, route)
+            self.assertEqual("opaque", credential)
+            self.assertTrue(diagnostics["limited_session_route_same_admin_origin"])
+            self.assertTrue(diagnostics["limited_session_route_path_valid"])
+            self.assertTrue(diagnostics["limited_session_route_controller_valid"])
+            self.assertTrue(diagnostics["limited_session_route_query_shape_valid"])
+            self.assertTrue(all(type(value) is bool for value in diagnostics.values()))
+            self.assertNotIn("opaque", str(diagnostics))
 
-        for route, expected_path_valid in (
-            ("/admin-kuranea/other/index.php?controller=AdminBusinessProfileTransfers&token=opaque", False),
-            ("/admin-kuranea/index.php/extra?controller=AdminBusinessProfileTransfers&token=opaque", False),
-            ("/admin-kuranea/?controller=AdminBusinessProfileTransfers&token=opaque&controller=AdminBusinessProfileTransfers", True),
-            ("/admin-kuranea/?controller=AdminBusinessProfileTransfers&token=", True),
-        ):
-            checks = {key: True for key in module.LIMITED_ROUTE_CHECK_KEYS}
-            # Keep the helper's route check at success so this layer's own URL
-            # validation rejects the independently supplied malformed route.
-            checks.update({"route_path_directory_root": True, "route_path_index_php": False})
-            payload = {"status": "success", "failure_stage": "none", "checks": checks, "route": route}
-            diagnostics: dict[str, object] = {}
-            with patch.object(module, "docker_php_json", return_value=payload):
-                with self.assertRaisesRegex(RuntimeError, "exact expected Back Office route"):
-                    module.limited_transfer_route(
-                        {"admin": "http://localhost:18080/admin-kuranea", "view_email": "opaque@example.invalid"},
-                        diagnostics=diagnostics,
-                    )
-            self.assertEqual(expected_path_valid, diagnostics["limited_route_path_valid"])
+        invalid_routes = (
+            ("http://localhost:18080/admin-kuranea/other/index.php?controller=AdminBusinessProfileTransfers&token=opaque", "limited_session_route_path_valid"),
+            ("http://localhost:18080/admin-kuranea/index.php/extra?controller=AdminBusinessProfileTransfers&token=opaque", "limited_session_route_path_valid"),
+            ("http://localhost:18080/admin-kuranea/?controller=AdminOrders&token=opaque", "limited_session_route_controller_valid"),
+            ("http://localhost:18080/admin-kuranea/?controller=AdminBusinessProfileTransfers&token=", "limited_session_route_credential_present"),
+            ("http://localhost:18080/admin-kuranea/?controller=AdminBusinessProfileTransfers&token=opaque&token=extra", "limited_session_route_query_shape_valid"),
+            ("http://localhost:18080/admin-kuranea/?controller=AdminBusinessProfileTransfers&token=opaque&extra=1", "limited_session_route_query_shape_valid"),
+            ("http://evil.invalid/admin-kuranea/?controller=AdminBusinessProfileTransfers&token=opaque", "limited_session_route_same_admin_origin"),
+            ("http://localhost:18080/admin-kuranea/?controller=AdminBusinessProfileTransfers&token=bad%20credential", "limited_session_route_credential_whitespace_free"),
+            ("http://localhost:18080/admin-kuranea/?controller=AdminBusinessProfileTransfers&token=" + "x" * 257, "limited_session_route_credential_bounded"),
+        )
+        for href, failed_check in invalid_routes:
+            diagnostics = {}
+            with self.assertRaisesRegex(AssertionError, "exact same-admin transfer route"):
+                module.validate_limited_session_route(href, admin_root, diagnostics)
+            self.assertFalse(diagnostics[failed_check])
+            self.assertTrue(all(type(value) is bool for value in diagnostics.values()))
+            self.assertNotIn("opaque", str(diagnostics))
 
-        self.assertIn("$checks['route_path_directory_root'] = $path === '/admin-kuranea/'", self.limited_route)
-        self.assertIn("$checks['route_path_index_php'] = $path === '/admin-kuranea/index.php'", self.limited_route)
-        self.assertIn("getAdminLink('AdminBusinessProfileTransfers')", self.limited_route)
-        self.assertIn("$checks['route_controller_valid'] = $controllerValues === 'AdminBusinessProfileTransfers'", self.limited_route)
-        self.assertNotIn("getAdminLink('AdminBusinessProfileTransfers', false)", self.limited_route)
+    def test_limited_employee_uses_its_authenticated_menu_route_after_acl_readback(self) -> None:
+        helper_call = self.browser.index("verify_limited_staff_access(ctx, set_substage, result)")
+        menu_call = self.browser.index("find_transfer_menu_link(limited, str(ctx[\"admin\"]), set_substage)", helper_call)
+        validator_call = self.browser.index("validate_limited_session_route(", menu_call)
+        navigation_call = self.browser.index("visit(limited, limited_url, str(ctx[\"shop\"]))", validator_call)
+        self.assertLess(helper_call, menu_call)
+        self.assertLess(menu_call, validator_call)
+        self.assertLess(validator_call, navigation_call)
+        self.assertNotIn("getAdminLink('AdminBusinessProfileTransfers')", self.limited_access)
+        self.assertNotIn("payload['route']", self.limited_access)
+        self.assertIn("#nav-sidebar #subtab-AdminBusinessProfileTransfers > a[href]", self.browser)
 
-    def test_limited_route_helper_emits_only_allowlisted_stage_and_boolean_failure_evidence(self) -> None:
+    def test_limited_access_helper_emits_only_boolean_access_evidence(self) -> None:
         module = self.load_browser_module()
-        self.require("ordenowaLimitedRouteResult", self.limited_route)
+        self.require("ordenowaLimitedAccessResult", self.limited_access)
         for stage in (
             "scope_validation", "bootstrap", "employee_lookup", "employee_active",
-            "transfer_tab_acl", "orders_read_acl", "admin_directory_validation", "admin_context_validation",
-            "admin_link_generation", "route_validation",
+            "transfer_tab_acl", "orders_read_acl",
         ):
-            self.require(f"'{stage}'", self.limited_route)
-        for check_key in module.LIMITED_ROUTE_CHECK_KEYS:
-            self.require(f"'{check_key}'", self.limited_route)
-        for result_key in module.LIMITED_ROUTE_CHECK_KEYS.values():
+            self.require(f"'{stage}'", self.limited_access)
+        for check_key in module.LIMITED_ACCESS_CHECK_KEYS:
+            self.require(f"'{check_key}'", self.limited_access)
+        for result_key in module.LIMITED_ACCESS_CHECK_KEYS.values():
             self.assertIn(result_key, module.SAFE_RESULT_KEYS)
             self.assertNotRegex(result_key, r"email|token|password|statement_reference|url")
-        result_writer = self.limited_route.split("function ordenowaLimitedRouteResult", 1)[1].split("$runId", 1)[0]
-        for forbidden in ("$email", "$generated", "$parts", "$query", "getMessage", "getTrace"):
+        result_writer = self.limited_access.split("function ordenowaLimitedAccessResult", 1)[1].split("$runId", 1)[0]
+        for forbidden in ("$email", "$generated", "$parts", "$query", "getMessage", "getTrace", "route')"):
             self.assertNotIn(forbidden, result_writer)
-        self.require("catch (Throwable)", self.limited_route)
-        self.assertIn("$payload['route'] = $route;", result_writer)
-        self.require("limited_route_helper_execution", self.browser)
-        self.require("limited_route_helper_json_parse", self.browser)
-        self.require("limited_route_helper_json_shape", self.browser)
-
-    def test_limited_route_cli_bootstrap_defines_only_the_exact_isolated_admin_directory(self) -> None:
-        self.require("$expectedAdminDirectory = '/var/www/html/admin-kuranea';", self.limited_route)
-        self.require("realpath($expectedAdminDirectory)", self.limited_route)
-        self.require("$adminDirectory === $expectedAdminDirectory", self.limited_route)
-        self.assertNotIn("KURANEA_ADMIN_FOLDER", self.limited_route)
-        self.require("define('_PS_ADMIN_DIR_', $adminDirectory)", self.limited_route)
-        self.require("realpath((string) _PS_ADMIN_DIR_) === $adminDirectory", self.limited_route)
-        self.assertLess(
-            self.limited_route.index("define('_PS_ADMIN_DIR_', $adminDirectory)"),
-            self.limited_route.index("->getAdminLink('AdminBusinessProfileTransfers')"),
-        )
-        self.assertIn("limited_route_admin_directory_valid", self.browser)
-        self.assertIn("limited_route_admin_context_ready", self.browser)
+        self.require("catch (Throwable)", self.limited_access)
+        self.assertNotIn("getAdminLink", self.limited_access)
+        self.assertNotIn("'route' =>", self.limited_access)
+        self.require("limited_access_helper_execution", self.browser)
+        self.require("limited_access_helper_json_parse", self.browser)
+        self.require("limited_access_helper_json_shape", self.browser)
 
     def test_fixture_is_bound_to_a_run_scoped_unpaid_native_jpy_order(self) -> None:
         for expected in (
@@ -387,7 +365,7 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.require("주문 입금 확인 권한이 없습니다.", self.controller)
         self.require("주문 입금 안내를 발급할 권한이 없습니다.", self.controller)
         for expected in ("VIEW_ONLY_EMAIL", "Profile::getProfileAccesses", "AdminBusinessProfileTransfers", "view_allowed", "issue_denied", "confirm_denied"):
-            self.require(expected, self.limited_route)
+            self.require(expected, self.limited_access)
 
     def test_customer_instruction_is_bound_to_the_visible_native_order_product_line(self) -> None:
         self.require("product_id", self.unpaid_readback)
@@ -404,11 +382,11 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.require("$transferAccess['view']", self.security_fixture)
         self.require("$transferAccess['edit']", self.security_fixture)
         self.require("$transferAccess['add']", self.security_fixture)
-        self.require("view_allowed", self.limited_route)
-        self.require("issue_denied", self.limited_route)
-        self.require("confirm_denied", self.limited_route)
-        self.require("$ordersTabId = (int) Tab::getIdFromClassName('AdminOrders')", self.limited_route)
-        self.require("$checks['orders_view_allowed']", self.limited_route)
+        self.require("view_allowed", self.limited_access)
+        self.require("issue_denied", self.limited_access)
+        self.require("confirm_denied", self.limited_access)
+        self.require("$ordersTabId = (int) Tab::getIdFromClassName('AdminOrders')", self.limited_access)
+        self.require("$checks['orders_view_allowed']", self.limited_access)
         self.require("view_only_confirmation_denied", self.browser)
         self.require("view_only_issue_denied", self.browser)
         self.require("view_only_issue_order_unpaid", self.browser)
@@ -456,9 +434,9 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             '"csrf_invalid_token_submit"',
             '"csrf_rejection_readback"',
             '"csrf_unissued_db_readback"',
-            '"limited_route_fixture_readback"',
-            '"limited_route_contract_readback"',
-            '"limited_route_identity_validation"',
+            '"limited_access_fixture_readback"',
+            '"limited_access_contract_readback"',
+            '"limited_session_route_validation"',
             '"limited_issue_denial_readback"',
             '"limited_issue_unpaid_db_readback"',
             '"limited_confirmation_denial_readback"',
@@ -743,7 +721,7 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
 
     def test_failed_issue_notice_reads_only_scoped_unpaid_persistence_flags(self) -> None:
         diagnostic = self.browser.split("def diagnose_unpaid_issue_persistence", 1)[1].split(
-            "def limited_transfer_route", 1
+            "def verify_limited_staff_access", 1
         )[0]
         for marker in (
             '"KURANEA_CI_TRANSFER_EXPECTATION": "diagnostic"',

@@ -115,6 +115,9 @@ SAFE_BROWSER_SUBSTAGES = {
     "admin_public_reply_mailbox_poll", "admin_public_reply_subject_identity_readback",
     "admin_public_reply_thread_id_readback", "admin_public_reply_email_content_readback",
     "admin_public_reply_link_validation", "admin_public_reply_link_token_readback",
+    "image_attachment_link_lookup", "image_attachment_filename_readback",
+    "image_attachment_response_readback", "image_attachment_response_validation",
+    "image_attachment_foreign_session_probe",
     "contact_field_lookup", "contact_id_readback", "attachment_control_lookup", "attachment_send_keys",
     "accepted_attachment_fixture_validation", "accepted_attachment_file_readback", "message_field_lookup",
     "message_send_keys", "submit_control_lookup", "submit_control_scroll", "submit_control_hit_test",
@@ -821,10 +824,41 @@ def validate_synthetic_upload(filename: str, content: bytes, mime: str) -> None:
         raise ValueError("support image fixture bytes are invalid")
 
 
-def assert_image_attachment_filename(href: str) -> None:
-    names = parse_qs(urlparse(href).query).get("fileName", [])
+def assert_image_attachment_filename(
+    href: str, route_kind: str = "modern_thread_view", expected_thread_id: int | None = None,
+    admin_url: str | None = None,
+) -> None:
+    query = parse_qs(urlparse(href).query, keep_blank_values=True)
+    if route_kind == "legacy_thread_view":
+        if (
+            type(expected_thread_id) is not int or expected_thread_id < 1
+            or not isinstance(admin_url, str)
+            or thread_route_identity(href, admin_url) != (route_kind, expected_thread_id)
+        ):
+            raise AssertionError("legacy support image link did not retain its exact native thread identity")
+        # PrestaShop 9.2's legacy AdminCustomerThreadsController uses lowercase
+        # `filename` and accepts the read-only same-thread show URL.
+        names = query.get("filename", [])
+    elif route_kind == "modern_thread_view":
+        names = query.get("fileName", [])
+    else:
+        raise ValueError("native support image link has an unsupported thread route kind")
     if len(names) != 1 or re.fullmatch(r"[A-Za-z0-9_-]{1,100}\.png", names[0], flags=re.ASCII) is None:
         raise AssertionError("native support image link did not identify one safe PNG filename")
+
+
+def assert_legacy_attachment_identity(
+    href: str, thread_url: str, admin_url: str, expected_thread_id: int,
+) -> None:
+    if (
+        thread_route_identity(href, admin_url) != ("legacy_thread_view", expected_thread_id)
+        or thread_route_identity(thread_url, admin_url) != ("legacy_thread_view", expected_thread_id)
+    ):
+        raise AssertionError("legacy support attachment did not retain the exact native thread")
+    link_tokens = parse_qs(urlparse(href).query, keep_blank_values=True).get("token", [])
+    page_tokens = parse_qs(urlparse(thread_url).query, keep_blank_values=True).get("token", [])
+    if len(link_tokens) != 1 or not link_tokens[0] or link_tokens != page_tokens:
+        raise AssertionError("legacy support attachment did not retain the authenticated thread token")
 
 
 def assert_image_attachment_response(result: Any, expected: bytes) -> None:
@@ -838,9 +872,14 @@ def assert_image_attachment_response(result: Any, expected: bytes) -> None:
         raise AssertionError("authenticated support image readback did not match its synthetic PNG metadata")
 
 
-def read_native_image_attachment(driver, href: str, expected: bytes) -> None:
-    # The pinned native SecuredFileReaderController renders PNG as image/png.
-    assert_image_attachment_filename(href)
+def read_native_image_attachment(
+    driver, href: str, expected: bytes, route_kind: str, expected_thread_id: int, admin_url: str,
+    diagnostic_result: dict[str, Any] | None = None,
+) -> None:
+    # PrestaShop 9.2 serves legacy attachments through AdminCustomerThreads and
+    # modern ones through the secured reader; both render PNG as image/png.
+    assert_image_attachment_filename(href, route_kind, expected_thread_id, admin_url)
+    mark_browser_substage(diagnostic_result, "image_attachment_response_readback")
     # Only nonsecret metadata returns to Python; response bytes and raw headers stay in-browser.
     result = driver.execute_async_script(r"""
       const [url, done] = arguments;
@@ -859,6 +898,7 @@ def read_native_image_attachment(driver, href: str, expected: bytes) -> None:
         })
         .catch(() => done({status: 0}));
     """, href)
+    mark_browser_substage(diagnostic_result, "image_attachment_response_validation")
     assert_image_attachment_response(result, expected)
 
 
@@ -1346,7 +1386,11 @@ def has_thread_order_association(
     return False
 
 
-def find_attachment_link(driver, admin_url: str, buyer_marker: str, route_kind: str) -> str:
+def find_attachment_link(
+    driver, admin_url: str, buyer_marker: str, route_kind: str, expected_thread_id: int,
+) -> str:
+    if thread_route_identity(driver.current_url, admin_url) != (route_kind, expected_thread_id):
+        raise AssertionError("native attachment lookup left the exact customer thread")
     message = None
     for candidate in driver.find_elements(By.CSS_SELECTOR, customer_thread_message_text_selector(route_kind)):
         if buyer_marker in candidate.text:
@@ -1368,6 +1412,8 @@ def find_attachment_link(driver, admin_url: str, buyer_marker: str, route_kind: 
     href = found[0]
     if not safe_admin_path(href, admin_url):
         raise AssertionError("native support attachment link left the authenticated Back Office")
+    if route_kind == "legacy_thread_view":
+        assert_legacy_attachment_identity(href, driver.current_url, admin_url, expected_thread_id)
     return href
 
 
@@ -1943,7 +1989,7 @@ def run() -> None:
         result["orderless_thread_unchanged"] = True
         visit(admin, thread_view_url)
         stage = result["stage"] = "attachment_readback"
-        attachment_url = find_attachment_link(admin, ctx.admin, buyer_marker, thread_route_kind)
+        attachment_url = find_attachment_link(admin, ctx.admin, buyer_marker, thread_route_kind, thread_id)
         open_native_attachment(admin, attachment_url, attachment_marker, download_dir)
         if attachment_visible_to_session(foreign, attachment_url, attachment_marker):
             raise AssertionError("a different customer session could read the private support attachment")
@@ -2052,9 +2098,14 @@ def run() -> None:
             raise AssertionError("fresh native thread readback did not preserve public/private/customer messages")
 
         stage = result["stage"] = "image_attachment_readback"
-        image_url = find_attachment_link(admin, ctx.admin, followup_marker, thread_route_kind)
-        read_native_image_attachment(admin, image_url, image_bytes)
+        mark_browser_substage(result, "image_attachment_link_lookup")
+        image_url = find_attachment_link(admin, ctx.admin, followup_marker, thread_route_kind, thread_id)
+        mark_browser_substage(result, "image_attachment_filename_readback")
+        read_native_image_attachment(
+            admin, image_url, image_bytes, thread_route_kind, thread_id, ctx.admin, result
+        )
         result["image_attachment_admin_readback"] = True
+        mark_browser_substage(result, "image_attachment_foreign_session_probe")
         if attachment_visible_to_session(foreign, image_url, image_marker):
             raise AssertionError("a different customer session could read the private support image")
         result["image_attachment_foreign_denied"] = True
@@ -2172,6 +2223,8 @@ def run() -> None:
             f"admin_public_reply_link_thread_id_matches={str(result['admin_public_reply_link_thread_id_matches']).lower()}; "
             f"admin_public_reply_link_token_valid={str(result['admin_public_reply_link_token_valid']).lower()}; "
             f"admin_public_reply_link_token_matches={str(result['admin_public_reply_link_token_matches']).lower()}; "
+            f"image_attachment_admin_readback={str(result['image_attachment_admin_readback']).lower()}; "
+            f"image_attachment_foreign_denied={str(result['image_attachment_foreign_denied']).lower()}; "
             f"same_origin={str(result['contact_same_origin']).lower()}; "
             f"native_route={str(result['contact_native_route']).lower()}; "
             f"form_count={result['contact_form_count']}; "

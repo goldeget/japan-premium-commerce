@@ -37,6 +37,23 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         self.assertTrue((ROOT / "modules/kuraneabusinessprofile/upgrade/upgrade-1.0.3.php").is_file())
         self.assertTrue((ROOT / "modules/kuraneabusinessprofile/upgrade/upgrade-1.0.4.php").is_file())
 
+    def test_password_reset_text_is_fixed_in_the_referenced_template_before_message_creation(self):
+        module = MODULE_PATH.read_text(encoding="utf-8")
+        hook = module.split("public function hookActionEmailAddAfterContent(array $params)", 1)[1].split(
+            "public function hookActionEmailSendBefore", 1
+        )[0]
+        reset_text = hook.split("if (($params['template'] ?? '') === 'password_query'", 1)[1].split(
+            "if (($params['template'] ?? '') !== 'order_conf'", 1
+        )[0]
+
+        self.assertIn("self::$pendingMailSendContext", reset_text)
+        self.assertIn("$sendContext['native_reset_url']", reset_text)
+        self.assertIn("$this->validatedNativeResetUrl(", reset_text)
+        self.assertIn("$this->hasExactValidatedNativeResetUrl(", reset_text)
+        self.assertIn("str_replace('{url}', $validatedResetUrl, $templateTxt)", reset_text)
+        self.assertIn("$params['template_txt'] = $templateTxt", reset_text)
+        self.assertIn("$validatedResetUrl", reset_text)
+
     def test_pre_smtp_reset_diagnostic_is_run_scoped_and_contains_only_link_shape_booleans(self):
         module = MODULE_PATH.read_text(encoding="utf-8")
         install = module.split("public function install()", 1)[1].split("public function uninstall()", 1)[0]
@@ -59,6 +76,9 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
             "'message_is_symfony_email' => 'Symfony-Email-Object'",
             "'text_setter_returned_same_message' => 'Text-Setter-Returned-Same-Message'",
             "'text_getter_returned_string' => 'Text-Getter-Returned-String'",
+            "'text_replacement_contains_expected_url' => 'Text-Replacement-Contains-Expected-URL'",
+            "'text_getter_contains_expected_url' => 'Text-Getter-Contains-Expected-URL'",
+            "'text_mime_contains_expected_url' => 'Text-Mime-Contains-Expected-URL'",
             "'text_mime_body_read_succeeded' => 'Text-Mime-Body-Read-Succeeded'",
             "'text_mime_body_identity_same_after_setter' => 'Text-Mime-Body-Identity-Same-After-Setter'",
             "'text_mime_body_reset_retry_attempted' => 'Text-Mime-Body-Reset-Retry-Attempted'",
@@ -191,6 +211,8 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
             "path_match",
         ):
             self.assertIn(marker, extractor + validator)
+        self.assertIn("?string $expectedUrl = null", extractor)
+        self.assertIn("hash_equals($expectedUrl, $candidate)", extractor)
         for key in ("token_present", "reset_token_present", "id_customer_present"):
             self.assertIn(key, extractor)
             self.assertIn(key, validator)
@@ -207,6 +229,7 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         )[0]
         self.assertIn("$this->validatedNativeResetUrl(", exact_verifier)
         self.assertIn("$this->extractNativeResetUrl(", exact_verifier)
+        self.assertIn("$validatedExpectedUrl", exact_verifier)
         self.assertIn("$candidateEvidence['credentials_complete']", exact_verifier)
         self.assertIn("$candidateEvidence['candidate_selected']", exact_verifier)
         self.assertIn("$candidateEvidence['scheme_host_port_match']", exact_verifier)
@@ -220,6 +243,7 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         self.assertIn("getMediaSubtype() !== 'plain'", mime_verifier)
         self.assertIn("\\Symfony\\Component\\Mime\\Part\\AbstractMultipartPart", mime_verifier)
         self.assertIn("getParts()", mime_verifier)
+        self.assertIn("if (!$this->hasPlainTextMimePart($child))", mime_verifier)
 
     def test_mail_shop_context_reaches_both_content_and_extra_vars_before_cleanup(self):
         module = MODULE_PATH.read_text(encoding="utf-8")

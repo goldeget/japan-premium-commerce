@@ -40,14 +40,12 @@ SAFE_SUBSTAGES = {
     "instruction_issue_notice_unpaid_present_danger", "instruction_issue_notice_unpaid_missing_danger",
     "instruction_issue_notice_unpaid_present_missing", "instruction_issue_notice_unpaid_missing_missing",
     "instruction_issue_notice_unpaid_present_other", "instruction_issue_notice_unpaid_missing_other",
-    "limited_staff_login", "limited_route_fixture_readback", "limited_route_helper_copy",
-    "limited_route_helper_execution", "limited_route_helper_json_parse", "limited_route_helper_json_shape",
-    "limited_route_helper_result_contract", "limited_route_scope_validation",
-    "limited_route_bootstrap", "limited_route_employee_lookup", "limited_route_employee_active",
-    "limited_route_transfer_tab_acl", "limited_route_admin_directory_validation",
-    "limited_route_admin_context_validation", "limited_route_admin_link_generation",
-    "limited_route_route_validation", "limited_route_contract_readback",
-    "limited_route_identity_validation", "limited_route_orders_read_acl",
+    "limited_staff_login", "limited_access_fixture_readback", "limited_access_helper_copy",
+    "limited_access_helper_execution", "limited_access_helper_json_parse", "limited_access_helper_json_shape",
+    "limited_access_helper_result_contract", "limited_access_scope_validation",
+    "limited_access_bootstrap", "limited_access_employee_lookup", "limited_access_employee_active",
+    "limited_access_transfer_tab_acl", "limited_access_orders_read_acl", "limited_access_contract_readback",
+    "limited_session_route_discovery", "limited_session_route_validation",
     "limited_page_navigation", "limited_page_route_readback", "limited_page_content_readback",
     "limited_order_row_readback", "limited_issue_post",
     "limited_issue_denial_readback", "limited_issue_unpaid_db_readback", "limited_confirmation_post",
@@ -71,10 +69,10 @@ SAFE_RESULT_KEYS = {
     "order_identity_match", "order_product_line_match", "amount_match", "account_match", "foreign_customer_denied",
     "limited_staff_denied", "view_only_issue_denied", "view_only_issue_order_unpaid",
     "view_only_confirmation_denied", "view_only_confirmation_order_unpaid",
-    "limited_route_ci_scope_valid", "limited_route_identity_shape_valid",
-    "limited_route_employee_found", "limited_route_employee_active",
-    "limited_route_transfer_tab_present", "limited_route_view_allowed",
-    "limited_route_orders_tab_present", "limited_route_orders_view_allowed",
+    "limited_staff_ci_scope_valid", "limited_staff_identity_shape_valid",
+    "limited_staff_employee_found", "limited_staff_employee_active",
+    "limited_staff_transfer_tab_present", "limited_staff_view_allowed",
+    "limited_staff_orders_tab_present", "limited_staff_orders_view_allowed",
     "limited_page_same_admin_origin", "limited_page_admin_path_valid",
     "limited_page_controller_valid", "limited_page_route_credential_matches",
     "limited_page_login_redirect_absent", "limited_page_transfer_heading_present",
@@ -83,12 +81,12 @@ SAFE_RESULT_KEYS = {
     "limited_order_reference_column_match", "limited_order_id_column_match",
     "limited_order_exact_row_match", "limited_order_amount_matches",
     "limited_mutation_controls_absent",
-    "limited_route_issue_denied", "limited_route_confirm_denied",
-    "limited_route_admin_directory_valid", "limited_route_admin_context_ready",
-    "limited_route_admin_link_generated", "limited_route_path_directory_root",
-    "limited_route_path_index_php", "limited_route_path_valid",
-    "limited_route_controller_valid", "limited_route_credential_present",
-    "limited_route_credential_bounded", "limited_route_credential_whitespace_free",
+    "limited_staff_issue_denied", "limited_staff_confirm_denied",
+    "limited_session_route_same_admin_origin", "limited_session_route_path_directory_root",
+    "limited_session_route_path_index_php", "limited_session_route_path_valid",
+    "limited_session_route_controller_valid", "limited_session_route_credential_present",
+    "limited_session_route_credential_bounded", "limited_session_route_credential_whitespace_free",
+    "limited_session_route_query_shape_valid",
     "issue_csrf_rejected", "csrf_rejected", "wrong_amount_rejected", "receipt_confirmed",
     "idempotent_replay", "customer_paid_state_changed", "instruction_hidden_after_payment",
     "native_readback",
@@ -103,39 +101,25 @@ SAFE_ISSUE_FAILURE_CATEGORIES = {
     "employee_missing", "issuer_validation_error", "instruction_persistence_error",
     "existing_instruction_mismatch", "unclassified_notice",
 }
-LIMITED_ROUTE_CHECK_KEYS = {
-    "ci_scope_valid": "limited_route_ci_scope_valid",
-    "identity_shape_valid": "limited_route_identity_shape_valid",
-    "employee_found": "limited_route_employee_found",
-    "employee_active": "limited_route_employee_active",
-    "transfer_tab_present": "limited_route_transfer_tab_present",
-    "view_allowed": "limited_route_view_allowed",
-    "orders_tab_present": "limited_route_orders_tab_present",
-    "orders_view_allowed": "limited_route_orders_view_allowed",
-    "issue_denied": "limited_route_issue_denied",
-    "confirm_denied": "limited_route_confirm_denied",
-    "admin_directory_valid": "limited_route_admin_directory_valid",
-    "admin_context_ready": "limited_route_admin_context_ready",
-    "admin_link_generated": "limited_route_admin_link_generated",
-    "route_path_directory_root": "limited_route_path_directory_root",
-    "route_path_index_php": "limited_route_path_index_php",
-    "route_path_valid": "limited_route_path_valid",
-    "route_controller_valid": "limited_route_controller_valid",
-    "route_credential_present": "limited_route_credential_present",
-    "route_credential_bounded": "limited_route_credential_bounded",
-    "route_credential_whitespace_free": "limited_route_credential_whitespace_free",
+LIMITED_ACCESS_CHECK_KEYS = {
+    "ci_scope_valid": "limited_staff_ci_scope_valid",
+    "identity_shape_valid": "limited_staff_identity_shape_valid",
+    "employee_found": "limited_staff_employee_found",
+    "employee_active": "limited_staff_employee_active",
+    "transfer_tab_present": "limited_staff_transfer_tab_present",
+    "view_allowed": "limited_staff_view_allowed",
+    "orders_tab_present": "limited_staff_orders_tab_present",
+    "orders_view_allowed": "limited_staff_orders_view_allowed",
+    "issue_denied": "limited_staff_issue_denied",
+    "confirm_denied": "limited_staff_confirm_denied",
 }
-LIMITED_ROUTE_FAILURE_SUBSTAGES = {
-    "scope_validation": "limited_route_scope_validation",
-    "bootstrap": "limited_route_bootstrap",
-    "employee_lookup": "limited_route_employee_lookup",
-    "employee_active": "limited_route_employee_active",
-    "transfer_tab_acl": "limited_route_transfer_tab_acl",
-    "orders_read_acl": "limited_route_orders_read_acl",
-    "admin_directory_validation": "limited_route_admin_directory_validation",
-    "admin_context_validation": "limited_route_admin_context_validation",
-    "admin_link_generation": "limited_route_admin_link_generation",
-    "route_validation": "limited_route_route_validation",
+LIMITED_ACCESS_FAILURE_SUBSTAGES = {
+    "scope_validation": "limited_access_scope_validation",
+    "bootstrap": "limited_access_bootstrap",
+    "employee_lookup": "limited_access_employee_lookup",
+    "employee_active": "limited_access_employee_active",
+    "transfer_tab_acl": "limited_access_transfer_tab_acl",
+    "orders_read_acl": "limited_access_orders_read_acl",
 }
 LIMITED_PAGE_DIAGNOSTIC_KEYS = {
     "limited_page_same_admin_origin", "limited_page_admin_path_valid",
@@ -152,6 +136,13 @@ LIMITED_PAGE_REQUIRED_KEYS = LIMITED_PAGE_DIAGNOSTIC_KEYS - {
     "limited_order_id_column_match", "limited_order_exact_row_match",
     "limited_order_amount_matches", "limited_mutation_controls_absent",
 }
+LIMITED_SESSION_ROUTE_DIAGNOSTIC_KEYS = {
+    "limited_session_route_same_admin_origin", "limited_session_route_path_directory_root",
+    "limited_session_route_path_index_php", "limited_session_route_path_valid",
+    "limited_session_route_controller_valid", "limited_session_route_credential_present",
+    "limited_session_route_credential_bounded", "limited_session_route_credential_whitespace_free",
+    "limited_session_route_query_shape_valid",
+}
 RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {
     "status", "stage", "exception_type", "failure_substage", "issue_persistence_diagnostic",
     "issue_failure_category",
@@ -164,8 +155,8 @@ OPTIONAL_SUCCESS_DIAGNOSTIC_BOOLEAN_KEYS = CSRF_DIAGNOSTIC_BOOLEAN_KEYS | {
     # isolated checkout gate authorizes this synthetic acceptance.
     "issue_seller_commerce_gate_enabled",
     # Exactly one of the two native Dispatcher path shapes is valid per run.
-    "limited_route_path_directory_root",
-    "limited_route_path_index_php",
+    "limited_session_route_path_directory_root",
+    "limited_session_route_path_index_php",
 }
 SUCCESS_REQUIRED_BOOLEAN_KEYS = RESULT_BOOLEAN_KEYS - OPTIONAL_SUCCESS_DIAGNOSTIC_BOOLEAN_KEYS
 
@@ -326,14 +317,14 @@ def docker_php_json(
             set_substage(name)
 
     project = str(ctx["project"])
-    mark("limited_route_helper_copy")
+    mark("limited_access_helper_copy")
     copy = subprocess.run(
         ["docker", "compose", "-p", project, "exec", "-T", "prestashop", "sh", "-c", f"cat > {container_path}"],
         input=source_path.read_text(encoding="utf-8"), capture_output=True, text=True, timeout=30, check=False,
     )
     if copy.returncode != 0:
         raise RuntimeError("could not stage a bounded transfer acceptance helper in the disposable shop")
-    mark("limited_route_helper_execution")
+    mark("limited_access_helper_execution")
     command = ["docker", "compose", "-p", project, "exec", "-T", "--user", "www-data"]
     defaults = {
         "CI": "true", "GITHUB_ACTIONS": "true", "KURANEA_ISOLATED_CI": "1",
@@ -350,12 +341,12 @@ def docker_php_json(
     if completed.returncode != 0:
         raise RuntimeError("the isolated native transfer acceptance readback did not pass")
     lines = completed.stdout.splitlines()
-    mark("limited_route_helper_json_parse")
+    mark("limited_access_helper_json_parse")
     try:
         payload = json.loads(lines[-1])
     except (IndexError, TypeError, ValueError):
         raise RuntimeError("the isolated native transfer helper did not return bounded JSON") from None
-    mark("limited_route_helper_json_shape")
+    mark("limited_access_helper_json_shape")
     if not isinstance(payload, dict):
         raise RuntimeError("the isolated native transfer helper returned an invalid result shape")
     return payload
@@ -449,22 +440,22 @@ def diagnose_unpaid_issue_persistence(ctx: dict[str, object], order: dict[str, o
     return "unpaid_instruction_persisted" if payload["instruction_persisted"] else "unpaid_instruction_absent"
 
 
-def limited_transfer_route(
+def verify_limited_staff_access(
     ctx: dict[str, object], set_substage=None, diagnostics: dict[str, object] | None = None
-) -> tuple[str, str]:
-    source_path = Path(__file__).resolve().parents[1] / "business_profile" / "resolve_ci_limited_transfer_route.php"
+) -> None:
+    source_path = Path(__file__).resolve().parents[1] / "business_profile" / "verify_ci_limited_transfer_access.php"
     if set_substage is not None:
-        set_substage("limited_route_fixture_readback")
+        set_substage("limited_access_fixture_readback")
     payload = docker_php_json(
         ctx,
         source_path,
-        "/tmp/resolve_ci_limited_transfer_route.php",
+        "/tmp/verify_ci_limited_transfer_access.php",
         {"VIEW_ONLY_EMAIL": str(ctx["view_email"])},
         set_substage=set_substage,
     )
     if set_substage is not None:
-        set_substage("limited_route_contract_readback")
-    expected_check_keys = set(LIMITED_ROUTE_CHECK_KEYS)
+        set_substage("limited_access_contract_readback")
+    expected_check_keys = set(LIMITED_ACCESS_CHECK_KEYS)
     checks = payload.get("checks")
     valid_checks = (
         isinstance(checks, dict)
@@ -472,59 +463,25 @@ def limited_transfer_route(
         and all(type(value) is bool for value in checks.values())
     )
     if valid_checks and diagnostics is not None:
-        diagnostics.update({result_key: checks[check_key] for check_key, result_key in LIMITED_ROUTE_CHECK_KEYS.items()})
+        diagnostics.update({result_key: checks[check_key] for check_key, result_key in LIMITED_ACCESS_CHECK_KEYS.items()})
 
     helper_stage = payload.get("failure_stage")
     if (payload.get("status") == "failure"
             and isinstance(helper_stage, str)
-            and helper_stage in LIMITED_ROUTE_FAILURE_SUBSTAGES
+            and helper_stage in LIMITED_ACCESS_FAILURE_SUBSTAGES
             and valid_checks):
         if set_substage is not None:
-            set_substage(LIMITED_ROUTE_FAILURE_SUBSTAGES[helper_stage])
-        raise RuntimeError("the isolated limited employee route helper failed a bounded acceptance check")
+            set_substage(LIMITED_ACCESS_FAILURE_SUBSTAGES[helper_stage])
+        raise RuntimeError("the isolated limited employee access fixture failed a bounded acceptance check")
 
-    path_shape_check_keys = {"route_path_directory_root", "route_path_index_php"}
-    checks_are_valid_success = (
-        valid_checks
-        and checks.get("route_path_valid") is True
-        and sum(checks.get(key) is True for key in path_shape_check_keys) == 1
-        and all(value is True for key, value in checks.items() if key not in path_shape_check_keys)
-    )
-    if (set(payload) != {"status", "failure_stage", "checks", "route"}
+    if (set(payload) != {"status", "failure_stage", "checks"}
             or payload.get("status") != "success"
             or helper_stage != "none"
-            or not checks_are_valid_success
-            or not isinstance(payload.get("route"), str)):
+            or not valid_checks
+            or not all(value is True for value in checks.values())):
         if set_substage is not None:
-            set_substage("limited_route_helper_result_contract")
-        raise RuntimeError("the isolated limited employee permission fixture was not read back safely")
-    if set_substage is not None:
-        set_substage("limited_route_identity_validation")
-    internal = urlparse("http://localhost:18080" + str(payload["route"]))
-    query = parse_qs(internal.query, keep_blank_values=True)
-    token_values = query.get("token", [])
-    path_directory_root = internal.path == "/admin-kuranea/"
-    path_index_php = internal.path == "/admin-kuranea/index.php"
-    path_valid = path_directory_root or path_index_php
-    if diagnostics is not None:
-        diagnostics.update({
-            "limited_route_path_directory_root": path_directory_root,
-            "limited_route_path_index_php": path_index_php,
-            "limited_route_path_valid": path_valid,
-        })
-    if (not path_valid
-            or query.get("controller") != ["AdminBusinessProfileTransfers"]
-            or len(token_values) != 1
-            or not token_values[0].strip()
-            or len(token_values[0]) > 256
-            or re.search(r"\s", token_values[0])):
-        raise RuntimeError("the limited employee controller link was not the exact expected Back Office route")
-    admin_origin = urlparse(str(ctx["admin"]))
-    external = admin_origin._replace(path=internal.path, params="", query=internal.query, fragment="")
-    url = external.geturl()
-    if not safe_admin_path(url, str(ctx["admin"])):
-        raise RuntimeError("the limited employee controller link left the isolated admin folder")
-    return url, token_values[0]
+            set_substage("limited_access_helper_result_contract")
+        raise RuntimeError("the isolated limited employee access fixture was not read back safely")
 
 
 def admin_login(driver: webdriver.Chrome, ctx: dict[str, object], email: str | None = None) -> None:
@@ -582,6 +539,45 @@ def find_transfer_menu_link(driver: webdriver.Chrome, admin_root: str, set_subst
     if len(candidates) != 1:
         raise AssertionError("the authenticated Orders menu did not expose one native bank-transfer route")
     return next(iter(candidates))
+
+
+def validate_limited_session_route(
+    href: str, admin_root: str, diagnostics: dict[str, object] | None = None
+) -> tuple[str, str]:
+    candidate = urljoin(admin_root.rstrip("/") + "/", href)
+    parsed = urlparse(candidate)
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    root = urlparse(admin_root)
+    path_directory_root = parsed.path == "/admin-kuranea/"
+    path_index_php = parsed.path == "/admin-kuranea/index.php"
+    same_admin_origin = same_origin(candidate, admin_root)
+    path_valid = safe_admin_path(candidate, admin_root) and (path_directory_root or path_index_php)
+    controller_valid = query.get("controller") == ["AdminBusinessProfileTransfers"]
+    credential_values = query.get("token", [])
+    credential_present = len(credential_values) == 1 and bool(credential_values[0].strip())
+    credential_bounded = len(credential_values) == 1 and len(credential_values[0]) <= 256
+    credential_whitespace_free = len(credential_values) == 1 and re.search(r"\s", credential_values[0]) is None
+    query_shape_valid = set(query) == {"controller", "token"} and all(len(values) == 1 for values in query.values())
+    diagnostics_out = {
+        "limited_session_route_same_admin_origin": same_admin_origin,
+        "limited_session_route_path_directory_root": path_directory_root,
+        "limited_session_route_path_index_php": path_index_php,
+        "limited_session_route_path_valid": path_valid,
+        "limited_session_route_controller_valid": controller_valid,
+        "limited_session_route_credential_present": credential_present,
+        "limited_session_route_credential_bounded": credential_bounded,
+        "limited_session_route_credential_whitespace_free": credential_whitespace_free,
+        "limited_session_route_query_shape_valid": query_shape_valid,
+    }
+    if diagnostics is not None:
+        diagnostics.update(diagnostics_out)
+    if (not same_admin_origin or not path_valid or not controller_valid or not query_shape_valid
+            or not credential_present or not credential_bounded or not credential_whitespace_free
+            or parsed.username is not None or parsed.password is not None or parsed.fragment
+            or (parsed.scheme, parsed.hostname, parsed.port)
+            != (root.scheme, root.hostname, root.port)):
+        raise AssertionError("the limited employee menu did not provide the exact same-admin transfer route")
+    return candidate, credential_values[0]
 
 
 def limited_transfer_page_evidence(
@@ -995,7 +991,7 @@ def write_result(path: Path, result: dict[str, object]) -> None:
             or (result.get("status") == "success" and (
                 result.get("exception_type") is not None
                 or sum(result.get(key) is True for key in (
-                    "limited_route_path_directory_root", "limited_route_path_index_php",
+                    "limited_session_route_path_directory_root", "limited_session_route_path_index_php",
                 )) != 1
                 or any(result.get(key) is not True for key in SUCCESS_REQUIRED_BOOLEAN_KEYS)
             ))):
@@ -1055,7 +1051,8 @@ def run() -> None:
         "foreign_customer_denied": False, "limited_staff_denied": False,
         "view_only_issue_denied": False, "view_only_issue_order_unpaid": False,
         "view_only_confirmation_denied": False, "view_only_confirmation_order_unpaid": False,
-        **{result_key: False for result_key in LIMITED_ROUTE_CHECK_KEYS.values()},
+        **{result_key: False for result_key in LIMITED_ACCESS_CHECK_KEYS.values()},
+        **{result_key: False for result_key in LIMITED_SESSION_ROUTE_DIAGNOSTIC_KEYS},
         **{result_key: False for result_key in LIMITED_PAGE_DIAGNOSTIC_KEYS},
         "issue_csrf_rejected": False, "csrf_rejected": False, "wrong_amount_rejected": False, "receipt_confirmed": False,
         "idempotent_replay": False, "customer_paid_state_changed": False,
@@ -1204,11 +1201,17 @@ def run() -> None:
         limited = new_driver(1440, 960)
         set_substage("limited_staff_login")
         admin_login(limited, ctx, str(ctx["view_email"]))
-        limited_url, limited_token = limited_transfer_route(ctx, set_substage, result)
+        verify_limited_staff_access(ctx, set_substage, result)
+        set_substage("limited_session_route_discovery")
+        limited_href = find_transfer_menu_link(limited, str(ctx["admin"]), set_substage)
+        set_substage("limited_session_route_validation")
+        limited_url, limited_credential = validate_limited_session_route(
+            limited_href, str(ctx["admin"]), result
+        )
         set_substage("limited_page_navigation")
         visit(limited, limited_url, str(ctx["shop"]))
         set_substage("limited_page_route_readback")
-        result.update(limited_transfer_page_evidence(limited, str(ctx["admin"]), limited_token))
+        result.update(limited_transfer_page_evidence(limited, str(ctx["admin"]), limited_credential))
         set_substage("limited_page_content_readback")
         if not all(result[key] is True for key in LIMITED_PAGE_REQUIRED_KEYS):
             raise AssertionError("the view-only employee did not receive the exact same-shop transfer read page")
@@ -1229,7 +1232,7 @@ def run() -> None:
         ):
             set_substage("limited_issue_post" if submit_name == "submitOrdenowaIssueTransfer" else "limited_confirmation_post")
             body = submit_hidden_admin_post(
-                limited, limited_url, limited_token, {**fields, submit_name: "1"}, str(ctx["admin"])
+                limited, limited_url, limited_credential, {**fields, submit_name: "1"}, str(ctx["admin"])
             )
             if submit_name == "submitOrdenowaConfirmBankTransfer":
                 set_substage("limited_confirmation_denial_readback")
@@ -1366,26 +1369,25 @@ def run() -> None:
             f"issue_isolated_ci_gate_enabled={str(result['issue_isolated_ci_gate_enabled']).lower()}; "
             f"issue_seller_commerce_gate_enabled={str(result['issue_seller_commerce_gate_enabled']).lower()}; "
             f"issue_effective_commerce_gate_enabled={str(result['issue_effective_commerce_gate_enabled']).lower()}; "
-            f"limited_route_ci_scope_valid={str(result['limited_route_ci_scope_valid']).lower()}; "
-            f"limited_route_identity_shape_valid={str(result['limited_route_identity_shape_valid']).lower()}; "
-            f"limited_route_employee_found={str(result['limited_route_employee_found']).lower()}; "
-            f"limited_route_employee_active={str(result['limited_route_employee_active']).lower()}; "
-            f"limited_route_transfer_tab_present={str(result['limited_route_transfer_tab_present']).lower()}; "
-            f"limited_route_view_allowed={str(result['limited_route_view_allowed']).lower()}; "
-            f"limited_route_orders_tab_present={str(result['limited_route_orders_tab_present']).lower()}; "
-            f"limited_route_orders_view_allowed={str(result['limited_route_orders_view_allowed']).lower()}; "
-            f"limited_route_issue_denied={str(result['limited_route_issue_denied']).lower()}; "
-            f"limited_route_confirm_denied={str(result['limited_route_confirm_denied']).lower()}; "
-            f"limited_route_admin_directory_valid={str(result['limited_route_admin_directory_valid']).lower()}; "
-            f"limited_route_admin_context_ready={str(result['limited_route_admin_context_ready']).lower()}; "
-            f"limited_route_admin_link_generated={str(result['limited_route_admin_link_generated']).lower()}; "
-            f"limited_route_path_directory_root={str(result['limited_route_path_directory_root']).lower()}; "
-            f"limited_route_path_index_php={str(result['limited_route_path_index_php']).lower()}; "
-            f"limited_route_path_valid={str(result['limited_route_path_valid']).lower()}; "
-            f"limited_route_controller_valid={str(result['limited_route_controller_valid']).lower()}; "
-            f"limited_route_credential_present={str(result['limited_route_credential_present']).lower()}; "
-            f"limited_route_credential_bounded={str(result['limited_route_credential_bounded']).lower()}; "
-            f"limited_route_credential_whitespace_free={str(result['limited_route_credential_whitespace_free']).lower()}; "
+            f"limited_staff_ci_scope_valid={str(result['limited_staff_ci_scope_valid']).lower()}; "
+            f"limited_staff_identity_shape_valid={str(result['limited_staff_identity_shape_valid']).lower()}; "
+            f"limited_staff_employee_found={str(result['limited_staff_employee_found']).lower()}; "
+            f"limited_staff_employee_active={str(result['limited_staff_employee_active']).lower()}; "
+            f"limited_staff_transfer_tab_present={str(result['limited_staff_transfer_tab_present']).lower()}; "
+            f"limited_staff_view_allowed={str(result['limited_staff_view_allowed']).lower()}; "
+            f"limited_staff_orders_tab_present={str(result['limited_staff_orders_tab_present']).lower()}; "
+            f"limited_staff_orders_view_allowed={str(result['limited_staff_orders_view_allowed']).lower()}; "
+            f"limited_staff_issue_denied={str(result['limited_staff_issue_denied']).lower()}; "
+            f"limited_staff_confirm_denied={str(result['limited_staff_confirm_denied']).lower()}; "
+            f"limited_session_route_same_admin_origin={str(result['limited_session_route_same_admin_origin']).lower()}; "
+            f"limited_session_route_path_directory_root={str(result['limited_session_route_path_directory_root']).lower()}; "
+            f"limited_session_route_path_index_php={str(result['limited_session_route_path_index_php']).lower()}; "
+            f"limited_session_route_path_valid={str(result['limited_session_route_path_valid']).lower()}; "
+            f"limited_session_route_controller_valid={str(result['limited_session_route_controller_valid']).lower()}; "
+            f"limited_session_route_credential_present={str(result['limited_session_route_credential_present']).lower()}; "
+            f"limited_session_route_credential_bounded={str(result['limited_session_route_credential_bounded']).lower()}; "
+            f"limited_session_route_credential_whitespace_free={str(result['limited_session_route_credential_whitespace_free']).lower()}; "
+            f"limited_session_route_query_shape_valid={str(result['limited_session_route_query_shape_valid']).lower()}; "
             f"limited_page_same_admin_origin={str(result['limited_page_same_admin_origin']).lower()}; "
             f"limited_page_admin_path_valid={str(result['limited_page_admin_path_valid']).lower()}; "
             f"limited_page_controller_valid={str(result['limited_page_controller_valid']).lower()}; "

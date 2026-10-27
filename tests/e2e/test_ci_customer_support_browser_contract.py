@@ -73,7 +73,9 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             'expected_rejection=True', 'disallowed_attachment_rejected',
             'image_attachment_admin_readback', 'image_attachment_foreign_denied',
             'submit_contact_message(customer, ctx, ctx.buyer, followup_marker, image_file, customer_reply_url)',
-            'read_native_image_attachment(admin, image_url, image_bytes)',
+            'read_native_image_attachment(',
+            'admin, image_url, image_bytes, thread_route_kind, thread_id, ctx.admin, result',
+            'image_attachment_foreign_session_probe',
             'attachment_visible_to_session(foreign, image_url, image_marker)',
             'validate_synthetic_upload(attachment_path.name, attachment_path.read_bytes(), expected_mime)',
             'metadata.get("mime") != expected_mime',
@@ -82,6 +84,43 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 self.assertTrue(expected in source, "missing image acceptance boundary: " + expected)
         fixture = FIXTURE.read_text(encoding="utf-8")
         self.assertIn('Tools::getMaxUploadSize() >= 4096', fixture)
+
+    def test_legacy_image_attachment_uses_lowercase_filename_and_exact_thread_route(self):
+        module = load_script()
+        admin = "http://localhost:18080/admin-kuranea"
+        href = (
+            admin + "/index.php?controller=AdminCustomerThreads&id_customer_thread=47"
+            "&viewcustomer_thread=&filename=synthetic-image.png&show=1&token=workerToken"
+        )
+        module.assert_image_attachment_filename(href, "legacy_thread_view", 47, admin)
+        self.assertEqual(("legacy_thread_view", 47), module.thread_route_identity(href, admin))
+        page_url = (
+            admin + "/index.php?controller=AdminCustomerThreads&id_customer_thread=47"
+            "&viewcustomer_thread=1&token=workerToken"
+        )
+        module.assert_legacy_attachment_identity(href, page_url, admin, 47)
+        with self.assertRaisesRegex(AssertionError, "authenticated thread token"):
+            module.assert_legacy_attachment_identity(
+                href.replace("token=workerToken", "token=otherWorkerToken"), page_url, admin, 47
+            )
+
+        for candidate in (
+            href.replace("id_customer_thread=47", "id_customer_thread=48"),
+            href.replace("filename=synthetic-image.png", "filename=../private.png"),
+            href.replace("filename=synthetic-image.png", "fileName=synthetic-image.png"),
+            href.replace("controller=AdminCustomerThreads", "controller=AdminOrders"),
+        ):
+            with self.subTest(candidate=candidate), self.assertRaises(AssertionError):
+                module.assert_image_attachment_filename(candidate, "legacy_thread_view", 47, admin)
+
+        class Driver:
+            current_url = admin + "/index.php?controller=AdminCustomerThreads&id_customer_thread=48&viewcustomer_thread=1&token=safe"
+
+            def find_elements(self, *_args):
+                raise AssertionError("mismatched thread must be rejected before DOM lookup")
+
+        with self.assertRaisesRegex(AssertionError, "exact customer thread"):
+            module.find_attachment_link(Driver(), admin, "follow-up-marker", "legacy_thread_view", 47)
 
     def test_contact_controls_scroll_clear_and_keep_native_select_and_upload_assertions(self):
         module = load_script()

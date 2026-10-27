@@ -103,6 +103,9 @@ class ResetEmailLocaleContract(unittest.TestCase):
         mail['X-ORDENOWA-CI-Reset-Symfony-Email-Object'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Text-Setter-Returned-Same-Message'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Text-Getter-Returned-String'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-Text-Replacement-Contains-Expected-URL'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-Text-Getter-Contains-Expected-URL'] = 'false'
+        mail['X-ORDENOWA-CI-Reset-Text-Mime-Contains-Expected-URL'] = 'false'
         mail['X-ORDENOWA-CI-Reset-Text-Mime-Body-Read-Succeeded'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Text-Mime-Body-Identity-Same-After-Setter'] = 'false'
         mail['X-ORDENOWA-CI-Reset-Text-Mime-Body-Reset-Retry-Attempted'] = 'false'
@@ -135,6 +138,9 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'pre_smtp_message_is_symfony_email': True,
             'pre_smtp_text_setter_returned_same_message': True,
             'pre_smtp_text_getter_returned_string': True,
+            'pre_smtp_text_replacement_contains_expected_url': True,
+            'pre_smtp_text_getter_contains_expected_url': False,
+            'pre_smtp_text_mime_contains_expected_url': False,
             'pre_smtp_text_mime_body_read_succeeded': True,
             'pre_smtp_text_mime_body_identity_same_after_setter': False,
             'pre_smtp_text_mime_body_reset_retry_attempted': False,
@@ -177,6 +183,9 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'pre_smtp_text_setter_invoked': True,
             'pre_smtp_text_setter_returned_same_message': True,
             'pre_smtp_text_getter_returned_string': True,
+            'pre_smtp_text_replacement_contains_expected_url': True,
+            'pre_smtp_text_getter_contains_expected_url': True,
+            'pre_smtp_text_mime_contains_expected_url': True,
             'pre_smtp_text_getter_match_reason': 'matched',
             'pre_smtp_text_mime_body_read_succeeded': True,
             'pre_smtp_text_plain_part_present': True,
@@ -435,7 +444,9 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'pre_smtp_text_mime_link=none; '
             'pre_smtp_text_getter_match_reason=none; pre_smtp_text_mime_match_reason=none; '
             'pre_smtp_email_object=none; pre_smtp_setter_same_object=none; '
-            'pre_smtp_getter_string=none; pre_smtp_mime_body_read=none; '
+            'pre_smtp_getter_string=none; '
+            'pre_smtp_replacement_expected_url=none; pre_smtp_getter_expected_url=none; '
+            'pre_smtp_mime_expected_url=none; pre_smtp_mime_body_read=none; '
             'pre_smtp_body_same_after_setter=none; pre_smtp_body_reset_retry=none; '
             'pre_smtp_body_changed_after_reset=none; pre_smtp_plain_part=none; '
             'pre_smtp_url_candidate=none; pre_smtp_reset_template_context=none; '
@@ -472,6 +483,9 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 "pre_smtp_message_is_symfony_email": None,
                 "pre_smtp_text_setter_returned_same_message": None,
                 "pre_smtp_text_getter_returned_string": None,
+                "pre_smtp_text_replacement_contains_expected_url": None,
+                "pre_smtp_text_getter_contains_expected_url": None,
+                "pre_smtp_text_mime_contains_expected_url": None,
                 "pre_smtp_text_mime_body_read_succeeded": None,
                 "pre_smtp_text_mime_body_identity_same_after_setter": None,
                 "pre_smtp_text_mime_body_reset_retry_attempted": None,

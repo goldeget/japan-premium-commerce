@@ -176,6 +176,9 @@ def write_diagnostics(result: dict) -> None:
             'pre_smtp_text_getter_match_reason', 'pre_smtp_text_mime_match_reason',
             'pre_smtp_message_is_symfony_email', 'pre_smtp_text_setter_returned_same_message',
             'pre_smtp_text_getter_returned_string', 'pre_smtp_text_mime_body_read_succeeded',
+            'pre_smtp_text_replacement_contains_expected_url',
+            'pre_smtp_text_getter_contains_expected_url',
+            'pre_smtp_text_mime_contains_expected_url',
             'pre_smtp_text_mime_body_identity_same_after_setter',
             'pre_smtp_text_mime_body_reset_retry_attempted',
             'pre_smtp_text_mime_body_changed_after_reset', 'pre_smtp_text_plain_part_present',
@@ -214,6 +217,9 @@ def write_diagnostics(result: dict) -> None:
                 'pre_smtp_text_native_link_shape', 'pre_smtp_text_mime_native_link_shape',
                 'pre_smtp_message_is_symfony_email', 'pre_smtp_text_setter_returned_same_message',
                 'pre_smtp_text_getter_returned_string', 'pre_smtp_text_mime_body_read_succeeded',
+                'pre_smtp_text_replacement_contains_expected_url',
+                'pre_smtp_text_getter_contains_expected_url',
+                'pre_smtp_text_mime_contains_expected_url',
                 'pre_smtp_text_mime_body_identity_same_after_setter',
                 'pre_smtp_text_mime_body_reset_retry_attempted',
                 'pre_smtp_text_mime_body_changed_after_reset', 'pre_smtp_text_plain_part_present',
@@ -356,6 +362,9 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
         'pre_smtp_message_is_symfony_email': None,
         'pre_smtp_text_setter_returned_same_message': None,
         'pre_smtp_text_getter_returned_string': None,
+        'pre_smtp_text_replacement_contains_expected_url': None,
+        'pre_smtp_text_getter_contains_expected_url': None,
+        'pre_smtp_text_mime_contains_expected_url': None,
         'pre_smtp_text_mime_body_read_succeeded': None,
         'pre_smtp_text_mime_body_identity_same_after_setter': None,
         'pre_smtp_text_mime_body_reset_retry_attempted': None,
@@ -390,6 +399,9 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
         ('X-ORDENOWA-CI-Reset-Symfony-Email-Object', 'pre_smtp_message_is_symfony_email'),
         ('X-ORDENOWA-CI-Reset-Text-Setter-Returned-Same-Message', 'pre_smtp_text_setter_returned_same_message'),
         ('X-ORDENOWA-CI-Reset-Text-Getter-Returned-String', 'pre_smtp_text_getter_returned_string'),
+        ('X-ORDENOWA-CI-Reset-Text-Replacement-Contains-Expected-URL', 'pre_smtp_text_replacement_contains_expected_url'),
+        ('X-ORDENOWA-CI-Reset-Text-Getter-Contains-Expected-URL', 'pre_smtp_text_getter_contains_expected_url'),
+        ('X-ORDENOWA-CI-Reset-Text-Mime-Contains-Expected-URL', 'pre_smtp_text_mime_contains_expected_url'),
         ('X-ORDENOWA-CI-Reset-Text-Mime-Body-Read-Succeeded', 'pre_smtp_text_mime_body_read_succeeded'),
         ('X-ORDENOWA-CI-Reset-Text-Mime-Body-Identity-Same-After-Setter', 'pre_smtp_text_mime_body_identity_same_after_setter'),
         ('X-ORDENOWA-CI-Reset-Text-Mime-Body-Reset-Retry-Attempted', 'pre_smtp_text_mime_body_reset_retry_attempted'),
@@ -726,6 +738,9 @@ def run() -> bool:
         'pre_smtp_message_is_symfony_email': None,
         'pre_smtp_text_setter_returned_same_message': None,
         'pre_smtp_text_getter_returned_string': None,
+        'pre_smtp_text_replacement_contains_expected_url': None,
+        'pre_smtp_text_getter_contains_expected_url': None,
+        'pre_smtp_text_mime_contains_expected_url': None,
         'pre_smtp_text_mime_body_read_succeeded': None,
         'pre_smtp_text_mime_body_identity_same_after_setter': None,
         'pre_smtp_text_mime_body_reset_retry_attempted': None,
@@ -778,6 +793,9 @@ def run() -> bool:
                               pre_smtp_message_is_symfony_email=None,
                               pre_smtp_text_setter_returned_same_message=None,
                               pre_smtp_text_getter_returned_string=None,
+                              pre_smtp_text_replacement_contains_expected_url=None,
+                              pre_smtp_text_getter_contains_expected_url=None,
+                              pre_smtp_text_mime_contains_expected_url=None,
                               pre_smtp_text_mime_body_read_succeeded=None,
                               pre_smtp_text_mime_body_identity_same_after_setter=None,
                               pre_smtp_text_mime_body_reset_retry_attempted=None,
@@ -912,6 +930,9 @@ def run() -> bool:
                 f'pre_smtp_email_object={str(diagnostic["pre_smtp_message_is_symfony_email"]).lower()}; '
                 f'pre_smtp_setter_same_object={str(diagnostic["pre_smtp_text_setter_returned_same_message"]).lower()}; '
                 f'pre_smtp_getter_string={str(diagnostic["pre_smtp_text_getter_returned_string"]).lower()}; '
+                f'pre_smtp_replacement_expected_url={str(diagnostic["pre_smtp_text_replacement_contains_expected_url"]).lower()}; '
+                f'pre_smtp_getter_expected_url={str(diagnostic["pre_smtp_text_getter_contains_expected_url"]).lower()}; '
+                f'pre_smtp_mime_expected_url={str(diagnostic["pre_smtp_text_mime_contains_expected_url"]).lower()}; '
                 f'pre_smtp_mime_body_read={str(diagnostic["pre_smtp_text_mime_body_read_succeeded"]).lower()}; '
                 f'pre_smtp_body_same_after_setter={str(diagnostic["pre_smtp_text_mime_body_identity_same_after_setter"]).lower()}; '
                 f'pre_smtp_body_reset_retry={str(diagnostic["pre_smtp_text_mime_body_reset_retry_attempted"]).lower()}; '
@@ -959,6 +980,9 @@ def run() -> bool:
             f'pre_smtp_email_object={str(diagnostic["pre_smtp_message_is_symfony_email"]).lower()}; '
             f'pre_smtp_setter_same_object={str(diagnostic["pre_smtp_text_setter_returned_same_message"]).lower()}; '
             f'pre_smtp_getter_string={str(diagnostic["pre_smtp_text_getter_returned_string"]).lower()}; '
+            f'pre_smtp_replacement_expected_url={str(diagnostic["pre_smtp_text_replacement_contains_expected_url"]).lower()}; '
+            f'pre_smtp_getter_expected_url={str(diagnostic["pre_smtp_text_getter_contains_expected_url"]).lower()}; '
+            f'pre_smtp_mime_expected_url={str(diagnostic["pre_smtp_text_mime_contains_expected_url"]).lower()}; '
             f'pre_smtp_mime_body_read={str(diagnostic["pre_smtp_text_mime_body_read_succeeded"]).lower()}; '
             f'pre_smtp_body_same_after_setter={str(diagnostic["pre_smtp_text_mime_body_identity_same_after_setter"]).lower()}; '
             f'pre_smtp_body_reset_retry={str(diagnostic["pre_smtp_text_mime_body_reset_retry_attempted"]).lower()}; '
