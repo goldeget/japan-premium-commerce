@@ -784,6 +784,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         )[0]
         for marker in (
             'input[type="checkbox"][required]',
+            'input[type="checkbox"][name="psgdpr_consent_checkbox"]',
             "checkbox.is_selected()",
             "if not checkbox.is_enabled():",
             'raise AssertionError("required customer address consent is disabled")',
@@ -795,6 +796,19 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         ):
             self.assertIn(marker, helper)
         self.assertNotIn("execute_script", helper)
+
+        psgdpr_template = (
+            ROOT
+            / "themes"
+            / "hummingbird"
+            / "modules"
+            / "psgdpr"
+            / "views"
+            / "templates"
+            / "hook"
+            / "displayGDPRConsent.tpl"
+        ).read_text(encoding="utf-8")
+        self.assertIn('name="psgdpr_consent_checkbox"', psgdpr_template)
 
     def test_customer_address_failure_reports_redacted_substage_state(self) -> None:
         address = self.source.split("def populate_japan_customer_address", 1)[1].split(

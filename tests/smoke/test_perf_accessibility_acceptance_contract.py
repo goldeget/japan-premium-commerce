@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import ast
+import http.client
 import json
 from pathlib import Path
+import socket
+import ssl
+from urllib.error import HTTPError, URLError
 import unittest
 
 
@@ -89,6 +93,109 @@ class PerformanceAccessibilityAcceptanceContractTests(unittest.TestCase):
             self.assertIn(required, source)
         for disallowed in ("node.get('html')", "node.get('target')", "report['finalUrl']", "report_path.read_text()"):
             self.assertNotIn(disallowed, source)
+
+    def test_route_preflight_is_bounded_and_one_failure_does_not_stop_other_routes(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        assignments = {
+            node.targets[0].id: ast.literal_eval(node.value)
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == "ROUTE_LABELS"
+        }
+        self.assertEqual(("home", "product", "contact_ja"), assignments["ROUTE_LABELS"])
+
+        preflight = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "preflight_routes"
+        )
+        preflight_source = ast.get_source_segment(source, preflight)
+        self.assertIn("for label in ROUTE_LABELS", preflight_source)
+        self.assertIn("except HTTPError as error", preflight_source)
+        self.assertIn("except Exception as error", preflight_source)
+        self.assertIn('"status": status', preflight_source)
+        self.assertIn('"exception_category": category', preflight_source)
+        self.assertIn('"passed": passed', preflight_source)
+        for sensitive in ("str(error)", "error.reason", "response.read(", "page_source", "screenshot"):
+            self.assertNotIn(sensitive, preflight_source)
+
+        main = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "main"
+        )
+        main_source = ast.get_source_segment(source, main)
+        self.assertIn("route_ready = preflight_routes(routes, result)", main_source)
+        self.assertGreaterEqual(main_source.count("if not route_ready.get(label)"), 2)
+        self.assertIn("all_routes_ready", main_source)
+        self.assertIn("route_preflight={preflight_summary(result)}", main_source)
+        self.assertIn("safe_failure_codes=", main_source)
+
+    def test_route_status_mismatch_remains_a_failure_when_other_routes_are_scanned(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('"route_status_mismatch" if status is not None else "route_unreachable"', source)
+        self.assertIn('result["safe_failure_codes"].append(', source)
+        self.assertIn('result["overall"] = "success" if lighthouse_passed and axe_passed and interaction_passed and not result["safe_failure_codes"] else "failure"', source)
+
+    def test_preflight_records_numeric_status_and_fixed_exception_without_stopping(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        selected = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name in {"preflight_exception_category", "preflight_routes", "preflight_summary"}
+        ]
+        namespace = {
+            "ROUTE_LABELS": ("home", "product", "contact_ja"),
+            "HTTPError": HTTPError,
+            "URLError": URLError,
+            "http": http,
+            "socket": socket,
+            "ssl": ssl,
+        }
+        exec(compile(ast.Module(body=selected, type_ignores=[]), str(SCRIPT), "exec"), namespace)
+
+        opened = []
+
+        class Response:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        def fake_urlopen(url):
+            opened.append(url)
+            if url.endswith("/product"):
+                raise HTTPError(url, 404, "raw response text", None, None)
+            if url.endswith("/contact"):
+                raise URLError(ConnectionRefusedError("private transport detail"))
+            return Response()
+
+        namespace["urlopen"] = fake_urlopen
+        result = {"route_preflight": [], "safe_failure_codes": []}
+        routes = {
+            "home": "http://localhost/home",
+            "product": "http://localhost/product",
+            "contact_ja": "http://localhost/contact",
+        }
+        ready = namespace["preflight_routes"](routes, result)
+
+        self.assertEqual(["http://localhost/home", "http://localhost/product", "http://localhost/contact"], opened)
+        self.assertEqual({"home": True, "product": False, "contact_ja": False}, ready)
+        self.assertEqual(
+            [
+                {"route": "home", "status": 200, "exception_category": None, "passed": True},
+                {"route": "product", "status": 404, "exception_category": None, "passed": False},
+                {"route": "contact_ja", "status": None, "exception_category": "connection_error", "passed": False},
+            ],
+            result["route_preflight"],
+        )
+        self.assertEqual("home:200,product:404,contact_ja:connection_error", namespace["preflight_summary"](result))
+        self.assertEqual(["route_status_mismatch", "route_unreachable"], result["safe_failure_codes"])
 
 
 if __name__ == "__main__":

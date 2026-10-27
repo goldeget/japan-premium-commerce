@@ -67,6 +67,11 @@ READBACK_CHECKS = {
     'reimport_value_identity',
 }
 MANAGER_LIST_STATES = {'unknown', 'load_error', 'empty', 'loaded'}
+ALERT_CLASSES = {'alert-danger', 'alert-warning', 'alert-success', 'alert-info', 'other'}
+ALERT_REGIONS = {'module_content', 'global_admin', 'unknown'}
+ALERT_GROUP_FIELDS = {'alert_class', 'region_category', 'count'}
+MAX_VISIBLE_ALERTS = 20
+MAX_ALERT_GROUPS = len(ALERT_CLASSES) * len(ALERT_REGIONS)
 MANAGER_LIST_DIAGNOSTIC_FIELDS = {
     'list_state', 'link_count', 'valid_id_count', 'valid_route_count', 'unique_id_count',
     'expected_unique_id_count', 'expected_member_count', 'expected_product_link_count',
@@ -150,9 +155,53 @@ DIAGNOSTIC_FIELDS = (
        'admin_controller', 'page_class', 'document_ready_state', 'current_substage',
        'manager_link_path_class', 'native_readback_check', 'native_readback_check_match',
        'manager_products_load_state', 'manager_list_diagnostics',
+       'visible_alert_groups',
        *OPTIONAL_INTEGER_FIELDS,
        'document_response_status', 'exception_class'}
 )
+
+
+def safe_visible_alert_groups(value: Any, visible_alert_count: int) -> list[dict[str, Any]]:
+    """Keep only bounded alert class/region counts; never retain page-provided content."""
+    try:
+        _validate_visible_alert_groups(value, visible_alert_count)
+        return value
+    except ValueError:
+        if type(visible_alert_count) is not int or not 0 <= visible_alert_count <= MAX_VISIBLE_ALERTS:
+            visible_alert_count = 0
+        return ([{
+            'alert_class': 'other',
+            'region_category': 'unknown',
+            'count': visible_alert_count,
+        }] if visible_alert_count else [])
+
+
+def _validate_visible_alert_groups(value: Any, visible_alert_count: int) -> None:
+    if not isinstance(value, list) or len(value) > MAX_ALERT_GROUPS:
+        raise ValueError('catalog visible alert groups are invalid')
+    if type(visible_alert_count) is not int or not 0 <= visible_alert_count <= MAX_VISIBLE_ALERTS:
+        raise ValueError('catalog visible alert count is invalid')
+    seen: set[tuple[str, str]] = set()
+    total = 0
+    for group in value:
+        if not isinstance(group, dict) or set(group) != ALERT_GROUP_FIELDS:
+            raise ValueError('catalog visible alert group fields are not allowlisted')
+        alert_class = group['alert_class']
+        region = group['region_category']
+        count = group['count']
+        if type(alert_class) is not str or alert_class not in ALERT_CLASSES:
+            raise ValueError('catalog visible alert class is invalid')
+        if type(region) is not str or region not in ALERT_REGIONS:
+            raise ValueError('catalog visible alert region is invalid')
+        if type(count) is not int or not 1 <= count <= MAX_VISIBLE_ALERTS:
+            raise ValueError('catalog visible alert group count is invalid')
+        key = (alert_class, region)
+        if key in seen:
+            raise ValueError('catalog visible alert groups contain duplicates')
+        seen.add(key)
+        total += count
+    if total != visible_alert_count:
+        raise ValueError('catalog visible alert groups do not match the bounded total')
 
 
 def summarize_manager_product_ids(
@@ -369,6 +418,7 @@ def validate(data: Any) -> dict[str, Any]:
         raise ValueError('catalog import native readback state is inconsistent')
     _validate_manager_list_diagnostics(data['manager_list_diagnostics'])
     _validate_click_diagnostics(data['click_diagnostics'])
+    _validate_visible_alert_groups(data['visible_alert_groups'], data['visible_alert_count'])
     return data
 
 

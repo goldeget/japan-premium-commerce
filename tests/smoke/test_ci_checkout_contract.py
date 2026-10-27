@@ -2048,15 +2048,13 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
 
     def test_locale_mail_e2e_is_exact_isolated_and_uses_only_the_configured_mailpit(self) -> None:
         helper = MAIL_ACCEPTANCE.read_text(encoding="utf-8")
-        account_flow = ACCOUNT_FLOW.read_text(encoding="utf-8")
         checkout_flow = CHECKOUT_FLOW.read_text(encoding="utf-8")
         workflow = WORKFLOW.read_text(encoding="utf-8")
         mail_step = workflow.split(
-            "id: account_browser_qa", 1
+            "id: checkout_email_locale_browser_qa", 1
         )[1].split("- name:", 1)[0]
-        account_step = workflow.split(
-            "- name: Verify customer registration, email login, logout, password reset, and my page in Chromium",
-            1,
+        aggregate = workflow.split(
+            "- name: Aggregate browser QA and postal verification failures", 1
         )[1].split("- name:", 1)[0]
 
         for guard in (
@@ -2075,16 +2073,38 @@ class IsolatedCheckoutContractTests(unittest.TestCase):
             "verify_persisted_order(run_id, attempt, project, order, language)",
             '"KURANEA_CI_EXPECTED_ORDER_REFERENCE": str(order["reference"])',
             "_install_php_verifier(project)",
+            'if __name__ == "__main__":\n    run_acceptance()',
         ):
             with self.subTest(guard=guard):
                 self.assertIn(guard, helper)
         self.assertNotIn('os.environ.get("MAILPIT_API_URL", "http://', helper)
         self.assertNotIn("PS_MAIL_", helper)
-        self.assertIn("run_acceptance()", account_flow)
-        self.assertIn('os.environ.get("ORDENOWA_ADMIN_QA_FOCUS") != "true"', account_flow)
-        self.assertLess(account_flow.rindex("if failed_viewports:"), account_flow.rindex("run_acceptance()"))
+        for prerequisite in (
+            "steps.checkout_customer_browser_qa.outcome == 'success'",
+            "steps.checkout_order_persistence.outcome == 'success'",
+            "steps.checkout_override.outcome == 'success'",
+            "steps.shipping_product_fixture.outcome == 'success'",
+            "steps.mailpit_setup.outcome == 'success'",
+            "steps.chromium_setup.outcome == 'success'",
+            "env.ORDENOWA_ADMIN_QA_FOCUS != 'true'",
+        ):
+            with self.subTest(prerequisite=prerequisite):
+                self.assertIn(prerequisite, mail_step)
+        self.assertIn("tests/e2e/verify_ci_checkout_email_locale.py", mail_step)
         self.assertIn("MAILPIT_API_URL: http://127.0.0.1:8025", mail_step)
-        self.assertIn("steps.account_checkout_override.outcome == 'success'", account_step)
+        self.assertLess(
+            workflow.index("id: checkout_order_persistence"),
+            workflow.index("id: checkout_email_locale_browser_qa"),
+        )
+        self.assertLess(
+            workflow.index("id: checkout_email_locale_browser_qa"),
+            workflow.index("id: customer_support_fixture"),
+        )
+        self.assertIn(
+            "CHECKOUT_EMAIL_LOCALE_BROWSER_QA_OUTCOME: ${{ steps.checkout_email_locale_browser_qa.outcome }}",
+            aggregate,
+        )
+        self.assertIn('"checkout_email_locale=$CHECKOUT_EMAIL_LOCALE_BROWSER_QA_OUTCOME"', aggregate)
         self.assertLess(
             WORKFLOW.read_text(encoding="utf-8").index("id: shipping_product_fixture"),
             WORKFLOW.read_text(encoding="utf-8").index("id: account_browser_qa"),

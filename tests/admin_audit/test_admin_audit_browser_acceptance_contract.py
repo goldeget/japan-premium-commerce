@@ -12,6 +12,15 @@ BROWSER = ROOT / "tests" / "e2e" / "verify_admin_audit_browser.py"
 
 
 class AdminAuditBrowserAcceptanceContractTests(unittest.TestCase):
+    def test_fixture_invokes_guard_as_a_declared_php_function(self) -> None:
+        fixture = FIXTURE.read_text(encoding="utf-8")
+        self.assertRegex(fixture, re.compile(r"\bfunction\s+adminAuditFixtureRequire\s*\("))
+        self.assertGreaterEqual(
+            len(re.findall(r"(?m)^adminAuditFixtureRequire\s*\(", fixture)),
+            10,
+        )
+        self.assertNotRegex(fixture, re.compile(r"\$adminAuditFixtureRequire\s*\("))
+
     def test_fixture_is_limited_to_the_disposable_single_shop_ci_run(self) -> None:
         fixture = FIXTURE.read_text(encoding="utf-8")
         for marker in (

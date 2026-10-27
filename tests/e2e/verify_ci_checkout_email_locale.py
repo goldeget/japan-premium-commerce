@@ -241,6 +241,11 @@ def verify_persisted_order(run_id: str, attempt: str, project: str, order: dict,
         raise RuntimeError("native unpaid order and customer locale did not persist and read back")
 
 
+def suppress_checkout_screenshots(driver) -> None:
+    """Prevent shared checkout helpers from publishing account/address screenshots."""
+    setattr(driver, "save_screenshot", lambda _filename: False)
+
+
 def _run_locale(language: str, run_id: str, attempt: str, project: str, api: str) -> None:
     from verify_ci_checkout_admin_browser import (
         DEST,
@@ -265,6 +270,7 @@ def _run_locale(language: str, run_id: str, attempt: str, project: str, api: str
     driver = webdriver.Chrome(options=browser_options(1440, 960))
     stage = "product_search"
     try:
+        suppress_checkout_screenshots(driver)
         driver.set_window_size(1440, 960)
         search_for_product(
             driver,

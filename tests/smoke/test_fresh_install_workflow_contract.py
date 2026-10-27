@@ -676,6 +676,86 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             with self.subTest(key=key):
                 self.assertIn(key, setup)
 
+    def test_native_customer_raw_mime_locale_flow_has_checkout_dependencies_and_aggregate(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        verifier_path = ROOT / "tests" / "e2e" / "verify_ci_checkout_email_locale.py"
+        verifier = verifier_path.read_text(encoding="utf-8")
+        step = workflow.split("id: checkout_email_locale_browser_qa", 1)[1].split("- name:", 1)[0]
+        aggregate = workflow.split("- name: Aggregate browser QA and postal verification failures", 1)[1].split(
+            "- name:", 1
+        )[0]
+
+        for dependency in (
+            "steps.checkout_customer_browser_qa.outcome == 'success'",
+            "steps.checkout_order_persistence.outcome == 'success'",
+            "steps.checkout_override.outcome == 'success'",
+            "steps.shipping_product_fixture.outcome == 'success'",
+            "steps.mailpit_setup.outcome == 'success'",
+            "steps.chromium_setup.outcome == 'success'",
+            "env.ORDENOWA_ADMIN_QA_FOCUS != 'true'",
+        ):
+            with self.subTest(dependency=dependency):
+                self.assertIn(dependency, step)
+        self.assertLess(workflow.index("id: checkout_order_persistence"), workflow.index("id: checkout_email_locale_browser_qa"))
+        self.assertLess(workflow.index("id: checkout_email_locale_browser_qa"), workflow.index("id: customer_support_fixture"))
+        for environment in (
+            "CI: 'true'",
+            "GITHUB_ACTIONS: 'true'",
+            "KURANEA_ISOLATED_CI: '1'",
+            "CI_COMPOSE_PROJECT_NAME: ${{ env.CI_COMPOSE_PROJECT_NAME }}",
+            "MAILPIT_API_URL: http://127.0.0.1:8025",
+            "CI_TEST_PRODUCT_ID: ${{ env.CI_TEST_PRODUCT_ID }}",
+        ):
+            with self.subTest(environment=environment):
+                self.assertIn(environment, step)
+        self.assertIn("tests/e2e/verify_ci_checkout_email_locale.py", step)
+        self.assertIn("checkout-email-locale-e2e.log", step)
+
+        for acceptance in (
+            'LANGUAGES = ("ja", "en", "ko")',
+            "parse_raw_mime_parts(source)",
+            '"account_creation_raw_mime_locale_verified": True',
+            '"order_confirmation_raw_mime_locale_verified": True',
+            '"customer_and_order_locale_persisted": True',
+            '"payment_module": "ps_checkpayment"',
+            '"unpaid": True',
+        ):
+            with self.subTest(acceptance=acceptance):
+                self.assertIn(acceptance, verifier)
+
+        locale_flow = verifier.split("def _run_locale(", 1)[1].split("def run_acceptance(", 1)[0]
+        self.assertLess(locale_flow.index("suppress_checkout_screenshots(driver)"), locale_flow.index("search_for_product("))
+        suppress_source = verifier.split("def suppress_checkout_screenshots(", 1)[1].split("def _run_locale(", 1)[0]
+        self.assertIn('setattr(driver, "save_screenshot", lambda _filename: False)', suppress_source)
+
+        module = ast.parse(verifier)
+        suppress_function = next(
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == "suppress_checkout_screenshots"
+        )
+        isolated_module = ast.Module(body=[suppress_function], type_ignores=[])
+        namespace: dict[str, object] = {}
+        exec(compile(isolated_module, str(verifier_path), "exec"), namespace)
+
+        class ScreenshotDriver:
+            def save_screenshot(self, filename: str) -> bool:
+                Path(filename).write_text("synthetic customer and address", encoding="utf-8")
+                return True
+
+        with tempfile.TemporaryDirectory() as temporary:
+            screenshot = Path(temporary) / "checkout-mail-ja-japan-address.png"
+            driver = ScreenshotDriver()
+            namespace["suppress_checkout_screenshots"](driver)
+            self.assertFalse(driver.save_screenshot(str(screenshot)))
+            self.assertFalse(screenshot.exists())
+
+        self.assertIn(
+            "CHECKOUT_EMAIL_LOCALE_BROWSER_QA_OUTCOME: ${{ steps.checkout_email_locale_browser_qa.outcome }}",
+            aggregate,
+        )
+        self.assertIn('"checkout_email_locale=$CHECKOUT_EMAIL_LOCALE_BROWSER_QA_OUTCOME"', aggregate)
+        self.assertIn('if [[ "$entry" != *=success ]]; then', aggregate)
+
     def test_customer_email_login_state_is_annotated_once_and_retained_in_step_summary(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         account_flow = (ROOT / "tests" / "e2e" / "verify_customer_account_browser.py").read_text(

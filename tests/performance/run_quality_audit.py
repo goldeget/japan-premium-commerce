@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import json
+import http.client
 import math
 import os
 import re
 import shutil
+import socket
+import ssl
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
+from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 from selenium import webdriver
@@ -39,6 +43,7 @@ TARGETS = {
     "scripted_interaction_next_paint_ms_lab_proxy_max": 200.0,
 }
 VIEWPORTS = {"mobile": (390, 844), "desktop": (1440, 1000)}
+ROUTE_LABELS = ("home", "product", "contact_ja")
 
 
 class AuditFailure(RuntimeError):
@@ -65,6 +70,90 @@ def safe_failure_code(value: object) -> str:
     candidate = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", str(value))
     candidate = re.sub(r"[^A-Za-z0-9]+", "_", candidate).strip("_").lower()
     return candidate if SAFE_FAILURE_CODE.fullmatch(candidate) else "audit_failure"
+
+
+def preflight_exception_category(error: BaseException) -> str:
+    """Return a fixed category without exposing exception text or request data."""
+    if isinstance(error, (TimeoutError, socket.timeout)):
+        return "timeout"
+    if isinstance(error, ssl.SSLError):
+        return "tls_error"
+    if isinstance(error, socket.gaierror):
+        return "dns_error"
+    if isinstance(error, ConnectionError):
+        return "connection_error"
+    if isinstance(error, URLError):
+        reason = error.reason
+        if isinstance(reason, BaseException):
+            return preflight_exception_category(reason)
+        return "url_error"
+    if isinstance(error, http.client.HTTPException):
+        return "protocol_error"
+    if isinstance(error, OSError):
+        return "network_error"
+    return "request_error"
+
+
+def preflight_routes(routes: dict[str, str], result: dict) -> dict[str, bool]:
+    """Record bounded status evidence and continue independently across routes."""
+    route_ready: dict[str, bool] = {}
+    for label in ROUTE_LABELS:
+        route = routes.get(label)
+        if not isinstance(route, str):
+            result["route_preflight"].append({
+                "route": label,
+                "status": None,
+                "exception_category": "route_unavailable",
+                "passed": False,
+            })
+            result["safe_failure_codes"].append("route_unreachable")
+            route_ready[label] = False
+            continue
+
+        try:
+            with urlopen(route) as response:
+                status = response.status
+            passed = isinstance(status, int) and status == 200
+            category = None
+        except HTTPError as error:
+            status = error.code if isinstance(error.code, int) else None
+            passed = False
+            category = None if status is not None else "http_error"
+        except Exception as error:
+            status = None
+            passed = False
+            category = preflight_exception_category(error)
+
+        result["route_preflight"].append({
+            "route": label,
+            "status": status,
+            "exception_category": category,
+            "passed": passed,
+        })
+        if not passed:
+            result["safe_failure_codes"].append(
+                "route_status_mismatch" if status is not None else "route_unreachable"
+            )
+        route_ready[label] = passed
+    return route_ready
+
+
+def preflight_summary(result: dict) -> str:
+    rows = {row.get("route"): row for row in result.get("route_preflight", []) if isinstance(row, dict)}
+    summary = []
+    for label in ROUTE_LABELS:
+        row = rows.get(label, {})
+        status = row.get("status")
+        if isinstance(status, int):
+            outcome = str(status)
+        else:
+            category = row.get("exception_category")
+            outcome = category if category in {
+                "route_unavailable", "timeout", "tls_error", "dns_error", "connection_error",
+                "url_error", "protocol_error", "network_error", "request_error", "http_error",
+            } else "unavailable"
+        summary.append(f"{label}:{outcome}")
+    return ",".join(summary)
 
 
 def require_isolated_loopback() -> tuple[str, dict[str, str]]:
@@ -332,6 +421,7 @@ def main() -> int:
         "source_sha": os.environ.get("GITHUB_SHA", "")[:40],
         "tool_versions": {"node": EXPECTED_NODE_VERSION, "lighthouse": EXPECTED_LIGHTHOUSE_VERSION, "axe_core": EXPECTED_AXE_VERSION},
         "targets": TARGETS,
+        "route_preflight": [],
         "lighthouse": [],
         "axe": [],
         "scripted_interaction_lab_proxy": [],
@@ -350,15 +440,13 @@ def main() -> int:
         assert_supported_axe_tags()
         axe_source = AXE_SCRIPT.read_text(encoding="utf-8")
 
-        for label, route in routes.items():
-            try:
-                with urlopen(route) as response:
-                    if response.status != 200:
-                        raise AuditFailure("route_status_mismatch")
-            except AuditFailure:
-                raise
-            except Exception:
-                raise AuditFailure("route_unreachable") from None
+        route_ready = preflight_routes(routes, result)
+        write_summary(result)
+
+        for label in ROUTE_LABELS:
+            route = routes.get(label)
+            if not route_ready.get(label) or not isinstance(route, str):
+                continue
             for viewport in VIEWPORTS:
                 try:
                     measure_lighthouse(label, route, viewport, result)
@@ -372,7 +460,10 @@ def main() -> int:
                 driver = make_driver(*size)
                 if not result.get("browser_version"):
                     result["browser_version"] = str(driver.capabilities.get("browserVersion", "unknown"))[:40]
-                for label, route in routes.items():
+                for label in ROUTE_LABELS:
+                    route = routes.get(label)
+                    if not route_ready.get(label) or not isinstance(route, str):
+                        continue
                     try:
                         axe_scan(driver, label, route, viewport, axe_source, result)
                     except AuditFailure as error:
@@ -388,8 +479,11 @@ def main() -> int:
                 if driver:
                     driver.quit()
 
-        lighthouse_passed = len(result["lighthouse"]) == len(routes) * len(VIEWPORTS) and all(item["passed"] for item in result["lighthouse"])
-        axe_passed = len(result["axe"]) == len(routes) * len(VIEWPORTS) and all(item["passed"] for item in result["axe"])
+        all_routes_ready = len(result["route_preflight"]) == len(ROUTE_LABELS) and all(
+            item["passed"] for item in result["route_preflight"]
+        )
+        lighthouse_passed = all_routes_ready and len(result["lighthouse"]) == len(ROUTE_LABELS) * len(VIEWPORTS) and all(item["passed"] for item in result["lighthouse"])
+        axe_passed = all_routes_ready and len(result["axe"]) == len(ROUTE_LABELS) * len(VIEWPORTS) and all(item["passed"] for item in result["axe"])
         interaction_passed = len(result["scripted_interaction_lab_proxy"]) == len(VIEWPORTS) and all(
             item["passed_lab_proxy_budget"] for item in result["scripted_interaction_lab_proxy"]
         )
@@ -408,7 +502,9 @@ def main() -> int:
         "ORDENOWA_PERF_A11Y_OUTCOME: "
         f"{result['overall']} lighthouse={len(result['lighthouse'])}/{len(routes) * len(VIEWPORTS) if 'routes' in locals() else 0} "
         f"axe={len(result['axe'])}/{len(routes) * len(VIEWPORTS) if 'routes' in locals() else 0} "
-        f"interaction_lab_proxy={len(result['scripted_interaction_lab_proxy'])}/{len(VIEWPORTS)}"
+        f"interaction_lab_proxy={len(result['scripted_interaction_lab_proxy'])}/{len(VIEWPORTS)} "
+        f"route_preflight={preflight_summary(result)} "
+        f"safe_failure_codes={','.join(result['safe_failure_codes']) if result['safe_failure_codes'] else 'none'}"
     )
     return 0 if result["overall"] == "success" else 1
 

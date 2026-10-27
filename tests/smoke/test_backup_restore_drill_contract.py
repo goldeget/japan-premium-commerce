@@ -243,6 +243,17 @@ class BackupRestoreDrillContractTests(unittest.TestCase):
         self.assertIn('chown www-data:www-data "$catalog_queue_dir"', entrypoint)
         self.assertIn('chmod 0750 "$catalog_queue_dir"', entrypoint)
 
+    def test_restored_catalog_queue_readback_uses_the_indexed_shop_scoped_repository(self) -> None:
+        source = SCRIPT.read_text(encoding="utf-8")
+        helper = source.split("check_queue_read_only() {", 1)[1].split("\n}", 1)[0]
+
+        self.assertIn("CatalogQueueRepositoryFactory::fromEnvironment(_PS_ROOT_DIR_)", helper)
+        self.assertIn('$context->shop = new Shop(1);', helper)
+        self.assertIn('$queue->find($key)', helper)
+        self.assertIn('"amazon_jp:B0KURANEA1"', helper)
+        self.assertNotIn("review-queue.json", helper)
+        self.assertIn("RESTORE_READINESS_FAILED stage=catalog_queue_readback", source)
+
     def test_restore_create_uses_supported_compose_238_arguments(self) -> None:
         source = SCRIPT.read_text(encoding="utf-8")
         helper = source.split("create_restore_service() {", 1)[1].split("\n}", 1)[0]

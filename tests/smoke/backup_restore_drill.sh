@@ -514,15 +514,17 @@ shop_base_url="http://127.0.0.1:${SHOP_PORT}"
 check_queue_read_only() {
   local project=$1
   if ! docker compose -p "$project" exec -T prestashop php -r '
-    $path = "/var/lib/kuranea/catalog-review/review-queue.json";
-    $contents = @file_get_contents($path);
-    $document = $contents === false ? null : json_decode($contents, true);
+    require "/var/www/html/config/config.inc.php";
+    require "/var/www/html/modules/kuraneacatalog/autoload.php";
+    $context = Context::getContext();
+    $context->shop = new Shop(1);
+    $queue = \Kuranea\Catalog\Infrastructure\Persistence\CatalogQueueRepositoryFactory::fromEnvironment(_PS_ROOT_DIR_);
     $key = "amazon_jp:B0KURANEA1";
-    if (!is_array($document)
-        || ($document["schemaVersion"] ?? null) !== 1
-        || !is_array($document["entries"] ?? null)
-        || !isset($document["entries"][$key])
-        || !is_array($document["entries"][$key])) {
+    $entry = $queue->find($key);
+    if ($entry === null
+        || $entry->idempotencyKey !== $key
+        || $entry->snapshot->source !== "amazon_jp"
+        || !in_array($entry->status, ["pending", "approved", "rejected"], true)) {
         exit(1);
     }
   ' >/dev/null 2>"$stderr_file"; then
@@ -535,17 +537,28 @@ check_restored_shop() {
   local project=$1
   local db_probe
   if ! curl --fail --location --max-redirs 5 --silent --output /dev/null "$shop_base_url/" 2>"$stderr_file"; then
+    printf 'RESTORE_READINESS_FAILED stage=storefront_http\n' >&2
     return 1
   fi
   if ! curl --fail --location --max-redirs 5 --silent --output /dev/null "$shop_base_url/admin-kuranea/login" 2>"$stderr_file"; then
+    printf 'RESTORE_READINESS_FAILED stage=admin_login_http\n' >&2
     return 1
   fi
   db_probe=$(docker compose -p "$project" exec -T mariadb sh -ec '
     MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h127.0.0.1 -uroot -N "$MARIADB_DATABASE" \
       -e "SELECT COUNT(*) FROM ps_shop WHERE id_shop=1 AND name=\"ORDENOWA\""
-  ' 2>"$stderr_file") || return 1
-  [[ "$db_probe" == 1 ]] || return 1
-  check_queue_read_only "$project" || return 1
+  ' 2>"$stderr_file") || {
+    printf 'RESTORE_READINESS_FAILED stage=shop_database_query\n' >&2
+    return 1
+  }
+  if [[ "$db_probe" != 1 ]]; then
+    printf 'RESTORE_READINESS_FAILED stage=shop_database_identity\n' >&2
+    return 1
+  fi
+  if ! check_queue_read_only "$project"; then
+    printf 'RESTORE_READINESS_FAILED stage=catalog_queue_readback\n' >&2
+    return 1
+  fi
   return 0
 }
 

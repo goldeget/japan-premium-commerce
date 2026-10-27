@@ -2376,6 +2376,34 @@ jobs:
             cat "$verification_log"
           done
 
+      - name: Verify native account and unpaid order raw MIME in Japanese, English, and Korean
+        id: checkout_email_locale_browser_qa
+        if: steps.checkout_customer_browser_qa.outcome == 'success' && steps.checkout_order_persistence.outcome == 'success' && steps.checkout_override.outcome == 'success' && steps.shipping_product_fixture.outcome == 'success' && steps.mailpit_setup.outcome == 'success' && steps.chromium_setup.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          CI: 'true'
+          GITHUB_ACTIONS: 'true'
+          KURANEA_ISOLATED_CI: '1'
+          CI_COMPOSE_PROJECT_NAME: ${{ env.CI_COMPOSE_PROJECT_NAME }}
+          SHOP_BASE_URL: http://localhost:18080
+          MAILPIT_API_URL: http://127.0.0.1:8025
+          QA_ARTIFACT_DIR: ${{ runner.temp }}/ordenowa-browser-qa
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          CI_TEST_PRODUCT_ID: ${{ env.CI_TEST_PRODUCT_ID }}
+          CI_TEST_PRODUCT_SEARCH_TERM: free
+        run: |
+          set -euo pipefail
+          if ! [[ "$CI_TEST_PRODUCT_ID" =~ ^[1-9][0-9]{0,9}$ ]]; then
+            echo '::error title=ORDENOWA native customer email QA::The run-scoped synthetic product fixture did not export a valid product ID.'
+            exit 1
+          fi
+          mkdir -p "$QA_ARTIFACT_DIR"
+          "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" \
+            tests/e2e/verify_ci_checkout_email_locale.py \
+            2>&1 | tee "$QA_ARTIFACT_DIR/checkout-email-locale-e2e.log"
+
       - name: Prepare isolated native customer support settings
         id: customer_support_fixture
         if: always() && !cancelled() && steps.checkout_customer_browser_qa.outcome == 'success' && steps.checkout_order_persistence.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
@@ -4121,6 +4149,7 @@ jobs:
           CHECKOUT_CUSTOMER_BROWSER_QA_OUTCOME: ${{ steps.checkout_customer_browser_qa.outcome }}
           CHECKOUT_BANK_CUSTOMER_BROWSER_QA_OUTCOME: ${{ steps.checkout_bank_customer_browser_qa.outcome }}
           CHECKOUT_ORDER_PERSISTENCE_OUTCOME: ${{ steps.checkout_order_persistence.outcome }}
+          CHECKOUT_EMAIL_LOCALE_BROWSER_QA_OUTCOME: ${{ steps.checkout_email_locale_browser_qa.outcome }}
           CUSTOMER_SUPPORT_FIXTURE_OUTCOME: ${{ steps.customer_support_fixture.outcome }}
           CUSTOMER_SUPPORT_BROWSER_QA_OUTCOME: ${{ steps.customer_support_browser_qa.outcome }}
           BANK_TRANSFER_FIXTURE_OUTCOME: ${{ steps.bank_transfer_fixture.outcome }}
@@ -4277,6 +4306,7 @@ jobs:
             "checkout_customer=$CHECKOUT_CUSTOMER_BROWSER_QA_OUTCOME" \
             "checkout_bank_customer=$CHECKOUT_BANK_CUSTOMER_BROWSER_QA_OUTCOME" \
             "checkout_order_persistence=$CHECKOUT_ORDER_PERSISTENCE_OUTCOME" \
+            "checkout_email_locale=$CHECKOUT_EMAIL_LOCALE_BROWSER_QA_OUTCOME" \
             "customer_support_fixture=$CUSTOMER_SUPPORT_FIXTURE_OUTCOME" \
             "customer_support=$CUSTOMER_SUPPORT_BROWSER_QA_OUTCOME" \
             "bank_transfer_fixture=$BANK_TRANSFER_FIXTURE_OUTCOME" \

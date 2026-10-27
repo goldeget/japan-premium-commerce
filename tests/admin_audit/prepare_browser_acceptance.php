@@ -37,7 +37,7 @@ require_once _PS_MODULE_DIR_ . 'kuraneabackoffice/vendor/autoload.php';
 $shopId = (int) Shop::getContextShopID();
 $shop = $shopId > 0 ? new Shop($shopId) : false;
 $admin = new Employee();
-$adminAuditFixtureRequire(
+adminAuditFixtureRequire(
     Shop::getTotalShops() === 1
         && Shop::getContext() === Shop::CONTEXT_SHOP
         && Validate::isLoadedObject($shop)
@@ -51,7 +51,7 @@ $orderId = (int) $orderIdText;
 $order = new Order($orderId);
 $customer = Validate::isLoadedObject($order) ? new Customer((int) $order->id_customer) : false;
 $expectedCustomerEmail = sprintf('qa-ordenowa-checkout-%s-%s-bank@example.invalid', $runId, $attempt);
-$adminAuditFixtureRequire(
+adminAuditFixtureRequire(
     Validate::isLoadedObject($order)
         && (int) $order->id_shop === $shopId
         && Validate::isLoadedObject($customer)

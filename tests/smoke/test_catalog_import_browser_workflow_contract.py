@@ -873,7 +873,13 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'empty_url_notice_visible': False, 'batch_save_failure_notice_visible': False,
             'batch_created_notice_visible': False, 'option_guard_notice_visible': False,
             'unclassified_alert_visible': False,
-            'visible_alert_count': 3, 'document_response_status': 200,
+            'visible_alert_count': 3,
+            'visible_alert_groups': [
+                {'alert_class': 'alert-danger', 'region_category': 'module_content', 'count': 1},
+                {'alert_class': 'alert-info', 'region_category': 'global_admin', 'count': 1},
+                {'alert_class': 'other', 'region_category': 'unknown', 'count': 1},
+            ],
+            'document_response_status': 200,
             'read_only_notice_visible': False, 'access_denied_notice_visible': False,
             'queue_unavailable_notice_visible': False, 'exception_class': 'ElementClickInterceptedException',
             'manager_route_matches': False, 'manager_product_id_parameter_present': False,
@@ -1067,7 +1073,11 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             'empty_url_notice_visible': False, 'batch_save_failure_notice_visible': False,
             'batch_created_notice_visible': False, 'option_guard_notice_visible': False,
             'unclassified_alert_visible': True,
-            'visible_alert_count': 1, 'document_response_status': 200,
+            'visible_alert_count': 1,
+            'visible_alert_groups': [
+                {'alert_class': 'alert-danger', 'region_category': 'module_content', 'count': 1},
+            ],
+            'document_response_status': 200,
             'read_only_notice_visible': False, 'access_denied_notice_visible': False,
             'queue_unavailable_notice_visible': False, 'exception_class': 'TimeoutException',
             'manager_route_matches': False, 'manager_product_id_parameter_present': False,
@@ -1103,6 +1113,29 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             DIAGNOSTICS.validate({**valid, 'stage': 'https://private.invalid/?token=secret'})
         with self.assertRaises(ValueError):
             DIAGNOSTICS.validate({**valid, 'visible_alert_count': True})
+        for invalid_alert_groups in (
+            [{'alert_class': 'alert-private', 'region_category': 'module_content', 'count': 1}],
+            [{'alert_class': 'alert-danger', 'region_category': 'private-region', 'count': 1}],
+            [{'alert_class': 'alert-danger', 'region_category': 'module_content', 'count': 2}],
+            [{'alert_class': 'alert-danger', 'region_category': 'module_content', 'count': True}],
+            [{
+                'alert_class': 'alert-danger', 'region_category': 'module_content', 'count': 1,
+                'message': 'must never be emitted',
+            }],
+            [
+                {'alert_class': 'alert-danger', 'region_category': 'module_content', 'count': 1},
+                {'alert_class': 'alert-danger', 'region_category': 'module_content', 'count': 1},
+            ],
+        ):
+            with self.subTest(invalid_alert_groups=invalid_alert_groups):
+                with self.assertRaises(ValueError):
+                    DIAGNOSTICS.validate({**valid, 'visible_alert_groups': invalid_alert_groups})
+        self.assertEqual(
+            DIAGNOSTICS.safe_visible_alert_groups(
+                [{'alert_class': 'private', 'region_category': 'module_content', 'count': 1}], 1
+            ),
+            [{'alert_class': 'other', 'region_category': 'unknown', 'count': 1}],
+        )
         with self.assertRaises(ValueError):
             DIAGNOSTICS.validate({**valid, 'stage': ['not', 'a', 'stage']})
 
@@ -1123,6 +1156,32 @@ class CatalogImportBrowserWorkflowContract(unittest.TestCase):
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('screenshot was not captured', result.stdout)
+
+    def test_alert_diagnostics_emit_only_bounded_class_region_counts(self):
+        browser = self.read_required('tests/e2e/verify_catalog_import_browser.py')
+        diagnostics = self.read_required('tests/e2e/catalog_import_diagnostics.py')
+        snapshot = browser.split('page = driver.execute_script("""', 1)[1].split(
+            '""", expected_product_id_text)', 1
+        )[0]
+        returned_page = snapshot.split('return {', 1)[1]
+        self.assertIn('visible_alert_groups: visibleAlertGroups', returned_page)
+        self.assertIn('visible_alert_count: Math.min(visibleAlerts.length, 20)', returned_page)
+        self.assertNotRegex(returned_page, r'\bvisibleAlerts\s*[,}]')
+        self.assertNotRegex(returned_page, r'\b(?:alert_text|alert_message|alert_content)\s*:')
+        for marker in (
+            "const alertClassOrder = [",
+            "const alertRegionOrder = ['module_content', 'global_admin', 'unknown']",
+            'visibleAlertElements.slice(0, 20)',
+            'element.classList.contains(name)',
+            'alert_class: alertClass',
+            'region_category: regionCategory',
+            'count,',
+            'MAX_VISIBLE_ALERTS = 20',
+            'MAX_ALERT_GROUPS = len(ALERT_CLASSES) * len(ALERT_REGIONS)',
+            'set(group) != ALERT_GROUP_FIELDS',
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, browser + diagnostics)
 
     def test_retry_controls_stop_after_the_fixed_attempt_limit(self):
         controller = (ROOT / 'modules/kuraneacatalog/controllers/admin/AdminKuraneaCatalogReviewController.php').read_text()

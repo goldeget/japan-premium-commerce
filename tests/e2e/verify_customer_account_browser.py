@@ -3397,8 +3397,11 @@ def save_customer_address_edit(
 
 
 def accept_required_customer_address_checkboxes(form) -> None:
-    """Accept required address-form consent with native customer interactions."""
-    for checkbox in form.find_elements(By.CSS_SELECTOR, 'input[type="checkbox"][required]'):
+    """Accept required address disclosures and the native psgdpr consent control."""
+    for checkbox in form.find_elements(
+        By.CSS_SELECTOR,
+        'input[type="checkbox"][required], input[type="checkbox"][name="psgdpr_consent_checkbox"]',
+    ):
         if checkbox.is_selected():
             continue
         if not checkbox.is_enabled():
@@ -5119,7 +5122,3 @@ if __name__ == "__main__":
             failed_viewports.append(viewport[2])
     if failed_viewports:
         raise SystemExit(f"isolated customer account browser flow failed for: {', '.join(failed_viewports)}")
-    if os.environ.get("ORDENOWA_ADMIN_QA_FOCUS") != "true":
-        from verify_ci_checkout_email_locale import run_acceptance
-
-        run_acceptance()

@@ -126,21 +126,88 @@ if ($enabledProfileLocales !== ['ja', 'en', 'ko']) {
 
 $stage = 'robots core-directive baseline';
 $robotsContent = Tools::getRobotsContent();
-if (!is_string($robotsContent)) {
+if (!is_array($robotsContent)
+    || !isset($robotsContent['Allow'], $robotsContent['Directories'], $robotsContent['Files'], $robotsContent['GB'])
+    || !is_array($robotsContent['Allow'])
+    || !is_array($robotsContent['Directories'])
+    || !is_array($robotsContent['Files'])
+    || !is_array($robotsContent['GB'])
+    || !is_file(_PS_ROOT_DIR_ . '/robots.txt')
+) {
     throw new RuntimeException('PrestaShop did not provide its baseline robots rules.');
 }
-preg_match_all('/^[ \t]*(?:Allow|Disallow)[ \t]*:[ \t]*.*$/im', $robotsContent, $matches);
+
+// PrestaShop 9.2 returns rule data here, not the generated robots.txt string.
+// Reconstruct its core Allow/Disallow directives so the HTTP readback can prove
+// they survived the module-owned sitemap rewrite.
+$expectedCoreDirectives = [];
+foreach ($robotsContent['Allow'] as $allowRule) {
+    if (!is_string($allowRule) || $allowRule === '') {
+        throw new RuntimeException('PrestaShop returned an invalid core Allow rule.');
+    }
+    $expectedCoreDirectives[] = 'Allow: ' . $allowRule;
+}
+foreach ($robotsContent['GB'] as $blockedQuery) {
+    if (!is_string($blockedQuery) || $blockedQuery === '') {
+        throw new RuntimeException('PrestaShop returned an invalid core query rule.');
+    }
+    $expectedCoreDirectives[] = 'Disallow: /*' . $blockedQuery;
+}
+
+$prefixesForGeneration = [];
+foreach (Language::getIsoIds() as $language) {
+    if (!is_array($language) || !is_string($language['iso_code'] ?? null) || $language['iso_code'] === '') {
+        throw new RuntimeException('PrestaShop returned an invalid core language rule.');
+    }
+    $prefixesForGeneration[] = $language['iso_code'] . '/';
+}
+$prefixesForGeneration[] = '';
+$defaultLanguageIso = Language::getIsoById((int) Configuration::get('PS_LANG_DEFAULT'));
+foreach (Tools::getDomains() as $uriList) {
+    foreach ($uriList as $uri) {
+        if (!is_array($uri) || !is_string($uri['physical'] ?? null)) {
+            throw new RuntimeException('PrestaShop returned an invalid core shop path.');
+        }
+        foreach ($prefixesForGeneration as $prefix) {
+            foreach ($robotsContent['Directories'] as $directory) {
+                if (!is_string($directory) || $directory === '') {
+                    throw new RuntimeException('PrestaShop returned an invalid core directory rule.');
+                }
+                $expectedCoreDirectives[] = 'Disallow: ' . $uri['physical'] . $prefix . $directory;
+            }
+        }
+        foreach ($robotsContent['Files'] as $iso => $files) {
+            if (!is_string($iso) || !is_array($files)) {
+                throw new RuntimeException('PrestaShop returned invalid core rewritten-file rules.');
+            }
+            foreach ($files as $file) {
+                if (!is_string($file) || $file === '') {
+                    throw new RuntimeException('PrestaShop returned an invalid core rewritten-file rule.');
+                }
+                $expectedCoreDirectives[] = 'Disallow: ' . $uri['physical'] . $iso . '/' . $file;
+                if ($iso === $defaultLanguageIso) {
+                    $expectedCoreDirectives[] = 'Disallow: ' . $uri['physical'] . $file;
+                }
+            }
+        }
+    }
+}
+
 $directiveHashes = [];
-foreach ($matches[0] ?? [] as $directive) {
-    $directiveHashes[] = hash('sha256', trim((string) $directive));
+foreach ($expectedCoreDirectives as $directive) {
+    $directiveHashes[] = hash('sha256', $directive);
 }
-preg_match_all('/^[ \t]*Sitemap[ \t]*:[ \t]*\S+[ \t]*$/im', $robotsContent, $sitemapMatches);
+$robotsFileContent = @file_get_contents(_PS_ROOT_DIR_ . '/robots.txt');
+if (!is_string($robotsFileContent)) {
+    throw new RuntimeException('The generated robots file could not be read back.');
+}
+preg_match_all('/^[ \t]*Sitemap[ \t]*:[ \t]*(\S+)[ \t]*$/im', $robotsFileContent, $sitemapMatches);
 $sitemapHashes = [];
-foreach ($sitemapMatches[0] ?? [] as $directive) {
-    $sitemapHashes[] = hash('sha256', trim((string) $directive));
-}
-if ($directiveHashes === [] || !is_file(_PS_ROOT_DIR_ . '/robots.txt')) {
-    throw new RuntimeException('The installed shop has no generated core robots directives.');
+foreach (($sitemapMatches[0] ?? []) as $index => $directive) {
+    $target = (string) ($sitemapMatches[1][$index] ?? '');
+    if ($target !== $shopBaseUrl . 'sitemap.xml') {
+        $sitemapHashes[] = hash('sha256', trim((string) $directive));
+    }
 }
 sort($directiveHashes);
 sort($sitemapHashes);

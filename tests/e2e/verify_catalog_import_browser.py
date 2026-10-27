@@ -21,6 +21,7 @@ from catalog_import_diagnostics import (
     READBACK_CHECKS,
     begin_native_readback_check,
     finish_native_readback_check,
+    safe_visible_alert_groups,
     summarize_manager_product_ids,
 )
 from selenium import webdriver
@@ -998,6 +999,7 @@ def safe_catalog_import_browser_state(driver, state):
         'batch_save_failure_notice_visible': False,
         'batch_created_notice_visible': False,
         'visible_alert_count': 0,
+        'visible_alert_groups': [],
         'document_response_status': None,
         'read_only_notice_visible': False,
         'access_denied_notice_visible': False,
@@ -1023,14 +1025,44 @@ def safe_catalog_import_browser_state(driver, state):
                     return style.display !== 'none' && style.visibility !== 'hidden'
                         && rect.width > 0 && rect.height > 0;
                 };
-                const visibleAlerts = Array.from(document.querySelectorAll('.alert'))
+                const visibleAlertElements = Array.from(document.querySelectorAll('.alert'))
                     .filter((element) => {
                         const style = getComputedStyle(element);
                         const rect = element.getBoundingClientRect();
                         return style.display !== 'none' && style.visibility !== 'hidden'
                             && rect.width > 0 && rect.height > 0;
-                    })
-                    .map((element) => element.innerText.trim());
+                    });
+                const visibleAlerts = visibleAlertElements.map(
+                    (element) => (element.innerText || element.textContent || '').trim()
+                );
+                const alertClassOrder = [
+                    'alert-danger', 'alert-warning', 'alert-success', 'alert-info', 'other'
+                ];
+                const alertRegionOrder = ['module_content', 'global_admin', 'unknown'];
+                const alertGroupCounts = new Map();
+                for (const element of visibleAlertElements.slice(0, 20)) {
+                    const alertClass = alertClassOrder.slice(0, 4).find(
+                        (name) => element.classList.contains(name)
+                    ) || 'other';
+                    const regionCategory = element.closest(
+                        '#notifications, #header, #footer, #nav-sidebar'
+                    ) ? 'global_admin' : element.closest('#content') ? 'module_content' : 'unknown';
+                    const key = `${alertClass}|${regionCategory}`;
+                    alertGroupCounts.set(key, (alertGroupCounts.get(key) || 0) + 1);
+                }
+                const visibleAlertGroups = [];
+                for (const alertClass of alertClassOrder) {
+                    for (const regionCategory of alertRegionOrder) {
+                        const count = alertGroupCounts.get(`${alertClass}|${regionCategory}`) || 0;
+                        if (count > 0) {
+                            visibleAlertGroups.push({
+                                alert_class: alertClass,
+                                region_category: regionCategory,
+                                count,
+                            });
+                        }
+                    }
+                }
                 const progress = document.querySelector('#catalog-import-progress progress');
                 const rows = document.querySelectorAll('#catalog-import-progress tbody tr');
                 const navigation = performance.getEntriesByType('navigation')[0];
@@ -1098,6 +1130,7 @@ def safe_catalog_import_browser_state(driver, state):
                     batch_created_notice_visible: visibleAlerts.some((text) => /^(?:[1-9]|10)개 고유 상품 URL을 수집 대기열에 추가했습니다[.]$/.test(text)),
                     unclassified_alert_visible: visibleAlerts.some((text) => !recognizedAlert(text)),
                     visible_alert_count: Math.min(visibleAlerts.length, 20),
+                    visible_alert_groups: visibleAlertGroups,
                     document_response_status: responseStatus,
                     read_only_notice_visible: visibleAlerts.includes('상품 수집 작업은 편집·등록 권한이 있는 직원만 수행할 수 있습니다.'),
                     access_denied_notice_visible: visibleAlerts.includes('상품 검수 대기열을 조회할 권한이 없습니다.'),
@@ -1137,6 +1170,9 @@ def safe_catalog_import_browser_state(driver, state):
         row_count = 0
     if type(visible_alert_count) is not int or not 0 <= visible_alert_count <= 20:
         visible_alert_count = 0
+    visible_alert_groups = safe_visible_alert_groups(
+        page.get('visible_alert_groups'), visible_alert_count
+    )
     if type(response_status) is not int or not 100 <= response_status <= 599:
         response_status = None
     manager_products_load_state = page.get('manager_products_load_state')
@@ -1229,6 +1265,7 @@ def safe_catalog_import_browser_state(driver, state):
         'option_guard_notice_visible': bool(page.get('option_guard_notice_visible')),
         'unclassified_alert_visible': unclassified_alert,
         'visible_alert_count': visible_alert_count,
+        'visible_alert_groups': visible_alert_groups,
         'document_response_status': response_status,
         'read_only_notice_visible': read_only,
         'access_denied_notice_visible': access_denied,
