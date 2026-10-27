@@ -958,19 +958,24 @@ def resolve_customer_threads_index(
 ) -> tuple[str, str, int]:
     """Accept a safe admin route only after it links the exact expected native thread."""
     deadline = time.monotonic() + max(0.1, float(timeout))
-    for index_url in candidates:
+    for candidate_index, index_url in enumerate(candidates):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
+        candidate_budget = remaining / (len(candidates) - candidate_index)
+        navigation_budget = min(10.0, max(0.1, candidate_budget / 2))
+        candidate_started = time.monotonic()
         mark_browser_substage(diagnostic_result, "admin_route_candidate_navigation")
         try:
-            visit(driver, index_url, timeout=remaining)
+            visit(driver, index_url, timeout=navigation_budget)
             remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
+            candidate_remaining = candidate_budget - (time.monotonic() - candidate_started)
+            readback_budget = min(remaining, max(0.1, candidate_remaining))
+            if readback_budget <= 0:
+                continue
             mark_browser_substage(diagnostic_result, "admin_route_exact_thread_readback")
             thread_url, thread_id = view_link_from_index(
-                driver, ctx, buyer, expected_thread_id, timeout=remaining
+                driver, ctx, buyer, expected_thread_id, timeout=readback_budget
             )
         except (AssertionError, TimeoutException):
             continue

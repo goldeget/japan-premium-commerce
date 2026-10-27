@@ -467,9 +467,12 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         self.assertIn('native Customer service navigation exposed a noncanonical route', route_helper)
         self.assertIn("resolve_customer_threads_index(", browser)
         self.assertIn("thread_id == expected_thread_id", browser)
-        self.assertIn("timeout=remaining", browser)
         self.assertNotIn('return sorted(safe_candidates', route_helper)
         self.assertNotIn("print(", route_helper)
+        resolver = browser[browser.index("def resolve_customer_threads_index("):browser.index("def assert_thread_order_link(")]
+        self.assertIn("candidate_budget = remaining / (len(candidates) - candidate_index)", resolver)
+        self.assertIn("navigation_budget = min(10.0, max(0.1, candidate_budget / 2))", resolver)
+        self.assertIn("timeout=readback_budget", resolver)
         identity_helper = browser[browser.index("def customer_threads_navigation_identity("):browser.index("def thread_route_identity(")]
         self.assertIn('parse_qsl(candidate.query, keep_blank_values=True, strict_parsing=True)', identity_helper)
         self.assertIn('if key in query:', identity_helper)
@@ -564,8 +567,10 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
 
         def readback(_driver, _ctx, _buyer, expected_thread_id: int, timeout: float = 40):
             if attempts[-1] == first:
-                raise AssertionError("stale token did not expose the expected thread")
+                self.assertLessEqual(timeout, 20.0)
+                raise module.TimeoutException("stale token did not expose the expected thread")
             self.assertEqual(47, expected_thread_id)
+            self.assertLessEqual(timeout, 40.0)
             return expected_thread, 47
 
         module.visit = visit

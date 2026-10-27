@@ -217,6 +217,12 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.assertLess(no_change_readback, csrf_flow.index('substage = "none"'))
 
     def test_issue_csrf_failure_distinguishes_wrong_method_from_token_mismatch(self) -> None:
+        init_content = self.controller.split("public function initContent()", 1)[1].split(
+            "private function processIssue", 1
+        )[0]
+        self.assertEqual(1, init_content.count("parent::initContent();"))
+        self.assertLess(init_content.index("parent::initContent();"), init_content.index("$this->processIssue("))
+
         issue = self.controller.split("private function processIssue", 1)[1].split(
             "private function processConfirm", 1
         )[0]

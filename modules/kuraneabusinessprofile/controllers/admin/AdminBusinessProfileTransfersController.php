@@ -64,11 +64,11 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
 
         $instructions = new BankTransferInstructionRepository();
         $receipts = new BankTransferReceiptRepository();
+        parent::initContent();
         $this->processIssue($shopId, $instructions);
         $this->processConfirm($shopId, $instructions, $receipts);
         $orders = $this->unpaidJpyOrders($shopId);
 
-        parent::initContent();
         $actionUrl = (string) $this->context->link->getAdminLink('AdminBusinessProfileTransfers');
         $token = (string) $this->token;
         $this->content .= $this->renderFeedback();

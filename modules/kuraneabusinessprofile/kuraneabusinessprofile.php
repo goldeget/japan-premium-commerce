@@ -22,6 +22,7 @@ use Kuranea\BusinessProfile\Infrastructure\BankTransferInstructionRepository;
 class Kuraneabusinessprofile extends Module
 {
     private ?int $activeMailShopId = null;
+    private ?int $activeMailLangId = null;
     private ?string $activeMailTemplate = null;
     private ?string $activeNativeResetUrl = null;
 
@@ -378,6 +379,8 @@ class Kuraneabusinessprofile extends Module
     {
         $shopId = (int) ($params['idShop'] ?? 0);
         $this->activeMailShopId = $shopId > 0 ? $shopId : null;
+        $langId = (int) ($params['idLang'] ?? 0);
+        $this->activeMailLangId = $langId > 0 ? $langId : null;
         $this->activeMailTemplate = is_string($params['template'] ?? null) ? $params['template'] : null;
         $this->activeNativeResetUrl = null;
 
@@ -388,7 +391,7 @@ class Kuraneabusinessprofile extends Module
 
         $this->activeNativeResetUrl = $this->validatedNativeResetUrl(
             $params['templateVars']['{url}'] ?? null,
-            (int) ($params['idLang'] ?? 0),
+            $this->activeMailLangId ?? 0,
             $this->activeMailShopId
         );
     }
@@ -404,9 +407,17 @@ class Kuraneabusinessprofile extends Module
                 return;
             }
 
+            $htmlBody = (string) ($message->getHtmlBody() ?? '');
             $resetUrl = $this->activeMailTemplate === 'password_query'
                 ? $this->activeNativeResetUrl
                 : null;
+            if ($resetUrl === null && $this->activeMailTemplate === 'password_query') {
+                $resetUrl = $this->extractNativeResetUrl(
+                    $htmlBody,
+                    $this->activeMailLangId ?? 0,
+                    $this->activeMailShopId
+                );
+            }
             if ($resetUrl !== null && method_exists($message, 'text')) {
                 $textBody = (string) ($message->getTextBody() ?? '');
                 if (!$this->hasNativeResetLink($textBody, $resetUrl)) {
@@ -429,7 +440,7 @@ class Kuraneabusinessprofile extends Module
                 return;
             }
             $htmlHasLink = $resetUrl !== null
-                && $this->hasNativeResetLink((string) ($message->getHtmlBody() ?? ''), $resetUrl);
+                && $this->hasNativeResetLink($htmlBody, $resetUrl);
             $textHasLink = $resetUrl !== null
                 && $this->hasNativeResetLink((string) ($message->getTextBody() ?? ''), $resetUrl);
             $headers->addTextHeader('X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link', $htmlHasLink ? 'true' : 'false');
@@ -438,6 +449,7 @@ class Kuraneabusinessprofile extends Module
             $this->activeMailTemplate = null;
             $this->activeNativeResetUrl = null;
             $this->activeMailShopId = null;
+            $this->activeMailLangId = null;
         }
     }
 
@@ -496,6 +508,42 @@ class Kuraneabusinessprofile extends Module
         }
 
         return trim($candidate);
+    }
+
+    private function extractNativeResetUrl(string $body, int $idLang, ?int $shopId): ?string
+    {
+        if ($body === '' || !is_object($this->context->link) || !method_exists($this->context->link, 'getPageLink')) {
+            return null;
+        }
+        $nativeUrl = (string) $this->context->link->getPageLink(
+            'password', null, $idLang > 0 ? $idLang : null, null, false, ($shopId ?? 0) > 0 ? $shopId : null
+        );
+        $native = parse_url($nativeUrl);
+        if (!is_array($native)) {
+            return null;
+        }
+
+        $decoded = html_entity_decode($body, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        if (preg_match_all('~https?://[^\s<>]+~i', $decoded, $matches) < 1) {
+            return null;
+        }
+        foreach ($matches[0] as $candidate) {
+            $candidate = rtrim($candidate, '.,;)]>' . chr(34) . chr(39));
+            $parts = parse_url($candidate);
+            if (!$this->sameNativeResetRoute($parts, $native)) {
+                continue;
+            }
+            parse_str((string) ($parts['query'] ?? ''), $query);
+            foreach (['token', 'reset_token', 'id_customer'] as $key) {
+                if (!is_string($query[$key] ?? null) || trim($query[$key]) === '') {
+                    continue 2;
+                }
+            }
+
+            return $candidate;
+        }
+
+        return null;
     }
 
     private function hasNativeResetLink(string $body, string $expectedUrl): bool

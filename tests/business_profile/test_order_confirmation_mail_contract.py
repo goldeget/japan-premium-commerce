@@ -74,6 +74,9 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         validator = module.split("private function validatedNativeResetUrl", 1)[1].split(
             "private function hasNativeResetLink", 1
         )[0]
+        extractor = module.split("private function extractNativeResetUrl", 1)[1].split(
+            "private function hasNativeResetLink", 1
+        )[0]
         link_matcher = module.split("private function hasNativeResetLink", 1)[1].split(
             "private function sameNativeResetRoute", 1
         )[0]
@@ -88,10 +91,16 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
             self.assertIn(key, validator)
             self.assertIn(key, link_matcher)
         self.assertIn("$this->activeMailTemplate === 'password_query'", alter)
+        self.assertIn("$resetUrl = $this->extractNativeResetUrl(", alter)
+        self.assertIn("$htmlBody", alter)
+        self.assertIn("$this->activeMailLangId", alter)
         self.assertIn("$message->text($replacement)", alter)
         self.assertIn("$this->hasNativeResetLink($textBody, $resetUrl)", alter)
+        self.assertIn("getPageLink(", extractor)
+        self.assertIn("sameNativeResetRoute($parts, $native)", extractor)
         self.assertIn("finally", alter)
         self.assertIn("$this->activeNativeResetUrl = null", alter)
+        self.assertIn("$this->activeMailLangId = null", alter)
         self.assertNotIn("error_log", alter)
 
     def test_mail_shop_context_reaches_both_content_and_extra_vars_before_cleanup(self):
