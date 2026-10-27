@@ -54,6 +54,22 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         self.assertIn("$params['template_txt'] = $templateTxt", reset_text)
         self.assertIn("$validatedResetUrl", reset_text)
 
+    def test_password_reset_url_overrides_core_extra_template_vars_before_strtr(self):
+        module = MODULE_PATH.read_text(encoding="utf-8")
+        hook = module.split("public function hookActionGetExtraMailTemplateVars(array $params)", 1)[1].split(
+            "public function hookActionEmailAddAfterContent", 1
+        )[0]
+        reset_override = hook.split("if (($params['template'] ?? '') === 'password_query'", 1)[1].split(
+            "// Generic templates must never inherit account details", 1
+        )[0]
+
+        self.assertIn("self::$pendingMailSendContext", reset_override)
+        self.assertIn("$sendContext['native_reset_url']", reset_override)
+        self.assertIn("$this->validatedNativeResetUrl(", reset_override)
+        self.assertIn("$params['extra_template_vars']['{url}'] = $validatedResetUrl", reset_override)
+        self.assertIn("'final_reset_url_template_var_pinned' => false", module)
+        self.assertIn("$sendContext['final_reset_url_template_var_pinned'] = true", reset_override)
+
     def test_pre_smtp_reset_diagnostic_is_run_scoped_and_contains_only_link_shape_booleans(self):
         module = MODULE_PATH.read_text(encoding="utf-8")
         install = module.split("public function install()", 1)[1].split("public function uninstall()", 1)[0]
@@ -79,6 +95,10 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
             "'text_replacement_contains_expected_url' => 'Text-Replacement-Contains-Expected-URL'",
             "'text_getter_contains_expected_url' => 'Text-Getter-Contains-Expected-URL'",
             "'text_mime_contains_expected_url' => 'Text-Mime-Contains-Expected-URL'",
+            "'text_getter_expected_url_candidate_present' => 'Text-Getter-Expected-URL-Candidate-Present'",
+            "'text_getter_expected_url_candidate_exact' => 'Text-Getter-Expected-URL-Candidate-Exact'",
+            "'text_mime_expected_url_candidate_present' => 'Text-Mime-Expected-URL-Candidate-Present'",
+            "'text_mime_expected_url_candidate_exact' => 'Text-Mime-Expected-URL-Candidate-Exact'",
             "'text_mime_body_read_succeeded' => 'Text-Mime-Body-Read-Succeeded'",
             "'text_mime_body_identity_same_after_setter' => 'Text-Mime-Body-Identity-Same-After-Setter'",
             "'text_mime_body_reset_retry_attempted' => 'Text-Mime-Body-Reset-Retry-Attempted'",
@@ -89,6 +109,7 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
             "X-ORDENOWA-CI-Reset-Template-URL-Candidate-Present",
             "X-ORDENOWA-CI-Reset-Template-URL-Credentials-Complete",
             "X-ORDENOWA-CI-Reset-Template-URL-Native-Route",
+            "X-ORDENOWA-CI-Reset-Final-Template-URL-Pinned",
             "'candidate_present' => 'HTML-URL-Candidate-Present'",
             "'token_present' => 'HTML-Token-Present'",
             "'reset_token_present' => 'HTML-Reset-Token-Present'",
@@ -239,11 +260,18 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         mime_verifier = module.split("private function hasExactNativeResetUrlInMimeBody", 1)[1].split(
             "public function publicProfile", 1
         )[0]
-        self.assertIn("\\Symfony\\Component\\Mime\\Part\\TextPart", mime_verifier)
-        self.assertIn("getMediaSubtype() !== 'plain'", mime_verifier)
-        self.assertIn("\\Symfony\\Component\\Mime\\Part\\AbstractMultipartPart", mime_verifier)
-        self.assertIn("getParts()", mime_verifier)
-        self.assertIn("if (!$this->hasPlainTextMimePart($child))", mime_verifier)
+        selected_plain = module.split("private function selectedPlainTextMimePart", 1)[1].split(
+            "private function plainTextMimeContainsExpectedUrl", 1
+        )[0]
+        self.assertIn("$this->selectedPlainTextMimePart($part)", mime_verifier)
+        self.assertIn("$this->hasExactValidatedNativeResetUrl(", mime_verifier)
+        self.assertIn("\\Symfony\\Component\\Mime\\Part\\TextPart", selected_plain)
+        self.assertIn("getMediaSubtype() === 'plain'", selected_plain)
+        self.assertIn("\\Symfony\\Component\\Mime\\Part\\DataPart", selected_plain)
+        self.assertIn("\\Symfony\\Component\\Mime\\Part\\AbstractMultipartPart", selected_plain)
+        self.assertIn("getParts()", selected_plain)
+        self.assertIn("expected_url_candidate_present", extractor)
+        self.assertIn("expected_url_candidate_exact", extractor)
 
     def test_mail_shop_context_reaches_both_content_and_extra_vars_before_cleanup(self):
         module = MODULE_PATH.read_text(encoding="utf-8")

@@ -79,6 +79,17 @@ SAFE_RESULT_KEYS = {
     "admin_public_reply_link_contact_route", "admin_public_reply_link_thread_id_matches",
     "admin_public_reply_link_token_valid",
     "admin_public_reply_link_token_matches",
+    "support_attachment_page_thread_matches", "support_attachment_link_found",
+    "support_attachment_link_same_shop", "support_attachment_link_thread_matches",
+    "support_attachment_link_thread_id_matches", "support_attachment_link_route_kind_matches",
+    "support_attachment_page_legacy_route_kind", "support_attachment_page_modern_route_kind",
+    "support_attachment_link_legacy_route_kind", "support_attachment_link_modern_view_route_kind",
+    "support_attachment_link_modern_secured_reader_route_kind",
+    "support_attachment_message_row_association", "support_attachment_legacy_token_matches",
+    "support_attachment_modern_session_route_shape",
+    "support_attachment_link_token_present", "support_attachment_link_token_matches",
+    "support_attachment_admin_content_matches", "support_attachment_foreign_probe_completed",
+    "support_attachment_foreign_status_verifiable", "support_attachment_foreign_content_absent",
     "contact_document_status", "contact_same_origin", "contact_native_route",
     "contact_form_count", "contact_form_visible", "support_denial_status",
     "support_denial_form_count", "support_denial_redirected", "support_denial_same_origin",
@@ -94,6 +105,19 @@ RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {
     "support_denial_form_count", "customer_service_route_candidate_count",
     "customer_service_route_safe_count", "customer_service_route_modern_count",
     "customer_service_route_legacy_count", "customer_service_route_invalid_count", "browser_substage",
+}
+SUPPORT_ATTACHMENT_DIAGNOSTIC_KEYS = {
+    "support_attachment_page_thread_matches", "support_attachment_link_found",
+    "support_attachment_link_same_shop", "support_attachment_link_thread_matches",
+    "support_attachment_link_thread_id_matches", "support_attachment_link_route_kind_matches",
+    "support_attachment_page_legacy_route_kind", "support_attachment_page_modern_route_kind",
+    "support_attachment_link_legacy_route_kind", "support_attachment_link_modern_view_route_kind",
+    "support_attachment_link_modern_secured_reader_route_kind",
+    "support_attachment_message_row_association", "support_attachment_legacy_token_matches",
+    "support_attachment_modern_session_route_shape",
+    "support_attachment_link_token_present", "support_attachment_link_token_matches",
+    "support_attachment_admin_content_matches", "support_attachment_foreign_probe_completed",
+    "support_attachment_foreign_status_verifiable", "support_attachment_foreign_content_absent",
 }
 SAFE_EXCEPTION_TYPES = {
     "AssertionError", "TimeoutException", "ValueError", "RuntimeError", "URLError", "OSError",
@@ -118,6 +142,13 @@ SAFE_BROWSER_SUBSTAGES = {
     "image_attachment_link_lookup", "image_attachment_filename_readback",
     "image_attachment_response_readback", "image_attachment_response_validation",
     "image_attachment_foreign_session_probe",
+    "attachment_page_thread_readback", "attachment_link_lookup",
+    "attachment_link_presence_readback", "attachment_link_origin_readback",
+    "attachment_link_route_readback",
+    "attachment_link_thread_readback", "attachment_link_token_readback",
+    "attachment_admin_open", "attachment_admin_download_wait",
+    "attachment_admin_content_readback", "attachment_foreign_session_probe",
+    "attachment_foreign_response_readback",
     "contact_field_lookup", "contact_id_readback", "attachment_control_lookup", "attachment_send_keys",
     "accepted_attachment_fixture_validation", "accepted_attachment_file_readback", "message_field_lookup",
     "message_send_keys", "submit_control_lookup", "submit_control_scroll", "submit_control_hit_test",
@@ -849,15 +880,33 @@ def assert_image_attachment_filename(
 
 def assert_legacy_attachment_identity(
     href: str, thread_url: str, admin_url: str, expected_thread_id: int,
+    diagnostic_result: dict[str, Any] | None = None,
 ) -> None:
-    if (
-        thread_route_identity(href, admin_url) != ("legacy_thread_view", expected_thread_id)
-        or thread_route_identity(thread_url, admin_url) != ("legacy_thread_view", expected_thread_id)
-    ):
+    mark_browser_substage(diagnostic_result, "attachment_link_thread_readback")
+    link_identity = thread_route_identity(href, admin_url)
+    page_identity = thread_route_identity(thread_url, admin_url)
+    thread_id_matches = link_identity is not None and link_identity[1] == expected_thread_id
+    route_kind_matches = link_identity is not None and link_identity[0] == "legacy_thread_view"
+    route_matches = (
+        link_identity == ("legacy_thread_view", expected_thread_id)
+        and page_identity == ("legacy_thread_view", expected_thread_id)
+    )
+    if diagnostic_result is not None:
+        diagnostic_result["support_attachment_link_thread_id_matches"] = thread_id_matches
+        diagnostic_result["support_attachment_link_route_kind_matches"] = route_kind_matches
+        diagnostic_result["support_attachment_link_thread_matches"] = route_matches
+    if not route_matches:
         raise AssertionError("legacy support attachment did not retain the exact native thread")
+    mark_browser_substage(diagnostic_result, "attachment_link_token_readback")
     link_tokens = parse_qs(urlparse(href).query, keep_blank_values=True).get("token", [])
     page_tokens = parse_qs(urlparse(thread_url).query, keep_blank_values=True).get("token", [])
-    if len(link_tokens) != 1 or not link_tokens[0] or link_tokens != page_tokens:
+    token_present = len(link_tokens) == 1 and bool(link_tokens[0].strip())
+    token_matches = token_present and link_tokens == page_tokens
+    if diagnostic_result is not None:
+        diagnostic_result["support_attachment_link_token_present"] = token_present
+        diagnostic_result["support_attachment_link_token_matches"] = token_matches
+        diagnostic_result["support_attachment_legacy_token_matches"] = token_matches
+    if not token_matches:
         raise AssertionError("legacy support attachment did not retain the authenticated thread token")
 
 
@@ -1388,9 +1437,22 @@ def has_thread_order_association(
 
 def find_attachment_link(
     driver, admin_url: str, buyer_marker: str, route_kind: str, expected_thread_id: int,
+    diagnostic_result: dict[str, Any] | None = None,
 ) -> str:
-    if thread_route_identity(driver.current_url, admin_url) != (route_kind, expected_thread_id):
+    mark_browser_substage(diagnostic_result, "attachment_page_thread_readback")
+    page_identity = thread_route_identity(driver.current_url, admin_url)
+    page_matches = page_identity == (route_kind, expected_thread_id)
+    if diagnostic_result is not None:
+        diagnostic_result["support_attachment_page_thread_matches"] = page_matches
+        diagnostic_result["support_attachment_page_legacy_route_kind"] = (
+            page_identity is not None and page_identity[0] == "legacy_thread_view"
+        )
+        diagnostic_result["support_attachment_page_modern_route_kind"] = (
+            page_identity is not None and page_identity[0] == "modern_thread_view"
+        )
+    if not page_matches:
         raise AssertionError("native attachment lookup left the exact customer thread")
+    mark_browser_substage(diagnostic_result, "attachment_link_lookup")
     message = None
     for candidate in driver.find_elements(By.CSS_SELECTOR, customer_thread_message_text_selector(route_kind)):
         if buyer_marker in candidate.text:
@@ -1407,17 +1469,79 @@ def find_attachment_link(
         link.get_attribute("href") or ""
         for link in message_row.find_elements(By.CSS_SELECTOR, "a[href]")
     ]
-    if len(set(found)) != 1:
+    link_found = len(set(found)) == 1
+    if diagnostic_result is not None:
+        diagnostic_result["support_attachment_link_found"] = link_found
+        diagnostic_result["support_attachment_message_row_association"] = link_found
+    mark_browser_substage(diagnostic_result, "attachment_link_presence_readback")
+    if not link_found:
         raise AssertionError("native customer message did not expose exactly one owned attachment")
     href = found[0]
-    if not safe_admin_path(href, admin_url):
+    mark_browser_substage(diagnostic_result, "attachment_link_origin_readback")
+    same_shop = safe_admin_path(href, admin_url)
+    if diagnostic_result is not None:
+        diagnostic_result["support_attachment_link_same_shop"] = same_shop
+    if not same_shop:
         raise AssertionError("native support attachment link left the authenticated Back Office")
+    mark_browser_substage(diagnostic_result, "attachment_link_route_readback")
+    link_identity = thread_route_identity(href, admin_url)
+    modern_session_route = is_modern_secured_attachment_route(href, admin_url)
+    if diagnostic_result is not None:
+        diagnostic_result["support_attachment_link_legacy_route_kind"] = (
+            link_identity is not None and link_identity[0] == "legacy_thread_view"
+        )
+        diagnostic_result["support_attachment_link_modern_view_route_kind"] = (
+            link_identity is not None and link_identity[0] == "modern_thread_view"
+        )
+        diagnostic_result["support_attachment_link_modern_secured_reader_route_kind"] = modern_session_route
+        diagnostic_result["support_attachment_link_thread_id_matches"] = (
+            link_identity is not None and link_identity[1] == expected_thread_id
+        )
+        diagnostic_result["support_attachment_link_route_kind_matches"] = (
+            link_identity is not None and link_identity[0] == route_kind
+        )
+        diagnostic_result["support_attachment_link_thread_matches"] = (
+            link_identity == (route_kind, expected_thread_id)
+        )
+        diagnostic_result["support_attachment_modern_session_route_shape"] = modern_session_route
     if route_kind == "legacy_thread_view":
-        assert_legacy_attachment_identity(href, driver.current_url, admin_url, expected_thread_id)
+        assert_legacy_attachment_identity(
+            href, driver.current_url, admin_url, expected_thread_id, diagnostic_result
+        )
+    elif route_kind == "modern_thread_view" and not modern_session_route:
+        raise AssertionError("modern support attachment did not use the native secured reader route")
     return href
 
 
-def attachment_visible_to_session(driver, href: str, expected_content: str) -> bool:
+def is_modern_secured_attachment_route(href: str, admin_url: str) -> bool:
+    """Recognize only PrestaShop 9.2's session-protected file reader URL shape."""
+    if not safe_admin_path(href, admin_url):
+        return False
+    admin_root = urlparse(admin_url).path.rstrip("/")
+    parsed = urlparse(urljoin(admin_url.rstrip("/") + "/", href))
+    if parsed.path not in {
+        admin_root + "/common/secured/upload/document",
+        admin_root + "/index.php/common/secured/upload/document",
+    }:
+        return False
+    try:
+        pairs = parse_qsl(parsed.query, keep_blank_values=True, strict_parsing=True)
+    except ValueError:
+        return False
+    if len(pairs) != 1 or pairs[0][0] != "fileName":
+        return False
+    filename = pairs[0][1]
+    if not filename or "/" in filename or "\\" in filename or filename.count(".") != 1:
+        return False
+    extension = filename.rsplit(".", 1)[1].lower()
+    return extension in {"txt", "rtf", "doc", "docx", "pdf", "zip", "png", "jpeg", "gif", "jpg", "webp"}
+
+
+def attachment_visible_to_session(
+    driver, href: str, expected_content: str,
+    diagnostic_result: dict[str, Any] | None = None,
+) -> bool:
+    mark_browser_substage(diagnostic_result, "attachment_foreign_session_probe")
     result = driver.execute_async_script("""
       const [url, marker, done] = arguments;
       fetch(url, {credentials: 'same-origin', redirect: 'follow'})
@@ -1433,6 +1557,14 @@ def attachment_visible_to_session(driver, href: str, expected_content: str) -> b
         or type(result.get("contentMatch")) is not bool
     ):
         raise AssertionError("support attachment privacy probe returned an invalid response")
+    if diagnostic_result is not None:
+        diagnostic_result["support_attachment_foreign_probe_completed"] = True
+    mark_browser_substage(diagnostic_result, "attachment_foreign_response_readback")
+    content_absent = result["contentMatch"] is False
+    status_verifiable = result["status"] in {200, 401, 403, 404}
+    if diagnostic_result is not None:
+        diagnostic_result["support_attachment_foreign_status_verifiable"] = status_verifiable
+        diagnostic_result["support_attachment_foreign_content_absent"] = content_absent
     if result["contentMatch"]:
         return True
     if result["status"] not in {200, 401, 403, 404}:
@@ -1440,7 +1572,11 @@ def attachment_visible_to_session(driver, href: str, expected_content: str) -> b
     return False
 
 
-def open_native_attachment(driver, href: str, expected_content: str, download_dir: Path) -> None:
+def open_native_attachment(
+    driver, href: str, expected_content: str, download_dir: Path,
+    diagnostic_result: dict[str, Any] | None = None,
+) -> None:
+    mark_browser_substage(diagnostic_result, "attachment_admin_open")
     previous = set(driver.window_handles)
     original_handle = driver.current_window_handle
     link = next((element for element in driver.find_elements(By.CSS_SELECTOR, "a[href]") if element.get_attribute("href") == href), None)
@@ -1450,11 +1586,16 @@ def open_native_attachment(driver, href: str, expected_content: str, download_di
         if child.is_file():
             child.unlink()
     link.click()
+    mark_browser_substage(diagnostic_result, "attachment_admin_download_wait")
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
         download = next((path for path in download_dir.iterdir() if path.is_file() and not path.name.endswith(".crdownload")), None)
         if download is not None:
-            if expected_content not in download.read_text(encoding="utf-8", errors="replace"):
+            mark_browser_substage(diagnostic_result, "attachment_admin_content_readback")
+            content_matches = expected_content in download.read_text(encoding="utf-8", errors="replace")
+            if diagnostic_result is not None:
+                diagnostic_result["support_attachment_admin_content_matches"] = content_matches
+            if not content_matches:
                 raise AssertionError("authenticated native attachment download did not return the uploaded fixture content")
             return
         new_handles = [handle for handle in driver.window_handles if handle not in previous]
@@ -1465,13 +1606,21 @@ def open_native_attachment(driver, href: str, expected_content: str, download_di
                     page_text = driver.find_element(By.TAG_NAME, "body").text
                 except Exception:
                     page_text = ""
-                if expected_content in page_text:
+                mark_browser_substage(diagnostic_result, "attachment_admin_content_readback")
+                content_matches = expected_content in page_text
+                if diagnostic_result is not None:
+                    diagnostic_result["support_attachment_admin_content_matches"] = content_matches
+                if content_matches:
                     driver.close()
                     driver.switch_to.window(original_handle)
                     return
             driver.switch_to.window(original_handle)
         elif driver.current_url == href and driver.execute_script("return document.readyState") == "complete":
-            if expected_content in driver.find_element(By.TAG_NAME, "body").text:
+            mark_browser_substage(diagnostic_result, "attachment_admin_content_readback")
+            content_matches = expected_content in driver.find_element(By.TAG_NAME, "body").text
+            if diagnostic_result is not None:
+                diagnostic_result["support_attachment_admin_content_matches"] = content_matches
+            if content_matches:
                 return
         time.sleep(0.2)
     raise TimeoutError("authenticated native attachment readback did not complete")
@@ -1750,7 +1899,7 @@ def write_result(path: Path, result: dict[str, Any]) -> None:
         or (result.get("exception_type") is not None and result.get("exception_type") not in SAFE_EXCEPTION_TYPES)
         or (result.get("status") == "success" and (
             result.get("exception_type") is not None
-            or any(result.get(key) is not True for key in RESULT_BOOLEAN_KEYS - {
+            or any(result.get(key) is not True for key in RESULT_BOOLEAN_KEYS - SUPPORT_ATTACHMENT_DIAGNOSTIC_KEYS - {
                 "paid", "payment_provider_called", "support_denial_redirected",
             })
             or result.get("paid") is not False
@@ -1789,6 +1938,26 @@ def run() -> None:
         "admin_public_reply_link_thread_id_matches": False,
         "admin_public_reply_link_token_valid": False,
         "admin_public_reply_link_token_matches": False,
+        "support_attachment_page_thread_matches": False,
+        "support_attachment_link_found": False,
+        "support_attachment_link_same_shop": False,
+        "support_attachment_link_thread_matches": False,
+        "support_attachment_link_thread_id_matches": False,
+        "support_attachment_link_route_kind_matches": False,
+        "support_attachment_page_legacy_route_kind": False,
+        "support_attachment_page_modern_route_kind": False,
+        "support_attachment_link_legacy_route_kind": False,
+        "support_attachment_link_modern_view_route_kind": False,
+        "support_attachment_link_modern_secured_reader_route_kind": False,
+        "support_attachment_message_row_association": False,
+        "support_attachment_legacy_token_matches": False,
+        "support_attachment_modern_session_route_shape": False,
+        "support_attachment_link_token_present": False,
+        "support_attachment_link_token_matches": False,
+        "support_attachment_admin_content_matches": False,
+        "support_attachment_foreign_probe_completed": False,
+        "support_attachment_foreign_status_verifiable": False,
+        "support_attachment_foreign_content_absent": False,
         "customer_followup_same_thread": False, "foreign_customer_denied": False,
         "limited_employee_denied": False, "mailpit_provider": "isolated_only",
         "paid": False, "payment_provider_called": False, "assignment_created": False,
@@ -1989,9 +2158,11 @@ def run() -> None:
         result["orderless_thread_unchanged"] = True
         visit(admin, thread_view_url)
         stage = result["stage"] = "attachment_readback"
-        attachment_url = find_attachment_link(admin, ctx.admin, buyer_marker, thread_route_kind, thread_id)
-        open_native_attachment(admin, attachment_url, attachment_marker, download_dir)
-        if attachment_visible_to_session(foreign, attachment_url, attachment_marker):
+        attachment_url = find_attachment_link(
+            admin, ctx.admin, buyer_marker, thread_route_kind, thread_id, result
+        )
+        open_native_attachment(admin, attachment_url, attachment_marker, download_dir, result)
+        if attachment_visible_to_session(foreign, attachment_url, attachment_marker, result):
             raise AssertionError("a different customer session could read the private support attachment")
         result["attachment_admin_readback"] = True
 
@@ -2223,6 +2394,26 @@ def run() -> None:
             f"admin_public_reply_link_thread_id_matches={str(result['admin_public_reply_link_thread_id_matches']).lower()}; "
             f"admin_public_reply_link_token_valid={str(result['admin_public_reply_link_token_valid']).lower()}; "
             f"admin_public_reply_link_token_matches={str(result['admin_public_reply_link_token_matches']).lower()}; "
+            f"support_attachment_page_thread_matches={str(result['support_attachment_page_thread_matches']).lower()}; "
+            f"support_attachment_link_found={str(result['support_attachment_link_found']).lower()}; "
+            f"support_attachment_link_same_shop={str(result['support_attachment_link_same_shop']).lower()}; "
+            f"support_attachment_link_thread_matches={str(result['support_attachment_link_thread_matches']).lower()}; "
+            f"support_attachment_link_thread_id_matches={str(result['support_attachment_link_thread_id_matches']).lower()}; "
+            f"support_attachment_link_route_kind_matches={str(result['support_attachment_link_route_kind_matches']).lower()}; "
+            f"support_attachment_page_legacy_route_kind={str(result['support_attachment_page_legacy_route_kind']).lower()}; "
+            f"support_attachment_page_modern_route_kind={str(result['support_attachment_page_modern_route_kind']).lower()}; "
+            f"support_attachment_link_legacy_route_kind={str(result['support_attachment_link_legacy_route_kind']).lower()}; "
+            f"support_attachment_link_modern_view_route_kind={str(result['support_attachment_link_modern_view_route_kind']).lower()}; "
+            f"support_attachment_link_modern_secured_reader_route_kind={str(result['support_attachment_link_modern_secured_reader_route_kind']).lower()}; "
+            f"support_attachment_message_row_association={str(result['support_attachment_message_row_association']).lower()}; "
+            f"support_attachment_legacy_token_matches={str(result['support_attachment_legacy_token_matches']).lower()}; "
+            f"support_attachment_modern_session_route_shape={str(result['support_attachment_modern_session_route_shape']).lower()}; "
+            f"support_attachment_link_token_present={str(result['support_attachment_link_token_present']).lower()}; "
+            f"support_attachment_link_token_matches={str(result['support_attachment_link_token_matches']).lower()}; "
+            f"support_attachment_admin_content_matches={str(result['support_attachment_admin_content_matches']).lower()}; "
+            f"support_attachment_foreign_probe_completed={str(result['support_attachment_foreign_probe_completed']).lower()}; "
+            f"support_attachment_foreign_status_verifiable={str(result['support_attachment_foreign_status_verifiable']).lower()}; "
+            f"support_attachment_foreign_content_absent={str(result['support_attachment_foreign_content_absent']).lower()}; "
             f"image_attachment_admin_readback={str(result['image_attachment_admin_readback']).lower()}; "
             f"image_attachment_foreign_denied={str(result['image_attachment_foreign_denied']).lower()}; "
             f"same_origin={str(result['contact_same_origin']).lower()}; "

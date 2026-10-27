@@ -434,6 +434,15 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             '"csrf_invalid_token_submit"',
             '"csrf_rejection_readback"',
             '"csrf_unissued_db_readback"',
+            '"csrf_confirmation_page_navigation"',
+            '"csrf_confirmation_order_row_readback"',
+            '"csrf_confirmation_form_readback"',
+            '"csrf_confirmation_control_validation"',
+            '"csrf_confirmation_invalid_token_submit"',
+            '"csrf_confirmation_submit"',
+            '"csrf_confirmation_notice_wait"',
+            '"csrf_confirmation_notice_assertion"',
+            '"csrf_confirmation_unpaid_db_readback"',
             '"limited_access_fixture_readback"',
             '"limited_access_contract_readback"',
             '"limited_session_route_validation"',
@@ -496,6 +505,62 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         )
         self.assertLess(no_change_readback, csrf_flow.index('result["issue_csrf_rejected"] = True'))
         self.assertLess(no_change_readback, csrf_flow.index('substage = "none"'))
+
+    def test_confirmation_csrf_rejection_has_safe_substage_at_each_browser_boundary(self) -> None:
+        limited_flow = self.browser.split('stage = result["stage"] = "limited_staff_denial"', 1)[1]
+        csrf_flow = limited_flow.split('stage = result["stage"] = "csrf_rejected"', 1)[1].split(
+            'stage = result["stage"] = "wrong_amount_rejected"', 1
+        )[0]
+        flow_markers = (
+            'set_substage("csrf_confirmation_page_navigation")',
+            'set_substage("csrf_confirmation_order_row_readback")',
+            'tamper_token=True, set_substage=set_substage',
+            'set_substage("csrf_confirmation_notice_assertion")',
+            'set_substage("csrf_confirmation_unpaid_db_readback")',
+            'verify_unpaid_native_order(ctx, order, "issued")',
+            'set_substage("none")',
+        )
+        positions = [csrf_flow.index(marker) for marker in flow_markers]
+        self.assertEqual(positions, sorted(positions))
+
+        helper = self.browser.split("def fill_and_submit_confirmation", 1)[1].split(
+            "def submit_hidden_admin_post", 1
+        )[0]
+        helper_markers = (
+            'set_substage("csrf_confirmation_form_readback")',
+            'set_substage("csrf_confirmation_control_validation")',
+            'set_substage("csrf_confirmation_invalid_token_submit")',
+            'set_substage("csrf_confirmation_submit")',
+            'set_substage("csrf_confirmation_notice_wait")',
+        )
+        helper_positions = [helper.index(marker) for marker in helper_markers]
+        self.assertEqual(helper_positions, sorted(helper_positions))
+        self.require("notice = read_visible_notice_snapshot(driver) if tamper_token else read_visible_notice(driver)", helper)
+        self.assertEqual(1, helper.count('fields["submit"][0].click()'))
+        self.assertEqual(1, helper.count("read_visible_notice_snapshot(driver)"))
+        self.assertLess(helper.index('fields["submit"][0].click()'), helper.index("read_visible_notice_snapshot(driver)"))
+        self.require("notice_text, notice_class = notice_snapshot", csrf_flow)
+        self.require('"alert-danger" not in notice_class.split()', csrf_flow)
+        self.require(
+            '"관리자 보안 토큰이 현재 관리자 세션과 다릅니다." not in notice_text', csrf_flow
+        )
+        self.require('fields["submit"][0].click()', self.browser)
+        self.require('driver.execute_script("arguments[0].value = \'invalid\';", fields["token"][0])', self.browser)
+        self.assertNotIn("submit_hidden_admin_post(", csrf_flow)
+
+        tree = ast.parse(self.browser)
+        substage_assignment = next(
+            node for node in tree.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "SAFE_SUBSTAGES" for target in node.targets)
+        )
+        safe_substages = ast.literal_eval(substage_assignment.value)
+        expected = {
+            marker.split('"')[1]
+            for marker in (*flow_markers, *helper_markers)
+            if marker.startswith('set_substage')
+        }
+        self.assertTrue(expected <= safe_substages)
 
     def test_issue_csrf_failure_distinguishes_wrong_method_from_token_mismatch(self) -> None:
         init_content = self.controller.split("public function initContent()", 1)[1].split(

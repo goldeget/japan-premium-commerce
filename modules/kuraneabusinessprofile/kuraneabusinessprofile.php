@@ -302,6 +302,31 @@ class Kuraneabusinessprofile extends Module
                 return;
             }
 
+            $sendContext = self::$pendingMailSendContext;
+            if (($params['template'] ?? '') === 'password_query'
+                && ($sendContext['template'] ?? $this->activeMailTemplate) === 'password_query') {
+                $mailLangId = (int) ($params['id_lang'] ?? 0);
+                if ($mailLangId < 1) {
+                    $mailLangId = (int) ($sendContext['lang_id'] ?? $this->activeMailLangId ?? 0);
+                }
+                $mailShopId = $sendContext['shop_id'] ?? $mailContextShopId;
+                $nativeResetUrl = $sendContext['native_reset_url'] ?? $this->activeNativeResetUrl;
+                if ($mailLangId > 0 && is_string($nativeResetUrl)) {
+                    $validatedResetUrl = $this->validatedNativeResetUrl(
+                        $nativeResetUrl,
+                        $mailLangId,
+                        is_int($mailShopId) && $mailShopId > 0 ? $mailShopId : null
+                    );
+                    if ($validatedResetUrl !== null) {
+                        // Mail::send() merges extra_template_vars over templateVars
+                        // immediately before strtr() builds both HTML and Text.
+                        $params['extra_template_vars']['{url}'] = $validatedResetUrl;
+                        $sendContext['final_reset_url_template_var_pinned'] = true;
+                        self::$pendingMailSendContext = $sendContext;
+                    }
+                }
+            }
+
             // Generic templates must never inherit account details from another hook or environment.
             $params['extra_template_vars']['{ordenowa_bank_accounts}'] = '';
 
@@ -456,6 +481,7 @@ class Kuraneabusinessprofile extends Module
             'reset_url_candidate_present' => $templateUrlEvidence['candidate_present'] ?? false,
             'reset_url_credentials_complete' => $templateUrlEvidence['credentials_complete'] ?? false,
             'reset_url_native_route' => $templateUrlEvidence['native_route'] ?? false,
+            'final_reset_url_template_var_pinned' => false,
         ];
     }
 
@@ -520,6 +546,8 @@ class Kuraneabusinessprofile extends Module
             $textMimeHasLink = false;
             $textGetterMatchReason = 'not_checked';
             $textMimeMatchReason = 'not_checked';
+            $textGetterEvidence = [];
+            $textMimeEvidence = [];
             $textMimeBodyReadSucceeded = false;
             $textMimeBodyIdentitySameAfterSetter = false;
             $textMimeBodyChangedAfterReset = false;
@@ -665,6 +693,10 @@ class Kuraneabusinessprofile extends Module
                 'text_replacement_contains_expected_url' => 'Text-Replacement-Contains-Expected-URL',
                 'text_getter_contains_expected_url' => 'Text-Getter-Contains-Expected-URL',
                 'text_mime_contains_expected_url' => 'Text-Mime-Contains-Expected-URL',
+                'text_getter_expected_url_candidate_present' => 'Text-Getter-Expected-URL-Candidate-Present',
+                'text_getter_expected_url_candidate_exact' => 'Text-Getter-Expected-URL-Candidate-Exact',
+                'text_mime_expected_url_candidate_present' => 'Text-Mime-Expected-URL-Candidate-Present',
+                'text_mime_expected_url_candidate_exact' => 'Text-Mime-Expected-URL-Candidate-Exact',
                 'text_mime_body_read_succeeded' => 'Text-Mime-Body-Read-Succeeded',
                 'text_mime_body_identity_same_after_setter' => 'Text-Mime-Body-Identity-Same-After-Setter',
                 'text_mime_body_reset_retry_attempted' => 'Text-Mime-Body-Reset-Retry-Attempted',
@@ -678,6 +710,10 @@ class Kuraneabusinessprofile extends Module
                     'text_replacement_contains_expected_url' => $textReplacementContainsExpectedUrl,
                     'text_getter_contains_expected_url' => $textGetterContainsExpectedUrl,
                     'text_mime_contains_expected_url' => $textMimeContainsExpectedUrl,
+                    'text_getter_expected_url_candidate_present' => $textGetterEvidence['expected_url_candidate_present'] ?? false,
+                    'text_getter_expected_url_candidate_exact' => $textGetterEvidence['expected_url_candidate_exact'] ?? false,
+                    'text_mime_expected_url_candidate_present' => $textMimeEvidence['expected_url_candidate_present'] ?? false,
+                    'text_mime_expected_url_candidate_exact' => $textMimeEvidence['expected_url_candidate_exact'] ?? false,
                     'text_mime_body_read_succeeded' => $textMimeBodyReadSucceeded,
                     'text_mime_body_identity_same_after_setter' => $textMimeBodyIdentitySameAfterSetter,
                     'text_mime_body_reset_retry_attempted' => $textMimeBodyResetRetryAttempted,
@@ -705,6 +741,10 @@ class Kuraneabusinessprofile extends Module
             $headers->addTextHeader(
                 'X-ORDENOWA-CI-Reset-Template-URL-Native-Route',
                 ($sendContext['reset_url_native_route'] ?? false) ? 'true' : 'false'
+            );
+            $headers->addTextHeader(
+                'X-ORDENOWA-CI-Reset-Final-Template-URL-Pinned',
+                ($sendContext['final_reset_url_template_var_pinned'] ?? false) ? 'true' : 'false'
             );
             foreach ([
                 'candidate_present' => 'HTML-URL-Candidate-Present',
@@ -822,6 +862,10 @@ class Kuraneabusinessprofile extends Module
             'scheme_host_port_match' => false,
             'path_match' => false,
             'candidate_selected' => false,
+            'expected_url_literal_present' => false,
+            'expected_url_candidate_present' => false,
+            'expected_url_candidate_exact' => false,
+            'expected_url_candidate_credentials_complete' => false,
         ];
         if ($body === '' || !is_object($this->context->link) || !method_exists($this->context->link, 'getPageLink')) {
             return null;
@@ -835,6 +879,8 @@ class Kuraneabusinessprofile extends Module
         }
 
         $decoded = html_entity_decode($body, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $evidence['expected_url_literal_present'] = $expectedUrl !== null
+            && str_contains($decoded, $expectedUrl);
         if (preg_match_all('~https?://[^\s<>]+~i', $decoded, $matches) < 1) {
             return null;
         }
@@ -844,6 +890,14 @@ class Kuraneabusinessprofile extends Module
             $evidence['candidate_present'] = true;
             $credentialEvidence = $this->resetCredentialEvidence($parts);
             $routeEvidence = $this->resetRouteEvidence($parts, $native);
+            if ($expectedUrl !== null && str_contains($candidate, $expectedUrl)) {
+                $evidence['expected_url_candidate_present'] = true;
+                $evidence['expected_url_candidate_exact'] = $evidence['expected_url_candidate_exact']
+                    || hash_equals($expectedUrl, $candidate);
+                $evidence['expected_url_candidate_credentials_complete'] =
+                    $evidence['expected_url_candidate_credentials_complete']
+                    || $credentialEvidence['credentials_complete'];
+            }
             foreach (['token_present', 'reset_token_present', 'id_customer_present'] as $key) {
                 $evidence[$key] = $evidence[$key] || $credentialEvidence[$key];
             }
@@ -1012,6 +1066,10 @@ class Kuraneabusinessprofile extends Module
             'path_match' => false,
             'candidate_selected' => false,
             'expected_url_match' => false,
+            'expected_url_literal_present' => false,
+            'expected_url_candidate_present' => false,
+            'expected_url_candidate_exact' => false,
+            'expected_url_candidate_credentials_complete' => false,
             'match_reason' => 'candidate_absent',
         ];
         if ($body === '') {
@@ -1042,6 +1100,8 @@ class Kuraneabusinessprofile extends Module
         foreach ([
             'candidate_present', 'token_present', 'reset_token_present', 'id_customer_present',
             'credentials_complete', 'scheme_host_port_match', 'path_match', 'candidate_selected',
+            'expected_url_literal_present', 'expected_url_candidate_present',
+            'expected_url_candidate_exact', 'expected_url_candidate_credentials_complete',
         ] as $key) {
             $evidence[$key] = $candidateEvidence[$key] ?? false;
         }
@@ -1081,35 +1141,34 @@ class Kuraneabusinessprofile extends Module
 
     private function hasPlainTextMimePart(mixed $part): bool
     {
+        return $this->selectedPlainTextMimePart($part) !== null;
+    }
+
+    private function selectedPlainTextMimePart(mixed $part): ?\Symfony\Component\Mime\Part\TextPart
+    {
+        if ($part instanceof \Symfony\Component\Mime\Part\DataPart) {
+            return null;
+        }
         if ($part instanceof \Symfony\Component\Mime\Part\TextPart) {
-            return $part->getMediaSubtype() === 'plain';
+            return $part->getMediaSubtype() === 'plain' ? $part : null;
         }
         if ($part instanceof \Symfony\Component\Mime\Part\AbstractMultipartPart) {
             foreach ($part->getParts() as $child) {
-                if ($this->hasPlainTextMimePart($child)) {
-                    return true;
+                $plainPart = $this->selectedPlainTextMimePart($child);
+                if ($plainPart !== null) {
+                    return $plainPart;
                 }
             }
         }
 
-        return false;
+        return null;
     }
 
     private function plainTextMimeContainsExpectedUrl(mixed $part, string $expectedUrl): bool
     {
-        if ($part instanceof \Symfony\Component\Mime\Part\TextPart) {
-            return $part->getMediaSubtype() === 'plain'
-                && str_contains($part->getBody(), $expectedUrl);
-        }
-        if ($part instanceof \Symfony\Component\Mime\Part\AbstractMultipartPart) {
-            foreach ($part->getParts() as $child) {
-                if ($this->plainTextMimeContainsExpectedUrl($child, $expectedUrl)) {
-                    return true;
-                }
-            }
-        }
+        $plainPart = $this->selectedPlainTextMimePart($part);
 
-        return false;
+        return $plainPart !== null && str_contains($plainPart->getBody(), $expectedUrl);
     }
 
     private function hasExactNativeResetUrlInMimeBody(
@@ -1120,49 +1179,20 @@ class Kuraneabusinessprofile extends Module
         ?array &$evidence = null
     ): bool
     {
-        if ($part instanceof \Symfony\Component\Mime\Part\TextPart) {
-            if ($part->getMediaSubtype() !== 'plain') {
-                return false;
-            }
-
-            return $this->hasExactValidatedNativeResetUrl(
-                $part->getBody(),
-                $expectedUrl,
-                $idLang,
-                $shopId,
-                $evidence
-            );
-        }
-        if ($part instanceof \Symfony\Component\Mime\Part\AbstractMultipartPart) {
-            $lastEvidence = null;
-            foreach ($part->getParts() as $child) {
-                if (!$this->hasPlainTextMimePart($child)) {
-                    continue;
-                }
-                $childEvidence = [];
-                if ($this->hasExactNativeResetUrlInMimeBody(
-                    $child,
-                    $expectedUrl,
-                    $idLang,
-                    $shopId,
-                    $childEvidence
-                )) {
-                    $evidence = $childEvidence;
-
-                    return true;
-                }
-                if ($childEvidence !== []) {
-                    $lastEvidence = $childEvidence;
-                }
-            }
-            $evidence = $lastEvidence ?? ['match_reason' => 'plain_text_part_missing'];
+        $plainPart = $this->selectedPlainTextMimePart($part);
+        if ($plainPart === null) {
+            $evidence = ['match_reason' => 'plain_text_part_missing'];
 
             return false;
         }
 
-        $evidence = ['match_reason' => 'plain_text_part_missing'];
-
-        return false;
+        return $this->hasExactValidatedNativeResetUrl(
+            $plainPart->getBody(),
+            $expectedUrl,
+            $idLang,
+            $shopId,
+            $evidence
+        );
     }
 
     /** @return array<string, mixed>|null */

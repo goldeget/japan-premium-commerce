@@ -33,6 +33,11 @@ SAFE_SUBSTAGES = {
     "unique_transfer_link", "menu_link_token", "transfer_route_navigation",
     "transfer_order_row_readback", "csrf_form_missing", "csrf_form_ambiguous", "csrf_control_validation",
     "csrf_invalid_token_submit", "csrf_rejection_readback", "csrf_unissued_db_readback",
+    "csrf_confirmation_page_navigation", "csrf_confirmation_order_row_readback",
+    "csrf_confirmation_form_readback", "csrf_confirmation_control_validation",
+    "csrf_confirmation_invalid_token_submit", "csrf_confirmation_submit",
+    "csrf_confirmation_notice_wait", "csrf_confirmation_notice_assertion",
+    "csrf_confirmation_unpaid_db_readback",
     "instruction_issue_navigation", "instruction_issue_order_row_readback", "instruction_issue_action_controls",
     "instruction_issue_submit", "instruction_issue_notice_readback", "instruction_issue_db_readback",
     "instruction_issue_profile_gate_evidence",
@@ -835,8 +840,13 @@ def fill_and_submit_confirmation(
     statement_reference: str,
     admin_root: str,
     tamper_token: bool = False,
+    set_substage=None,
 ) -> tuple[object, str, str]:
+    if tamper_token and set_substage is not None:
+        set_substage("csrf_confirmation_form_readback")
     form, fields, action = confirmation_form(row, admin_root)
+    if tamper_token and set_substage is not None:
+        set_substage("csrf_confirmation_control_validation")
     token = fields["token"][0].get_attribute("value") or ""
     if not token.strip() or len(token) > 256 or re.search(r"\s", token):
         raise AssertionError("the native staff form did not expose one valid bounded CSRF token")
@@ -847,9 +857,16 @@ def fill_and_submit_confirmation(
     if tamper_token:
         # Deliberately mutate only the hidden field to exercise server-side CSRF rejection;
         # the actual confirmation button remains a normal Selenium click.
+        if set_substage is not None:
+            set_substage("csrf_confirmation_invalid_token_submit")
         driver.execute_script("arguments[0].value = 'invalid';", fields["token"][0])
+    if tamper_token and set_substage is not None:
+        set_substage("csrf_confirmation_submit")
     fields["submit"][0].click()
-    return read_visible_notice(driver), action, token
+    if tamper_token and set_substage is not None:
+        set_substage("csrf_confirmation_notice_wait")
+    notice = read_visible_notice_snapshot(driver) if tamper_token else read_visible_notice(driver)
+    return notice, action, token
 
 
 def submit_hidden_admin_post(
@@ -1255,16 +1272,23 @@ def run() -> None:
         limited.save_screenshot(str(Path(ctx["artifact_dir"]) / "bank-transfer-limited-denied-desktop.png"))
 
         stage = result["stage"] = "csrf_rejected"
+        set_substage("csrf_confirmation_page_navigation")
         visit(admin, transfer_url, str(ctx["shop"]))
+        set_substage("csrf_confirmation_order_row_readback")
         row = order_row(admin, order)
-        notice, confirmation_action, confirmation_token = fill_and_submit_confirmation(
-            admin, row, order, str(order["amount"]), synthetic_statement, str(ctx["admin"]), tamper_token=True
+        notice_snapshot, confirmation_action, confirmation_token = fill_and_submit_confirmation(
+            admin, row, order, str(order["amount"]), synthetic_statement, str(ctx["admin"]),
+            tamper_token=True, set_substage=set_substage,
         )
-        if ("관리자 보안 토큰이 현재 관리자 세션과 다릅니다." not in notice.text
-                or "alert-danger" not in (notice.get_attribute("class") or "")):
+        notice_text, notice_class = notice_snapshot
+        set_substage("csrf_confirmation_notice_assertion")
+        if ("관리자 보안 토큰이 현재 관리자 세션과 다릅니다." not in notice_text
+                or "alert-danger" not in notice_class.split()):
             raise AssertionError("an invalid confirmation CSRF token was not rejected by the native controller")
+        set_substage("csrf_confirmation_unpaid_db_readback")
         verify_unpaid_native_order(ctx, order, "issued")
         result["csrf_rejected"] = True
+        set_substage("none")
 
         stage = result["stage"] = "wrong_amount_rejected"
         visit(admin, transfer_url, str(ctx["shop"]))

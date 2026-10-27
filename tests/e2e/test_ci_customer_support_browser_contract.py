@@ -122,6 +122,191 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "exact customer thread"):
             module.find_attachment_link(Driver(), admin, "follow-up-marker", "legacy_thread_view", 47)
 
+    def test_legacy_text_attachment_diagnostics_split_exact_route_and_token_without_values(self):
+        module = load_script()
+        module.By = SimpleNamespace(CSS_SELECTOR="css selector", XPATH="xpath")
+        admin = "http://localhost:18080/admin-kuranea"
+        page_url = (
+            admin + "/index.php?controller=AdminCustomerThreads&id_customer_thread=47"
+            "&viewcustomer_thread=1&token=workerToken"
+        )
+        href = (
+            admin + "/index.php?controller=AdminCustomerThreads&id_customer_thread=47"
+            "&viewcustomer_thread=&filename=support.txt&show=1&token=workerToken"
+        )
+
+        class Link:
+            def __init__(self, value: str) -> None:
+                self.value = value
+
+            def get_attribute(self, _name: str) -> str:
+                return self.value
+
+        class Row:
+            def __init__(self, value: str) -> None:
+                self.value = value
+
+            def find_elements(self, _by: str, _selector: str) -> list[Link]:
+                return [Link(self.value)]
+
+        class Message:
+            text = "synthetic inquiry marker"
+
+            def __init__(self, value: str) -> None:
+                self.row = Row(value)
+
+            def find_element(self, _by: str, _selector: str) -> Row:
+                return self.row
+
+        class Driver:
+            current_url = page_url
+
+            def __init__(self, value: str) -> None:
+                self.message = Message(value)
+
+            def find_elements(self, _by: str, _selector: str) -> list[Message]:
+                return [self.message]
+
+        result: dict[str, object] = {}
+        self.assertEqual(
+            href,
+            module.find_attachment_link(
+                Driver(href), admin, "synthetic inquiry", "legacy_thread_view", 47, result
+            ),
+        )
+        self.assertEqual("attachment_link_token_readback", result["browser_substage"])
+        for key in (
+            "support_attachment_page_thread_matches", "support_attachment_link_found",
+            "support_attachment_link_same_shop", "support_attachment_link_thread_matches",
+            "support_attachment_link_thread_id_matches", "support_attachment_link_route_kind_matches",
+            "support_attachment_page_legacy_route_kind", "support_attachment_link_legacy_route_kind",
+            "support_attachment_message_row_association", "support_attachment_legacy_token_matches",
+            "support_attachment_link_token_present", "support_attachment_link_token_matches",
+        ):
+            self.assertIs(result[key], True, key)
+        self.assertIs(result["support_attachment_page_modern_route_kind"], False)
+        self.assertIs(result["support_attachment_link_modern_secured_reader_route_kind"], False)
+        self.assertNotIn("workerToken", json.dumps(result))
+
+        wrong_route: dict[str, object] = {}
+        with self.assertRaisesRegex(AssertionError, "exact native thread"):
+            module.find_attachment_link(
+                Driver(href.replace("id_customer_thread=47", "id_customer_thread=48")),
+                admin, "synthetic inquiry", "legacy_thread_view", 47, wrong_route,
+            )
+        self.assertEqual("attachment_link_thread_readback", wrong_route["browser_substage"])
+        self.assertIs(wrong_route["support_attachment_link_thread_matches"], False)
+        self.assertIs(wrong_route["support_attachment_link_thread_id_matches"], False)
+        self.assertIs(wrong_route["support_attachment_link_route_kind_matches"], True)
+
+        converted_route: dict[str, object] = {}
+        converted_href = admin + "/sell/customer-service/customer-threads/47/view?filename=support.txt&show=1"
+        with self.assertRaisesRegex(AssertionError, "exact native thread"):
+            module.find_attachment_link(
+                Driver(converted_href), admin, "synthetic inquiry", "legacy_thread_view", 47,
+                converted_route,
+            )
+        self.assertEqual("attachment_link_thread_readback", converted_route["browser_substage"])
+        self.assertIs(converted_route["support_attachment_link_thread_id_matches"], True)
+        self.assertIs(converted_route["support_attachment_link_route_kind_matches"], False)
+        self.assertIs(converted_route["support_attachment_link_thread_matches"], False)
+
+        wrong_token: dict[str, object] = {}
+        with self.assertRaisesRegex(AssertionError, "authenticated thread token"):
+            module.find_attachment_link(
+                Driver(href.replace("token=workerToken", "token=otherWorkerToken")),
+                admin, "synthetic inquiry", "legacy_thread_view", 47, wrong_token,
+            )
+        self.assertEqual("attachment_link_token_readback", wrong_token["browser_substage"])
+        self.assertIs(wrong_token["support_attachment_link_thread_matches"], True)
+        self.assertIs(wrong_token["support_attachment_link_token_present"], True)
+        self.assertIs(wrong_token["support_attachment_link_token_matches"], False)
+        self.assertNotIn("otherWorkerToken", json.dumps(wrong_token))
+
+    def test_modern_text_attachment_uses_exact_secured_reader_shape_and_page_association(self):
+        module = load_script()
+        module.By = SimpleNamespace(CSS_SELECTOR="css selector", XPATH="xpath")
+        admin = "http://localhost:18080/admin-kuranea"
+        page_url = admin + "/sell/customer-service/customer-threads/47/view?token=workerToken"
+        href = admin + "/common/secured/upload/document?fileName=synthetic-upload.txt"
+
+        class Link:
+            def get_attribute(self, _name: str) -> str:
+                return href
+
+        class Row:
+            def find_elements(self, _by: str, _selector: str) -> list[Link]:
+                return [Link()]
+
+        class Message:
+            text = "synthetic inquiry marker"
+
+            def find_element(self, _by: str, _selector: str) -> Row:
+                return Row()
+
+        class Driver:
+            current_url = page_url
+
+            def find_elements(self, _by: str, _selector: str) -> list[Message]:
+                return [Message()]
+
+        self.assertTrue(module.is_modern_secured_attachment_route(href, admin))
+        for malformed in (
+            href.replace("/common/secured/upload/document", "/common/other/document"),
+            href.replace("?fileName=", "?filename="),
+            href + "&token=extra",
+            href.replace("synthetic-upload.txt", "../synthetic-upload.txt"),
+            href.replace("synthetic-upload.txt", "synthetic-upload.php"),
+        ):
+            with self.subTest(malformed=malformed):
+                self.assertFalse(module.is_modern_secured_attachment_route(malformed, admin))
+
+        result: dict[str, object] = {}
+        self.assertEqual(
+            href,
+            module.find_attachment_link(
+                Driver(), admin, "synthetic inquiry", "modern_thread_view", 47, result
+            ),
+        )
+        self.assertIs(result["support_attachment_page_modern_route_kind"], True)
+        self.assertIs(result["support_attachment_page_legacy_route_kind"], False)
+        self.assertIs(result["support_attachment_link_modern_secured_reader_route_kind"], True)
+        self.assertIs(result["support_attachment_modern_session_route_shape"], True)
+        self.assertIs(result["support_attachment_message_row_association"], True)
+        self.assertIs(result["support_attachment_link_thread_id_matches"], False)
+        self.assertIs(result.get("support_attachment_legacy_token_matches", False), False)
+        self.assertNotIn("synthetic-upload.txt", json.dumps(result))
+
+        class WrongRouteLink:
+            def get_attribute(self, _name: str) -> str:
+                return admin + "/common/not-the-reader?fileName=synthetic-upload.txt"
+
+        class WrongRouteRow:
+            def find_elements(self, _by: str, _selector: str) -> list[WrongRouteLink]:
+                return [WrongRouteLink()]
+
+        class WrongRouteMessage:
+            text = "synthetic inquiry marker"
+
+            def find_element(self, _by: str, _selector: str) -> WrongRouteRow:
+                return WrongRouteRow()
+
+        class WrongRouteDriver:
+            current_url = page_url
+
+            def find_elements(self, _by: str, _selector: str) -> list[WrongRouteMessage]:
+                return [WrongRouteMessage()]
+
+        wrong_route: dict[str, object] = {}
+        with self.assertRaisesRegex(AssertionError, "secured reader route"):
+            module.find_attachment_link(
+                WrongRouteDriver(), admin, "synthetic inquiry", "modern_thread_view", 47,
+                wrong_route,
+            )
+        self.assertEqual("attachment_link_route_readback", wrong_route["browser_substage"])
+        self.assertIs(wrong_route["support_attachment_link_same_shop"], True)
+        self.assertIs(wrong_route["support_attachment_modern_session_route_shape"], False)
+
     def test_contact_controls_scroll_clear_and_keep_native_select_and_upload_assertions(self):
         module = load_script()
 
@@ -727,6 +912,26 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 "admin_public_reply_link_thread_id_matches": True,
                 "admin_public_reply_link_token_valid": True,
                 "admin_public_reply_link_token_matches": True,
+                "support_attachment_page_thread_matches": True,
+                "support_attachment_link_found": True,
+                "support_attachment_link_same_shop": True,
+                "support_attachment_link_thread_matches": True,
+                "support_attachment_link_thread_id_matches": True,
+                "support_attachment_link_route_kind_matches": True,
+                "support_attachment_page_legacy_route_kind": True,
+                "support_attachment_page_modern_route_kind": False,
+                "support_attachment_link_legacy_route_kind": True,
+                "support_attachment_link_modern_view_route_kind": False,
+                "support_attachment_link_modern_secured_reader_route_kind": False,
+                "support_attachment_message_row_association": True,
+                "support_attachment_legacy_token_matches": True,
+                "support_attachment_modern_session_route_shape": False,
+                "support_attachment_link_token_present": True,
+                "support_attachment_link_token_matches": True,
+                "support_attachment_admin_content_matches": True,
+                "support_attachment_foreign_probe_completed": True,
+                "support_attachment_foreign_status_verifiable": True,
+                "support_attachment_foreign_content_absent": True,
                 "customer_followup_same_thread": True, "foreign_customer_denied": True,
                 "limited_employee_denied": True, "mailpit_provider": "isolated_only",
                 "paid": False, "payment_provider_called": False, "assignment_created": True,

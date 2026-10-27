@@ -106,6 +106,10 @@ class ResetEmailLocaleContract(unittest.TestCase):
         mail['X-ORDENOWA-CI-Reset-Text-Replacement-Contains-Expected-URL'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Text-Getter-Contains-Expected-URL'] = 'false'
         mail['X-ORDENOWA-CI-Reset-Text-Mime-Contains-Expected-URL'] = 'false'
+        mail['X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Candidate-Present'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-Text-Getter-Expected-URL-Candidate-Exact'] = 'false'
+        mail['X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Candidate-Present'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-Text-Mime-Expected-URL-Candidate-Exact'] = 'false'
         mail['X-ORDENOWA-CI-Reset-Text-Mime-Body-Read-Succeeded'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Text-Mime-Body-Identity-Same-After-Setter'] = 'false'
         mail['X-ORDENOWA-CI-Reset-Text-Mime-Body-Reset-Retry-Attempted'] = 'false'
@@ -116,6 +120,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
         mail['X-ORDENOWA-CI-Reset-Template-URL-Candidate-Present'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Template-URL-Credentials-Complete'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Template-URL-Native-Route'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-Final-Template-URL-Pinned'] = 'true'
         mail['X-ORDENOWA-CI-Reset-HTML-URL-Candidate-Present'] = 'true'
         mail['X-ORDENOWA-CI-Reset-HTML-Token-Present'] = 'true'
         mail['X-ORDENOWA-CI-Reset-HTML-Reset-Token-Present'] = 'true'
@@ -141,6 +146,10 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'pre_smtp_text_replacement_contains_expected_url': True,
             'pre_smtp_text_getter_contains_expected_url': False,
             'pre_smtp_text_mime_contains_expected_url': False,
+            'pre_smtp_text_getter_expected_url_candidate_present': True,
+            'pre_smtp_text_getter_expected_url_candidate_exact': False,
+            'pre_smtp_text_mime_expected_url_candidate_present': True,
+            'pre_smtp_text_mime_expected_url_candidate_exact': False,
             'pre_smtp_text_mime_body_read_succeeded': True,
             'pre_smtp_text_mime_body_identity_same_after_setter': False,
             'pre_smtp_text_mime_body_reset_retry_attempted': False,
@@ -151,6 +160,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'pre_smtp_template_url_candidate_present': True,
             'pre_smtp_template_url_credentials_complete': True,
             'pre_smtp_template_url_native_route': True,
+            'pre_smtp_final_template_url_pinned': True,
             'pre_smtp_html_url_candidate_present': True,
             'pre_smtp_html_token_present': True,
             'pre_smtp_html_reset_token_present': True,
@@ -446,11 +456,14 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'pre_smtp_email_object=none; pre_smtp_setter_same_object=none; '
             'pre_smtp_getter_string=none; '
             'pre_smtp_replacement_expected_url=none; pre_smtp_getter_expected_url=none; '
-            'pre_smtp_mime_expected_url=none; pre_smtp_mime_body_read=none; '
+            'pre_smtp_mime_expected_url=none; '
+            'pre_smtp_getter_url_candidate=none/none; pre_smtp_mime_url_candidate=none/none; '
+            'pre_smtp_mime_body_read=none; '
             'pre_smtp_body_same_after_setter=none; pre_smtp_body_reset_retry=none; '
             'pre_smtp_body_changed_after_reset=none; pre_smtp_plain_part=none; '
             'pre_smtp_url_candidate=none; pre_smtp_reset_template_context=none; '
             'pre_smtp_template_url=none; pre_smtp_template_credentials=none; pre_smtp_template_route=none; '
+            'pre_smtp_final_template_url_pinned=none; '
             'pre_smtp_html_candidate=none; pre_smtp_html_credentials=none/none/none; '
             'pre_smtp_html_route=none/none; pre_smtp_html_selected=none; '
             'pre_smtp_text_setter_available=none; '
@@ -486,6 +499,10 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 "pre_smtp_text_replacement_contains_expected_url": None,
                 "pre_smtp_text_getter_contains_expected_url": None,
                 "pre_smtp_text_mime_contains_expected_url": None,
+                "pre_smtp_text_getter_expected_url_candidate_present": None,
+                "pre_smtp_text_getter_expected_url_candidate_exact": None,
+                "pre_smtp_text_mime_expected_url_candidate_present": None,
+                "pre_smtp_text_mime_expected_url_candidate_exact": None,
                 "pre_smtp_text_mime_body_read_succeeded": None,
                 "pre_smtp_text_mime_body_identity_same_after_setter": None,
                 "pre_smtp_text_mime_body_reset_retry_attempted": None,
@@ -496,6 +513,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 "pre_smtp_template_url_candidate_present": None,
                 "pre_smtp_template_url_credentials_complete": None,
                 "pre_smtp_template_url_native_route": None,
+                "pre_smtp_final_template_url_pinned": None,
                 "pre_smtp_html_url_candidate_present": None,
                 "pre_smtp_html_token_present": None,
                 "pre_smtp_html_reset_token_present": None,
