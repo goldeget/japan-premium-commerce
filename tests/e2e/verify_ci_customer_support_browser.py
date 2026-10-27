@@ -73,13 +73,16 @@ SAFE_RESULT_KEYS = {
     "contact_form_count", "contact_form_visible", "support_denial_status",
     "support_denial_form_count", "support_denial_redirected", "support_denial_same_origin",
     "customer_service_route_candidate_count", "customer_service_route_safe_count",
+    "customer_service_route_modern_count", "customer_service_route_legacy_count",
+    "customer_service_route_invalid_count",
     "browser_substage",
 }
 RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {
     "status", "stage", "exception_type", "mailpit_provider",
     "contact_document_status", "contact_form_count", "support_denial_status",
     "support_denial_form_count", "customer_service_route_candidate_count",
-    "customer_service_route_safe_count", "browser_substage",
+    "customer_service_route_safe_count", "customer_service_route_modern_count",
+    "customer_service_route_legacy_count", "customer_service_route_invalid_count", "browser_substage",
 }
 SAFE_EXCEPTION_TYPES = {
     "AssertionError", "TimeoutException", "ValueError", "RuntimeError", "URLError", "OSError",
@@ -804,28 +807,57 @@ def assert_foreign_orderless_post_denied(
 def generated_customer_threads_link(
     driver, admin_url: str, diagnostic_result: dict[str, Any] | None = None
 ) -> str:
-    candidates = []
-    safe_candidates = []
+    expected = urlparse(admin_url)
+    root = expected.path.rstrip("/")
+    modern_paths = {
+        root + "/sell/customer-service/customer-threads",
+        root + "/index.php/sell/customer-service/customer-threads",
+    }
+    legacy_paths = {root, root + "/index.php"}
+    candidates: set[str] = set()
+    safe_candidates: set[str] = set()
+    modern_candidates: set[str] = set()
+    legacy_candidates: set[str] = set()
+    invalid_candidates: set[str] = set()
     for link in driver.find_elements(By.CSS_SELECTOR, "a[href]"):
         href = link.get_attribute("href") or ""
         parsed = urlparse(href)
-        query = parse_qs(parsed.query)
-        route_match = (
-            query.get("controller") == ["AdminCustomerThreads"]
-            or "/sell/customer-service/customer-threads" in parsed.path
-        )
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        legacy_marker = query.get("controller") == ["AdminCustomerThreads"]
+        modern_suffix = re.search(r"/sell/customer-service/customer-threads/?$", parsed.path) is not None
+        route_match = legacy_marker or modern_suffix
         if route_match:
-            candidates.append(href)
-            if safe_admin_path(href, admin_url):
-                safe_candidates.append(href)
+            candidates.add(href)
+            if not safe_admin_path(href, admin_url):
+                continue
+            safe_candidates.add(href)
+            is_modern = parsed.path.rstrip("/") in modern_paths
+            is_legacy = legacy_marker and parsed.path.rstrip("/") in legacy_paths
+            if is_modern and not legacy_marker:
+                modern_candidates.add(href)
+            elif is_legacy and not modern_suffix:
+                legacy_candidates.add(href)
+            else:
+                invalid_candidates.add(href)
     if diagnostic_result is not None:
-        diagnostic_result["customer_service_route_candidate_count"] = min(len(set(candidates)), 20)
-        diagnostic_result["customer_service_route_safe_count"] = min(len(set(safe_candidates)), 20)
+        diagnostic_result["customer_service_route_candidate_count"] = min(len(candidates), 20)
+        diagnostic_result["customer_service_route_safe_count"] = min(len(safe_candidates), 20)
+        diagnostic_result["customer_service_route_modern_count"] = min(len(modern_candidates), 20)
+        diagnostic_result["customer_service_route_legacy_count"] = min(len(legacy_candidates), 20)
+        diagnostic_result["customer_service_route_invalid_count"] = min(len(invalid_candidates), 20)
     if len(safe_candidates) != len(candidates):
         raise AssertionError("native Customer service navigation left the isolated Back Office")
-    if len(set(candidates)) != 1:
-        raise AssertionError("the authenticated administrator did not expose one native Customer service route")
-    return candidates[0]
+    if invalid_candidates:
+        raise AssertionError("native Customer service navigation exposed a noncanonical route")
+    if len(modern_candidates) > 1 or len(legacy_candidates) > 1:
+        raise AssertionError("native Customer service navigation exposed ambiguous route aliases")
+    if len(modern_candidates) == 1:
+        return next(iter(modern_candidates))
+    if len(legacy_candidates) == 1:
+        return next(iter(legacy_candidates))
+    if not safe_candidates:
+        raise AssertionError("the authenticated administrator did not expose a native Customer service route")
+    raise AssertionError("native Customer service navigation did not expose one unambiguous route")
 
 
 def admin_login(driver, ctx: Context, email: str) -> None:
@@ -1130,6 +1162,12 @@ def write_result(path: Path, result: dict[str, Any]) -> None:
         or not 0 <= result["customer_service_route_candidate_count"] <= 20
         or type(result.get("customer_service_route_safe_count")) is not int
         or not 0 <= result["customer_service_route_safe_count"] <= 20
+        or type(result.get("customer_service_route_modern_count")) is not int
+        or not 0 <= result["customer_service_route_modern_count"] <= 20
+        or type(result.get("customer_service_route_legacy_count")) is not int
+        or not 0 <= result["customer_service_route_legacy_count"] <= 20
+        or type(result.get("customer_service_route_invalid_count")) is not int
+        or not 0 <= result["customer_service_route_invalid_count"] <= 20
         or not isinstance(result.get("browser_substage"), str)
         or result["browser_substage"] not in SAFE_BROWSER_SUBSTAGES
         or result.get("mailpit_provider") != "isolated_only"
@@ -1174,6 +1212,8 @@ def run() -> None:
         "support_denial_status": None, "support_denial_form_count": 0,
         "support_denial_redirected": True, "support_denial_same_origin": False,
         "customer_service_route_candidate_count": 0, "customer_service_route_safe_count": 0,
+        "customer_service_route_modern_count": 0, "customer_service_route_legacy_count": 0,
+        "customer_service_route_invalid_count": 0,
     }
     customer = admin = foreign = limited = None
     buyer_marker = f"[CI ONLY] ORDENOWA support inquiry {ctx.run_id}-{ctx.attempt}-{secrets.token_hex(5)}"
@@ -1509,6 +1549,9 @@ def run() -> None:
             f"support_denial_same_origin={str(result['support_denial_same_origin']).lower()}; "
             f"admin_route_candidates={result['customer_service_route_candidate_count']}; "
             f"admin_route_safe={result['customer_service_route_safe_count']}; "
+            f"admin_route_modern={result['customer_service_route_modern_count']}; "
+            f"admin_route_legacy={result['customer_service_route_legacy_count']}; "
+            f"admin_route_invalid={result['customer_service_route_invalid_count']}; "
             f"same_origin={str(result['contact_same_origin']).lower()}; "
             f"native_route={str(result['contact_native_route']).lower()}; "
             f"form_count={result['contact_form_count']}; "

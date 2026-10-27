@@ -13,7 +13,8 @@ class BankTransferInstructionsContractTests(unittest.TestCase):
         self.assertIn("canIssueBankTransferInstructions", policy)
         self.assertIn("'add'", policy)
         self.assertIn("AdminAccessPolicy::canIssueBankTransferInstructions", controller)
-        self.assertIn("Tools::getAdminTokenLite('AdminBusinessProfileTransfers')", controller)
+        self.assertIn("$token = (string) $this->token;", controller)
+        self.assertIn("hash_equals((string) $this->token, $submittedToken)", controller)
         self.assertIn("hash_equals", controller)
 
     def test_issue_action_requires_the_live_seller_gate_or_exact_isolated_ci_gate(self) -> None:

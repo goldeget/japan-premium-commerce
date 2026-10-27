@@ -57,6 +57,8 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             "payment_provider_called",
             "admin_login_completed", "admin_service_route_discovery",
             "customer_service_route_candidate_count", "customer_service_route_safe_count",
+            "customer_service_route_modern_count", "customer_service_route_legacy_count",
+            "customer_service_route_invalid_count",
         ):
             with self.subTest(contract=expected):
                 self.assertIn(expected, source)
@@ -411,6 +413,9 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 "support_denial_redirected": False, "support_denial_same_origin": True,
                 "customer_service_route_candidate_count": 1,
                 "customer_service_route_safe_count": 1,
+                "customer_service_route_modern_count": 0,
+                "customer_service_route_legacy_count": 1,
+                "customer_service_route_invalid_count": 0,
             }
             module.write_result(path, result)
             content = path.read_text(encoding="utf-8")
@@ -457,6 +462,10 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         self.assertIn("diagnostic_result: dict[str, Any] | None = None", route_helper)
         self.assertIn('diagnostic_result["customer_service_route_candidate_count"]', route_helper)
         self.assertIn('diagnostic_result["customer_service_route_safe_count"]', route_helper)
+        self.assertIn('len(modern_candidates) > 1 or len(legacy_candidates) > 1', route_helper)
+        self.assertIn('parsed.path.rstrip("/") in modern_paths', route_helper)
+        self.assertIn('native Customer service navigation exposed a noncanonical route', route_helper)
+        self.assertNotIn('return sorted(safe_candidates', route_helper)
         self.assertNotIn("print(", route_helper)
         run = browser[browser.index("stage = result[\"stage\"] = \"admin_login\"", browser.index("def run()")):]
         self.assertLess(run.index('mark_browser_substage(result, "admin_login_completed")'),
@@ -465,6 +474,107 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                         run.index('mark_browser_substage(result, "admin_service_route_discovery")'))
         self.assertIn("generated_customer_threads_link(admin, ctx.admin, result)", run)
         self.assertIn('admin_route_candidates={result[\'customer_service_route_candidate_count\']}', run)
+
+    def test_multiple_safe_native_thread_route_aliases_select_modern_route(self):
+        module = load_script()
+        module.By = SimpleNamespace(CSS_SELECTOR="css selector")
+        admin_root = "http://127.0.0.1:18080/admin-test"
+        modern = admin_root + "/index.php/sell/customer-service/customer-threads?token=modern-safe"
+        legacy = admin_root + "/index.php?controller=AdminCustomerThreads&token=legacy-safe"
+
+        class Link:
+            def __init__(self, href: str) -> None:
+                self.href = href
+
+            def get_attribute(self, _name: str) -> str:
+                return self.href
+
+        class Driver:
+            def find_elements(self, _by: str, _selector: str) -> list[Link]:
+                return [Link(legacy), Link(modern)]
+
+        diagnostic: dict[str, object] = {}
+        self.assertEqual(modern, module.generated_customer_threads_link(Driver(), admin_root, diagnostic))
+        self.assertEqual(2, diagnostic["customer_service_route_candidate_count"])
+        self.assertEqual(2, diagnostic["customer_service_route_safe_count"])
+        self.assertEqual(1, diagnostic["customer_service_route_modern_count"])
+        self.assertEqual(1, diagnostic["customer_service_route_legacy_count"])
+        self.assertEqual(0, diagnostic["customer_service_route_invalid_count"])
+
+    def test_duplicate_identical_customer_threads_hrefs_are_deduplicated(self):
+        module = load_script()
+        module.By = SimpleNamespace(CSS_SELECTOR="css selector")
+        admin_root = "http://127.0.0.1:18080/admin-test"
+        modern = admin_root + "/index.php/sell/customer-service/customer-threads?token=safe"
+
+        class Link:
+            def get_attribute(self, _name: str) -> str:
+                return modern
+
+        class Driver:
+            def find_elements(self, _by: str, _selector: str) -> list[Link]:
+                return [Link(), Link()]
+
+        diagnostic: dict[str, object] = {}
+        self.assertEqual(modern, module.generated_customer_threads_link(Driver(), admin_root, diagnostic))
+        self.assertEqual(1, diagnostic["customer_service_route_candidate_count"])
+        self.assertEqual(1, diagnostic["customer_service_route_modern_count"])
+
+    def test_multiple_distinct_customer_threads_aliases_fail_as_ambiguous(self):
+        module = load_script()
+        module.By = SimpleNamespace(CSS_SELECTOR="css selector")
+        admin_root = "http://127.0.0.1:18080/admin-test"
+        modern_one = admin_root + "/sell/customer-service/customer-threads?token=one"
+        modern_two = admin_root + "/index.php/sell/customer-service/customer-threads?token=two"
+
+        class Link:
+            def __init__(self, href: str) -> None:
+                self.href = href
+
+            def get_attribute(self, _name: str) -> str:
+                return self.href
+
+        class Driver:
+            def find_elements(self, _by: str, _selector: str) -> list[Link]:
+                return [Link(modern_one), Link(modern_two)]
+
+        with self.assertRaisesRegex(AssertionError, "ambiguous route aliases"):
+            module.generated_customer_threads_link(Driver(), admin_root)
+
+    def test_nested_false_modern_route_fails_closed(self):
+        module = load_script()
+        module.By = SimpleNamespace(CSS_SELECTOR="css selector")
+        admin_root = "http://127.0.0.1:18080/admin-test"
+        nested = admin_root + "/extra/sell/customer-service/customer-threads?token=safe"
+
+        class Link:
+            def get_attribute(self, _name: str) -> str:
+                return nested
+
+        class Driver:
+            def find_elements(self, _by: str, _selector: str) -> list[Link]:
+                return [Link()]
+
+        diagnostic: dict[str, object] = {}
+        with self.assertRaisesRegex(AssertionError, "noncanonical route"):
+            module.generated_customer_threads_link(Driver(), admin_root, diagnostic)
+        self.assertEqual(1, diagnostic["customer_service_route_invalid_count"])
+
+    def test_any_unsafe_customer_threads_route_candidate_still_fails_closed(self):
+        module = load_script()
+        module.By = SimpleNamespace(CSS_SELECTOR="css selector")
+        admin_root = "http://127.0.0.1:18080/admin-test"
+
+        class Link:
+            def get_attribute(self, _name: str) -> str:
+                return "https://outside.invalid/admin/index.php?controller=AdminCustomerThreads&token=unsafe"
+
+        class Driver:
+            def find_elements(self, _by: str, _selector: str) -> list[Link]:
+                return [Link()]
+
+        with self.assertRaisesRegex(AssertionError, "left the isolated Back Office"):
+            module.generated_customer_threads_link(Driver(), admin_root)
 
     def test_contact_uses_shop_generated_locale_routes_and_probes_legacy_query_route(self):
         browser = SCRIPT.read_text(encoding="utf-8")

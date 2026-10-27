@@ -77,7 +77,8 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             '"receipt_confirmation"',
         ):
             self.require(expected_stage, self.browser)
-        self.require("관리자 보안 토큰이 올바르지 않습니다.", self.controller)
+        self.require("관리자 보안 토큰이 현재 관리자 세션과 다릅니다.", self.controller)
+        self.require('$token = (string) $this->token;', self.controller)
         self.require("실제 입금액이 주문 금액과 다릅니다.", (ROOT / "modules" / "kuraneabusinessprofile" / "src" / "Infrastructure" / "BankTransferReceiptConfirmer.php").read_text(encoding="utf-8"))
         self.require("submitOrdenowaConfirmBankTransfer", self.browser)
         self.require("verified_transfer", self.browser)
@@ -195,7 +196,7 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
 
         helper = self.browser.split("def reject_issue_with_invalid_csrf", 1)[1].split("def confirmation_form", 1)[0]
         self.require(
-            'notice_text.strip() != "관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요."',
+            'notice_text.strip() != "관리자 보안 토큰이 현재 관리자 세션과 다릅니다. 페이지를 새로고침한 후 다시 시도해 주세요."',
             helper,
         )
         self.require('"alert-danger" not in notice_class.split()', helper)
@@ -214,6 +215,25 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         )
         self.assertLess(no_change_readback, csrf_flow.index('result["issue_csrf_rejected"] = True'))
         self.assertLess(no_change_readback, csrf_flow.index('substage = "none"'))
+
+    def test_issue_csrf_failure_distinguishes_wrong_method_from_token_mismatch(self) -> None:
+        issue = self.controller.split("private function processIssue", 1)[1].split(
+            "private function processConfirm", 1
+        )[0]
+        self.assertLess(issue.index("REQUEST_METHOD"), issue.index("hash_equals"))
+        self.require("입금 안내 발급 요청 방식이 올바르지 않습니다.", issue)
+        self.require("관리자 보안 토큰이 현재 관리자 세션과 다릅니다.", issue)
+        self.require('hash_equals((string) $this->token, $submittedToken)', issue)
+        self.require('요청에 관리자 보안 토큰이 누락되었습니다.', issue)
+
+        helper = self.browser.split("def issue_form_token_matches_action", 1)[1].split(
+            "def read_visible_notice", 1
+        )[0]
+        self.require('input[name="token"]', helper)
+        self.require('get("token", [])', helper)
+        self.require("form_token == action_tokens[0]", helper)
+        self.require('result["issue_form_csrf_consistent"] = issue_form_token_matches_action(', self.browser)
+        self.require("issue_form_csrf_consistent=", self.browser)
 
     def test_instruction_issue_notice_uses_fresh_snapshot_before_persistence_readback(self) -> None:
         issue_flow = self.browser.split('stage = result["stage"] = "instruction_issue"', 1)[1].split(
@@ -293,7 +313,9 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             "def reject_issue_with_invalid_csrf", 1
         )[0]
         self.require('"unclassified_notice"', category_helper)
-        self.require('"csrf_rejected"', category_helper)
+        self.require('"csrf_field_missing"', category_helper)
+        self.require('"csrf_field_mismatch"', category_helper)
+        self.require('"invalid_http_method"', category_helper)
         self.require('"instruction_persistence_error"', category_helper)
         self.assertNotIn("print(", category_helper)
         tree = ast.parse(self.browser)
@@ -305,8 +327,16 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         exec(compile(ast.Module(body=[category_function], type_ignores=[]), str(BROWSER), "exec"), category_namespace)
         classify_category = category_namespace["issue_notice_failure_category"]
         self.assertEqual(
-            classify_category("관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요."),
-            "csrf_rejected",
+            classify_category("관리자 보안 토큰이 현재 관리자 세션과 다릅니다. 페이지를 새로고침한 후 다시 시도해 주세요."),
+            "csrf_field_mismatch",
+        )
+        self.assertEqual(
+            classify_category("요청에 관리자 보안 토큰이 누락되었습니다. 페이지를 새로고침한 후 다시 시도해 주세요."),
+            "csrf_field_missing",
+        )
+        self.assertEqual(
+            classify_category("입금 안내 발급 요청 방식이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요."),
+            "invalid_http_method",
         )
         self.assertEqual(classify_category("주문 입금 안내를 저장하지 못했습니다."), "instruction_persistence_error")
         self.assertEqual(classify_category("private order error sentinel"), "unclassified_notice")

@@ -70,7 +70,7 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
 
         parent::initContent();
         $actionUrl = (string) $this->context->link->getAdminLink('AdminBusinessProfileTransfers');
-        $token = (string) Tools::getAdminTokenLite('AdminBusinessProfileTransfers');
+        $token = (string) $this->token;
         $this->content .= $this->renderFeedback();
         $this->content .= '<h2>미결제 엔화 주문</h2>'
             . '<p>주문 금액과 게시된 계좌를 확인한 뒤 안내를 한 번 발급합니다. 금액이나 계좌를 이 화면에서 바꿀 수 없으며, 발급만으로 결제완료 처리되지 않습니다.</p>'
@@ -89,9 +89,16 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
         }
 
         $submittedToken = isset($_POST['token']) && is_string($_POST['token']) ? $_POST['token'] : '';
-        if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? '')) !== 'POST'
-            || !hash_equals((string) Tools::getAdminTokenLite('AdminBusinessProfileTransfers'), $submittedToken)) {
-            $this->fail('관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.');
+        if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? '')) !== 'POST') {
+            $this->fail('입금 안내 발급 요청 방식이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.');
+            return;
+        }
+        if ($submittedToken === '') {
+            $this->fail('요청에 관리자 보안 토큰이 누락되었습니다. 페이지를 새로고침한 후 다시 시도해 주세요.');
+            return;
+        }
+        if (!hash_equals((string) $this->token, $submittedToken)) {
+            $this->fail('관리자 보안 토큰이 현재 관리자 세션과 다릅니다. 페이지를 새로고침한 후 다시 시도해 주세요.');
             return;
         }
         if (!AdminAccessPolicy::canIssueBankTransferInstructions((array) ($this->tabAccess ?? []))) {
@@ -178,9 +185,16 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
         }
 
         $submittedToken = isset($_POST['token']) && is_string($_POST['token']) ? $_POST['token'] : '';
-        if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? '')) !== 'POST'
-            || !hash_equals((string) Tools::getAdminTokenLite('AdminBusinessProfileTransfers'), $submittedToken)) {
-            $this->fail('관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.');
+        if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? '')) !== 'POST') {
+            $this->fail('입금 확인 요청 방식이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.');
+            return;
+        }
+        if ($submittedToken === '') {
+            $this->fail('요청에 관리자 보안 토큰이 누락되었습니다. 페이지를 새로고침한 후 다시 시도해 주세요.');
+            return;
+        }
+        if (!hash_equals((string) $this->token, $submittedToken)) {
+            $this->fail('관리자 보안 토큰이 현재 관리자 세션과 다릅니다. 페이지를 새로고침한 후 다시 시도해 주세요.');
             return;
         }
         if (!AdminAccessPolicy::canConfirmBankTransferReceipt((array) ($this->tabAccess ?? []))) {

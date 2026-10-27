@@ -47,7 +47,7 @@ SAFE_EXCEPTION_TYPES = {
 }
 SAFE_RESULT_KEYS = {
     "status", "stage", "exception_type", "failure_substage", "fixture_bound", "instruction_issued",
-    "issue_persistence_diagnostic", "issue_failure_category",
+    "issue_persistence_diagnostic", "issue_failure_category", "issue_form_csrf_consistent",
     "issue_left_order_unpaid", "instruction_immutable", "customer_instruction_visible",
     "order_identity_match", "order_product_line_match", "amount_match", "account_match", "foreign_customer_denied",
     "limited_staff_denied", "view_only_confirmation_denied", "issue_csrf_rejected", "csrf_rejected", "wrong_amount_rejected", "receipt_confirmed",
@@ -58,7 +58,8 @@ SAFE_ISSUE_PERSISTENCE_DIAGNOSTICS = {
     "not_run", "unpaid_instruction_absent", "unpaid_instruction_persisted", "unexpected_state", "unavailable",
 }
 SAFE_ISSUE_FAILURE_CATEGORIES = {
-    "not_run", "csrf_rejected", "issue_permission_denied", "order_scope_rejected",
+    "not_run", "csrf_rejected", "csrf_field_missing", "csrf_field_mismatch",
+    "invalid_http_method", "issue_permission_denied", "order_scope_rejected",
     "wrong_payment_module", "invalid_unpaid_order", "profile_account_gate",
     "employee_missing", "issuer_validation_error", "instruction_persistence_error",
     "existing_instruction_mismatch", "unclassified_notice",
@@ -442,6 +443,24 @@ def order_row(driver: webdriver.Chrome, order: dict[str, object]):
     return matches[0]
 
 
+def issue_form_token_matches_action(row, admin_root: str) -> bool:
+    forms = row.find_elements(By.CSS_SELECTOR, "form")
+    if len(forms) != 1:
+        return False
+    form = forms[0]
+    tokens = form.find_elements(By.CSS_SELECTOR, 'input[name="token"]')
+    action = form.get_attribute("action") or ""
+    action_tokens = parse_qs(urlparse(action).query, keep_blank_values=True).get("token", [])
+    form_token = tokens[0].get_attribute("value") if len(tokens) == 1 else ""
+    return bool(
+        safe_admin_path(action, admin_root)
+        and len(action_tokens) == 1
+        and action_tokens[0].strip()
+        and form_token
+        and form_token == action_tokens[0]
+    )
+
+
 def read_visible_notice(driver: webdriver.Chrome):
     return WebDriverWait(driver, 35).until(lambda browser: next((
         notice for notice in browser.find_elements(By.CSS_SELECTOR, ".alert.alert-success, .alert.alert-danger")
@@ -484,7 +503,9 @@ def issue_notice_failure_category(notice_text: str) -> str:
     """Map exact known feedback to a fixed category without logging message content."""
     normalized = " ".join(notice_text.split())
     known_feedback = {
-        "관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.": "csrf_rejected",
+        "요청에 관리자 보안 토큰이 누락되었습니다. 페이지를 새로고침한 후 다시 시도해 주세요.": "csrf_field_missing",
+        "관리자 보안 토큰이 현재 관리자 세션과 다릅니다. 페이지를 새로고침한 후 다시 시도해 주세요.": "csrf_field_mismatch",
+        "입금 안내 발급 요청 방식이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.": "invalid_http_method",
         "주문 입금 안내를 발급할 권한이 없습니다.": "issue_permission_denied",
         "선택한 쇼핑몰의 주문을 찾을 수 없습니다.": "order_scope_rejected",
         "입금 안내는 미결제 계좌이체 주문에만 발급할 수 있습니다.": "wrong_payment_module",
@@ -523,7 +544,7 @@ def reject_issue_with_invalid_csrf(driver: webdriver.Chrome, row, admin_root: st
     buttons[0].click()
     set_substage("csrf_rejection_readback")
     notice_text, notice_class = read_visible_notice_snapshot(driver)
-    if (notice_text.strip() != "관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요."
+    if (notice_text.strip() != "관리자 보안 토큰이 현재 관리자 세션과 다릅니다. 페이지를 새로고침한 후 다시 시도해 주세요."
             or "alert-danger" not in notice_class.split()):
         raise AssertionError("an invalid instruction CSRF token was not rejected by the native controller")
 
@@ -752,6 +773,7 @@ def run() -> None:
         "failure_substage": "none",
         "issue_persistence_diagnostic": "not_run",
         "issue_failure_category": "not_run",
+        "issue_form_csrf_consistent": False,
         "fixture_bound": False, "instruction_issued": False, "issue_left_order_unpaid": False,
         "instruction_immutable": False, "customer_instruction_visible": False,
         "order_identity_match": False, "order_product_line_match": False, "amount_match": False, "account_match": False,
@@ -812,6 +834,9 @@ def run() -> None:
         set_substage("instruction_issue_order_row_readback")
         row = order_row(admin, order)
         set_substage("instruction_issue_action_controls")
+        result["issue_form_csrf_consistent"] = issue_form_token_matches_action(
+            row, str(ctx["admin"])
+        )
         issue_buttons = row.find_elements(By.CSS_SELECTOR, 'button[name="submitOrdenowaIssueTransfer"]')
         if len(issue_buttons) != 1 or not issue_buttons[0].is_displayed() or not issue_buttons[0].is_enabled():
             raise AssertionError("the exact unpaid order did not expose one enabled instruction-issue action")
@@ -918,7 +943,7 @@ def run() -> None:
         notice, confirmation_action, confirmation_token = fill_and_submit_confirmation(
             admin, row, order, str(order["amount"]), synthetic_statement, str(ctx["admin"]), tamper_token=True
         )
-        if ("관리자 보안 토큰이 올바르지 않습니다." not in notice.text
+        if ("관리자 보안 토큰이 현재 관리자 세션과 다릅니다." not in notice.text
                 or "alert-danger" not in (notice.get_attribute("class") or "")):
             raise AssertionError("an invalid confirmation CSRF token was not rejected by the native controller")
         verify_unpaid_native_order(ctx, order, "issued")
@@ -1007,7 +1032,8 @@ def run() -> None:
             f"FAIL: isolated bank-transfer browser QA; stage={result['stage']}; "
             f"substage={substage}; exception={result['exception_type']}; "
             f"issue_failure_category={result['issue_failure_category']}; "
-            f"issue_persistence_diagnostic={result['issue_persistence_diagnostic']}",
+            f"issue_persistence_diagnostic={result['issue_persistence_diagnostic']}; "
+            f"issue_form_csrf_consistent={str(result['issue_form_csrf_consistent']).lower()}",
             file=sys.stderr,
         )
         for browser, filename in (

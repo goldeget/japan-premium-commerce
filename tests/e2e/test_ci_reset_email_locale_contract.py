@@ -3,6 +3,7 @@ import ast
 import contextlib
 import importlib.util
 import io
+from email.message import EmailMessage
 from pathlib import Path
 import tempfile
 import unittest
@@ -67,6 +68,65 @@ class ResetEmailLocaleContract(unittest.TestCase):
             with self.assertRaises(module.MessageValidationError) as caught:
                 module.assert_message(self.message(url=url), 'en', 'http://127.0.0.1:18080', '/reset', self.forbidden())
             self.assertIn(caught.exception.check, {'reset_link_origin_mismatch', 'reset_link_path_mismatch'})
+
+    def test_raw_rfc822_mime_parts_are_decoded_in_memory_and_drive_link_acceptance(self):
+        module = self.module()
+        url = 'http://127.0.0.1:18080/reset?token=synthetic-token&reset_token=synthetic-reset'
+        mail = EmailMessage()
+        mail['Subject'] = 'native reset fixture'
+        mail.set_content('비밀번호 재설정\n' + url + '\n', charset='utf-8')
+        mail.add_alternative(f'<html><body>비밀번호 <a href="{url}">reset</a></body></html>', subtype='html')
+        raw_html, raw_text = module.parse_raw_mime_parts(mail.as_bytes())
+        self.assertIn('href=', raw_html)
+        self.assertIn(url, raw_text)
+
+        message = self.message('ko')
+        message['Text'] = 'Mailpit-derived preview omits the native route'
+        reset_url = module.assert_message(
+            message, 'ko', 'http://127.0.0.1:18080', '/reset', self.forbidden(),
+            (raw_html, raw_text),
+        )
+        self.assertEqual(url, reset_url)
+
+    def test_raw_rfc822_mime_parts_still_require_a_native_plain_text_reset_link(self):
+        module = self.module()
+        url = 'http://127.0.0.1:18080/reset?token=synthetic-token&reset_token=synthetic-reset'
+        mail = EmailMessage()
+        mail['Subject'] = 'native reset fixture'
+        mail.set_content('비밀번호 재설정\nhttps://outside.invalid/help\n', charset='utf-8')
+        mail.add_alternative(f'<html><body>비밀번호 <a href="{url}">reset</a></body></html>', subtype='html')
+        raw_parts = module.parse_raw_mime_parts(mail.as_bytes())
+        with self.assertRaises(module.MessageValidationError) as caught:
+            module.assert_message(
+                self.message('ko'), 'ko', 'http://127.0.0.1:18080', '/reset', self.forbidden(), raw_parts,
+            )
+        self.assertEqual('text_reset_link_missing', caught.exception.check)
+
+    def test_raw_rfc822_ignores_filename_attachments_and_forwarded_messages(self):
+        module = self.module()
+        url = 'http://127.0.0.1:18080/reset?token=synthetic-token&reset_token=synthetic-reset'
+        forwarded = EmailMessage()
+        forwarded.set_content('forwarded note ' + url, charset='utf-8')
+        mail = EmailMessage()
+        mail.set_content('비밀번호 재설정\n' + url + '\n', charset='utf-8')
+        mail.add_alternative(f'<html><body>비밀번호 <a href="{url}">reset</a></body></html>', subtype='html')
+        mail.add_attachment(('forwarded note ' + url).encode('utf-8'), maintype='text', subtype='plain',
+                            filename='forwarded.txt')
+        mail.add_attachment(forwarded.as_bytes(), maintype='message', subtype='rfc822',
+                            filename='forwarded.eml')
+        raw_html, raw_text = module.parse_raw_mime_parts(mail.as_bytes())
+        self.assertIn(url, raw_text)
+        self.assertEqual(1, raw_text.count(url))
+        self.assertTrue(module.text_has_native_reset_link_shape(raw_text, 'http://127.0.0.1:18080', '/reset'))
+
+    def test_raw_and_mailpit_preview_comparison_reports_only_bounded_link_shape(self):
+        module = self.module()
+        raw_text = '비밀번호 ' + self.message('ko')['Text']
+        preview = '비밀번호: Mailpit parsed preview'
+        self.assertTrue(module.text_has_native_reset_link_shape(
+            raw_text, 'http://127.0.0.1:18080', '/reset'))
+        self.assertFalse(module.text_has_native_reset_link_shape(
+            preview, 'http://127.0.0.1:18080', '/reset'))
 
     def test_credentials_and_generic_bank_details_fail_without_logging_payload(self):
         module = self.module()
@@ -250,6 +310,8 @@ class ResetEmailLocaleContract(unittest.TestCase):
             output.getvalue(),
             'FAIL: isolated native reset email locale=none stage=context exception=RuntimeError; '
             'response_status=unavailable; message_check=none; message_parts=unavailable; '
+            'raw_text_native_link=none; mailpit_preview_text_native_link=none; '
+            'mailpit_preview_text_shape_match=none; '
             'mail_type=unavailable; template_candidate=unavailable; '
             'template_iso=none; text_source=unavailable; '
             'text_template_present=false; text_template_has_url=false; '
@@ -267,6 +329,9 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 "status": "failure", "language": "ja", "stage": "native_request_email_field",
                 "exception_type": "TimeoutException", "response_status": 404,
                 "message_check": "none", "message_part_evidence": None,
+                "raw_text_native_link_shape": None,
+                "mailpit_preview_text_native_link_shape": None,
+                "mailpit_preview_text_shape_match": None,
                 "mail_type": None, "template_candidate": "unavailable",
                 "template_iso": "none", "text_source": "unavailable",
                 "text_template_present": False, "text_template_has_url": False,
