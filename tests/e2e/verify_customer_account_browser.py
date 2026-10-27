@@ -1835,6 +1835,9 @@ def safe_registration_navigation_summary(events: object) -> list[dict[str, objec
                 "selected_link_matches_request": event.get("selected_link_matches_request")
                 if type(event.get("selected_link_matches_request")) is bool
                 else None,
+                "request_matches_expected": event.get("request_matches_expected")
+                if type(event.get("request_matches_expected")) is bool
+                else None,
                 "location_target": safe_route(event.get("location_target_metadata")),
                 "location_matches_next_request": event.get("location_matches_next_request")
                 if type(event.get("location_matches_next_request")) is bool
@@ -1846,6 +1849,12 @@ def safe_registration_navigation_summary(events: object) -> list[dict[str, objec
                 "redirect_status_code": safe_status(event.get("redirect_status_code")),
                 "from_service_worker": event.get("from_service_worker")
                 if type(event.get("from_service_worker")) is bool
+                else None,
+                "from_disk_cache": event.get("from_disk_cache")
+                if type(event.get("from_disk_cache")) is bool
+                else None,
+                "from_prefetch_cache": event.get("from_prefetch_cache")
+                if type(event.get("from_prefetch_cache")) is bool
                 else None,
             }
         )
@@ -2022,6 +2031,7 @@ def document_navigation_events(
     *,
     selected_signout_url: str | None = None,
     expected_login_url: str | None = None,
+    expected_document_url: str | None = None,
 ) -> list[dict[str, object]]:
     """Summarize same-tab document requests and redirects without URL values."""
     try:
@@ -2189,6 +2199,11 @@ def document_navigation_events(
                     if selected_signout_url is not None and not isinstance(redirect_response, dict)
                     else None
                 ),
+                "request_matches_expected": (
+                    safe_same_shop_request_match(request_url, expected_document_url)
+                    if expected_document_url is not None and not isinstance(redirect_response, dict)
+                    else None
+                ),
                 **redirect_diagnostics,
                 "frame_scope": safe_document_frame_scope(params.get("frameId"), main_frame_id),
                 "initiator_type": initiator_type,
@@ -2209,6 +2224,12 @@ def document_navigation_events(
                 else 0,
                 "from_service_worker": response_obj.get("fromServiceWorker")
                 if type(response_obj.get("fromServiceWorker")) is bool
+                else None,
+                "from_disk_cache": response_obj.get("fromDiskCache")
+                if type(response_obj.get("fromDiskCache")) is bool
+                else None,
+                "from_prefetch_cache": response_obj.get("fromPrefetchCache")
+                if type(response_obj.get("fromPrefetchCache")) is bool
                 else None,
             }
         )
@@ -3977,6 +3998,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         key: False for key in CUSTOMER_ADDRESS_ISOLATION_RESULT_KEYS
     }
     address_isolation_substage = "not_started"
+    address_isolation_network_only = False
     expected_first_name = f"CI-{label.title()}"
     driver = None
     success = False
@@ -3992,6 +4014,35 @@ def run_viewport(width: int, height: int, label: str) -> bool:
     def mark_email_login_account_route_classification(value: str) -> None:
         nonlocal email_login_account_route_classification
         email_login_account_route_classification = value
+
+    def set_address_isolation_network_only(enabled: bool) -> None:
+        nonlocal address_isolation_network_only
+        if enabled:
+            address_isolation_network_only = True
+        driver.execute_cdp_cmd("Network.setBypassServiceWorker", {"bypass": enabled})
+        driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": enabled})
+        address_isolation_network_only = enabled
+
+    def assert_network_backed_navigation(
+        events: object,
+        operation: str,
+        accepted_statuses: frozenset[int] = frozenset({200}),
+    ) -> list[dict[str, object]]:
+        top_events = [
+            event for event in events
+            if isinstance(event, dict) and event.get("frame_scope") == "top_frame"
+        ] if isinstance(events, list) else []
+        if not top_events:
+            raise AssertionError(f"{operation} did not produce a top-level network response")
+        if any(event.get("from_service_worker") is not False for event in top_events):
+            raise AssertionError(f"{operation} was served by a service worker")
+        if any(event.get("from_disk_cache") is True for event in top_events):
+            raise AssertionError(f"{operation} was served from the browser disk cache")
+        if any(event.get("from_prefetch_cache") is True for event in top_events):
+            raise AssertionError(f"{operation} was served from the browser prefetch cache")
+        if top_events[-1].get("status_code") not in accepted_statuses:
+            raise AssertionError(f"{operation} returned an unexpected HTTP status")
+        return top_events
 
     def mark_customer_address_substage(value: str) -> None:
         nonlocal address_substage
@@ -4319,6 +4370,21 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         address_isolation_substage = "foreign_account_route"
         _, foreign_account_url = my_account_link_from_header(driver, open_menu=False)
 
+        stage = "customer_address_cross_owner_foreign_session_pre_request"
+        address_isolation_substage = "foreign_account_pre_request"
+        set_address_isolation_network_only(True)
+        clear_document_navigation_events(driver)
+        driver.get(foreign_account_url)
+        if not safe_generated_route_match(driver.current_url, foreign_account_url):
+            raise AssertionError("foreign customer pre-request check left its canonical account route")
+        assert_my_page(driver, foreign_first_name)
+        assert_network_backed_navigation(
+            document_navigation_events(driver),
+            "foreign account pre-request readback",
+        )
+        address_isolation_result["foreign_session_authenticated_before_request"] = True
+        address_isolation_result["foreign_session_network_backed_before_request"] = True
+
         stage = "customer_address_foreign_access"
         address_isolation_substage = "foreign_edit_request"
         clear_document_navigation_events(driver)
@@ -4328,13 +4394,38 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             lambda browser: browser.execute_script("return document.readyState") == "complete"
         )
         address_isolation_substage = "foreign_response_readback"
-        navigation_events = document_navigation_events(driver)
+        navigation_events = document_navigation_events(
+            driver,
+            expected_document_url=owner_address_edit_url,
+        )
         top_level_events = [
             event for event in navigation_events
             if isinstance(event, dict) and event.get("frame_scope") == "top_frame"
         ]
         if not top_level_events:
             raise AssertionError("foreign address access did not produce a top-level response")
+        print(
+            "ORDENOWA_CUSTOMER_ADDRESS_FOREIGN_RESPONSE_SAFE_TRACE="
+            + json.dumps(
+                safe_registration_navigation_summary(top_level_events),
+                ensure_ascii=True,
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
+        top_level_events = assert_network_backed_navigation(
+            top_level_events,
+            "foreign address request",
+            frozenset({200, 401, 403, 404}),
+        )
+        first_request = next(
+            (event for event in top_level_events if event.get("event") == "document_request"),
+            None,
+        )
+        if not isinstance(first_request, dict) or first_request.get("request_matches_expected") is not True:
+            raise AssertionError("foreign address response did not match the owner's native edit request")
+        address_isolation_result["foreign_response_network_backed"] = True
+        address_isolation_result["foreign_response_target_matched"] = True
         final_event = top_level_events[-1]
         if final_event.get("status_code") not in {200, 401, 403, 404}:
             raise AssertionError("foreign address access did not resolve to a successful or denied response")
@@ -4354,15 +4445,6 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         if current_origin != shop_origin:
             raise AssertionError("foreign address access left the isolated shop origin")
         address_isolation_result["foreign_response_same_shop"] = True
-        print(
-            "ORDENOWA_CUSTOMER_ADDRESS_FOREIGN_RESPONSE_SAFE_TRACE="
-            + json.dumps(
-                safe_registration_navigation_summary(top_level_events),
-                ensure_ascii=True,
-                sort_keys=True,
-            ),
-            file=sys.stderr,
-        )
         body_text = driver.find_element(By.TAG_NAME, "body").text
         address_forms = driver.find_elements(By.CSS_SELECTOR, ".js-address-form form")
         if address_forms:
@@ -4408,13 +4490,22 @@ def run_viewport(width: int, height: int, label: str) -> bool:
 
         stage = "customer_address_cross_owner_foreign_session_readback"
         address_isolation_substage = "foreign_account_readback"
+        clear_document_navigation_events(driver)
         driver.get(foreign_account_url)
+        if not safe_generated_route_match(driver.current_url, foreign_account_url):
+            raise AssertionError("foreign session readback left its canonical account route")
         assert_my_page(driver, foreign_first_name)
+        assert_network_backed_navigation(
+            document_navigation_events(driver),
+            "foreign account readback",
+        )
         address_isolation_result["foreign_session_authenticated"] = True
+        address_isolation_result["foreign_session_network_backed"] = True
 
         stage = "customer_address_cross_owner_foreign_logout"
         address_isolation_substage = "foreign_logout"
         logout(driver, login_url=login_url)
+        set_address_isolation_network_only(True)
         stage = "customer_address_cross_owner_owner_relogin"
         address_isolation_substage = "owner_relogin"
         clear_document_navigation_events(driver)
@@ -4431,6 +4522,11 @@ def run_viewport(width: int, height: int, label: str) -> bool:
                 f"owner_login_submit_{value}"
             ),
         )
+        address_isolation_substage = "owner_account_page_navigation"
+        clear_document_navigation_events(driver)
+        driver.get(account_url)
+        if not safe_generated_route_match(driver.current_url, account_url):
+            raise AssertionError("owner re-login did not reach the canonical account route")
         assert_my_page(
             driver,
             expected_first_name,
@@ -4438,16 +4534,27 @@ def run_viewport(width: int, height: int, label: str) -> bool:
                 f"owner_{value}"
             ),
         )
+        assert_network_backed_navigation(
+            document_navigation_events(driver),
+            "owner account readback after re-login",
+        )
         # Partial failure evidence must not treat the pre-logout session as a relogin.
         address_isolation_result["owner_session_authenticated"] = True
+        address_isolation_result["owner_session_network_backed"] = True
 
         stage = "customer_address_cross_owner_owner_readback"
         address_isolation_substage = "owner_fresh_readback"
+        clear_document_navigation_events(driver)
         driver.get(account_url)
         assert_my_page(driver, expected_first_name)
         address_list_link = visible(driver, "#addresses_main_link")
+        clear_document_navigation_events(driver)
         click_centered(driver, address_list_link)
         wait_for_customer_address_card(driver, address_alias)
+        assert_network_backed_navigation(
+            document_navigation_events(driver),
+            "owner address fresh readback",
+        )
         assert_customer_address_line(
             driver,
             address_alias,
@@ -4456,8 +4563,10 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             previous_line=initial_address_line,
         )
         address_isolation_result["owner_fresh_readback_unchanged"] = True
+        address_isolation_result["owner_fresh_readback_network_backed"] = True
         if not all(address_isolation_result.values()):
             raise AssertionError("cross-customer address isolation did not satisfy every check")
+        set_address_isolation_network_only(False)
 
         stage = "email_login"
         email_login_substage = "logout"
@@ -4676,6 +4785,15 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             file=sys.stderr,
         )
     finally:
+        if driver is not None and address_isolation_network_only:
+            try:
+                set_address_isolation_network_only(False)
+            except Exception:
+                print(
+                    "FAIL: customer address isolation could not restore service worker and cache handling",
+                    file=sys.stderr,
+                )
+                success = False
         if driver is not None:
             try:
                 driver.quit()

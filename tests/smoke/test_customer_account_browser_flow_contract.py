@@ -124,11 +124,18 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             result_keys = (
                 "foreign_response_status_allowed",
                 "foreign_response_same_shop",
+                "foreign_response_network_backed",
+                "foreign_response_target_matched",
+                "foreign_session_authenticated_before_request",
+                "foreign_session_network_backed_before_request",
                 "owner_session_authenticated",
+                "owner_session_network_backed",
                 "foreign_session_authenticated",
+                "foreign_session_network_backed",
                 "foreign_edit_form_absent",
                 "foreign_address_content_absent",
                 "owner_fresh_readback_unchanged",
+                "owner_fresh_readback_network_backed",
             )
             result = {key: True for key in result_keys}
             for viewport in ("desktop", "mobile"):
@@ -487,6 +494,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             "customer_address_cross_owner_registration_submit",
             "customer_address_cross_owner_registration_success",
             "customer_address_cross_owner_foreign_account_route",
+            "customer_address_cross_owner_foreign_session_pre_request",
             "customer_address_foreign_access",
             "customer_address_cross_owner_foreign_session_readback",
             "customer_address_cross_owner_foreign_logout",
@@ -509,7 +517,13 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         )[0]
         foreign_access = self.blocks["customer_address_foreign_access"]
         self.assertIn("driver.get(owner_address_edit_url)", foreign_access)
-        self.assertIn("document_navigation_events(driver)", foreign_access)
+        self.assertIn("document_navigation_events(\n            driver,\n            expected_document_url=owner_address_edit_url,\n        )", foreign_access)
+        self.assertIn("from_service_worker", run_viewport)
+        self.assertIn("from_disk_cache", self.source)
+        self.assertIn("from_prefetch_cache", self.source)
+        self.assertIn("request_matches_expected", self.source)
+        self.assertIn("foreign_response_network_backed", foreign_access)
+        self.assertIn("foreign_response_target_matched", foreign_access)
         self.assertIn("final_event.get(\"status_code\") not in {200, 401, 403, 404}", foreign_access)
         self.assertIn("current_origin != shop_origin", foreign_access)
         self.assertIn('address_isolation_result["foreign_response_status_allowed"] = True', foreign_access)
@@ -531,10 +545,21 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertNotIn("print(address_alias", foreign_access)
         self.assertNotIn("print(owner_address_edit_url", foreign_access)
 
+        foreign_pre_request = self.blocks[
+            "customer_address_cross_owner_foreign_session_pre_request"
+        ]
+        self.assertIn("driver.get(foreign_account_url)", foreign_pre_request)
+        self.assertIn("assert_my_page(driver, foreign_first_name)", foreign_pre_request)
+        self.assertIn("foreign_session_authenticated_before_request", foreign_pre_request)
+        self.assertIn("foreign_session_network_backed_before_request", foreign_pre_request)
+        self.assertIn('"cacheDisabled": enabled', run_viewport)
+        self.assertIn('set_address_isolation_network_only(False)', run_viewport)
+
         foreign_session_readback = self.blocks["customer_address_cross_owner_foreign_session_readback"]
         self.assertIn("driver.get(foreign_account_url)", foreign_session_readback)
         self.assertIn("assert_my_page(driver, foreign_first_name)", foreign_session_readback)
         self.assertIn("foreign_session_authenticated", foreign_session_readback)
+        self.assertIn("foreign_session_network_backed", foreign_session_readback)
         foreign_session_check = 'address_isolation_result["foreign_session_authenticated"] = True'
         self.assertEqual(run_viewport.count(foreign_session_check), 1)
         foreign_session_assertion = run_viewport.index(
@@ -557,8 +582,11 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         for substage in (
             "owner_login_navigation",
             "owner_login_form",
+            "owner_account_page_navigation",
         ):
             self.assertIn(substage, owner_relogin)
+        self.assertIn("driver.get(account_url)", owner_relogin)
+        self.assertIn("owner_session_network_backed", owner_relogin)
         self.assertIn('f"owner_login_submit_{value}"', owner_relogin)
         self.assertIn('f"owner_{value}"', owner_relogin)
 
@@ -579,6 +607,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn("driver.get(account_url)", owner_readback)
         self.assertIn("assert_customer_address_line", owner_readback)
         self.assertIn("owner_fresh_readback_unchanged", owner_readback)
+        self.assertIn("owner_fresh_readback_network_backed", owner_readback)
 
         handler = run_viewport.split("except Exception as error:", 1)[1].split(
             "inner_stage = (", 1

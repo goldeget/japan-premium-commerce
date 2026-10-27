@@ -12,11 +12,18 @@ from typing import Any
 CUSTOMER_ADDRESS_ISOLATION_RESULT_KEYS = (
     "foreign_response_status_allowed",
     "foreign_response_same_shop",
+    "foreign_response_network_backed",
+    "foreign_response_target_matched",
+    "foreign_session_authenticated_before_request",
+    "foreign_session_network_backed_before_request",
     "owner_session_authenticated",
+    "owner_session_network_backed",
     "foreign_session_authenticated",
+    "foreign_session_network_backed",
     "foreign_edit_form_absent",
     "foreign_address_content_absent",
     "owner_fresh_readback_unchanged",
+    "owner_fresh_readback_network_backed",
 )
 
 

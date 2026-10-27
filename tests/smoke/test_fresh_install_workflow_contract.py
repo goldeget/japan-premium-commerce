@@ -706,7 +706,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("def assert_my_page", account_flow)
         my_page = account_flow.split("def assert_my_page", 1)[1].split("def prepare_required_registration_fields", 1)[0]
         logout = account_flow.split("def logout", 1)[1].split("def run_viewport", 1)[0]
-        self.assertEqual(len(re.findall(r"(?m)^\s+assert_my_page\(", account_flow)), 12)
+        self.assertEqual(len(re.findall(r"(?m)^\s+assert_my_page\(", account_flow)), 13)
         for selector in ("identity_main_link", "signout_link"):
             self.assertIn(selector, my_page)
         self.assertIn("expected_first_name", my_page)
