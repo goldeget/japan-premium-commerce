@@ -36,6 +36,10 @@ class BankTransferReceiptContractTests(unittest.TestCase):
             "current_state",
         ):
             self.assertIn(required, confirmer)
+        lock_query = confirmer.split("$lockedOrders = $this->database->executeS(", 1)[1].split(");", 1)[0]
+        self.assertIn("LIMIT 1 FOR UPDATE", lock_query)
+        self.assertIn("true,\n                false", lock_query)
+        self.assertNotIn("$lockedOrderId = (int) $this->database->getValue(", confirmer)
         self.assertNotIn("addWithemail", confirmer)
         self.assertNotIn("Mail::Send", confirmer)
 

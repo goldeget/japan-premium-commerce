@@ -383,6 +383,29 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
         $queryToken = isset($_GET['token']) && is_string($_GET['token']) ? $_GET['token'] : '';
         $controllerToken = (string) $this->token;
         $adminLinkToken = (string) Tools::getAdminTokenLite('AdminBusinessProfileTransfers');
+        $postedOrderId = isset($_POST['id_order']) && is_string($_POST['id_order'])
+            && preg_match('/\\A[1-9][0-9]{0,9}\\z/D', $_POST['id_order']) === 1
+            ? (int) $_POST['id_order']
+            : 0;
+        $fixtureOrderIdValue = (string) getenv('KURANEA_CI_ORDER_ID');
+        $fixtureOrderId = preg_match('/\\A[1-9][0-9]{0,9}\\z/D', $fixtureOrderIdValue) === 1
+            ? (int) $fixtureOrderIdValue
+            : 0;
+        $currentShopId = (int) ($this->context->shop->id ?? 0);
+        $postedOrderExistsInCurrentShop = false;
+        if ($postedOrderId > 0 && $currentShopId > 0) {
+            try {
+                $resolvedOrderId = (int) Db::getInstance()->getValue(
+                    'SELECT `id_order` FROM `' . _DB_PREFIX_ . 'orders`'
+                    . ' WHERE `id_order` = ' . $postedOrderId
+                    . ' AND `id_shop` = ' . $currentShopId,
+                    false
+                );
+                $postedOrderExistsInCurrentShop = $resolvedOrderId === $postedOrderId;
+            } catch (Throwable) {
+                $postedOrderExistsInCurrentShop = false;
+            }
+        }
         $evidence = [
             'post-value-present' => $submittedToken !== '',
             'post-matches-controller' => hash_equals($controllerToken, $submittedToken),
@@ -390,6 +413,9 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
             'post-matches-query' => $queryToken !== '' && hash_equals($queryToken, $submittedToken),
             'controller-matches-admin-link' => hash_equals($controllerToken, $adminLinkToken),
             'post-native-csrf-valid' => $this->hasValidAdminMutationToken(),
+            'post-order-id-positive' => $postedOrderId > 0,
+            'post-order-id-matches-fixture' => $fixtureOrderId > 0 && $postedOrderId === $fixtureOrderId,
+            'post-order-exists-in-current-shop' => $postedOrderExistsInCurrentShop,
         ];
         $attributes = '';
         foreach ($evidence as $name => $matches) {

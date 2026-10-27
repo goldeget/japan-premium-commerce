@@ -513,6 +513,46 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.assertLess(no_change_readback, csrf_flow.index('result["issue_csrf_rejected"] = True'))
         self.assertLess(no_change_readback, csrf_flow.index('substage = "none"'))
 
+    def test_confirmation_form_targets_the_exact_order_in_its_row(self) -> None:
+        module = self.load_browser_module()
+        admin_root = "http://localhost:18080/admin-kuranea"
+
+        class Control:
+            def __init__(self, value: str = "") -> None:
+                self.value = value
+
+            def get_attribute(self, name: str) -> str | None:
+                return self.value if name == "value" else None
+
+        class Form:
+            controls = {
+                'input[name="received_amount"]': [Control()],
+                'input[name="bank_statement_reference"]': [Control()],
+                'input[name="verified_transfer"][value="1"]': [Control("1")],
+                'input[name="token"]': [Control("opaque")],
+                'input[name="id_order"]': [Control("7001")],
+                'button[name="submitOrdenowaConfirmBankTransfer"]': [Control("1")],
+            }
+
+            def find_elements(self, _by: str, selector: str):
+                return self.controls.get(selector, [])
+
+            def get_attribute(self, name: str) -> str | None:
+                return "http://localhost:18080/admin-kuranea/?controller=AdminBusinessProfileTransfers" if name == "action" else None
+
+        class Row:
+            def __init__(self, form: Form) -> None:
+                self.form = form
+
+            def find_elements(self, _by: str, selector: str):
+                return [self.form] if selector == "form" else []
+
+        row = Row(Form())
+        self.assertEqual(3, len(module.confirmation_form(row, admin_root, 7001)))
+        row.form.controls['input[name="id_order"]'] = [Control("7002")]
+        with self.assertRaisesRegex(AssertionError, "exact unpaid order"):
+            module.confirmation_form(row, admin_root, 7001)
+
     def test_confirmation_csrf_rejection_has_safe_substage_at_each_browser_boundary(self) -> None:
         limited_flow = self.browser.split('stage = result["stage"] = "limited_staff_denial"', 1)[1]
         csrf_flow = limited_flow.split('stage = result["stage"] = "csrf_rejected"', 1)[1].split(
@@ -601,6 +641,10 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.assertIn('"wrong_amount_post_native_csrf_valid"', self.browser)
         self.assertIn('data-ordenowa-transfer-feedback="true"', self.controller)
         self.assertIn('"amount_mismatch"', self.browser)
+        self.assertIn('posted_order_id != str(expected_order_id)', self.browser)
+        self.assertIn('"wrong_amount_post_order_id_matches_fixture"', self.browser)
+        self.assertIn("post-order-id-matches-fixture", self.controller)
+        self.assertIn("post-order-exists-in-current-shop", self.controller)
 
     def test_issue_csrf_failure_distinguishes_wrong_method_from_token_mismatch(self) -> None:
         init_content = self.controller.split("public function initContent()", 1)[1].split(

@@ -2280,6 +2280,7 @@ jobs:
             echo '::error title=ORDENOWA bank transfer fixture::The run-scoped bank order ID is invalid.'
             exit 1
           fi
+          printf 'KURANEA_CI_ORDER_ID=%s\n' "$bank_order_id" >> "$GITHUB_ENV"
           docker compose -p "$CI_COMPOSE_PROJECT_NAME" exec -T \
             -e CI=true -e GITHUB_ACTIONS=true -e KURANEA_ISOLATED_CI=1 \
             -e CI_COMPOSE_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" \

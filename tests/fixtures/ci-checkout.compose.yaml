@@ -7,3 +7,4 @@ services:
       GITHUB_RUN_ATTEMPT: ${GITHUB_RUN_ATTEMPT:?GitHub Actions run attempt is required for isolated checkout QA}
       KURANEA_ISOLATED_CI: "1"
       KURANEA_CI_PROJECT_NAME: ${CI_COMPOSE_PROJECT_NAME:?unique Compose project name is required for isolated checkout QA}
+      KURANEA_CI_ORDER_ID: ${KURANEA_CI_ORDER_ID:-}

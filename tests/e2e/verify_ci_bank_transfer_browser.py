@@ -76,6 +76,8 @@ SAFE_RESULT_KEYS = {
     "issue_post_native_csrf_valid",
     "wrong_amount_server_csrf_evidence_present", "wrong_amount_post_value_present",
     "wrong_amount_post_matches_query", "wrong_amount_post_native_csrf_valid",
+    "wrong_amount_post_order_id_positive", "wrong_amount_post_order_id_matches_fixture",
+    "wrong_amount_post_order_exists_in_current_shop",
     "wrong_amount_notice_danger", "wrong_amount_unpaid_readback",
     "wrong_amount_notice_category",
     "issue_server_profile_evidence_present", "issue_profile_readback_succeeded", "issue_published_profile_present",
@@ -805,6 +807,9 @@ def read_confirmation_csrf_server_evidence(driver: webdriver.Chrome) -> dict[str
         "wrong_amount_post_value_present": False,
         "wrong_amount_post_matches_query": False,
         "wrong_amount_post_native_csrf_valid": False,
+        "wrong_amount_post_order_id_positive": False,
+        "wrong_amount_post_order_id_matches_fixture": False,
+        "wrong_amount_post_order_exists_in_current_shop": False,
     }
     if len(elements) != 1:
         return evidence
@@ -812,6 +817,9 @@ def read_confirmation_csrf_server_evidence(driver: webdriver.Chrome) -> dict[str
         ("wrong_amount_post_value_present", "data-post-value-present"),
         ("wrong_amount_post_matches_query", "data-post-matches-query"),
         ("wrong_amount_post_native_csrf_valid", "data-post-native-csrf-valid"),
+        ("wrong_amount_post_order_id_positive", "data-post-order-id-positive"),
+        ("wrong_amount_post_order_id_matches_fixture", "data-post-order-id-matches-fixture"),
+        ("wrong_amount_post_order_exists_in_current_shop", "data-post-order-exists-in-current-shop"),
     ):
         evidence[key] = elements[0].get_attribute(attribute) == "true"
     return evidence
@@ -881,7 +889,7 @@ def reject_issue_with_invalid_csrf(driver: webdriver.Chrome, row, admin_root: st
         raise AssertionError("an invalid instruction CSRF token was not rejected by the native controller")
 
 
-def confirmation_form(row, admin_root: str):
+def confirmation_form(row, admin_root: str, expected_order_id: int):
     forms = row.find_elements(By.CSS_SELECTOR, "form")
     if len(forms) != 1:
         raise AssertionError("the issued order did not expose one separate staff receipt-confirmation form")
@@ -891,10 +899,14 @@ def confirmation_form(row, admin_root: str):
         "reference": form.find_elements(By.CSS_SELECTOR, 'input[name="bank_statement_reference"]'),
         "attestation": form.find_elements(By.CSS_SELECTOR, 'input[name="verified_transfer"][value="1"]'),
         "token": form.find_elements(By.CSS_SELECTOR, 'input[name="token"]'),
+        "order_id": form.find_elements(By.CSS_SELECTOR, 'input[name="id_order"]'),
         "submit": form.find_elements(By.CSS_SELECTOR, 'button[name="submitOrdenowaConfirmBankTransfer"]'),
     }
     if any(len(fields[key]) != 1 for key in fields):
-        raise AssertionError("the staff confirmation form omitted an amount, reference, CSRF token, attestation, or submit control")
+        raise AssertionError("the staff confirmation form omitted its target order, amount, reference, CSRF token, attestation, or submit control")
+    posted_order_id = fields["order_id"][0].get_attribute("value") or ""
+    if posted_order_id != str(expected_order_id):
+        raise AssertionError("the staff confirmation form did not target the exact unpaid order shown in its row")
     action = form.get_attribute("action") or ""
     if not safe_admin_path(action, admin_root):
         raise AssertionError("the staff confirmation POST action left the authenticated Back Office")
@@ -913,7 +925,7 @@ def fill_and_submit_confirmation(
 ) -> tuple[object, str, str]:
     if tamper_token and set_substage is not None:
         set_substage("csrf_confirmation_form_readback")
-    form, fields, action = confirmation_form(row, admin_root)
+    form, fields, action = confirmation_form(row, admin_root, int(order["order_id"]))
     if tamper_token and set_substage is not None:
         set_substage("csrf_confirmation_control_validation")
     token = fields["token"][0].get_attribute("value") or ""
@@ -1131,6 +1143,9 @@ def run() -> None:
         "wrong_amount_post_value_present": False,
         "wrong_amount_post_matches_query": False,
         "wrong_amount_post_native_csrf_valid": False,
+        "wrong_amount_post_order_id_positive": False,
+        "wrong_amount_post_order_id_matches_fixture": False,
+        "wrong_amount_post_order_exists_in_current_shop": False,
         "wrong_amount_notice_danger": False,
         "wrong_amount_unpaid_readback": False,
         "wrong_amount_notice_category": "not_run",
@@ -1475,6 +1490,9 @@ def run() -> None:
             f"wrong_amount_post_value_present={str(result['wrong_amount_post_value_present']).lower()}; "
             f"wrong_amount_post_matches_query={str(result['wrong_amount_post_matches_query']).lower()}; "
             f"wrong_amount_post_native_csrf_valid={str(result['wrong_amount_post_native_csrf_valid']).lower()}; "
+            f"wrong_amount_post_order_id_positive={str(result['wrong_amount_post_order_id_positive']).lower()}; "
+            f"wrong_amount_post_order_id_matches_fixture={str(result['wrong_amount_post_order_id_matches_fixture']).lower()}; "
+            f"wrong_amount_post_order_exists_in_current_shop={str(result['wrong_amount_post_order_exists_in_current_shop']).lower()}; "
             f"wrong_amount_notice_danger={str(result['wrong_amount_notice_danger']).lower()}; "
             f"wrong_amount_unpaid_readback={str(result['wrong_amount_unpaid_readback']).lower()}; "
             f"issue_form_csrf_consistent={str(result['issue_form_csrf_consistent']).lower()}; "

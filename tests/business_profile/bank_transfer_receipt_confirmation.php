@@ -123,8 +123,16 @@ final class FakeTransferReceiptDb
     }
 
     /** @return list<array<string, mixed>> */
-    public function executeS(string $sql): array
+    public function executeS(string $sql, bool $array = true, bool $useCache = true): array
     {
+        if (str_contains($sql, 'SELECT `id_order` FROM `ps_orders`')) {
+            preg_match('/`id_order` = ([0-9]+)/', $sql, $orderMatch);
+            preg_match('/`id_shop` = ([0-9]+)/', $sql, $shopMatch);
+            $orderId = (int) ($orderMatch[1] ?? 0);
+            return isset($this->orders[$orderId]) && (int) $this->orders[$orderId]['id_shop'] === (int) ($shopMatch[1] ?? 0)
+                ? [['id_order' => $orderId]]
+                : [];
+        }
         if (str_contains($sql, 'FROM `ps_order_payment`')) {
             preg_match('/o\.`id_order` = ([0-9]+)/', $sql, $orderMatch);
             preg_match('/op\.`id_order_payment` = ([0-9]+)/', $sql, $paymentIdMatch);

@@ -73,13 +73,17 @@ final class BankTransferReceiptConfirmer
         }
 
         try {
-            $lockedOrderId = (int) $this->database->getValue(
+            $lockedOrders = $this->database->executeS(
                 'SELECT `id_order` FROM `' . _DB_PREFIX_ . 'orders`'
                 . ' WHERE `id_order` = ' . (int) $orderId
                 . ' AND `id_shop` = ' . (int) $shopId
-                . ' FOR UPDATE',
+                . ' LIMIT 1 FOR UPDATE',
+                true,
                 false
             );
+            $lockedOrderId = is_array($lockedOrders) && isset($lockedOrders[0]['id_order'])
+                ? (int) $lockedOrders[0]['id_order']
+                : 0;
             if ($lockedOrderId !== $orderId) {
                 throw new RuntimeException('선택한 쇼핑몰의 주문을 찾을 수 없습니다.');
             }
