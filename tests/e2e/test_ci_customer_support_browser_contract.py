@@ -479,7 +479,13 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         self.assertIn("except TimeoutException:", detail)
         self.assertIn("thread_route_identity(browser.current_url, admin_url)", detail)
         self.assertIn("identity[1] != expected_thread_id", detail)
-        self.assertIn('"[data-role=\'messages-thread\']"', detail)
+        self.assertIn("customer_thread_detail_selector(requested_identity[0])", detail)
+        selector_helper = browser[browser.index("def customer_thread_detail_selector("):browser.index("def assert_thread_order_link(")]
+        self.assertIn('if route_kind == "modern_thread_view"', selector_helper)
+        self.assertIn('return "[data-role=\'messages-thread\']"', selector_helper)
+        self.assertIn('if route_kind == "legacy_thread_view"', selector_helper)
+        self.assertIn('return ".message-item-initial"', selector_helper)
+        self.assertIn("native legacy customer_threads view renders the original", selector_helper)
         self.assertIn("visit_exact_customer_thread_detail(", browser)
         identity_helper = browser[browser.index("def customer_threads_navigation_identity("):browser.index("def thread_route_identity(")]
         self.assertIn('parse_qsl(candidate.query, keep_blank_values=True, strict_parsing=True)', identity_helper)
@@ -604,6 +610,7 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 self.current_thread_id = current_thread_id
                 self.current_url = "about:blank"
                 self.page_load_timeouts: list[float] = []
+                self.selectors: list[str] = []
 
             def set_page_load_timeout(self, timeout: float) -> None:
                 self.page_load_timeouts.append(timeout)
@@ -618,7 +625,8 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             def execute_script(self, _script: str) -> str:
                 return "complete"
 
-            def find_elements(self, _by: str, _selector: str) -> list[Thread]:
+            def find_elements(self, _by: str, selector: str) -> list[Thread]:
+                self.selectors.append(selector)
                 return [Thread()]
 
         class ImmediateWait:
@@ -642,7 +650,11 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         )
         self.assertEqual("isolated inquiry", thread.text)
         self.assertLessEqual(exact_driver.page_load_timeouts[0], 17.5)
+        self.assertEqual([".message-item-initial"], exact_driver.selectors)
         self.assertEqual("admin_thread_detail_readback", diagnostic["browser_substage"])
+        self.assertEqual("[data-role='messages-thread']", module.customer_thread_detail_selector("modern_thread_view"))
+        with self.assertRaises(ValueError):
+            module.customer_thread_detail_selector("unexpected_thread_route")
 
         wrong_thread_driver = Driver(48)
         diagnostic.clear()
@@ -651,6 +663,110 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 wrong_thread_driver, thread_url, admin_root, 47, diagnostic, timeout=35
             )
         self.assertEqual("admin_thread_detail_readback", diagnostic["browser_substage"])
+
+    def test_forward_modal_uses_native_visibility_form_location_and_exact_thread_action(self):
+        module = load_script()
+        module.By = SimpleNamespace(CSS_SELECTOR="css selector", XPATH="xpath")
+        admin_root = "http://127.0.0.1:18080/admin-test"
+        legacy_view = admin_root + "/index.php?controller=AdminCustomerThreads&id_customer_thread=47&viewcustomer_thread=1&token=safe"
+        legacy_form = legacy_view
+        modern_view = admin_root + "/sell/customer-service/customer-threads/47/view?token=safe"
+        modern_index_view = admin_root + "/index.php/sell/customer-service/customer-threads/47/view?token=safe"
+        modern_forward = admin_root + "/sell/customer-service/customer-threads/47/forward?token=safe"
+
+        self.assertEqual(("legacy_thread_view", 47), module.thread_action_route_identity(legacy_form, admin_root))
+        self.assertEqual(("modern_thread_view", 47), module.thread_route_identity(modern_view, admin_root))
+        self.assertEqual(("modern_thread_view", 47), module.thread_route_identity(modern_index_view, admin_root))
+        self.assertEqual(("modern_thread_view", 47), module.thread_action_route_identity(modern_forward, admin_root))
+        self.assertEqual(("modern_thread_view", 48), module.thread_action_route_identity(
+            admin_root + "/sell/customer-service/customer-threads/48/forward?token=safe", admin_root
+        ))
+        self.assertIsNone(module.thread_action_route_identity(
+            "https://outside.invalid/sell/customer-service/customer-threads/47/forward?token=safe", admin_root
+        ))
+        self.assertIsNone(module.thread_route_identity(
+            admin_root + "/unexpected/sell/customer-service/customer-threads/47/view?token=safe", admin_root
+        ))
+        self.assertIsNone(module.thread_action_route_identity(
+            admin_root + "/unexpected/sell/customer-service/customer-threads/47/forward?token=safe", admin_root
+        ))
+        self.assertEqual("#myModal", module.customer_thread_forward_target("legacy_thread_view"))
+        self.assertEqual("#myModal.in", module.customer_thread_forward_visible_modal("legacy_thread_view"))
+        self.assertEqual("#forwardThreadModal.show", module.customer_thread_forward_visible_modal("modern_thread_view"))
+        self.assertIn('visible(admin, f\'button[data-target="{forward_target}"]\')', SCRIPT.read_text(encoding="utf-8"))
+
+        class Modal:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, str]] = []
+
+            def find_elements(self, by: str, selector: str) -> list[object]:
+                self.calls.append((by, selector))
+                return [object()]
+
+        legacy_modal = Modal()
+        modern_modal = Modal()
+        self.assertEqual(1, len(module.customer_thread_forward_forms(legacy_modal, "legacy_thread_view")))
+        self.assertEqual(1, len(module.customer_thread_forward_forms(modern_modal, "modern_thread_view")))
+        self.assertEqual([("xpath", "./ancestor::form[1]")], legacy_modal.calls)
+        self.assertEqual([("css selector", "form")], modern_modal.calls)
+
+    def test_legacy_reply_and_status_controls_are_scoped_to_the_exact_thread_action(self):
+        module = load_script()
+        module.By = SimpleNamespace(CSS_SELECTOR="css selector")
+        admin_root = "http://127.0.0.1:18080/admin-test"
+        current = admin_root + "/index.php?controller=AdminCustomerThreads&id_customer_thread=47&viewcustomer_thread=1&token=safe"
+
+        class Control:
+            def is_displayed(self) -> bool:
+                return True
+
+            def is_enabled(self) -> bool:
+                return True
+
+        textarea = Control()
+        reply_button = Control()
+        close_button = Control()
+
+        class Form:
+            def __init__(self, action: str) -> None:
+                self.action = action
+
+            def get_attribute(self, name: str) -> str:
+                return self.action if name == "action" else ""
+
+            def find_elements(self, _by: str, selector: str) -> list[Control]:
+                if selector in {"textarea[name='reply_message']", "button[name='submitReply']"}:
+                    return [textarea if selector.startswith("textarea") else reply_button]
+                if selector == "button[name='setstatus'][value='2']":
+                    return [close_button]
+                return []
+
+        wrong_action = admin_root + "/index.php?controller=AdminCustomerThreads&id_customer_thread=48&viewcustomer_thread=1&token=safe"
+
+        class Driver:
+            current_url = current
+
+            def find_elements(self, _by: str, selector: str) -> list[Form]:
+                if selector != "form":
+                    raise AssertionError("legacy control lookup must be scoped to native forms")
+                return [Form(wrong_action), Form(current)]
+
+        driver = Driver()
+        form, found_textarea, found_reply_button = module.customer_thread_reply_form(
+            driver, "legacy_thread_view", 47, admin_root
+        )
+        self.assertEqual(current, form.get_attribute("action"))
+        self.assertIs(textarea, found_textarea)
+        self.assertIs(reply_button, found_reply_button)
+        found_status_form, found_close_button = module.status_action_form(
+            driver, "closed", "legacy_thread_view", 47, admin_root
+        )
+        self.assertEqual(current, found_status_form.get_attribute("action"))
+        self.assertIs(close_button, found_close_button)
+
+        driver.current_url = current.replace("id_customer_thread=47", "id_customer_thread=48")
+        with self.assertRaisesRegex(AssertionError, "exact customer thread route"):
+            module.customer_thread_reply_form(driver, "legacy_thread_view", 47, admin_root)
 
     def test_equivalent_legacy_customer_threads_aliases_ignore_query_order_and_path_alias(self):
         module = load_script()

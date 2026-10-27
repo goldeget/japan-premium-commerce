@@ -94,15 +94,26 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
             self.assertIn(key, validator)
             self.assertIn(key, link_matcher)
         self.assertIn("$this->activeMailTemplate === 'password_query'", alter)
-        self.assertIn("$resetUrl = $this->extractNativeResetUrl(", alter)
+        self.assertIn(
+            "$resetUrl = $this->activeMailTemplate === 'password_query'\n"
+            "                ? $this->extractNativeResetUrl($htmlBody, $mailLangId, $mailShopId)\n"
+            "                : null;",
+            alter,
+        )
+        self.assertLess(
+            alter.index("$resetUrl = $this->activeMailTemplate === 'password_query'"),
+            alter.index("$this->activeNativeResetUrl"),
+        )
         self.assertIn("$htmlBody", alter)
         self.assertIn("$params['id_lang']", alter)
         self.assertIn("$params['id_shop'] ?? $params['idShop']", alter)
         self.assertIn("$this->context->language->id", alter)
         self.assertIn("$this->context->shop->id", alter)
-        fallback = alter.split("if ($resetUrl === null)", 1)[1].split("$textSetterAvailable", 1)[0]
-        self.assertIn("$this->extractNativeResetUrl(", fallback)
-        self.assertNotIn("$this->activeMailTemplate", fallback)
+        fallback = alter.split("if ($resetUrl === null", 1)[1].split("$textSetterAvailable", 1)[0]
+        self.assertIn("$this->activeMailTemplate === 'password_query'", fallback)
+        self.assertIn("$this->activeNativeResetUrl", fallback)
+        self.assertIn("$this->hasNativeResetLink($htmlBody, $this->activeNativeResetUrl)", fallback)
+        self.assertIn("$this->extractNativeResetUrl($htmlBody, $mailLangId, $mailShopId)", alter)
         self.assertIn("$textSetterAvailable = method_exists($message, 'text')", alter)
         self.assertIn("$textSetterInvoked = true", alter)
         self.assertIn("$resetUrl !== null", alter)

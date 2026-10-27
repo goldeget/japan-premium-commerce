@@ -112,5 +112,18 @@ $service = new ProfileVersionService($repository, new ProfileValidator());
 $draftVersionId = $service->saveDraft($shopId, $profile, $employeeId);
 $publish = $service->publish($shopId, $draftVersionId, $employeeId);
 ordenowaBankFixtureRequire($publish['published'] === true, 'The synthetic account could not be published for this disposable acceptance.');
+$published = $repository->loadPublished($shopId);
+$publishedAccount = $published === null
+    ? null
+    : \Kuranea\BusinessProfile\Domain\BankTransferPayment::selectedActiveAccount($published->profile);
+ordenowaBankFixtureRequire(
+    $published !== null
+        && $published->id === $draftVersionId
+        && is_array($publishedAccount)
+        && ($publishedAccount['id'] ?? null) === $accountId
+        && ($publishedAccount['account_number'] ?? null) === $accountNumber
+        && ($publishedAccount['account_holder'] ?? null) === 'ORDENOWA CI ONLY',
+    'The published run-scoped transfer account did not survive a fresh profile readback.'
+);
 
 fwrite(STDOUT, "PASS: isolated transfer UI has one run-scoped synthetic account; native order remains unpaid.\n");

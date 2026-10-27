@@ -33,7 +33,7 @@ except ModuleNotFoundError:
 
 try:
     from selenium import webdriver
-    from selenium.common.exceptions import TimeoutException
+    from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support import expected_conditions as EC
@@ -42,6 +42,7 @@ try:
 except ModuleNotFoundError:  # Pure contract helpers remain importable without local browser extras.
     webdriver = None
     TimeoutException = TimeoutError
+    StaleElementReferenceException = RuntimeError
     Options = None
     By = None
     EC = None
@@ -343,6 +344,20 @@ def customer_threads_navigation_identity(value: str, admin_url: str) -> tuple[st
     return None
 
 
+def modern_thread_route_id(path: str, admin_url: str, endpoint: str) -> int | None:
+    admin_root = urlparse(admin_url).path.rstrip("/")
+    prefixes = (admin_root, admin_root + "/index.php")
+    for prefix in prefixes:
+        match = re.fullmatch(
+            re.escape(prefix)
+            + rf"/sell/customer-service/customer-threads/([1-9][0-9]{{0,9}})/{re.escape(endpoint)}/?",
+            path,
+        )
+        if match is not None:
+            return int(match.group(1))
+    return None
+
+
 def thread_route_identity(value: str, admin_url: str) -> tuple[str, int] | None:
     if not safe_admin_path(value, admin_url):
         return None
@@ -353,10 +368,48 @@ def thread_route_identity(value: str, admin_url: str) -> tuple[str, int] | None:
         if query.get("viewcustomer_thread") in (["1"], [""]) and len(candidates) == 1 and candidates[0].isdigit():
             thread_id = int(candidates[0])
             return ("legacy_thread_view", thread_id) if thread_id > 0 else None
-    match = re.search(r"/sell/customer-service/customer-threads/([1-9][0-9]{0,9})/view/?$", parsed.path)
-    if match:
-        return "modern_thread_view", int(match.group(1))
+    thread_id = modern_thread_route_id(parsed.path, admin_url, "view")
+    if thread_id is not None:
+        return "modern_thread_view", thread_id
     return None
+
+
+def thread_action_route_identity(value: str, admin_url: str) -> tuple[str, int] | None:
+    """Identify an exact native thread target for view and forward form actions."""
+    identity = thread_route_identity(value, admin_url)
+    if identity is not None:
+        return identity
+    if not safe_admin_path(value, admin_url):
+        return None
+    parsed = urlparse(urljoin(admin_url.rstrip("/") + "/", value))
+    thread_id = modern_thread_route_id(parsed.path, admin_url, "forward")
+    return ("modern_thread_view", thread_id) if thread_id is not None else None
+
+
+def customer_thread_forward_target(route_kind: str) -> str:
+    if route_kind == "modern_thread_view":
+        return "#forwardThreadModal"
+    if route_kind == "legacy_thread_view":
+        return "#myModal"
+    raise ValueError("the customer thread route kind is not a supported native view")
+
+
+def customer_thread_forward_visible_modal(route_kind: str) -> str:
+    if route_kind == "modern_thread_view":
+        return "#forwardThreadModal.show"
+    if route_kind == "legacy_thread_view":
+        # The pinned PrestaShop 9.2 Back Office uses Bootstrap 3, which opens
+        # this legacy modal with .in. The modern Twig modal uses Bootstrap 5 .show.
+        return "#myModal.in"
+    raise ValueError("the customer thread route kind is not a supported native view")
+
+
+def customer_thread_forward_forms(modal, route_kind: str):
+    if route_kind == "modern_thread_view":
+        return modal.find_elements(By.CSS_SELECTOR, "form")
+    if route_kind == "legacy_thread_view":
+        return modal.find_elements(By.XPATH, "./ancestor::form[1]")
+    raise ValueError("the customer thread route kind is not a supported native view")
 
 
 def parse_thread_email_subject(subject: object) -> tuple[int, str] | None:
@@ -994,6 +1047,7 @@ def visit_exact_customer_thread_detail(
     requested_identity = thread_route_identity(thread_url, admin_url)
     if requested_identity is None or requested_identity[1] != expected_thread_id:
         raise AssertionError("the selected native customer thread route did not match the expected thread")
+    thread_selector = customer_thread_detail_selector(requested_identity[0])
 
     deadline = time.monotonic() + max(0.1, float(timeout))
     navigation_budget = max(0.1, min(17.5, float(timeout) / 2))
@@ -1018,10 +1072,101 @@ def visit_exact_customer_thread_detail(
             return False
         if browser.execute_script("return document.readyState") not in {"interactive", "complete"}:
             return False
-        elements = browser.find_elements(By.CSS_SELECTOR, "[data-role='messages-thread']")
+        elements = browser.find_elements(By.CSS_SELECTOR, thread_selector)
         return elements[0] if len(elements) == 1 and elements[0].is_displayed() else False
 
     return WebDriverWait(driver, max(0.1, remaining)).until(exact_thread_loaded)
+
+
+def customer_thread_detail_selector(route_kind: str) -> str:
+    if route_kind == "modern_thread_view":
+        return "[data-role='messages-thread']"
+    if route_kind == "legacy_thread_view":
+        # PrestaShop 9.2's native legacy customer_threads view renders the original
+        # customer message inside .message-item-initial; it has no modern thread role.
+        return ".message-item-initial"
+    raise ValueError("the customer thread route kind is not a supported native view")
+
+
+def customer_thread_content_selector(route_kind: str) -> str:
+    if route_kind == "modern_thread_view":
+        return "[data-role='messages-thread']"
+    if route_kind == "legacy_thread_view":
+        return ".message-item-initial, [data-role='thread-messages']"
+    raise ValueError("the customer thread route kind is not a supported native view")
+
+
+def customer_thread_message_text_selector(route_kind: str) -> str:
+    if route_kind == "modern_thread_view":
+        return "[data-role='messages-thread'] p.thread-message"
+    if route_kind == "legacy_thread_view":
+        return ".message-item-initial .message-item-text, [data-role='thread-messages'] .message-item-text"
+    raise ValueError("the customer thread route kind is not a supported native view")
+
+
+def read_customer_thread_text(
+    driver, route_kind: str, expected_thread_id: int, admin_url: str, *, timeout: float = 30,
+) -> str:
+    selector = customer_thread_content_selector(route_kind)
+
+    def visible_exact_thread(browser):
+        identity = thread_route_identity(browser.current_url, admin_url)
+        if identity is None or identity[1] != expected_thread_id or identity[0] != route_kind:
+            return False
+        elements = browser.find_elements(By.CSS_SELECTOR, selector)
+        visible_text = []
+        for element in elements:
+            try:
+                if element.is_displayed():
+                    visible_text.append(element.text)
+            except StaleElementReferenceException:
+                return False
+        return "\n".join(visible_text) if visible_text else False
+
+    return WebDriverWait(driver, max(0.1, timeout)).until(visible_exact_thread)
+
+
+def customer_thread_text_contains(
+    driver, route_kind: str, expected_thread_id: int, admin_url: str, marker: str,
+) -> bool:
+    try:
+        return marker in read_customer_thread_text(
+            driver, route_kind, expected_thread_id, admin_url, timeout=0.2
+        )
+    except TimeoutException:
+        return False
+
+
+def customer_thread_reply_form(driver, route_kind: str, expected_thread_id: int, admin_url: str):
+    identity = thread_route_identity(driver.current_url, admin_url)
+    if identity is None or identity[1] != expected_thread_id or identity[0] != route_kind:
+        raise AssertionError("native customer reply form left the exact customer thread route")
+
+    matches = []
+    if route_kind == "modern_thread_view":
+        reply_card = visible(driver, "[data-role='employee-answer']")
+        reply_form = reply_card.find_element(By.XPATH, "./ancestor::form[1]")
+        textareas = reply_form.find_elements(By.CSS_SELECTOR, "textarea[name$='[reply_message]']")
+        buttons = reply_form.find_elements(By.CSS_SELECTOR, "button")
+        if len(textareas) == 1 and len(buttons) == 1:
+            matches.append((reply_form, textareas[0], buttons[0]))
+    elif route_kind == "legacy_thread_view":
+        for reply_form in driver.find_elements(By.CSS_SELECTOR, "form"):
+            action = reply_form.get_attribute("action") or ""
+            action_identity = thread_route_identity(urljoin(driver.current_url, action), admin_url)
+            textareas = reply_form.find_elements(By.CSS_SELECTOR, "textarea[name='reply_message']")
+            buttons = reply_form.find_elements(By.CSS_SELECTOR, "button[name='submitReply']")
+            if action_identity == identity and len(textareas) == 1 and len(buttons) == 1:
+                matches.append((reply_form, textareas[0], buttons[0]))
+    else:
+        raise ValueError("the customer thread route kind is not a supported native view")
+
+    if len(matches) != 1:
+        raise AssertionError("native customer thread did not expose one exact-thread public reply form")
+    reply_form, textarea, button = matches[0]
+    if not textarea.is_displayed() or not button.is_displayed() or not button.is_enabled():
+        raise AssertionError("native customer thread reply controls are not visible and enabled")
+    return reply_form, textarea, button
 
 
 def assert_thread_order_link(driver, expected_order_id: int) -> None:
@@ -1038,15 +1183,19 @@ def assert_thread_order_link(driver, expected_order_id: int) -> None:
     raise AssertionError("native customer thread did not link to the same associated order")
 
 
-def find_attachment_link(driver, admin_url: str, buyer_marker: str) -> str:
+def find_attachment_link(driver, admin_url: str, buyer_marker: str, route_kind: str) -> str:
     message = None
-    for candidate in driver.find_elements(By.CSS_SELECTOR, "[data-role='messages-thread'] p.thread-message"):
+    for candidate in driver.find_elements(By.CSS_SELECTOR, customer_thread_message_text_selector(route_kind)):
         if buyer_marker in candidate.text:
             message = candidate
             break
     if message is None:
         raise AssertionError("native customer message with the uploaded attachment is missing")
-    message_row = message.find_element(By.XPATH, "./ancestor::li[1]")
+    message_row = message.find_element(
+        By.XPATH,
+        "./ancestor::li[1]" if route_kind == "modern_thread_view"
+        else "./ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' message-body ')][1]",
+    )
     found = [
         link.get_attribute("href") or ""
         for link in message_row.find_elements(By.CSS_SELECTOR, "a[href]")
@@ -1119,24 +1268,63 @@ def open_native_attachment(driver, href: str, expected_content: str, download_di
     raise TimeoutError("authenticated native attachment readback did not complete")
 
 
-def status_action_form(driver, status: str):
+def status_action_form(driver, status: str, route_kind: str, expected_thread_id: int, admin_url: str):
+    identity = thread_route_identity(driver.current_url, admin_url)
+    if identity is None or identity[1] != expected_thread_id or identity[0] != route_kind:
+        raise AssertionError("native support status action left the exact customer thread route")
+
     matches = []
-    for form in driver.find_elements(By.CSS_SELECTOR, "[data-role='messages-thread'] form"):
-        fields = form.find_elements(By.CSS_SELECTOR, f"input[name='newStatus'][value='{status}']")
-        if fields:
-            matches.append((form, fields[0]))
+    if route_kind == "modern_thread_view":
+        for form in driver.find_elements(By.CSS_SELECTOR, "[data-role='messages-thread'] form"):
+            fields = form.find_elements(By.CSS_SELECTOR, f"input[name='newStatus'][value='{status}']")
+            buttons = form.find_elements(By.CSS_SELECTOR, "button")
+            if fields and len(buttons) == 1:
+                matches.append((form, buttons[0]))
+    elif route_kind == "legacy_thread_view":
+        status_value = {"open": "1", "closed": "2"}.get(status)
+        if status_value is None:
+            raise ValueError("the requested customer thread status is not supported")
+        for form in driver.find_elements(By.CSS_SELECTOR, "form"):
+            action = form.get_attribute("action") or ""
+            action_identity = thread_route_identity(urljoin(driver.current_url, action), admin_url)
+            buttons = form.find_elements(By.CSS_SELECTOR, f"button[name='setstatus'][value='{status_value}']")
+            if action_identity == identity and buttons:
+                matches.append((form, buttons[0]))
+    else:
+        raise ValueError("the customer thread route kind is not a supported native view")
+
     if len(matches) != 1:
         raise AssertionError(f"native support thread did not expose the expected {status} status action")
-    return matches[0][0]
+    return matches[0]
 
 
-def update_thread_status(driver, status: str, expected_next_action: str) -> None:
-    form = status_action_form(driver, status)
-    button = form.find_element(By.CSS_SELECTOR, "button")
+def update_thread_status(
+    driver, status: str, expected_next_action: str, route_kind: str, expected_thread_id: int, admin_url: str,
+) -> None:
+    _form, button = status_action_form(driver, status, route_kind, expected_thread_id, admin_url)
     button.click()
-    WebDriverWait(driver, 25).until(lambda browser: len(browser.find_elements(
-        By.CSS_SELECTOR, f"[data-role='messages-thread'] form input[name='newStatus'][value='{expected_next_action}']"
-    )) == 1)
+
+    def next_action_visible(browser):
+        identity = thread_route_identity(browser.current_url, admin_url)
+        if identity is None or identity[1] != expected_thread_id or identity[0] != route_kind:
+            return False
+        try:
+            status_action_form(browser, expected_next_action, route_kind, expected_thread_id, admin_url)
+        except AssertionError:
+            return False
+        return True
+
+    WebDriverWait(driver, 25).until(next_action_visible)
+
+
+def _status_action_available(
+    driver, status: str, route_kind: str, expected_thread_id: int, admin_url: str,
+) -> bool:
+    try:
+        status_action_form(driver, status, route_kind, expected_thread_id, admin_url)
+    except AssertionError:
+        return False
+    return True
 
 
 def employee_scoped_thread_url(driver, source_url: str, admin_url: str) -> str:
@@ -1484,7 +1672,11 @@ def run() -> None:
         thread_element = visit_exact_customer_thread_detail(
             admin, thread_view_url, ctx.admin, thread_id, result
         )
-        thread_body = thread_element.text
+        thread_identity = thread_route_identity(thread_view_url, ctx.admin)
+        if thread_identity is None or thread_identity[1] != thread_id:
+            raise AssertionError("native customer thread detail route lost its validated identity")
+        thread_route_kind = thread_identity[0]
+        thread_body = read_customer_thread_text(admin, thread_route_kind, thread_id, ctx.admin)
         if buyer_marker not in thread_body:
             raise AssertionError("native administrator thread did not show the submitted customer inquiry")
         assert_thread_order_link(admin, int(ctx.buyer["order_id"]))
@@ -1493,60 +1685,81 @@ def run() -> None:
 
         stage = result["stage"] = "orderless_readback"
         visit(admin, index_link)
-        orderless_view_url, _ = view_link_from_index(admin, ctx, ctx.buyer, orderless_id)
+        orderless_view_url, orderless_thread_id = view_link_from_index(admin, ctx, ctx.buyer, orderless_id)
+        if orderless_thread_id != orderless_id:
+            raise AssertionError("native orderless inquiry detail did not retain its exact thread identity")
+        orderless_identity = thread_route_identity(orderless_view_url, ctx.admin)
+        if orderless_identity is None or orderless_identity[1] != orderless_id:
+            raise AssertionError("native orderless inquiry route did not match its exact thread identity")
         visit(admin, orderless_view_url)
-        orderless_body = visible(admin, "[data-role='messages-thread']").text
+        orderless_body = read_customer_thread_text(
+            admin, orderless_identity[0], orderless_id, ctx.admin
+        )
         if orderless_marker not in orderless_body or attack_marker in orderless_body:
             raise AssertionError("a foreign sender changed the native orderless inquiry")
         result["orderless_thread_unchanged"] = True
         visit(admin, thread_view_url)
         stage = result["stage"] = "attachment_readback"
-        attachment_url = find_attachment_link(admin, ctx.admin, buyer_marker)
+        attachment_url = find_attachment_link(admin, ctx.admin, buyer_marker, thread_route_kind)
         open_native_attachment(admin, attachment_url, attachment_marker, download_dir)
         if attachment_visible_to_session(foreign, attachment_url, attachment_marker):
             raise AssertionError("a different customer session could read the private support attachment")
         result["attachment_admin_readback"] = True
 
         stage = result["stage"] = "private_forward_note"
-        forward_button = visible(admin, 'button[data-target="#forwardThreadModal"]')
+        forward_target = customer_thread_forward_target(thread_route_kind)
+        forward_button = visible(admin, f'button[data-target="{forward_target}"]')
         forward_button.click()
-        modal = visible(admin, "#forwardThreadModal.show")
-        employee_selects = modal.find_elements(By.CSS_SELECTOR, "select[name$='[employee_id]']")
-        note_fields = modal.find_elements(By.CSS_SELECTOR, "textarea[name$='[comment]']")
+        modal_selector = customer_thread_forward_visible_modal(thread_route_kind)
+        modal = visible(admin, modal_selector)
+        if thread_route_kind == "modern_thread_view":
+            employee_selects = modal.find_elements(By.CSS_SELECTOR, "select[name$='[employee_id]']")
+            note_fields = modal.find_elements(By.CSS_SELECTOR, "textarea[name$='[comment]']")
+        else:
+            employee_selects = modal.find_elements(By.CSS_SELECTOR, "select[name='id_employee_forward']")
+            note_fields = modal.find_elements(By.CSS_SELECTOR, "textarea[name='message_forward']")
         if len(employee_selects) != 1 or len(note_fields) != 1:
             raise AssertionError("native forward form did not expose employee and internal comment fields")
+        forward_forms = customer_thread_forward_forms(modal, thread_route_kind)
+        exact_forward_forms = []
+        for form in forward_forms:
+            forward_action = form.get_attribute("action") or ""
+            forward_identity = thread_action_route_identity(urljoin(admin.current_url, forward_action), ctx.admin)
+            if forward_identity is not None and forward_identity == (thread_route_kind, thread_id):
+                exact_forward_forms.append(form)
+        if len(exact_forward_forms) != 1:
+            raise AssertionError("native internal note form did not target the exact customer thread")
+        forward_form = exact_forward_forms[0]
         employee_select = Select(employee_selects[0])
         if not any(option.get_attribute("value") == "1" for option in employee_select.options):
             raise AssertionError("the native internal-note recipient is not the isolated primary administrator")
         employee_select.select_by_value("1")
         note_fields[0].send_keys(private_marker)
         forward_submit = modal.find_element(By.CSS_SELECTOR, "button[type='submit']")
+        if not forward_submit.is_displayed() or not forward_submit.is_enabled():
+            raise AssertionError("native internal note submit control is not visible and enabled")
         forward_submit.click()
-        WebDriverWait(admin, 30).until(lambda browser: private_marker in browser.find_element(By.CSS_SELECTOR, "[data-role='messages-thread']").text)
+        WebDriverWait(admin, 30).until(lambda browser: customer_thread_text_contains(
+            browser, thread_route_kind, thread_id, ctx.admin, private_marker
+        ))
         result["private_note_admin_only"] = True
 
         stage = result["stage"] = "close_thread"
-        update_thread_status(admin, "closed", "open")
+        update_thread_status(admin, "closed", "open", thread_route_kind, thread_id, ctx.admin)
         stage = result["stage"] = "reopen_thread"
-        update_thread_status(admin, "open", "closed")
+        update_thread_status(admin, "open", "closed", thread_route_kind, thread_id, ctx.admin)
         result["status_close_reopen"] = True
 
         stage = result["stage"] = "admin_public_reply"
         before_reply = mail_ids(ctx.mailpit)
-        reply_card = visible(admin, "[data-role='employee-answer']")
-        # In the pinned 9.2 Twig template `form_start()` wraps the answer card.
-        reply_form = reply_card.find_element(By.XPATH, "./ancestor::form[1]")
-        reply_textareas = reply_form.find_elements(By.CSS_SELECTOR, "textarea[name$='[reply_message]']")
-        if len(reply_textareas) != 1:
-            raise AssertionError("native admin thread did not expose one customer reply field")
-        reply_buttons = reply_form.find_elements(By.CSS_SELECTOR, "button")
-        if len(reply_buttons) != 1 or not reply_buttons[0].is_displayed() or not reply_buttons[0].is_enabled():
-            raise AssertionError("native admin thread did not expose one enabled customer reply control")
-        reply_textareas[0].send_keys(reply_marker)
-        reply_buttons[0].click()
-        WebDriverWait(admin, 35).until(lambda browser: len(browser.find_elements(
-            By.CSS_SELECTOR, "[data-role='messages-thread'] form input[name='newStatus'][value='open']"
-        )) == 1)
+        reply_form, reply_textarea, reply_button = customer_thread_reply_form(
+            admin, thread_route_kind, thread_id, ctx.admin
+        )
+        reply_textarea.send_keys(reply_marker)
+        reply_button.click()
+        WebDriverWait(admin, 35).until(lambda browser: _status_action_available(
+            browser, "closed", thread_route_kind, thread_id, ctx.admin
+        ))
         stage = result["stage"] = "mailpit_public_reply"
         reply_thread_id, reply_token, reply_message = wait_for_thread_email(ctx.mailpit, ctx.buyer["email"], before_reply)
         if reply_thread_id != first_thread_id:
@@ -1576,12 +1789,12 @@ def run() -> None:
 
         stage = result["stage"] = "thread_fresh_readback"
         visit(admin, thread_view_url)
-        fresh_body = visible(admin, "[data-role='messages-thread']").text
+        fresh_body = read_customer_thread_text(admin, thread_route_kind, thread_id, ctx.admin)
         if followup_marker not in fresh_body or private_marker not in fresh_body or buyer_marker not in fresh_body:
             raise AssertionError("fresh native thread readback did not preserve public/private/customer messages")
 
         stage = result["stage"] = "image_attachment_readback"
-        image_url = find_attachment_link(admin, ctx.admin, followup_marker)
+        image_url = find_attachment_link(admin, ctx.admin, followup_marker, thread_route_kind)
         read_native_image_attachment(admin, image_url, image_bytes)
         result["image_attachment_admin_readback"] = True
         if attachment_visible_to_session(foreign, image_url, image_marker):
@@ -1641,7 +1854,7 @@ def run() -> None:
         limited_target = employee_scoped_thread_url(limited, thread_view_url, ctx.admin)
         visit(limited, limited_target)
         limited_body = limited.find_element(By.TAG_NAME, "body").text
-        if limited.find_elements(By.CSS_SELECTOR, "[data-role='messages-thread']") or buyer_marker in limited_body or private_marker in limited_body:
+        if limited.find_elements(By.CSS_SELECTOR, customer_thread_content_selector(thread_route_kind)) or buyer_marker in limited_body or private_marker in limited_body:
             raise AssertionError("limited-privilege employee could view a protected customer support thread")
         result["limited_employee_denied"] = True
 

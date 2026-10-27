@@ -2852,9 +2852,30 @@ jobs:
           cat "$QA_ARTIFACT_DIR/order-lifecycle-e2e.log"
           rm -f -- "$verification_stdout" "$RUNNER_TEMP/order-lifecycle-verification.stderr"
 
+      - name: Enable run-scoped checkout for the isolated bank transfer browser QA
+        id: bank_transfer_checkout_override
+        if: always() && !cancelled() && steps.checkout_restore.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          expected_project="kuranea-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if [[ "$CI_COMPOSE_PROJECT_NAME" != "$expected_project" ]]; then
+            echo '::error title=ORDENOWA bank transfer browser QA::Refusing the temporary checkout override outside this exact disposable GitHub Actions project.'
+            exit 1
+          fi
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" \
+            -f compose.yaml -f tests/fixtures/ci-checkout.compose.yaml config --quiet
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" \
+            -f compose.yaml -f tests/fixtures/ci-checkout.compose.yaml \
+            up -d --no-deps --wait --wait-timeout 300 prestashop
+
       - name: Verify order-bound bank transfer issue, rejection, and receipt confirmation in Chromium
         id: bank_transfer_browser_qa
-        if: always() && !cancelled() && steps.bank_transfer_fixture.outcome == 'success' && steps.order_lifecycle.outcome == 'success' && steps.security_fixture.outcome == 'success' && steps.chromium_setup.outcome == 'success' && steps.checkout_customer_browser_qa.outcome == 'success' && steps.checkout_order_persistence.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
+        if: always() && !cancelled() && steps.bank_transfer_checkout_override.outcome == 'success' && steps.bank_transfer_fixture.outcome == 'success' && steps.order_lifecycle.outcome == 'success' && steps.security_fixture.outcome == 'success' && steps.chromium_setup.outcome == 'success' && steps.checkout_customer_browser_qa.outcome == 'success' && steps.checkout_order_persistence.outcome == 'success' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -2877,6 +2898,17 @@ jobs:
           mkdir -p "$QA_ARTIFACT_DIR"
           "$RUNNER_TEMP/ordenowa-browser-venv/bin/python" tests/e2e/verify_ci_bank_transfer_browser.py \
             2>&1 | tee "$QA_ARTIFACT_DIR/bank-transfer-e2e.log"
+
+      - name: Restore fail-closed checkout after the isolated bank transfer browser QA
+        id: bank_transfer_checkout_restore
+        if: always() && steps.bank_transfer_checkout_override.outcome != 'skipped' && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -p "$CI_COMPOSE_PROJECT_NAME" \
+            up -d --no-deps --force-recreate --wait --wait-timeout 300 prestashop
+          printf 'PASS: restored the fail-closed base checkout environment after isolated bank transfer QA.\n'
 
       - name: Diagnose Japanese order rewrite in the isolated database
         if: always() && steps.checkout_override.outcome == 'success' && (steps.checkout_customer_browser_qa.outcome == 'failure' || steps.account_browser_qa.outcome == 'failure') && env.ORDENOWA_ADMIN_QA_FOCUS != 'true'
@@ -3001,7 +3033,9 @@ jobs:
           CUSTOMER_SUPPORT_FIXTURE_OUTCOME: ${{ steps.customer_support_fixture.outcome }}
           CUSTOMER_SUPPORT_BROWSER_QA_OUTCOME: ${{ steps.customer_support_browser_qa.outcome }}
           BANK_TRANSFER_FIXTURE_OUTCOME: ${{ steps.bank_transfer_fixture.outcome }}
+          BANK_TRANSFER_CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.bank_transfer_checkout_override.outcome }}
           BANK_TRANSFER_BROWSER_QA_OUTCOME: ${{ steps.bank_transfer_browser_qa.outcome }}
+          BANK_TRANSFER_CHECKOUT_RESTORE_OUTCOME: ${{ steps.bank_transfer_checkout_restore.outcome }}
           CHECKOUT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.checkout_admin_browser_qa.outcome }}
           CHECKOUT_RESTORE_OUTCOME: ${{ steps.checkout_restore.outcome }}
           CHECKOUT_GATE_AFTER_ORDER_OUTCOME: ${{ steps.checkout_gate_after_order.outcome }}
@@ -3793,7 +3827,9 @@ jobs:
           CUSTOMER_SUPPORT_FIXTURE_OUTCOME: ${{ steps.customer_support_fixture.outcome }}
           CUSTOMER_SUPPORT_BROWSER_QA_OUTCOME: ${{ steps.customer_support_browser_qa.outcome }}
           BANK_TRANSFER_FIXTURE_OUTCOME: ${{ steps.bank_transfer_fixture.outcome }}
+          BANK_TRANSFER_CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.bank_transfer_checkout_override.outcome }}
           BANK_TRANSFER_BROWSER_QA_OUTCOME: ${{ steps.bank_transfer_browser_qa.outcome }}
+          BANK_TRANSFER_CHECKOUT_RESTORE_OUTCOME: ${{ steps.bank_transfer_checkout_restore.outcome }}
           CHECKOUT_ADMIN_BROWSER_QA_OUTCOME: ${{ steps.checkout_admin_browser_qa.outcome }}
           CHECKOUT_RESTORE_OUTCOME: ${{ steps.checkout_restore.outcome }}
           CHECKOUT_GATE_AFTER_ORDER_OUTCOME: ${{ steps.checkout_gate_after_order.outcome }}
@@ -3941,7 +3977,9 @@ jobs:
             "customer_support_fixture=$CUSTOMER_SUPPORT_FIXTURE_OUTCOME" \
             "customer_support=$CUSTOMER_SUPPORT_BROWSER_QA_OUTCOME" \
             "bank_transfer_fixture=$BANK_TRANSFER_FIXTURE_OUTCOME" \
+            "bank_transfer_checkout_override=$BANK_TRANSFER_CHECKOUT_OVERRIDE_OUTCOME" \
             "bank_transfer=$BANK_TRANSFER_BROWSER_QA_OUTCOME" \
+            "bank_transfer_checkout_restore=$BANK_TRANSFER_CHECKOUT_RESTORE_OUTCOME" \
             "checkout_admin=$CHECKOUT_ADMIN_BROWSER_QA_OUTCOME" \
             "checkout_restore=$CHECKOUT_RESTORE_OUTCOME" \
             "checkout_gate_after_order=$CHECKOUT_GATE_AFTER_ORDER_OUTCOME" \

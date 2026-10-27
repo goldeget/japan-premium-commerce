@@ -1,7 +1,12 @@
 from pathlib import Path
 import ast
+import importlib.util
 import re
+import sys
+import tempfile
+from types import ModuleType, SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -27,6 +32,59 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
 
     def require(self, needle: str, haystack: str) -> None:
         self.assertTrue(needle in haystack, f"missing contract: {needle}")
+
+    def test_result_schema_accepts_isolated_gate_with_pending_seller_authorization(self) -> None:
+        spec = importlib.util.spec_from_file_location("ordenowa_bank_transfer_browser", BROWSER)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+
+        def stub(name: str, **attributes: object) -> ModuleType:
+            value = ModuleType(name)
+            value.__dict__.update(attributes)
+            value.__path__ = []  # type: ignore[attr-defined]
+            return value
+
+        webdriver = stub("selenium.webdriver", Chrome=object)
+        by = stub("selenium.webdriver.common.by", By=SimpleNamespace(ID="id", CSS_SELECTOR="css selector"))
+        exceptions = stub(
+            "selenium.common.exceptions",
+            StaleElementReferenceException=type("StaleElementReferenceException", (Exception,), {}),
+        )
+        stubs = {
+            "selenium": stub("selenium", webdriver=webdriver),
+            "selenium.common": stub("selenium.common"),
+            "selenium.common.exceptions": exceptions,
+            "selenium.webdriver": webdriver,
+            "selenium.webdriver.chrome": stub("selenium.webdriver.chrome"),
+            "selenium.webdriver.chrome.options": stub("selenium.webdriver.chrome.options", Options=object),
+            "selenium.webdriver.common": stub("selenium.webdriver.common"),
+            "selenium.webdriver.common.by": by,
+            "selenium.webdriver.support": stub("selenium.webdriver.support", expected_conditions=object()),
+            "selenium.webdriver.support.ui": stub("selenium.webdriver.support.ui", WebDriverWait=object),
+        }
+        with patch.dict(sys.modules, stubs):
+            spec.loader.exec_module(module)
+
+        self.assertNotIn("issue_seller_commerce_gate_enabled", module.SUCCESS_REQUIRED_BOOLEAN_KEYS)
+        self.assertIn("issue_effective_commerce_gate_enabled", module.SUCCESS_REQUIRED_BOOLEAN_KEYS)
+        result: dict[str, object] = {key: True for key in module.SAFE_RESULT_KEYS}
+        result.update({
+            "status": "success",
+            "stage": "complete",
+            "exception_type": None,
+            "failure_substage": "none",
+            "issue_persistence_diagnostic": "unpaid_instruction_persisted",
+            "issue_failure_category": "not_run",
+            "issue_seller_commerce_gate_enabled": False,
+        })
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "bank-transfer-result.json"
+            module.write_result(output, result)
+            self.assertTrue(output.is_file())
+            result["issue_effective_commerce_gate_enabled"] = False
+            with self.assertRaisesRegex(ValueError, "allowlisted schema"):
+                module.write_result(output, result)
 
     def test_fixture_is_bound_to_a_run_scoped_unpaid_native_jpy_order(self) -> None:
         for expected in (
@@ -65,9 +123,15 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "fresh-install.yml").read_text(encoding="utf-8")
         lifecycle = workflow.index("id: order_lifecycle")
         bank_browser = workflow.index("id: bank_transfer_browser_qa")
+        checkout_restore = workflow.index("id: checkout_restore")
+        bank_override = workflow.index("id: bank_transfer_checkout_override")
+        bank_restore = workflow.index("id: bank_transfer_checkout_restore")
         admin_cancel = workflow.index("id: checkout_admin_browser_qa")
         self.assertLess(admin_cancel, lifecycle)
         self.assertLess(lifecycle, bank_browser)
+        self.assertLess(checkout_restore, bank_override)
+        self.assertLess(bank_override, bank_browser)
+        self.assertLess(bank_browser, bank_restore)
 
     def test_browser_rejects_csrf_and_mismatched_amount_before_real_synthetic_confirmation(self) -> None:
         for expected_stage in (
@@ -260,7 +324,7 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.require("issue_form_csrf_consistent=", self.browser)
 
         ci_evidence = self.controller.split("private function renderIsolatedCiCsrfEvidence", 1)[1].split(
-            "private function escape", 1
+            "private function renderIsolatedCiProfileEvidence", 1
         )[0]
         for marker in (
             "isIsolatedCiDiagnosticRun()",
@@ -273,11 +337,28 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             "'post-matches-controller'",
         ):
             self.require(marker, ci_evidence)
-        self.require("getenv('GITHUB_ACTIONS') === 'true'", ci_evidence)
-        self.require("getenv('KURANEA_CI_PROJECT_NAME') === 'kuranea-ci-' . $runId . '-' . $runAttempt", ci_evidence)
         self.assertNotIn("CommerceGate::isIsolatedCiCheckoutEnabled()", ci_evidence)
         self.assertNotIn("$submittedToken .", ci_evidence)
         self.assertNotIn("$queryToken .", ci_evidence)
+        run_scope = self.controller.split("private function isIsolatedCiDiagnosticRun", 1)[1].split(
+            "private function escape", 1
+        )[0]
+        self.require("getenv('GITHUB_ACTIONS') === 'true'", run_scope)
+        self.require("getenv('KURANEA_CI_PROJECT_NAME') === 'kuranea-ci-' . $runId . '-' . $runAttempt", run_scope)
+
+        profile_evidence = self.controller.split("private function renderIsolatedCiProfileEvidence", 1)[1].split(
+            "private function hasValidAdminMutationToken", 1
+        )[0]
+        for marker in (
+            "isIsolatedCiDiagnosticRun()", "loadPublished($shopId)",
+            "BankTransferPayment::selectedActiveAccount($profile) !== null",
+            "CommerceGate::isIsolatedCiCheckoutEnabled()", "CommerceGate::isEnabled(",
+            "ordenowa-ci-transfer-profile-evidence", "profile-readback-succeeded",
+            "'published-profile-present'", "'selected-active-account-present'",
+            "'effective-commerce-gate-enabled'",
+        ):
+            self.require(marker, profile_evidence)
+        self.assertNotIn("account_number", profile_evidence)
 
         browser_evidence = self.browser.split("def read_issue_csrf_server_evidence", 1)[1].split(
             "def read_visible_notice", 1
@@ -288,6 +369,29 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         self.assertNotIn('get_attribute("value")', browser_evidence)
         self.require('result.update(read_issue_csrf_server_evidence(admin))', self.browser)
         self.require('"issue_post_native_csrf_valid"', self.browser)
+        profile_browser_evidence = self.browser.split("def read_issue_profile_server_evidence", 1)[1].split(
+            "def read_visible_notice", 1
+        )[0]
+        self.require('By.ID, "ordenowa-ci-transfer-profile-evidence"', profile_browser_evidence)
+        self.require('"issue_selected_active_account_present", "data-selected-active-account-present"', profile_browser_evidence)
+        self.require('"issue_profile_readback_succeeded", "data-profile-readback-succeeded"', profile_browser_evidence)
+        self.require('"issue_effective_commerce_gate_enabled", "data-effective-commerce-gate-enabled"', profile_browser_evidence)
+        self.assertNotIn('get_attribute("value")', profile_browser_evidence)
+        self.require('result.update(read_issue_profile_server_evidence(admin))', self.browser)
+        self.require('"issue_selected_active_account_present"', self.browser)
+        self.require('"issue_effective_commerce_gate_enabled"', self.browser)
+
+    def test_synthetic_bank_fixture_reloads_the_published_profile_before_browser_qa(self) -> None:
+        fixture = PREPARE.read_text(encoding="utf-8")
+        for expected in (
+            "$published = $repository->loadPublished($shopId)",
+            "BankTransferPayment::selectedActiveAccount($published->profile)",
+            "$published->id === $draftVersionId",
+            "($publishedAccount['id'] ?? null) === $accountId",
+            "($publishedAccount['account_number'] ?? null) === $accountNumber",
+            "fresh profile readback",
+        ):
+            self.require(expected, fixture)
 
     def test_instruction_issue_notice_uses_fresh_snapshot_before_persistence_readback(self) -> None:
         issue_flow = self.browser.split('stage = result["stage"] = "instruction_issue"', 1)[1].split(

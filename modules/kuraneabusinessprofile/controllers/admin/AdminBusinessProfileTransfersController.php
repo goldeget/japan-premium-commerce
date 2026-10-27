@@ -366,9 +366,10 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
         }
         $class = $this->ordenowaFeedbackIsError ? 'alert-danger' : 'alert-success';
         $ciCsrfEvidence = $this->renderIsolatedCiCsrfEvidence();
+        $ciProfileEvidence = $this->renderIsolatedCiProfileEvidence();
 
         return '<div class="alert ' . $class . '">' . $this->escape($this->ordenowaFeedback) . '</div>'
-            . $ciCsrfEvidence;
+            . $ciCsrfEvidence . $ciProfileEvidence;
     }
 
     private function renderIsolatedCiCsrfEvidence(): string
@@ -395,6 +396,47 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
         }
 
         return '<span id="ordenowa-ci-transfer-csrf-evidence" hidden' . $attributes . '></span>';
+    }
+
+    private function renderIsolatedCiProfileEvidence(): string
+    {
+        if (!$this->isIsolatedCiDiagnosticRun()) {
+            return '';
+        }
+
+        $shopId = (int) ($this->context->shop->id ?? 0);
+        $published = null;
+        $profileReadbackSucceeded = false;
+        if ($shopId > 0) {
+            try {
+                $published = (new VersionedProfileRepository())->loadPublished($shopId);
+                $profileReadbackSucceeded = true;
+            } catch (Throwable) {
+                $published = null;
+            }
+        }
+        $profile = $published?->profile ?? [];
+        $bankTransfer = $profile['payment_methods']['bank_transfer'] ?? null;
+        $isolatedGateEnabled = CommerceGate::isIsolatedCiCheckoutEnabled();
+        $sellerGateEnabled = $published !== null && CommerceGate::isEnabled(
+            $published->profile,
+            getenv('ORDENOWA_SELLER_AUTHORIZATION_CONFIRMED') === '1'
+        );
+        $evidence = [
+            'profile-readback-succeeded' => $profileReadbackSucceeded,
+            'published-profile-present' => $published !== null,
+            'bank-transfer-enabled' => is_array($bankTransfer) && ($bankTransfer['enabled'] ?? false) === true,
+            'selected-active-account-present' => BankTransferPayment::selectedActiveAccount($profile) !== null,
+            'isolated-commerce-gate-enabled' => $isolatedGateEnabled,
+            'seller-commerce-gate-enabled' => $sellerGateEnabled,
+            'effective-commerce-gate-enabled' => $isolatedGateEnabled || $sellerGateEnabled,
+        ];
+        $attributes = '';
+        foreach ($evidence as $name => $matches) {
+            $attributes .= ' data-' . $name . '="' . ($matches ? 'true' : 'false') . '"';
+        }
+
+        return '<span id="ordenowa-ci-transfer-profile-evidence" hidden' . $attributes . '></span>';
     }
 
     private function hasValidAdminMutationToken(): bool

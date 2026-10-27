@@ -1592,10 +1592,14 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
 
         checkout_name = "Place dedicated bank-transfer acceptance order through Chromium"
         fixture_name = "Prepare synthetic bank transfer account for the persisted unpaid browser order"
+        override_name = "Enable run-scoped checkout for the isolated bank transfer browser QA"
         browser_name = "Verify order-bound bank transfer issue, rejection, and receipt confirmation in Chromium"
+        restore_name = "Restore fail-closed checkout after the isolated bank transfer browser QA"
         checkout = workflow.split(f"- name: {checkout_name}", 1)[1].split("- name:", 1)[0]
         fixture = workflow.split(f"- name: {fixture_name}", 1)[1].split("- name:", 1)[0]
+        override = workflow.split(f"- name: {override_name}", 1)[1].split("- name:", 1)[0]
         browser = workflow.split(f"- name: {browser_name}", 1)[1].split("- name:", 1)[0]
+        restore = workflow.split(f"- name: {restore_name}", 1)[1].split("- name:", 1)[0]
         self.assertIn("id: checkout_bank_customer_browser_qa", checkout)
         self.assertIn("verify_ci_checkout_admin_browser.py customer-bank", checkout)
         self.assertLess(workflow.index("id: checkout_customer_browser_qa"), workflow.index("id: checkout_bank_customer_browser_qa"))
@@ -1619,24 +1623,40 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn('ci-checkout-bank.json', fixture)
         self.assertIn("KURANEA_CI_VIEWPORT=bank", fixture)
         self.assertIn("KURANEA_ISOLATED_CI=1", fixture)
+        self.assertIn("id: bank_transfer_checkout_override", override)
+        self.assertIn("steps.checkout_restore.outcome == 'success'", override)
+        self.assertIn('expected_project="kuranea-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"', override)
+        self.assertIn('if [[ "$CI_COMPOSE_PROJECT_NAME" != "$expected_project" ]]', override)
+        self.assertIn("-f compose.yaml -f tests/fixtures/ci-checkout.compose.yaml config --quiet", override)
+        self.assertIn("-f compose.yaml -f tests/fixtures/ci-checkout.compose.yaml", override)
         self.assertIn("id: bank_transfer_browser_qa", browser)
+        self.assertIn("steps.bank_transfer_checkout_override.outcome == 'success'", browser)
         self.assertIn("steps.bank_transfer_fixture.outcome == 'success'", browser)
         self.assertIn("steps.checkout_order_persistence.outcome == 'success'", browser)
         self.assertIn("ADMIN_PASSWD: ${{ env.ADMIN_PASSWD }}", browser)
         self.assertIn("VIEW_ONLY_EMAIL: ${{ env.VIEW_ONLY_EMPLOYEE_EMAIL }}", browser)
         self.assertIn("tests/e2e/verify_ci_bank_transfer_browser.py", browser)
+        self.assertIn("id: bank_transfer_checkout_restore", restore)
+        self.assertIn("steps.bank_transfer_checkout_override.outcome != 'skipped'", restore)
+        self.assertIn("--force-recreate --wait --wait-timeout 300 prestashop", restore)
+        self.assertNotIn("tests/fixtures/ci-checkout.compose.yaml", restore)
         self.assertLess(
             workflow.index(f"- name: {fixture_name}"),
             workflow.index("- name: Verify a separate admin session can view both browser orders"),
         )
         self.assertLess(workflow.index("id: checkout_admin_browser_qa"), workflow.index("id: order_lifecycle"))
         self.assertLess(workflow.index("id: order_lifecycle"), workflow.index(f"- name: {browser_name}"))
+        self.assertLess(workflow.index("id: checkout_restore"), workflow.index(f"- name: {override_name}"))
+        self.assertLess(workflow.index(f"- name: {override_name}"), workflow.index(f"- name: {browser_name}"))
+        self.assertLess(workflow.index(f"- name: {browser_name}"), workflow.index(f"- name: {restore_name}"))
 
         evidence = workflow.split("- name: Verify browser QA screenshot coverage", 1)[1].split("- name:", 1)[0]
         for expected in (
             "CHECKOUT_BANK_CUSTOMER_BROWSER_QA_OUTCOME: ${{ steps.checkout_bank_customer_browser_qa.outcome }}",
             "BANK_TRANSFER_FIXTURE_OUTCOME: ${{ steps.bank_transfer_fixture.outcome }}",
+            "BANK_TRANSFER_CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.bank_transfer_checkout_override.outcome }}",
             "BANK_TRANSFER_BROWSER_QA_OUTCOME: ${{ steps.bank_transfer_browser_qa.outcome }}",
+            "BANK_TRANSFER_CHECKOUT_RESTORE_OUTCOME: ${{ steps.bank_transfer_checkout_restore.outcome }}",
             "bank-transfer-fixture.log",
             "bank-transfer-browser-result.json",
             "bank-transfer-customer-instructions-mobile.png",
@@ -1649,10 +1669,14 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         aggregate = workflow.split("- name: Aggregate browser QA and postal verification failures", 1)[1].split("- name:", 1)[0]
         self.assertIn("CHECKOUT_BANK_CUSTOMER_BROWSER_QA_OUTCOME: ${{ steps.checkout_bank_customer_browser_qa.outcome }}", aggregate)
         self.assertIn("BANK_TRANSFER_FIXTURE_OUTCOME: ${{ steps.bank_transfer_fixture.outcome }}", aggregate)
+        self.assertIn("BANK_TRANSFER_CHECKOUT_OVERRIDE_OUTCOME: ${{ steps.bank_transfer_checkout_override.outcome }}", aggregate)
         self.assertIn("BANK_TRANSFER_BROWSER_QA_OUTCOME: ${{ steps.bank_transfer_browser_qa.outcome }}", aggregate)
+        self.assertIn("BANK_TRANSFER_CHECKOUT_RESTORE_OUTCOME: ${{ steps.bank_transfer_checkout_restore.outcome }}", aggregate)
         self.assertIn('"checkout_bank_customer=$CHECKOUT_BANK_CUSTOMER_BROWSER_QA_OUTCOME"', aggregate)
         self.assertIn('"bank_transfer_fixture=$BANK_TRANSFER_FIXTURE_OUTCOME"', aggregate)
+        self.assertIn('"bank_transfer_checkout_override=$BANK_TRANSFER_CHECKOUT_OVERRIDE_OUTCOME"', aggregate)
         self.assertIn('"bank_transfer=$BANK_TRANSFER_BROWSER_QA_OUTCOME"', aggregate)
+        self.assertIn('"bank_transfer_checkout_restore=$BANK_TRANSFER_CHECKOUT_RESTORE_OUTCOME"', aggregate)
 
 
 if __name__ == "__main__":

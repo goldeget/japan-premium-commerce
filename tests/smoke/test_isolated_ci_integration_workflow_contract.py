@@ -24,7 +24,8 @@ NEW_STEP_IDS = (
     "shipping_free_customer_browser_qa", "shipping_free_osaka_mobile_browser_qa",
     "shipping_free_taxable_browser_qa", "shipping_free_order_persistence",
     "shipping_free_exemption_browser_qa",
-    "shipping_free_admin_browser_qa",
+    "shipping_free_admin_browser_qa", "bank_transfer_checkout_override",
+    "bank_transfer_checkout_restore",
 )
 
 

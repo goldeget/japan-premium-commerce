@@ -35,6 +35,7 @@ SAFE_SUBSTAGES = {
     "csrf_invalid_token_submit", "csrf_rejection_readback", "csrf_unissued_db_readback",
     "instruction_issue_navigation", "instruction_issue_order_row_readback", "instruction_issue_action_controls",
     "instruction_issue_submit", "instruction_issue_notice_readback", "instruction_issue_db_readback",
+    "instruction_issue_profile_gate_evidence",
     "instruction_issue_notice_unpaid_present_success", "instruction_issue_notice_unpaid_missing_success",
     "instruction_issue_notice_unpaid_present_danger", "instruction_issue_notice_unpaid_missing_danger",
     "instruction_issue_notice_unpaid_present_missing", "instruction_issue_notice_unpaid_missing_missing",
@@ -51,6 +52,9 @@ SAFE_RESULT_KEYS = {
     "issue_server_csrf_evidence_present", "issue_post_value_present", "issue_post_matches_controller",
     "issue_query_matches_controller", "issue_post_matches_query", "issue_controller_matches_admin_link",
     "issue_post_native_csrf_valid",
+    "issue_server_profile_evidence_present", "issue_profile_readback_succeeded", "issue_published_profile_present",
+    "issue_bank_transfer_enabled", "issue_selected_active_account_present", "issue_isolated_ci_gate_enabled",
+    "issue_seller_commerce_gate_enabled", "issue_effective_commerce_gate_enabled",
     "issue_left_order_unpaid", "instruction_immutable", "customer_instruction_visible",
     "order_identity_match", "order_product_line_match", "amount_match", "account_match", "foreign_customer_denied",
     "limited_staff_denied", "view_only_confirmation_denied", "issue_csrf_rejected", "csrf_rejected", "wrong_amount_rejected", "receipt_confirmed",
@@ -74,7 +78,12 @@ RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {
 CSRF_DIAGNOSTIC_BOOLEAN_KEYS = {
     "issue_post_matches_controller", "issue_query_matches_controller", "issue_controller_matches_admin_link",
 }
-SUCCESS_REQUIRED_BOOLEAN_KEYS = RESULT_BOOLEAN_KEYS - CSRF_DIAGNOSTIC_BOOLEAN_KEYS
+OPTIONAL_SUCCESS_DIAGNOSTIC_BOOLEAN_KEYS = CSRF_DIAGNOSTIC_BOOLEAN_KEYS | {
+    # The seller authorization gate can remain closed while the exact run-scoped
+    # isolated checkout gate authorizes this synthetic acceptance.
+    "issue_seller_commerce_gate_enabled",
+}
+SUCCESS_REQUIRED_BOOLEAN_KEYS = RESULT_BOOLEAN_KEYS - OPTIONAL_SUCCESS_DIAGNOSTIC_BOOLEAN_KEYS
 
 
 def assert_true(condition: object, message: str) -> None:
@@ -494,6 +503,34 @@ def read_issue_csrf_server_evidence(driver) -> dict[str, bool]:
     return evidence
 
 
+def read_issue_profile_server_evidence(driver) -> dict[str, bool]:
+    elements = driver.find_elements(By.ID, "ordenowa-ci-transfer-profile-evidence")
+    evidence = {
+        "issue_server_profile_evidence_present": len(elements) == 1,
+        "issue_profile_readback_succeeded": False,
+        "issue_published_profile_present": False,
+        "issue_bank_transfer_enabled": False,
+        "issue_selected_active_account_present": False,
+        "issue_isolated_ci_gate_enabled": False,
+        "issue_seller_commerce_gate_enabled": False,
+        "issue_effective_commerce_gate_enabled": False,
+    }
+    if len(elements) != 1:
+        return evidence
+    element = elements[0]
+    for key, attribute in (
+        ("issue_profile_readback_succeeded", "data-profile-readback-succeeded"),
+        ("issue_published_profile_present", "data-published-profile-present"),
+        ("issue_bank_transfer_enabled", "data-bank-transfer-enabled"),
+        ("issue_selected_active_account_present", "data-selected-active-account-present"),
+        ("issue_isolated_ci_gate_enabled", "data-isolated-commerce-gate-enabled"),
+        ("issue_seller_commerce_gate_enabled", "data-seller-commerce-gate-enabled"),
+        ("issue_effective_commerce_gate_enabled", "data-effective-commerce-gate-enabled"),
+    ):
+        evidence[key] = element.get_attribute(attribute) == "true"
+    return evidence
+
+
 def read_visible_notice(driver: webdriver.Chrome):
     return WebDriverWait(driver, 35).until(lambda browser: next((
         notice for notice in browser.find_elements(By.CSS_SELECTOR, ".alert.alert-success, .alert.alert-danger")
@@ -812,6 +849,11 @@ def run() -> None:
         "issue_post_matches_controller": False, "issue_query_matches_controller": False,
         "issue_post_matches_query": False, "issue_controller_matches_admin_link": False,
         "issue_post_native_csrf_valid": False,
+        "issue_server_profile_evidence_present": False, "issue_profile_readback_succeeded": False,
+        "issue_published_profile_present": False,
+        "issue_bank_transfer_enabled": False, "issue_selected_active_account_present": False,
+        "issue_isolated_ci_gate_enabled": False, "issue_seller_commerce_gate_enabled": False,
+        "issue_effective_commerce_gate_enabled": False,
         "fixture_bound": False, "instruction_issued": False, "issue_left_order_unpaid": False,
         "instruction_immutable": False, "customer_instruction_visible": False,
         "order_identity_match": False, "order_product_line_match": False, "amount_match": False, "account_match": False,
@@ -883,6 +925,7 @@ def run() -> None:
         set_substage("instruction_issue_notice_readback")
         notice_text, notice_class = read_visible_notice_snapshot(admin)
         result.update(read_issue_csrf_server_evidence(admin))
+        result.update(read_issue_profile_server_evidence(admin))
         if ("미결제" not in notice_text or "alert-success" not in notice_class.split()):
             set_substage(issue_notice_failure_substage(notice_text, notice_class))
             result["issue_failure_category"] = issue_notice_failure_category(notice_text)
@@ -891,6 +934,17 @@ def run() -> None:
             except Exception:
                 result["issue_persistence_diagnostic"] = "unavailable"
             raise AssertionError("issuing bank instructions did not preserve the unpaid-order notice")
+        if not all(result[key] for key in (
+            "issue_server_profile_evidence_present",
+            "issue_profile_readback_succeeded",
+            "issue_published_profile_present",
+            "issue_bank_transfer_enabled",
+            "issue_selected_active_account_present",
+            "issue_isolated_ci_gate_enabled",
+            "issue_effective_commerce_gate_enabled",
+        )):
+            set_substage("instruction_issue_profile_gate_evidence")
+            raise AssertionError("fresh run-scoped profile and effective checkout-gate evidence did not pass")
         result["instruction_issued"] = True
         result["issue_left_order_unpaid"] = True
         set_substage("instruction_issue_db_readback")
@@ -1079,7 +1133,14 @@ def run() -> None:
             f"issue_query_matches_controller={str(result['issue_query_matches_controller']).lower()}; "
             f"issue_post_matches_query={str(result['issue_post_matches_query']).lower()}; "
             f"issue_controller_matches_admin_link={str(result['issue_controller_matches_admin_link']).lower()}; "
-            f"issue_post_native_csrf_valid={str(result['issue_post_native_csrf_valid']).lower()}",
+            f"issue_post_native_csrf_valid={str(result['issue_post_native_csrf_valid']).lower()}; "
+            f"issue_profile_readback_succeeded={str(result['issue_profile_readback_succeeded']).lower()}; "
+            f"issue_published_profile_present={str(result['issue_published_profile_present']).lower()}; "
+            f"issue_bank_transfer_enabled={str(result['issue_bank_transfer_enabled']).lower()}; "
+            f"issue_selected_active_account_present={str(result['issue_selected_active_account_present']).lower()}; "
+            f"issue_isolated_ci_gate_enabled={str(result['issue_isolated_ci_gate_enabled']).lower()}; "
+            f"issue_seller_commerce_gate_enabled={str(result['issue_seller_commerce_gate_enabled']).lower()}; "
+            f"issue_effective_commerce_gate_enabled={str(result['issue_effective_commerce_gate_enabled']).lower()}",
             file=sys.stderr,
         )
         for browser, filename in (

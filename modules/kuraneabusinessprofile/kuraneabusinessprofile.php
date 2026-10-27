@@ -408,9 +408,6 @@ class Kuraneabusinessprofile extends Module
             }
 
             $htmlBody = (string) ($message->getHtmlBody() ?? '');
-            $resetUrl = $this->activeMailTemplate === 'password_query'
-                ? $this->activeNativeResetUrl
-                : null;
             $mailLangId = (int) ($params['id_lang'] ?? 0);
             if ($mailLangId < 1) {
                 $mailLangId = $this->activeMailLangId ?? (int) ($this->context->language->id ?? 0);
@@ -423,12 +420,16 @@ class Kuraneabusinessprofile extends Module
                 $contextShopId = (int) ($this->context->shop->id ?? 0);
                 $mailShopId = $contextShopId > 0 ? $contextShopId : null;
             }
-            if ($resetUrl === null) {
-                $resetUrl = $this->extractNativeResetUrl(
-                    $htmlBody,
-                    $mailLangId,
-                    $mailShopId
-                );
+            // Use the credential-complete link that survived template rendering. The
+            // pre-send {url} value can be valid for the route but stale for this body.
+            $resetUrl = $this->activeMailTemplate === 'password_query'
+                ? $this->extractNativeResetUrl($htmlBody, $mailLangId, $mailShopId)
+                : null;
+            if ($resetUrl === null
+                && $this->activeMailTemplate === 'password_query'
+                && is_string($this->activeNativeResetUrl)
+                && $this->hasNativeResetLink($htmlBody, $this->activeNativeResetUrl)) {
+                $resetUrl = $this->activeNativeResetUrl;
             }
             $textSetterAvailable = method_exists($message, 'text');
             $textSetterInvoked = false;

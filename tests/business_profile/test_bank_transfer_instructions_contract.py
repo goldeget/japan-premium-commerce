@@ -19,6 +19,22 @@ class BankTransferInstructionsContractTests(unittest.TestCase):
         self.assertIn("UserTokenManager::class", controller)
         self.assertIn("isTokenValid() === true", controller)
 
+    def test_ci_profile_failure_diagnostic_contains_only_safe_saved_state_booleans(self) -> None:
+        controller = (MODULE / "controllers/admin/AdminBusinessProfileTransfersController.php").read_text(encoding="utf-8")
+        diagnostic = controller.split("private function renderIsolatedCiProfileEvidence", 1)[1].split(
+            "private function hasValidAdminMutationToken", 1
+        )[0]
+        for expected in (
+            "isIsolatedCiDiagnosticRun()", "loadPublished($shopId)",
+            "BankTransferPayment::selectedActiveAccount($profile) !== null",
+            "CommerceGate::isIsolatedCiCheckoutEnabled()", "CommerceGate::isEnabled(",
+            "profile-readback-succeeded", "effective-commerce-gate-enabled",
+            "ordenowa-ci-transfer-profile-evidence",
+        ):
+            self.assertIn(expected, diagnostic)
+        self.assertNotIn("account_number", diagnostic)
+        self.assertNotIn("account_holder", diagnostic)
+
     def test_issue_action_requires_the_live_seller_gate_or_exact_isolated_ci_gate(self) -> None:
         controller = (MODULE / "controllers/admin/AdminBusinessProfileTransfersController.php").read_text(encoding="utf-8")
         self.assertIn("$_SERVER['REQUEST_METHOD']", controller)
