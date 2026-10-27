@@ -1838,6 +1838,9 @@ def safe_registration_navigation_summary(events: object) -> list[dict[str, objec
                 "request_matches_expected": event.get("request_matches_expected")
                 if type(event.get("request_matches_expected")) is bool
                 else None,
+                "request_method_matches_expected": event.get("request_method_matches_expected")
+                if type(event.get("request_method_matches_expected")) is bool
+                else None,
                 "location_target": safe_route(event.get("location_target_metadata")),
                 "location_matches_next_request": event.get("location_matches_next_request")
                 if type(event.get("location_matches_next_request")) is bool
@@ -2032,6 +2035,7 @@ def document_navigation_events(
     selected_signout_url: str | None = None,
     expected_login_url: str | None = None,
     expected_document_url: str | None = None,
+    expected_method: str | None = None,
 ) -> list[dict[str, object]]:
     """Summarize same-tab document requests and redirects without URL values."""
     try:
@@ -2202,6 +2206,13 @@ def document_navigation_events(
                 "request_matches_expected": (
                     safe_same_shop_request_match(request_url, expected_document_url)
                     if expected_document_url is not None and not isinstance(redirect_response, dict)
+                    else None
+                ),
+                "request_method_matches_expected": (
+                    isinstance(request, dict)
+                    and isinstance(request.get("method"), str)
+                    and request["method"].casefold() == expected_method.casefold()
+                    if expected_method is not None and not isinstance(redirect_response, dict)
                     else None
                 ),
                 **redirect_diagnostics,
@@ -4499,8 +4510,235 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             document_navigation_events(driver),
             "foreign account readback",
         )
+        stage = "customer_address_cross_owner_foreign_address_create"
+        address_isolation_substage = "foreign_address_create"
+        foreign_address_alias, foreign_address_initial_line = create_customer_address(
+            driver,
+            f"{label}-foreign",
+            substage_callback=mark_customer_address_substage,
+        )
+        foreign_address_card = wait_for_customer_address_card(driver, foreign_address_alias)
+        foreign_address_id = foreign_address_card.get_attribute("data-id-address") or ""
+        if not foreign_address_id or foreign_address_id == "0":
+            raise AssertionError("the foreign customer address did not receive a native address ID")
+        assert_customer_address_line(
+            driver,
+            foreign_address_alias,
+            foreign_address_id,
+            foreign_address_initial_line,
+        )
+
+        foreign_address_edited_line = f"大手町7-8-9 {label.upper()} FOREIGN CONTROL"
+        stage = "customer_address_cross_owner_foreign_address_post_control"
+        address_isolation_substage = "foreign_address_post_control_form"
+        foreign_address_edit_url = open_customer_address_edit(
+            driver,
+            foreign_address_alias,
+            foreign_address_id,
+        )
+        foreign_address_form = visible(driver, ".js-address-form form")
+        foreign_token_fields = foreign_address_form.find_elements(
+            By.CSS_SELECTOR, 'input[type="hidden"][name="token"]'
+        )
+        if len(foreign_token_fields) != 1:
+            raise AssertionError("the foreign customer native address form omitted its unique session token")
+        foreign_session_token = foreign_token_fields[0].get_attribute("value") or ""
+        if not foreign_session_token:
+            raise AssertionError("the foreign customer native address form had an empty session token")
+        clear_document_navigation_events(driver)
+        save_customer_address_edit(
+            driver,
+            foreign_address_id,
+            foreign_address_edited_line,
+            f"{label}-foreign",
+        )
+        foreign_post_events = document_navigation_events(
+            driver,
+            expected_document_url=foreign_address_edit_url,
+            expected_method="POST",
+        )
+        print(
+            "ORDENOWA_CUSTOMER_ADDRESS_FOREIGN_OWN_WRITE_SAFE_TRACE="
+            + json.dumps(
+                safe_registration_navigation_summary(foreign_post_events),
+                ensure_ascii=True,
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
+        foreign_post_top_events = assert_network_backed_navigation(
+            foreign_post_events,
+            "foreign customer's own address update",
+        )
+        foreign_post_request = next(
+            (
+                event
+                for event in foreign_post_top_events
+                if event.get("event") == "document_request"
+            ),
+            None,
+        )
+        if (
+            not isinstance(foreign_post_request, dict)
+            or foreign_post_request.get("request_matches_expected") is not True
+            or foreign_post_request.get("request_method_matches_expected") is not True
+        ):
+            raise AssertionError("the foreign customer's own address update was not an exact native POST")
+        assert_customer_address_line(
+            driver,
+            foreign_address_alias,
+            foreign_address_id,
+            foreign_address_edited_line,
+            previous_line=foreign_address_initial_line,
+        )
+        address_isolation_result["foreign_own_address_post_network_backed"] = True
+        address_isolation_result["foreign_own_address_post_target_matched"] = True
+        address_isolation_result["foreign_own_address_post_method_matched"] = True
+        address_isolation_result["foreign_own_address_post_persisted"] = True
+
+        stage = "customer_address_cross_owner_foreign_write_post"
+        address_isolation_substage = "foreign_write_native_form"
+        foreign_address_edit_url = open_customer_address_edit(
+            driver,
+            foreign_address_alias,
+            foreign_address_id,
+        )
+        foreign_address_form = visible(driver, ".js-address-form form")
+        foreign_token_fields = foreign_address_form.find_elements(
+            By.CSS_SELECTOR, 'input[type="hidden"][name="token"]'
+        )
+        address_id_fields = foreign_address_form.find_elements(
+            By.CSS_SELECTOR, 'input[type="hidden"][name="id_address"]'
+        )
+        if (
+            len(foreign_token_fields) != 1
+            or (foreign_token_fields[0].get_attribute("value") or "") != foreign_session_token
+        ):
+            raise AssertionError("the foreign write form did not retain its proven session token")
+        if foreign_address_form.get_attribute("data-id-address") != foreign_address_id:
+            raise AssertionError("the foreign write form did not identify its native address before targeting")
+        if not safe_same_shop_request_match(
+            foreign_address_form.get_attribute("action"),
+            foreign_address_edit_url,
+        ):
+            raise AssertionError("the foreign write form did not start at its native address route")
+        if len(address_id_fields) > 1:
+            raise AssertionError("the foreign write form had ambiguous address identity controls")
+        if address_id_fields:
+            address_id_field = address_id_fields[0]
+            if address_id_field.get_attribute("value") != foreign_address_id:
+                raise AssertionError("the foreign write form did not identify its native address before targeting")
+        if not foreign_token_fields[0].get_attribute("value"):
+            raise AssertionError("the foreign write form had an empty session token")
+
+        foreign_attack_alias = f"FOREIGN ATTACK {label.upper()}"
+        foreign_attack_line = f"大手町9-8-7 {label.upper()} FOREIGN ATTEMPT"
+        alias_field = foreign_address_form.find_element(By.NAME, "alias")
+        alias_field.clear()
+        alias_field.send_keys(foreign_attack_alias)
+        address_field = foreign_address_form.find_element(By.NAME, "address1")
+        address_field.clear()
+        address_field.send_keys(foreign_attack_line)
+        # Hummingbird 9.2 carries id_address in the action query. If a theme
+        # also posts a hidden ID field, send the exact same owner ID in the body.
+        if address_id_fields:
+            driver.execute_script(
+                "arguments[0].value = arguments[1];",
+                address_id_fields[0],
+                address_id,
+            )
+            if address_id_fields[0].get_attribute("value") != address_id:
+                raise AssertionError("the foreign write body did not target the exact owner address ID")
+        driver.execute_script(
+            "arguments[0].action = arguments[1];",
+            foreign_address_form,
+            owner_address_edit_url,
+        )
+        if not safe_same_shop_request_match(
+            foreign_address_form.get_attribute("action"),
+            owner_address_edit_url,
+        ):
+            raise AssertionError("the foreign write form did not target the exact owner address route")
+        if (foreign_address_form.get_attribute("method") or "").casefold() != "post":
+            raise AssertionError("the foreign write form did not retain native POST semantics")
+        assert_native_form_valid(driver, foreign_address_form, "foreign cross-owner address update")
+        address_isolation_result["foreign_write_csrf_present"] = True
+        clear_document_navigation_events(driver)
+        click_centered(
+            driver,
+            visible(driver, ".js-address-form button.form-control-submit"),
+        )
+        foreign_write_events = document_navigation_events(
+            driver,
+            expected_document_url=owner_address_edit_url,
+            expected_method="POST",
+        )
+        print(
+            "ORDENOWA_CUSTOMER_ADDRESS_FOREIGN_WRITE_SAFE_TRACE="
+            + json.dumps(
+                safe_registration_navigation_summary(foreign_write_events),
+                ensure_ascii=True,
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
+        foreign_write_top_events = assert_network_backed_navigation(
+            foreign_write_events,
+            "cross-owner address write POST",
+            frozenset({404}),
+        )
+        foreign_write_request = next(
+            (
+                event
+                for event in foreign_write_top_events
+                if event.get("event") == "document_request"
+            ),
+            None,
+        )
+        if (
+            not isinstance(foreign_write_request, dict)
+            or foreign_write_request.get("request_matches_expected") is not True
+            or foreign_write_request.get("request_method_matches_expected") is not True
+        ):
+            raise AssertionError("cross-owner address write did not POST to the exact owner address route")
+        address_isolation_result["foreign_write_target_id_exact"] = True
+        if driver.find_elements(By.CSS_SELECTOR, ".js-address-form form"):
+            raise AssertionError("a foreign customer received an owner address edit form after POST")
+        address_isolation_result["foreign_write_post_network_backed"] = True
+        address_isolation_result["foreign_write_post_target_matched"] = True
+        address_isolation_result["foreign_write_post_method_matched"] = True
+        address_isolation_result["foreign_write_response_denied"] = True
+
+        stage = "customer_address_cross_owner_foreign_post_readback"
+        address_isolation_substage = "foreign_account_readback_after_write"
+        clear_document_navigation_events(driver)
+        driver.get(foreign_account_url)
+        if not safe_generated_route_match(driver.current_url, foreign_account_url):
+            raise AssertionError("foreign post-write session readback left its canonical account route")
+        assert_my_page(driver, foreign_first_name)
+        assert_network_backed_navigation(
+            document_navigation_events(driver),
+            "foreign account readback after cross-owner write POST",
+        )
+        foreign_address_list_link = visible(driver, "#addresses_main_link")
+        clear_document_navigation_events(driver)
+        click_centered(driver, foreign_address_list_link)
+        wait_for_customer_address_card(driver, foreign_address_alias)
+        assert_network_backed_navigation(
+            document_navigation_events(driver),
+            "foreign customer's address readback after cross-owner write POST",
+        )
+        assert_customer_address_line(
+            driver,
+            foreign_address_alias,
+            foreign_address_id,
+            foreign_address_edited_line,
+            previous_line=foreign_address_initial_line,
+        )
         address_isolation_result["foreign_session_authenticated"] = True
         address_isolation_result["foreign_session_network_backed"] = True
+        address_isolation_result["foreign_address_readback_unchanged"] = True
+        address_isolation_result["foreign_address_readback_network_backed"] = True
 
         stage = "customer_address_cross_owner_foreign_logout"
         address_isolation_substage = "foreign_logout"
@@ -4658,7 +4896,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         )
         print(
             f"PASS: {label} customer registration and duplicate rejection, profile and Japan address create/edit, "
-            "cross-customer address isolation, email login/logout, and Mailpit password reset"
+            "cross-customer address read/write isolation, email login/logout, and Mailpit password reset"
         )
         success = True
     except Exception as error:

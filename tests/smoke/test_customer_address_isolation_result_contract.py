@@ -33,6 +33,10 @@ class CustomerAddressIsolationResultContractTests(unittest.TestCase):
         self.assertTrue(RESULTS.validate_payload(partial, require_passed=False))
         self.assertFalse(RESULTS.validate_payload(partial, require_passed=True))
 
+        cross_owner_write_not_denied = dict(self.passed, foreign_write_response_denied=False)
+        self.assertTrue(RESULTS.validate_payload(cross_owner_write_not_denied, require_passed=False))
+        self.assertFalse(RESULTS.validate_payload(cross_owner_write_not_denied, require_passed=True))
+
         truthy_string = dict(self.passed, foreign_edit_form_absent="yes")
         self.assertFalse(RESULTS.validate_payload(truthy_string, require_passed=False))
 

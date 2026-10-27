@@ -89,6 +89,9 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
                 )
                 self.assertNotRegex(self.source, direct_screenshot)
 
+        self.assertIn('f"{label}-foreign"', self.source)
+        self.assertIn("save_redacted_customer_address_screenshot(", self.source)
+
         handler = self.source.split("except Exception as error:", 1)[1].split(
             "inner_stage = (", 1
         )[0]
@@ -105,8 +108,8 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             artifact_dir = Path(temporary)
             log = artifact_dir / "customer-account-e2e.log"
             log.write_text(
-                "PASS: desktop customer registration and cross-customer address isolation\n"
-                "PASS: mobile customer registration and cross-customer address isolation\n",
+                "PASS: desktop customer registration and cross-customer address read/write isolation\n"
+                "PASS: mobile customer registration and cross-customer address read/write isolation\n",
                 encoding="utf-8",
             )
             for filename in (
@@ -118,6 +121,10 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
                 "mobile-customer-address-edit-form.png",
                 "desktop-customer-address-edited-after-refresh.png",
                 "mobile-customer-address-edited-after-refresh.png",
+                "desktop-foreign-customer-address-new.png",
+                "mobile-foreign-customer-address-new.png",
+                "desktop-foreign-customer-address-edit-form.png",
+                "mobile-foreign-customer-address-edit-form.png",
             ):
                 (artifact_dir / filename).write_bytes(b"synthetic capture")
 
@@ -134,6 +141,18 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
                 "foreign_session_network_backed",
                 "foreign_edit_form_absent",
                 "foreign_address_content_absent",
+                "foreign_own_address_post_network_backed",
+                "foreign_own_address_post_target_matched",
+                "foreign_own_address_post_method_matched",
+                "foreign_own_address_post_persisted",
+                "foreign_write_csrf_present",
+                "foreign_write_target_id_exact",
+                "foreign_write_post_network_backed",
+                "foreign_write_post_target_matched",
+                "foreign_write_post_method_matched",
+                "foreign_write_response_denied",
+                "foreign_address_readback_unchanged",
+                "foreign_address_readback_network_backed",
                 "owner_fresh_readback_unchanged",
                 "owner_fresh_readback_network_backed",
             )
@@ -497,6 +516,10 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             "customer_address_cross_owner_foreign_session_pre_request",
             "customer_address_foreign_access",
             "customer_address_cross_owner_foreign_session_readback",
+            "customer_address_cross_owner_foreign_address_create",
+            "customer_address_cross_owner_foreign_address_post_control",
+            "customer_address_cross_owner_foreign_write_post",
+            "customer_address_cross_owner_foreign_post_readback",
             "customer_address_cross_owner_foreign_logout",
             "customer_address_cross_owner_owner_relogin",
             "customer_address_cross_owner_owner_readback",
@@ -522,6 +545,12 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn("from_disk_cache", self.source)
         self.assertIn("from_prefetch_cache", self.source)
         self.assertIn("request_matches_expected", self.source)
+        navigation_events = self.source.split("def document_navigation_events(", 1)[1].split(
+            "def safe_registration_path", 1
+        )[0]
+        self.assertIn("expected_method: str | None = None", navigation_events)
+        self.assertIn("request_method_matches_expected", navigation_events)
+        self.assertIn("expected_method.casefold()", navigation_events)
         self.assertIn("foreign_response_network_backed", foreign_access)
         self.assertIn("foreign_response_target_matched", foreign_access)
         self.assertIn("final_event.get(\"status_code\") not in {200, 401, 403, 404}", foreign_access)
@@ -545,6 +574,52 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertNotIn("print(address_alias", foreign_access)
         self.assertNotIn("print(owner_address_edit_url", foreign_access)
 
+        foreign_address_create = self.blocks[
+            "customer_address_cross_owner_foreign_address_create"
+        ]
+        self.assertIn('create_customer_address(', foreign_address_create)
+        self.assertIn('f"{label}-foreign"', foreign_address_create)
+        self.assertIn("assert_customer_address_line(", foreign_address_create)
+
+        foreign_positive_post = self.blocks[
+            "customer_address_cross_owner_foreign_address_post_control"
+        ]
+        self.assertIn("open_customer_address_edit(", foreign_positive_post)
+        self.assertIn('input[type="hidden"][name="token"]', foreign_positive_post)
+        self.assertIn("foreign_session_token", foreign_positive_post)
+        self.assertIn('expected_method="POST"', foreign_positive_post)
+        self.assertIn("request_matches_expected", foreign_positive_post)
+        self.assertIn("request_method_matches_expected", foreign_positive_post)
+        self.assertIn("foreign_own_address_post_network_backed", foreign_positive_post)
+        self.assertIn("foreign_own_address_post_persisted", foreign_positive_post)
+
+        foreign_write_post = self.blocks[
+            "customer_address_cross_owner_foreign_write_post"
+        ]
+        self.assertIn('input[type="hidden"][name="id_address"]', foreign_write_post)
+        self.assertIn("!= foreign_session_token", foreign_write_post)
+        self.assertIn("if len(address_id_fields) > 1:", foreign_write_post)
+        self.assertIn("if address_id_fields:", foreign_write_post)
+        self.assertIn("Hummingbird 9.2 carries id_address in the action query", foreign_write_post)
+        self.assertIn("owner_address_edit_url", foreign_write_post)
+        self.assertIn("safe_same_shop_request_match(", foreign_write_post)
+        self.assertIn("assert_native_form_valid(", foreign_write_post)
+        self.assertIn('expected_method="POST"', foreign_write_post)
+        self.assertIn('frozenset({404})', foreign_write_post)
+        self.assertIn("request_matches_expected", foreign_write_post)
+        self.assertIn("request_method_matches_expected", foreign_write_post)
+        self.assertIn("foreign_write_response_denied", foreign_write_post)
+        self.assertIn("ORDENOWA_CUSTOMER_ADDRESS_FOREIGN_WRITE_SAFE_TRACE=", foreign_write_post)
+
+        foreign_post_readback = self.blocks[
+            "customer_address_cross_owner_foreign_post_readback"
+        ]
+        self.assertIn("assert_my_page(driver, foreign_first_name)", foreign_post_readback)
+        self.assertIn("foreign_address_alias", foreign_post_readback)
+        self.assertIn("foreign_address_edited_line", foreign_post_readback)
+        self.assertIn("foreign_address_readback_unchanged", foreign_post_readback)
+        self.assertIn("foreign_address_readback_network_backed", foreign_post_readback)
+
         foreign_pre_request = self.blocks[
             "customer_address_cross_owner_foreign_session_pre_request"
         ]
@@ -558,13 +633,16 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         foreign_session_readback = self.blocks["customer_address_cross_owner_foreign_session_readback"]
         self.assertIn("driver.get(foreign_account_url)", foreign_session_readback)
         self.assertIn("assert_my_page(driver, foreign_first_name)", foreign_session_readback)
-        self.assertIn("foreign_session_authenticated", foreign_session_readback)
-        self.assertIn("foreign_session_network_backed", foreign_session_readback)
         foreign_session_check = 'address_isolation_result["foreign_session_authenticated"] = True'
         self.assertEqual(run_viewport.count(foreign_session_check), 1)
+        foreign_post_readback = self.blocks[
+            "customer_address_cross_owner_foreign_post_readback"
+        ]
+        self.assertIn("foreign_session_authenticated", foreign_post_readback)
+        self.assertIn("foreign_session_network_backed", foreign_post_readback)
         foreign_session_assertion = run_viewport.index(
             "assert_my_page(driver, foreign_first_name)",
-            run_viewport.index('stage = "customer_address_cross_owner_foreign_session_readback"'),
+            run_viewport.index('stage = "customer_address_cross_owner_foreign_post_readback"'),
         )
         self.assertGreater(
             run_viewport.index(foreign_session_check),
@@ -626,6 +704,15 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertNotIn("address_id", result_keys)
         self.assertNotIn("email", result_keys)
         self.assertNotIn("token", result_keys)
+        for write_check in (
+            "foreign_own_address_post_persisted",
+            "foreign_write_csrf_present",
+            "foreign_write_target_id_exact",
+            "foreign_write_post_method_matched",
+            "foreign_write_response_denied",
+            "foreign_address_readback_unchanged",
+        ):
+            self.assertIn(write_check, result_keys)
 
         workflow = WORKFLOW.read_text(encoding="utf-8")
         evidence_start = workflow.index("      - name: Verify focused customer account browser evidence")
@@ -633,6 +720,10 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         evidence = workflow[evidence_start:evidence_end]
         self.assertIn("desktop-customer-account-created.png", evidence)
         self.assertIn("mobile-customer-account-created.png", evidence)
+        self.assertIn("desktop-foreign-customer-address-new.png", evidence)
+        self.assertIn("mobile-foreign-customer-address-new.png", evidence)
+        self.assertIn("desktop-foreign-customer-address-edit-form.png", evidence)
+        self.assertIn("mobile-foreign-customer-address-edit-form.png", evidence)
         self.assertIn("^PASS: desktop customer registration", evidence)
         self.assertIn("^PASS: mobile customer registration", evidence)
         self.assertIn("desktop-customer-address-isolation.json", evidence)

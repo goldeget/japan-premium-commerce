@@ -623,6 +623,11 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "mobile-customer-address-saved.png",
             "desktop-customer-address-edited-after-refresh.png",
             "mobile-customer-address-edited-after-refresh.png",
+            "desktop-foreign-customer-address-new.png",
+            "mobile-foreign-customer-address-new.png",
+            "desktop-foreign-customer-address-edit-form.png",
+            "mobile-foreign-customer-address-edit-form.png",
+            "cross-owner write denial",
             "ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE=",
         ):
             with self.subTest(evidence=filename):
@@ -706,7 +711,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("def assert_my_page", account_flow)
         my_page = account_flow.split("def assert_my_page", 1)[1].split("def prepare_required_registration_fields", 1)[0]
         logout = account_flow.split("def logout", 1)[1].split("def run_viewport", 1)[0]
-        self.assertEqual(len(re.findall(r"(?m)^\s+assert_my_page\(", account_flow)), 13)
+        self.assertEqual(len(re.findall(r"(?m)^\s+assert_my_page\(", account_flow)), 14)
         for selector in ("identity_main_link", "signout_link"):
             self.assertIn(selector, my_page)
         self.assertIn("expected_first_name", my_page)

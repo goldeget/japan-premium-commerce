@@ -417,7 +417,7 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (artifact_dir / "customer-account-e2e.log").write_text(
-                "PASS: mobile customer registration and cross-customer address isolation\n",
+                "PASS: mobile customer registration and cross-customer address read/write isolation\n",
                 encoding="utf-8",
             )
             account_artifacts = (
@@ -429,6 +429,10 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
                 "mobile-customer-address-edit-form.png",
                 "desktop-customer-address-edited-after-refresh.png",
                 "mobile-customer-address-edited-after-refresh.png",
+                "desktop-foreign-customer-address-new.png",
+                "mobile-foreign-customer-address-new.png",
+                "desktop-foreign-customer-address-edit-form.png",
+                "mobile-foreign-customer-address-edit-form.png",
             )
             for artifact in account_artifacts:
                 (artifact_dir / artifact).write_bytes(b"synthetic capture")
@@ -447,6 +451,18 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
                     "foreign_session_network_backed",
                     "foreign_edit_form_absent",
                     "foreign_address_content_absent",
+                    "foreign_own_address_post_network_backed",
+                    "foreign_own_address_post_target_matched",
+                    "foreign_own_address_post_method_matched",
+                    "foreign_own_address_post_persisted",
+                    "foreign_write_csrf_present",
+                    "foreign_write_target_id_exact",
+                    "foreign_write_post_network_backed",
+                    "foreign_write_post_target_matched",
+                    "foreign_write_post_method_matched",
+                    "foreign_write_response_denied",
+                    "foreign_address_readback_unchanged",
+                    "foreign_address_readback_network_backed",
                     "owner_fresh_readback_unchanged",
                     "owner_fresh_readback_network_backed",
                 )

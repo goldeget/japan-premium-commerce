@@ -1147,6 +1147,10 @@ jobs:
               mobile-customer-address-edit-form.png \
               desktop-customer-address-edited-after-refresh.png \
               mobile-customer-address-edited-after-refresh.png \
+              desktop-foreign-customer-address-new.png \
+              mobile-foreign-customer-address-new.png \
+              desktop-foreign-customer-address-edit-form.png \
+              mobile-foreign-customer-address-edit-form.png \
               desktop-customer-address-isolation.json \
               mobile-customer-address-isolation.json; do
               if [[ ! -s "$QA_ARTIFACT_DIR/$file" ]]; then
@@ -1159,7 +1163,7 @@ jobs:
             python3 tests/e2e/customer_address_isolation_result.py \
               "$QA_ARTIFACT_DIR/desktop-customer-address-isolation.json" \
               "$QA_ARTIFACT_DIR/mobile-customer-address-isolation.json"
-            printf 'PASS: isolated desktop/mobile address creation, edit, and refreshed readback screenshots are present.\n'
+            printf 'PASS: isolated desktop/mobile address creation, cross-owner write denial, and fresh readback evidence are present.\n'
           else
             if ! grep -q '^FAIL:' "$log_file"; then
               echo '::error title=Customer account browser evidence::The failed account run has no safe FAIL stage marker.'
@@ -3441,6 +3445,10 @@ jobs:
               mobile-customer-address-edit-form.png
               desktop-customer-address-edited-after-refresh.png
               mobile-customer-address-edited-after-refresh.png
+              desktop-foreign-customer-address-new.png
+              mobile-foreign-customer-address-new.png
+              desktop-foreign-customer-address-edit-form.png
+              mobile-foreign-customer-address-edit-form.png
               desktop-customer-address-isolation.json
               mobile-customer-address-isolation.json
             )
