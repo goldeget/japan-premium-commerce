@@ -68,7 +68,7 @@ class AdminKuraneaSupportAssignmentsController extends ModuleAdminController
             $actionUrl = (string) $this->context->link->getAdminLink('AdminKuraneaSupportAssignments');
             $paginationUrl = $actionUrl;
             $actionUrl .= '&support_page=' . $page;
-            $token = (string) Tools::getAdminTokenLite('AdminKuraneaSupportAssignments');
+            $token = (string) $this->token;
             $this->content .= $this->renderFeedback();
             $this->content .= '<div class="panel"><h3>고객 문의 담당자 지정</h3>'
                 . '<p>선택한 쇼핑몰의 문의에 활성 관리자를 지정합니다. 문의 본문, 고객 연락처와 주소는 이 화면에 표시하지 않습니다.</p>'
@@ -99,9 +99,7 @@ class AdminKuraneaSupportAssignmentsController extends ModuleAdminController
         }
         $this->assignmentPostHandled = true;
 
-        $submittedToken = $_POST['token'] ?? null;
-        $expectedToken = (string) Tools::getAdminTokenLite('AdminKuraneaSupportAssignments');
-        if (!is_string($submittedToken) || !hash_equals($expectedToken, $submittedToken)) {
+        if (!$this->hasValidAdminMutationToken()) {
             $this->fail('관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.', 'csrf_rejected');
 
             return;
@@ -198,6 +196,9 @@ class AdminKuraneaSupportAssignmentsController extends ModuleAdminController
                     . '<input type="hidden" name="token" value="' . $this->escape($token) . '">'
                     . '<input type="hidden" name="id_customer_thread" value="' . $threadId . '">'
                     . '<select class="form-control" name="id_employee" required>';
+                if ($currentEmployeeId < 1) {
+                    $html .= '<option value="" selected disabled>담당자를 선택해 주세요</option>';
+                }
                 $currentIsListed = false;
                 foreach ($employees as $employee) {
                     $employeeId = (int) $employee['id_employee'];
@@ -367,8 +368,44 @@ class AdminKuraneaSupportAssignmentsController extends ModuleAdminController
             ? $this->assignmentOutcome
             : 'controller_failure';
 
+        $submittedToken = isset($_POST['token']) && is_string($_POST['token']) ? $_POST['token'] : '';
+        $queryToken = isset($_GET['token']) && is_string($_GET['token']) ? $_GET['token'] : '';
+        $csrfEvidence = [
+            'post-value-present' => $submittedToken !== '',
+            'post-matches-query' => $queryToken !== '' && hash_equals($queryToken, $submittedToken),
+            'post-native-csrf-valid' => $this->hasValidAdminMutationToken(),
+        ];
+        $attributes = '';
+        foreach ($csrfEvidence as $name => $matches) {
+            $attributes .= ' data-' . $name . '="' . ($matches ? 'true' : 'false') . '"';
+        }
+
         return '<span id="ordenowa-ci-support-assignment-evidence" hidden data-outcome="'
-            . $this->escape($outcome) . '"></span>';
+            . $this->escape($outcome) . '"' . $attributes . '></span>';
+    }
+
+    private function hasValidAdminMutationToken(): bool
+    {
+        $submittedToken = isset($_POST['token']) && is_string($_POST['token']) ? $_POST['token'] : '';
+        $queryToken = isset($_GET['token']) && is_string($_GET['token']) ? $_GET['token'] : '';
+        if ($submittedToken === '' || $queryToken === '' || !hash_equals($queryToken, $submittedToken)) {
+            return false;
+        }
+
+        try {
+            $container = \PrestaShop\PrestaShop\Adapter\SymfonyContainer::getInstance();
+            if ($container === null) {
+                return false;
+            }
+
+            $tokenManager = $container->get(\PrestaShopBundle\Security\Admin\UserTokenManager::class);
+
+            return is_object($tokenManager)
+                && method_exists($tokenManager, 'isTokenValid')
+                && $tokenManager->isTokenValid() === true;
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private function escape(string $value): string

@@ -78,7 +78,12 @@ class SupportAssignmentContractTests(unittest.TestCase):
         self.assertIn("$this->access('edit')", source)
         self.assertIn("$_SERVER['REQUEST_METHOD']", source)
         self.assertIn("hash_equals(", source)
-        self.assertIn("Tools::getAdminTokenLite('AdminKuraneaSupportAssignments')", source)
+        self.assertIn("$token = (string) $this->token;", source)
+        self.assertIn("UserTokenManager::class", source)
+        self.assertIn("$tokenManager->isTokenValid() === true", source)
+        self.assertIn("hash_equals($queryToken, $submittedToken)", source)
+        self.assertNotIn("Tools::getAdminTokenLite('AdminKuraneaSupportAssignments')", source)
+        self.assertIn('<option value="" selected disabled>담당자를 선택해 주세요</option>', source)
         self.assertIn("Shop::CONTEXT_SHOP", source)
         self.assertIn("preg_match('/\\A[1-9][0-9]{0,9}\\z/D'", source)
 

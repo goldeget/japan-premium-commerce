@@ -1379,9 +1379,10 @@ def run() -> None:
         row = order_row(admin, order)
         wrong_amount = str(int(amount) + 1)
         substage = "wrong_amount_submit"
-        notice_text, notice_class = fill_and_submit_confirmation(
+        wrong_amount_notice, _, _ = fill_and_submit_confirmation(
             admin, row, order, wrong_amount, synthetic_statement, str(ctx["admin"])
         )
+        notice_text, notice_class = wrong_amount_notice
         substage = "wrong_amount_notice_readback"
         result["wrong_amount_notice_category"] = confirmation_notice_category(notice_text)
         result["wrong_amount_notice_danger"] = "alert-danger" in notice_class.split()

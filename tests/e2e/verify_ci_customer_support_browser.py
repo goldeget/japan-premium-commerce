@@ -70,6 +70,9 @@ SAFE_RESULT_KEYS = {
     "assignment_reassigned", "assignment_actor_history", "assignment_limited_employee_denied",
     "assignment_create_feedback", "assignment_reassign_feedback",
     "assignment_create_persisted", "assignment_reassign_persisted",
+    "assignment_create_post_value_present", "assignment_create_post_matches_query",
+    "assignment_create_native_csrf_valid", "assignment_reassign_post_value_present",
+    "assignment_reassign_post_matches_query", "assignment_reassign_native_csrf_valid",
     "image_attachment_admin_readback", "image_attachment_foreign_denied", "disallowed_attachment_rejected",
     "foreign_valid_thread_denied", "foreign_orderless_post_denied", "orderless_thread_unchanged",
     "admin_public_reply_persisted",
@@ -1855,6 +1858,24 @@ def support_assignment_feedback_state(driver) -> str | None:
     return next(iter(visible_states)) if len(visible_states) == 1 else "ambiguous"
 
 
+def record_support_assignment_csrf_evidence(
+    driver, diagnostic_result: dict[str, Any], operation: str,
+) -> None:
+    if operation not in {"create", "reassign"}:
+        raise ValueError("support assignment operation is not allowlisted")
+    evidence = driver.find_elements(By.ID, "ordenowa-ci-support-assignment-evidence")
+    if len(evidence) != 1:
+        return
+    marker = evidence[0]
+    fields = {
+        "post_value_present": "data-post-value-present",
+        "post_matches_query": "data-post-matches-query",
+        "native_csrf_valid": "data-post-native-csrf-valid",
+    }
+    for key, attribute in fields.items():
+        diagnostic_result[f"assignment_{operation}_{key}"] = marker.get_attribute(attribute) == "true"
+
+
 def assign_thread(
     driver, thread_id: int, employee_id: str, diagnostic_result: dict[str, Any], operation: str,
 ) -> str:
@@ -1879,6 +1900,7 @@ def assign_thread(
         # been submitted. Read the current response once; never replay the mutation.
         mark_browser_substage(diagnostic_result, f"assignment_{operation}_submit_timeout_readback")
         feedback_state = support_assignment_feedback_state(driver)
+        record_support_assignment_csrf_evidence(driver, diagnostic_result, operation)
         outcome = feedback_state if feedback_state is not None else "click_timeout"
         diagnostic_result[outcome_key] = outcome
         return outcome
@@ -1889,20 +1911,28 @@ def assign_thread(
             lambda browser: support_assignment_feedback_state(browser) or False
         )
     except TimeoutException:
+        record_support_assignment_csrf_evidence(driver, diagnostic_result, operation)
         diagnostic_result[outcome_key] = "timeout"
         return "timeout"
+    record_support_assignment_csrf_evidence(driver, diagnostic_result, operation)
     diagnostic_result[outcome_key] = feedback_state
     return feedback_state
 
 
 def selected_assignment_employee(driver, thread_id: int) -> str:
     row = assignment_row(driver, thread_id)
+    cells = row.find_elements(By.CSS_SELECTOR, "td")
+    if len(cells) < 5 or cells[3].text.strip() == "미지정":
+        raise AssertionError("fresh support assignment GET still shows the thread as unassigned")
     selects = row.find_elements(By.CSS_SELECTOR, "select[name='id_employee']")
     if len(selects) != 1:
         raise AssertionError("saved support assignment does not expose one employee selector")
     value = Select(selects[0]).first_selected_option.get_attribute("value")
     if not isinstance(value, str) or not value.isdigit() or int(value) < 1:
         raise AssertionError("saved support assignment did not resolve to a positive employee ID")
+    selected_name = Select(selects[0]).first_selected_option.text.strip()
+    if not selected_name or cells[3].text.strip() != selected_name:
+        raise AssertionError("saved support assignment row does not display the selected employee")
     return value
 
 
@@ -2040,6 +2070,12 @@ def run() -> None:
         "assignment_limited_employee_denied": False,
         "assignment_create_feedback": "not_started", "assignment_reassign_feedback": "not_started",
         "assignment_create_persisted": False, "assignment_reassign_persisted": False,
+        "assignment_create_post_value_present": False,
+        "assignment_create_post_matches_query": False,
+        "assignment_create_native_csrf_valid": False,
+        "assignment_reassign_post_value_present": False,
+        "assignment_reassign_post_matches_query": False,
+        "assignment_reassign_native_csrf_valid": False,
         "image_attachment_admin_readback": False, "image_attachment_foreign_denied": False,
         "disallowed_attachment_rejected": False,
         "foreign_valid_thread_denied": False, "foreign_orderless_post_denied": False,
@@ -2465,6 +2501,12 @@ def run() -> None:
             f"assignment_reassign_feedback={result['assignment_reassign_feedback']}; "
             f"assignment_create_persisted={str(result['assignment_create_persisted']).lower()}; "
             f"assignment_reassign_persisted={str(result['assignment_reassign_persisted']).lower()}; "
+            f"assignment_create_post_value_present={str(result['assignment_create_post_value_present']).lower()}; "
+            f"assignment_create_post_matches_query={str(result['assignment_create_post_matches_query']).lower()}; "
+            f"assignment_create_native_csrf_valid={str(result['assignment_create_native_csrf_valid']).lower()}; "
+            f"assignment_reassign_post_value_present={str(result['assignment_reassign_post_value_present']).lower()}; "
+            f"assignment_reassign_post_matches_query={str(result['assignment_reassign_post_matches_query']).lower()}; "
+            f"assignment_reassign_native_csrf_valid={str(result['assignment_reassign_native_csrf_valid']).lower()}; "
             f"contact_status={contact_status}; "
             f"support_denial_status={result['support_denial_status'] or 'unavailable'}; "
             f"support_denial_form_count={result['support_denial_form_count']}; "

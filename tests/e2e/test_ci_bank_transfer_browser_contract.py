@@ -584,6 +584,8 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             'substage = "wrong_amount_navigation"',
             'substage = "wrong_amount_row_readback"',
             'substage = "wrong_amount_submit"',
+            'wrong_amount_notice, _, _ = fill_and_submit_confirmation(',
+            'notice_text, notice_class = wrong_amount_notice',
             'substage = "wrong_amount_notice_readback"',
             'result["wrong_amount_notice_category"] = confirmation_notice_category(notice_text)',
             'substage = "wrong_amount_server_csrf_readback"',

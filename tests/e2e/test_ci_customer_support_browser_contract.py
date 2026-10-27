@@ -445,6 +445,8 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             'mark_browser_substage(result, "assignment_reassign_persisted_readback")',
             'result["assignment_create_persisted"]',
             'result["assignment_reassign_persisted"]',
+            'record_support_assignment_csrf_evidence(driver, diagnostic_result, operation)',
+            'cells[3].text.strip() != selected_name',
             "latest support assignment history did not retain prior, new, and acting employees",
             'mark_browser_substage(diagnostic_result, f"assignment_{operation}_feedback_readback")',
             'lambda browser: support_assignment_feedback_state(browser) or False',
@@ -505,6 +507,32 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             with self.subTest(outcome=expected):
                 self.assertEqual(expected, module.support_assignment_feedback_state(driver))
                 self.assertNotIn("private controller feedback", repr(module.support_assignment_feedback_state(driver)))
+
+    def test_support_assignment_csrf_evidence_records_only_safe_native_validation_results(self):
+        module = load_script()
+        module.By = SimpleNamespace(ID="id")
+
+        class Evidence:
+            def get_attribute(self, name: str):
+                return {
+                    "data-post-value-present": "true",
+                    "data-post-matches-query": "true",
+                    "data-post-native-csrf-valid": "true",
+                }.get(name)
+
+        class Driver:
+            def find_elements(self, _by: str, _selector: str):
+                return [Evidence()]
+
+        result = {}
+        module.record_support_assignment_csrf_evidence(Driver(), result, "create")
+        self.assertEqual({
+            "assignment_create_post_value_present": True,
+            "assignment_create_post_matches_query": True,
+            "assignment_create_native_csrf_valid": True,
+        }, result)
+        with self.assertRaises(ValueError):
+            module.record_support_assignment_csrf_evidence(Driver(), {}, "unknown")
 
     def test_thread_identity_and_customer_reply_links_fail_closed(self):
         module = load_script()
@@ -1002,6 +1030,12 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 "assignment_limited_employee_denied": True,
                 "assignment_create_feedback": "success", "assignment_reassign_feedback": "success",
                 "assignment_create_persisted": True, "assignment_reassign_persisted": True,
+                "assignment_create_post_value_present": True,
+                "assignment_create_post_matches_query": True,
+                "assignment_create_native_csrf_valid": True,
+                "assignment_reassign_post_value_present": True,
+                "assignment_reassign_post_matches_query": True,
+                "assignment_reassign_native_csrf_valid": True,
                 "image_attachment_admin_readback": True, "image_attachment_foreign_denied": True,
                 "disallowed_attachment_rejected": True,
                 "foreign_valid_thread_denied": True, "foreign_orderless_post_denied": True,
