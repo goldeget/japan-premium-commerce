@@ -71,22 +71,31 @@ class CiNativeCustomerReturnBrowserContractTests(unittest.TestCase):
     def test_order_detail_interactions_have_distinct_stages_and_pointer_diagnostics(self) -> None:
         self.assertContract(self.source, 'stage = "return_quantity_select"')
         self.assertContract(self.source, 'stage = "return_product_checkbox"')
-        quantity_stage = self.source.index('stage = "return_quantity_select"')
-        quantity_selection = self.source.index('Select(quantity).select_by_value("1")')
-        checkbox_stage = self.source.index('stage = "return_product_checkbox"')
-        centered_scroll = self.source.index('scrollIntoView({block: "center", inline: "nearest"})')
-        checkbox_click = self.source.index("checkbox.click()")
-        self.assertLess(quantity_stage, quantity_selection)
+        main_flow = self.source.split('stage = "return_quantity_select"', 1)[1].split(
+            'stage = "return_form_submit"', 1
+        )[0]
+        quantity_selection = main_flow.index('Select(quantity).select_by_value("1")')
+        checkbox_stage = main_flow.index('stage = "return_product_checkbox"')
+        checkbox_wait = main_flow.index(
+            "wait_for_return_checkbox(driver, order_id, checkbox_name)"
+        )
+        checkbox_click = main_flow.index("checkbox.click()")
         self.assertLess(quantity_selection, checkbox_stage)
-        self.assertLess(checkbox_stage, centered_scroll)
-        self.assertLess(centered_scroll, checkbox_click)
+        self.assertLess(checkbox_stage, checkbox_wait)
+        self.assertLess(checkbox_wait, checkbox_click)
 
         for required in (
             "ElementClickInterceptedException",
+            "StaleElementReferenceException",
             "TimeoutException",
             "poll_frequency=0.1",
             "def checkbox_center_is_unobstructed(browser)",
             "WebDriverWait(driver, 3, poll_frequency=0.1).until(checkbox_center_is_unobstructed)",
+            'browser.find_elements(By.CSS_SELECTOR, "#order-return-form")',
+            'return_form.find_elements(By.NAME, "id_order")',
+            'By.CSS_SELECTOR, "input[name^=\'ids_order_detail[\']"',
+            'checkbox.get_attribute("name") or "") != checkbox_name',
+            'except StaleElementReferenceException:',
             "target === element || element.contains(target)",
             "document.elementFromPoint",
             'tag: target.tagName.toLowerCase()',
@@ -104,9 +113,122 @@ class CiNativeCustomerReturnBrowserContractTests(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertContract(self.source, required)
 
-        self.assertLess(self.source.index("WebDriverWait(driver, 3, poll_frequency=0.1)"),
-                        self.source.index("checkbox.click()"))
+        helper = self.source.split("def wait_for_return_checkbox(", 1)[1].split(
+            "\ndef same_origin", 1
+        )[0]
+        self.assertIn("WebDriverWait(driver, 3, poll_frequency=0.1)", helper)
         self.assertIn("except (ElementClickInterceptedException, TimeoutException):", self.source)
+
+    def test_checkbox_readiness_reacquires_after_stale_reference_without_clicking(self) -> None:
+        tree = ast.parse(self.source)
+        helper = next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "wait_for_return_checkbox"
+        )
+
+        class FakeStaleElementReference(Exception):
+            pass
+
+        class FakeBy:
+            CSS_SELECTOR = "css selector"
+            NAME = "name"
+
+        class FakeWait:
+            calls: list[tuple[int, float]] = []
+
+            def __init__(self, driver, timeout, poll_frequency):
+                self.driver = driver
+                self.calls.append((timeout, poll_frequency))
+
+            def until(self, predicate):
+                for _ in range(3):
+                    result = predicate(self.driver)
+                    if result:
+                        return result
+                raise AssertionError("read-only checkbox readiness predicate did not become true")
+
+        class FakeField:
+            def __init__(self, value):
+                self.value = value
+
+            def get_attribute(self, name):
+                assert name == "value"
+                return self.value
+
+        class FakeCheckbox:
+            def __init__(self, name, stale=False):
+                self.name = name
+                self.stale = stale
+                self.clicks = 0
+
+            def get_attribute(self, name):
+                assert name == "name"
+                if self.stale:
+                    raise FakeStaleElementReference("old node was detached")
+                return self.name
+
+            def is_enabled(self):
+                return True
+
+            def click(self):
+                self.clicks += 1
+
+        class FakeForm:
+            def __init__(self, checkbox, order_id):
+                self.checkbox = checkbox
+                self.order_id = order_id
+
+            def is_displayed(self):
+                return True
+
+            def find_elements(self, by, selector):
+                if by == FakeBy.NAME and selector == "id_order":
+                    return [FakeField(self.order_id)]
+                if by == FakeBy.CSS_SELECTOR and selector == "input[name^='ids_order_detail[']":
+                    return [self.checkbox]
+                raise AssertionError(f"unexpected form lookup: {by} {selector}")
+
+        stale_checkbox = FakeCheckbox("ids_order_detail[731]", stale=True)
+        fresh_checkbox = FakeCheckbox("ids_order_detail[731]")
+        stale_form = FakeForm(stale_checkbox, "842")
+        fresh_form = FakeForm(fresh_checkbox, "842")
+
+        class FakeDriver:
+            def __init__(self):
+                self.form_reads = 0
+
+            def find_elements(self, by, selector):
+                assert by == FakeBy.CSS_SELECTOR
+                assert selector == "#order-return-form"
+                self.form_reads += 1
+                return [stale_form if self.form_reads == 1 else fresh_form]
+
+            def execute_script(self, script, element):
+                if "scrollIntoView" in script:
+                    assert element is fresh_checkbox
+                    return None
+                assert "document.elementFromPoint" in script
+                assert element is fresh_checkbox
+                return True
+
+        namespace = {
+            "By": FakeBy,
+            "WebDriverWait": FakeWait,
+            "StaleElementReferenceException": FakeStaleElementReference,
+        }
+        exec(compile(ast.Module(body=[helper], type_ignores=[]), str(FLOW), "exec"), namespace)
+        driver = FakeDriver()
+        refreshed_form, checkbox = namespace["wait_for_return_checkbox"](
+            driver, 842, "ids_order_detail[731]"
+        )
+
+        self.assertIs(refreshed_form, fresh_form)
+        self.assertIs(checkbox, fresh_checkbox)
+        self.assertEqual(driver.form_reads, 2)
+        self.assertEqual(FakeWait.calls, [(3, 0.1)])
+        self.assertEqual(stale_checkbox.clicks, 0)
+        self.assertEqual(fresh_checkbox.clicks, 0)
 
     def test_submit_button_interception_emits_bounded_safe_diagnostics_before_quit(self) -> None:
         self.assertContract(self.source, "def capture_submit_click_blocker(")

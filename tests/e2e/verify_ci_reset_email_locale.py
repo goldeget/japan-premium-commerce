@@ -45,6 +45,7 @@ SAFE_MESSAGE_CHECKS = {
     'generic_bank_details', 'reset_credentials_invalid', 'reset_link_origin_mismatch',
     'reset_link_path_mismatch', 'parts_credentials_mismatch',
     'html_reset_link_missing', 'text_reset_link_missing', 'raw_message_unavailable',
+    'pre_smtp_text_getter_readback_missing', 'pre_smtp_text_mime_link_missing',
     'html_mime_part_missing', 'html_mime_part_ambiguous',
     'text_mime_part_missing', 'text_mime_part_ambiguous', 'mime_part_decode_failed',
 }
@@ -163,7 +164,8 @@ def write_diagnostics(result: dict) -> None:
             'message_check', 'message_part_evidence',
             'raw_text_native_link_shape', 'mailpit_preview_text_native_link_shape',
             'mailpit_preview_text_shape_match', 'pre_smtp_html_native_link_shape',
-            'pre_smtp_text_native_link_shape', 'pre_smtp_reset_url_candidate_found',
+            'pre_smtp_text_native_link_shape', 'pre_smtp_text_mime_native_link_shape',
+            'pre_smtp_reset_url_candidate_found',
             'pre_smtp_reset_template_context_recognized',
             'pre_smtp_template_url_candidate_present', 'pre_smtp_template_url_credentials_complete',
             'pre_smtp_template_url_native_route', 'pre_smtp_html_url_candidate_present',
@@ -191,7 +193,8 @@ def write_diagnostics(result: dict) -> None:
             or any(result[key] is not None and type(result[key]) is not bool for key in (
                 'raw_text_native_link_shape', 'mailpit_preview_text_native_link_shape',
                 'mailpit_preview_text_shape_match', 'pre_smtp_html_native_link_shape',
-                'pre_smtp_text_native_link_shape', 'pre_smtp_reset_url_candidate_found',
+                'pre_smtp_text_native_link_shape', 'pre_smtp_text_mime_native_link_shape',
+                'pre_smtp_reset_url_candidate_found',
                 'pre_smtp_reset_template_context_recognized',
                 'pre_smtp_template_url_candidate_present', 'pre_smtp_template_url_credentials_complete',
                 'pre_smtp_template_url_native_route', 'pre_smtp_html_url_candidate_present',
@@ -324,6 +327,7 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
     result: dict[str, bool | None] = {
         'pre_smtp_html_native_link_shape': None,
         'pre_smtp_text_native_link_shape': None,
+        'pre_smtp_text_mime_native_link_shape': None,
         'pre_smtp_reset_url_candidate_found': None,
         'pre_smtp_reset_template_context_recognized': None,
         'pre_smtp_template_url_candidate_present': None,
@@ -347,6 +351,7 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
     for name, key in (
         ('X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link', 'pre_smtp_html_native_link_shape'),
         ('X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link', 'pre_smtp_text_native_link_shape'),
+        ('X-ORDENOWA-CI-Pre-SMTP-Text-Mime-Native-Reset-Link', 'pre_smtp_text_mime_native_link_shape'),
         ('X-ORDENOWA-CI-Reset-URL-Candidate-Found', 'pre_smtp_reset_url_candidate_found'),
         ('X-ORDENOWA-CI-Reset-Template-Context-Recognized', 'pre_smtp_reset_template_context_recognized'),
         ('X-ORDENOWA-CI-Reset-Template-URL-Candidate-Present', 'pre_smtp_template_url_candidate_present'),
@@ -441,6 +446,13 @@ def assert_message(message: dict, language: str, base: str, reset_path: str,
         if body.count(secure_key) != allowed_secure_key_occurrences[part]:
             raise MessageValidationError('customer_secure_key_outside_reset_link')
     return verified_url
+
+
+def assert_pre_smtp_text_mutation(diagnostic: dict) -> None:
+    if diagnostic.get('pre_smtp_text_native_link_shape') is not True:
+        raise MessageValidationError('pre_smtp_text_getter_readback_missing')
+    if diagnostic.get('pre_smtp_text_mime_native_link_shape') is not True:
+        raise MessageValidationError('pre_smtp_text_mime_link_missing')
 
 
 def assert_reset_page(driver, language: str, base: str, reset_path: str) -> None:
@@ -646,6 +658,7 @@ def run() -> bool:
         'mailpit_preview_text_shape_match': None,
         'pre_smtp_html_native_link_shape': None,
         'pre_smtp_text_native_link_shape': None,
+        'pre_smtp_text_mime_native_link_shape': None,
         'pre_smtp_reset_url_candidate_found': None,
         'pre_smtp_reset_template_context_recognized': None,
         'pre_smtp_template_url_candidate_present': None,
@@ -687,6 +700,7 @@ def run() -> bool:
                               mailpit_preview_text_shape_match=None,
                               pre_smtp_html_native_link_shape=None,
                               pre_smtp_text_native_link_shape=None,
+                              pre_smtp_text_mime_native_link_shape=None,
                               pre_smtp_reset_url_candidate_found=None,
                               pre_smtp_reset_template_context_recognized=None,
                               pre_smtp_template_url_candidate_present=None,
@@ -789,6 +803,7 @@ def run() -> bool:
             )
             reset_url = assert_message(captured_message, language, base,
                                        reset_path, fixture['forbidden'], raw_mime_parts)
+            assert_pre_smtp_text_mutation(diagnostic)
             stage = 'native_link_document'
             driver.get(reset_url)
             diagnostic['response_status'] = navigation_status(driver)
@@ -809,6 +824,7 @@ def run() -> bool:
                 f'mailpit_preview_text_shape_match={str(diagnostic["mailpit_preview_text_shape_match"]).lower()}; '
                 f'pre_smtp_html_native_link={str(diagnostic["pre_smtp_html_native_link_shape"]).lower()}; '
                 f'pre_smtp_text_native_link={str(diagnostic["pre_smtp_text_native_link_shape"]).lower()}; '
+                f'pre_smtp_text_mime_link={str(diagnostic["pre_smtp_text_mime_native_link_shape"]).lower()}; '
                 f'pre_smtp_url_candidate={str(diagnostic["pre_smtp_reset_url_candidate_found"]).lower()}; '
                 f'pre_smtp_reset_template_context={str(diagnostic["pre_smtp_reset_template_context_recognized"]).lower()}; '
                 f'pre_smtp_template_url={str(diagnostic["pre_smtp_template_url_candidate_present"]).lower()}; '
@@ -845,6 +861,7 @@ def run() -> bool:
             f'mailpit_preview_text_shape_match={str(diagnostic["mailpit_preview_text_shape_match"]).lower()}; '
             f'pre_smtp_html_native_link={str(diagnostic["pre_smtp_html_native_link_shape"]).lower()}; '
             f'pre_smtp_text_native_link={str(diagnostic["pre_smtp_text_native_link_shape"]).lower()}; '
+            f'pre_smtp_text_mime_link={str(diagnostic["pre_smtp_text_mime_native_link_shape"]).lower()}; '
             f'pre_smtp_url_candidate={str(diagnostic["pre_smtp_reset_url_candidate_found"]).lower()}; '
             f'pre_smtp_reset_template_context={str(diagnostic["pre_smtp_reset_template_context_recognized"]).lower()}; '
             f'pre_smtp_template_url={str(diagnostic["pre_smtp_template_url_candidate_present"]).lower()}; '

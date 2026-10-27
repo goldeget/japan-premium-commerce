@@ -97,6 +97,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
         mail['Subject'] = 'synthetic reset diagnostic'
         mail['X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link'] = 'true'
         mail['X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link'] = 'false'
+        mail['X-ORDENOWA-CI-Pre-SMTP-Text-Mime-Native-Reset-Link'] = 'false'
         mail['X-ORDENOWA-CI-Reset-URL-Candidate-Found'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Template-Context-Recognized'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Template-URL-Candidate-Present'] = 'true'
@@ -118,6 +119,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
         self.assertEqual({
             'pre_smtp_html_native_link_shape': True,
             'pre_smtp_text_native_link_shape': False,
+            'pre_smtp_text_mime_native_link_shape': False,
             'pre_smtp_reset_url_candidate_found': True,
             'pre_smtp_reset_template_context_recognized': True,
             'pre_smtp_template_url_candidate_present': True,
@@ -144,6 +146,24 @@ class ResetEmailLocaleContract(unittest.TestCase):
         malformed = EmailMessage()
         malformed['X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link'] = 'https://private.invalid/token=secret'
         self.assertIsNone(module.pre_smtp_message_shape_headers(malformed.as_bytes())['pre_smtp_html_native_link_shape'])
+
+    def test_acceptance_requires_immediate_getter_and_mime_text_readback(self):
+        module = self.module()
+        module.assert_pre_smtp_text_mutation({
+            'pre_smtp_text_native_link_shape': True,
+            'pre_smtp_text_mime_native_link_shape': True,
+        })
+        for diagnostic, check in (
+            ({'pre_smtp_text_native_link_shape': False,
+              'pre_smtp_text_mime_native_link_shape': True}, 'pre_smtp_text_getter_readback_missing'),
+            ({'pre_smtp_text_native_link_shape': True,
+              'pre_smtp_text_mime_native_link_shape': False}, 'pre_smtp_text_mime_link_missing'),
+            ({'pre_smtp_text_native_link_shape': None,
+              'pre_smtp_text_mime_native_link_shape': True}, 'pre_smtp_text_getter_readback_missing'),
+        ):
+            with self.assertRaises(module.MessageValidationError) as caught:
+                module.assert_pre_smtp_text_mutation(diagnostic)
+            self.assertEqual(check, caught.exception.check)
 
     def test_raw_rfc822_mime_parts_still_require_a_native_plain_text_reset_link(self):
         module = self.module()
@@ -376,6 +396,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'raw_text_native_link=none; mailpit_preview_text_native_link=none; '
             'mailpit_preview_text_shape_match=none; '
             'pre_smtp_html_native_link=none; pre_smtp_text_native_link=none; '
+            'pre_smtp_text_mime_link=none; '
             'pre_smtp_url_candidate=none; pre_smtp_reset_template_context=none; '
             'pre_smtp_template_url=none; pre_smtp_template_credentials=none; pre_smtp_template_route=none; '
             'pre_smtp_html_candidate=none; pre_smtp_html_credentials=none/none/none; '
@@ -404,6 +425,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 "mailpit_preview_text_shape_match": None,
                 "pre_smtp_html_native_link_shape": None,
                 "pre_smtp_text_native_link_shape": None,
+                "pre_smtp_text_mime_native_link_shape": None,
                 "pre_smtp_reset_url_candidate_found": None,
                 "pre_smtp_reset_template_context_recognized": None,
                 "pre_smtp_template_url_candidate_present": None,

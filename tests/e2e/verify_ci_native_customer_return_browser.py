@@ -11,7 +11,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from selenium import webdriver
-from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException
+from selenium.common.exceptions import (
+    ElementClickInterceptedException,
+    StaleElementReferenceException,
+    TimeoutException,
+)
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -122,6 +126,55 @@ def detail_order_id(detail_url: str) -> int:
     if not candidates or not candidates[0].isdigit() or int(candidates[0]) < 1:
         raise AssertionError("the order-history link did not identify a native order")
     return int(candidates[0])
+
+
+def wait_for_return_checkbox(driver, expected_order_id: int, checkbox_name: str):
+    def checkbox_center_is_unobstructed(browser):
+        try:
+            forms = browser.find_elements(By.CSS_SELECTOR, "#order-return-form")
+            if len(forms) != 1:
+                return False
+            return_form = forms[0]
+            if not return_form.is_displayed():
+                return False
+
+            order_fields = return_form.find_elements(By.NAME, "id_order")
+            if (
+                len(order_fields) != 1
+                or order_fields[0].get_attribute("value") != str(expected_order_id)
+            ):
+                return False
+
+            selected_products = return_form.find_elements(
+                By.CSS_SELECTOR, "input[name^='ids_order_detail[']"
+            )
+            if len(selected_products) != 1:
+                return False
+            checkbox = selected_products[0]
+            if (checkbox.get_attribute("name") or "") != checkbox_name or not checkbox.is_enabled():
+                return False
+
+            browser.execute_script(
+                'arguments[0].scrollIntoView({block: "center", inline: "nearest"});', checkbox
+            )
+            unobstructed = browser.execute_script(
+                """
+                const element = arguments[0];
+                const rect = element.getBoundingClientRect();
+                const target = document.elementFromPoint(
+                  rect.left + rect.width / 2,
+                  rect.top + rect.height / 2
+                );
+                return Boolean(target && (target === element || element.contains(target)));
+                """,
+                checkbox,
+            )
+            return (return_form, checkbox) if unobstructed else False
+        except StaleElementReferenceException:
+            # This predicate only reads/reacquires DOM state. The eventual click is never retried.
+            return False
+
+    return WebDriverWait(driver, 3, poll_frequency=0.1).until(checkbox_center_is_unobstructed)
 
 
 def same_origin(base_url: str, target_url: str) -> bool:
@@ -415,26 +468,8 @@ def main() -> int:
 
         stage = "return_product_checkbox"
         checkbox = selected_products[0]
-        driver.execute_script(
-            'arguments[0].scrollIntoView({block: "center", inline: "nearest"});', checkbox
-        )
-
-        def checkbox_center_is_unobstructed(browser):
-            return browser.execute_script(
-                """
-                const element = arguments[0];
-                const rect = element.getBoundingClientRect();
-                const target = document.elementFromPoint(
-                  rect.left + rect.width / 2,
-                  rect.top + rect.height / 2
-                );
-                return Boolean(target && (target === element || element.contains(target)));
-                """,
-                checkbox,
-            )
-
         try:
-            WebDriverWait(driver, 3, poll_frequency=0.1).until(checkbox_center_is_unobstructed)
+            return_form, checkbox = wait_for_return_checkbox(driver, order_id, checkbox_name)
             checkbox.click()
         except (ElementClickInterceptedException, TimeoutException):
             click_intercept_target, failure_screenshot_name = capture_checkbox_click_blocker(

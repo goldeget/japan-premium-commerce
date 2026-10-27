@@ -484,6 +484,7 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 "customer_submitted": True, "order_association_verified": True,
                 "attachment_admin_readback": True, "private_note_admin_only": True,
                 "status_close_reopen": True, "admin_public_reply": True,
+                "admin_public_reply_persisted": True,
                 "customer_followup_same_thread": True, "foreign_customer_denied": True,
                 "limited_employee_denied": True, "mailpit_provider": "isolated_only",
                 "paid": False, "payment_provider_called": False, "assignment_created": True,
@@ -951,6 +952,142 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         self.assertEqual(1, lookup_calls)
         self.assertEqual(1, stale_button.click_count)
         self.assertEqual("status_action_click", diagnostic["browser_substage"])
+
+    def test_public_reply_readback_requires_exact_thread_marker_and_closed_status(self):
+        module = load_script()
+        admin_root = "http://127.0.0.1:18080/admin-test"
+        current = admin_root + "/index.php?controller=AdminCustomerThreads&id_customer_thread=47&viewcustomer_thread=1&token=safe"
+        marker = "synthetic-public-reply-marker"
+
+        class Driver:
+            current_url = current
+
+        driver = Driver()
+        body = f"initial customer message\n{marker}"
+        module.read_customer_thread_text = lambda _driver, _kind, _thread_id, _admin, *, timeout: body
+        observed_statuses: list[str] = []
+
+        def status_form(_driver, status, _kind, _thread_id, _admin):
+            observed_statuses.append(status)
+            if status != "open":
+                raise AssertionError("closed threads expose only the native reopen action")
+            return object(), object()
+
+        module.status_action_form = status_form
+        self.assertTrue(module.public_reply_readback_available(
+            driver, "legacy_thread_view", 47, admin_root, marker
+        ))
+        self.assertEqual(["open"], observed_statuses)
+
+        body = "initial customer message without public reply"
+        observed_statuses.clear()
+        self.assertFalse(module.public_reply_readback_available(
+            driver, "legacy_thread_view", 47, admin_root, marker
+        ))
+        self.assertEqual([], observed_statuses)
+
+        body = marker
+        driver.current_url = current.replace("id_customer_thread=47", "id_customer_thread=48")
+        self.assertFalse(module.public_reply_readback_available(
+            driver, "legacy_thread_view", 47, admin_root, marker
+        ))
+
+        driver.current_url = current
+        def stale_status_form(_driver, _status, _kind, _thread_id, _admin):
+            raise module.StaleElementReferenceException("status form was replaced during GET readback")
+        module.status_action_form = stale_status_form
+        self.assertFalse(module.public_reply_readback_available(
+            driver, "legacy_thread_view", 47, admin_root, marker
+        ))
+
+    def test_public_reply_submit_is_single_shot_and_reports_truthful_substages(self):
+        module = load_script()
+        marker = "synthetic-public-reply-marker"
+        calls: list[str] = []
+
+        class Driver:
+            pass
+
+        class Textarea:
+            def send_keys(self, value: str) -> None:
+                self.value = value
+                calls.append("fill")
+
+        class Button:
+            def __init__(self) -> None:
+                self.click_count = 0
+
+            def click(self) -> None:
+                self.click_count += 1
+                calls.append("submit")
+
+        driver = Driver()
+        textarea = Textarea()
+        button = Button()
+        waits: list[float] = []
+
+        class ImmediateReadback:
+            def __init__(self, _driver, timeout: float) -> None:
+                waits.append(timeout)
+
+            def until(self, predicate):
+                if not predicate(driver):
+                    raise module.TimeoutException("public reply readback is incomplete")
+                return True
+
+        module.WebDriverWait = ImmediateReadback
+        module.public_reply_readback_available = lambda *_args: True
+        diagnostic = {"browser_substage": "not_applicable", "admin_public_reply_persisted": False}
+        module.submit_public_reply_once(
+            driver, textarea, button, marker, "legacy_thread_view", 47,
+            "http://127.0.0.1:18080/admin-test", diagnostic,
+        )
+        self.assertEqual(["fill", "submit"], calls)
+        self.assertEqual(marker, textarea.value)
+        self.assertEqual(1, button.click_count)
+        self.assertEqual([35], waits)
+        self.assertEqual("admin_public_reply_readback", diagnostic["browser_substage"])
+        self.assertTrue(diagnostic["admin_public_reply_persisted"])
+
+        calls.clear()
+        button = Button()
+        module.public_reply_readback_available = lambda *_args: False
+
+        class RetryingReadback:
+            def __init__(self, _driver, timeout: float) -> None:
+                waits.append(timeout)
+
+            def until(self, predicate):
+                for _ in range(3):
+                    predicate(driver)
+                raise module.TimeoutException("public reply readback remains unavailable")
+
+        module.WebDriverWait = RetryingReadback
+        diagnostic["admin_public_reply_persisted"] = False
+        with self.assertRaises(module.TimeoutException):
+            module.submit_public_reply_once(
+                driver, textarea, button, marker, "legacy_thread_view", 47,
+                "http://127.0.0.1:18080/admin-test", diagnostic,
+            )
+        self.assertEqual(["fill", "submit"], calls)
+        self.assertEqual(1, button.click_count)
+        self.assertEqual("admin_public_reply_readback", diagnostic["browser_substage"])
+        self.assertFalse(diagnostic["admin_public_reply_persisted"])
+
+    def test_public_reply_run_stages_native_lookup_submit_and_email_readback(self):
+        browser = SCRIPT.read_text(encoding="utf-8")
+        start = browser.index('stage = result["stage"] = "admin_public_reply"')
+        end = browser.index("if reply_thread_id != first_thread_id:", start)
+        run = browser[start:end]
+        stages = (
+            'mark_browser_substage(result, "admin_public_reply_form_lookup")',
+            "customer_thread_reply_form(",
+            "submit_public_reply_once(",
+            'mark_browser_substage(result, "admin_public_reply_email_readback")',
+        )
+        positions = [run.index(stage) for stage in stages]
+        self.assertEqual(sorted(positions), positions)
+        self.assertNotIn('_status_action_available(\n            browser, "closed"', run)
 
     def test_equivalent_legacy_customer_threads_aliases_ignore_query_order_and_path_alias(self):
         module = load_script()

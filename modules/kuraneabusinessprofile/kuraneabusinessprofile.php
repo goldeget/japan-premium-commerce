@@ -464,16 +464,47 @@ class Kuraneabusinessprofile extends Module
             }
             $textSetterAvailable = method_exists($message, 'text');
             $textSetterInvoked = false;
+            $textGetterHasLink = false;
+            $textMimeHasLink = false;
             if ($resetUrl !== null && $textSetterAvailable) {
                 $textBody = (string) ($message->getTextBody() ?? '');
-                if (!$this->hasNativeResetLink($textBody, $resetUrl)) {
-                    $replacement = ($textBody === '' ? '' : rtrim($textBody) . "\n\n") . $resetUrl;
-                    try {
-                        $message->text($replacement);
+                $replacement = $this->hasNativeResetLink($textBody, $resetUrl)
+                    ? $textBody
+                    : ($textBody === '' ? '' : rtrim($textBody) . "\n\n") . $resetUrl;
+                try {
+                    if (!$this->hasNativeResetLink($textBody, $resetUrl)) {
+                        $message->text($replacement, 'utf-8');
                         $textSetterInvoked = true;
-                    } catch (\Throwable) {
-                        // Keep mail delivery available if a compatible mailer cannot replace its text body.
                     }
+
+                    // Symfony Email::text() is the supported setter. Verify both its
+                    // public getter and the MIME tree that Mailer will serialize.
+                    $textGetterHasLink = $this->hasNativeResetLink(
+                        (string) ($message->getTextBody() ?? ''),
+                        $resetUrl
+                    );
+                    if ($message instanceof \Symfony\Component\Mime\Email) {
+                        $textMimeHasLink = $this->hasNativeResetLinkInMimeBody($message->getBody(), $resetUrl);
+                        if (!$textGetterHasLink || !$textMimeHasLink) {
+                            // Symfony Email can retain an explicit base Message body,
+                            // which takes precedence over its lazily generated parts.
+                            // Clear only that explicit body, then rebuild from Email's
+                            // HTML/Text/attachment fields using its public APIs.
+                            $message->setBody(null);
+                            $message->text($replacement, 'utf-8');
+                            $textSetterInvoked = true;
+                            $textGetterHasLink = $this->hasNativeResetLink(
+                                (string) ($message->getTextBody() ?? ''),
+                                $resetUrl
+                            );
+                            $textMimeHasLink = $this->hasNativeResetLinkInMimeBody(
+                                $message->getBody(),
+                                $resetUrl
+                            );
+                        }
+                    }
+                } catch (\Throwable) {
+                    // Keep mail delivery available if a compatible mailer cannot replace its text body.
                 }
             }
 
@@ -488,10 +519,15 @@ class Kuraneabusinessprofile extends Module
             }
             $htmlHasLink = $resetUrl !== null
                 && $this->hasNativeResetLink($htmlBody, $resetUrl);
-            $textHasLink = $resetUrl !== null
-                && $this->hasNativeResetLink((string) ($message->getTextBody() ?? ''), $resetUrl);
             $headers->addTextHeader('X-ORDENOWA-CI-Pre-SMTP-HTML-Native-Reset-Link', $htmlHasLink ? 'true' : 'false');
-            $headers->addTextHeader('X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link', $textHasLink ? 'true' : 'false');
+            $headers->addTextHeader(
+                'X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link',
+                $textGetterHasLink ? 'true' : 'false'
+            );
+            $headers->addTextHeader(
+                'X-ORDENOWA-CI-Pre-SMTP-Text-Mime-Native-Reset-Link',
+                $textMimeHasLink ? 'true' : 'false'
+            );
             $headers->addTextHeader('X-ORDENOWA-CI-Reset-URL-Candidate-Found', $resetUrl !== null ? 'true' : 'false');
             $headers->addTextHeader(
                 'X-ORDENOWA-CI-Reset-Template-Context-Recognized',
@@ -789,6 +825,23 @@ class Kuraneabusinessprofile extends Module
     private function sameNativeResetRoute(mixed $candidate, mixed $expected): bool
     {
         return $this->resetRouteEvidence($candidate, $expected)['native_route'];
+    }
+
+    private function hasNativeResetLinkInMimeBody(mixed $part, string $expectedUrl): bool
+    {
+        if ($part instanceof \Symfony\Component\Mime\Part\TextPart) {
+            return $part->getMediaSubtype() === 'plain'
+                && $this->hasNativeResetLink($part->getBody(), $expectedUrl);
+        }
+        if ($part instanceof \Symfony\Component\Mime\Part\AbstractMultipartPart) {
+            foreach ($part->getParts() as $child) {
+                if ($this->hasNativeResetLinkInMimeBody($child, $expectedUrl)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /** @return array<string, mixed>|null */

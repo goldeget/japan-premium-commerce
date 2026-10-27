@@ -139,8 +139,14 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         self.assertIn("$textSetterAvailable = method_exists($message, 'text')", alter)
         self.assertIn("$textSetterInvoked = true", alter)
         self.assertIn("$resetUrl !== null", alter)
-        self.assertIn("$message->text($replacement)", alter)
+        self.assertIn("$message->text($replacement, 'utf-8')", alter)
         self.assertIn("$this->hasNativeResetLink($textBody, $resetUrl)", alter)
+        self.assertIn("$message instanceof \\Symfony\\Component\\Mime\\Email", alter)
+        self.assertIn("$message->setBody(null)", alter)
+        self.assertIn("$this->hasNativeResetLinkInMimeBody($message->getBody(), $resetUrl)", alter)
+        self.assertIn("X-ORDENOWA-CI-Pre-SMTP-Text-Mime-Native-Reset-Link", alter)
+        self.assertIn("$textGetterHasLink = $this->hasNativeResetLink(", alter)
+        self.assertIn("if (!$textGetterHasLink || !$textMimeHasLink)", alter)
         self.assertIn("getPageLink(", extractor)
         self.assertIn("resetRouteEvidence($parts, $native)", extractor)
         self.assertIn("resetCredentialEvidence($parts)", extractor)
@@ -179,6 +185,14 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         self.assertIn("preg_split", credential_validator)
         self.assertIn("$this->resetCredentialEvidence($expected)", module)
         self.assertNotIn("error_log", extractor + validator)
+
+        mime_verifier = module.split("private function hasNativeResetLinkInMimeBody", 1)[1].split(
+            "public function publicProfile", 1
+        )[0]
+        self.assertIn("\\Symfony\\Component\\Mime\\Part\\TextPart", mime_verifier)
+        self.assertIn("getMediaSubtype() === 'plain'", mime_verifier)
+        self.assertIn("\\Symfony\\Component\\Mime\\Part\\AbstractMultipartPart", mime_verifier)
+        self.assertIn("getParts()", mime_verifier)
 
     def test_mail_shop_context_reaches_both_content_and_extra_vars_before_cleanup(self):
         module = MODULE_PATH.read_text(encoding="utf-8")

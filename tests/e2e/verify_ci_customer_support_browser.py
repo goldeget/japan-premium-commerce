@@ -70,6 +70,7 @@ SAFE_RESULT_KEYS = {
     "assignment_reassigned", "assignment_actor_history", "assignment_limited_employee_denied",
     "image_attachment_admin_readback", "image_attachment_foreign_denied", "disallowed_attachment_rejected",
     "foreign_valid_thread_denied", "foreign_orderless_post_denied", "orderless_thread_unchanged",
+    "admin_public_reply_persisted",
     "contact_document_status", "contact_same_origin", "contact_native_route",
     "contact_form_count", "contact_form_visible", "support_denial_status",
     "support_denial_form_count", "support_denial_redirected", "support_denial_same_origin",
@@ -101,6 +102,9 @@ SAFE_BROWSER_SUBSTAGES = {
     "admin_thread_detail_navigation", "admin_thread_detail_readback",
     "admin_thread_message_readback", "admin_thread_order_association_readback",
     "status_action_lookup", "status_action_click", "status_action_readback",
+    "admin_public_reply_form_lookup", "admin_public_reply_form_fill",
+    "admin_public_reply_submit", "admin_public_reply_readback",
+    "admin_public_reply_email_readback",
     "contact_field_lookup", "contact_id_readback", "attachment_control_lookup", "attachment_send_keys",
     "accepted_attachment_fixture_validation", "accepted_attachment_file_readback", "message_field_lookup",
     "message_send_keys", "submit_control_lookup", "submit_control_scroll", "submit_control_hit_test",
@@ -1374,9 +1378,49 @@ def _status_action_available(
 ) -> bool:
     try:
         status_action_form(driver, status, route_kind, expected_thread_id, admin_url)
-    except AssertionError:
+    except (AssertionError, StaleElementReferenceException):
         return False
     return True
+
+
+def public_reply_readback_available(
+    driver, route_kind: str, expected_thread_id: int, admin_url: str, reply_marker: str,
+) -> bool:
+    """Require the exact thread to retain the public reply and its native closed state."""
+    identity = thread_route_identity(driver.current_url, admin_url)
+    if identity != (route_kind, expected_thread_id):
+        return False
+    try:
+        thread_text = read_customer_thread_text(
+            driver, route_kind, expected_thread_id, admin_url, timeout=0.2
+        )
+    except (TimeoutException, StaleElementReferenceException):
+        return False
+    if reply_marker not in thread_text:
+        return False
+    # PrestaShop 9.2 closes a thread after successfully sending a public reply.
+    # A closed thread exposes the action to reopen it, named "open" in both views.
+    return _status_action_available(driver, "open", route_kind, expected_thread_id, admin_url)
+
+
+def submit_public_reply_once(
+    driver, textarea, button, reply_marker: str, route_kind: str,
+    expected_thread_id: int, admin_url: str,
+    diagnostic_result: dict[str, Any] | None = None,
+) -> None:
+    """Submit one public reply, then read it back without retrying the POST."""
+    mark_browser_substage(diagnostic_result, "admin_public_reply_form_fill")
+    textarea.send_keys(reply_marker)
+    mark_browser_substage(diagnostic_result, "admin_public_reply_submit")
+    # If this click or navigation fails, the POST may already have reached the server.
+    # Never replay it; only read-only state is polled below.
+    button.click()
+    mark_browser_substage(diagnostic_result, "admin_public_reply_readback")
+    WebDriverWait(driver, 35).until(lambda browser: public_reply_readback_available(
+        browser, route_kind, expected_thread_id, admin_url, reply_marker
+    ))
+    if diagnostic_result is not None:
+        diagnostic_result["admin_public_reply_persisted"] = True
 
 
 def employee_scoped_thread_url(driver, source_url: str, admin_url: str) -> str:
@@ -1568,6 +1612,7 @@ def run() -> None:
         "customer_submitted": False, "order_association_verified": False,
         "attachment_admin_readback": False, "private_note_admin_only": False,
         "status_close_reopen": False, "admin_public_reply": False,
+        "admin_public_reply_persisted": False,
         "customer_followup_same_thread": False, "foreign_customer_denied": False,
         "limited_employee_denied": False, "mailpit_provider": "isolated_only",
         "paid": False, "payment_provider_called": False, "assignment_created": False,
@@ -1820,15 +1865,16 @@ def run() -> None:
 
         stage = result["stage"] = "admin_public_reply"
         before_reply = mail_ids(ctx.mailpit)
+        mark_browser_substage(result, "admin_public_reply_form_lookup")
         reply_form, reply_textarea, reply_button = customer_thread_reply_form(
             admin, thread_route_kind, thread_id, ctx.admin
         )
-        reply_textarea.send_keys(reply_marker)
-        reply_button.click()
-        WebDriverWait(admin, 35).until(lambda browser: _status_action_available(
-            browser, "closed", thread_route_kind, thread_id, ctx.admin
-        ))
+        submit_public_reply_once(
+            admin, reply_textarea, reply_button, reply_marker,
+            thread_route_kind, thread_id, ctx.admin, result,
+        )
         stage = result["stage"] = "mailpit_public_reply"
+        mark_browser_substage(result, "admin_public_reply_email_readback")
         reply_thread_id, reply_token, reply_message = wait_for_thread_email(ctx.mailpit, ctx.buyer["email"], before_reply)
         if reply_thread_id != first_thread_id:
             raise AssertionError("native admin reply email did not retain the original thread identity")
@@ -1967,6 +2013,7 @@ def run() -> None:
             f"admin_route_invalid={result['customer_service_route_invalid_count']}; "
             f"admin_thread_message_marker_present={str(result['admin_thread_message_marker_present']).lower()}; "
             f"admin_thread_order_association_present={str(result['admin_thread_order_association_present']).lower()}; "
+            f"admin_public_reply_persisted={str(result['admin_public_reply_persisted']).lower()}; "
             f"same_origin={str(result['contact_same_origin']).lower()}; "
             f"native_route={str(result['contact_native_route']).lower()}; "
             f"form_count={result['contact_form_count']}; "
