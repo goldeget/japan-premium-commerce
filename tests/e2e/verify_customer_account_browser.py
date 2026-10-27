@@ -18,6 +18,10 @@ from urllib.error import URLError
 from urllib.parse import parse_qs, parse_qsl, quote, unquote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
+from customer_address_isolation_result import (
+    CUSTOMER_ADDRESS_ISOLATION_RESULT_KEYS,
+    safe_customer_address_isolation_result,
+)
 from selenium import webdriver
 from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException
 from selenium.webdriver.chrome.options import Options
@@ -115,6 +119,17 @@ PROFILE_UPDATE_SUBSTAGES = frozenset(
         "profile_screenshot",
     }
 )
+def write_customer_address_isolation_result(label: str, result: object) -> bool:
+    payload = safe_customer_address_isolation_result(result)
+    rendered = json.dumps(payload, ensure_ascii=True, sort_keys=True)
+    destination = DEST / f"{label}-customer-address-isolation.json"
+    try:
+        destination.write_text(rendered + "\n", encoding="utf-8")
+    except OSError:
+        print("FAIL: customer address isolation evidence could not be saved", file=sys.stderr)
+        return False
+    print("CUSTOMER_ADDRESS_ISOLATION_SAFE_RESULT=" + rendered)
+    return True
 
 
 class AnchorLinks(HTMLParser):
@@ -2706,7 +2721,7 @@ def populate_japan_customer_address(
     address_line = f"大手町1-2-3 {label.upper()} CI"
     for name, value in (
         ("alias", alias),
-        ("firstname", "ORDENOWA"),
+        ("firstname", f"OWNER-{label.upper()}"),
         ("lastname", f"CI {label.title()}"),
         ("address1", address_line),
         ("address2", f"ORDENOWA CI {label.upper()} TEST BUILDING 101"),
@@ -2981,7 +2996,7 @@ def open_customer_address_edit(
     *,
     substage_callback: Callable[[str, bool], None] | None = None,
     diagnostic_state: dict[str, object] | None = None,
-) -> None:
+) -> str:
     state = diagnostic_state if diagnostic_state is not None else {}
 
     def mark(value: str, completed: bool = False) -> None:
@@ -3051,6 +3066,7 @@ def open_customer_address_edit(
     if form.get_attribute("data-id-address") != address_id:
         raise AssertionError("the customer address edit form did not load the selected address")
     mark("address_edit_form_identity_check", True)
+    return edit_url
 
 
 def collect_customer_address_edit_diagnostics(
@@ -3889,6 +3905,10 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         "center_unobstructed": None,
         "failure_type": "unavailable",
     }
+    address_isolation_started = False
+    address_isolation_result: dict[str, bool] = {
+        key: False for key in CUSTOMER_ADDRESS_ISOLATION_RESULT_KEYS
+    }
     expected_first_name = f"CI-{label.title()}"
     driver = None
     success = False
@@ -4156,7 +4176,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
 
         edited_address_line = f"大手町4-5-6 {label.upper()} CI EDITED"
         stage = "customer_address_edit"
-        open_customer_address_edit(
+        owner_address_edit_url = open_customer_address_edit(
             driver,
             address_alias,
             address_id,
@@ -4185,6 +4205,146 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             previous_line=initial_address_line,
         )
         driver.save_screenshot(str(DEST / f"{label}-customer-address-edited-after-refresh.png"))
+
+        address_isolation_started = True
+        stage = "customer_address_cross_owner_owner_logout"
+        logout(driver, login_url=login_url)
+
+        foreign_email = f"qa-ordenowa-{RUN_ID}-{RUN_ATTEMPT}-{label}-foreign@example.invalid"
+        foreign_password = f"Ordenowa-Foreign-{RUN_ID}-{RUN_ATTEMPT}!"
+        stage = "customer_address_cross_owner_foreign_registration"
+        driver.get(registration_url)
+        if not safe_generated_route_match(driver.current_url, registration_url):
+            raise AssertionError("foreign customer registration left the generated route")
+        form = visible(driver, "#customer-form")
+        stage = "customer_address_cross_owner_registration_submit"
+        failure_control = {"name": "", "type": ""}
+        prepare_required_registration_fields(
+            driver,
+            form,
+            foreign_email,
+            foreign_password,
+            failure_control,
+        )
+        foreign_first_name = f"FOREIGN-{label.upper()}"
+        for name, value in (("firstname", foreign_first_name), ("lastname", "Customer")):
+            field = visible(driver, f'#customer-form input[name="{name}"]')
+            field.clear()
+            field.send_keys(value)
+        assert_native_form_valid(driver, form, "foreign customer registration")
+        submit_button = visible(driver, "#customer-form button.form-control-submit")
+        click_centered(driver, submit_button)
+        stage = "customer_address_cross_owner_registration_success"
+        wait_for_registration_success(driver)
+        assert_my_page(driver, foreign_first_name)
+
+        stage = "customer_address_foreign_access"
+        clear_document_navigation_events(driver)
+        driver.get(owner_address_edit_url)
+        WebDriverWait(driver, 30).until(
+            lambda browser: browser.execute_script("return document.readyState") == "complete"
+        )
+        navigation_events = document_navigation_events(driver)
+        top_level_events = [
+            event for event in navigation_events
+            if isinstance(event, dict) and event.get("frame_scope") == "top_frame"
+        ]
+        if not top_level_events:
+            raise AssertionError("foreign address access did not produce a top-level response")
+        final_event = top_level_events[-1]
+        if final_event.get("status_code") not in {200, 401, 403, 404}:
+            raise AssertionError("foreign address access did not resolve to a successful or denied response")
+        current_location = urlparse(driver.current_url)
+        shop_location = urlparse(BASE)
+        current_origin = (
+            current_location.scheme.lower(),
+            current_location.hostname,
+            current_location.port,
+        )
+        shop_origin = (
+            shop_location.scheme.lower(),
+            shop_location.hostname,
+            shop_location.port,
+        )
+        if current_origin != shop_origin:
+            raise AssertionError("foreign address access left the isolated shop origin")
+        # The foreign customer's authenticated shell must remain active after
+        # the direct request, so a login redirect cannot masquerade as owner
+        # isolation.
+        visible(driver, "#identity_main_link")
+        visible_signout_link(driver)
+        body_text = driver.find_element(By.TAG_NAME, "body").text
+        if foreign_first_name not in body_text:
+            raise AssertionError("the foreign customer session did not remain authenticated")
+        # Persist this checkpoint only after the direct owner URL was tested.
+        address_isolation_result["foreign_session_authenticated"] = True
+        address_forms = driver.find_elements(By.CSS_SELECTOR, ".js-address-form form")
+        if address_forms:
+            raise AssertionError("a foreign customer received an address edit form")
+        address_isolation_result["foreign_edit_form_absent"] = True
+
+        field_values = driver.execute_script(
+            """
+            return Array.from(document.querySelectorAll('input, textarea, select, option'))
+              .flatMap((element) => [String(element.value || ''), String(element.textContent || '')]);
+            """
+        )
+        if not isinstance(field_values, list):
+            raise AssertionError("foreign address page fields could not be checked safely")
+        document_markup = driver.execute_script(
+            "return document.documentElement ? document.documentElement.outerHTML : '';"
+        )
+        if not isinstance(document_markup, str):
+            raise AssertionError("foreign address page markup could not be checked safely")
+        private_address_values = (
+            address_alias,
+            account_email,
+            f"OWNER-{label.upper()}",
+            f"CI {label.title()}",
+            initial_address_line,
+            edited_address_line,
+            f"ORDENOWA CI {label.upper()} TEST BUILDING 101",
+            "100-0004",
+            "千代田区",
+            "0312345678",
+        )
+        address_content = "\n".join(
+            [body_text.casefold(), document_markup.casefold()]
+            + [value.casefold() for value in field_values if isinstance(value, str)]
+        )
+        if any(
+            value and value.casefold() in address_content
+            for value in private_address_values
+        ):
+            raise AssertionError("a foreign customer received owner address content")
+        address_isolation_result["foreign_address_content_absent"] = True
+
+        stage = "customer_address_cross_owner_foreign_logout"
+        logout(driver, login_url=login_url)
+        stage = "customer_address_cross_owner_owner_relogin"
+        driver.get(login_url)
+        visible(driver, '#login-form input[name="email"]')
+        submit_login(driver, account_email, initial_password)
+        assert_my_page(driver, expected_first_name)
+        # Partial failure evidence must not treat the pre-logout session as a relogin.
+        address_isolation_result["owner_session_authenticated"] = True
+
+        stage = "customer_address_cross_owner_owner_readback"
+        driver.get(account_url)
+        assert_my_page(driver, expected_first_name)
+        address_list_link = visible(driver, "#addresses_main_link")
+        click_centered(driver, address_list_link)
+        wait_for_customer_address_card(driver, address_alias)
+        assert_customer_address_line(
+            driver,
+            address_alias,
+            address_id,
+            edited_address_line,
+            previous_line=initial_address_line,
+        )
+        address_isolation_result["owner_fresh_readback_unchanged"] = True
+        if not all(address_isolation_result.values()):
+            raise AssertionError("cross-customer address isolation did not satisfy every check")
 
         stage = "email_login"
         email_login_substage = "logout"
@@ -4276,15 +4436,17 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         )
         print(
             f"PASS: {label} customer registration and duplicate rejection, profile and Japan address create/edit, "
-            "email login/logout, and Mailpit password reset"
+            "cross-customer address isolation, email login/logout, and Mailpit password reset"
         )
         success = True
     except Exception as error:
         if driver is not None:
-            try:
-                driver.save_screenshot(str(DEST / f"{label}-customer-account-failure.png"))
-            except Exception:
-                pass
+            privacy_sensitive_address_stage = stage.startswith("customer_address_cross_owner_") or stage == "customer_address_foreign_access"
+            if not privacy_sensitive_address_stage:
+                try:
+                    driver.save_screenshot(str(DEST / f"{label}-customer-account-failure.png"))
+                except Exception:
+                    pass
             if stage.startswith("registration_"):
                 try:
                     emit_registration_diagnostics(driver, stage, failure_control, registration_state)
@@ -4389,6 +4551,10 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             except Exception as error:
                 print(f"FAIL: {label} customer account browser cleanup ({type(error).__name__})", file=sys.stderr)
                 success = False
+        if address_isolation_started and not write_customer_address_isolation_result(
+            label, address_isolation_result
+        ):
+            success = False
     return success
 
 

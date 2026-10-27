@@ -38,6 +38,7 @@ on:
       - 'tests/smoke/test_fresh_install_workflow_contract.py'
       - 'tests/smoke/test_storefront_accessibility_contract.py'
       - 'tests/smoke/test_customer_account_browser_flow_contract.py'
+      - 'tests/smoke/test_customer_address_isolation_result_contract.py'
       - 'tests/smoke/test_customer_registration_privacy_gate_contract.py'
       - 'tests/smoke/test_korean_customer_login_contract.py'
       - 'tests/smoke/test_account_address_routes.py'
@@ -105,6 +106,7 @@ on:
       - 'tests/smoke/test_fresh_install_workflow_contract.py'
       - 'tests/smoke/test_storefront_accessibility_contract.py'
       - 'tests/smoke/test_customer_account_browser_flow_contract.py'
+      - 'tests/smoke/test_customer_address_isolation_result_contract.py'
       - 'tests/smoke/test_customer_registration_privacy_gate_contract.py'
       - 'tests/smoke/test_korean_customer_login_contract.py'
       - 'tests/smoke/test_account_address_routes.py'
@@ -200,7 +202,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_docker_run_recovery -v
 
       - name: Verify fresh-install workflow contracts
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_storefront_accessibility_contract tests.smoke.test_ci_diagnostics_script tests.smoke.test_catalog_import_browser_workflow_contract tests.smoke.test_catalog_import_admin_contract tests.smoke.test_catalog_fetcher_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_backup_restore_drill_contract tests.smoke.test_deployment_config_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_customer_registration_privacy_gate_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_checkout_reassurance_contract tests.smoke.test_ci_storefront_category_locales_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_kuraneapush_workflow_contract tests.pwa.php.test_backend_contract tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_pwa_registration_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard tests.business_profile.test_admin_recovery_fixture_contract tests.business_profile.test_bank_transfer_instructions_contract tests.business_profile.test_bank_transfer_receipt_contract tests.e2e.test_ci_bank_transfer_browser_contract tests.e2e.test_ci_admin_password_reset_contract tests.e2e.test_ci_admin_order_status_contract tests.e2e.test_ci_customer_support_browser_contract tests.e2e.test_ci_storefront_search_browser_contract tests.e2e.test_ci_reset_email_locale_contract tests.e2e.test_ci_product_seo_browser_contract tests.e2e.test_ci_product_seo_schema_contract tests.e2e.test_native_contact_route_contract -v
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_fresh_install_workflow_contract tests.smoke.test_storefront_accessibility_contract tests.smoke.test_ci_diagnostics_script tests.smoke.test_catalog_import_browser_workflow_contract tests.smoke.test_catalog_import_admin_contract tests.smoke.test_catalog_fetcher_contract tests.smoke.test_browser_qa_artifacts_contract tests.smoke.test_backup_restore_drill_contract tests.smoke.test_deployment_config_contract tests.smoke.test_customer_account_browser_flow_contract tests.smoke.test_customer_address_isolation_result_contract tests.smoke.test_customer_registration_privacy_gate_contract tests.smoke.test_korean_customer_login_contract tests.smoke.test_account_address_routes tests.smoke.test_reset_email_brand_contract tests.smoke.test_free_shipping_e2e_contract tests.smoke.test_checkout_reassurance_contract tests.smoke.test_ci_storefront_category_locales_contract tests.smoke.test_free_shipping_taxable_coupon_contract tests.smoke.test_free_shipping_exemption_contract tests.smoke.test_product_tax_rules_contract tests.smoke.test_variant_fixture_contract tests.smoke.test_cart_controls_browser_contract tests.smoke.test_security_runtime_e2e_contract tests.smoke.test_pwa_service_worker tests.smoke.test_kuraneapush_workflow_contract tests.pwa.php.test_backend_contract tests.smoke.test_pwa_logout_diagnostics_contract tests.smoke.test_pwa_registration_diagnostics_contract tests.smoke.test_private_customer_cache_routes_contract tests.smoke.test_taxable_checkout_browser_contract tests.smoke.test_isolated_browser_target_guards tests.smoke.test_isolated_ci_integration_workflow_contract tests.smoke.test_currency_bootstrap_contract tests.smoke.test_saved_order_tax_contract tests.smoke.test_product_admin_browser_guard tests.business_profile.test_admin_recovery_fixture_contract tests.business_profile.test_bank_transfer_instructions_contract tests.business_profile.test_bank_transfer_receipt_contract tests.e2e.test_ci_bank_transfer_browser_contract tests.e2e.test_ci_admin_password_reset_contract tests.e2e.test_ci_admin_order_status_contract tests.e2e.test_ci_customer_support_browser_contract tests.e2e.test_ci_storefront_search_browser_contract tests.e2e.test_ci_reset_email_locale_contract tests.e2e.test_ci_product_seo_browser_contract tests.e2e.test_ci_product_seo_schema_contract tests.e2e.test_native_contact_route_contract -v
 
       - name: Verify isolated unpaid checkout contracts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.smoke.test_ci_checkout_contract tests.business_profile.test_admin_tab_navigation_contract tests.business_profile.test_admin_access_source_contract tests.business_profile.test_shipping_admin_links_contract tests.business_profile.test_admin_profile_history_contract tests.admin_locale.test_admin_locale_overlay tests.admin_locale.test_admin_locale_response_diagnostic tests.admin_locale.test_orders_empty_state_asset tests.admin_locale.test_orders_locale_overlay tests.postcode.test_ci_native_order_lifecycle_contract tests.e2e.test_ci_admin_return_browser_contract tests.e2e.test_ci_native_customer_return_browser_contract tests.e2e.test_ci_admin_password_reset_contract -v
@@ -1137,40 +1139,93 @@ jobs:
           fi
           if [[ "$ACCOUNT_BROWSER_QA_OUTCOME" == success ]]; then
             for file in \
+              desktop-customer-account-created.png \
+              mobile-customer-account-created.png \
               desktop-customer-address-saved.png \
               mobile-customer-address-saved.png \
               desktop-customer-address-edit-form.png \
               mobile-customer-address-edit-form.png \
               desktop-customer-address-edited-after-refresh.png \
-              mobile-customer-address-edited-after-refresh.png; do
+              mobile-customer-address-edited-after-refresh.png \
+              desktop-customer-address-isolation.json \
+              mobile-customer-address-isolation.json; do
               if [[ ! -s "$QA_ARTIFACT_DIR/$file" ]]; then
-                echo "::error title=Customer account browser evidence::Missing focused address screenshot: $file"
+                echo "::error title=Customer account browser evidence::Missing focused address evidence: $file"
                 exit 1
               fi
             done
+            grep -q '^PASS: desktop customer registration' "$log_file"
             grep -q '^PASS: mobile customer registration' "$log_file"
+            python3 tests/e2e/customer_address_isolation_result.py \
+              "$QA_ARTIFACT_DIR/desktop-customer-address-isolation.json" \
+              "$QA_ARTIFACT_DIR/mobile-customer-address-isolation.json"
             printf 'PASS: isolated desktop/mobile address creation, edit, and refreshed readback screenshots are present.\n'
           else
             if ! grep -q '^FAIL:' "$log_file"; then
               echo '::error title=Customer account browser evidence::The failed account run has no safe FAIL stage marker.'
               exit 1
             fi
-            failure_screenshot_found=false
-            for viewport in desktop mobile; do
-              if [[ -s "$QA_ARTIFACT_DIR/${viewport}-customer-account-failure.png" ]]; then
-                failure_screenshot_found=true
+            if grep -Eq '^FAIL: (desktop|mobile) customer account flow at customer_address_(foreign_access|cross_owner_)' "$log_file"; then
+              result_files=()
+              while IFS= read -r failure_line; do
+                if [[ "$failure_line" =~ ^FAIL:\ (desktop|mobile)\ customer\ account\ flow\ at\ customer_address_(foreign_access|cross_owner_) ]]; then
+                  viewport="${BASH_REMATCH[1]}"
+                else
+                  continue
+                fi
+                result_file="$QA_ARTIFACT_DIR/${viewport}-customer-address-isolation.json"
+                if [[ ! -s "$result_file" ]]; then
+                  echo "::error title=Customer account browser evidence::Cross-owner sequence failure for $viewport has no matching redacted boolean result."
+                  exit 1
+                fi
+                result_files+=("$result_file")
+              done < <(grep -E '^FAIL: (desktop|mobile) customer account flow at customer_address_(foreign_access|cross_owner_)' "$log_file")
+              if [[ ${#result_files[@]} -eq 0 ]]; then
+                echo '::error title=Customer account browser evidence::Cross-owner sequence failure has no redacted boolean result.'
+                exit 1
               fi
-            done
-            if [[ "$failure_screenshot_found" != true ]]; then
-              echo '::error title=Customer account browser evidence::No failure viewport screenshot was captured.'
-              exit 1
+              python3 tests/e2e/customer_address_isolation_result.py \
+                --allow-partial "${result_files[@]}"
+              non_privacy_failures=$(grep -E '^FAIL: (desktop|mobile) customer account flow at ' "$log_file" \
+                | grep -Ev '^FAIL: (desktop|mobile) customer account flow at customer_address_(foreign_access|cross_owner_)' || true)
+              if [[ -n "$non_privacy_failures" ]]; then
+                while IFS= read -r failure_line; do
+                  if [[ "$failure_line" =~ ^FAIL:\ (desktop|mobile)\ customer\ account\ flow\ at\ ([^[:space:]]+) ]]; then
+                    viewport="${BASH_REMATCH[1]}"
+                    failure_stage="${BASH_REMATCH[2]}"
+                  else
+                    continue
+                  fi
+                  if [[ ! -s "$QA_ARTIFACT_DIR/${viewport}-customer-account-failure.png" ]]; then
+                    echo "::error title=Customer account browser evidence::Non-privacy failure for $viewport has no matching viewport screenshot."
+                    exit 1
+                  fi
+                  if [[ "$failure_stage" == customer_address_edit ]] \
+                    && ! grep -q '^ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE=' "$log_file"; then
+                    echo '::error title=Customer account browser evidence::Address edit failed without its safe stage diagnostics.'
+                    exit 1
+                  fi
+                done <<< "$non_privacy_failures"
+              fi
+              printf 'PASS: cross-owner sequence failure is preserved with boolean-only evidence; no foreign-session or cross-owner-sequence screenshot was captured.\n'
+            else
+              failure_screenshot_found=false
+              for viewport in desktop mobile; do
+                if [[ -s "$QA_ARTIFACT_DIR/${viewport}-customer-account-failure.png" ]]; then
+                  failure_screenshot_found=true
+                fi
+              done
+              if [[ "$failure_screenshot_found" != true ]]; then
+                echo '::error title=Customer account browser evidence::No failure viewport screenshot was captured.'
+                exit 1
+              fi
+              if grep -q 'at customer_address_edit' "$log_file" \
+                && ! grep -q '^ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE=' "$log_file"; then
+                echo '::error title=Customer account browser evidence::Address edit failed without its safe stage diagnostics.'
+                exit 1
+              fi
+              printf 'PASS: isolated account failure stage and viewport screenshot are preserved for diagnosis.\n'
             fi
-            if grep -q 'at customer_address_edit' "$log_file" \
-              && ! grep -q '^ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE=' "$log_file"; then
-              echo '::error title=Customer account browser evidence::Address edit failed without its safe stage diagnostics.'
-              exit 1
-            fi
-            printf 'PASS: isolated account failure stage and viewport screenshot are preserved for diagnosis.\n'
           fi
 
       - name: Verify Korean admin native product create and edit in Chromium
@@ -3363,7 +3418,17 @@ jobs:
               mobile-customer-address-edit-form.png
               desktop-customer-address-edited-after-refresh.png
               mobile-customer-address-edited-after-refresh.png
+              desktop-customer-address-isolation.json
+              mobile-customer-address-isolation.json
             )
+          elif [[ "$ACCOUNT_BROWSER_QA_OUTCOME" == failure ]]; then
+            required_artifacts+=(customer-account-e2e.log)
+            for viewport in desktop mobile; do
+              result_file="${viewport}-customer-address-isolation.json"
+              if [[ -s "$artifact_dir/$result_file" ]]; then
+                required_artifacts+=("$result_file")
+              fi
+            done
           fi
           if [[ "$TAX_FIXTURE_OUTCOME" == success ]]; then
             required_artifacts+=(

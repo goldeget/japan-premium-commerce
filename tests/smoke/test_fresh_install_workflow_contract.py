@@ -301,11 +301,13 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "  workflow_dispatch:", 1
         )[0]
         account_contract_path = "tests/smoke/test_customer_account_browser_flow_contract.py"
+        address_isolation_result_path = "tests/smoke/test_customer_address_isolation_result_contract.py"
         login_contract_path = "tests/smoke/test_korean_customer_login_contract.py"
         email_brand_contract_path = "tests/smoke/test_reset_email_brand_contract.py"
         privacy_gate_contract_path = "tests/smoke/test_customer_registration_privacy_gate_contract.py"
         for event, event_block in (("push", push_event), ("pull_request", pull_request_event)):
             self.assertIn(account_contract_path, event_block, f"account contract changes do not trigger {event} CI")
+            self.assertIn(address_isolation_result_path, event_block, f"address evidence contract changes do not trigger {event} CI")
             self.assertIn(login_contract_path, event_block, f"Korean login contract changes do not trigger {event} CI")
             self.assertIn(email_brand_contract_path, event_block, f"email brand contract changes do not trigger {event} CI")
             self.assertIn(privacy_gate_contract_path, event_block, f"registration privacy gate changes do not trigger {event} CI")
@@ -317,6 +319,11 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             "tests.smoke.test_customer_account_browser_flow_contract",
             contract_step,
             "fresh-install CI does not run the offline customer account flow contract",
+        )
+        self.assertIn(
+            "tests.smoke.test_customer_address_isolation_result_contract",
+            contract_step,
+            "fresh-install CI does not run the boolean-only address evidence contract",
         )
         self.assertIn(
             "tests.smoke.test_korean_customer_login_contract",
@@ -699,7 +706,7 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
         self.assertIn("def assert_my_page", account_flow)
         my_page = account_flow.split("def assert_my_page", 1)[1].split("def prepare_required_registration_fields", 1)[0]
         logout = account_flow.split("def logout", 1)[1].split("def run_viewport", 1)[0]
-        self.assertEqual(account_flow.count("        assert_my_page(driver,"), 8)
+        self.assertEqual(account_flow.count("        assert_my_page(driver,"), 11)
         for selector in ("identity_main_link", "signout_link"):
             self.assertIn(selector, my_page)
         self.assertIn("expected_first_name", my_page)

@@ -406,6 +406,37 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
                 json.dumps(import_diagnostics, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
+            (artifact_dir / "customer-account-e2e.log").write_text(
+                "PASS: mobile customer registration and cross-customer address isolation\n",
+                encoding="utf-8",
+            )
+            account_artifacts = (
+                "desktop-customer-account-created.png",
+                "mobile-customer-account-created.png",
+                "desktop-customer-address-saved.png",
+                "mobile-customer-address-saved.png",
+                "desktop-customer-address-edit-form.png",
+                "mobile-customer-address-edit-form.png",
+                "desktop-customer-address-edited-after-refresh.png",
+                "mobile-customer-address-edited-after-refresh.png",
+            )
+            for artifact in account_artifacts:
+                (artifact_dir / artifact).write_bytes(b"synthetic capture")
+            address_isolation_result = {
+                key: True
+                for key in (
+                    "owner_session_authenticated",
+                    "foreign_session_authenticated",
+                    "foreign_edit_form_absent",
+                    "foreign_address_content_absent",
+                    "owner_fresh_readback_unchanged",
+                )
+            }
+            for viewport in ("desktop", "mobile"):
+                (artifact_dir / f"{viewport}-customer-address-isolation.json").write_text(
+                    json.dumps(address_isolation_result, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
             env = {
                 **os.environ,
                 **{variable: "failure" for variable in variables},
@@ -415,7 +446,7 @@ class IsolatedCiIntegrationWorkflowContractTests(unittest.TestCase):
             }
             result = subprocess.run(["bash", "-c", shell_body(coverage)], env=env, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0, "another failure hid the successful cart flow's missing evidence")
-            self.assertIn("cart-controls-desktop-initial.png", result.stdout)
+            self.assertIn("cart-controls-desktop-initial.png", result.stdout, result.stdout + result.stderr)
 
     def test_tracking_persistence_outcome_is_bound_into_screenshot_coverage(self) -> None:
         coverage = step("Verify browser QA screenshot coverage")

@@ -3,8 +3,12 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import sys
+import subprocess
+import tempfile
+import textwrap
 import unittest
 from contextlib import redirect_stderr
 from io import StringIO
@@ -15,6 +19,8 @@ from urllib.parse import parse_qs, parse_qsl, unquote, urljoin, urlparse
 
 ROOT = Path(__file__).resolve().parents[2]
 ACCOUNT_FLOW = ROOT / "tests" / "e2e" / "verify_customer_account_browser.py"
+RESULT_FLOW = ROOT / "tests" / "e2e" / "customer_address_isolation_result.py"
+WORKFLOW = ROOT / ".github" / "workflows" / "fresh-install.yml"
 
 
 def stage_blocks(source: str) -> tuple[list[str], dict[str, str]]:
@@ -51,6 +57,113 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.source = ACCOUNT_FLOW.read_text(encoding="utf-8")
         cls.stages, cls.blocks = stage_blocks(cls.source)
+
+    def test_focused_evidence_accepts_boolean_success_and_private_failure_without_screenshot(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        evidence_start = workflow.index("      - name: Verify focused customer account browser evidence")
+        evidence_end = workflow.index("      - name:", evidence_start + 12)
+        evidence = workflow[evidence_start:evidence_end]
+        command = textwrap.dedent(evidence.split("        run: |\n", 1)[1])
+
+        with tempfile.TemporaryDirectory() as temporary:
+            artifact_dir = Path(temporary)
+            log = artifact_dir / "customer-account-e2e.log"
+            log.write_text(
+                "PASS: desktop customer registration and cross-customer address isolation\n"
+                "PASS: mobile customer registration and cross-customer address isolation\n",
+                encoding="utf-8",
+            )
+            for filename in (
+                "desktop-customer-account-created.png",
+                "mobile-customer-account-created.png",
+                "desktop-customer-address-saved.png",
+                "mobile-customer-address-saved.png",
+                "desktop-customer-address-edit-form.png",
+                "mobile-customer-address-edit-form.png",
+                "desktop-customer-address-edited-after-refresh.png",
+                "mobile-customer-address-edited-after-refresh.png",
+            ):
+                (artifact_dir / filename).write_bytes(b"synthetic capture")
+
+            result_keys = (
+                "owner_session_authenticated",
+                "foreign_session_authenticated",
+                "foreign_edit_form_absent",
+                "foreign_address_content_absent",
+                "owner_fresh_readback_unchanged",
+            )
+            result = {key: True for key in result_keys}
+            for viewport in ("desktop", "mobile"):
+                (artifact_dir / f"{viewport}-customer-address-isolation.json").write_text(
+                    json.dumps(result, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+
+            environment = {
+                **os.environ,
+                "QA_ARTIFACT_DIR": temporary,
+                "ACCOUNT_BROWSER_QA_OUTCOME": "success",
+            }
+            success = subprocess.run(
+                ["bash", "-c", command], env=environment, capture_output=True, text=True
+            )
+            self.assertEqual(success.returncode, 0, success.stdout + success.stderr)
+
+            log.write_text(
+                "FAIL: mobile customer account flow at customer_address_foreign_access (AssertionError)\n",
+                encoding="utf-8",
+            )
+            result["foreign_address_content_absent"] = False
+            mobile_result = artifact_dir / "mobile-customer-address-isolation.json"
+            mobile_result.write_text(
+                json.dumps(result, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            mobile_result.unlink()
+            wrong_viewport = subprocess.run(
+                ["bash", "-c", command],
+                env={**environment, "ACCOUNT_BROWSER_QA_OUTCOME": "failure"},
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(wrong_viewport.returncode, 0)
+            self.assertIn("Cross-owner sequence failure for mobile has no matching", wrong_viewport.stdout)
+
+            mobile_result.write_text(
+                json.dumps(result, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            failure = subprocess.run(
+                ["bash", "-c", command],
+                env={**environment, "ACCOUNT_BROWSER_QA_OUTCOME": "failure"},
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(failure.returncode, 0, failure.stdout + failure.stderr)
+            self.assertIn("no foreign-session or cross-owner-sequence screenshot was captured", failure.stdout)
+
+            log.write_text(
+                "FAIL: desktop customer account flow at registration_link_load (TimeoutException)\n"
+                "FAIL: mobile customer account flow at customer_address_foreign_access (AssertionError)\n",
+                encoding="utf-8",
+            )
+            mixed_without_screenshot = subprocess.run(
+                ["bash", "-c", command],
+                env={**environment, "ACCOUNT_BROWSER_QA_OUTCOME": "failure"},
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(mixed_without_screenshot.returncode, 0)
+            self.assertIn("Non-privacy failure for desktop has no matching", mixed_without_screenshot.stdout)
+
+            (artifact_dir / "desktop-customer-account-failure.png").write_bytes(b"synthetic capture")
+            mixed_with_screenshot = subprocess.run(
+                ["bash", "-c", command],
+                env={**environment, "ACCOUNT_BROWSER_QA_OUTCOME": "failure"},
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(mixed_with_screenshot.returncode, 0, mixed_with_screenshot.stdout + mixed_with_screenshot.stderr)
 
     def test_registration_profile_email_login_and_reset_are_ordered(self) -> None:
         required_stages = (
@@ -282,6 +395,107 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn('data-id-address', self.source)
         self.assertIn('name="kuraneapostcode_search"', self.source)
         self.assertIn('button[role="option"]', self.source)
+
+    def test_cross_customer_address_request_is_denied_and_owner_readback_is_fresh(self) -> None:
+        required_stages = (
+            "customer_address_edit_persist_wait",
+            "customer_address_cross_owner_owner_logout",
+            "customer_address_cross_owner_foreign_registration",
+            "customer_address_cross_owner_registration_submit",
+            "customer_address_cross_owner_registration_success",
+            "customer_address_foreign_access",
+            "customer_address_cross_owner_foreign_logout",
+            "customer_address_cross_owner_owner_relogin",
+            "customer_address_cross_owner_owner_readback",
+            "email_login",
+        )
+        positions = [self.stages.index(stage) for stage in required_stages]
+        self.assertEqual(positions, sorted(positions))
+
+        edit_helper = self.source.split("def open_customer_address_edit", 1)[1].split(
+            "def save_customer_address_edit", 1
+        )[0]
+        self.assertIn("return edit_url", edit_helper)
+        self.assertIn("edit_link_same_origin", edit_helper)
+        self.assertIn("address_id", edit_helper)
+
+        run_viewport = self.source.split("def run_viewport", 1)[1].split(
+            "\n\nif __name__", 1
+        )[0]
+        foreign_access = self.blocks["customer_address_foreign_access"]
+        self.assertIn("driver.get(owner_address_edit_url)", foreign_access)
+        self.assertIn("document_navigation_events(driver)", foreign_access)
+        self.assertIn("final_event.get(\"status_code\") not in {200, 401, 403, 404}", foreign_access)
+        self.assertIn("current_origin != shop_origin", foreign_access)
+        self.assertIn('visible(driver, "#identity_main_link")', foreign_access)
+        self.assertIn('visible_signout_link(driver)', foreign_access)
+        self.assertIn('driver.find_elements(By.CSS_SELECTOR, ".js-address-form form")', foreign_access)
+        self.assertIn("document.documentElement.outerHTML", foreign_access)
+        self.assertIn("foreign_address_content_absent", foreign_access)
+        self.assertIn("document.querySelectorAll('input, textarea, select, option')", foreign_access)
+        for private_value in (
+            "account_email",
+            'f"OWNER-{label.upper()}"',
+            '"100-0004"',
+            '"千代田区"',
+            '"0312345678"',
+        ):
+            self.assertIn(private_value, foreign_access)
+        self.assertNotIn("print(address_alias", foreign_access)
+        self.assertNotIn("print(owner_address_edit_url", foreign_access)
+
+        foreign_session_check = 'address_isolation_result["foreign_session_authenticated"] = True'
+        self.assertEqual(run_viewport.count(foreign_session_check), 1)
+        self.assertGreater(
+            run_viewport.index(foreign_session_check),
+            run_viewport.index('if foreign_first_name not in body_text:'),
+        )
+        owner_session_check = 'address_isolation_result["owner_session_authenticated"] = True'
+        self.assertEqual(run_viewport.count(owner_session_check), 1)
+        self.assertGreater(
+            run_viewport.index(owner_session_check),
+            run_viewport.index("submit_login(driver, account_email, initial_password)"),
+        )
+
+        owner_readback = self.blocks["customer_address_cross_owner_owner_readback"]
+        self.assertIn("driver.get(account_url)", owner_readback)
+        self.assertIn("assert_customer_address_line", owner_readback)
+        self.assertIn("owner_fresh_readback_unchanged", owner_readback)
+
+        handler = run_viewport.split("except Exception as error:", 1)[1].split(
+            "inner_stage = (", 1
+        )[0]
+        self.assertIn('stage == "customer_address_foreign_access"', handler)
+        self.assertIn("if not privacy_sensitive_address_stage:", handler)
+        self.assertIn("write_customer_address_isolation_result", run_viewport)
+        self.assertIn('CUSTOMER_ADDRESS_ISOLATION_SAFE_RESULT=', self.source)
+        result_source = RESULT_FLOW.read_text(encoding="utf-8")
+        result_keys = result_source.split("CUSTOMER_ADDRESS_ISOLATION_RESULT_KEYS =", 1)[1].split(")", 1)[0]
+        self.assertNotIn("address_id", result_keys)
+        self.assertNotIn("email", result_keys)
+        self.assertNotIn("token", result_keys)
+
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        evidence_start = workflow.index("      - name: Verify focused customer account browser evidence")
+        evidence_end = workflow.index("      - name:", evidence_start + 12)
+        evidence = workflow[evidence_start:evidence_end]
+        self.assertIn("desktop-customer-account-created.png", evidence)
+        self.assertIn("mobile-customer-account-created.png", evidence)
+        self.assertIn("^PASS: desktop customer registration", evidence)
+        self.assertIn("^PASS: mobile customer registration", evidence)
+        self.assertIn("desktop-customer-address-isolation.json", evidence)
+        self.assertIn("mobile-customer-address-isolation.json", evidence)
+        self.assertIn("customer_address_(foreign_access|cross_owner_)", evidence)
+        self.assertIn("--allow-partial", evidence)
+        self.assertIn("no foreign-session or cross-owner-sequence screenshot was captured", evidence)
+
+        collector_start = workflow.index(
+            '          if [[ "$ACCOUNT_BROWSER_QA_OUTCOME" == success ]]; then',
+            workflow.index("required_artifacts+=(bank-transfer-e2e.log"),
+        )
+        collector_end = workflow.index("          if [[ \"$TAX_FIXTURE_OUTCOME\" == success ]]; then", collector_start)
+        collector = workflow[collector_start:collector_end]
+        self.assertIn("customer-address-isolation.json", collector)
 
     def test_customer_address_submission_waits_for_the_saved_card_before_navigation(self) -> None:
         create_address = self.source.split("def create_customer_address", 1)[1].split(
@@ -1071,7 +1285,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             and isinstance(node.func, ast.Name)
             and node.func.id == "logout"
         ]
-        self.assertEqual(len(logout_calls), 5)
+        self.assertEqual(len(logout_calls), 7)
         self.assertTrue(
             all(
                 len(call.args) == 1
@@ -1082,6 +1296,8 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             ),
             "logout calls must use the validated generated login URL",
         )
+        self.assertIn('stage = "customer_address_cross_owner_owner_logout"', run_viewport)
+        self.assertIn('stage = "customer_address_cross_owner_foreign_logout"', run_viewport)
 
         click_signout = logout.index("click_centered(driver, link)")
         wait_signed_out = logout.index("wait_for_signed_out_state(driver)")
