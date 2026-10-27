@@ -165,6 +165,51 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             )
             self.assertEqual(mixed_with_screenshot.returncode, 0, mixed_with_screenshot.stdout + mixed_with_screenshot.stderr)
 
+            log.write_text(
+                "FAIL: desktop customer account flow at registration_link_load (TimeoutException)\n"
+                "FAIL: mobile customer account flow at customer_address_edit (TimeoutException)\n"
+                "ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE={\"viewport\": \"mobile\"}\n",
+                encoding="utf-8",
+            )
+            (artifact_dir / "desktop-customer-account-failure.png").unlink()
+            (artifact_dir / "mobile-customer-account-failure.png").write_bytes(b"synthetic capture")
+            missing_failure_screenshot = subprocess.run(
+                ["bash", "-c", command],
+                env={**environment, "ACCOUNT_BROWSER_QA_OUTCOME": "failure"},
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(missing_failure_screenshot.returncode, 0)
+            self.assertIn("Failure for desktop has no matching viewport screenshot", missing_failure_screenshot.stdout)
+
+            (artifact_dir / "desktop-customer-account-failure.png").write_bytes(b"synthetic capture")
+            wrong_diagnostic_viewport = log.read_text(encoding="utf-8").replace(
+                '"viewport": "mobile"', '"viewport": "desktop"'
+            )
+            log.write_text(wrong_diagnostic_viewport, encoding="utf-8")
+            missing_address_diagnostic = subprocess.run(
+                ["bash", "-c", command],
+                env={**environment, "ACCOUNT_BROWSER_QA_OUTCOME": "failure"},
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(missing_address_diagnostic.returncode, 0)
+            self.assertIn("Address edit failure for mobile has no matching safe stage diagnostics", missing_address_diagnostic.stdout)
+
+            log.write_text(
+                wrong_diagnostic_viewport.replace(
+                    '"viewport": "desktop"', '"viewport": "mobile"'
+                ),
+                encoding="utf-8",
+            )
+            ordinary_failure = subprocess.run(
+                ["bash", "-c", command],
+                env={**environment, "ACCOUNT_BROWSER_QA_OUTCOME": "failure"},
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(ordinary_failure.returncode, 0, ordinary_failure.stdout + ordinary_failure.stderr)
+
     def test_registration_profile_email_login_and_reset_are_ordered(self) -> None:
         required_stages = (
             "registration_submit",
@@ -436,6 +481,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         for private_value in (
             "account_email",
             'f"OWNER-{label.upper()}"',
+            '"1000004"',
             '"100-0004"',
             '"千代田区"',
             '"0312345678"',
@@ -469,6 +515,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn("if not privacy_sensitive_address_stage:", handler)
         self.assertIn("write_customer_address_isolation_result", run_viewport)
         self.assertIn('CUSTOMER_ADDRESS_ISOLATION_SAFE_RESULT=', self.source)
+        self.assertIn('safe_state["viewport"]', self.source)
         result_source = RESULT_FLOW.read_text(encoding="utf-8")
         result_keys = result_source.split("CUSTOMER_ADDRESS_ISOLATION_RESULT_KEYS =", 1)[1].split(")", 1)[0]
         self.assertNotIn("address_id", result_keys)
@@ -488,6 +535,9 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn("customer_address_(foreign_access|cross_owner_)", evidence)
         self.assertIn("--allow-partial", evidence)
         self.assertIn("no foreign-session or cross-owner-sequence screenshot was captured", evidence)
+        self.assertIn("Failure for $viewport has no matching viewport screenshot", evidence)
+        self.assertIn("Address edit failure for $viewport has no matching safe stage diagnostics", evidence)
+        self.assertIn(r'grep -F "\"viewport\": \"$viewport\""', evidence)
 
         collector_start = workflow.index(
             '          if [[ "$ACCOUNT_BROWSER_QA_OUTCOME" == success ]]; then',
@@ -681,7 +731,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         }
         output = StringIO()
         with redirect_stderr(output):
-            namespace["emit_customer_address_edit_diagnostics"](FakeDriver(), state)
+            namespace["emit_customer_address_edit_diagnostics"](FakeDriver(), state, "mobile")
         rendered = output.getvalue()
         self.assertIn("ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE=", rendered)
         for expected in (
@@ -698,6 +748,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             '"occluder_class": "other"',
             '"edit_form_present": false',
             '"edit_form_visible": false',
+            '"viewport": "mobile"',
             '"edit_form_id_matches": false',
             '"failure_type": "TimeoutException"',
         ):

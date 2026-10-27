@@ -555,8 +555,8 @@ class FreshInstallWorkflowContractTests(unittest.TestCase):
             (bin_dir / "tail").symlink_to(tail_path)
             log_file = Path(temporary) / "account.log"
             log_file.write_text(
-                "FAIL: mobile customer account at customer_address_edit (TimeoutException)\n"
-                "ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE={\"substage\":\"form_wait\"}\n",
+                "FAIL: mobile customer account flow at customer_address_edit (TimeoutException)\n"
+                "ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE={\"substage\":\"form_wait\",\"viewport\":\"mobile\"}\n",
                 encoding="utf-8",
             )
             failure_extractor = next(line for line in extractor_lines if "FAIL:" in line)

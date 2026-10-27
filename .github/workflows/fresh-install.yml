@@ -1200,30 +1200,43 @@ jobs:
                     echo "::error title=Customer account browser evidence::Non-privacy failure for $viewport has no matching viewport screenshot."
                     exit 1
                   fi
-                  if [[ "$failure_stage" == customer_address_edit ]] \
-                    && ! grep -q '^ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE=' "$log_file"; then
-                    echo '::error title=Customer account browser evidence::Address edit failed without its safe stage diagnostics.'
-                    exit 1
+                  if [[ "$failure_stage" == customer_address_edit ]]; then
+                    address_edit_diagnostics=$(grep '^ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE=' "$log_file" \
+                      | grep -F "\"viewport\": \"$viewport\"" || true)
+                    if [[ -z "$address_edit_diagnostics" ]]; then
+                      echo "::error title=Customer account browser evidence::Address edit failure for $viewport has no matching safe stage diagnostics."
+                      exit 1
+                    fi
                   fi
                 done <<< "$non_privacy_failures"
               fi
               printf 'PASS: cross-owner sequence failure is preserved with boolean-only evidence; no foreign-session or cross-owner-sequence screenshot was captured.\n'
             else
-              failure_screenshot_found=false
-              for viewport in desktop mobile; do
-                if [[ -s "$QA_ARTIFACT_DIR/${viewport}-customer-account-failure.png" ]]; then
-                  failure_screenshot_found=true
+              ordinary_failures=$(grep -E '^FAIL: (desktop|mobile) customer account flow at ' "$log_file" || true)
+              if [[ -z "$ordinary_failures" ]]; then
+                echo '::error title=Customer account browser evidence::The failure log has no viewport-scoped account flow marker.'
+                exit 1
+              fi
+              while IFS= read -r failure_line; do
+                if [[ "$failure_line" =~ ^FAIL:\ (desktop|mobile)\ customer\ account\ flow\ at\ ([^[:space:]]+) ]]; then
+                  viewport="${BASH_REMATCH[1]}"
+                  failure_stage="${BASH_REMATCH[2]}"
+                else
+                  continue
                 fi
-              done
-              if [[ "$failure_screenshot_found" != true ]]; then
-                echo '::error title=Customer account browser evidence::No failure viewport screenshot was captured.'
-                exit 1
-              fi
-              if grep -q 'at customer_address_edit' "$log_file" \
-                && ! grep -q '^ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE=' "$log_file"; then
-                echo '::error title=Customer account browser evidence::Address edit failed without its safe stage diagnostics.'
-                exit 1
-              fi
+                if [[ ! -s "$QA_ARTIFACT_DIR/${viewport}-customer-account-failure.png" ]]; then
+                  echo "::error title=Customer account browser evidence::Failure for $viewport has no matching viewport screenshot."
+                  exit 1
+                fi
+                if [[ "$failure_stage" == customer_address_edit ]]; then
+                  address_edit_diagnostics=$(grep '^ORDENOWA_CUSTOMER_ADDRESS_EDIT_SAFE_STATE=' "$log_file" \
+                    | grep -F "\"viewport\": \"$viewport\"" || true)
+                  if [[ -z "$address_edit_diagnostics" ]]; then
+                    echo "::error title=Customer account browser evidence::Address edit failure for $viewport has no matching safe stage diagnostics."
+                    exit 1
+                  fi
+                fi
+              done <<< "$ordinary_failures"
               printf 'PASS: isolated account failure stage and viewport screenshot are preserved for diagnosis.\n'
             fi
           fi

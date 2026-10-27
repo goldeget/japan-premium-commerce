@@ -3271,9 +3271,14 @@ def collect_customer_address_edit_diagnostics(
 def emit_customer_address_edit_diagnostics(
     driver: webdriver.Chrome,
     state: dict[str, object],
+    viewport: str = "unavailable",
 ) -> None:
+    safe_state = collect_customer_address_edit_diagnostics(driver, state)
+    safe_state["viewport"] = (
+        viewport if viewport in {"desktop", "mobile"} else "unavailable"
+    )
     safe_state_json = json.dumps(
-        collect_customer_address_edit_diagnostics(driver, state),
+        safe_state,
         ensure_ascii=True,
         sort_keys=True,
     )
@@ -4304,6 +4309,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             initial_address_line,
             edited_address_line,
             f"ORDENOWA CI {label.upper()} TEST BUILDING 101",
+            "1000004",
             "100-0004",
             "千代田区",
             "0312345678",
@@ -4490,7 +4496,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
                     address_edit_state["failure_type"] = (
                         error_type if error_type in allowed_error_types else "other"
                     )
-                    emit_customer_address_edit_diagnostics(driver, address_edit_state)
+                    emit_customer_address_edit_diagnostics(driver, address_edit_state, label)
                 except Exception:
                     pass
             elif stage in {"email_login", "password_reset_login"}:
