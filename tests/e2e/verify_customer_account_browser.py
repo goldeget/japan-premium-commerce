@@ -3914,6 +3914,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
     address_isolation_result: dict[str, bool] = {
         key: False for key in CUSTOMER_ADDRESS_ISOLATION_RESULT_KEYS
     }
+    address_isolation_substage = "not_started"
     expected_first_name = f"CI-{label.title()}"
     driver = None
     success = False
@@ -4242,13 +4243,19 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         stage = "customer_address_cross_owner_registration_success"
         wait_for_registration_success(driver)
         assert_my_page(driver, foreign_first_name)
+        stage = "customer_address_cross_owner_foreign_account_route"
+        address_isolation_substage = "foreign_account_route"
+        _, foreign_account_url = my_account_link_from_header(driver, open_menu=False)
 
         stage = "customer_address_foreign_access"
+        address_isolation_substage = "foreign_edit_request"
         clear_document_navigation_events(driver)
         driver.get(owner_address_edit_url)
+        address_isolation_substage = "foreign_document_ready"
         WebDriverWait(driver, 30).until(
             lambda browser: browser.execute_script("return document.readyState") == "complete"
         )
+        address_isolation_substage = "foreign_response_readback"
         navigation_events = document_navigation_events(driver)
         top_level_events = [
             event for event in navigation_events
@@ -4273,16 +4280,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         )
         if current_origin != shop_origin:
             raise AssertionError("foreign address access left the isolated shop origin")
-        # The foreign customer's authenticated shell must remain active after
-        # the direct request, so a login redirect cannot masquerade as owner
-        # isolation.
-        visible(driver, "#identity_main_link")
-        visible_signout_link(driver)
         body_text = driver.find_element(By.TAG_NAME, "body").text
-        if foreign_first_name not in body_text:
-            raise AssertionError("the foreign customer session did not remain authenticated")
-        # Persist this checkpoint only after the direct owner URL was tested.
-        address_isolation_result["foreign_session_authenticated"] = True
         address_forms = driver.find_elements(By.CSS_SELECTOR, ".js-address-form form")
         if address_forms:
             raise AssertionError("a foreign customer received an address edit form")
@@ -4325,9 +4323,17 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             raise AssertionError("a foreign customer received owner address content")
         address_isolation_result["foreign_address_content_absent"] = True
 
+        stage = "customer_address_cross_owner_foreign_session_readback"
+        address_isolation_substage = "foreign_account_readback"
+        driver.get(foreign_account_url)
+        assert_my_page(driver, foreign_first_name)
+        address_isolation_result["foreign_session_authenticated"] = True
+
         stage = "customer_address_cross_owner_foreign_logout"
+        address_isolation_substage = "foreign_logout"
         logout(driver, login_url=login_url)
         stage = "customer_address_cross_owner_owner_relogin"
+        address_isolation_substage = "owner_relogin"
         driver.get(login_url)
         visible(driver, '#login-form input[name="email"]')
         submit_login(driver, account_email, initial_password)
@@ -4336,6 +4342,7 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         address_isolation_result["owner_session_authenticated"] = True
 
         stage = "customer_address_cross_owner_owner_readback"
+        address_isolation_substage = "owner_fresh_readback"
         driver.get(account_url)
         assert_my_page(driver, expected_first_name)
         address_list_link = visible(driver, "#addresses_main_link")
@@ -4530,6 +4537,11 @@ def run_viewport(width: int, height: int, label: str) -> bool:
             if stage == "customer_address_edit"
             else ""
         )
+        address_isolation_substage_detail = (
+            f"; address_isolation_substage={address_isolation_substage}"
+            if stage.startswith("customer_address_cross_owner_") or stage == "customer_address_foreign_access"
+            else ""
+        )
         reported_error_type = (
             address_edit_state.get("failure_type", "other")
             if stage == "customer_address_edit"
@@ -4538,14 +4550,14 @@ def run_viewport(width: int, height: int, label: str) -> bool:
         print(
             f"FAIL: {label} customer account flow at {stage}"
             f"{inner_stage_detail}{email_login_substage_detail}{profile_substage_detail}"
-            f"{address_edit_substage_detail} "
+            f"{address_edit_substage_detail}{address_isolation_substage_detail} "
             f"({reported_error_type})",
             file=sys.stderr,
         )
         print(
             f"::error title=Customer account browser QA::{label} failed at {stage} "
             f"({reported_error_type}){inner_stage_detail}{email_login_substage_detail}"
-            f"{profile_substage_detail}{address_edit_substage_detail}; "
+            f"{profile_substage_detail}{address_edit_substage_detail}{address_isolation_substage_detail}; "
             f"control_name={failure_control.get('name') or 'none'}; "
             f"control_type={failure_control.get('type') or 'none'}",
             file=sys.stderr,

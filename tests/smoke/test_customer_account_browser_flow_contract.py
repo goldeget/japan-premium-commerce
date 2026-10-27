@@ -448,7 +448,9 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
             "customer_address_cross_owner_foreign_registration",
             "customer_address_cross_owner_registration_submit",
             "customer_address_cross_owner_registration_success",
+            "customer_address_cross_owner_foreign_account_route",
             "customer_address_foreign_access",
+            "customer_address_cross_owner_foreign_session_readback",
             "customer_address_cross_owner_foreign_logout",
             "customer_address_cross_owner_owner_relogin",
             "customer_address_cross_owner_owner_readback",
@@ -472,8 +474,6 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertIn("document_navigation_events(driver)", foreign_access)
         self.assertIn("final_event.get(\"status_code\") not in {200, 401, 403, 404}", foreign_access)
         self.assertIn("current_origin != shop_origin", foreign_access)
-        self.assertIn('visible(driver, "#identity_main_link")', foreign_access)
-        self.assertIn('visible_signout_link(driver)', foreign_access)
         self.assertIn('driver.find_elements(By.CSS_SELECTOR, ".js-address-form form")', foreign_access)
         self.assertIn("document.documentElement.outerHTML", foreign_access)
         self.assertIn("foreign_address_content_absent", foreign_access)
@@ -490,11 +490,19 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         self.assertNotIn("print(address_alias", foreign_access)
         self.assertNotIn("print(owner_address_edit_url", foreign_access)
 
+        foreign_session_readback = self.blocks["customer_address_cross_owner_foreign_session_readback"]
+        self.assertIn("driver.get(foreign_account_url)", foreign_session_readback)
+        self.assertIn("assert_my_page(driver, foreign_first_name)", foreign_session_readback)
+        self.assertIn("foreign_session_authenticated", foreign_session_readback)
         foreign_session_check = 'address_isolation_result["foreign_session_authenticated"] = True'
         self.assertEqual(run_viewport.count(foreign_session_check), 1)
+        foreign_session_assertion = run_viewport.index(
+            "assert_my_page(driver, foreign_first_name)",
+            run_viewport.index('stage = "customer_address_cross_owner_foreign_session_readback"'),
+        )
         self.assertGreater(
             run_viewport.index(foreign_session_check),
-            run_viewport.index('if foreign_first_name not in body_text:'),
+            foreign_session_assertion,
         )
         owner_session_check = 'address_isolation_result["owner_session_authenticated"] = True'
         self.assertEqual(run_viewport.count(owner_session_check), 1)
@@ -513,6 +521,7 @@ class CustomerAccountBrowserFlowContractTests(unittest.TestCase):
         )[0]
         self.assertIn('stage == "customer_address_foreign_access"', handler)
         self.assertIn("if not privacy_sensitive_address_stage:", handler)
+        self.assertIn("address_isolation_substage_detail", run_viewport)
         self.assertIn("write_customer_address_isolation_result", run_viewport)
         self.assertIn('CUSTOMER_ADDRESS_ISOLATION_SAFE_RESULT=', self.source)
         self.assertIn('safe_state["viewport"]', self.source)
