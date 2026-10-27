@@ -21,7 +21,7 @@ use Kuranea\BusinessProfile\Infrastructure\BankTransferInstructionRepository;
 
 class Kuraneabusinessprofile extends Module
 {
-    /** @var array{template: ?string, shop_id: ?int, lang_id: ?int, native_reset_url: ?string}|null */
+    /** @var array{template: ?string, shop_id: ?int, lang_id: ?int, native_reset_url: ?string, reset_url_candidate_present: bool, reset_url_credentials_complete: bool, reset_url_native_route: bool}|null */
     private static ?array $pendingMailSendContext = null;
 
     private ?int $activeMailShopId = null;
@@ -393,10 +393,12 @@ class Kuraneabusinessprofile extends Module
             return;
         }
 
+        $templateUrlEvidence = [];
         $this->activeNativeResetUrl = $this->validatedNativeResetUrl(
             $params['templateVars']['{url}'] ?? null,
             $this->activeMailLangId ?? 0,
-            $this->activeMailShopId
+            $this->activeMailShopId,
+            $templateUrlEvidence
         );
         // The mail-alter hook can run on another instance of this module. Keep the
         // request-scoped native template context available until that message is sent.
@@ -405,6 +407,9 @@ class Kuraneabusinessprofile extends Module
             'shop_id' => $this->activeMailShopId,
             'lang_id' => $this->activeMailLangId,
             'native_reset_url' => $this->activeNativeResetUrl,
+            'reset_url_candidate_present' => $templateUrlEvidence['candidate_present'] ?? false,
+            'reset_url_credentials_complete' => $templateUrlEvidence['credentials_complete'] ?? false,
+            'reset_url_native_route' => $templateUrlEvidence['native_route'] ?? false,
         ];
     }
 
@@ -438,8 +443,9 @@ class Kuraneabusinessprofile extends Module
             // pre-send {url} value can be valid for the route but stale for this body.
             $mailTemplate = $sendContext['template'] ?? $this->activeMailTemplate;
             $nativeResetUrl = $sendContext['native_reset_url'] ?? $this->activeNativeResetUrl;
+            $htmlUrlEvidence = [];
             $resetUrl = $mailTemplate === 'password_query'
-                ? $this->extractNativeResetUrl($htmlBody, $mailLangId, $mailShopId)
+                ? $this->extractNativeResetUrl($htmlBody, $mailLangId, $mailShopId, $htmlUrlEvidence)
                 : null;
             if ($resetUrl === null
                 && $mailTemplate === 'password_query'
@@ -482,6 +488,33 @@ class Kuraneabusinessprofile extends Module
                 'X-ORDENOWA-CI-Reset-Template-Context-Recognized',
                 $mailTemplate === 'password_query' ? 'true' : 'false'
             );
+            $headers->addTextHeader(
+                'X-ORDENOWA-CI-Reset-Template-URL-Candidate-Present',
+                ($sendContext['reset_url_candidate_present'] ?? false) ? 'true' : 'false'
+            );
+            $headers->addTextHeader(
+                'X-ORDENOWA-CI-Reset-Template-URL-Credentials-Complete',
+                ($sendContext['reset_url_credentials_complete'] ?? false) ? 'true' : 'false'
+            );
+            $headers->addTextHeader(
+                'X-ORDENOWA-CI-Reset-Template-URL-Native-Route',
+                ($sendContext['reset_url_native_route'] ?? false) ? 'true' : 'false'
+            );
+            foreach ([
+                'candidate_present' => 'HTML-URL-Candidate-Present',
+                'token_present' => 'HTML-Token-Present',
+                'reset_token_present' => 'HTML-Reset-Token-Present',
+                'id_customer_present' => 'HTML-Customer-ID-Present',
+                'scheme_host_port_match' => 'HTML-Scheme-Host-Port-Match',
+                'path_match' => 'HTML-Path-Match',
+                'credentials_complete' => 'HTML-Credentials-Complete',
+                'candidate_selected' => 'HTML-Candidate-Selected',
+            ] as $key => $suffix) {
+                $headers->addTextHeader(
+                    'X-ORDENOWA-CI-Reset-' . $suffix,
+                    ($htmlUrlEvidence[$key] ?? false) ? 'true' : 'false'
+                );
+            }
             $headers->addTextHeader('X-ORDENOWA-CI-Text-Setter-Available', $textSetterAvailable ? 'true' : 'false');
             $headers->addTextHeader('X-ORDENOWA-CI-Text-Setter-Invoked', $textSetterInvoked ? 'true' : 'false');
         } finally {
@@ -525,8 +558,23 @@ class Kuraneabusinessprofile extends Module
         return false;
     }
 
-    private function validatedNativeResetUrl(mixed $candidate, int $idLang, ?int $shopId): ?string
+    private function validatedNativeResetUrl(
+        mixed $candidate,
+        int $idLang,
+        ?int $shopId,
+        ?array &$evidence = null
+    ): ?string
     {
+        $evidence = [
+            'candidate_present' => is_string($candidate) && trim($candidate) !== '',
+            'token_present' => false,
+            'reset_token_present' => false,
+            'id_customer_present' => false,
+            'credentials_complete' => false,
+            'scheme_host_port_match' => false,
+            'path_match' => false,
+            'native_route' => false,
+        ];
         if (!is_string($candidate) || trim($candidate) === ''
             || !is_object($this->context->link) || !method_exists($this->context->link, 'getPageLink')) {
             return null;
@@ -536,22 +584,38 @@ class Kuraneabusinessprofile extends Module
         );
         $native = parse_url($nativeUrl);
         $parts = parse_url(trim($candidate));
-        if (!$this->sameNativeResetRoute($parts, $native)) {
-            return null;
+        $routeEvidence = $this->resetRouteEvidence($parts, $native);
+        $evidence['scheme_host_port_match'] = $routeEvidence['scheme_host_port_match'];
+        $evidence['path_match'] = $routeEvidence['path_match'];
+        $evidence['native_route'] = $routeEvidence['native_route'];
+        $credentialEvidence = $this->resetCredentialEvidence($parts);
+        foreach (['token_present', 'reset_token_present', 'id_customer_present', 'credentials_complete'] as $key) {
+            $evidence[$key] = $credentialEvidence[$key];
         }
-
-        parse_str((string) ($parts['query'] ?? ''), $query);
-        foreach (['token', 'reset_token', 'id_customer'] as $key) {
-            if (!is_string($query[$key] ?? null) || trim($query[$key]) === '') {
-                return null;
-            }
+        if (!$evidence['native_route'] || !$evidence['credentials_complete']) {
+            return null;
         }
 
         return trim($candidate);
     }
 
-    private function extractNativeResetUrl(string $body, int $idLang, ?int $shopId): ?string
+    private function extractNativeResetUrl(
+        string $body,
+        int $idLang,
+        ?int $shopId,
+        ?array &$evidence = null
+    ): ?string
     {
+        $evidence = [
+            'candidate_present' => false,
+            'token_present' => false,
+            'reset_token_present' => false,
+            'id_customer_present' => false,
+            'credentials_complete' => false,
+            'scheme_host_port_match' => false,
+            'path_match' => false,
+            'candidate_selected' => false,
+        ];
         if ($body === '' || !is_object($this->context->link) || !method_exists($this->context->link, 'getPageLink')) {
             return null;
         }
@@ -570,20 +634,99 @@ class Kuraneabusinessprofile extends Module
         foreach ($matches[0] as $candidate) {
             $candidate = rtrim($candidate, '.,;)]>' . chr(34) . chr(39));
             $parts = parse_url($candidate);
-            if (!$this->sameNativeResetRoute($parts, $native)) {
+            $evidence['candidate_present'] = true;
+            $credentialEvidence = $this->resetCredentialEvidence($parts);
+            $routeEvidence = $this->resetRouteEvidence($parts, $native);
+            foreach (['token_present', 'reset_token_present', 'id_customer_present'] as $key) {
+                $evidence[$key] = $evidence[$key] || $credentialEvidence[$key];
+            }
+            $evidence['credentials_complete'] = $evidence['credentials_complete']
+                || $credentialEvidence['credentials_complete'];
+            $evidence['scheme_host_port_match'] = $evidence['scheme_host_port_match']
+                || $routeEvidence['scheme_host_port_match'];
+            $evidence['path_match'] = $evidence['path_match'] || $routeEvidence['path_match'];
+            if (!$routeEvidence['native_route'] || !$credentialEvidence['credentials_complete']) {
                 continue;
             }
-            parse_str((string) ($parts['query'] ?? ''), $query);
-            foreach (['token', 'reset_token', 'id_customer'] as $key) {
-                if (!is_string($query[$key] ?? null) || trim($query[$key]) === '') {
-                    continue 2;
-                }
-            }
 
+            $evidence['candidate_selected'] = true;
             return $candidate;
         }
 
         return null;
+    }
+
+    /** @return array{token_present: bool, reset_token_present: bool, id_customer_present: bool, credentials_complete: bool} */
+    private function resetCredentialEvidence(mixed $parts): array
+    {
+        $result = [
+            'token_present' => false,
+            'reset_token_present' => false,
+            'id_customer_present' => false,
+            'credentials_complete' => false,
+        ];
+        if (!is_array($parts)) {
+            return $result;
+        }
+
+        $queryString = (string) ($parts['query'] ?? '');
+        parse_str($queryString, $query);
+        $separators = (string) ini_get('arg_separator.input');
+        if ($separators === '') {
+            $separators = '&';
+        }
+        $pairs = preg_split('/[' . preg_quote($separators, '/') . ']/', $queryString) ?: [];
+        $credentialCounts = array_fill_keys(['token', 'reset_token', 'id_customer'], 0);
+        foreach ($pairs as $pair) {
+            if ($pair === '') {
+                continue;
+            }
+            $encodedKey = explode('=', $pair, 2)[0];
+            $key = urldecode($encodedKey);
+            if (array_key_exists($key, $credentialCounts)) {
+                ++$credentialCounts[$key];
+            }
+        }
+        foreach ([
+            'token' => 'token_present',
+            'reset_token' => 'reset_token_present',
+            'id_customer' => 'id_customer_present',
+        ] as $key => $resultKey) {
+            $result[$resultKey] = $credentialCounts[$key] === 1
+                && is_string($query[$key] ?? null)
+                && trim($query[$key]) !== '';
+        }
+        $result['credentials_complete'] = $result['token_present']
+            && $result['reset_token_present']
+            && $result['id_customer_present'];
+
+        return $result;
+    }
+
+    /** @return array{scheme_host_port_match: bool, path_match: bool, native_route: bool} */
+    private function resetRouteEvidence(mixed $candidate, mixed $expected): array
+    {
+        $result = ['scheme_host_port_match' => false, 'path_match' => false, 'native_route' => false];
+        if (!is_array($candidate) || !is_array($expected)
+            || !isset($candidate['scheme'], $candidate['host'], $candidate['path'])
+            || !isset($expected['scheme'], $expected['host'], $expected['path'])
+            || isset($candidate['user']) || isset($candidate['pass']) || isset($candidate['fragment'])) {
+            return $result;
+        }
+        $candidateScheme = strtolower((string) $candidate['scheme']);
+        $expectedScheme = strtolower((string) $expected['scheme']);
+        if (!in_array($candidateScheme, ['http', 'https'], true)) {
+            return $result;
+        }
+        $defaultPort = $candidateScheme === 'https' ? 443 : 80;
+        $result['scheme_host_port_match'] = $candidateScheme === $expectedScheme
+            && strtolower((string) $candidate['host']) === strtolower((string) $expected['host'])
+            && (int) ($candidate['port'] ?? $defaultPort) === (int) ($expected['port'] ?? $defaultPort);
+        $result['path_match'] = rtrim(rawurldecode((string) $candidate['path']), '/')
+            === rtrim(rawurldecode((string) $expected['path']), '/');
+        $result['native_route'] = $result['scheme_host_port_match'] && $result['path_match'];
+
+        return $result;
     }
 
     private function hasNativeResetLink(string $body, string $expectedUrl): bool
@@ -600,11 +743,19 @@ class Kuraneabusinessprofile extends Module
         if (!is_array($expected)) {
             return false;
         }
+        $expectedCredentialEvidence = $this->resetCredentialEvidence($expected);
+        if (!$expectedCredentialEvidence['credentials_complete']) {
+            return false;
+        }
         parse_str((string) ($expected['query'] ?? ''), $expectedQuery);
         foreach ($matches[0] as $candidate) {
             $candidate = rtrim($candidate, '.,;)]>' . chr(34) . chr(39));
             $parts = parse_url($candidate);
             if (!$this->sameNativeResetRoute($parts, $expected)) {
+                continue;
+            }
+            $credentialEvidence = $this->resetCredentialEvidence($parts);
+            if (!$credentialEvidence['credentials_complete']) {
                 continue;
             }
             parse_str((string) ($parts['query'] ?? ''), $query);
@@ -628,26 +779,7 @@ class Kuraneabusinessprofile extends Module
     /** @param array<string, mixed>|false|null $candidate @param array<string, mixed>|false|null $expected */
     private function sameNativeResetRoute(mixed $candidate, mixed $expected): bool
     {
-        if (!is_array($candidate) || !is_array($expected)
-            || !isset($candidate['scheme'], $candidate['host'], $candidate['path'])
-            || !isset($expected['scheme'], $expected['host'], $expected['path'])
-            || isset($candidate['user']) || isset($candidate['pass']) || isset($candidate['fragment'])) {
-            return false;
-        }
-        $candidateScheme = strtolower((string) $candidate['scheme']);
-        $expectedScheme = strtolower((string) $expected['scheme']);
-        if (!in_array($candidateScheme, ['http', 'https'], true)
-            || $candidateScheme !== $expectedScheme
-            || strtolower((string) $candidate['host']) !== strtolower((string) $expected['host'])) {
-            return false;
-        }
-        $defaultPort = $candidateScheme === 'https' ? 443 : 80;
-        if ((int) ($candidate['port'] ?? $defaultPort) !== (int) ($expected['port'] ?? $defaultPort)) {
-            return false;
-        }
-
-        return rtrim(rawurldecode((string) $candidate['path']), '/')
-            === rtrim(rawurldecode((string) $expected['path']), '/');
+        return $this->resetRouteEvidence($candidate, $expected)['native_route'];
     }
 
     /** @return array<string, mixed>|null */

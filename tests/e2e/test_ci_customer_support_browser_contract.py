@@ -269,11 +269,6 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             ("legacy_thread_view", 47),
             module.thread_route_identity(f"{admin}/index.php?controller=AdminCustomerThreads&id_customer_thread=47&viewcustomer_thread=1&token=workerToken", admin),
         )
-        modern_detail = module.modern_customer_thread_detail_url(admin, 47)
-        self.assertEqual(f"{admin}/sell/customer-service/customer-threads/47/view", modern_detail)
-        self.assertEqual(("modern_thread_view", 47), module.thread_route_identity(modern_detail, admin))
-        with self.assertRaisesRegex(ValueError, "positive native customer thread identity"):
-            module.modern_customer_thread_detail_url(admin, 0)
         for candidate in (
             f"{admin}-evil/sell/customer-service/customer-threads/47/view",
             f"{admin}/sell/customer-service/customer-threads/47/view/extra",
@@ -283,29 +278,92 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             with self.subTest(candidate=candidate):
                 self.assertIsNone(module.thread_route_identity(candidate, admin))
 
-    def test_order_association_must_link_the_exact_native_order_id(self):
+    def test_order_association_uses_exact_native_route_specific_evidence(self):
         module = load_script()
         module.By = SimpleNamespace(CSS_SELECTOR="a[href]")
 
         class Link:
-            def __init__(self, href):
+            def __init__(self, href, displayed=True):
                 self.href = href
+                self.displayed = displayed
+
+            def is_displayed(self):
+                return self.displayed
 
             def get_attribute(self, name):
                 return self.href if name == "href" else None
 
+        class TimelineItem:
+            def __init__(self, text, displayed=True):
+                self.text = text
+                self.displayed = displayed
+
+            def is_displayed(self):
+                return self.displayed
+
         class Driver:
-            def __init__(self, links):
+            def __init__(self, current_url, links=(), timeline_items=()):
+                self.current_url = current_url
                 self.links = links
+                self.timeline_items = timeline_items
 
-            def find_elements(self, *_args):
-                return self.links
+            def find_elements(self, _by, selector):
+                if selector in {"a[href]", "[data-role='messages_timeline'] a[href]"}:
+                    return self.links
+                if selector == "#orders-and-messages-block .timeline-item":
+                    return self.timeline_items
+                return []
 
-        exact = Driver([Link("http://127.0.0.1:18080/admin-kuranea/index.php?controller=AdminOrders&id_order=42")])
-        other = Driver([Link("http://127.0.0.1:18080/admin-kuranea/index.php?controller=AdminOrders&id_order=43")])
-        self.assertTrue(module.has_thread_order_link(exact, 42))
-        self.assertFalse(module.has_thread_order_link(exact, 43))
-        self.assertFalse(module.has_thread_order_link(other, 42))
+        admin = "http://127.0.0.1:18080/admin-kuranea"
+        modern_url = admin + "/sell/customer-service/customer-threads/47/view"
+        modern_exact = Driver(
+            modern_url,
+            links=[Link(admin + "/index.php?controller=AdminOrders&vieworder=1&id_order=42")],
+        )
+        modern_wrong_order = Driver(
+            modern_url,
+            links=[Link(admin + "/index.php?controller=AdminOrders&vieworder=1&id_order=43")],
+        )
+        modern_foreign = Driver(
+            modern_url,
+            links=[Link("https://outside.example/admin-kuranea/index.php?controller=AdminOrders&id_order=42")],
+        )
+        modern_hidden = Driver(
+            modern_url,
+            links=[Link(admin + "/index.php?controller=AdminOrders&vieworder=1&id_order=42", displayed=False)],
+        )
+        modern_wrong_controller = Driver(
+            modern_url,
+            links=[Link(admin + "/index.php?controller=AdminCustomers&id_order=42")],
+        )
+        modern_order_list = Driver(
+            modern_url,
+            links=[Link(admin + "/index.php?controller=AdminOrders&id_order=42")],
+        )
+        modern_rewritten_path = Driver(
+            modern_url,
+            links=[Link(admin + "/index.php/sell/orders/42/view")],
+        )
+        self.assertTrue(module.has_thread_order_association(modern_exact, 42, "modern_thread_view", 47, admin))
+        self.assertFalse(module.has_thread_order_association(modern_wrong_order, 42, "modern_thread_view", 47, admin))
+        self.assertFalse(module.has_thread_order_association(modern_foreign, 42, "modern_thread_view", 47, admin))
+        self.assertFalse(module.has_thread_order_association(modern_hidden, 42, "modern_thread_view", 47, admin))
+        self.assertFalse(module.has_thread_order_association(modern_wrong_controller, 42, "modern_thread_view", 47, admin))
+        self.assertFalse(module.has_thread_order_association(modern_order_list, 42, "modern_thread_view", 47, admin))
+        self.assertTrue(module.has_thread_order_association(modern_rewritten_path, 42, "modern_thread_view", 47, admin))
+
+        legacy_url = admin + "/index.php?controller=AdminCustomerThreads&id_customer_thread=47&viewcustomer_thread=1&token=safe"
+        legacy_exact = Driver(legacy_url, timeline_items=[TimelineItem("Message Order #42")])
+        legacy_other = Driver(legacy_url, timeline_items=[TimelineItem("Message Order #142")])
+        legacy_hidden = Driver(legacy_url, timeline_items=[TimelineItem("Message Order #42", displayed=False)])
+        wrong_thread = Driver(
+            admin + "/index.php?controller=AdminCustomerThreads&id_customer_thread=48&viewcustomer_thread=1&token=safe",
+            timeline_items=[TimelineItem("Message Order #42")],
+        )
+        self.assertTrue(module.has_thread_order_association(legacy_exact, 42, "legacy_thread_view", 47, admin))
+        self.assertFalse(module.has_thread_order_association(legacy_other, 42, "legacy_thread_view", 47, admin))
+        self.assertFalse(module.has_thread_order_association(legacy_hidden, 42, "legacy_thread_view", 47, admin))
+        self.assertFalse(module.has_thread_order_association(wrong_thread, 42, "legacy_thread_view", 47, admin))
 
     def test_employee_scoped_routes_keep_native_session_tokens_separate(self):
         module = load_script()
@@ -446,7 +504,7 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 "customer_service_route_legacy_count": 1,
                 "customer_service_route_invalid_count": 0,
                 "admin_thread_message_marker_present": True,
-                "admin_thread_order_link_present": True,
+                "admin_thread_order_association_present": True,
             }
             module.write_result(path, result)
             content = path.read_text(encoding="utf-8")
@@ -500,29 +558,31 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
         self.assertIn("thread_id == expected_thread_id", browser)
         self.assertNotIn('return sorted(safe_candidates', route_helper)
         self.assertNotIn("print(", route_helper)
-        resolver = browser[browser.index("def resolve_customer_threads_index("):browser.index("def assert_thread_order_link(")]
+        resolver = browser[browser.index("def resolve_customer_threads_index("):browser.index("def has_thread_order_link(")]
         self.assertIn("candidate_budget = remaining / (len(candidates) - candidate_index)", resolver)
         self.assertIn("navigation_budget = min(10.0, max(0.1, candidate_budget / 2))", resolver)
         self.assertIn("timeout=readback_budget", resolver)
-        detail = browser[browser.index("def visit_exact_customer_thread_detail("):browser.index("def assert_thread_order_link(")]
+        detail = browser[browser.index("def visit_exact_customer_thread_detail("):browser.index("def has_thread_order_link(")]
         self.assertIn('"admin_thread_detail_navigation"', detail)
         self.assertIn('"admin_thread_detail_readback"', detail)
         self.assertIn("except TimeoutException:", detail)
         self.assertIn("thread_route_identity(browser.current_url, admin_url)", detail)
+        self.assertIn("identity != requested_identity", detail)
         self.assertIn("identity[1] != expected_thread_id", detail)
         self.assertIn("customer_thread_detail_selector(requested_identity[0])", detail)
-        selector_helper = browser[browser.index("def customer_thread_detail_selector("):browser.index("def assert_thread_order_link(")]
+        selector_helper = browser[browser.index("def customer_thread_detail_selector("):browser.index("def has_thread_order_link(")]
         self.assertIn('if route_kind == "modern_thread_view"', selector_helper)
         self.assertIn('return "[data-role=\'messages-thread\']"', selector_helper)
         self.assertIn('if route_kind == "legacy_thread_view"', selector_helper)
         self.assertIn('return ".message-item-initial"', selector_helper)
         self.assertIn("native legacy customer_threads view renders the original", selector_helper)
         self.assertIn("visit_exact_customer_thread_detail(", browser)
-        self.assertIn("modern_customer_thread_detail_url(ctx.admin, thread_id)", browser)
+        self.assertIn("thread_view_url = index_thread_view_url", browser)
+        self.assertNotIn("modern_customer_thread_detail_url(ctx.admin, thread_id)", browser)
         self.assertIn('mark_browser_substage(result, "admin_thread_message_readback")', browser)
-        self.assertIn('mark_browser_substage(result, "admin_thread_order_link_readback")', browser)
+        self.assertIn('mark_browser_substage(result, "admin_thread_order_association_readback")', browser)
         self.assertIn('"admin_thread_message_marker_present"', browser)
-        self.assertIn('"admin_thread_order_link_present"', browser)
+        self.assertIn('"admin_thread_order_association_present"', browser)
         identity_helper = browser[browser.index("def customer_threads_navigation_identity("):browser.index("def thread_route_identity(")]
         self.assertIn('parse_qsl(candidate.query, keep_blank_values=True, strict_parsing=True)', identity_helper)
         self.assertIn('if key in query:', identity_helper)
@@ -642,8 +702,9 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 return True
 
         class Driver:
-            def __init__(self, current_thread_id: int) -> None:
+            def __init__(self, current_thread_id: int, route_kind: str = "legacy_thread_view") -> None:
                 self.current_thread_id = current_thread_id
+                self.route_kind = route_kind
                 self.current_url = "about:blank"
                 self.page_load_timeouts: list[float] = []
                 self.selectors: list[str] = []
@@ -652,10 +713,16 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 self.page_load_timeouts.append(timeout)
 
             def get(self, _url: str) -> None:
-                self.current_url = (
-                    "http://127.0.0.1:18080/admin-test/index.php?controller=AdminCustomerThreads"
-                    f"&id_customer_thread={self.current_thread_id}&viewcustomer_thread=1&token=safe"
-                )
+                if self.route_kind == "legacy_thread_view":
+                    self.current_url = (
+                        "http://127.0.0.1:18080/admin-test/index.php?controller=AdminCustomerThreads"
+                        f"&id_customer_thread={self.current_thread_id}&viewcustomer_thread=1&token=safe"
+                    )
+                else:
+                    self.current_url = (
+                        "http://127.0.0.1:18080/admin-test/sell/customer-service/customer-threads/"
+                        f"{self.current_thread_id}/view"
+                    )
                 raise module.TimeoutException("document load continued after Selenium timeout")
 
             def execute_script(self, _script: str) -> str:
@@ -699,6 +766,13 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
                 wrong_thread_driver, thread_url, admin_root, 47, diagnostic, timeout=35
             )
         self.assertEqual("admin_thread_detail_readback", diagnostic["browser_substage"])
+
+        wrong_route_driver = Driver(47, "modern_thread_view")
+        with self.assertRaises(module.TimeoutException):
+            module.visit_exact_customer_thread_detail(
+                wrong_route_driver, thread_url, admin_root, 47, diagnostic, timeout=35
+            )
+        self.assertEqual([], wrong_route_driver.selectors)
 
     def test_forward_modal_uses_native_visibility_form_location_and_exact_thread_action(self):
         module = load_script()

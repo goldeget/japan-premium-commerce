@@ -55,6 +55,18 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
             "X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link",
             "X-ORDENOWA-CI-Reset-URL-Candidate-Found",
             "X-ORDENOWA-CI-Reset-Template-Context-Recognized",
+            "X-ORDENOWA-CI-Reset-Template-URL-Candidate-Present",
+            "X-ORDENOWA-CI-Reset-Template-URL-Credentials-Complete",
+            "X-ORDENOWA-CI-Reset-Template-URL-Native-Route",
+            "'candidate_present' => 'HTML-URL-Candidate-Present'",
+            "'token_present' => 'HTML-Token-Present'",
+            "'reset_token_present' => 'HTML-Reset-Token-Present'",
+            "'id_customer_present' => 'HTML-Customer-ID-Present'",
+            "'scheme_host_port_match' => 'HTML-Scheme-Host-Port-Match'",
+            "'path_match' => 'HTML-Path-Match'",
+            "'credentials_complete' => 'HTML-Credentials-Complete'",
+            "'candidate_selected' => 'HTML-Candidate-Selected'",
+            "'X-ORDENOWA-CI-Reset-' . $suffix",
             "X-ORDENOWA-CI-Text-Setter-Available",
             "X-ORDENOWA-CI-Text-Setter-Invoked",
         ):
@@ -96,14 +108,14 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         self.assertIn("$params['idLang']", before)
         self.assertIn("$this->activeMailShopId", before)
         self.assertIn("$this->context->link->getPageLink(", validator)
-        self.assertIn("sameNativeResetRoute($parts, $native)", validator)
+        self.assertIn("resetRouteEvidence($parts, $native)", validator)
+        self.assertIn("resetCredentialEvidence($parts)", validator)
         for key in ("'token'", "'reset_token'", "'id_customer'"):
-            self.assertIn(key, validator)
             self.assertIn(key, link_matcher)
         self.assertIn("$mailTemplate === 'password_query'", alter)
         self.assertIn(
             "$resetUrl = $mailTemplate === 'password_query'\n"
-            "                ? $this->extractNativeResetUrl($htmlBody, $mailLangId, $mailShopId)\n"
+            "                ? $this->extractNativeResetUrl($htmlBody, $mailLangId, $mailShopId, $htmlUrlEvidence)\n"
             "                : null;",
             alter,
         )
@@ -120,18 +132,50 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         self.assertIn("$mailTemplate === 'password_query'", fallback)
         self.assertIn("$nativeResetUrl", fallback)
         self.assertIn("$this->hasNativeResetLink($htmlBody, $nativeResetUrl)", fallback)
-        self.assertIn("$this->extractNativeResetUrl($htmlBody, $mailLangId, $mailShopId)", alter)
+        self.assertIn("$this->extractNativeResetUrl($htmlBody, $mailLangId, $mailShopId, $htmlUrlEvidence)", alter)
         self.assertIn("$textSetterAvailable = method_exists($message, 'text')", alter)
         self.assertIn("$textSetterInvoked = true", alter)
         self.assertIn("$resetUrl !== null", alter)
         self.assertIn("$message->text($replacement)", alter)
         self.assertIn("$this->hasNativeResetLink($textBody, $resetUrl)", alter)
         self.assertIn("getPageLink(", extractor)
-        self.assertIn("sameNativeResetRoute($parts, $native)", extractor)
+        self.assertIn("resetRouteEvidence($parts, $native)", extractor)
+        self.assertIn("resetCredentialEvidence($parts)", extractor)
         self.assertIn("finally", alter)
         self.assertIn("$this->activeNativeResetUrl = null", alter)
         self.assertIn("$this->activeMailLangId = null", alter)
         self.assertNotIn("error_log", alter)
+
+    def test_reset_email_link_failure_diagnostics_are_boolean_and_keep_every_credential_guard(self):
+        module = MODULE_PATH.read_text(encoding="utf-8")
+        extractor = module.split("private function extractNativeResetUrl", 1)[1].split(
+            "private function hasNativeResetLink", 1
+        )[0]
+        validator = module.split("private function validatedNativeResetUrl", 1)[1].split(
+            "private function extractNativeResetUrl", 1
+        )[0]
+        credential_validator = module.split("private function resetCredentialEvidence", 1)[1].split(
+            "private function resetRouteEvidence", 1
+        )[0]
+        for marker in (
+            "resetCredentialEvidence($parts)",
+            "resetRouteEvidence($parts, $native)",
+            "credentials_complete",
+            "candidate_selected",
+            "scheme_host_port_match",
+            "path_match",
+        ):
+            self.assertIn(marker, extractor + validator)
+        for key in ("token_present", "reset_token_present", "id_customer_present"):
+            self.assertIn(key, extractor)
+            self.assertIn(key, validator)
+        self.assertIn("$result['credentials_complete'] = $result['token_present']", module)
+        self.assertIn("&& $result['reset_token_present']", module)
+        self.assertIn("&& $result['id_customer_present']", module)
+        self.assertIn("$credentialCounts[$key] === 1", credential_validator)
+        self.assertIn("preg_split", credential_validator)
+        self.assertIn("$this->resetCredentialEvidence($expected)", module)
+        self.assertNotIn("error_log", extractor + validator)
 
     def test_mail_shop_context_reaches_both_content_and_extra_vars_before_cleanup(self):
         module = MODULE_PATH.read_text(encoding="utf-8")

@@ -89,9 +89,9 @@ def safe_link_candidate_evidence(required_candidates: list[str], base: str, rese
         if not (credential_keys & query.keys()):
             continue
         credential_candidate_count += 1
-        if ('token' not in query or not ({'reset_token', 'id_customer'} & query.keys())
+        if (not credential_keys.issubset(query.keys())
                 or any(len(query[key]) != 1 or not query[key][0].strip()
-                       for key in credential_keys & query.keys())):
+                       for key in credential_keys if key in query)):
             continue
         if has_native_route:
             native_reset_link_shape = True
@@ -165,6 +165,12 @@ def write_diagnostics(result: dict) -> None:
             'mailpit_preview_text_shape_match', 'pre_smtp_html_native_link_shape',
             'pre_smtp_text_native_link_shape', 'pre_smtp_reset_url_candidate_found',
             'pre_smtp_reset_template_context_recognized',
+            'pre_smtp_template_url_candidate_present', 'pre_smtp_template_url_credentials_complete',
+            'pre_smtp_template_url_native_route', 'pre_smtp_html_url_candidate_present',
+            'pre_smtp_html_token_present', 'pre_smtp_html_reset_token_present',
+            'pre_smtp_html_id_customer_present', 'pre_smtp_html_scheme_host_port_match',
+            'pre_smtp_html_path_match', 'pre_smtp_html_credentials_complete',
+            'pre_smtp_html_candidate_selected',
             'pre_smtp_text_setter_available', 'pre_smtp_text_setter_invoked',
             'mail_type', 'template_candidate', 'template_iso', 'text_source',
             'text_template_present', 'text_template_has_url',
@@ -187,6 +193,12 @@ def write_diagnostics(result: dict) -> None:
                 'mailpit_preview_text_shape_match', 'pre_smtp_html_native_link_shape',
                 'pre_smtp_text_native_link_shape', 'pre_smtp_reset_url_candidate_found',
                 'pre_smtp_reset_template_context_recognized',
+                'pre_smtp_template_url_candidate_present', 'pre_smtp_template_url_credentials_complete',
+                'pre_smtp_template_url_native_route', 'pre_smtp_html_url_candidate_present',
+                'pre_smtp_html_token_present', 'pre_smtp_html_reset_token_present',
+                'pre_smtp_html_id_customer_present', 'pre_smtp_html_scheme_host_port_match',
+                'pre_smtp_html_path_match', 'pre_smtp_html_credentials_complete',
+                'pre_smtp_html_candidate_selected',
                 'pre_smtp_text_setter_available', 'pre_smtp_text_setter_invoked'))
             or (result['exception_type'] is not None and result['exception_type'] not in SAFE_EXCEPTION_TYPES)
             or (result['response_status'] is not None and (
@@ -314,6 +326,17 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
         'pre_smtp_text_native_link_shape': None,
         'pre_smtp_reset_url_candidate_found': None,
         'pre_smtp_reset_template_context_recognized': None,
+        'pre_smtp_template_url_candidate_present': None,
+        'pre_smtp_template_url_credentials_complete': None,
+        'pre_smtp_template_url_native_route': None,
+        'pre_smtp_html_url_candidate_present': None,
+        'pre_smtp_html_token_present': None,
+        'pre_smtp_html_reset_token_present': None,
+        'pre_smtp_html_id_customer_present': None,
+        'pre_smtp_html_scheme_host_port_match': None,
+        'pre_smtp_html_path_match': None,
+        'pre_smtp_html_credentials_complete': None,
+        'pre_smtp_html_candidate_selected': None,
         'pre_smtp_text_setter_available': None,
         'pre_smtp_text_setter_invoked': None,
     }
@@ -326,6 +349,17 @@ def pre_smtp_message_shape_headers(source: bytes) -> dict[str, bool | None]:
         ('X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link', 'pre_smtp_text_native_link_shape'),
         ('X-ORDENOWA-CI-Reset-URL-Candidate-Found', 'pre_smtp_reset_url_candidate_found'),
         ('X-ORDENOWA-CI-Reset-Template-Context-Recognized', 'pre_smtp_reset_template_context_recognized'),
+        ('X-ORDENOWA-CI-Reset-Template-URL-Candidate-Present', 'pre_smtp_template_url_candidate_present'),
+        ('X-ORDENOWA-CI-Reset-Template-URL-Credentials-Complete', 'pre_smtp_template_url_credentials_complete'),
+        ('X-ORDENOWA-CI-Reset-Template-URL-Native-Route', 'pre_smtp_template_url_native_route'),
+        ('X-ORDENOWA-CI-Reset-HTML-URL-Candidate-Present', 'pre_smtp_html_url_candidate_present'),
+        ('X-ORDENOWA-CI-Reset-HTML-Token-Present', 'pre_smtp_html_token_present'),
+        ('X-ORDENOWA-CI-Reset-HTML-Reset-Token-Present', 'pre_smtp_html_reset_token_present'),
+        ('X-ORDENOWA-CI-Reset-HTML-Customer-ID-Present', 'pre_smtp_html_id_customer_present'),
+        ('X-ORDENOWA-CI-Reset-HTML-Scheme-Host-Port-Match', 'pre_smtp_html_scheme_host_port_match'),
+        ('X-ORDENOWA-CI-Reset-HTML-Path-Match', 'pre_smtp_html_path_match'),
+        ('X-ORDENOWA-CI-Reset-HTML-Credentials-Complete', 'pre_smtp_html_credentials_complete'),
+        ('X-ORDENOWA-CI-Reset-HTML-Candidate-Selected', 'pre_smtp_html_candidate_selected'),
         ('X-ORDENOWA-CI-Text-Setter-Available', 'pre_smtp_text_setter_available'),
         ('X-ORDENOWA-CI-Text-Setter-Invoked', 'pre_smtp_text_setter_invoked'),
     ):
@@ -383,9 +417,9 @@ def assert_message(message: dict, language: str, base: str, reset_path: str,
             query = parse_qs(urlparse(candidate).query, keep_blank_values=True)
             if not (credential_keys & query.keys()):
                 continue
-            if ('token' not in query or not ({'reset_token', 'id_customer'} & query.keys())
+            if (not credential_keys.issubset(query.keys())
                     or any(len(query[key]) != 1 or not query[key][0].strip()
-                           for key in credential_keys & query.keys())):
+                           for key in credential_keys if key in query)):
                 raise MessageValidationError('reset_credentials_invalid')
             destination = urljoin(base + '/', candidate)
             if not same_origin(destination, base):
@@ -614,6 +648,17 @@ def run() -> bool:
         'pre_smtp_text_native_link_shape': None,
         'pre_smtp_reset_url_candidate_found': None,
         'pre_smtp_reset_template_context_recognized': None,
+        'pre_smtp_template_url_candidate_present': None,
+        'pre_smtp_template_url_credentials_complete': None,
+        'pre_smtp_template_url_native_route': None,
+        'pre_smtp_html_url_candidate_present': None,
+        'pre_smtp_html_token_present': None,
+        'pre_smtp_html_reset_token_present': None,
+        'pre_smtp_html_id_customer_present': None,
+        'pre_smtp_html_scheme_host_port_match': None,
+        'pre_smtp_html_path_match': None,
+        'pre_smtp_html_credentials_complete': None,
+        'pre_smtp_html_candidate_selected': None,
         'pre_smtp_text_setter_available': None,
         'pre_smtp_text_setter_invoked': None,
         'mail_type': None, 'template_candidate': 'unavailable',
@@ -644,6 +689,17 @@ def run() -> bool:
                               pre_smtp_text_native_link_shape=None,
                               pre_smtp_reset_url_candidate_found=None,
                               pre_smtp_reset_template_context_recognized=None,
+                              pre_smtp_template_url_candidate_present=None,
+                              pre_smtp_template_url_credentials_complete=None,
+                              pre_smtp_template_url_native_route=None,
+                              pre_smtp_html_url_candidate_present=None,
+                              pre_smtp_html_token_present=None,
+                              pre_smtp_html_reset_token_present=None,
+                              pre_smtp_html_id_customer_present=None,
+                              pre_smtp_html_scheme_host_port_match=None,
+                              pre_smtp_html_path_match=None,
+                              pre_smtp_html_credentials_complete=None,
+                              pre_smtp_html_candidate_selected=None,
                               pre_smtp_text_setter_available=None,
                               pre_smtp_text_setter_invoked=None,
                               same_origin=False, native_route=False, language_matches=False,
@@ -755,6 +811,16 @@ def run() -> bool:
                 f'pre_smtp_text_native_link={str(diagnostic["pre_smtp_text_native_link_shape"]).lower()}; '
                 f'pre_smtp_url_candidate={str(diagnostic["pre_smtp_reset_url_candidate_found"]).lower()}; '
                 f'pre_smtp_reset_template_context={str(diagnostic["pre_smtp_reset_template_context_recognized"]).lower()}; '
+                f'pre_smtp_template_url={str(diagnostic["pre_smtp_template_url_candidate_present"]).lower()}; '
+                f'pre_smtp_template_credentials={str(diagnostic["pre_smtp_template_url_credentials_complete"]).lower()}; '
+                f'pre_smtp_template_route={str(diagnostic["pre_smtp_template_url_native_route"]).lower()}; '
+                f'pre_smtp_html_candidate={str(diagnostic["pre_smtp_html_url_candidate_present"]).lower()}; '
+                f'pre_smtp_html_credentials={str(diagnostic["pre_smtp_html_token_present"]).lower()}/'
+                f'{str(diagnostic["pre_smtp_html_reset_token_present"]).lower()}/'
+                f'{str(diagnostic["pre_smtp_html_id_customer_present"]).lower()}; '
+                f'pre_smtp_html_route={str(diagnostic["pre_smtp_html_scheme_host_port_match"]).lower()}/'
+                f'{str(diagnostic["pre_smtp_html_path_match"]).lower()}; '
+                f'pre_smtp_html_selected={str(diagnostic["pre_smtp_html_candidate_selected"]).lower()}; '
                 f'pre_smtp_text_setter_available={str(diagnostic["pre_smtp_text_setter_available"]).lower()}; '
                 f'pre_smtp_text_setter_invoked={str(diagnostic["pre_smtp_text_setter_invoked"]).lower()}'
             )
@@ -781,6 +847,16 @@ def run() -> bool:
             f'pre_smtp_text_native_link={str(diagnostic["pre_smtp_text_native_link_shape"]).lower()}; '
             f'pre_smtp_url_candidate={str(diagnostic["pre_smtp_reset_url_candidate_found"]).lower()}; '
             f'pre_smtp_reset_template_context={str(diagnostic["pre_smtp_reset_template_context_recognized"]).lower()}; '
+            f'pre_smtp_template_url={str(diagnostic["pre_smtp_template_url_candidate_present"]).lower()}; '
+            f'pre_smtp_template_credentials={str(diagnostic["pre_smtp_template_url_credentials_complete"]).lower()}; '
+            f'pre_smtp_template_route={str(diagnostic["pre_smtp_template_url_native_route"]).lower()}; '
+            f'pre_smtp_html_candidate={str(diagnostic["pre_smtp_html_url_candidate_present"]).lower()}; '
+            f'pre_smtp_html_credentials={str(diagnostic["pre_smtp_html_token_present"]).lower()}/'
+            f'{str(diagnostic["pre_smtp_html_reset_token_present"]).lower()}/'
+            f'{str(diagnostic["pre_smtp_html_id_customer_present"]).lower()}; '
+            f'pre_smtp_html_route={str(diagnostic["pre_smtp_html_scheme_host_port_match"]).lower()}/'
+            f'{str(diagnostic["pre_smtp_html_path_match"]).lower()}; '
+            f'pre_smtp_html_selected={str(diagnostic["pre_smtp_html_candidate_selected"]).lower()}; '
             f'pre_smtp_text_setter_available={str(diagnostic["pre_smtp_text_setter_available"]).lower()}; '
             f'pre_smtp_text_setter_invoked={str(diagnostic["pre_smtp_text_setter_invoked"]).lower()}; '
             f'mail_type={diagnostic["mail_type"] if diagnostic["mail_type"] in (1, 2, 3, 4) else "unavailable"}; '

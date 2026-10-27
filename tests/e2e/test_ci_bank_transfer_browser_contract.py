@@ -1,6 +1,8 @@
 from pathlib import Path
 import ast
+import contextlib
 import importlib.util
+import io
 import re
 import sys
 import tempfile
@@ -33,7 +35,7 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
     def require(self, needle: str, haystack: str) -> None:
         self.assertTrue(needle in haystack, f"missing contract: {needle}")
 
-    def test_result_schema_accepts_isolated_gate_with_pending_seller_authorization(self) -> None:
+    def load_browser_module(self) -> ModuleType:
         spec = importlib.util.spec_from_file_location("ordenowa_bank_transfer_browser", BROWSER)
         self.assertIsNotNone(spec)
         self.assertIsNotNone(spec.loader)
@@ -65,6 +67,10 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         }
         with patch.dict(sys.modules, stubs):
             spec.loader.exec_module(module)
+        return module
+
+    def test_result_schema_accepts_isolated_gate_with_pending_seller_authorization(self) -> None:
+        module = self.load_browser_module()
 
         self.assertNotIn("issue_seller_commerce_gate_enabled", module.SUCCESS_REQUIRED_BOOLEAN_KEYS)
         self.assertIn("issue_effective_commerce_gate_enabled", module.SUCCESS_REQUIRED_BOOLEAN_KEYS)
@@ -85,6 +91,84 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             result["issue_effective_commerce_gate_enabled"] = False
             with self.assertRaisesRegex(ValueError, "allowlisted schema"):
                 module.write_result(output, result)
+
+    def test_limited_route_helper_wrapper_reports_safe_copy_execution_and_json_stages(self) -> None:
+        module = self.load_browser_module()
+
+        def completed(returncode, stdout="", stderr="private diagnostic"):
+            return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
+
+        scenarios = (
+            ([completed(1)], ["limited_route_helper_copy"]),
+            ([completed(0), completed(1)], ["limited_route_helper_copy", "limited_route_helper_execution"]),
+            ([completed(0), completed(0, "not-json\n")], [
+                "limited_route_helper_copy", "limited_route_helper_execution", "limited_route_helper_json_parse",
+            ]),
+            ([completed(0), completed(0, "[]\n")], [
+                "limited_route_helper_copy", "limited_route_helper_execution", "limited_route_helper_json_parse",
+                "limited_route_helper_json_shape",
+            ]),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "helper.php"
+            source.write_text("<?php", encoding="utf-8")
+            for responses, expected_stages in scenarios:
+                stages: list[str] = []
+                output = io.StringIO()
+                error_output = io.StringIO()
+                with patch.object(module.subprocess, "run", side_effect=responses):
+                    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error_output):
+                        with self.assertRaises(RuntimeError):
+                            module.docker_php_json(
+                                {"project": "kuranea-ci-1-1", "run_id": "1", "attempt": "1"},
+                                source,
+                                "/tmp/helper.php",
+                                {},
+                                set_substage=stages.append,
+                            )
+                self.assertEqual(expected_stages, stages)
+                self.assertNotIn("private diagnostic", output.getvalue() + error_output.getvalue())
+
+    def test_limited_route_helper_maps_php_failure_stage_to_safe_result_booleans(self) -> None:
+        module = self.load_browser_module()
+        checks = {key: False for key in module.LIMITED_ROUTE_CHECK_KEYS}
+        checks["ci_scope_valid"] = False
+        payload = {"status": "failure", "failure_stage": "scope_validation", "checks": checks}
+        stages: list[str] = []
+        diagnostics: dict[str, object] = {}
+        with patch.object(module, "docker_php_json", return_value=payload):
+            with self.assertRaises(RuntimeError):
+                module.limited_transfer_route(
+                    {"project": "kuranea-ci-1-1", "view_email": "opaque@example.invalid"},
+                    stages.append,
+                    diagnostics,
+                )
+        self.assertEqual("limited_route_scope_validation", stages[-1])
+        self.assertFalse(diagnostics["limited_route_ci_scope_valid"])
+        self.assertFalse(diagnostics["limited_route_employee_found"])
+        self.assertNotIn("opaque@example.invalid", str(diagnostics))
+
+    def test_limited_route_helper_emits_only_allowlisted_stage_and_boolean_failure_evidence(self) -> None:
+        module = self.load_browser_module()
+        self.require("ordenowaLimitedRouteResult", self.limited_route)
+        for stage in (
+            "scope_validation", "bootstrap", "employee_lookup", "employee_active",
+            "transfer_tab_acl", "admin_link_generation", "route_validation",
+        ):
+            self.require(f"'{stage}'", self.limited_route)
+        for check_key in module.LIMITED_ROUTE_CHECK_KEYS:
+            self.require(f"'{check_key}'", self.limited_route)
+        for result_key in module.LIMITED_ROUTE_CHECK_KEYS.values():
+            self.assertIn(result_key, module.SAFE_RESULT_KEYS)
+            self.assertNotRegex(result_key, r"email|token|password|statement_reference|url")
+        result_writer = self.limited_route.split("function ordenowaLimitedRouteResult", 1)[1].split("$runId", 1)[0]
+        for forbidden in ("$email", "$generated", "$parts", "$query", "getMessage", "getTrace"):
+            self.assertNotIn(forbidden, result_writer)
+        self.require("catch (Throwable)", self.limited_route)
+        self.assertIn("$payload['route'] = $route;", result_writer)
+        self.require("limited_route_helper_execution", self.browser)
+        self.require("limited_route_helper_json_parse", self.browser)
+        self.require("limited_route_helper_json_shape", self.browser)
 
     def test_fixture_is_bound_to_a_run_scoped_unpaid_native_jpy_order(self) -> None:
         for expected in (

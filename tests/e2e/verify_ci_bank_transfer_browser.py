@@ -40,7 +40,12 @@ SAFE_SUBSTAGES = {
     "instruction_issue_notice_unpaid_present_danger", "instruction_issue_notice_unpaid_missing_danger",
     "instruction_issue_notice_unpaid_present_missing", "instruction_issue_notice_unpaid_missing_missing",
     "instruction_issue_notice_unpaid_present_other", "instruction_issue_notice_unpaid_missing_other",
-    "limited_staff_login", "limited_route_fixture_readback", "limited_route_contract_readback",
+    "limited_staff_login", "limited_route_fixture_readback", "limited_route_helper_copy",
+    "limited_route_helper_execution", "limited_route_helper_json_parse", "limited_route_helper_json_shape",
+    "limited_route_helper_result_contract", "limited_route_scope_validation",
+    "limited_route_bootstrap", "limited_route_employee_lookup", "limited_route_employee_active",
+    "limited_route_transfer_tab_acl", "limited_route_admin_link_generation",
+    "limited_route_route_validation", "limited_route_contract_readback",
     "limited_route_identity_validation", "limited_order_row_readback", "limited_issue_post",
     "limited_issue_denial_readback", "limited_issue_unpaid_db_readback", "limited_confirmation_post",
     "limited_confirmation_denial_readback", "limited_confirmation_unpaid_db_readback",
@@ -63,6 +68,13 @@ SAFE_RESULT_KEYS = {
     "order_identity_match", "order_product_line_match", "amount_match", "account_match", "foreign_customer_denied",
     "limited_staff_denied", "view_only_issue_denied", "view_only_issue_order_unpaid",
     "view_only_confirmation_denied", "view_only_confirmation_order_unpaid",
+    "limited_route_ci_scope_valid", "limited_route_identity_shape_valid",
+    "limited_route_employee_found", "limited_route_employee_active",
+    "limited_route_transfer_tab_present", "limited_route_view_allowed",
+    "limited_route_issue_denied", "limited_route_confirm_denied",
+    "limited_route_admin_link_generated", "limited_route_path_valid",
+    "limited_route_controller_valid", "limited_route_credential_present",
+    "limited_route_credential_bounded", "limited_route_credential_whitespace_free",
     "issue_csrf_rejected", "csrf_rejected", "wrong_amount_rejected", "receipt_confirmed",
     "idempotent_replay", "customer_paid_state_changed", "instruction_hidden_after_payment",
     "native_readback",
@@ -76,6 +88,31 @@ SAFE_ISSUE_FAILURE_CATEGORIES = {
     "wrong_payment_module", "invalid_unpaid_order", "profile_account_gate",
     "employee_missing", "issuer_validation_error", "instruction_persistence_error",
     "existing_instruction_mismatch", "unclassified_notice",
+}
+LIMITED_ROUTE_CHECK_KEYS = {
+    "ci_scope_valid": "limited_route_ci_scope_valid",
+    "identity_shape_valid": "limited_route_identity_shape_valid",
+    "employee_found": "limited_route_employee_found",
+    "employee_active": "limited_route_employee_active",
+    "transfer_tab_present": "limited_route_transfer_tab_present",
+    "view_allowed": "limited_route_view_allowed",
+    "issue_denied": "limited_route_issue_denied",
+    "confirm_denied": "limited_route_confirm_denied",
+    "admin_link_generated": "limited_route_admin_link_generated",
+    "route_path_valid": "limited_route_path_valid",
+    "route_controller_valid": "limited_route_controller_valid",
+    "route_credential_present": "limited_route_credential_present",
+    "route_credential_bounded": "limited_route_credential_bounded",
+    "route_credential_whitespace_free": "limited_route_credential_whitespace_free",
+}
+LIMITED_ROUTE_FAILURE_SUBSTAGES = {
+    "scope_validation": "limited_route_scope_validation",
+    "bootstrap": "limited_route_bootstrap",
+    "employee_lookup": "limited_route_employee_lookup",
+    "employee_active": "limited_route_employee_active",
+    "transfer_tab_acl": "limited_route_transfer_tab_acl",
+    "admin_link_generation": "limited_route_admin_link_generation",
+    "route_validation": "limited_route_route_validation",
 }
 RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {
     "status", "stage", "exception_type", "failure_substage", "issue_persistence_diagnostic",
@@ -240,14 +277,22 @@ def customer_login(driver: webdriver.Chrome, ctx: dict[str, object], email: str)
     clear_passwords(driver)
 
 
-def docker_php_json(ctx: dict[str, object], source_path: Path, container_path: str, values: dict[str, str]) -> dict[str, object]:
+def docker_php_json(
+    ctx: dict[str, object], source_path: Path, container_path: str, values: dict[str, str], set_substage=None
+) -> dict[str, object]:
+    def mark(name: str) -> None:
+        if set_substage is not None:
+            set_substage(name)
+
     project = str(ctx["project"])
+    mark("limited_route_helper_copy")
     copy = subprocess.run(
         ["docker", "compose", "-p", project, "exec", "-T", "prestashop", "sh", "-c", f"cat > {container_path}"],
         input=source_path.read_text(encoding="utf-8"), capture_output=True, text=True, timeout=30, check=False,
     )
     if copy.returncode != 0:
         raise RuntimeError("could not stage a bounded transfer acceptance helper in the disposable shop")
+    mark("limited_route_helper_execution")
     command = ["docker", "compose", "-p", project, "exec", "-T", "--user", "www-data"]
     defaults = {
         "CI": "true", "GITHUB_ACTIONS": "true", "KURANEA_ISOLATED_CI": "1",
@@ -264,10 +309,12 @@ def docker_php_json(ctx: dict[str, object], source_path: Path, container_path: s
     if completed.returncode != 0:
         raise RuntimeError("the isolated native transfer acceptance readback did not pass")
     lines = completed.stdout.splitlines()
+    mark("limited_route_helper_json_parse")
     try:
         payload = json.loads(lines[-1])
     except (IndexError, TypeError, ValueError):
         raise RuntimeError("the isolated native transfer helper did not return bounded JSON") from None
+    mark("limited_route_helper_json_shape")
     if not isinstance(payload, dict):
         raise RuntimeError("the isolated native transfer helper returned an invalid result shape")
     return payload
@@ -361,7 +408,9 @@ def diagnose_unpaid_issue_persistence(ctx: dict[str, object], order: dict[str, o
     return "unpaid_instruction_persisted" if payload["instruction_persisted"] else "unpaid_instruction_absent"
 
 
-def limited_transfer_route(ctx: dict[str, object], set_substage=None) -> tuple[str, str]:
+def limited_transfer_route(
+    ctx: dict[str, object], set_substage=None, diagnostics: dict[str, object] | None = None
+) -> tuple[str, str]:
     source_path = Path(__file__).resolve().parents[1] / "business_profile" / "resolve_ci_limited_transfer_route.php"
     if set_substage is not None:
         set_substage("limited_route_fixture_readback")
@@ -370,13 +419,37 @@ def limited_transfer_route(ctx: dict[str, object], set_substage=None) -> tuple[s
         source_path,
         "/tmp/resolve_ci_limited_transfer_route.php",
         {"VIEW_ONLY_EMAIL": str(ctx["view_email"])},
+        set_substage=set_substage,
     )
     if set_substage is not None:
         set_substage("limited_route_contract_readback")
-    if (set(payload) != {"status", "route", "employee_found", "view_allowed", "issue_denied", "confirm_denied"}
+    expected_check_keys = set(LIMITED_ROUTE_CHECK_KEYS)
+    checks = payload.get("checks")
+    valid_checks = (
+        isinstance(checks, dict)
+        and set(checks) == expected_check_keys
+        and all(type(value) is bool for value in checks.values())
+    )
+    if valid_checks and diagnostics is not None:
+        diagnostics.update({result_key: checks[check_key] for check_key, result_key in LIMITED_ROUTE_CHECK_KEYS.items()})
+
+    helper_stage = payload.get("failure_stage")
+    if (payload.get("status") == "failure"
+            and isinstance(helper_stage, str)
+            and helper_stage in LIMITED_ROUTE_FAILURE_SUBSTAGES
+            and valid_checks):
+        if set_substage is not None:
+            set_substage(LIMITED_ROUTE_FAILURE_SUBSTAGES[helper_stage])
+        raise RuntimeError("the isolated limited employee route helper failed a bounded acceptance check")
+
+    if (set(payload) != {"status", "failure_stage", "checks", "route"}
             or payload.get("status") != "success"
-            or any(payload.get(key) is not True for key in ("employee_found", "view_allowed", "issue_denied", "confirm_denied"))
+            or helper_stage != "none"
+            or not valid_checks
+            or any(value is not True for value in checks.values())
             or not isinstance(payload.get("route"), str)):
+        if set_substage is not None:
+            set_substage("limited_route_helper_result_contract")
         raise RuntimeError("the isolated limited employee permission fixture was not read back safely")
     if set_substage is not None:
         set_substage("limited_route_identity_validation")
@@ -872,6 +945,7 @@ def run() -> None:
         "foreign_customer_denied": False, "limited_staff_denied": False,
         "view_only_issue_denied": False, "view_only_issue_order_unpaid": False,
         "view_only_confirmation_denied": False, "view_only_confirmation_order_unpaid": False,
+        **{result_key: False for result_key in LIMITED_ROUTE_CHECK_KEYS.values()},
         "issue_csrf_rejected": False, "csrf_rejected": False, "wrong_amount_rejected": False, "receipt_confirmed": False,
         "idempotent_replay": False, "customer_paid_state_changed": False,
         "instruction_hidden_after_payment": False, "native_readback": False,
@@ -1019,7 +1093,7 @@ def run() -> None:
         limited = new_driver(1440, 960)
         set_substage("limited_staff_login")
         admin_login(limited, ctx, str(ctx["view_email"]))
-        limited_url, limited_token = limited_transfer_route(ctx, set_substage)
+        limited_url, limited_token = limited_transfer_route(ctx, set_substage, result)
         set_substage("limited_order_row_readback")
         visit(limited, limited_url, str(ctx["shop"]))
         limited_row = order_row(limited, order)
@@ -1171,7 +1245,21 @@ def run() -> None:
             f"issue_selected_active_account_present={str(result['issue_selected_active_account_present']).lower()}; "
             f"issue_isolated_ci_gate_enabled={str(result['issue_isolated_ci_gate_enabled']).lower()}; "
             f"issue_seller_commerce_gate_enabled={str(result['issue_seller_commerce_gate_enabled']).lower()}; "
-            f"issue_effective_commerce_gate_enabled={str(result['issue_effective_commerce_gate_enabled']).lower()}",
+            f"issue_effective_commerce_gate_enabled={str(result['issue_effective_commerce_gate_enabled']).lower()}; "
+            f"limited_route_ci_scope_valid={str(result['limited_route_ci_scope_valid']).lower()}; "
+            f"limited_route_identity_shape_valid={str(result['limited_route_identity_shape_valid']).lower()}; "
+            f"limited_route_employee_found={str(result['limited_route_employee_found']).lower()}; "
+            f"limited_route_employee_active={str(result['limited_route_employee_active']).lower()}; "
+            f"limited_route_transfer_tab_present={str(result['limited_route_transfer_tab_present']).lower()}; "
+            f"limited_route_view_allowed={str(result['limited_route_view_allowed']).lower()}; "
+            f"limited_route_issue_denied={str(result['limited_route_issue_denied']).lower()}; "
+            f"limited_route_confirm_denied={str(result['limited_route_confirm_denied']).lower()}; "
+            f"limited_route_admin_link_generated={str(result['limited_route_admin_link_generated']).lower()}; "
+            f"limited_route_path_valid={str(result['limited_route_path_valid']).lower()}; "
+            f"limited_route_controller_valid={str(result['limited_route_controller_valid']).lower()}; "
+            f"limited_route_credential_present={str(result['limited_route_credential_present']).lower()}; "
+            f"limited_route_credential_bounded={str(result['limited_route_credential_bounded']).lower()}; "
+            f"limited_route_credential_whitespace_free={str(result['limited_route_credential_whitespace_free']).lower()}",
             file=sys.stderr,
         )
         for browser, filename in (

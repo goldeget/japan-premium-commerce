@@ -3,6 +3,7 @@ import ast
 import contextlib
 import importlib.util
 import io
+import json
 from email.message import EmailMessage
 from pathlib import Path
 import tempfile
@@ -40,7 +41,8 @@ class ResetEmailLocaleContract(unittest.TestCase):
 
     def message(self, language='en', url=None):
         markers = {'ja': 'パスワード', 'en': 'password', 'ko': '비밀번호'}
-        url = url or 'http://127.0.0.1:18080/reset?token=synthetic-token&reset_token=synthetic-reset'
+        url = url or ('http://127.0.0.1:18080/reset?token=synthetic-token'
+                      '&reset_token=synthetic-reset&id_customer=7')
         return {'HTML': f'<html><body>{markers[language]} <a href="{url}">reset</a></body></html>',
                 'Text': markers[language] + ' ' + url}
 
@@ -60,18 +62,19 @@ class ResetEmailLocaleContract(unittest.TestCase):
                                       'http://127.0.0.1:18080', '/reset', self.forbidden())
             self.assertEqual('locale_marker_missing', caught.exception.check)
         with self.assertRaises(module.MessageValidationError):
-            module.assert_message(self.message('ja', url='http://127.0.0.1:18080/password?token=x&reset_token=y'),
+            module.assert_message(self.message('ja', url='http://127.0.0.1:18080/password?token=x&reset_token=y&id_customer=7'),
                                   'en', 'http://127.0.0.1:18080', '/password', self.forbidden())
-        for url in ('https://evil.invalid/reset?token=x&reset_token=y',
-                    'http://user:secret@127.0.0.1:18080/reset?token=x&reset_token=y',
-                    'http://127.0.0.1:18080/other?token=x&reset_token=y'):
+        for url in ('https://evil.invalid/reset?token=x&reset_token=y&id_customer=7',
+                    'http://user:secret@127.0.0.1:18080/reset?token=x&reset_token=y&id_customer=7',
+                    'http://127.0.0.1:18080/other?token=x&reset_token=y&id_customer=7'):
             with self.assertRaises(module.MessageValidationError) as caught:
                 module.assert_message(self.message(url=url), 'en', 'http://127.0.0.1:18080', '/reset', self.forbidden())
             self.assertIn(caught.exception.check, {'reset_link_origin_mismatch', 'reset_link_path_mismatch'})
 
     def test_raw_rfc822_mime_parts_are_decoded_in_memory_and_drive_link_acceptance(self):
         module = self.module()
-        url = 'http://127.0.0.1:18080/reset?token=synthetic-token&reset_token=synthetic-reset'
+        url = ('http://127.0.0.1:18080/reset?token=synthetic-token'
+               '&reset_token=synthetic-reset&id_customer=7')
         mail = EmailMessage()
         mail['Subject'] = 'native reset fixture'
         mail.set_content('비밀번호 재설정\n' + url + '\n', charset='utf-8')
@@ -96,6 +99,17 @@ class ResetEmailLocaleContract(unittest.TestCase):
         mail['X-ORDENOWA-CI-Pre-SMTP-Text-Native-Reset-Link'] = 'false'
         mail['X-ORDENOWA-CI-Reset-URL-Candidate-Found'] = 'true'
         mail['X-ORDENOWA-CI-Reset-Template-Context-Recognized'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-Template-URL-Candidate-Present'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-Template-URL-Credentials-Complete'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-Template-URL-Native-Route'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-HTML-URL-Candidate-Present'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-HTML-Token-Present'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-HTML-Reset-Token-Present'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-HTML-Customer-ID-Present'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-HTML-Scheme-Host-Port-Match'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-HTML-Path-Match'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-HTML-Credentials-Complete'] = 'true'
+        mail['X-ORDENOWA-CI-Reset-HTML-Candidate-Selected'] = 'true'
         mail['X-ORDENOWA-CI-Text-Setter-Available'] = 'true'
         mail['X-ORDENOWA-CI-Text-Setter-Invoked'] = 'true'
         mail.set_content('synthetic body is never returned by the header parser')
@@ -106,6 +120,17 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'pre_smtp_text_native_link_shape': False,
             'pre_smtp_reset_url_candidate_found': True,
             'pre_smtp_reset_template_context_recognized': True,
+            'pre_smtp_template_url_candidate_present': True,
+            'pre_smtp_template_url_credentials_complete': True,
+            'pre_smtp_template_url_native_route': True,
+            'pre_smtp_html_url_candidate_present': True,
+            'pre_smtp_html_token_present': True,
+            'pre_smtp_html_reset_token_present': True,
+            'pre_smtp_html_id_customer_present': True,
+            'pre_smtp_html_scheme_host_port_match': True,
+            'pre_smtp_html_path_match': True,
+            'pre_smtp_html_credentials_complete': True,
+            'pre_smtp_html_candidate_selected': True,
             'pre_smtp_text_setter_available': True,
             'pre_smtp_text_setter_invoked': True,
         }, evidence)
@@ -122,7 +147,8 @@ class ResetEmailLocaleContract(unittest.TestCase):
 
     def test_raw_rfc822_mime_parts_still_require_a_native_plain_text_reset_link(self):
         module = self.module()
-        url = 'http://127.0.0.1:18080/reset?token=synthetic-token&reset_token=synthetic-reset'
+        url = ('http://127.0.0.1:18080/reset?token=synthetic-token'
+               '&reset_token=synthetic-reset&id_customer=7')
         mail = EmailMessage()
         mail['Subject'] = 'native reset fixture'
         mail.set_content('비밀번호 재설정\nhttps://outside.invalid/help\n', charset='utf-8')
@@ -136,7 +162,8 @@ class ResetEmailLocaleContract(unittest.TestCase):
 
     def test_raw_rfc822_ignores_filename_attachments_and_forwarded_messages(self):
         module = self.module()
-        url = 'http://127.0.0.1:18080/reset?token=synthetic-token&reset_token=synthetic-reset'
+        url = ('http://127.0.0.1:18080/reset?token=synthetic-token'
+               '&reset_token=synthetic-reset&id_customer=7')
         forwarded = EmailMessage()
         forwarded.set_content('forwarded note ' + url, charset='utf-8')
         mail = EmailMessage()
@@ -215,7 +242,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
         module = self.module()
         secure_key = self.forbidden()['customer_secure_key']
         url = ('http://127.0.0.1:18080/reset?token=synthetic-token'
-               + '&reset_token=' + secure_key)
+               + '&reset_token=' + secure_key + '&id_customer=7')
         message = self.message('ja', url=url)
         with self.assertRaises(module.MessageValidationError) as caught:
             module.assert_message(message, 'ja', 'http://127.0.0.1:18080', '/reset', self.forbidden())
@@ -291,8 +318,12 @@ class ResetEmailLocaleContract(unittest.TestCase):
 
     def test_reset_credentials_must_be_nonempty_and_unambiguous(self):
         module = self.module()
-        for query in ('token=&reset_token=x', 'token=x&reset_token=',
-                      'token=x&token=y&reset_token=z', 'token=x&reset_token=z&id_customer='):
+        for query in ('token=&reset_token=x&id_customer=7', 'token=x&reset_token=&id_customer=7',
+                      'token=x&token=y&reset_token=z&id_customer=7',
+                      'token=x&reset_token=z&id_customer=',
+                      'token=x&reset_token=z', 'token=x&id_customer=7',
+                      'reset_token=z&id_customer=7',
+                      'token=x&token=y&reset_token=z&id_customer=7'):
             with self.subTest(query=query), self.assertRaises(module.MessageValidationError) as caught:
                 module.assert_message(self.message(url='http://127.0.0.1:18080/reset?' + query),
                                       'en', 'http://127.0.0.1:18080', '/reset', self.forbidden())
@@ -301,7 +332,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
     def test_message_failure_reason_is_closed_and_does_not_contain_message_data(self):
         module = self.module()
         secret = 'synthetic-reset-secret@example.invalid'
-        url = 'https://outside.invalid/reset?token=' + secret + '&reset_token=another'
+        url = 'https://outside.invalid/reset?token=' + secret + '&reset_token=another&id_customer=7'
         with self.assertRaises(module.MessageValidationError) as caught:
             module.assert_message(self.message('ja', url=url), 'ja', 'http://127.0.0.1:18080', '/reset', self.forbidden())
         self.assertEqual('reset_link_origin_mismatch', caught.exception.check)
@@ -311,7 +342,7 @@ class ResetEmailLocaleContract(unittest.TestCase):
         module = self.module()
         message = self.message()
         message['HTML'] = message['HTML'].replace('http://127.0.0.1:18080/reset?', '/reset?')
-        self.assertEqual('http://127.0.0.1:18080/reset?token=synthetic-token&reset_token=synthetic-reset',
+        self.assertEqual('http://127.0.0.1:18080/reset?token=synthetic-token&reset_token=synthetic-reset&id_customer=7',
                          module.assert_message(message, 'en', 'http://127.0.0.1:18080', '/reset', self.forbidden()))
 
     def test_native_reset_page_requires_expected_origin_path_and_document_language(self):
@@ -346,6 +377,9 @@ class ResetEmailLocaleContract(unittest.TestCase):
             'mailpit_preview_text_shape_match=none; '
             'pre_smtp_html_native_link=none; pre_smtp_text_native_link=none; '
             'pre_smtp_url_candidate=none; pre_smtp_reset_template_context=none; '
+            'pre_smtp_template_url=none; pre_smtp_template_credentials=none; pre_smtp_template_route=none; '
+            'pre_smtp_html_candidate=none; pre_smtp_html_credentials=none/none/none; '
+            'pre_smtp_html_route=none/none; pre_smtp_html_selected=none; '
             'pre_smtp_text_setter_available=none; '
             'pre_smtp_text_setter_invoked=none; '
             'mail_type=unavailable; template_candidate=unavailable; '
@@ -372,6 +406,17 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 "pre_smtp_text_native_link_shape": None,
                 "pre_smtp_reset_url_candidate_found": None,
                 "pre_smtp_reset_template_context_recognized": None,
+                "pre_smtp_template_url_candidate_present": None,
+                "pre_smtp_template_url_credentials_complete": None,
+                "pre_smtp_template_url_native_route": None,
+                "pre_smtp_html_url_candidate_present": None,
+                "pre_smtp_html_token_present": None,
+                "pre_smtp_html_reset_token_present": None,
+                "pre_smtp_html_id_customer_present": None,
+                "pre_smtp_html_scheme_host_port_match": None,
+                "pre_smtp_html_path_match": None,
+                "pre_smtp_html_credentials_complete": None,
+                "pre_smtp_html_candidate_selected": None,
                 "pre_smtp_text_setter_available": None,
                 "pre_smtp_text_setter_invoked": None,
                 "mail_type": None, "template_candidate": "unavailable",
@@ -389,7 +434,9 @@ class ResetEmailLocaleContract(unittest.TestCase):
                 self.assertTrue(path.is_file())
                 contents = path.read_text(encoding="utf-8")
                 self.assertIn('"response_status": 404', contents)
-                for sensitive in ("token", "password", "email@example", "http://", "current_url"):
+                diagnostics = json.loads(contents)
+                self.assertIn('pre_smtp_html_token_present', diagnostics)
+                for sensitive in ("synthetic-token", "synthetic-reset", "email@example", "http://", "current_url"):
                     self.assertNotIn(sensitive, contents)
                 self.assertIn('"message_check": "none"', contents)
                 safe_evidence = {

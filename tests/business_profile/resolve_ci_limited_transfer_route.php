@@ -2,11 +2,19 @@
 
 declare(strict_types=1);
 
-function ordenowaLimitedRouteRequire(bool $condition, string $message): void
+function ordenowaLimitedRouteResult(string $status, string $failureStage, array $checks, ?string $route = null): never
 {
-    if (!$condition) {
-        throw new RuntimeException($message);
+    $payload = [
+        'status' => $status,
+        'failure_stage' => $failureStage,
+        'checks' => $checks,
+    ];
+    if ($route !== null) {
+        // The caller uses this tokenized route in memory only. It must never enter logs or artifacts.
+        $payload['route'] = $route;
     }
+    echo json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) . PHP_EOL;
+    exit(0);
 }
 
 $runId = (string) getenv('GITHUB_RUN_ID');
@@ -14,61 +22,105 @@ $attempt = (string) getenv('GITHUB_RUN_ATTEMPT');
 $project = (string) getenv('CI_COMPOSE_PROJECT_NAME');
 $email = strtolower(trim((string) getenv('VIEW_ONLY_EMAIL')));
 $expectedProject = sprintf('kuranea-ci-%s-%s', $runId, $attempt);
-ordenowaLimitedRouteRequire(
-    getenv('CI') === 'true'
+$checks = [
+    'ci_scope_valid' => getenv('CI') === 'true'
         && getenv('GITHUB_ACTIONS') === 'true'
         && getenv('KURANEA_ISOLATED_CI') === '1'
         && preg_match('/\A[0-9]+\z/D', $runId) === 1
         && preg_match('/\A[0-9]+\z/D', $attempt) === 1
         && $project === $expectedProject
-        && getenv('KURANEA_CI_PROJECT_NAME') === $expectedProject
-        && preg_match('/\Aordenowa-security-view-' . preg_quote($runId, '/') . '-' . preg_quote($attempt, '/') . '-[a-f0-9]+@example\.invalid\z/D', $email) === 1,
-    'Limited transfer route requires the exact run-scoped isolated employee.'
-);
+        && getenv('KURANEA_CI_PROJECT_NAME') === $expectedProject,
+    'identity_shape_valid' => preg_match(
+        '/\Aordenowa-security-view-' . preg_quote($runId, '/') . '-' . preg_quote($attempt, '/') . '-[a-f0-9]+@example\.invalid\z/D',
+        $email
+    ) === 1,
+    'employee_found' => false,
+    'employee_active' => false,
+    'transfer_tab_present' => false,
+    'view_allowed' => false,
+    'issue_denied' => false,
+    'confirm_denied' => false,
+    'admin_link_generated' => false,
+    'route_path_valid' => false,
+    'route_controller_valid' => false,
+    'route_credential_present' => false,
+    'route_credential_bounded' => false,
+    'route_credential_whitespace_free' => false,
+];
+$failureStage = 'scope_validation';
 
-$_SERVER['HTTP_HOST'] = trim((string) getenv('PS_DOMAIN')) ?: 'localhost:8080';
-$_SERVER['REQUEST_URI'] = '/';
-$_SERVER['SCRIPT_NAME'] = '/index.php';
-require_once '/var/www/html/config/config.inc.php';
+if (!$checks['ci_scope_valid'] || !$checks['identity_shape_valid']) {
+    ordenowaLimitedRouteResult('failure', $failureStage, $checks);
+}
 
-$employee = new Employee();
-ordenowaLimitedRouteRequire($employee->getByEmail($email) !== false && (int) $employee->id > 1, 'The run-scoped limited employee could not be loaded.');
-ordenowaLimitedRouteRequire((bool) $employee->active, 'The run-scoped limited employee is inactive.');
-$tabId = (int) Tab::getIdFromClassName('AdminBusinessProfileTransfers');
-ordenowaLimitedRouteRequire($tabId > 0, 'The bank-transfer Back Office tab is missing.');
-$profileAccess = Profile::getProfileAccesses((int) $employee->id_profile);
-$tabAccess = is_array($profileAccess) ? ($profileAccess[$tabId] ?? []) : [];
-$canView = ($tabAccess['view'] ?? '0') === '1';
-$canIssue = ($tabAccess['add'] ?? '0') === '1';
-$canConfirm = ($tabAccess['edit'] ?? '0') === '1';
-ordenowaLimitedRouteRequire(
-    $canView && !$canIssue && !$canConfirm,
-    'The run-scoped transfer employee must have read-only, not issue or confirmation, permission.'
-);
+try {
+    $failureStage = 'bootstrap';
+    $_SERVER['HTTP_HOST'] = trim((string) getenv('PS_DOMAIN')) ?: 'localhost:8080';
+    $_SERVER['REQUEST_URI'] = '/';
+    $_SERVER['SCRIPT_NAME'] = '/index.php';
+    require_once '/var/www/html/config/config.inc.php';
 
-Context::getContext()->employee = $employee;
-$generated = (string) Context::getContext()->link->getAdminLink('AdminBusinessProfileTransfers');
-$parts = parse_url($generated);
-parse_str((string) ($parts['query'] ?? ''), $query);
-$controllerValues = $query['controller'] ?? null;
-$tokenValues = $query['token'] ?? null;
-$path = (string) ($parts['path'] ?? '');
-ordenowaLimitedRouteRequire(
-    preg_match('/\A\/admin-kuranea\/index\.php\z/D', $path) === 1
-        && $controllerValues === 'AdminBusinessProfileTransfers'
-        && is_string($tokenValues)
-        && $tokenValues !== ''
-        && strlen($tokenValues) <= 256
-        && preg_match('/\s/', $tokenValues) !== 1,
-    'The limited employee did not receive a valid same-admin controller token route.'
-);
+    $failureStage = 'employee_lookup';
+    $employee = new Employee();
+    $checks['employee_found'] = $employee->getByEmail($email) !== false && (int) $employee->id > 1;
+    if (!$checks['employee_found']) {
+        ordenowaLimitedRouteResult('failure', $failureStage, $checks);
+    }
 
-// The caller captures this tokenized URL in memory only. It must never go to logs or artifacts.
-echo json_encode([
-    'status' => 'success',
-    'route' => $path . '?' . (string) $parts['query'],
-    'employee_found' => true,
-    'view_allowed' => true,
-    'issue_denied' => true,
-    'confirm_denied' => true,
-], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) . PHP_EOL;
+    $failureStage = 'employee_active';
+    $checks['employee_active'] = (bool) $employee->active;
+    if (!$checks['employee_active']) {
+        ordenowaLimitedRouteResult('failure', $failureStage, $checks);
+    }
+
+    $failureStage = 'transfer_tab_acl';
+    $tabId = (int) Tab::getIdFromClassName('AdminBusinessProfileTransfers');
+    $checks['transfer_tab_present'] = $tabId > 0;
+    if (!$checks['transfer_tab_present']) {
+        ordenowaLimitedRouteResult('failure', $failureStage, $checks);
+    }
+    $profileAccess = Profile::getProfileAccesses((int) $employee->id_profile);
+    $tabAccess = is_array($profileAccess) ? ($profileAccess[$tabId] ?? []) : [];
+    $checks['view_allowed'] = ($tabAccess['view'] ?? '0') === '1';
+    $checks['issue_denied'] = ($tabAccess['add'] ?? '0') !== '1';
+    $checks['confirm_denied'] = ($tabAccess['edit'] ?? '0') !== '1';
+    if (!$checks['view_allowed'] || !$checks['issue_denied'] || !$checks['confirm_denied']) {
+        ordenowaLimitedRouteResult('failure', $failureStage, $checks);
+    }
+
+    $failureStage = 'admin_link_generation';
+    Context::getContext()->employee = $employee;
+    $generated = (string) Context::getContext()->link->getAdminLink('AdminBusinessProfileTransfers');
+    $checks['admin_link_generated'] = $generated !== '';
+    if (!$checks['admin_link_generated']) {
+        ordenowaLimitedRouteResult('failure', $failureStage, $checks);
+    }
+
+    $failureStage = 'route_validation';
+    $parts = parse_url($generated);
+    if (!is_array($parts)) {
+        ordenowaLimitedRouteResult('failure', $failureStage, $checks);
+    }
+    parse_str((string) ($parts['query'] ?? ''), $query);
+    $controllerValues = $query['controller'] ?? null;
+    $credentialValues = $query['token'] ?? null;
+    $path = (string) ($parts['path'] ?? '');
+    $checks['route_path_valid'] = preg_match('/\A\/admin-kuranea\/index\.php\z/D', $path) === 1;
+    $checks['route_controller_valid'] = $controllerValues === 'AdminBusinessProfileTransfers';
+    $checks['route_credential_present'] = is_string($credentialValues) && $credentialValues !== '';
+    $checks['route_credential_bounded'] = is_string($credentialValues)
+        && strlen($credentialValues) <= 256;
+    $checks['route_credential_whitespace_free'] = is_string($credentialValues)
+        && preg_match('/\s/', $credentialValues) !== 1;
+    if (!$checks['route_path_valid']
+            || !$checks['route_controller_valid']
+            || !$checks['route_credential_present']
+            || !$checks['route_credential_bounded']
+            || !$checks['route_credential_whitespace_free']) {
+        ordenowaLimitedRouteResult('failure', $failureStage, $checks);
+    }
+
+    ordenowaLimitedRouteResult('success', 'none', $checks, $path . '?' . (string) $parts['query']);
+} catch (Throwable) {
+    ordenowaLimitedRouteResult('failure', $failureStage, $checks);
+}
