@@ -368,7 +368,8 @@ class AdminBusinessProfileTransfersController extends ModuleAdminController
         $ciCsrfEvidence = $this->renderIsolatedCiCsrfEvidence();
         $ciProfileEvidence = $this->renderIsolatedCiProfileEvidence();
 
-        return '<div class="alert ' . $class . '">' . $this->escape($this->ordenowaFeedback) . '</div>'
+        return '<div class="alert ' . $class . '" data-ordenowa-transfer-feedback="true">'
+            . $this->escape($this->ordenowaFeedback) . '</div>'
             . $ciCsrfEvidence . $ciProfileEvidence;
     }
 

@@ -32,7 +32,9 @@
   <div id="ps_searchbar" class="ps-searchbar js-search-widget" data-search-controller-url="{$search_controller_url}">
     <form class="ps-searchbar__form" method="get" action="{$search_controller_url}" role="search">
       <input type="hidden" name="controller" value="search">
-      <i class="material-icons ps-searchbar__magnifier js-search-icon" aria-hidden="true">&#xE8B6;</i>
+      <button type="submit" class="ps-searchbar__submit" aria-label="{$searchLabel|escape:'htmlall':'UTF-8'}">
+        <i class="material-icons ps-searchbar__magnifier js-search-icon" aria-hidden="true">&#xE8B6;</i>
+      </button>
       <label for="ps_searchbar_input" class="visually-hidden">{$searchLabel|escape:'htmlall':'UTF-8'}</label>
       <input
         class="js-search-input form-control ps-searchbar__input"

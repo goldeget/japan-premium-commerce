@@ -1826,13 +1826,27 @@ def assignment_row(driver, thread_id: int):
 
 
 ASSIGNMENT_FEEDBACK_OUTCOMES = {
-    "not_started", "success", "rejected", "timeout", "click_timeout", "ambiguous",
+    "not_started", "success", "csrf_rejected", "invalid_request", "thread_not_found",
+    "employee_missing", "employee_ineligible", "create_permission_denied",
+    "update_permission_denied", "assignment_rejected", "storage_failure",
+    "post_commit_render_failure", "controller_failure", "rejected", "timeout",
+    "click_timeout", "ambiguous",
 }
 
 
 def support_assignment_feedback_state(driver) -> str | None:
+    evidence = driver.find_elements(By.ID, "ordenowa-ci-support-assignment-evidence")
+    if len(evidence) > 1:
+        return "ambiguous"
+    if len(evidence) == 1:
+        outcome = evidence[0].get_attribute("data-outcome")
+        return outcome if outcome in ASSIGNMENT_FEEDBACK_OUTCOMES else "ambiguous"
+
     visible_states = set()
-    for state, selector in (("success", ".alert.alert-success"), ("rejected", ".alert.alert-danger")):
+    for state, selector in (
+        ("success", "[data-ordenowa-support-assignment-feedback].alert.alert-success"),
+        ("rejected", "[data-ordenowa-support-assignment-feedback].alert.alert-danger"),
+    ):
         for feedback in driver.find_elements(By.CSS_SELECTOR, selector):
             if feedback.is_displayed():
                 visible_states.add(state)

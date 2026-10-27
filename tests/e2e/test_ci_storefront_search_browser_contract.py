@@ -41,6 +41,8 @@ class StorefrontSearchBrowserContractTests(unittest.TestCase):
             '"exact", "カートオプション"', '"partial", "カートオプ"',
             '"missing", f"該当なし検索検証{run_id}試行{attempt}"',
             'Keys.ENTER', 'parse_qs', 'body#search',
+            'button[type="submit"].ps-searchbar__submit[aria-label]',
+            '"submit_control_available"', '"search_form_submit_control"',
             'assert_japanese_document(driver)', 'expected_name',
             'product_page_failure_reason(', 'expected_product_id=PRODUCT_ID',
             '"desktop", 1440, 960', '"mobile", 390, 844',
@@ -88,6 +90,8 @@ class StorefrontSearchBrowserContractTests(unittest.TestCase):
     def test_selectors_are_grounded_in_child_and_parent_theme_templates(self):
         searchbar = (ROOT / "themes/kuranea/modules/ps_searchbar/ps_searchbar.tpl").read_text()
         for required in ('id="ps_searchbar_input"', 'name="s"', 'role="search"', 'id="searchCanvas"',
+                         'type="submit" class="ps-searchbar__submit"', 'aria-label="{$searchLabel',
+                         'type="button" class="ps-searchbar__clear',
                          '<input type="hidden" name="controller" value="search">'):
             self.assertIn(required, searchbar)
         miniature = (ROOT / "themes/hummingbird/templates/catalog/_partials/miniatures/product.tpl").read_text()

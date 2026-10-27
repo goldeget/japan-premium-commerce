@@ -10,6 +10,8 @@ class AdminKuraneaSupportAssignmentsController extends ModuleAdminController
 {
     private string $feedback = '';
     private bool $feedbackIsError = false;
+    private bool $assignmentPostHandled = false;
+    private string $assignmentOutcome = 'not_started';
 
     public function __construct()
     {
@@ -59,6 +61,9 @@ class AdminKuraneaSupportAssignmentsController extends ModuleAdminController
             }
             $employees = $repository->employeesForShop($shopId);
             $selectedThread = $this->selectedThread($shopId, $repository);
+            $history = $selectedThread !== null
+                ? $repository->historyForThread($shopId, $selectedThread['id_customer_thread'])
+                : [];
 
             $actionUrl = (string) $this->context->link->getAdminLink('AdminKuraneaSupportAssignments');
             $paginationUrl = $actionUrl;
@@ -70,13 +75,17 @@ class AdminKuraneaSupportAssignmentsController extends ModuleAdminController
                 . $this->renderThreadTable($threads, $employees, $actionUrl, $token)
                 . $this->renderPagination($paginationUrl, $page, $hasNextPage);
             if ($selectedThread !== null) {
-                $history = $repository->historyForThread($shopId, $selectedThread['id_customer_thread']);
                 $this->content .= $this->renderHistory($selectedThread, $history);
             }
             $this->content .= '</div>';
         } catch (Throwable) {
             http_response_code(503);
-            $this->content .= '<div class="alert alert-danger">고객 문의 담당자 화면을 불러오지 못했습니다. 쇼핑몰과 권한을 확인해 주세요.</div>';
+            $this->assignmentOutcome = $this->assignmentOutcome === 'success'
+                ? 'post_commit_render_failure'
+                : 'controller_failure';
+            $this->content .= '<div class="alert alert-danger" data-ordenowa-support-assignment-feedback="true">'
+                . '고객 문의 담당자 화면을 불러오지 못했습니다. 쇼핑몰과 권한을 확인해 주세요.</div>'
+                . $this->renderIsolatedCiAssignmentEvidence();
         }
 
         $this->context->smarty->assign('content', $this->content);
@@ -88,11 +97,12 @@ class AdminKuraneaSupportAssignmentsController extends ModuleAdminController
             || !Tools::isSubmit('submitOrdenowaSupportAssignment')) {
             return;
         }
+        $this->assignmentPostHandled = true;
 
         $submittedToken = $_POST['token'] ?? null;
         $expectedToken = (string) Tools::getAdminTokenLite('AdminKuraneaSupportAssignments');
         if (!is_string($submittedToken) || !hash_equals($expectedToken, $submittedToken)) {
-            $this->fail('관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.');
+            $this->fail('관리자 보안 토큰이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.', 'csrf_rejected');
 
             return;
         }
@@ -100,19 +110,19 @@ class AdminKuraneaSupportAssignmentsController extends ModuleAdminController
         $threadId = self::positivePostId('id_customer_thread');
         $employeeId = self::positivePostId('id_employee');
         if ($threadId === null || $employeeId === null) {
-            $this->fail('문의 번호와 담당자를 다시 선택해 주세요.');
+            $this->fail('문의 번호와 담당자를 다시 선택해 주세요.', 'invalid_request');
 
             return;
         }
         if ($repository->threadForShop($shopId, $threadId) === null) {
-            $this->fail('선택한 쇼핑몰의 문의를 찾을 수 없습니다.');
+            $this->fail('선택한 쇼핑몰의 문의를 찾을 수 없습니다.', 'thread_not_found');
 
             return;
         }
 
         $actorEmployeeId = (int) ($this->context->employee->id ?? 0);
         if ($actorEmployeeId < 1) {
-            $this->fail('현재 관리자 계정을 확인할 수 없습니다.');
+            $this->fail('현재 관리자 계정을 확인할 수 없습니다.', 'employee_missing');
 
             return;
         }
@@ -131,15 +141,23 @@ class AdminKuraneaSupportAssignmentsController extends ModuleAdminController
                 : '선택한 담당자가 이미 지정되어 있습니다.');
         } catch (InvalidArgumentException $exception) {
             $message = $exception->getMessage();
+            $outcome = match ($message) {
+                '선택한 쇼핑몰의 문의를 찾을 수 없습니다.' => 'thread_not_found',
+                '선택한 담당자가 이 쇼핑몰의 활성 관리자 계정이 아닙니다.' => 'employee_ineligible',
+                '현재 관리자 계정을 확인할 수 없습니다.' => 'employee_missing',
+                '고객 문의 담당자를 지정할 권한이 없습니다.' => 'create_permission_denied',
+                '고객 문의 담당자를 변경할 권한이 없습니다.' => 'update_permission_denied',
+                default => 'assignment_rejected',
+            };
             $this->fail(in_array($message, [
                 '선택한 쇼핑몰의 문의를 찾을 수 없습니다.',
                 '선택한 담당자가 이 쇼핑몰의 활성 관리자 계정이 아닙니다.',
                 '현재 관리자 계정을 확인할 수 없습니다.',
                 '고객 문의 담당자를 지정할 권한이 없습니다.',
                 '고객 문의 담당자를 변경할 권한이 없습니다.',
-            ], true) ? $message : '담당자를 지정하지 못했습니다. 입력한 값을 확인해 주세요.');
+            ], true) ? $message : '담당자를 지정하지 못했습니다. 입력한 값을 확인해 주세요.', $outcome);
         } catch (Throwable) {
-            $this->fail('담당자를 저장하지 못했습니다. 다시 조회한 후 시도해 주세요.');
+            $this->fail('담당자를 저장하지 못했습니다. 다시 조회한 후 시도해 주세요.', 'storage_failure');
         }
     }
 
@@ -306,12 +324,14 @@ class AdminKuraneaSupportAssignmentsController extends ModuleAdminController
     {
         $this->feedback = $message;
         $this->feedbackIsError = false;
+        $this->assignmentOutcome = 'success';
     }
 
-    private function fail(string $message): void
+    private function fail(string $message, string $outcome): void
     {
         $this->feedback = $message;
         $this->feedbackIsError = true;
+        $this->assignmentOutcome = $outcome;
     }
 
     private function renderFeedback(): string
@@ -320,7 +340,35 @@ class AdminKuraneaSupportAssignmentsController extends ModuleAdminController
             return '';
         }
         $class = $this->feedbackIsError ? 'danger' : 'success';
-        return '<div class="alert alert-' . $class . '">' . $this->escape($this->feedback) . '</div>';
+        return '<div class="alert alert-' . $class
+            . '" data-ordenowa-support-assignment-feedback="true">'
+            . $this->escape($this->feedback) . '</div>' . $this->renderIsolatedCiAssignmentEvidence();
+    }
+
+    private function renderIsolatedCiAssignmentEvidence(): string
+    {
+        $runId = (string) getenv('GITHUB_RUN_ID');
+        $runAttempt = (string) getenv('GITHUB_RUN_ATTEMPT');
+        $isIsolatedCiRun = getenv('CI') === 'true'
+            && getenv('GITHUB_ACTIONS') === 'true'
+            && preg_match('/\A[0-9]+\z/D', $runId) === 1
+            && preg_match('/\A[0-9]+\z/D', $runAttempt) === 1
+            && getenv('KURANEA_CI_PROJECT_NAME') === 'kuranea-ci-' . $runId . '-' . $runAttempt;
+        if (!$this->assignmentPostHandled || !$isIsolatedCiRun) {
+            return '';
+        }
+
+        $allowedOutcomes = [
+            'success', 'csrf_rejected', 'invalid_request', 'thread_not_found', 'employee_missing',
+            'employee_ineligible', 'create_permission_denied', 'update_permission_denied',
+            'assignment_rejected', 'storage_failure', 'post_commit_render_failure', 'controller_failure',
+        ];
+        $outcome = in_array($this->assignmentOutcome, $allowedOutcomes, true)
+            ? $this->assignmentOutcome
+            : 'controller_failure';
+
+        return '<span id="ordenowa-ci-support-assignment-evidence" hidden data-outcome="'
+            . $this->escape($outcome) . '"></span>';
     }
 
     private function escape(string $value): string

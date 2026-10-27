@@ -273,6 +273,32 @@ class OrderConfirmationMailContractTest(unittest.TestCase):
         self.assertIn("expected_url_candidate_present", extractor)
         self.assertIn("expected_url_candidate_exact", extractor)
 
+    def test_reset_url_encodes_only_native_path_spaces_after_validating_credentials(self):
+        module = MODULE_PATH.read_text(encoding="utf-8")
+        validator = module.split("private function validatedNativeResetUrl", 1)[1].split(
+            "private function encodeNativeResetPathSpaces", 1
+        )[0]
+        encoder = module.split("private function encodeNativeResetPathSpaces", 1)[1].split(
+            "private function extractNativeResetUrl", 1
+        )[0]
+        credential_validator = module.split("private function resetCredentialEvidence", 1)[1].split(
+            "private function resetRouteEvidence", 1
+        )[0]
+
+        self.assertLess(validator.index("$this->resetRouteEvidence($parts, $native)"),
+                        validator.index("$this->encodeNativeResetPathSpaces($candidateUrl)"))
+        self.assertLess(validator.index("$this->resetCredentialEvidence($parts)"),
+                        validator.index("$this->encodeNativeResetPathSpaces($candidateUrl)"))
+        self.assertIn("$canonicalRouteEvidence = $this->resetRouteEvidence($canonicalParts, $native)", validator)
+        self.assertIn("$canonicalCredentialEvidence = $this->resetCredentialEvidence($canonicalParts)", validator)
+        self.assertIn("str_replace(' ', '%20', (string) $parts['path'])", encoder)
+        self.assertIn("$hasForbiddenWhitespace($host) || $hasForbiddenWhitespace($query)", encoder)
+        self.assertIn("preg_match('/[\\x09-\\x0D\\x7F]|\\p{Z}/u', $value) !== 0", encoder)
+        self.assertNotIn("rawurlencode", encoder)
+        self.assertNotIn("urlencode", encoder)
+        self.assertIn("preg_match('/[\\x00-\\x20\\x7F]|\\p{Z}/u', $query[$key]) === 0", credential_validator)
+        self.assertIn("rawurldecode((string) $candidate['path'])", module)
+
     def test_mail_shop_context_reaches_both_content_and_extra_vars_before_cleanup(self):
         module = MODULE_PATH.read_text(encoding="utf-8")
 

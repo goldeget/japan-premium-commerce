@@ -38,6 +38,9 @@ SAFE_SUBSTAGES = {
     "csrf_confirmation_invalid_token_submit", "csrf_confirmation_submit",
     "csrf_confirmation_notice_wait", "csrf_confirmation_notice_assertion",
     "csrf_confirmation_unpaid_db_readback",
+    "wrong_amount_navigation", "wrong_amount_row_readback", "wrong_amount_submit",
+    "wrong_amount_notice_readback", "wrong_amount_server_csrf_readback",
+    "wrong_amount_unpaid_db_readback", "wrong_amount_notice_assertion",
     "csrf_confirmation_unpaid_helper_copy", "csrf_confirmation_unpaid_input_validation",
     "csrf_confirmation_unpaid_execution", "csrf_confirmation_unpaid_json_parse",
     "csrf_confirmation_unpaid_json_shape", "csrf_confirmation_unpaid_result_contract",
@@ -71,6 +74,10 @@ SAFE_RESULT_KEYS = {
     "issue_server_csrf_evidence_present", "issue_post_value_present", "issue_post_matches_controller",
     "issue_query_matches_controller", "issue_post_matches_query", "issue_controller_matches_admin_link",
     "issue_post_native_csrf_valid",
+    "wrong_amount_server_csrf_evidence_present", "wrong_amount_post_value_present",
+    "wrong_amount_post_matches_query", "wrong_amount_post_native_csrf_valid",
+    "wrong_amount_notice_danger", "wrong_amount_unpaid_readback",
+    "wrong_amount_notice_category",
     "issue_server_profile_evidence_present", "issue_profile_readback_succeeded", "issue_published_profile_present",
     "issue_bank_transfer_enabled", "issue_selected_active_account_present", "issue_isolated_ci_gate_enabled",
     "issue_seller_commerce_gate_enabled", "issue_effective_commerce_gate_enabled",
@@ -109,6 +116,11 @@ SAFE_ISSUE_FAILURE_CATEGORIES = {
     "wrong_payment_module", "invalid_unpaid_order", "profile_account_gate",
     "employee_missing", "issuer_validation_error", "instruction_persistence_error",
     "existing_instruction_mismatch", "unclassified_notice",
+}
+SAFE_WRONG_AMOUNT_NOTICE_CATEGORIES = {
+    "not_run", "amount_mismatch", "csrf_mismatch", "csrf_missing", "invalid_http_method",
+    "permission_denied", "attestation_required", "order_not_found", "instruction_missing",
+    "commerce_gate_closed", "unclassified_notice",
 }
 LIMITED_ACCESS_CHECK_KEYS = {
     "ci_scope_valid": "limited_staff_ci_scope_valid",
@@ -154,7 +166,7 @@ LIMITED_SESSION_ROUTE_DIAGNOSTIC_KEYS = {
 }
 RESULT_BOOLEAN_KEYS = SAFE_RESULT_KEYS - {
     "status", "stage", "exception_type", "failure_substage", "issue_persistence_diagnostic",
-    "issue_failure_category",
+    "issue_failure_category", "wrong_amount_notice_category",
 }
 CSRF_DIAGNOSTIC_BOOLEAN_KEYS = {
     "issue_post_matches_controller", "issue_query_matches_controller", "issue_controller_matches_admin_link",
@@ -741,27 +753,68 @@ def read_issue_profile_server_evidence(driver) -> dict[str, bool]:
 
 
 def read_visible_notice(driver: webdriver.Chrome):
-    return WebDriverWait(driver, 35).until(lambda browser: next((
-        notice for notice in browser.find_elements(By.CSS_SELECTOR, ".alert.alert-success, .alert.alert-danger")
-        if notice.is_displayed()
-    ), None))
+    return read_visible_notice_snapshot(driver)
 
 
 def read_visible_notice_snapshot(driver: webdriver.Chrome) -> tuple[str, str]:
     def read_snapshot(browser):
-        for notice in browser.find_elements(By.CSS_SELECTOR, ".alert.alert-success, .alert.alert-danger"):
+        visible_notices = []
+        for notice in browser.find_elements(
+            By.CSS_SELECTOR,
+            "[data-ordenowa-transfer-feedback].alert.alert-success, "
+            "[data-ordenowa-transfer-feedback].alert.alert-danger",
+        ):
             try:
                 if not notice.is_displayed():
                     continue
                 text = notice.text
                 class_name = notice.get_attribute("class") or ""
                 if notice.is_displayed():
-                    return text, class_name
+                    visible_notices.append((text, class_name))
             except StaleElementReferenceException:
                 continue
+        if len(visible_notices) == 1:
+            return visible_notices[0]
+        if len(visible_notices) > 1:
+            raise AssertionError("the transfer response exposed multiple module feedback notices")
         return False
 
     return WebDriverWait(driver, 35).until(read_snapshot)
+
+
+def confirmation_notice_category(notice_text: str) -> str:
+    normalized = " ".join(notice_text.split())
+    known_feedback = {
+        "실제 입금액이 주문 금액과 다릅니다. 부분 입금이나 초과 입금은 확인할 수 없습니다.": "amount_mismatch",
+        "관리자 보안 토큰이 현재 관리자 세션과 다릅니다. 페이지를 새로고침한 후 다시 시도해 주세요.": "csrf_mismatch",
+        "요청에 관리자 보안 토큰이 누락되었습니다. 페이지를 새로고침한 후 다시 시도해 주세요.": "csrf_missing",
+        "입금 확인 요청 방식이 올바르지 않습니다. 페이지를 새로고침한 후 다시 시도해 주세요.": "invalid_http_method",
+        "주문 입금 확인 권한이 없습니다.": "permission_denied",
+        "은행 거래내역과 주문 금액을 직접 대조하고 입금 사실을 확인해야 합니다.": "attestation_required",
+        "선택한 쇼핑몰의 주문을 찾을 수 없습니다.": "order_not_found",
+        "먼저 이 주문의 입금 안내를 발급해야 합니다.": "instruction_missing",
+        "판매자 승인과 게시된 계좌 안내를 먼저 확인해 주세요.": "commerce_gate_closed",
+    }
+    return known_feedback.get(normalized, "unclassified_notice")
+
+
+def read_confirmation_csrf_server_evidence(driver: webdriver.Chrome) -> dict[str, bool]:
+    elements = driver.find_elements(By.ID, "ordenowa-ci-transfer-csrf-evidence")
+    evidence = {
+        "wrong_amount_server_csrf_evidence_present": len(elements) == 1,
+        "wrong_amount_post_value_present": False,
+        "wrong_amount_post_matches_query": False,
+        "wrong_amount_post_native_csrf_valid": False,
+    }
+    if len(elements) != 1:
+        return evidence
+    for key, attribute in (
+        ("wrong_amount_post_value_present", "data-post-value-present"),
+        ("wrong_amount_post_matches_query", "data-post-matches-query"),
+        ("wrong_amount_post_native_csrf_valid", "data-post-native-csrf-valid"),
+    ):
+        evidence[key] = elements[0].get_attribute(attribute) == "true"
+    return evidence
 
 
 def issue_notice_failure_substage(notice_text: str, notice_class: str) -> str:
@@ -881,7 +934,7 @@ def fill_and_submit_confirmation(
     fields["submit"][0].click()
     if tamper_token and set_substage is not None:
         set_substage("csrf_confirmation_notice_wait")
-    notice = read_visible_notice_snapshot(driver) if tamper_token else read_visible_notice(driver)
+    notice = read_visible_notice_snapshot(driver)
     return notice, action, token
 
 
@@ -1019,6 +1072,7 @@ def write_result(path: Path, result: dict[str, object]) -> None:
             or result.get("failure_substage") not in SAFE_SUBSTAGES
             or result.get("issue_persistence_diagnostic") not in SAFE_ISSUE_PERSISTENCE_DIAGNOSTICS
             or result.get("issue_failure_category") not in SAFE_ISSUE_FAILURE_CATEGORIES
+            or result.get("wrong_amount_notice_category") not in SAFE_WRONG_AMOUNT_NOTICE_CATEGORIES
             or (result.get("exception_type") is not None and result.get("exception_type") not in SAFE_EXCEPTION_TYPES)
             or any(type(result.get(key)) is not bool for key in RESULT_BOOLEAN_KEYS)
             or (result.get("status") == "success" and (
@@ -1073,6 +1127,13 @@ def run() -> None:
         "issue_post_matches_controller": False, "issue_query_matches_controller": False,
         "issue_post_matches_query": False, "issue_controller_matches_admin_link": False,
         "issue_post_native_csrf_valid": False,
+        "wrong_amount_server_csrf_evidence_present": False,
+        "wrong_amount_post_value_present": False,
+        "wrong_amount_post_matches_query": False,
+        "wrong_amount_post_native_csrf_valid": False,
+        "wrong_amount_notice_danger": False,
+        "wrong_amount_unpaid_readback": False,
+        "wrong_amount_notice_category": "not_run",
         "issue_server_profile_evidence_present": False, "issue_profile_readback_succeeded": False,
         "issue_published_profile_present": False,
         "issue_bank_transfer_enabled": False, "issue_selected_active_account_present": False,
@@ -1312,17 +1373,29 @@ def run() -> None:
         substage = "none"
 
         stage = result["stage"] = "wrong_amount_rejected"
+        substage = "wrong_amount_navigation"
         visit(admin, transfer_url, str(ctx["shop"]))
+        substage = "wrong_amount_row_readback"
         row = order_row(admin, order)
         wrong_amount = str(int(amount) + 1)
-        notice, confirmation_action, confirmation_token = fill_and_submit_confirmation(
+        substage = "wrong_amount_submit"
+        notice_text, notice_class = fill_and_submit_confirmation(
             admin, row, order, wrong_amount, synthetic_statement, str(ctx["admin"])
         )
-        if ("실제 입금액이 주문 금액과 다릅니다." not in notice.text
-                or "alert-danger" not in (notice.get_attribute("class") or "")):
-            raise AssertionError("a mismatched deposit amount was not rejected by the native controller")
+        substage = "wrong_amount_notice_readback"
+        result["wrong_amount_notice_category"] = confirmation_notice_category(notice_text)
+        result["wrong_amount_notice_danger"] = "alert-danger" in notice_class.split()
+        substage = "wrong_amount_server_csrf_readback"
+        result.update(read_confirmation_csrf_server_evidence(admin))
+        substage = "wrong_amount_unpaid_db_readback"
         verify_unpaid_native_order(ctx, order, "issued")
+        result["wrong_amount_unpaid_readback"] = True
+        substage = "wrong_amount_notice_assertion"
+        if (result["wrong_amount_notice_category"] != "amount_mismatch"
+                or not result["wrong_amount_notice_danger"]):
+            raise AssertionError("a mismatched deposit amount was not rejected by the native controller")
         result["wrong_amount_rejected"] = True
+        substage = "none"
 
         stage = result["stage"] = "receipt_confirmation"
         visit(admin, transfer_url, str(ctx["shop"]))
@@ -1330,8 +1403,9 @@ def run() -> None:
         notice, confirmation_action, confirmation_token = fill_and_submit_confirmation(
             admin, row, order, str(order["amount"]), synthetic_statement, str(ctx["admin"])
         )
-        if ("격리 QA용 합성 입금 확인" not in notice.text or "주문 상태" not in notice.text
-                or "alert-success" not in (notice.get_attribute("class") or "")):
+        notice_text, notice_class = notice
+        if ("격리 QA용 합성 입금 확인" not in notice_text or "주문 상태" not in notice_text
+                or "alert-success" not in notice_class.split()):
             raise AssertionError("the synthetic receipt confirmation did not update the native order state")
         paid_order_still_listed = any(
             len(cells := row.find_elements(By.CSS_SELECTOR, "td")) >= 2
@@ -1395,6 +1469,13 @@ def run() -> None:
             f"substage={substage}; exception={result['exception_type']}; "
             f"issue_failure_category={result['issue_failure_category']}; "
             f"issue_persistence_diagnostic={result['issue_persistence_diagnostic']}; "
+            f"wrong_amount_notice_category={result['wrong_amount_notice_category']}; "
+            f"wrong_amount_server_csrf_evidence_present={str(result['wrong_amount_server_csrf_evidence_present']).lower()}; "
+            f"wrong_amount_post_value_present={str(result['wrong_amount_post_value_present']).lower()}; "
+            f"wrong_amount_post_matches_query={str(result['wrong_amount_post_matches_query']).lower()}; "
+            f"wrong_amount_post_native_csrf_valid={str(result['wrong_amount_post_native_csrf_valid']).lower()}; "
+            f"wrong_amount_notice_danger={str(result['wrong_amount_notice_danger']).lower()}; "
+            f"wrong_amount_unpaid_readback={str(result['wrong_amount_unpaid_readback']).lower()}; "
             f"issue_form_csrf_consistent={str(result['issue_form_csrf_consistent']).lower()}; "
             f"issue_server_csrf_evidence_present={str(result['issue_server_csrf_evidence_present']).lower()}; "
             f"issue_post_value_present={str(result['issue_post_value_present']).lower()}; "

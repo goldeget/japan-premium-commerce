@@ -85,6 +85,7 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             "failure_substage": "none",
             "issue_persistence_diagnostic": "unpaid_instruction_persisted",
             "issue_failure_category": "not_run",
+            "wrong_amount_notice_category": "not_run",
             "issue_seller_commerce_gate_enabled": False,
         })
         result["limited_session_route_path_index_php"] = False
@@ -484,7 +485,8 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             "def reject_issue_with_invalid_csrf", 1
         )[0]
         self.require("WebDriverWait(driver, 35).until(read_snapshot)", snapshot)
-        self.require("browser.find_elements(By.CSS_SELECTOR, \".alert.alert-success, .alert.alert-danger\")", snapshot)
+        self.require("[data-ordenowa-transfer-feedback].alert.alert-success", snapshot)
+        self.require("[data-ordenowa-transfer-feedback].alert.alert-danger", snapshot)
         self.require("except StaleElementReferenceException:", snapshot)
         self.require("text = notice.text", snapshot)
         self.require('class_name = notice.get_attribute("class") or ""', snapshot)
@@ -543,7 +545,7 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
         )
         helper_positions = [helper.index(marker) for marker in helper_markers]
         self.assertEqual(helper_positions, sorted(helper_positions))
-        self.require("notice = read_visible_notice_snapshot(driver) if tamper_token else read_visible_notice(driver)", helper)
+        self.require("notice = read_visible_notice_snapshot(driver)", helper)
         self.assertEqual(1, helper.count('fields["submit"][0].click()'))
         self.assertEqual(1, helper.count("read_visible_notice_snapshot(driver)"))
         self.assertLess(helper.index('fields["submit"][0].click()'), helper.index("read_visible_notice_snapshot(driver)"))
@@ -573,6 +575,30 @@ class CiBankTransferBrowserContractTests(unittest.TestCase):
             if marker.startswith('set_substage')
         }
         self.assertTrue(expected <= safe_substages)
+
+    def test_wrong_amount_response_is_scoped_classified_and_read_back_before_assertion(self) -> None:
+        flow = self.browser.split('stage = result["stage"] = "wrong_amount_rejected"', 1)[1].split(
+            'stage = result["stage"] = "receipt_confirmation"', 1
+        )[0]
+        markers = (
+            'substage = "wrong_amount_navigation"',
+            'substage = "wrong_amount_row_readback"',
+            'substage = "wrong_amount_submit"',
+            'substage = "wrong_amount_notice_readback"',
+            'result["wrong_amount_notice_category"] = confirmation_notice_category(notice_text)',
+            'substage = "wrong_amount_server_csrf_readback"',
+            'result.update(read_confirmation_csrf_server_evidence(admin))',
+            'substage = "wrong_amount_unpaid_db_readback"',
+            'verify_unpaid_native_order(ctx, order, "issued")',
+            'result["wrong_amount_unpaid_readback"] = True',
+            'substage = "wrong_amount_notice_assertion"',
+            'result["wrong_amount_notice_category"] != "amount_mismatch"',
+        )
+        positions = [flow.index(marker) for marker in markers]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn('"wrong_amount_post_native_csrf_valid"', self.browser)
+        self.assertIn('data-ordenowa-transfer-feedback="true"', self.controller)
+        self.assertIn('"amount_mismatch"', self.browser)
 
     def test_issue_csrf_failure_distinguishes_wrong_method_from_token_mismatch(self) -> None:
         init_content = self.controller.split("public function initContent()", 1)[1].split(

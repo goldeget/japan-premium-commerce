@@ -122,6 +122,12 @@ def search(driver, query: str, mobile: bool, result: dict) -> None:
     diagnostics["form_action_native_search"] = is_native_search_route(action, controller_values)
     result["substage"] = "search_form_route"
     assert_true(diagnostics["form_action_native_search"], "Search form does not target the native search route")
+    result["substage"] = "search_form_submit_control"
+    submit_controls = form.find_elements(By.CSS_SELECTOR, 'button[type="submit"].ps-searchbar__submit[aria-label]')
+    diagnostics["submit_control_available"] = (
+        len(submit_controls) == 1 and submit_controls[0].is_displayed() and submit_controls[0].is_enabled()
+    )
+    assert_true(diagnostics["submit_control_available"], "Search form has no one enabled, labeled native submit control")
     old_document = driver.find_element(By.TAG_NAME, 'html')
     field.clear()
     field.send_keys(query)
@@ -180,7 +186,8 @@ def run_viewport(label: str, width: int, height: int, run_id: str, attempt: str)
               'diagnostics': {
                   'search_toggle_visible': False, 'search_field_visible': False,
                   'form_method_get': False, 'form_action_same_origin': False,
-                  'form_action_native_search': False, 'document_changed': False,
+                  'form_action_native_search': False, 'submit_control_available': False,
+                  'document_changed': False,
                   'response_status': None, 'search_document': False,
                   'query_readback_matches': False, 'input_readback_matches': False,
               }}
@@ -216,7 +223,8 @@ def run_viewport(label: str, width: int, height: int, run_id: str, attempt: str)
             result['diagnostics'].update(
                 search_toggle_visible=False, search_field_visible=False,
                 form_method_get=False, form_action_same_origin=False,
-                form_action_native_search=False, document_changed=False,
+                form_action_native_search=False, submit_control_available=False,
+                document_changed=False,
                 response_status=None, search_document=False,
                 query_readback_matches=False, input_readback_matches=False,
             )

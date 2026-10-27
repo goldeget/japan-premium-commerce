@@ -849,7 +849,8 @@ class Kuraneabusinessprofile extends Module
             'password', null, $idLang > 0 ? $idLang : null, null, false, ($shopId ?? 0) > 0 ? $shopId : null
         );
         $native = parse_url($nativeUrl);
-        $parts = parse_url(trim($candidate));
+        $candidateUrl = trim($candidate);
+        $parts = parse_url($candidateUrl);
         $routeEvidence = $this->resetRouteEvidence($parts, $native);
         $evidence['scheme_host_port_match'] = $routeEvidence['scheme_host_port_match'];
         $evidence['path_match'] = $routeEvidence['path_match'];
@@ -862,7 +863,69 @@ class Kuraneabusinessprofile extends Module
             return null;
         }
 
-        return trim($candidate);
+        // PrestaShop's KO translation currently stores the password-recovery
+        // slug with a literal space ("비밀번호 복구"). Keep that native route
+        // and its credentials, but encode the path space so mail clients and
+        // text tokenizers preserve one valid URL. Never rewrite host or query.
+        $canonicalUrl = $this->encodeNativeResetPathSpaces($candidateUrl);
+        if ($canonicalUrl === null) {
+            return null;
+        }
+        $canonicalParts = parse_url($canonicalUrl);
+        $canonicalRouteEvidence = $this->resetRouteEvidence($canonicalParts, $native);
+        $canonicalCredentialEvidence = $this->resetCredentialEvidence($canonicalParts);
+        if (!$canonicalRouteEvidence['native_route'] || !$canonicalCredentialEvidence['credentials_complete']) {
+            return null;
+        }
+
+        $evidence['scheme_host_port_match'] = $canonicalRouteEvidence['scheme_host_port_match'];
+        $evidence['path_match'] = $canonicalRouteEvidence['path_match'];
+        $evidence['native_route'] = $canonicalRouteEvidence['native_route'];
+
+        return $canonicalUrl;
+    }
+
+    private function encodeNativeResetPathSpaces(string $url): ?string
+    {
+        $parts = parse_url($url);
+        if (!is_array($parts) || !isset($parts['scheme'], $parts['host'], $parts['path'])
+            || isset($parts['user']) || isset($parts['pass']) || isset($parts['fragment'])) {
+            return null;
+        }
+        $hasForbiddenWhitespace = static function (string $value): bool {
+            // Treat malformed UTF-8 as forbidden too; PCRE returns false for it.
+            return preg_match('/[\x09-\x0D\x7F]|\p{Z}/u', $value) !== 0;
+        };
+        $host = (string) $parts['host'];
+        $query = (string) ($parts['query'] ?? '');
+        if ($hasForbiddenWhitespace($host) || $hasForbiddenWhitespace($query)) {
+            return null;
+        }
+
+        $path = str_replace(' ', '%20', (string) $parts['path']);
+        if ($hasForbiddenWhitespace($path)) {
+            return null;
+        }
+
+        if ($path === (string) $parts['path']) {
+            return $url;
+        }
+
+        // parse_url() returns IPv6 hosts in brackets on supported PHP versions;
+        // preserve or restore them when rebuilding the validated origin.
+        if (str_contains($host, ':') && !str_starts_with($host, '[')) {
+            $host = '[' . $host . ']';
+        }
+        $canonical = (string) $parts['scheme'] . '://' . $host;
+        if (isset($parts['port'])) {
+            $canonical .= ':' . (int) $parts['port'];
+        }
+        $canonical .= $path;
+        if (array_key_exists('query', $parts)) {
+            $canonical .= '?' . $query;
+        }
+
+        return $canonical;
     }
 
     private function extractNativeResetUrl(
@@ -989,7 +1052,8 @@ class Kuraneabusinessprofile extends Module
         ] as $key => $resultKey) {
             $result[$resultKey] = $credentialCounts[$key] === 1
                 && is_string($query[$key] ?? null)
-                && trim($query[$key]) !== '';
+                && trim($query[$key]) !== ''
+                && preg_match('/[\x00-\x20\x7F]|\p{Z}/u', $query[$key]) === 0;
         }
         $result['credentials_complete'] = $result['token_present']
             && $result['reset_token_present']

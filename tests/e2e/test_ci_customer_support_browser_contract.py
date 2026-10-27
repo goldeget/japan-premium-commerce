@@ -448,6 +448,9 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             "latest support assignment history did not retain prior, new, and acting employees",
             'mark_browser_substage(diagnostic_result, f"assignment_{operation}_feedback_readback")',
             'lambda browser: support_assignment_feedback_state(browser) or False',
+            'ordenowa-ci-support-assignment-evidence',
+            'data-ordenowa-support-assignment-feedback',
+            'post_commit_render_failure',
             'diagnostic_result[outcome_key] = "timeout"',
             'outcome = feedback_state if feedback_state is not None else "click_timeout"',
             "support_assignment_feedback_state",
@@ -457,7 +460,7 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
 
     def test_support_assignment_feedback_is_classified_without_message_content(self):
         module = load_script()
-        module.By = SimpleNamespace(CSS_SELECTOR="css selector")
+        module.By = SimpleNamespace(CSS_SELECTOR="css selector", ID="id")
 
         class Alert:
             def __init__(self, visible: bool = True) -> None:
@@ -470,14 +473,24 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             def text(self) -> str:
                 return "private controller feedback must never be emitted"
 
+        class Evidence:
+            def __init__(self, outcome: str) -> None:
+                self.outcome = outcome
+
+            def get_attribute(self, name: str):
+                return self.outcome if name == "data-outcome" else None
+
         class Driver:
-            def __init__(self, successes=(), rejections=()) -> None:
+            def __init__(self, successes=(), rejections=(), evidence=()) -> None:
                 self.by_selector = {
-                    ".alert.alert-success": list(successes),
-                    ".alert.alert-danger": list(rejections),
+                    "[data-ordenowa-support-assignment-feedback].alert.alert-success": list(successes),
+                    "[data-ordenowa-support-assignment-feedback].alert.alert-danger": list(rejections),
                 }
+                self.evidence = list(evidence)
 
             def find_elements(self, _by: str, selector: str):
+                if selector == "ordenowa-ci-support-assignment-evidence":
+                    return self.evidence
                 return self.by_selector[selector]
 
         for driver, expected in (
@@ -485,6 +498,8 @@ class CustomerSupportBrowserContractTests(unittest.TestCase):
             (Driver(successes=[Alert(), Alert()]), "success"),
             (Driver(rejections=[Alert()]), "rejected"),
             (Driver(successes=[Alert()], rejections=[Alert()]), "ambiguous"),
+            (Driver(evidence=[Evidence("update_permission_denied")]), "update_permission_denied"),
+            (Driver(evidence=[Evidence("success"), Evidence("success")]), "ambiguous"),
             (Driver(successes=[Alert(False)]), None),
         ):
             with self.subTest(outcome=expected):
