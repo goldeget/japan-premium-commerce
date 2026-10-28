@@ -7,9 +7,10 @@ declare(strict_types=1);
 // No existing shop database or volume is opened.
 define('_DB_PREFIX_', 'native_test_');
 define('_PS_VERSION_', '9.2.0');
+require_once dirname(__DIR__) . '/admin_audit/native_post_token_fixture.php';
 $nativeImageDirectory = sys_get_temp_dir() . '/ordenowa-native-images-' . bin2hex(random_bytes(6));
 mkdir($nativeImageDirectory, 0700, true);
-define('_PS_PROD_IMG_DIR_', $nativeImageDirectory . '/');
+define('_PS_PRODUCT_IMG_DIR_', $nativeImageDirectory . '/');
 foreach ([501,502,701,702,703,704,705] as $imageId) {
     $imageFolder = $nativeImageDirectory . '/' . implode('/', str_split((string) $imageId));
     mkdir($imageFolder, 0700, true);
@@ -32,7 +33,7 @@ class Module
     public function isRegisteredInHook(string $hook): bool { return in_array($hook, $this->hooks, true); }
     public function registerHook(string $hook): bool { $this->hooks[] = $hook; return true; }
 }
-class ModuleAdminController { public function __construct() {} }
+class ModuleAdminController { public function __construct() {} public function getContainer(): object { $tab=$this->procurementTab; return nativePostTokenFixtureContainer(static fn(string $value):bool=>in_array($value,[Tools::getAdminTokenLite($tab),'native-valid-previous-mask'],true)); } }
 #[AllowDynamicProperties]
 class Tab
 {
@@ -229,6 +230,8 @@ $_POST['procurement_action'] = 'assign';
 nativeDenied(fn () => $admin->action(Runtime::employeeActor()), 403);
 $_POST['procurement_action'] = 'award';
 $_POST['amount'] = '1.2';
+nativeDenied(fn () => $admin->action(Runtime::employeeActor()), 422);
+$_POST['token'] = 'native-valid-previous-mask';
 nativeDenied(fn () => $admin->action(Runtime::employeeActor()), 422);
 nativeAssert(Db::getInstance()->writes === [], 'Denied native form actions must never reach domain writes.');
 

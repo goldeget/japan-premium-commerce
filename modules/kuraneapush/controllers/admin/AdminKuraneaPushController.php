@@ -26,8 +26,10 @@ class AdminKuraneaPushController extends ModuleAdminController
     {
         header('Cache-Control: private, no-store, max-age=0', true);
         header('X-Robots-Tag: noindex, nofollow', true);
+        require_once dirname(__DIR__, 3) . '/kuraneabackoffice/vendor/autoload.php';
         if (!$this->viewAccess() || empty($this->tabAccess['view'])) {
             http_response_code(403);
+            \Kuranea\Backoffice\Admin\AdminResponseSubscriber::mark($this, 403);
             $this->content = '<div class="alert alert-danger">알림 설정을 조회할 권한이 없습니다.</div>';
             $this->context->smarty->assign('content', $this->content);
             return;
@@ -43,8 +45,9 @@ class AdminKuraneaPushController extends ModuleAdminController
         $token = (string) Tools::getAdminTokenLite('AdminKuraneaPush');
         if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['submitOrdenowaPush'])) {
             $submitted = $_POST['token'] ?? null;
-            if (!$canEdit || !is_string($submitted) || !hash_equals($token, $submitted)) {
+            if (!$canEdit || !\Kuranea\Backoffice\Admin\AdminPostTokenValidator::forController($this, $submitted)) {
                 http_response_code(403);
+                \Kuranea\Backoffice\Admin\AdminResponseSubscriber::mark($this,403);
                 $this->content .= '<div class="alert alert-danger">설정을 변경할 권한이 없거나 요청이 유효하지 않습니다.</div>';
             } else {
                 $this->save($shop);

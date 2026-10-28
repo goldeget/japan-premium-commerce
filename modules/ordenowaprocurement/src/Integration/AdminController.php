@@ -46,8 +46,10 @@ abstract class AdminController extends \ModuleAdminController
             $this->content .= $this->renderPage($actor) . '</div>';
         } catch (\Throwable $error) {
             $code = (int) $error->getCode();
-            http_response_code(in_array($code, [403, 404, 409, 422, 503], true) ? $code : 422);
             parent::initContent();
+            http_response_code(in_array($code, [403, 404, 409, 422, 503], true) ? $code : 422);
+            require_once dirname(__DIR__, 3) . '/kuraneabackoffice/vendor/autoload.php';
+            \Kuranea\Backoffice\Admin\AdminResponseSubscriber::mark($this, in_array($code,[403,404,409,422,503],true) ? $code : 422);
             $this->content .= '<div class="alert alert-danger" role="alert">'
                 . self::escape($this->safeError($error)) . '</div>';
         }
@@ -66,7 +68,8 @@ abstract class AdminController extends \ModuleAdminController
             return;
         }
         $token = $this->input('token');
-        if ($token === '' || !hash_equals((string) \Tools::getAdminTokenLite($this->procurementTab), $token)) {
+        require_once dirname(__DIR__, 3) . '/kuraneabackoffice/vendor/autoload.php';
+        if (!\Kuranea\Backoffice\Admin\AdminPostTokenValidator::forController($this, $token)) {
             throw new \RuntimeException('보안 토큰이 유효하지 않습니다. 화면을 새로 열어 주세요.', 403);
         }
         $actions = [

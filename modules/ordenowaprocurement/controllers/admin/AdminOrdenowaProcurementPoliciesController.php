@@ -14,8 +14,9 @@ class AdminOrdenowaProcurementPoliciesController extends \Ordenowa\Procurement\I
     {
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST' || !isset($_POST['save_policy'])) return;
         $token = $_POST['token'] ?? null;
+        require_once dirname(__DIR__, 3) . '/kuraneabackoffice/vendor/autoload.php';
         if (!Runtime::nativePermission($this->procurementTab, 'EDIT') || !is_string($token)
-            || !hash_equals((string) Tools::getAdminTokenLite($this->procurementTab), $token)) throw new RuntimeException('정책 수정 권한 또는 보안 토큰을 확인해 주세요.', 403);
+            || !\Kuranea\Backoffice\Admin\AdminPostTokenValidator::forController($this, $token)) throw new RuntimeException('정책 수정 권한 또는 보안 토큰을 확인해 주세요.', 403);
         $actor->require('policy.manage');
         $version = $_POST['version'] ?? '';
         if (!is_string($version) || preg_match('/\A(?:0|[1-9][0-9]*)\z/D', $version) !== 1 || filter_var($version, FILTER_VALIDATE_INT) === false) throw new InvalidArgumentException('정책 버전을 확인해 주세요.', 422);

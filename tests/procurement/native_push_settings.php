@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+require_once dirname(__DIR__) . '/admin_audit/native_post_token_fixture.php';
 require dirname(__DIR__, 2) . '/modules/kuraneapush/autoload.php';
 $vendor = dirname(__DIR__, 2) . '/modules/kuraneapush/vendor/autoload.php';
 if (is_file($vendor)) require_once $vendor;
@@ -26,6 +27,7 @@ class Tools { public static function getAdminTokenLite(string $tab): string { re
 #[AllowDynamicProperties]
 class ModuleAdminController
 {
+    public static ?object $responseRequest = null;
     public object $context;
     public string $content = '';
     public array $tabAccess = ['view' => 1, 'edit' => 1];
@@ -33,6 +35,21 @@ class ModuleAdminController
     public function viewAccess(): bool { return (bool) $this->tabAccess['view']; }
     public function access(string $action): bool { return (bool) ($this->tabAccess[$action] ?? false); }
     public function initContent(): void {}
+    public function getContainer(): object
+    {
+        $native = nativePostTokenFixtureContainer(static fn(string $value):bool=>in_array($value,[Tools::getAdminTokenLite('AdminKuraneaPush'),'native-valid-prior-mask'],true));
+        return new class($native, self::$responseRequest) {
+            public function __construct(private object $native, private ?object $request) {}
+            public function get(string $name): object
+            {
+                if ($name === 'request_stack') return new class($this->request) {
+                    public function __construct(private ?object $request) {}
+                    public function getMainRequest(): ?object { return $this->request; }
+                };
+                return $this->native->get($name);
+            }
+        };
+    }
 }
 require dirname(__DIR__, 2) . '/modules/kuraneapush/controllers/admin/AdminKuraneaPushController.php';
 
@@ -45,6 +62,16 @@ pushNativeAssert(!LiveSubscriptionReadiness::isHttpsOrigin('https://other.exampl
 pushNativeAssert(!LiveSubscriptionReadiness::isHttpsOrigin('https://shop.example.test/', ['HTTPS' => 'off','SERVER_PORT' => '80','HTTP_HOST' => 'shop.example.test','HTTP_X_FORWARDED_PROTO' => 'https']), 'Client forwarded-proto cannot activate subscriptions.');
 pushNativeAssert(!LiveSubscriptionReadiness::isHttpsOrigin('https://shop.example.test/', ['HTTPS' => 'on','HTTP_HOST' => 'shop.example.test@attacker.test']), 'Host userinfo cannot masquerade as canonical origin.');
 Context::$context = (object) ['shop' => (object) ['id' => 1], 'link' => new PushTestLink(), 'smarty' => new class { public function assign(mixed $key, mixed $value = null): void {} }];
+ModuleAdminController::$responseRequest = (object) ['attributes' => new class {
+    public array $values = [];
+    public function set(string $key, mixed $value): void { $this->values[$key] = $value; }
+}];
+$deniedView = new AdminKuraneaPushController();
+$deniedView->tabAccess['view'] = 0;
+$deniedView->initContent();
+pushNativeAssert((ModuleAdminController::$responseRequest->attributes->values[\Kuranea\Backoffice\Admin\AdminResponseSubscriber::STATUS_ATTRIBUTE] ?? null) === 403
+    && Configuration::$writes === [] && !str_contains($deniedView->content, 'data-testid="push-settings"'), 'READ denial marks the native Symfony response403 without settings disclosure or writes.');
+ModuleAdminController::$responseRequest = null;
 $_SERVER = $server + ['REQUEST_METHOD' => 'POST'];
 Configuration::$values[1]['PS_SSL_ENABLED'] = 1;
 putenv('ORDENOWA_APP_MODE=procurement');
@@ -79,6 +106,7 @@ $_POST['ORDENOWA_PUSH_CONSENT_NOTICE_JA'] = '';
 (new AdminKuraneaPushController())->initContent();
 pushNativeAssert(Configuration::$writes === [], 'Blank real consent copy cannot enable live Push.');
 $_POST['ORDENOWA_PUSH_CONSENT_NOTICE_JA'] = 'SYNTHETIC TEST consent JA';
+$_POST['token'] = 'native-valid-prior-mask';
 $editor = new AdminKuraneaPushController(); $editor->initContent();
 pushNativeAssert(count(Configuration::$writes) === 10, 'Authorized native secure form persists all supported settings.');
 pushNativeAssert(!str_contains($editor->content, $keys['privateKey']) && !str_contains($editor->content, $keys['publicKey']), 'Admin UI exposes only environment references, never key values.');

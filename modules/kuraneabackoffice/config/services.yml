@@ -8,3 +8,16 @@ services:
       $activeModules: '%prestashop.active_modules%'
     tags:
       - { name: kernel.event_subscriber }
+
+  Kuranea\Backoffice\Admin\AdminPostTokenValidator:
+    public: true
+    arguments:
+      $tokens: '@Symfony\Component\Security\Csrf\CsrfTokenManagerInterface'
+      $security: '@security.helper'
+
+  Kuranea\Backoffice\Admin\AdminResponseSubscriber:
+    arguments:
+      $tokens: '@Kuranea\Backoffice\Admin\AdminPostTokenValidator'
+      $activeModules: '%prestashop.active_modules%'
+    tags:
+      - { name: kernel.event_subscriber }

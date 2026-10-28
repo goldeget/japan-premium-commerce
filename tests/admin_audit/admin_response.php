@@ -1,0 +1,19 @@
+<?php
+
+declare(strict_types=1);
+require __DIR__ . '/native_post_token_fixture.php';
+use Kuranea\Backoffice\Admin\{AdminPostTokenValidator,AdminResponseSubscriber};
+use Symfony\Component\HttpKernel\Event\ResponseEvent;
+class AdminResponseBag { public function __construct(public array $values=[]){}public function get(string $key,mixed $default=null):mixed{return $this->values[$key]??$default;}public function set(string $key,mixed $value):void{$this->values[$key]=$value;}public function has(string $key):bool{return array_key_exists($key,$this->values);} }
+class AdminResponseRequest {public AdminResponseBag $attributes;public AdminResponseBag $query;public AdminResponseBag $request;public function __construct(public string $method='POST',string $name='AdminOrdenowaProcurementPolicies',mixed $token='prior-mask'){$this->attributes=new AdminResponseBag(['_legacy_controller_name'=>$name,'_route'=>'admin_legacy_controller']);$this->query=new AdminResponseBag(['controller'=>$name,'token'=>'prior-mask']);$this->request=new AdminResponseBag(['token'=>$token]);}public function isMethod(string $method):bool{return $method===$this->method;} }
+class AdminResponseReply {public AdminResponseBag $headers;public function __construct(public int $status=200){$this->headers=new AdminResponseBag();}public function setStatusCode(int $status):void{$this->status=$status;} }
+function adminResponseAssert(bool $ok,string $label):void{if(!$ok)throw new RuntimeException($label);}
+$tokens=nativePostTokenFixtureContainer(static fn(string $token):bool=>$token==='prior-mask')->get(AdminPostTokenValidator::class);
+$subscriber=new AdminResponseSubscriber($tokens,['kuraneabackoffice']);
+foreach([403,404,409,422,503]as$status){$request=new AdminResponseRequest();$request->attributes->set(AdminResponseSubscriber::STATUS_ATTRIBUTE,$status);$reply=new AdminResponseReply(200);$subscriber->onResponse(new ResponseEvent($request,$reply));adminResponseAssert($reply->status===$status,'Explicit owned legacy errors survive Symfony Response200 wrapping.');adminResponseAssert($reply->headers->get('Cache-Control')==='private, no-store, max-age=0'&&$reply->headers->get('X-Robots-Tag')==='noindex, nofollow','Owned native errors stay private/no-store/noindex.');}
+foreach(['forged',[],null,'']as$bad){$request=new AdminResponseRequest('POST','AdminOrdenowaProcurementPolicies',$bad);$reply=new AdminResponseReply();$subscriber->onResponse(new ResponseEvent($request,$reply));adminResponseAssert($reply->status===403,'Native invalid-token page200 becomes403 even when a valid URL token exists.');}
+$request=new AdminResponseRequest('GET');$request->query->set('token','forged');$reply=new AdminResponseReply();$subscriber->onResponse(new ResponseEvent($request,$reply));adminResponseAssert($reply->status===403,'Native GET invalid-token200 is normalized only for owned controllers.');
+$request=new AdminResponseRequest('POST','AdminAccess','forged');$reply=new AdminResponseReply();$subscriber->onResponse(new ResponseEvent($request,$reply));adminResponseAssert($reply->status===200&&$reply->headers->values===[],'Other native controllers are not intercepted.');
+$request=new AdminResponseRequest();$reply=new AdminResponseReply(302);$subscriber->onResponse(new ResponseEvent($request,$reply));adminResponseAssert($reply->status===302,'Valid owned redirects retain native redirect status.');
+$request=new AdminResponseRequest();$request->attributes->set(AdminResponseSubscriber::STATUS_ATTRIBUTE,503);$reply=new AdminResponseReply();$subscriber->onResponse(new ResponseEvent($request,$reply,false));adminResponseAssert($reply->status===200&&$reply->headers->values===[],'Subrequests remain untouched.');
+echo "admin_response: PASS legacy Response200 status bridge, strict body failures, privacy, owned scope and redirect/subrequest preservation\n";

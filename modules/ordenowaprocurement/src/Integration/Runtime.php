@@ -270,8 +270,8 @@ final class Runtime
     /** Existing native public derivatives only; no remote fetch or new publication. */
     private static function nativeImagePath(int $image): string
     {
-        if ($image < 1 || !defined('_PS_PROD_IMG_DIR_')) return '';
-        $base = realpath((string) _PS_PROD_IMG_DIR_);
+        if ($image < 1 || !defined('_PS_PRODUCT_IMG_DIR_')) return '';
+        $base = realpath((string) _PS_PRODUCT_IMG_DIR_);
         if ($base === false) return '';
         $folder = implode('/', str_split((string) $image)) . '/';
         foreach (['-large_default', '-home_default', '-medium_default', ''] as $type) {
