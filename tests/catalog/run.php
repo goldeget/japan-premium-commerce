@@ -103,9 +103,9 @@ assertCatalogThrows(
 );
 // Keep the historical unequal-range fixture as a rejection case. A separate
 // observed equal-bound document supplies an unambiguous price for identity tests.
-$exactRakutenFixture = static fn (string $name): string => str_replace('"highPrice": "2980"', '"highPrice": "2480"', fixture($name));
+$exactRakutenFixture = static fn (string $html): string => str_replace('"highPrice": "2980"', '"highPrice": "2480"', $html);
 $rakuten = $rakutenParser->parse(
-    $exactRakutenFixture('rakuten-product.synthetic.html'),
+    $exactRakutenFixture(fixture('rakuten-product.synthetic.html')),
     'https://item.rakuten.co.jp/fixture-shop/synthetic-case-b/',
     $fetchedAt
 );
@@ -118,7 +118,7 @@ assertCatalogSame([], $rakuten->reviews, 'Missing provider reviews should remain
 
 // Merchant identifiers must not replace the URL identity used by batch imports.
 $rakutenMerchantIdentifiers = (new RakutenHtmlParser())->parse(
-    $exactRakutenFixture('rakuten-merchant-identifiers.synthetic.html'),
+    $exactRakutenFixture(fixture('rakuten-merchant-identifiers.synthetic.html')),
     'https://item.rakuten.co.jp/fixture-shop/synthetic-case-b/',
     $fetchedAt
 );
@@ -126,7 +126,7 @@ assertCatalogSame('fixture-shop:synthetic-case-b', $rakutenMerchantIdentifiers->
 assertCatalogSame('rakuten_ichiba:fixture-shop:synthetic-case-b', $rakutenMerchantIdentifiers->deduplicationKey, 'Merchant identifiers must not change the Rakuten deduplication key.');
 assertCatalogSame($rakuten->toArray(), $rakutenMerchantIdentifiers->toArray(), 'Changing merchant identifiers alone must preserve the normalized source metadata and content fingerprint.');
 $rakutenSkuOnly = (new RakutenHtmlParser())->parse(
-    str_replace('"productID": "SYNTHETIC-MERCHANT-PRODUCT-ID",', '', $exactRakutenFixture('rakuten-merchant-identifiers.synthetic.html')),
+    str_replace('"productID": "SYNTHETIC-MERCHANT-PRODUCT-ID",', '', $exactRakutenFixture(fixture('rakuten-merchant-identifiers.synthetic.html'))),
     'https://item.rakuten.co.jp/fixture-shop/synthetic-case-b/',
     $fetchedAt
 );
