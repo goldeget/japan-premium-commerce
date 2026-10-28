@@ -44,3 +44,14 @@ The audit stores actor/profile/role identifiers, actual previous and new grants,
 `AdminResponseSubscriber` applies only to the procurement module's five admin controllers and Push settings on native admin routes. It carries explicit 403/404/409/422/503 status metadata through PrestaShop 9's legacy-to-Symfony Response wrapper and applies private/no-store/noindex headers, including invalid-token responses. Other native controllers and subrequests retain their behavior. Recompile the native Symfony admin container after deploying `config/services.yml` changes.
 
 Focused checks are `tests/admin_audit/native_acl_atomic.php`, `admin_post_token.php` and `admin_response.php`; `tests/procurement/acl_browser.py` additionally exercises the actual official native hook against a dedicated employee-free profile in the exact disposable CI project. It grants one known native READ role and revokes it through native AJAX, then checks fresh audit readback and unchanged unrelated profiles. These tests do not authorize changes to an existing shop database.
+# Native Twig cache warmup
+
+The module decorates `twig.template_iterator` with Symfony's documented `*.twig`
+filename boundary for eager compilation. PrestaShop registers the entire modules
+directory as the `Modules` Twig namespace; without this boundary its optional
+warmer also compiles PHP libraries and PHAR archives as Twig templates. Runtime
+Twig loader paths and rendering remain unchanged. Nonstandard template names can
+still render lazily; real `.twig` templates continue to warm, and enumeration
+errors remain visible.
+
+Focused verification: `php tests/admin_locale/twig_warmup_templates.php`.

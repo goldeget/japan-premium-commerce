@@ -1,4 +1,9 @@
 services:
+  Kuranea\Backoffice\Cache\TwigWarmupTemplates:
+    decorates: twig.template_iterator
+    arguments:
+      $templates: '@Kuranea\Backoffice\Cache\TwigWarmupTemplates.inner'
+
   Kuranea\Backoffice\AdminLocaleSubscriber:
     autowire: true
     arguments:
