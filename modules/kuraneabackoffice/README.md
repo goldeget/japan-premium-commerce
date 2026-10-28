@@ -13,7 +13,11 @@ New empty Compose installations bundle and install this module during the first 
 - `AdminActions.ko-KR.xlf` supplies the missing `Back to` value for the normalized `Admin.Actions` domain.
 - `messages.ko-KR.xlf` supplies initial psgdpr admin wording that the legacy module translator falls back to the Symfony `messages` domain for. Add further audited source strings to this file as coverage work continues.
 
-No translation rows are written to the database, and no files are copied into `modules/psgdpr`.
+No translation catalogue overrides are written to the native translation table, and no files are copied into `modules/psgdpr`.
+
+Upgrade `1.0.7`, first install, and the idempotent project bootstrap call `installKoreanAdminTabLabels()` to repair the Korean names of five explicitly identified native tabs (Community, Wall of Fame, Extra Properties, and Security parent/page). Native navigation prints persisted `tab_lang.name`, so loading XLIFF alone cannot repair these installer fallbacks. The helper accepts only the expected native controller/module owner and replaces an exact English fallback or empty Korean name; it fills a missing Korean row. Custom names, other locales, tab IDs/wording, ACL and business data remain intact. It never runs from administrator GET requests. Module-category labels use the native `Admin.Modules.Feature` domain.
+
+`tests/admin_locale/korean_tab_labels.php` exercises the repair against dedicated test-DB tables, including repeated calls, custom/case-sensitive names, other languages, wrong module owners, missing rows and unchanged ACL/metadata. Actual browser inventory remains a separate acceptance step.
 
 ## Synthetic checks
 

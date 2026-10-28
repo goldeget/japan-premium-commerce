@@ -68,8 +68,8 @@ if (!$businessProfileModule || !$businessProfileModule->ensureBankTransferInfras
 
 // The official installer may pre-register a bundled module before project hooks are added.
 $backofficeModule = Module::getInstanceByName('kuraneabackoffice');
-if (!$backofficeModule || !$backofficeModule->installSupportContactPrivacy() || !$backofficeModule->installNativeAclAudit()) {
-    throw new RuntimeException('Could not ensure the account-owned contact privacy hook.');
+if (!$backofficeModule || !$backofficeModule->installSupportContactPrivacy() || !$backofficeModule->installNativeAclAudit() || !$backofficeModule->installKoreanAdminTabLabels()) {
+    throw new RuntimeException('Could not ensure native administrator audit, Korean menu metadata, and account-owned contact privacy infrastructure.');
 }
 
 $pushModule = Module::getInstanceByName('kuraneapush');

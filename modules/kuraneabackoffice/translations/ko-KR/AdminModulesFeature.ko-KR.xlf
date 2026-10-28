@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="Admin.Modules.Feature.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="kuranea-module-category-administration" approved="yes">
+        <source>Administration</source>
+        <target state="final">관리</target>
+      </trans-unit>
+      <trans-unit id="kuranea-module-category-other" approved="yes">
+        <source>Other</source>
+        <target state="final">기타</target>
+      </trans-unit>
+      <trans-unit id="kuranea-module-category-payment" approved="yes">
+        <source>Payment</source>
+        <target state="final">결제</target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

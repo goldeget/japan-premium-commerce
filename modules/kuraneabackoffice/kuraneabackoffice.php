@@ -12,7 +12,7 @@ class Kuraneabackoffice extends Module
     {
         $this->name = 'kuraneabackoffice';
         $this->tab = 'administration';
-        $this->version = '1.0.6';
+        $this->version = '1.0.7';
         $this->author = 'ORDENOWA';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -30,7 +30,17 @@ class Kuraneabackoffice extends Module
             'displayAdminLogin',
             'displayAdminEndContent',
             'actionAdminControllerSetMedia',
-        ]) && $this->installSupportAssignments() && $this->installEmployeeProfileAudit() && $this->installSupportContactPrivacy();
+        ]) && $this->installSupportAssignments() && $this->installEmployeeProfileAudit() && $this->installSupportContactPrivacy() && $this->installKoreanAdminTabLabels();
+    }
+
+    /** Only installer/upgrader/bootstrap calls this; administrator GETs stay read-only. */
+    public function installKoreanAdminTabLabels(): bool
+    {
+        require_once __DIR__ . '/vendor/autoload.php';
+        $koreanLanguageId = (int) Language::getIdByIso('ko', true);
+        return $koreanLanguageId < 1 || \Kuranea\Backoffice\Admin\KoreanAdminTabLabels::repair(
+            Db::getInstance(), $koreanLanguageId, _DB_PREFIX_
+        );
     }
 
     public function installSupportContactPrivacy(): bool
