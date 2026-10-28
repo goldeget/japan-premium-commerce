@@ -39,6 +39,8 @@ final class EmployeeProfileAuditFakeDatabase
     public array $activityFeedEvents = [];
     /** @var list<string> */
     public array $queries = [];
+    /** @var list<string> Installer metadata statements; never audit events or ACL writes. */
+    public array $koreanTabQueries = [];
 
     public function executeS(string $sql, bool $array = true, bool $useCache = true): array|false
     {
@@ -112,6 +114,12 @@ final class EmployeeProfileAuditFakeDatabase
     {
         $this->queries[] = $sql;
         if (str_starts_with($sql, 'CREATE TABLE IF NOT EXISTS')) {
+            return true;
+        }
+        if (str_starts_with($sql, 'INSERT INTO `ps_tab_lang` (id_tab, id_lang, name) SELECT t.id_tab, 3,')
+            && str_contains($sql, 'FROM `ps_tab` t WHERE t.class_name = ')
+            && str_contains($sql, 'ON DUPLICATE KEY UPDATE name = CASE WHEN BINARY name IN ')) {
+            $this->koreanTabQueries[] = $sql;
             return true;
         }
         if (preg_match(
@@ -190,6 +198,14 @@ final class EmployeeProfileAuditFakeLink
 
 final class Language
 {
+    public static function getIdByIso(string $isoCode, bool $activeOnly = false): int|false
+    {
+        foreach (self::getLanguages($activeOnly) as $language) {
+            if ($language['iso_code'] === $isoCode) return $language['id_lang'];
+        }
+        return false;
+    }
+
     public static function getLanguages(bool $activeOnly = false): array
     {
         return [
@@ -365,6 +381,8 @@ $db->employeeProfiles[31] = 3;
 $module = new Kuraneabackoffice();
 Hook::$module = $module;
 employeeProfileAuditAssertSame(true, $module->install(), 'A fresh module install should create the audit store and tab.');
+employeeProfileAuditAssertSame(5, count($db->koreanTabQueries), 'Fresh install should apply the five exact Korean native menu fallback statements.');
+employeeProfileAuditAssertSame([], $db->events, 'Menu metadata initialization must not produce employee profile audit events.');
 employeeProfileAuditAssertSame(true, in_array('actionObjectEmployeeUpdateBefore', $module->registeredHooks, true), 'Fresh install should register the Employee before hook.');
 employeeProfileAuditAssertSame(true, in_array('actionObjectEmployeeUpdateAfter', $module->registeredHooks, true), 'Fresh install should register the Employee after hook.');
 $auditTableCreates = array_values(array_filter(
