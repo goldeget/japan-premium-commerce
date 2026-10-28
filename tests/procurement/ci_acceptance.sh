@@ -30,7 +30,7 @@ outcomes = {}
 for line in Path(sys.argv[1]).read_text().splitlines():
     phase, status = line.split('\t')
     outcomes[phase] = status
-required = ('fresh_install','native_source','module_seed','native_gallery','requests_database','requests_behavior','requests_concurrency','points_behavior','points_concurrency','notifications_behavior','notifications_native','notifications_concurrency','native_boundary','native_push_settings','policies_behavior','policies_concurrency','policies_smarty','support_database','support_concurrency_review','support_controller','support_smarty','customer_ui','customer_smarty','navigation_smarty','signin_smarty','pwa_worker','pwa_registration','native_browser','native_notifications','native_push_provider','native_accounts','native_acl','native_quality','durable_readback','restart_readback','restart_source','restore')
+required = ('image_build','fresh_install','native_source','module_seed','native_gallery','requests_database','requests_behavior','requests_concurrency','points_behavior','points_concurrency','notifications_behavior','notifications_native','notifications_concurrency','native_boundary','native_push_settings','policies_behavior','policies_concurrency','policies_smarty','support_database','support_concurrency_review','support_controller','support_smarty','customer_ui','customer_smarty','navigation_smarty','signin_smarty','pwa_worker','pwa_registration','native_browser','native_notifications','native_push_provider','native_accounts','native_acl','native_quality','durable_readback','restart_readback','restart_source','restore')
 Path(sys.argv[2]).write_text(json.dumps({'passed':int(sys.argv[3]) == 0 and all(outcomes.get(x) == 'passed' for x in required),
     'phases':{x:outcomes.get(x,'not_run') for x in required}}, sort_keys=True) + '\n')
 PY
@@ -50,6 +50,13 @@ run_phase() {
     # Private logs may include SQL/token/native identity data. Do not upload
     # them or print exception messages. The fixed phase locates the failure.
     printf 'FAIL procurement acceptance phase=%s exit=%d\n' "$phase" "$result" >&2
+    # Only the setup classifier's already-redacted JSON may expose bounded
+    # build/startup error evidence. Raw install logs remain private.
+    if [[ $phase == image_build ]]; then
+      python3 tests/procurement/ci_safe_failure.py emit "$QA_ARTIFACT_DIR/image-build-outcome.json" || :
+    elif [[ $phase == fresh_install ]]; then
+      python3 tests/procurement/ci_safe_failure.py emit "$QA_ARTIFACT_DIR/runtime-start-outcome.json" || :
+    fi
     python3 - "$private_dir/$phase.log" <<'PYSAFE'
 import re, sys
 from pathlib import Path
@@ -112,9 +119,36 @@ for volume in mariadb_data prestashop_html catalog_review_data; do
     exit 77
   fi
 done
-compose config --quiet
-compose up --detach --build >"$private_dir/install.log" 2>&1
-run_phase fresh_install wait_install
+image_build() {
+  local setup_status
+  if compose config --quiet >"$private_dir/image-build.log" 2>&1; then
+    :
+  else
+    setup_status=$?
+    python3 tests/procurement/ci_safe_failure.py image_build "$private_dir/image-build.log" "$QA_ARTIFACT_DIR/image-build-outcome.json" "$setup_status" || :
+    return "$setup_status"
+  fi
+  if compose build prestashop >>"$private_dir/image-build.log" 2>&1; then
+    python3 tests/procurement/ci_safe_failure.py image_build "$private_dir/image-build.log" "$QA_ARTIFACT_DIR/image-build-outcome.json" 0
+  else
+    setup_status=$?
+    python3 tests/procurement/ci_safe_failure.py image_build "$private_dir/image-build.log" "$QA_ARTIFACT_DIR/image-build-outcome.json" "$setup_status" || :
+    return "$setup_status"
+  fi
+}
+fresh_install() {
+  local setup_status
+  if compose up --detach --no-build >"$private_dir/install.log" 2>&1; then
+    python3 tests/procurement/ci_safe_failure.py runtime_start "$private_dir/install.log" "$QA_ARTIFACT_DIR/runtime-start-outcome.json" 0 || return "$?"
+  else
+    setup_status=$?
+    python3 tests/procurement/ci_safe_failure.py runtime_start "$private_dir/install.log" "$QA_ARTIFACT_DIR/runtime-start-outcome.json" "$setup_status" || :
+    return "$setup_status"
+  fi
+  wait_install
+}
+run_phase image_build image_build
+run_phase fresh_install fresh_install
 run_phase native_source python3 tests/procurement/source_integrity.py native_source
 phase=copy_acceptance
 # The integration diagnostic may run while peers finish source changes. A
