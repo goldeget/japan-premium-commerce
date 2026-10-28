@@ -22,20 +22,27 @@ try {
     $pdo->exec('CREATE TABLE `' . $prefix . 'tab` (id_tab INT PRIMARY KEY,class_name VARCHAR(100),module VARCHAR(100),wording VARCHAR(100)) ENGINE=InnoDB');
     $pdo->exec('CREATE TABLE `' . $prefix . 'tab_lang` (id_tab INT,id_lang INT,name VARCHAR(100),PRIMARY KEY(id_tab,id_lang)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
     $pdo->exec('CREATE TABLE `' . $prefix . 'access` (id_profile INT,id_tab INT,permission VARCHAR(10)) ENGINE=InnoDB');
-    $tabs = [[1,'AdminPsdistributionapiclientCommunity','ps_distributionapiclient','Community'],[2,'AdminPsdistributionapiclient','ps_distributionapiclient','Wall of Fame'],[3,'AdminSecurity','','Security'],[4,'AdminExtraPropertyDefinitions',null,'Extra Properties'],[5,'CustomModule','','Custom item'],[6,'AdminParentSecurity','','Security']];
+    $tabs = [[1,'AdminPsdistributionapiclientCommunity','ps_distributionapiclient','Community'],[2,'AdminPsdistributionapiclient','ps_distributionapiclient','Wall of Fame'],[3,'AdminSecurity','','Security'],[4,'AdminExtraPropertyDefinitions',null,'Extra Properties'],[5,'CustomModule','','Custom item'],[6,'AdminParentSecurity','','Security'],
+        [7,'AdminPsMboTheme','ps_mbo','Themes Catalog'],[8,'AdminSecuritySessionEmployee','','Employee Sessions'],[9,'AdminSecuritySessionCustomer','','Customer Sessions'],[10,'AdminPsClassicEditionHomepageController','ps_classic_edition','Care Center'],[11,'AdminPsThemeCustoConfiguration','ps_themecusto','Pages Configuration'],[12,'AdminPsThemeCustoAdvanced','ps_themecusto','Advanced Customization'],[13,'HOME','ps_classic_edition','Welcome'],[14,'AdminEmails','','E-mail']];
     $insert = $pdo->prepare('INSERT INTO `' . $prefix . 'tab` VALUES (?,?,?,?)');
     foreach ($tabs as $tab) $insert->execute($tab);
     $insert = $pdo->prepare('INSERT INTO `' . $prefix . 'tab_lang` VALUES (?,?,?)');
     foreach ($tabs as $tab) foreach ([1,2,3] as $language) $insert->execute([$tab[0],$language,$tab[3]]);
+    $pdo->exec('UPDATE `' . $prefix . 'tab_lang` SET name="Epos" WHERE id_tab=14 AND id_lang=3');
     $pdo->exec('INSERT INTO `' . $prefix . 'access` VALUES (1,3,"READ"),(2,4,"READ")');
     $snapshot = static fn(string $table): string => hash('sha256', json_encode($pdo->query('SELECT * FROM `' . $prefix . $table . '` ORDER BY 1,2')->fetchAll(PDO::FETCH_ASSOC),JSON_THROW_ON_ERROR));
     $tabHash = $snapshot('tab'); $accessHash = $snapshot('access');
     $otherLanguages = $pdo->query('SELECT * FROM `' . $prefix . 'tab_lang` WHERE id_lang <> 3 ORDER BY 1,2')->fetchAll(PDO::FETCH_ASSOC);
     $assert(KoreanAdminTabLabels::repair($db,3,$prefix));
     $names = $pdo->query('SELECT id_tab,name FROM `' . $prefix . 'tab_lang` WHERE id_lang=3 ORDER BY id_tab')->fetchAll(PDO::FETCH_KEY_PAIR);
-    $assert($names === [1=>'커뮤니티',2=>'명예의 전당',3=>'보안',4=>'추가 속성',5=>'Custom item',6=>'보안']);
+    $assert($names === [1=>'커뮤니티',2=>'명예의 전당',3=>'보안',4=>'추가 속성',5=>'Custom item',6=>'보안',7=>'테마 카탈로그',8=>'관리자 세션',9=>'고객 세션',10=>'지원 센터',11=>'페이지 설정',12=>'고급 사용자 정의',13=>'시작하기',14=>'이메일']);
     $assert($otherLanguages === $pdo->query('SELECT * FROM `' . $prefix . 'tab_lang` WHERE id_lang <> 3 ORDER BY 1,2')->fetchAll(PDO::FETCH_ASSOC));
     $assert($tabHash === $snapshot('tab') && $accessHash === $snapshot('access'));
+    foreach (['E-mail'=>'이메일','Epos'=>'이메일','epos'=>'epos','Custom email menu'=>'Custom email menu'] as $beforeName=>$expected) {
+        $statement=$pdo->prepare('UPDATE `' . $prefix . 'tab_lang` SET name=? WHERE id_tab=14 AND id_lang=3'); $statement->execute([$beforeName]);
+        $assert(KoreanAdminTabLabels::repair($db,3,$prefix));
+        $assert($pdo->query('SELECT name FROM `' . $prefix . 'tab_lang` WHERE id_tab=14 AND id_lang=3')->fetchColumn() === $expected);
+    }
     $firstHash = $snapshot('tab_lang');
     $assert(KoreanAdminTabLabels::repair($db,3,$prefix) && $firstHash === $snapshot('tab_lang'));
     $pdo->exec('UPDATE `' . $prefix . 'tab_lang` SET name="Custom Korean admin menu" WHERE id_tab=1 AND id_lang=3');
@@ -46,6 +53,16 @@ try {
     $names = $pdo->query('SELECT id_tab,name FROM `' . $prefix . 'tab_lang` WHERE id_lang=3 ORDER BY id_tab')->fetchAll(PDO::FETCH_KEY_PAIR);
     $assert($names[1] === 'Custom Korean admin menu' && $names[2] === 'community');
     $assert($names[3] === '보안' && $names[4] === '추가 속성');
+    foreach (range(7,13) as $id) $pdo->exec('UPDATE `' . $prefix . 'tab_lang` SET name="Customized native menu ' . $id . '" WHERE id_tab=' . $id . ' AND id_lang=3');
+    $assert(KoreanAdminTabLabels::repair($db,3,$prefix));
+    foreach (range(7,13) as $id) $assert($pdo->query('SELECT name FROM `' . $prefix . 'tab_lang` WHERE id_tab=' . $id . ' AND id_lang=3')->fetchColumn() === 'Customized native menu ' . $id);
+    $pdo->exec('DELETE FROM `' . $prefix . 'tab_lang` WHERE id_tab=7 AND id_lang=3');
+    $pdo->exec('UPDATE `' . $prefix . 'tab_lang` SET name="Employee Sessions" WHERE id_tab=8 AND id_lang=3');
+    $assert(KoreanAdminTabLabels::repair($db,3,$prefix));
+    $assert($pdo->query('SELECT name FROM `' . $prefix . 'tab_lang` WHERE id_tab=7 AND id_lang=3')->fetchColumn() === '테마 카탈로그');
+    $assert($pdo->query('SELECT name FROM `' . $prefix . 'tab_lang` WHERE id_tab=8 AND id_lang=3')->fetchColumn() === '관리자 세션');
+    $assert($otherLanguages === $pdo->query('SELECT * FROM `' . $prefix . 'tab_lang` WHERE id_lang <> 3 ORDER BY 1,2')->fetchAll(PDO::FETCH_ASSOC));
+    $assert($tabHash === $snapshot('tab') && $accessHash === $snapshot('access'));
     $pdo->exec('UPDATE `' . $prefix . 'tab` SET module="other_module" WHERE id_tab=3');
     $pdo->exec('UPDATE `' . $prefix . 'tab_lang` SET name="Security" WHERE id_tab=3 AND id_lang=3');
     $assert(KoreanAdminTabLabels::repair($db,3,$prefix));

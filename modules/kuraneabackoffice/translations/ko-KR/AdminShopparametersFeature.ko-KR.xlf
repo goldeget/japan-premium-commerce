@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="AdminShopparametersFeature.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="expanded-native-a571d59298c135855cfa" approved="yes">
+        <source>Category used in breadcrumbs</source>
+        <target state="final">탐색 경로에 사용할 카테고리</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-bada019adcda20f58e54" approved="yes">
+        <source>Default pack stock behavior</source>
+        <target state="final">묶음 상품의 기본 재고 처리 방식</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-fcacaed75fb8189c2b2e" approved="yes">
+        <source>Minimum order value</source>
+        <target state="final">최소 주문 금액</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-3e08158a9b66c1ae800b" approved="yes">
+        <source>Quantity discounts based on</source>
+        <target state="final">수량 할인 기준</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

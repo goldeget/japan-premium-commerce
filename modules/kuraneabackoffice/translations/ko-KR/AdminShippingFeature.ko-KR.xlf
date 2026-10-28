@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="AdminShippingFeature.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="expanded-native-bc4361b2add30676d9b0" approved="yes">
+        <source>Free shipping starts at</source>
+        <target state="final">무료 배송 시작 기준</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

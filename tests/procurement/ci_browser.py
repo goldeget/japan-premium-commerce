@@ -20,6 +20,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import Select, WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 BASE = os.environ['SHOP_BASE_URL'].rstrip('/')
 # Native canonical links and auth cookies use PS_DOMAIN. The HTTP readiness
@@ -134,13 +135,20 @@ def admin_page(driver, controller):
     check(response['status'] == 200 and response['private'])
 
 
+def wait_admin_submission(driver, form):
+    # The previous document may still report "complete" while its server POST
+    # starts. Observe its replacement before reading success or closing it.
+    WebDriverWait(driver, 30).until(lambda d: EC.staleness_of(form)(d)
+                                  and d.execute_script('return document.readyState') == 'complete')
+
+
 def admin_form(driver, action, fields):
     form = visible(driver, '[data-testid="procurement-' + action + '"]')
     check(form.tag_name == 'form')
     for name, value in fields.items():
         fill(form, name, value)
     form.find_element(By.CSS_SELECTOR, '[name="procurement_action"][value="' + action + '"]').click()
-    WebDriverWait(driver, 30).until(lambda d: d.execute_script('return document.readyState') == 'complete')
+    wait_admin_submission(driver, form)
     check(not driver.find_elements(By.CSS_SELECTOR, '.alert-danger'))
 
 
@@ -298,6 +306,7 @@ def main():
         for name, value in policy_values.items():
             fill(policy_form, name, value)
         policy_form.find_element(By.CSS_SELECTOR, 'button[name="save_policy"]').click()
+        wait_admin_submission(admin, policy_form)
         check(not admin.find_elements(By.CSS_SELECTOR, '.alert-danger'))
         admin.quit()
         browsers.remove(admin)

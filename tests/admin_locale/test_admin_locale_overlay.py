@@ -173,7 +173,7 @@ class AdminLocaleOverlayContractTests(unittest.TestCase):
         self.assertIn("explode(';', $contentType, 2)", response_handler)
         for marker in (
             "$event->isMainRequest()",
-            "str_starts_with($route, 'admin_')",
+            "self::isBackOfficeRoute($request)",
             "self::KOREAN_LOCALE",
             "setContent(",
             "Content-Length",

@@ -41,6 +41,26 @@
         <target state="final">결제</target>
         <note>Exact static label observed in the isolated native administrator inventory; no stored customer or category data replacement.</note>
       </trans-unit>
+      <trans-unit id="expanded-native-2550d962e536e7c0889f" approved="yes">
+        <source>E-mail</source>
+        <target state="final">이메일</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-61183ac67fe037de9a60" approved="yes">
+        <source>Email theme</source>
+        <target state="final">이메일 테마</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-c7a11cbb576155dcf0d4" approved="yes">
+        <source>Module positions</source>
+        <target state="final">모듈 배치</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-8b43b0cb1da1969f9050" approved="yes">
+        <source>Quick access</source>
+        <target state="final">빠른 접근</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
     </body>
   </file>
 </xliff>

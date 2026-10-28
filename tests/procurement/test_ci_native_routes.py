@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Offline contract for authoritative native account routes; no browser required."""
+"""Offline native account route and server form navigation contracts."""
 import ast
 from pathlib import Path
 import unittest
+from types import SimpleNamespace
 from urllib.parse import urlparse
 
 
@@ -44,6 +45,35 @@ class NativeRouteTests(unittest.TestCase):
             self.assertEqual(first.func.attr, 'get')
             self.assertEqual(first.args[0].func.id, 'native_page_url')
             self.assertEqual(first.args[0].args[0].value, controller)
+
+
+    def test_submission_requires_replaced_complete_document_with_original_budget(self):
+        testcase = self
+        driver = SimpleNamespace(phase='old_complete')
+        driver.execute_script = lambda script: 'loading' if driver.phase == 'new_loading' else 'complete'
+        observations = []
+
+        class Wait:
+            def __init__(self, current, budget):
+                testcase.assertIs(current, driver)
+                testcase.assertEqual(budget, 30)
+
+            def until(self, condition):
+                for phase, expected in (('old_complete', False), ('new_loading', False), ('new_complete', True)):
+                    driver.phase = phase
+                    observed = bool(condition(driver))
+                    observations.append(observed)
+                    testcase.assertEqual(observed, expected)
+
+        namespace = {'WebDriverWait': Wait,
+                     'EC': SimpleNamespace(staleness_of=lambda form: lambda current: current.phase != 'old_complete')}
+        function = next(node for node in SOURCE.body if isinstance(node, ast.FunctionDef) and node.name == 'wait_admin_submission')
+        exec(compile(ast.Module(body=[function], type_ignores=[]), 'wait_admin_submission', 'exec'), namespace)
+        namespace['wait_admin_submission'](driver, object())
+        self.assertEqual(observations, [False, False, True])
+        consumers = [node for node in ast.walk(SOURCE) if isinstance(node, ast.Call)
+                     and isinstance(node.func, ast.Name) and node.func.id == 'wait_admin_submission']
+        self.assertEqual(len(consumers), 2)  # Generic actions and policy save.
 
 
 if __name__ == '__main__':

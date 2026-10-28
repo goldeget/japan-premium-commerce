@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="AdminAdvparametersHelp.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="expanded-native-7d8805103a47321e8bd7" approved="yes">
+        <source>(Optional) Insert a cookie name to enable the debug mode only when this cookie is set.</source>
+        <target state="final">(선택) 이 쿠키가 설정된 경우에만 디버그 모드를 사용하려면 쿠키 이름을 입력하세요.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-454209f29ef841004181" approved="yes">
+        <source>(Optional) Insert a value to enable the debug mode only when the cookie configured above is set to this value.</source>
+        <target state="final">(선택) 위에서 설정한 쿠키가 이 값일 때만 디버그 모드를 사용하려면 값을 입력하세요.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-196620db173385a7324c" approved="yes">
+        <source>Admin API forces the use of HTTPS with TLSv1.2 or higher, you can disable this check for debug mode only.</source>
+        <target state="final">관리자 API는 TLSv1.2 이상의 HTTPS 사용을 필수로 합니다. 이 검사는 디버그 모드에서만 비활성화할 수 있습니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-5d771f395cb856e53cac" approved="yes">
+        <source>Before enabling the Admin API, you must be sure to:</source>
+        <target state="final">관리자 API를 사용하기 전에 다음 사항을 확인하세요:</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-ff7b252c7164c8ab64db" approved="yes">
+        <source>Enable / Disable the customer group page.</source>
+        <target state="final">고객 그룹 페이지를 사용하거나 사용하지 않습니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-42a3e8cb4529e408724d" approved="yes">
+        <source>Enable / Disable the merchandise return page.</source>
+        <target state="final">상품 반품 페이지를 사용하거나 사용하지 않습니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-fb61070e7cbad6068deb" approved="yes">
+        <source>Enable / Disable the migrated quick access page.</source>
+        <target state="final">이전된 빠른 접근 페이지를 사용하거나 사용하지 않습니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-0a048011e904a99ca6ba" approved="yes">
+        <source>Enable / Disable the new discount system.</source>
+        <target state="final">새 할인 시스템을 사용하거나 사용하지 않습니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-7f52c73c1283f8ecc5d8" approved="yes">
+        <source>Enable / Disable the new front container.</source>
+        <target state="final">새 프런트 컨테이너를 사용하거나 사용하지 않습니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-db64210c56a1dbd52da8" approved="yes">
+        <source>Enable / Disable the new pricing system. This feature introduces an improved pricing engine.</source>
+        <target state="final">새 가격 책정 시스템을 사용하거나 사용하지 않습니다. 이 기능은 개선된 가격 책정 엔진을 제공합니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-34ca063670f0374ede80" approved="yes">
+        <source>Enable / Disable the newly improved shipment system.</source>
+        <target state="final">새롭게 개선된 배송 시스템을 사용하거나 사용하지 않습니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-c3531736522c1d4658dc" approved="yes">
+        <source>Enable / Disable the store page.</source>
+        <target state="final">매장 페이지를 사용하거나 사용하지 않습니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-9c8a65c1937ddb3ff791" approved="yes">
+        <source>Enable / Disable the tag page.</source>
+        <target state="final">태그 페이지를 사용하거나 사용하지 않습니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-86c5fd7d1e5d26b7f17e" approved="yes">
+        <source>Experimental API endpoints are disabled by default in prod environment, this configuration allows to forcefully enable them.</source>
+        <target state="final">운영 환경에서는 실험적 API 엔드포인트가 기본적으로 비활성화됩니다. 이 설정으로 강제로 활성화할 수 있습니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-677a85618649643c90d6" approved="yes">
+        <source>Indicate the minimum log levels that will be saved in database.</source>
+        <target state="final">데이터베이스에 저장할 최소 로그 수준을 지정하세요.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="AdminAdvparametersFeature.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="expanded-native-a91191728baf66ce33e9" approved="yes">
+        <source>Both, with text format automatically generated</source>
+        <target state="final">두 형식 모두 (텍스트 형식 자동 생성)</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-2945f0a3615acbcb5721" approved="yes">
+        <source>Extra properties extend existing entities (products, customers, orders…) with custom fields stored in dedicated database columns.</source>
+        <target state="final">추가 속성은 전용 데이터베이스 열에 저장되는 사용자 정의 필드를 사용하여 기존 개체(상품, 고객, 주문 등)를 확장합니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-3e955cc77a921d4d3236" approved="yes">
+        <source>Extra property definitions</source>
+        <target state="final">추가 속성 정의</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-3d9fda6f4ffe27462ea3" approved="yes">
+        <source>Improved shipment</source>
+        <target state="final">개선된 배송</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-f74db55acc8256219d10" approved="yes">
+        <source>New pricing</source>
+        <target state="final">새 가격 책정</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-816a8a3e395109492c14" approved="yes">
+        <source>Properties owned by a module (column "Module" is not empty) are read-only: the module is responsible for registering and removing them.</source>
+        <target state="final">모듈에 속한 속성("모듈" 열이 비어 있지 않은 경우)은 읽기 전용입니다. 해당 모듈이 속성을 등록하고 제거합니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-8b43b0cb1da1969f9050" approved="yes">
+        <source>Quick access</source>
+        <target state="final">빠른 접근</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-f8a3d7e112cf931c95c8" approved="yes">
+        <source>Select your default file separator</source>
+        <target state="final">기본 파일 구분자를 선택하세요.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-a1867cbba32db75ab856" approved="yes">
+        <source>Send a test email to</source>
+        <target state="final">테스트 이메일 수신 주소</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-becf35f15ec24fc2f324" approved="yes">
+        <source>Send emails to</source>
+        <target state="final">이메일 수신 대상</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-614630217e8820455a12" approved="yes">
+        <source>Severity (0-4)</source>
+        <target state="final">심각도 (0-4)</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-25cc3d3391460d0b45df" approved="yes">
+        <source>Where each field is exposed (front-office, forms, grids, Admin API) is configured from the edit form.</source>
+        <target state="final">각 필드의 노출 위치(고객 화면, 양식, 표, 관리자 API)는 편집 양식에서 설정합니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

@@ -15,6 +15,7 @@ on:
       - 'tests/procurement/**'
       - 'tests/catalog/**'
       - 'tests/admin_audit/**'
+      - 'tests/admin_locale/**'
       - 'tests/performance/**'
       - 'tests/e2e/**'
       - 'docker/**'
@@ -83,8 +84,10 @@ jobs:
       - name: Use free runner browser tooling
         run: python3 -m pip install --disable-pip-version-check selenium==4.38.0
 
-      - name: Check portable CI configuration and native account route contracts
-        run: python3 -m unittest discover -s tests/procurement -p 'test_ci*.py'
+      - name: Check CI configuration, native routes and Korean admin contracts
+        run: |
+          python3 -m unittest discover -s tests/procurement -p 'test_ci*.py'
+          python3 -m unittest discover -s tests/admin_locale -p 'test_*.py'
 
       - name: Run fresh native install, behavioral and browser acceptance, restart and restore
         id: acceptance

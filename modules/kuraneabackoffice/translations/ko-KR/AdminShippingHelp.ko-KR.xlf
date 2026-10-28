@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="AdminShippingHelp.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="expanded-native-92d0530343db292b91a2" approved="yes">
+        <source>Default carrier that will be pre-selected for customers in the checkout process.</source>
+        <target state="final">주문 과정에서 고객에게 미리 선택되는 기본 배송사입니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-4d01bdb7c028c6131d77" approved="yes">
+        <source>Determines how carriers are sorted in the checkout.</source>
+        <target state="final">주문 화면에서 배송사를 정렬하는 기준을 정합니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-481568fb55474e83c701" approved="yes">
+        <source>Optional additional fee added to carriers with handling charges enabled. This fee is not applied when shipping is free due to options below.</source>
+        <target state="final">취급 수수료를 사용하는 배송사에 추가할 선택 수수료입니다. 아래 옵션에 따라 배송비가 무료인 경우에는 이 수수료를 적용하지 않습니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-56600d00085994a74fd5" approved="yes">
+        <source>Sets the sorting direction of carriers in the checkout.</source>
+        <target state="final">주문 화면에서 배송사의 정렬 방향을 정합니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-da8407de1cc9b8be2e59" approved="yes">
+        <source>Shipping is free for all zones when the cart total reaches or exceeds this amount.</source>
+        <target state="final">장바구니 총액이 이 금액 이상이면 모든 배송 지역에 무료 배송을 적용합니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-4cff7b3f01c4cb6f50bb" approved="yes">
+        <source>Shipping is free for all zones when the total cart weight reaches or exceeds this value.</source>
+        <target state="final">장바구니의 총중량이 이 값 이상이면 모든 배송 지역에 무료 배송을 적용합니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

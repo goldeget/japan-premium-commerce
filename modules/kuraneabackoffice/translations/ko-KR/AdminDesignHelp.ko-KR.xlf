@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="AdminDesignHelp.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="expanded-native-16516e513a0eae11e159" approved="yes">
+        <source>AVIF is disabled because it's not supported on your server, check your configuration if you want to use it.</source>
+        <target state="final">서버에서 지원하지 않아 AVIF가 비활성화되어 있습니다. 사용하려면 서버 설정을 확인하세요.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-6e077f467a0f20876449" approved="yes">
+        <source>Beware that to benefit from modern image formats, they must be supported by your theme.</source>
+        <target state="final">최신 이미지 형식을 사용하려면 해당 형식을 테마에서 지원해야 합니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-422c3bc2b1f45146c50e" approved="yes">
+        <source>Most common setup is to have the base JPG/PNG format and one modern WebP or AVIF format - the browser will choose the format it likes the most.</source>
+        <target state="final">일반적으로 기본 JPG/PNG 형식과 최신 WebP 또는 AVIF 형식 중 하나를 함께 사용합니다. 브라우저가 가장 적합한 형식을 선택합니다.</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

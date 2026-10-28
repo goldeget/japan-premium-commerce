@@ -61,7 +61,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
         }
 
         $route = (string) $request->attributes->get('_route', '');
-        if (!str_starts_with($route, 'admin_') || !$this->applyKoreanAdminLocale($request)) {
+        if (!self::isBackOfficeRoute($request) || !$this->applyKoreanAdminLocale($request)) {
             return;
         }
 
@@ -73,7 +73,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
         $parentRequest = $this->requestStack->getMainRequest();
         if (
             $parentRequest === null
-            || !str_starts_with((string) $parentRequest->attributes->get('_route', ''), 'admin_')
+            || !self::isBackOfficeRoute($parentRequest)
             || $parentRequest->getLocale() !== self::KOREAN_LOCALE
         ) {
             return;
@@ -93,7 +93,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
         $route = (string) $request->attributes->get('_route', '');
         $isMainRequest = $event->isMainRequest();
         $moduleActive = in_array(self::MODULE_NAME, $this->activeModules, true);
-        $adminRoute = str_starts_with($route, 'admin_');
+        $adminRoute = self::isBackOfficeRoute($request);
         $gateFields = self::diagnosticGateFields($request);
         $isolatedCiDiagnosticEnabled = self::isIsolatedCiDiagnosticRequest($request)
             && $gateFields['probe_header'] === '1'
@@ -296,6 +296,18 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
         ];
     }
 
+    /** Router-owned legacy metadata covers native BO module routes without an admin_ name. */
+    private static function isBackOfficeRoute(Request $request): bool
+    {
+        $route = $request->attributes->get('_route');
+        if (!is_string($route) || $route === '') return false;
+        if (str_starts_with($route, 'admin_')) return true;
+        // Never read query/body controller names: these attributes are resolved
+        // by the native router and do not grant authentication or native ACL.
+        $legacyController = $request->attributes->get('_legacy_controller');
+        return is_string($legacyController) && preg_match('/\AAdmin[A-Za-z0-9_]+\z/D', $legacyController) === 1;
+    }
+
     private function applyKoreanAdminLocale(Request $request): bool
     {
         $koreanLanguage = $this->languageRepository->getOneByLocaleOrIsoCode(self::KOREAN_LOCALE);
@@ -345,6 +357,16 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
             'Admin.Notifications.Success' => 'AdminNotificationsSuccess.ko-KR.xlf',
             'Admin.Orderscustomers.Feature' => 'AdminOrderscustomersFeature.ko-KR.xlf',
             'Admin.Shopparameters.Help' => 'AdminShopparametersHelp.ko-KR.xlf',
+            'Admin.Design.Feature' => 'AdminDesignFeature.ko-KR.xlf',
+            'Admin.Design.Help' => 'AdminDesignHelp.ko-KR.xlf',
+            'Admin.Shopparameters.Feature' => 'AdminShopparametersFeature.ko-KR.xlf',
+            'Admin.Shopparameters.Notification' => 'AdminShopparametersNotification.ko-KR.xlf',
+            'Admin.Advparameters.Help' => 'AdminAdvparametersHelp.ko-KR.xlf',
+            'Admin.Advparameters.Feature' => 'AdminAdvparametersFeature.ko-KR.xlf',
+            'Admin.International.Feature' => 'AdminInternationalFeature.ko-KR.xlf',
+            'Admin.Shipping.Help' => 'AdminShippingHelp.ko-KR.xlf',
+            'Admin.Shipping.Feature' => 'AdminShippingFeature.ko-KR.xlf',
+            'Modules.Classicedition.Admin' => 'ModulesClassiceditionAdmin.ko-KR.xlf',
             'Modules.Distributionapiclient.Admin' => 'ModulesDistributionapiclientAdmin.ko-KR.xlf',
             'Modules.Gsitemap.Admin' => 'ModulesGsitemapAdmin.ko-KR.xlf',
             'Modules.Onepagecheckout.Admin' => 'ModulesOnepagecheckoutAdmin.ko-KR.xlf',

@@ -116,7 +116,15 @@ foreach ([
     ['admin_login', ['kuraneabackoffice'], null, 'ko-KR', '주문'],
     ['shop_index', ['kuraneabackoffice'], null, 'ja-JP', 'Orders'],
     ['admin_orders_index', [], 1, 'en-US', 'Orders'],
-] as [$route, $activeModules, $employeeLanguageId, $expectedLocale, $expectedOrders]) {
+    ['ps_classic_edition_homepage', ['kuraneabackoffice'], 1, 'ko-KR', '주문', 'AdminPsClassicEditionHomepageController'],
+    ['ps_classic_edition_homepage', [], 1, 'en-US', 'Orders', 'AdminPsClassicEditionHomepageController'],
+    ['shop_index', ['kuraneabackoffice'], null, 'ja-JP', 'Orders', null, 'AdminPsClassicEditionHomepageController'],
+    ['api_public_resource', ['kuraneabackoffice'], null, 'ja-JP', 'Orders', null, 'AdminPsClassicEditionHomepageController'],
+    ['module_front_resource', ['kuraneabackoffice'], null, 'ja-JP', 'Orders', 'ModuleFrontController'],
+    ['module_front_resource', ['kuraneabackoffice'], null, 'ja-JP', 'Orders', ['AdminInvalid']],
+] as $case) {
+    [$route, $activeModules, $employeeLanguageId, $expectedLocale, $expectedOrders, $trustedLegacy, $queryLegacy] = array_pad($case, 7, null);
+    $expectsOverlay = $activeModules !== [] && $expectedLocale === 'ko-KR';
     $translator = new TranslatorComponent('en-US');
     $translator->addLoader('xlf', new \Symfony\Component\Translation\Loader\XliffFileLoader());
     // Keep base catalogues in memory: this regression needs no DB resources.
@@ -169,6 +177,12 @@ foreach ([
     $dispatcher->addSubscriber(new LegacyContextSubscriber([$builder]));
     $request = Request::create('/');
     $request->attributes->set('_route', $route);
+    if ($trustedLegacy !== null) $request->attributes->set('_legacy_controller', $trustedLegacy);
+    if ($queryLegacy !== null) {
+        $request->query->set('_legacy_controller', $queryLegacy);
+        $request->query->set('controller', $queryLegacy);
+        $request->request->set('_legacy_controller', $queryLegacy);
+    }
     $requestStack->push($request);
     $mainRequestEvent = new RequestEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST);
     $userLocaleSubscriber->onKernelRequest($mainRequestEvent);
@@ -178,7 +192,7 @@ foreach ([
 
     // An explicit Korean translation proves domain registration independently
     // of the current locale. Default translation exposes later locale resets.
-    if ($activeModules !== [] && str_starts_with($route, 'admin_')) {
+    if ($expectsOverlay) {
         same('주문', $translator->trans('Orders', [], 'Admin.Navigation.Menu', 'ko-KR'), $route . ' explicit Korean catalogue');
         same('배송사', $translator->trans('Carriers', [], 'Admin.Navigation.Menu', 'ko-KR'), $route . ' explicit Korean carrier navigation');
         same('결제 수단', $translator->trans('Payment Methods', [], 'Admin.Navigation.Menu', 'ko-KR'), $route . ' explicit Korean payment menu title');
@@ -194,7 +208,7 @@ foreach ([
     }
     $context->getTranslator();
     same($expectedOrders, $translator->trans('Orders', [], 'Admin.Navigation.Menu'), $route . ' Orders title');
-    if ($activeModules !== [] && str_starts_with($route, 'admin_')) {
+    if ($expectsOverlay) {
         same('결제 수단', $translator->trans('Payment Methods', [], 'Admin.Navigation.Menu'), $route . ' default Korean payment menu title');
         same('결제 수단', $translator->trans('Payment methods', [], 'Admin.Navigation.Menu'), $route . ' default Korean payment menu label');
         same('데모 모드', $translator->trans('Demo mode', [], 'Admin.Dashboard.Feature'), $route . ' default Korean demo mode label');

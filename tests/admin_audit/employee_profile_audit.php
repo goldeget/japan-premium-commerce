@@ -381,7 +381,7 @@ $db->employeeProfiles[31] = 3;
 $module = new Kuraneabackoffice();
 Hook::$module = $module;
 employeeProfileAuditAssertSame(true, $module->install(), 'A fresh module install should create the audit store and tab.');
-employeeProfileAuditAssertSame(5, count($db->koreanTabQueries), 'Fresh install should apply the five exact Korean native menu fallback statements.');
+employeeProfileAuditAssertSame(13, count($db->koreanTabQueries), 'Fresh install should apply the thirteen exact Korean native menu fallback statements.');
 employeeProfileAuditAssertSame([], $db->events, 'Menu metadata initialization must not produce employee profile audit events.');
 employeeProfileAuditAssertSame(true, in_array('actionObjectEmployeeUpdateBefore', $module->registeredHooks, true), 'Fresh install should register the Employee before hook.');
 employeeProfileAuditAssertSame(true, in_array('actionObjectEmployeeUpdateAfter', $module->registeredHooks, true), 'Fresh install should register the Employee after hook.');
@@ -397,6 +397,10 @@ require_once dirname(__DIR__, 2) . '/modules/kuraneabackoffice/upgrade/upgrade-1
 require_once dirname(__DIR__, 2) . '/modules/kuraneabackoffice/upgrade/upgrade-1.0.5.php';
 employeeProfileAuditAssertSame(true, upgrade_module_1_0_3($module), 'The installed-module upgrade should apply the additive audit setup.');
 employeeProfileAuditAssertSame(true, upgrade_module_1_0_5($module), 'The installed-module upgrade should rename the existing audit tab.');
+require_once dirname(__DIR__, 2) . '/modules/kuraneabackoffice/upgrade/upgrade-1.0.8.php';
+employeeProfileAuditAssertSame(true, upgrade_module_1_0_8($module), 'The installed-module upgrade should apply the expanded exact Korean fallback repair.');
+employeeProfileAuditAssertSame(26, count($db->koreanTabQueries), 'Fresh install and the additive upgrade each apply exactly thirteen metadata CAS statements.');
+employeeProfileAuditAssertSame([], $db->events, 'The Korean label upgrade must not create employee profile audit events.');
 $auditTableCreates = array_values(array_filter(
     $db->queries,
     static fn (string $sql): bool => str_contains($sql, 'kuraneabackoffice_employee_profile_audit')

@@ -1,4 +1,11 @@
 services:
+  Kuranea\Backoffice\Form\CopyLanguageLabelsExtension:
+    arguments:
+      $requestStack: '@request_stack'
+      $activeModules: '%prestashop.active_modules%'
+    tags:
+      - { name: form.type_extension }
+
   Kuranea\Backoffice\Cache\TwigWarmupTemplates:
     decorates: twig.template_iterator
     arguments:

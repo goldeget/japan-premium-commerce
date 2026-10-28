@@ -7,6 +7,61 @@
         <target state="final">기본 단일 페이지 주문 기능입니다.</target>
         <note>Exact static label observed in the isolated native administrator inventory; no stored customer or category data replacement.</note>
       </trans-unit>
+      <trans-unit id="expanded-native-c06169337f082c96c045" approved="yes">
+        <source>Checkout layout</source>
+        <target state="final">주문 화면 구성</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-c1675d367f158460cc78" approved="yes">
+        <source>Four-page checkout</source>
+        <target state="final">4페이지 주문 화면</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-2259ef44d694bbe2a27f" approved="yes">
+        <source>Increased conversion with a seamless and frictionless experience</source>
+        <target state="final">원활하고 간편한 주문 경험을 통한 전환율 향상</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-8f5979ede71ac616ccd5" approved="yes">
+        <source>Mobile-friendly checkout</source>
+        <target state="final">모바일에 적합한 주문 화면</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-08842bb168816410d106" approved="yes">
+        <source>Propose a step-by-step checkout experience. All the usual payment steps will be displayed on different screens. Choose this method if:</source>
+        <target state="final">단계별 주문 경험을 제공합니다. 일반적인 결제 단계가 각각 다른 화면에 표시됩니다. 다음과 같은 경우 이 방식을 선택하세요:</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-7473ee2852f82ebabfc0" approved="yes">
+        <source>Propose the best checkout experience to your clients with the one-page layout. All the payment steps will be displayed in one page and let you benefit from:</source>
+        <target state="final">단일 페이지 구성으로 고객에게 편리한 주문 경험을 제공하세요. 모든 결제 단계가 한 페이지에 표시되며 다음과 같은 이점이 있습니다:</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-d70604e8430461372849" approved="yes">
+        <source>Recommended</source>
+        <target state="final">권장</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-d2b1c1fd907162591386" approved="yes">
+        <source>Reduced time spent, less clicks &amp; no extra-step</source>
+        <target state="final">소요 시간과 클릭 수 감소 및 추가 단계 제거</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-410d9b263902b8c3f1ee" approved="yes">
+        <source>You need flexibility for complex or specific information</source>
+        <target state="final">복잡하거나 특정한 정보를 처리할 수 있는 유연성이 필요한 경우</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-30275e247a440571121e" approved="yes">
+        <source>You want to integrate upsell &amp; cross-sell strategies</source>
+        <target state="final">상향 판매 및 교차 판매 전략을 통합하려는 경우</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
+      <trans-unit id="expanded-native-4350919c1f9c887d2419" approved="yes">
+        <source>You're under regulatory compliance</source>
+        <target state="final">관련 규정 준수 요구사항이 있는 경우</target>
+        <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
+      </trans-unit>
     </body>
   </file>
 </xliff>
