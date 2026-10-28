@@ -17,8 +17,15 @@
   {/if}
 {/block}
 
-{capture name="header_nav_1"}{hook h='displayNav1'}{/capture}
-{capture name="header_nav_2"}{hook h='displayNav2'}{/capture}
+{capture name="header_nav_1"}{if empty($ordenowaProcurementEnabled)}{hook h='displayNav1'}{/if}{/capture}
+{capture name="header_nav_2"}
+  {if !empty($ordenowaProcurementEnabled)}
+    {hook h='displayNav2' mod='ps_languageselector'}
+    {hook h='displayNav2' mod='ps_customersignin'}
+  {else}
+    {hook h='displayNav2'}
+  {/if}
+{/capture}
 {block name='header_nav'}
   {if !empty($smarty.capture.header_nav_1) || !empty($smarty.capture.header_nav_2)}
     <div class="{$headerTop} d-none d-md-block">
@@ -55,7 +62,7 @@
         </div>
 
         {if !empty($ordenowaProcurementEnabled)}
-          <nav class="col d-flex align-items-center justify-content-end" aria-label="{$ordenowaWorkspaceLabel|escape:'htmlall':'UTF-8'}">
+          <nav class="col d-none d-md-flex align-items-center justify-content-end ordenowa-header-platform-nav" aria-label="{$ordenowaWorkspaceLabel|escape:'htmlall':'UTF-8'}">
             <a class="btn btn-link ordenowa-workspace-link" href="{$ordenowaWorkspaceUrl|escape:'htmlall':'UTF-8'}">{$ordenowaWorkspaceLabel|escape:'htmlall':'UTF-8'}</a>
             <a class="btn btn-link" href="{$urls.pages.my_account}">{l s='Your account' d='Shop.Theme.Customeraccount'}</a>
           </nav>
