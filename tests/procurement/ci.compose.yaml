@@ -1,16 +1,8 @@
 # Use only with the exact disposable project validated by ci_acceptance.sh.
+# Hosted CI uses the base standard build network and image trust store.
+# Managed-cloud proxy/CA build overrides belong in private local configuration.
 services:
   prestashop:
-    build:
-      network: host
-      extra_hosts:
-        - '${ORDENOWA_BUILD_PROXY_HOST:-host.docker.internal}:${ORDENOWA_BUILD_PROXY_ADDRESS:-host-gateway}'
-      args:
-        HTTP_PROXY: ${HTTP_PROXY:-}
-        HTTPS_PROXY: ${HTTPS_PROXY:-}
-        NO_PROXY: ${NO_PROXY:-}
-      secrets:
-        - composer_ca
     environment:
       ORDENOWA_APP_MODE: procurement
       CI: 'true'
@@ -32,7 +24,3 @@ services:
       MP_MAX_MESSAGES: '100'
     tmpfs:
       - /data:rw,noexec,nosuid,size=32m,mode=1777
-
-secrets:
-  composer_ca:
-    file: ${HOST_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}

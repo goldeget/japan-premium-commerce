@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline regression for the setup failure evidence boundary."""
 import json
+from pathlib import Path
 import unittest
 
 from ci_safe_failure import evidence
@@ -28,6 +29,7 @@ class SafeFailureTests(unittest.TestCase):
     def test_categories_are_evidence_not_guesses(self):
         for raw, expected in (
             ('ERROR toomanyrequests: pull rate limit', 'registry_rate_limit'),
+            ('additional privileges requested: pass "--allow=network.host --allow=fs.example.crt" to grant requested privileges', 'build_entitlements'),
             ('failed: invalid IP address in add-host: host-gateway', 'build_host_gateway'),
             ('failed CONNECT tunnel: response 403', 'network_policy'),
             ('failed: SSL certificate problem: unable to get local issuer', 'tls_certificate'),
@@ -46,6 +48,21 @@ class SafeFailureTests(unittest.TestCase):
         self.assertEqual(result['error_category'], 'unclassified')
         self.assertTrue(any('terminal stream interruption' in line for line in result['safe_tail_lines']))
         self.assertNotIn('password-value', json.dumps(result))
+
+    def test_hosted_compose_uses_standard_build_network_and_image_trust(self):
+        root = Path(__file__).resolve().parents[2]
+        override = (root / 'tests/procurement/ci.compose.yaml').read_text()
+        # Build routing belongs to an explicit private managed-cloud override.
+        self.assertNotRegex(override, r'(?m)^\s*(?:build|secrets|network|extra_hosts|args):')
+        for setting in ('composer_ca', 'HTTP_PROXY', 'HTTPS_PROXY', 'HOST_CA_BUNDLE', 'host-gateway'):
+            self.assertNotIn(setting, override)
+        base = (root / 'compose.yaml').read_text()
+        self.assertIn('    build:\n      context: .\n      dockerfile: docker/Dockerfile\n', base)
+        self.assertNotRegex(base, r'(?m)^\s*(?:network|extra_hosts|secrets):')
+        dockerfile = (root / 'docker/Dockerfile').read_text()
+        self.assertIn('--mount=type=secret,id=composer_ca', dockerfile)
+        self.assertNotIn('id=composer_ca,required', dockerfile)
+        self.assertIn('if [ -f /run/secrets/composer_ca ]; then', dockerfile)
 
     def test_output_is_bounded_and_success_is_not_a_failure(self):
         raw = '\n'.join('ERROR ' + str(index) + ' ' + ('!' * 1000) for index in range(100))

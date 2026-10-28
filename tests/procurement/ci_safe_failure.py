@@ -10,6 +10,7 @@ import sys
 from urllib.parse import quote, quote_plus
 
 CATEGORIES = (
+    ('build_entitlements', r'additional privileges requested|grant requested privileges|entitlement[^\n]{0,100}(?:not allowed|denied)'),
     ('registry_rate_limit', r'toomanyrequests|pull rate limit|rate limit exceeded'),
     ('registry_authentication', r'unauthorized:|authentication required|requested access .*denied'),
     ('build_host_gateway', r'host-gateway|host gateway|invalid (?:host|ip address)'),
