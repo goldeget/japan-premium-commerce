@@ -4,7 +4,7 @@ import ast
 from pathlib import Path
 import unittest
 from types import SimpleNamespace
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 
 SOURCE = ast.parse(Path(__file__).with_name('ci_browser.py').read_text())
@@ -46,6 +46,46 @@ class NativeRouteTests(unittest.TestCase):
             self.assertEqual(first.args[0].func.id, 'native_page_url')
             self.assertEqual(first.args[0].args[0].value, controller)
 
+
+    def test_native_admin_form_action_preserves_target_and_denies_route_gaps(self):
+        namespace = dict(self.namespace, parse_qs=parse_qs)
+        function = next(node for node in SOURCE.body if isinstance(node, ast.FunctionDef) and node.name == 'native_admin_form_url')
+        exec(compile(ast.Module(body=[function], type_ignores=[]), 'native_admin_form_url', 'exec'), namespace)
+        target = 'AdminOrdenowaProcurementPolicies'
+        action = 'http://localhost:18081/admin-kuranea/index.php?controller=' + target + '&token=native-form-token&_token=native-session-token'
+        self.assertEqual(namespace['native_admin_form_url'](action, target, 'own-form-token'), action)
+        directory_action = action.replace('/admin-kuranea/index.php', '/admin-kuranea/')
+        self.assertEqual(namespace['native_admin_form_url'](directory_action, target, 'own-form-token'), directory_action)
+        for invalid, controller, form_token in (
+            (action.replace('localhost:18081', 'external.invalid'), target, 'own'),
+            (action.replace('/admin-kuranea/index.php', '/other/path'), target, 'own'),
+            (action, 'AdminOrdenowaProcurementReviews', 'own'),
+            (action.replace('&token=native-form-token', ''), target, 'own'),
+            (action + '&token=duplicate', target, 'own'),
+            (action, target, ''),
+            (action, 'AdminUnrelated', 'own'),
+        ):
+            with self.subTest(controller=controller, form_token=bool(form_token)):
+                with self.assertRaises(AssertionError):
+                    namespace['native_admin_form_url'](invalid, controller, form_token)
+
+    def test_acl_denial_posts_target_form_body_token(self):
+        captured = {}
+        driver = SimpleNamespace(current_url='http://localhost:18081/admin-kuranea/index.php?token=url-token',
+                                 find_elements=lambda *args: [])
+        token = SimpleNamespace(get_attribute=lambda name: 'target-form-body-token')
+        form = SimpleNamespace(find_element=lambda *args: token)
+        def fetch(current, url, data):
+            captured.update(data)
+            return {'status': 403, 'private': True}
+        namespace = dict(self.namespace, admin_page=lambda *args: None,
+                         visible=lambda *args: form, fetch=fetch, By=SimpleNamespace(CSS_SELECTOR='css'))
+        function = next(node for node in SOURCE.body if isinstance(node, ast.FunctionDef) and node.name == 'denied_admin_action')
+        exec(compile(ast.Module(body=[function], type_ignores=[]), 'denied_admin_action', 'exec'), namespace)
+        namespace['denied_admin_action'](driver, 'AdminOrdenowaProcurementReviews', 'review', {'id_request': 1})
+        self.assertEqual(captured['token'], 'target-form-body-token')
+        self.assertNotEqual(captured['token'], 'url-token')
+        self.assertEqual(captured['procurement_action'], 'review')
 
     def test_submission_requires_replaced_complete_document_with_original_budget(self):
         testcase = self

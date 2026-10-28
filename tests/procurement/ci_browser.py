@@ -101,7 +101,8 @@ def login_admin(driver, email, password):
 def denied_admin_action(driver, controller, action, fields):
     admin_page(driver, controller)
     check(not driver.find_elements(By.CSS_SELECTOR, '[data-testid="procurement-' + action + '"]'))
-    token = parse_qs(urlparse(driver.current_url).query).get('token', [''])[0]
+    token_form = visible(driver, '.ordenowa-procurement-admin form[method="get"]')
+    token = token_form.find_element(By.CSS_SELECTOR, 'input[name="token"]').get_attribute('value')
     check(bool(token))
     response = fetch(driver, driver.current_url, dict(fields, procurement_action=action, token=token))
     check(response['status'] == 403 and response['private'])
@@ -112,6 +113,17 @@ def native_identity(driver, side):
     email = visible(driver, 'form input[name="email"]').get_attribute('value')
     check(email == IDENTITY['customers'][side]['email'])
     check(not driver.find_elements(By.CSS_SELECTOR, '#login-form'))
+
+
+def native_admin_form_url(action, controller, form_token):
+    check(controller in ('AdminOrdenowaProcurement', 'AdminOrdenowaProcurementReviews',
+                         'AdminOrdenowaProcurementPoints', 'AdminOrdenowaProcurementAudit', 'AdminOrdenowaProcurementPolicies'))
+    target, base = urlparse(action), urlparse(BASE)
+    fields = parse_qs(target.query)
+    check(target.scheme == base.scheme and target.netloc == base.netloc and not target.username and not target.password)
+    check(target.path in ('/admin-kuranea/', '/admin-kuranea/index.php') and fields.get('controller') == [controller])
+    check(bool(form_token) and len(fields.get('token', [])) == 1 and bool(fields['token'][0]))
+    return action
 
 
 def admin_page(driver, controller):
@@ -131,6 +143,15 @@ def admin_page(driver, controller):
     check(urlparse(href).netloc == urlparse(BASE).netloc)
     driver.get(href)
     visible(driver, '.ordenowa-procurement-admin')
+    if not links:
+        # The copied source-controller URL token is not a target-controller
+        # token. Use the authorized target page's untouched native form action.
+        selector = '[data-testid="procurement-policy-settings"]' if controller == 'AdminOrdenowaProcurementPolicies' else '.ordenowa-procurement-admin form[method="get"]'
+        target_form = visible(driver, selector)
+        own_token = target_form.find_element(By.CSS_SELECTOR, 'input[name="token"]').get_attribute('value')
+        canonical = native_admin_form_url(target_form.get_attribute('action'), controller, own_token)
+        driver.get(canonical)
+        visible(driver, selector)
     response = fetch(driver, driver.current_url)
     check(response['status'] == 200 and response['private'])
 
@@ -178,7 +199,7 @@ def safe_capture(driver, name):
     driver.execute_script('document.body.innerHTML=arguments[0]', original_body)
 
 
-def capture_static(driver, artifact_prefix='confirmation', extra_labels=(), widths=(320, 390, 1440), artifact_locale=None):
+def capture_static(driver, artifact_prefix='confirmation', extra_labels=(), widths=(320, 390, 1440), artifact_locale=None, scroll_selector=None, required_visible=()):
     command = ['docker', 'compose', '-f', 'compose.yaml', '-f', 'tests/procurement/ci.compose.yaml', '-p', os.environ['CI_COMPOSE_PROJECT_NAME'],
                'exec', '-T', '-u', 'www-data', 'prestashop', 'php', '/tmp/ordenowa-procurement-ci/ci_labels.php']
     result = subprocess.run(command, capture_output=True, timeout=60)
@@ -190,6 +211,27 @@ def capture_static(driver, artifact_prefix='confirmation', extra_labels=(), widt
         check(driver.execute_script('return document.documentElement.scrollWidth<=innerWidth+1'))
         driver.execute_script("scrollTo({top:0,behavior:'instant'})")
         driver.execute_async_script('const done=arguments[0];document.fonts.ready.then(()=>requestAnimationFrame(()=>requestAnimationFrame(done)));')
+        if scroll_selector:
+            check(driver.execute_async_script("""
+                const [selector,done]=arguments;const target=document.querySelector(selector);
+                if(!target){done(false);return;}
+                target.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
+                requestAnimationFrame(()=>requestAnimationFrame(()=>done(true)));
+            """, scroll_selector))
+        if required_visible:
+            target_state = driver.execute_script("""
+                return arguments[0].every(selector=>{
+                    const nodes=[...document.querySelectorAll(selector)];
+                    return nodes.length>0&&nodes.every(node=>{
+                        const r=node.getBoundingClientRect(),s=getComputedStyle(node);
+                        const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
+                        return r.width>0&&r.height>0&&r.left>=-1&&r.top>=0&&r.right<=innerWidth+1&&r.bottom<=innerHeight
+                            &&s.display!=='none'&&s.visibility==='visible'&&+s.opacity>0
+                            &&!!hit&&(hit===node||node.contains(hit));
+                    });
+                });
+            """, list(required_visible))
+            check(target_state)
         # Proven native v5 pixel overlay: does not replace text nodes, change
         # form values/enabled state, or modify source geometry.
         geometry = driver.execute_script("\nconst old=document.getElementById('owa-safe-pixel-mask');if(old)old.remove();\nconst before=[document.documentElement.scrollWidth,document.documentElement.scrollHeight];\nconst controls=[...document.querySelectorAll('input,textarea,button,select')].map(e=>e.disabled);\nconst allowed=arguments[0].filter(x=>x.trim().length>=2).sort((a,b)=>b.length-a.length);\nfor(const e of document.querySelectorAll('input:not([type=hidden]),textarea')){e.style.color='transparent';e.style.caretColor='transparent';e.style.webkitTextFillColor='transparent';}\nfor(const e of document.querySelectorAll('img')){const keep=e.matches('.ow-product-media img,.ow-gallery-images img,.kuranea-brand__image')&&e.complete&&e.naturalWidth>0;if(!keep)e.style.visibility='hidden';}\nfor(const e of document.querySelectorAll('[title]'))e.removeAttribute('title');\nconst masks=[];const walk=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);let node;\nwhile(node=walk.nextNode()){\n if(!node.textContent.trim()||['SCRIPT','STYLE','OPTION'].includes(node.parentElement?.tagName)||node.parentElement?.closest('#owa-safe-pixel-mask'))continue;\n const text=node.textContent;let pos=0;\n while(pos<text.length){let at=text.length,label='';for(const value of allowed){const found=text.indexOf(value,pos);if(found>=0&&(found<at||(found===at&&value.length>label.length))){at=found;label=value;}}\n  if(at>pos&&text.slice(pos,at).trim()){const range=document.createRange();range.setStart(node,pos);range.setEnd(node,at);for(const rect of range.getClientRects())if(rect.width&&rect.height)masks.push({x:rect.left,y:rect.top,w:rect.width,h:rect.height});range.detach();}\n  pos=label?at+label.length:text.length;\n }\n}\nconst canvas=document.createElement('canvas');canvas.id='owa-safe-pixel-mask';canvas.width=innerWidth;canvas.height=innerHeight;canvas.setAttribute('aria-hidden','true');canvas.style.cssText='position:fixed!important;inset:0!important;width:'+innerWidth+'px!important;height:'+innerHeight+'px!important;pointer-events:none!important;z-index:2147483647!important;margin:0!important;padding:0!important;border:0!important';\nconst ctx=canvas.getContext('2d');ctx.fillStyle='#dce3eb';for(const r of masks)ctx.fillRect(Math.floor(r.x)-1,Math.floor(r.y)-1,Math.ceil(r.w)+2,Math.ceil(r.h)+2);document.body.appendChild(canvas);\nreturn {before,after:[document.documentElement.scrollWidth,document.documentElement.scrollHeight],scroll:scrollY,controls:controls.every((state,index)=>state===[...document.querySelectorAll('input,textarea,button,select')][index].disabled),mask_rectangles:masks.length};\n", labels)
@@ -349,7 +391,9 @@ def main():
             check(parse_qs(urlparse(leaf_url).query).get('category') == [str(category_path[1]['id_category'])])
             # Only explicitly reviewed synthetic category names join the static
             # copy allowlist. Preserve real controls/photos and mask other data.
-            capture_static(a, 'categories', extra_labels=category_labels, artifact_locale=locale)
+            capture_static(a, 'categories-target', extra_labels=category_labels, artifact_locale=locale,
+                           scroll_selector='[data-testid=category-navigation]',
+                           required_visible=('[data-testid=category-navigation] > a', '[data-testid=category-navigation] li > a'))
             a.get(leaf_url)
             check(len(a.find_elements(By.CSS_SELECTOR, '[data-testid="assignment-card"]')) == 1)
             a.get(with_query(route, category=2147483647))
@@ -373,7 +417,9 @@ def main():
             photos = a.find_elements(By.CSS_SELECTOR, '[data-testid="product-photo"] img')
             check(len(photos) >= 2)
             WebDriverWait(a, 30).until(lambda d: all(d.execute_script('return arguments[0].complete && arguments[0].naturalWidth > 0', photo) for photo in photos))
-            capture_static(a, 'gallery-' + color, extra_labels=category_labels, widths=(width,))
+            capture_static(a, 'gallery-' + color + '-target', extra_labels=category_labels, widths=(width,),
+                           scroll_selector='[data-testid=product-gallery]',
+                           required_visible=('[data-testid=product-gallery] summary', '.ow-gallery-images [data-testid=product-photo]'))
         viewport(a, 1440)
         a.execute_cdp_cmd('Emulation.setEmulatedMedia', {'features': [{'name': 'prefers-color-scheme', 'value': 'light'}]})
         for locale in ('ja', 'en', 'ko'):
@@ -385,7 +431,8 @@ def main():
             confirmation = visible(a, '[data-testid="confirm-request"]')
             check(a.find_element(By.TAG_NAME, 'html').get_attribute('lang').startswith(locale))
             version = confirmation.find_element(By.CSS_SELECTOR, '[name="version"]').get_attribute('value')
-            capture_static(a, 'confirmation-' + locale)
+            capture_static(a, 'confirmation-' + locale + '-target', scroll_selector='.ow-request-form .ow-actions',
+                           required_visible=('.ow-request-form [data-testid=submit-request]', '.ow-request-form .ow-actions > a', '[data-testid=confirmed-quantity]'))
         # The three confirmations only render a preview. Submit exactly once.
         visible(a, '[data-testid="submit-request"]').send_keys(Keys.ENTER)
         visible(a, '[data-testid="request-detail"]')

@@ -81,6 +81,62 @@ jobs:
       - name: Install pinned free quality tools
         run: npm ci --prefix tests/performance --ignore-scripts --no-audit --no-fund
 
+      - name: Install free CJK fonts and verify Japanese and Korean glyph coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends fonts-noto-cjk fontconfig
+          fc-cache -f
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          result = {
+              'passed': False,
+              'scope': 'host_runner_fontconfig_required_ui_glyphs',
+              'browser_render_verification': 'requires_actual_capture_review',
+              'locales': {},
+          }
+          samples = {
+              'ja': ('Noto Sans CJK JP', '発注案内商品 発注リクエストの確認 ポイント'),
+              'ko': ('Noto Sans CJK KR', '발주 안내 상품 발주 요청 확인 포인트'),
+          }
+          try:
+              for locale, (family, text) in samples.items():
+                  probe = subprocess.run(
+                      ['fc-match', '-f', '%{family}\n%{file}\n%{charset}\n', family + ':lang=' + locale],
+                      capture_output=True, text=True, check=True,
+                  ).stdout.splitlines()
+                  resolved, font_file, charset = probe
+                  ranges = []
+                  for value in charset.split():
+                      ends = value.split('-')
+                      low, high = int(ends[0], 16), int(ends[-1], 16)
+                      if not 0 <= low <= high <= 0x10FFFF:
+                          raise ValueError('Invalid fontconfig range')
+                      ranges.append((low, high))
+                  required = {ord(char) for char in text if not char.isspace()}
+                  covered = {code for code in required if any(low <= code <= high for low, high in ranges)}
+                  row = {
+                      'requested_family': family,
+                      'resolved_family_matches': family in resolved.split(','),
+                      'font_file_present': Path(font_file).is_file(),
+                      'required_unique_glyphs': len(required),
+                      'covered_unique_glyphs': len(covered),
+                  }
+                  row['passed'] = row['resolved_family_matches'] and row['font_file_present'] and bool(required) and covered == required
+                  result['locales'][locale] = row
+              result['passed'] = len(result['locales']) == 2 and all(row['passed'] for row in result['locales'].values())
+          except (OSError, ValueError, subprocess.SubprocessError):
+              result['failure_code'] = 'required_cjk_font_probe_failed'
+          destination = Path(os.environ['QA_ARTIFACT_DIR']) / 'fonts-cjk-outcome.json'
+          destination.parent.mkdir(parents=True, exist_ok=True)
+          destination.write_text(json.dumps(result, sort_keys=True) + '\n')
+          print('PASS CJK font coverage' if result['passed'] else 'FAIL CJK font coverage')
+          raise SystemExit(0 if result['passed'] else 1)
+          PY
+
       - name: Use free runner browser tooling
         run: python3 -m pip install --disable-pip-version-check selenium==4.38.0
 
