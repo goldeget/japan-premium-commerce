@@ -115,6 +115,48 @@ class NativeRouteTests(unittest.TestCase):
                      and isinstance(node.func, ast.Name) and node.func.id == 'wait_admin_submission']
         self.assertEqual(len(consumers), 2)  # Generic actions and policy save.
 
+    def test_viewport_waits_for_pending_running_cancelled_and_replaced_transitions(self):
+        namespace = {}
+        function = next(node for node in SOURCE.body if isinstance(node, ast.FunctionDef) and node.name == 'viewport_ready')
+        exec(compile(ast.Module(body=[function], type_ignores=[]), 'viewport_ready', 'exec'), namespace)
+        ready = namespace['viewport_ready']
+        for transitions, expected in (
+            ([{'pending': True, 'playState': 'running'}], False),
+            ([{'pending': False, 'playState': 'running'}], False),
+            ([{'pending': False, 'playState': 'paused'}], False),
+            ([{'pending': False, 'playState': 'unknown'}], False),
+            ([{'pending': False, 'playState': 'idle'}], True),  # Cancelled.
+            ([{'pending': False, 'playState': 'idle'}, {'pending': True, 'playState': 'running'}], False),
+            ([{'pending': False, 'playState': 'idle'}, {'pending': False, 'playState': 'finished'}], True),
+            ([], True),
+        ):
+            with self.subTest(transitions=transitions):
+                driver = SimpleNamespace(execute_script=lambda script: {'width': 320, 'transitions': transitions})
+                self.assertEqual(ready(driver, 320), expected)
+        driver = SimpleNamespace(execute_script=lambda script: {'width': 390, 'transitions': []})
+        self.assertFalse(ready(driver, 320))
+        script = function.body[0].value.args[0].value
+        self.assertIn('document.documentElement.offsetHeight', script)
+        self.assertIn('document.getAnimations()', script)
+        self.assertIn("typeof animation.transitionProperty === 'string'", script)
+
+    def test_viewport_preserves_original_wait_budget_and_exact_width_guard(self):
+        observed = []
+        driver = SimpleNamespace(execute_cdp_cmd=lambda *args: None, execute_script=lambda script: 320)
+        testcase = self
+        class Wait:
+            def __init__(self, current, budget):
+                testcase.assertIs(current, driver)
+                testcase.assertEqual(budget, 30)
+            def until(self, condition):
+                testcase.assertTrue(condition(driver))
+        namespace = {'WebDriverWait': Wait, 'check': lambda condition: testcase.assertTrue(condition),
+                     'viewport_ready': lambda current, width: observed.append((current, width)) or True}
+        function = next(node for node in SOURCE.body if isinstance(node, ast.FunctionDef) and node.name == 'viewport')
+        exec(compile(ast.Module(body=[function], type_ignores=[]), 'viewport', 'exec'), namespace)
+        namespace['viewport'](driver, 320)
+        self.assertEqual(observed, [(driver, 320)])
+
 
 if __name__ == '__main__':
     unittest.main()

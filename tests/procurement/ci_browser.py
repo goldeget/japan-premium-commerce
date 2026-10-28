@@ -173,11 +173,25 @@ def admin_form(driver, action, fields):
     check(not driver.find_elements(By.CSS_SELECTOR, '.alert-danger'))
 
 
+def viewport_ready(driver, width):
+    state = driver.execute_script("""
+        // Resolve responsive styles before observing their native transitions.
+        void document.documentElement.offsetHeight;
+        return {width: innerWidth, transitions: document.getAnimations()
+            .filter(animation => typeof animation.transitionProperty === 'string')
+            .map(animation => ({pending: animation.pending, playState: animation.playState}))};
+    """)
+    return state['width'] == width and all(not animation['pending'] and animation['playState'] in ('finished', 'idle')
+                                           for animation in state['transitions'])
+
+
 def viewport(driver, width):
     driver.execute_cdp_cmd('Emulation.setDeviceMetricsOverride', {
         'width': width, 'height': 1000, 'deviceScaleFactor': 1, 'mobile': width < 768,
     })
-    WebDriverWait(driver, 30).until(lambda d: d.execute_script('return window.innerWidth') == width)
+    # Hummingbird transitions anchor font sizes/padding after responsive changes.
+    # Observe completion within the original budget before measuring/capturing.
+    WebDriverWait(driver, 30).until(lambda d: viewport_ready(d, width))
     check(driver.execute_script('return window.innerWidth') == width)
 
 
