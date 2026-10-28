@@ -2,7 +2,30 @@
 
 ## 2026-10-29 현재 발주 플랫폼 검증
 
-검증 코드: **`8663e96cdd240be52cd812f4e1d62e1edaa55ee4`** (원격 work 저장·변경 파일 일치). 최종 단일 SHA 전체38phase [#40756263392](https://github.com/goldeget/japan-premium-commerce/actions/runs/40756263392)는 진행 중이며 아직 전체 PASS가 아니다.
+### 최종 검증 후보 — 91c6098 / 전체 격리 QA SUCCESS
+
+검증 코드 **`91c6098c6b551946cc8291b31c868656d50c9b34`**를 원격 work에 저장하고 변경 파일 재조회·새 원격 복제본으로 일치 확인했다. main **`ee02a3657448d563508687614a246e05ac61eecd`**와 원래 사용자 체크아웃/운영 DB·volume은 보존했다. 이후 문서 저장 HEAD와 검증 코드 SHA는 구분한다.
+
+전체 [#40763074207](https://github.com/goldeget/japan-premium-commerce/actions/runs/40763074207)는 최종 **SUCCESS**, 실제 **38/38 phase PASS / aggregate passed=true / cleanup success**다. native browser16단계·3언어 회원/reset·공식 ACL·메일/Push mock·재시작/독립 복원까지 통과했다. 초기/재시작 앱1140·Pushvendor1426 파일이 정확한91코드와 일치했다. [artifact12850640042](https://github.com/goldeget/japan-premium-commerce/actions/runs/40763074207/artifacts/12850640042), ZIP SHA256 **`5c01e0d4b070875e3bac1e75b4586ee20113748a298039dc1a2f5589c4c69802`**를 직접 확인했고 [원본12JSON·24PNG·무결성 명세](evidence/2026-10-29-procurement-local/fresh-91c6098-complete/)를 보존했다.
+
+직전 실패는 실제200ms 링크 font/padding 전환이 끝나기 전에 캡처한 QA 순서 문제였다. 기존30초와 full rect/center hit/privacy geometry/enabled/stable scroll·권한 조건을 유지한 수정으로13unit·실제D20target·저장 재조회가 통과했다. 별도 GPT는 **새 hosted24PNG를 모두 실제 열었고 핵심20target(3언어9메뉴·9요청확인·2사진)을 인수**했다. JA/KO 글리프·부모/하위 분류·최종 버튼/사진쌍이 보인다. 전체 텍스트를 치환한 나머지4포인트 PNG는 의미/geometry 인수 근거로 쓰지 않는다. [독립 실제 검수](evidence/2026-10-29-procurement-local/fresh-91c6098-complete/ordenowa-independent-final-hosted-40763074207-review.md).
+
+최신 품질은 JA7경로/10폭+일부dark의7privacy·84layout·84axe·14실제클릭·14Lighthouse PASS다.14건 성능/접근성100, 공개정책SEO100, 모바일LCP최대1747.3ms/CLS0.0001이다. axe위반0이지만84셀 incomplete와 기존 제한된13패턴 수동 검토를 유지한다. 전체WCAG·실사용INP·실기기 성공으로 확대하지 않는다.
+
+로컬D의 요청/원장/포인트계정0·ACTIVE1과 원래A/B/C/80P·업무12/ACL감사8/메뉴2/상품·사진 보존을 확인했다. 새D의 native언어 전환 `id_lang/date_upd`와 접속/session telemetry만 별도 기록했다. [로컬 집중·정확한 보존 범위](evidence/2026-10-29-procurement-local/real-two-level-category-focus/). **핵심 구현과 명시한 합성 격리 검증은 완료했으며, 실제 상품·운영 정책/환경·기기 인수는 남아 있다. 운영 출시 완료는 아니다.**
+
+
+### 직전 재확인 — 587bdf4 / 전체 QA 실패 원인 집중 조사
+
+당시 로컬·원격 work는 `587bdf484d5e3b27084b99870ccdbedc914bdb7a`이며 main은 `ee02a3657448d563508687614a246e05ac61eecd`를 유지한다. 앱 소스는 d4e470a와 같고587 변경은 CI의 native 관리자 대상 토큰·화면 캡처·CJK 폰트 환경이다.
+
+전체 [#40759815264](https://github.com/goldeget/japan-premium-commerce/actions/runs/40759815264)는 **28phase PASS / native_browser FAIL / 후속9 not_run / cleanup success**다. 폰트 JA17/KO12 glyph 및 오프라인11+61은 통과했다. 첫 실패는 실제2단계 카테고리의 새 target capture(main394), 첫PNG 전이다. 실제 D 재현에서 모든 target rect/center hit와 즉시 privacy geometry는 통과하고 screenshot 후 scroll 안정성만 실패했다. native 링크의200ms font-size/padding CSS 전환이 캡처 전후 running(99.9→166.6ms)이어서 문서 높이/scroll이 바뀌는 검증기 순서 문제를 확정했다. 기존30초 내 실제 CSS 전환 완료를 관찰하는 수정과 집중 재검증을 진행한다. artifact **12847477729**, ZIP SHA256 `57f41209767259df3d2517f94de8f204fabc7cf56f5b9d72619e69168532fecb`. [안전한 결과](evidence/2026-10-29-procurement-local/fresh-587bdf4-partial/).
+
+이전 d4e470a/#40757330613도 완료 **FAIL**이며 native 조회전용 관리자의 대상 controller 토큰을 잘못 복사한 QA 문제를 실제 native form action200과 대조해 수정했다. 현재 helper의 정상 READ GET3건200·각 대상의 유효 body token을 사용한 변경 POST4건403·보호 데이터 무변경을 집중 확인했다. [집중 증거](evidence/2026-10-29-procurement-local/native-reader-token-focus/).
+
+해당 d4e artifact12847660925의20PNG는 실제 독립 검수에서 JA/KO 글리프 누락 및 target이 캡처 밖인 문제가 확인되어 시각 PASS가 아니다. 로컬 새 target15PNG는 범위 내 PASS지만 Home-only 메뉴로 실제2단계 메뉴 인수를 대신할 수 없다. 동일 소유 격리 환경의 별도 D 합성 상품·고객으로 실제2단계 메뉴/필터와 캡처를 집중 재현 중이며 최종 제출·지급은 하지 않는다. 원래 고객·요청·원장은 보존하고, native 분류 생성의 기존 nleft/nright 재번호만 허용한다. 새 자료 없이 같은 QA를 반복하지 않는다.
+
+당시 검증 코드: **`d4e470ae005a27568b260653107dfe62074fbc6a`** (원격 work 저장·변경 파일 일치). 최종 단일 SHA 전체38phase [#40757330613](https://github.com/goldeget/japan-premium-commerce/actions/runs/40757330613)는 완료 FAIL이며 최신 집중 조사는 위587bdf4 절을 따른다.
 
 | 검증 | 실제 결과와 범위 |
 |---|---|
@@ -15,7 +38,7 @@
 | 렌더·PWA | 실제 Smarty 고객72/정책169/문의18/메뉴24/signin81/언어선택41 PASS. 새 PWA Node2·기존 SW73 PASS. 최종3언어 computed name/키보드·카탈로그 병합 보존 PASS |
 | 품질3 | 실제 native JA7경로·10폭+dark 일부: layout84/axe84/실제 클릭14/Lighthouse14 PASS. 성능99–100·접근성100·공개정책SEO100·최대LCP2131.1ms·CLS0.0001. field INP 미측정 |
 | 독립 시각 | 별도 GPT가 안전한 고객21+54PNG, 정적 구성요소42PNG, 언어선택3PNG를 실제 열어 검수. 추가 native 관리자12PNG의 top viewport도 독립 검수. 관측13패턴에 확정 결함 없음. 자동 incomplete84셀 유지, 전체WCAG·보조기술·실기기 PASS 아님 |
-| 소스·복원 | 최종 app1128/vendor1426 정렬, native 기준 파일/CCC 분류·unknown0; 재시작과 별도 복원 DB12테이블+native 상담/ACL hash 일치 PASS. 기본512M 실제 cache:clear WITH warmup PASS |
+| 소스·복원 | 최신 app1140/vendor1426 정렬, native 기준 파일/CCC 분류·unknown0; 재시작과 별도 복원 DB12테이블+native 상담/ACL hash 일치 PASS. 기본512M 실제 cache:clear WITH warmup PASS |
 | CI 수정 | 6f9c301 portable build/sanitized evidence5검사 PASS. root 최초 unittest module경로 호출은 import 오류였고 표준 discover 경로에서5PASS; 제품 실패가 아니다 |
 
 [안전한 결과·캡처·독립 검수](evidence/2026-10-29-procurement-local/README.md)를 보존한다. 로컬 집중 검증은 bd1ced8 이미지+후속 정렬/부분 수정 결과이며 최신 immutable fresh aggregate와 동일시하지 않는다. 초기 품질1 실제 label mismatch·품질2 이전 소스 결과 및 중간 continuation FAIL은 기록을 유지하고 최신 품질3/집중 후속 결과와 구분한다.
@@ -38,16 +61,24 @@
 - #40750834639/1aca9e9:28phase PASS/native_browser FAIL/후행9 not_run/cleanup success. artifact12844705387 SHA256 `2ea6f0f498b26eefc800b4b23c6adfbcf85d78d8276caad84e7db089f9b8c795`. 실제 클릭27.52ms 뒤 정책POST33.33ms 시작·302161.79ms·최종200문서4313.06ms를 확인했다. 단1회 저장/정확1policy+1audit/새 세션13값/다른 데이터 보존 PASS. 수정은 이전 form stale와 새 문서 complete를 같은30초에 기다리며 모든 저장값/버전 검사를 유지한다.
 - native 관리자69노드 GET:66건200·KO·인증 본문,3실패는2외부 목적지(별칭 포함), 정규화60목적지다. 최초17개 화면만으로 전체 관리자 완료를 선언하지 않고 범위를 확장했다. 원문/도메인 확인된69번역, 정확13Tab CAS, KO CopyLanguageType raw From/To만 수정했다. 기존 글로벌 날짜From/To·다른 언어·custom labels·선택값·CSRF는 보존한다.
 - 영향19건 집중 GET(6+7+6) 모두200·KO·인증 본문. 원문/도메인에 맞는 한국어와 Email 메뉴를 긍정 검증했고 비기술 영문 잔존0이다. 언어 복사 라벨의 direct text는 정확히 원본 언어/대상 언어, 추가 node는 native 필수표시 `*`뿐이다. 초기 whole-label strict false와 원인을 보존하며 느슨한 contains로 대체하지 않았다. 두 select의 visible/enabled/4options와 전후12domain/ACL·감사/Tab·TabLang/critical hash가 일치한다.
-- native FormFactory62 / CAS 실제 MariaDB33 / locale Python60 / audit계약13 / CI계약9 / fresh 현재소스 경량 workflow24명령군 PASS. host/opt/live 앱1140·locked Push vendor1426 일치·unknown0, 기본512M/nooverride/www-data cache:clear WITHwarmup5.9초 PASS. 새62폼 검사는 기존38phase native_boundary에 포함했다.
+- native FormFactory62 / CAS 실제 MariaDB33 / locale Python61 / audit계약13 / CI계약9 / fresh 현재소스 경량 workflow24명령군 PASS. host/opt/live 앱1140·locked Push vendor1426 일치·unknown0, 기본512M/nooverride/www-data cache:clear WITHwarmup5.9초 PASS. 새62폼 검사는 기존38phase native_boundary에 포함했다.
 - 테마 마켓플레이스503은 native external-content circuit fallback(하위 transport상세 미확정), Facebook모듈500은 기존 로그의 cURL56 CONNECT403 외부 통신 실패다. 발주/포인트 controller 결함으로 단정하지 않고 외부 페이지의 가용/시각 인수는 남긴다. 재시도·유료 서비스·우회 호출은 실행하지 않았다.
 
 [최종 관리자 결과와 원본 실패](evidence/2026-10-29-procurement-local/admin-expanded/), [정책 저장 단1회 증거](evidence/2026-10-29-procurement-local/policy-submit-focus/). 위 로컬1140파일은 bd1ced8 이미지+명시적 ad51cff 소스 overlay이며, 현재 실행 중인 immutable fresh aggregate와 구분한다.
 
-### 최신 fresh 초기값 불일치와 증거 수집
+### 8663e96 시점의 fresh 초기값 불일치 기록
 
 ad51cff의 전체 #40755121454는 **3phase PASS/module_seed FAIL/후속34not_run/cleanup success**다. 새13메뉴의 엄격한 한국어 초기값 assertion에서 실패했고 당시 로그에는 대상 클래스가 없어, 올바른 기존 한국어 표현 보존과의 기대값 충돌인지 실제 초기화 결함인지 아직 확정하지 않는다. artifact12845373313 SHA256 `115a8c0c4d9e4c4a112b3814aaead0feed688a4e02c54134753cc12620786cca`.
 
 8663e96은 앱을 바꾸지 않고, 원래 엄격한13개 assertion 전에 고정 클래스의 존재/owner/일치/기본영문/Hangul/중복 여부만 안전하게 보존한다. 이름 원문·ID·토큰은 넣지 않고 실패 후에도 JSON을 복사한다.5개 진단 fixture/기존9계약·lint 통과 후 위 실행에서 새 증거를 수집 중이다. 실패를 성공으로 바꾸거나 확인되지 않은 원인을 수정했다고 기록하지 않는다. 앱1140파일은 ad51cff와 동일하다.
+
+### 이전 d4e470a 후보 — 시작 메뉴 문구 일치
+
+8663e96/#40756263392는 원본3phase PASS/module_seed FAIL/34not_run/cleanup success이며, 안전한13클래스 vector에서 **HOME만 expected owner·한 행·Hangul13bytes·기대값 불일치**, 나머지12개는 정확 일치했다. artifact12847195330 SHA256 `cb52ad758ffa7fae7cedfb83dbd6ad5fc23a0a0116eeb2f3bced93a31f7e1a25`.
+
+실제 native ClassicEdition TabsInstaller+번역기를 메모리 경계에서 실행해 이전 XLF가 `시작 안내`13bytes, 수정 XLF가 기존 CAS/엄격 seed와 같은 `시작하기`12bytes를 생성함을 재현했다. 원격 이름 원문 자체는 미보존이라 정확 동일성을 추정해 기록하지 않는다. source의 세 경로 불일치는 확정되어 XLF 한 값만 고쳤고, 원래13개 assertion·사용자 지정 한국어 보존은 그대로다. 세 경로 일치 회귀검사 포함 locale61 PASS. 실제 관리자 한 페이지에서200KO·`시작하기`/`지원 센터`를 확인했고 기존12domain/ACL·감사/Tab·TabLang/critical hash가 같았다. 최종1140app/1426vendor 정렬·기본512M warmup5.68초 PASS.
+
+현재 전체38phase [#40757330613](https://github.com/goldeget/japan-premium-commerce/actions/runs/40757330613),d4e470a는 완료 FAIL이고 경량 #40757330533은 SUCCESS다. 같은 QA를 중복 실행하지 않으며 실제 aggregate·cleanup·artifact가 확정되기 전 전체 PASS로 표시하지 않는다.
 
 ---
 

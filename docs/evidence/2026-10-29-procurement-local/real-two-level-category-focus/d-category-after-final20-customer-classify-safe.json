@@ -1,0 +1,1 @@
+{"all_pre_D_customer_rows_exactly_preserved":true,"sole_new_D_customer_row_changed":true,"exact_changed_field_sets_proven_by_original_baseline_row_hash":[["date_upd","id_lang"]],"D_requests":0,"D_ledger_entries":0,"D_point_accounts":0}

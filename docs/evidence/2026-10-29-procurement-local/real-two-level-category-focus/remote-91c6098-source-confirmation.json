@@ -1,0 +1,18 @@
+{
+  "code_sha": "91c6098c6b551946cc8291b31c868656d50c9b34",
+  "remote_work_sha_verified": true,
+  "main_sha": "ee02a3657448d563508687614a246e05ac61eecd",
+  "remote_method": "GitHub plugin fetch_file at exact code SHA; compare Git blob SHA with local git hash-object",
+  "files": [
+    {
+      "path": "tests/procurement/ci_browser.py",
+      "git_blob_sha": "6e306ebb45e8eddf274543484d1694f000ed27ed",
+      "matches": true
+    },
+    {
+      "path": "tests/procurement/test_ci_native_routes.py",
+      "git_blob_sha": "e1855c628f11499a5689ca2ddf83503178a07e8c",
+      "matches": true
+    }
+  ]
+}

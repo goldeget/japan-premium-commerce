@@ -1,0 +1,1 @@
+{"passed": false, "stages": {"native_policy_invalid_csrf_no_write": true, "native_policy_save_fresh_readback": true, "admin_assign_product": true, "reviewed_category_navigation_filters": true, "customer_a_confirm_submit": true, "customer_b_owner_denials": true}, "failed_stage": "native_readonly_review_denial"}

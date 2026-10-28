@@ -71,3 +71,28 @@
 `remote-40755121454-*.json` 원본은 ad51cff의3phase PASS/module_seed FAIL/후속34not_run/cleanup success다. artifact12845373313 ZIP SHA256 `115a8c0c4d9e4c4a112b3814aaead0feed688a4e02c54134753cc12620786cca`. 새13메뉴 엄격 기대값의 어느 클래스가 달랐는지는 원래로그에 없다. 보존되는 올바른 한국어 기본값과 검증 기대값 차이인지 실제 bootstrap 결함인지 추정으로 확정하지 않는다.
 
 8663e96/#40756263392는 앱 변경 없이 원래 assertion 전에 고정13클래스 상태의 bounded 비식별 JSON을 보존해 새 증거를 수집한다. rawname/IDs/tokens를 기록하지 않고 최대3중복행의 boolean·enum·count만 보존한다. 진단 fixture5cases PASS이며, 이 변경만으로 이전 실패가 해결됐다고 선언하지 않는다.
+
+## 시작 메뉴 번역 불일치 확정·최소 수정
+
+`remote-40756263392-seed-metadata-outcome.json`은 원격 이름 원문 없이 HOME 한 행만 expectedowner/Hangul13bytes/target불일치, 나머지12정확 일치를 보존했다. `admin-expanded/native-home-translation-proof.json`은 실제 native TabsInstaller+Translator+XliffLoader를 사용하되 Tab/Language 저장 경계만 RAM으로 대체해 이전 Welcome13→수정canonical12byte를 재현한다. 운영 config/DB/메뉴를 쓰지 않았다. 원격 실제 rawname 동일성을 추정으로 확정하지 않는다.
+
+`d4e470a`는 XLF Welcome 한 값을 기존 CAS/strictseed의 시작하기로 통일하고 세 경로 일치 회귀검사를 추가했다(locale61 PASS). `welcome-*.json`은 한 XLF만 opt/live반영·기본512M warmup5.68초·1140app/1426vendor 일치·실제 단일 CareCenter200KO/두 한국어 라벨·기존 protectedbaseline 보존의 근거다. 메타데이터 재보정이나 사용자 지정 한국어 덮어쓰기 없이 통과했다.
+
+최신 전체38phase #40757330613/d4e470a는 진행 중이고 경량 #40757330533은 SUCCESS다. 이 README의 앞선 실행 중/최신 표기는 각 커밋 기록 시점이며 현재 판정은 TEST_RESULTS 맨 위를 따른다.
+
+## 587bdf4 원격 실패와 native 조회전용 토큰 집중 근거
+
+- `fresh-587bdf4-partial/`: 전체 #40759815264의 실제28PASS/브라우저FAIL/9not_run/cleanup success. artifact12847477729 ZIP SHA256 `57f41209767259df3d2517f94de8f204fabc7cf56f5b9d72619e69168532fecb`. CJK glyph 검사는 통과했으나 실제2단계 category target capture 첫PNG 전 실패다. 아직 시각 인수나 정확한 내부 predicate 원인을 확정하지 않았다.
+- `native-reader-token-focus/`: 원본 d4e helper403와 untouched native 대상form action200·각 READ권한/shop관계 확인, 현587 helper의 새 세션3READ200/4유효 body token POST403와12domain/8ACL감사/2nav/3critical 무변경. 최초 directory-path guard 실패도 유지했다. CLI 인증없는 actor false는 브라우저 권한 실패 근거로 쓰지 않는다.
+- `fresh-d4e470a-partial/`: 이전 full #40757330613의20PNG 실제 독립 검수에서 JA/KO 글리프·target 위치 결함이 확인됐다. 시각 PASS가 아니다.
+- `current-native-target-focus/`: 현587 helper의 로컬 target15PNG 실제 제한된 독립 검수 PASS. JAENKO 확인9/JA사진3/JAHome-only 메뉴3이며 실제2단계 category 화면을 대체하지 않는다.
+
+새 D 합성 상품/고객은 실제 parser→검수→native 부모/하위 분류→private 상품·원본CI이미지쌍→배정으로만 준비하며 최종 제출·포인트·외부 전달을 하지 않는다. 기존 customer/request/ledger와 approved snapshot은 보존하고 nativeCategory::add의 기존 nleft/nright 구조 재번호만 별도 기록한다. 실제 Amazon/Rakuten 데이터 인수와 구분한다.
+
+## 최종 동일 후보 fresh 통합 완료 — 91c6098
+
+`fresh-91c6098-complete/`는 실제#40763074207 SUCCESS의 원본12JSON/24PNG, 전체36파일 무결성 명세와 안전한 요약을 보존한다.38/38phase PASS·native browser16단계 PASS·aggregate true·cleanup success다. 초기/재시작1140app+1426vendor가 정확91코드와 같다. artifact12850640042 ZIP SHA256 `5c01e0d4b070875e3bac1e75b4586ee20113748a298039dc1a2f5589c4c69802`를 루트가 직접 대조했다.
+
+별도 GPT는 hosted24PNG 모두를 실제 열고 핵심20target(3언어9분류/9확인/2사진)을 인수했다. JA/KO글리프·하위분류·최종버튼/사진쌍이 보인다. 나머지4포인트 broad-redaction 이미지는 텍스트 치환의 인공 wrap/overflow 때문에 의미/geometry 근거에서 제외했다. 앱 결함으로 단정하지 않는다.
+
+최신 fresh품질은7privacy/84layout/84axe/14trustedclick/14Lighthouse PASS, 성능/접근성100·공개SEO100·모바일LCP최대1747.3ms·CLS0.0001이다. incomplete84셀의2rule은 유지하며, 이전과 신규rule/노드수증가가 없다는 비교가 모든현재노드 재검수는 아니다. 기존13패턴 제한·fieldINP/전체WCAG/기기 미검증을 유지한다. 실제 Amazon/Rakuten 호환·운영 설정/정책·기기는 별도 출시 조건이다.

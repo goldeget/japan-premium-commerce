@@ -1,0 +1,37 @@
+{
+  "scope": "sanitized outcomes only; no raw logs, references, identities or tokens",
+  "files": [
+    {
+      "file": "browser-outcome.json",
+      "sha256": "3970c14a39823fcd2cbbc4a42a35a0f0647cacfd35f5710c615b8374254ae41a"
+    },
+    {
+      "file": "cache-warmup-outcome.json",
+      "sha256": "940e4451f3812fcaf909a05d654803417d44eb05c57aa8ecc5777360f6955386"
+    },
+    {
+      "file": "fonts-cjk-outcome.json",
+      "sha256": "1137c93af4b41b860b7fa239ccc16629d01eac152d89cec2a0efbdbd158b9d69"
+    },
+    {
+      "file": "image-build-outcome.json",
+      "sha256": "bb0e8307eed0be3dbc9caa9d181be9aaeb598305dc5c278eb40e913107c76d6b"
+    },
+    {
+      "file": "native_source-outcome.json",
+      "sha256": "3ab7c32bbab4a440145c74e3db474c83bc007e82af4114fb2f58fd27f3f29759"
+    },
+    {
+      "file": "outcome.json",
+      "sha256": "4221f16ade54ae7b9d9147df40131fb379f775b3d07a91ddb3e88d930ec7f026"
+    },
+    {
+      "file": "runtime-start-outcome.json",
+      "sha256": "d7d714d9742311ed30ec056146a2ed4a6d2fd70b9acf07fe6c226b66705bdfd0"
+    },
+    {
+      "file": "seed-metadata-outcome.json",
+      "sha256": "c88a3167246e43b917ab1e7b11854e9e855948cd31f51961dc4a01f2deceaea2"
+    }
+  ]
+}

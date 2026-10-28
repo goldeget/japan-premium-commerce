@@ -1,0 +1,168 @@
+{
+  "capture_helper_sha256": "43cfb52d9c95ad5c11ff2ba88603c5ae6db1f72b9153d0b8271556282a810f80",
+  "scope": "Actual local native new reviewed D product/customer/assignment with real two-level native categories; not a fresh hosted full install",
+  "actual_reviewed_png_count": 20,
+  "matched_capture_owner_manifest": true,
+  "images": [
+    {
+      "file": "categories-target-redacted-static-labels-en-1440.png",
+      "sha256": "b493fc2c8f31d2fef81542759c672eefcfaf0e1a464f8fdd5acf85363b785818",
+      "bytes": 60208,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "categories-target-redacted-static-labels-en-320.png",
+      "sha256": "882e74ee23b24167250425978e328e5f1590aa051e1138a4db8739012fbb2754",
+      "bytes": 31077,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "categories-target-redacted-static-labels-en-390.png",
+      "sha256": "331ce9c0047b07098b4b1e711debfde1b88c4bbee8212dc78f47853a27857188",
+      "bytes": 34841,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "categories-target-redacted-static-labels-ja-1440.png",
+      "sha256": "fe49fb1b59429dac712ffb0179fc68cdbed31fc354c03579e4a26afd278d695a",
+      "bytes": 63305,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "categories-target-redacted-static-labels-ja-320.png",
+      "sha256": "d70c43c16a30415a16e12c0b4ae9d54c7903c2d4acf5d098fe0c18ec61a0c86f",
+      "bytes": 33030,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "categories-target-redacted-static-labels-ja-390.png",
+      "sha256": "ec80e2719b0a33ec6d1407ac10bd5aa2124830441417836e83e447b7f9774272",
+      "bytes": 34953,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "categories-target-redacted-static-labels-ko-1440.png",
+      "sha256": "54be14b6ef5ab05c1e65c43a6afd217952c034874d8ca748b06abc8c816cb3d8",
+      "bytes": 47001,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "categories-target-redacted-static-labels-ko-320.png",
+      "sha256": "5f71b90a932cc002ffc54136ffa6a5247f6b617e91533e46b8ea54fb013a51e3",
+      "bytes": 27192,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "categories-target-redacted-static-labels-ko-390.png",
+      "sha256": "9f1505692e380e6e316a22b44fc41ced1d26b62394a319aebfbd1853b9da4e69",
+      "bytes": 28414,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "confirmation-en-target-redacted-static-labels-1440.png",
+      "sha256": "9e6989679494b75ccd05b5293c196c935bdca56dbd5214287762377e28b5e794",
+      "bytes": 46198,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "confirmation-en-target-redacted-static-labels-320.png",
+      "sha256": "b213e36f81688dfa47140dceb671da2214a9002aee5dc9940dae8322e885eefe",
+      "bytes": 25256,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "confirmation-en-target-redacted-static-labels-390.png",
+      "sha256": "ca994ad8a1a75b6f30307d175b65fba972b70b6b51d9b47287a75f07187bc612",
+      "bytes": 26404,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "confirmation-ja-target-redacted-static-labels-1440.png",
+      "sha256": "fed053b13039cbbc706e0deb2b18ab17e2738f73ce92066960f915a1844e75e4",
+      "bytes": 48156,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "confirmation-ja-target-redacted-static-labels-320.png",
+      "sha256": "70ce97fa11232bcfd4d4dcf1e38dffb5870626da8f9d9e6680d0c4549db6ca80",
+      "bytes": 29277,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "confirmation-ja-target-redacted-static-labels-390.png",
+      "sha256": "90d642733d4c92aab8341ee4112e32ed7b84c102bdd41ed1100768e159b0deee",
+      "bytes": 30588,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "confirmation-ko-target-redacted-static-labels-1440.png",
+      "sha256": "85cc9de1ce06ced7b68cde239266fcb44777b34a3e7379384f39c55c319877bc",
+      "bytes": 38585,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "confirmation-ko-target-redacted-static-labels-320.png",
+      "sha256": "f103399318271ba0138102b0cdda607bf7c3672fd75e2803f7d19f52b4f6216b",
+      "bytes": 19013,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "confirmation-ko-target-redacted-static-labels-390.png",
+      "sha256": "f6339c826cc3d5f5b204b89a3a6fa3980b00da7d4df9a8a2ab01d1117c60e90f",
+      "bytes": 20077,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "gallery-dark-target-redacted-static-labels-390.png",
+      "sha256": "51c068c2b68e7ffa58a9fe21d20ca0976c14e192b14b4d41e02015f510fa937f",
+      "bytes": 24773,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "gallery-light-target-redacted-static-labels-1440.png",
+      "sha256": "800be643524b79a7eb0006cae4d85267b511a431b0fabd704721455ae1ec7036",
+      "bytes": 49535,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "remote_work_sha": "6dafe96838d195ddc1202be01c48e606ed00cc93",
+  "files_checked": 7,
+  "all_selected_bytes_equal": true,
+  "hummingbird_gitlink": "4e52b64d3c772f19d9974409b73d55fb532e9e22",
+  "main_preserved_sha": "ee02a3657448d563508687614a246e05ac61eecd",
+  "no_checkout_or_submodule_mutation": true
+}

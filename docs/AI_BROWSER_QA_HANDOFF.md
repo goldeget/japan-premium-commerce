@@ -1,22 +1,51 @@
 # ORDENOWA AI Browser QA Handoff
 
-## 현재 Cloud Codex·독립 화면 검수 — 2026-10-29
+### 최종 검증 후보 — 91c6098 / 전체 격리 QA SUCCESS
 
-검증 코드 **`8663e96cdd240be52cd812f4e1d62e1edaa55ee4`**, 원격 work 저장·파일 재조회 일치, main 원본 유지. 전체38phase [#40756263392](https://github.com/goldeget/japan-premium-commerce/actions/runs/40756263392)는 진행 중이다. Cloud Codex는 실제 Chromium/ChromeDriver로 HTTP/DOM/입력/키보드·저장/재조회를 수행했다. 외부 Work Mode 세션에 직접 전달하지 않았다. Codex 패널 요청의 queued/무응답은 GUI 접근·검수 성공의 근거가 아니다.
+검증 코드 **`91c6098c6b551946cc8291b31c868656d50c9b34`**를 원격 work에 저장하고 변경 파일 재조회·새 원격 복제본으로 일치 확인했다. main **`ee02a3657448d563508687614a246e05ac61eecd`**와 원래 사용자 체크아웃/운영 DB·volume은 보존했다. 이후 문서 저장 HEAD와 검증 코드 SHA는 구분한다.
 
-검수한 핵심: 배정→수량2확인/요청→승인0P→별도100P→재로그인100P→정정80P, B foreign GET/POST 거부·B인증 유지·A원본 보존, 제한 직원403, 문의 공개/내부 분리. 기대 결과는 본인 상품/요청만 표시하고 cart/shipping/payment/withdraw 흐름이 없는 것이다.
+전체 [#40763074207](https://github.com/goldeget/japan-premium-commerce/actions/runs/40763074207)는 최종 **SUCCESS**, 실제 **38/38 phase PASS / aggregate passed=true / cleanup success**다. native browser16단계·3언어 회원/reset·공식 ACL·메일/Push mock·재시작/독립 복원까지 통과했다. 초기/재시작 앱1140·Pushvendor1426 파일이 정확한91코드와 일치했다. [artifact12850640042](https://github.com/goldeget/japan-premium-commerce/actions/runs/40763074207/artifacts/12850640042), ZIP SHA256 **`5c01e0d4b070875e3bac1e75b4586ee20113748a298039dc1a2f5589c4c69802`**를 직접 확인했고 [원본12JSON·24PNG·무결성 명세](evidence/2026-10-29-procurement-local/fresh-91c6098-complete/)를 보존했다.
 
-UI를 작성하지 않은 별도 GPT가 안전한 고객21+54PNG, 공개 정적 구성요소42PNG, 최종 언어 선택기3PNG 및 native 관리자12PNG를 모두 실제 열어 검수했다. [독립 결과](evidence/2026-10-29-procurement-local/INDEPENDENT_REVIEW.md), [제한된 접근성 판정](evidence/2026-10-29-procurement-local/BOUNDED_MANUAL_REVIEW.md), [관리자 top viewport](evidence/2026-10-29-procurement-local/reviewed-admin-native/INDEPENDENT_REVIEW.md)를 따른다. 관리자 하단 정책 필드/저장 버튼·일부 비어 있던 pending 조작은 그 캡처 범위 밖이며 실제 기능 E2E와 구분한다.
+직전 실패는 실제200ms 링크 font/padding 전환이 끝나기 전에 캡처한 QA 순서 문제였다. 기존30초와 full rect/center hit/privacy geometry/enabled/stable scroll·권한 조건을 유지한 수정으로13unit·실제D20target·저장 재조회가 통과했다. 별도 GPT는 **새 hosted24PNG를 모두 실제 열었고 핵심20target(3언어9메뉴·9요청확인·2사진)을 인수**했다. JA/KO 글리프·부모/하위 분류·최종 버튼/사진쌍이 보인다. 전체 텍스트를 치환한 나머지4포인트 PNG는 의미/geometry 인수 근거로 쓰지 않는다. [독립 실제 검수](evidence/2026-10-29-procurement-local/fresh-91c6098-complete/ordenowa-independent-final-hosted-40763074207-review.md).
 
-이번 변경 화면은 한국어 native 이미지/모듈/상품설정/SEO/성능/실험기능/배송설정/메일/로그/API/언어복사/CareCenter 및 메뉴명이다. 기존 노출 UI의 번역만 보강하며 배송·반품·checkout을 새 출시 기능으로 추가하지 않는다.69개 메뉴노드의 현재 화면을 대조한 뒤 변경 영향19건을 실제 집중 재검증했다. 한국어69번역·이메일 메뉴·원본/대상 언어 라벨, 선택값/CSRF/업무·권한/TabLang 보존을 확인했다. [안전한 DOM 결과](evidence/2026-10-29-procurement-local/admin-expanded/)는 캡처 시각 인수와 구분한다.
+최신 품질은 JA7경로/10폭+일부dark의7privacy·84layout·84axe·14실제클릭·14Lighthouse PASS다.14건 성능/접근성100, 공개정책SEO100, 모바일LCP최대1747.3ms/CLS0.0001이다. axe위반0이지만84셀 incomplete와 기존 제한된13패턴 수동 검토를 유지한다. 전체WCAG·실사용INP·실기기 성공으로 확대하지 않는다.
 
-최종 full artifact가 나오면 동일 SHA의 실제 category/하위메뉴9PNG·확인9PNG·gallery2PNG를 독립 검수한다. 아직 새 fresh category 이미지를 열었다고 주장하지 않는다. 실제 Amazon/Rakuten·실기기·전체WCAG/실사용INP 완료로 확대하지 않는다. 같은 코드 수정·동일 CI를 중복 실행하지 않고 artifact SHA·실제 outcome·aggregate·cleanup을 확인한다.
+로컬D의 요청/원장/포인트계정0·ACTIVE1과 원래A/B/C/80P·업무12/ACL감사8/메뉴2/상품·사진 보존을 확인했다. 새D의 native언어 전환 `id_lang/date_upd`와 접속/session telemetry만 별도 기록했다. [로컬 집중·정확한 보존 범위](evidence/2026-10-29-procurement-local/real-two-level-category-focus/). **핵심 구현과 명시한 합성 격리 검증은 완료했으며, 실제 상품·운영 정책/환경·기기 인수는 남아 있다. 운영 출시 완료는 아니다.**
 
-### 최신 fresh 초기값 불일치와 증거 수집
 
-ad51cff의 전체 #40755121454는 **3phase PASS/module_seed FAIL/후속34not_run/cleanup success**다. 새13메뉴의 엄격한 한국어 초기값 assertion에서 실패했고 당시 로그에는 대상 클래스가 없어, 올바른 기존 한국어 표현 보존과의 기대값 충돌인지 실제 초기화 결함인지 아직 확정하지 않는다. artifact12845373313 SHA256 `115a8c0c4d9e4c4a112b3814aaead0feed688a4e02c54134753cc12620786cca`.
+## 실제 브라우저와 화면 검수 인계
 
-8663e96은 앱을 바꾸지 않고, 원래 엄격한13개 assertion 전에 고정 클래스의 존재/owner/일치/기본영문/Hangul/중복 여부만 안전하게 보존한다. 이름 원문·ID·토큰은 넣지 않고 실패 후에도 JSON을 복사한다.5개 진단 fixture/기존9계약·lint 통과 후 위 실행에서 새 증거를 수집 중이다. 실패를 성공으로 바꾸거나 확인되지 않은 원인을 수정했다고 기록하지 않는다. 앱1140파일은 ad51cff와 동일하다.
+Cloud Codex는 실제 Chromium/ChromeDriver로 HTTP·DOM·입력·키보드·저장·새 세션 재조회를 수행했다. Codex browser/file 패널 열기 요청은 queued였으며 GUI 접근 성공이나 외부 Work Mode 전달 완료를 뜻하지 않는다. 내부 별도 GPT의 실제 PNG 검수와 외부 Work Mode 인수를 구분한다.
+
+| 변경 화면 | 실제 집중 근거 | 검수 기대 결과 |
+| --- | --- | --- |
+| 분류·하위메뉴 | [D 실제9PNG/필터](evidence/2026-10-29-procurement-local/real-two-level-category-focus/final-targets/) | JA/EN/KO320/390/1440에서 부모/하위 연결·전체링크 표시, leaf는 본인 배정1건·미등록은 빈 결과 |
+| 요청 확인 | 같은 폴더9PNG·수량2 DOM | 명시적 최종제출·수량변경 표시, 최종제출 없음 |
+| 사진 보기 | 같은 폴더1440light/390dark선호2PNG | 서로 다른 원본CI사진2장 표시. 실제상품/별도다크테마 인수 아님 |
+| 최신 hosted 화면 | [artifact12850640042](https://github.com/goldeget/japan-premium-commerce/actions/runs/40763074207/artifacts/12850640042)·[실제24장검수](evidence/2026-10-29-procurement-local/fresh-91c6098-complete/ordenowa-independent-final-hosted-40763074207-review.md) | hosted20target 실제 인수 완료. 추가4포인트 broad-redaction은 의미/geometry 근거 제외 |
+
+[실제20장 독립 검수](evidence/2026-10-29-procurement-local/real-two-level-category-focus/final-targets/ordenowa-independent-real-d-final-review.md)와 원본 실패 캡처도 보존한다. Work Mode에는 최종 코드SHA·artifact·변경 화면·기대 결과를 이 문서로 제공하며, 실제 전달 여부는 별도 표시한다.
+
+
+## 구현과 검증 범위
+
+운영자 상품 배정 → 고객 상품·수량 확인/발주 요청 → 운영자 수동 검토 → 별도 수동 포인트 지급 → 고객 잔액·내역 조회를 구현했다. 판매결제·배송·반품·상품환불·포인트 사용/출금은 확정 범위 제외다. 일반 업무 결과·증거 제출 플랫폼으로 확장하지 않는다.
+
+전용12테이블의 저장/rollback·동시성·멱등, owner/shop/역할/CSRF, 원본 연결 정정과 원장 대조, 요청별 공개 문의/내부 메모, 정책 버전·감사·outbox를 검증했다. 실제 native A의 수량2 요청·승인0P→명시적100P→새 로그인100P→정정80P, B GET/POST 거부·본인 인증 유지·A원본 보존, 유효 native 토큰을 사용한 제한 직원 변경403을 확인했다.
+
+3언어 회원/reset·Mailpit5건/재전달0·실제 ACL6변경/감사6행·재시작/독립 복원 집중 결과를 보존한다. 관리자69메뉴노드(60목적지) 중66건200KO,69번역·13Tab CAS·범위가 고정된 언어복사 라벨 수정 후19건 재조회와 native폼62/DB33/locale61검사를 통과했다. 외부2페이지와 미진입 오류 분기는 전체 한국어 인수 미완료다.
+
+이전 품질3은 JA7경로/10폭·84layout/axe·14클릭·14Lighthouse PASS(성능99–100/접근성100/공개SEO100)다. 자동 incomplete84셀과 제한된 수동 검토를 구분하며 전체WCAG·실기기·field INP 인증은 주장하지 않는다. 로컬 overlay 검사와 최신 immutable fresh 결과도 구분한다.
+
+## 남은 출시 조건
+
+1. Amazon Japan/Rakuten 실제 가격·상세·사진·원문 분류 호환: 현재 관리망 CONNECT403으로 차단. 합성 결과로 대체하지 않는다.
+2. 관리자 외부2페이지와 미진입 오류 분기의 전체 한국어 인수. 접근성 incomplete84셀과 제한된 수동13패턴도 보존한다.
+3. 실제 운영자/지원·상품/참여 고객·검토/수당 기준과9개 JA/EN/KO 정책 초안 승인.
+4. 승인 운영 환경의 HTTPS/SMTP·secret 참조·불변 이미지 digest·scheduler·감시·복원/롤백 연결과 인수. 단순 값 입력만 남은 상태가 아니다.
+5. 실제 iOS/Android PWA·Push 설치/업데이트/수신/철회 인수.
+
+[요구사항표](RELEASE_REQUIREMENTS_MATRIX.md)·[정확한 QA 이력](TEST_RESULTS.md)·[증거 목록](evidence/2026-10-29-procurement-local/README.md)·[단일 운영 입력표](PRODUCTION_DEPLOYMENT.md#현재-서비스의-운영-입력-체크리스트)를 따른다. 운영 배포·실결제·실거래·유료 서비스는 실행하지 않았다.
 
 ---
 

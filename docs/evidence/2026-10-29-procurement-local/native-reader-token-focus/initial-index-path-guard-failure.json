@@ -1,0 +1,11 @@
+{
+  "helper_source_sha256": "0a1deeb9c039496d9d2d800c199b2a9d69a30738f92f83ed1f82c3aeb395a66c",
+  "exact_current_helpers": true,
+  "read_only_except_four_expected_denied_posts": true,
+  "get_pages": {},
+  "denials": {},
+  "fresh_native_reader_login_pass": true,
+  "passed": false,
+  "failure_stage": "AdminOrdenowaProcurementPolicies",
+  "failure_type": "AssertionError"
+}

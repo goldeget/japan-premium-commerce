@@ -1,0 +1,127 @@
+{
+  "scope": "Existing local C preview, no final submission; existing Home-only snapshot is not fresh category semantics",
+  "capture_helper_sha256": "65d7fdc25b3ba142b57a5b90436315fb577c3236a062127bace2da4f61685cbf",
+  "image_count": 15,
+  "images": [
+    {
+      "file": "focus-categories-target-redacted-static-labels-ja-1440.png",
+      "sha256": "02bf066bde0dd78f3d7913d070d8fbb42c9599b92b277e4ca99a80a3fe8fcb6a",
+      "bytes": 60876,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "focus-categories-target-redacted-static-labels-ja-320.png",
+      "sha256": "bf4b456a55edd42a02eea03da7aab0c95a03bd2708f33169b6aaa94a783be81c",
+      "bytes": 30543,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "focus-categories-target-redacted-static-labels-ja-390.png",
+      "sha256": "6d3e5572e91dc653db375f1d8a890a377805e41c0b47421e39d50c29786adf55",
+      "bytes": 31979,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "focus-confirmation-target-redacted-static-labels-en-1440.png",
+      "sha256": "49bba0c9c59ce8aaaf5586cbd7e223f909af15be232a3fa86a15dd7499857231",
+      "bytes": 46195,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "focus-confirmation-target-redacted-static-labels-en-320.png",
+      "sha256": "516ab89ab0580e8911f95fc8dffd65b3308a03343c94637554458f304aea6fa4",
+      "bytes": 25270,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "focus-confirmation-target-redacted-static-labels-en-390.png",
+      "sha256": "67f012a57c7f2fe4ddbe99e5fd9f70adcaa2b2d85cc5b9a8b3f10bcdbc93be83",
+      "bytes": 26403,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "focus-confirmation-target-redacted-static-labels-ja-1440.png",
+      "sha256": "db0c2b5e3bd1d7983e252bc3ec63cd24f50867a5dd53c0712978df789d8b1f1a",
+      "bytes": 48142,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "focus-confirmation-target-redacted-static-labels-ja-320.png",
+      "sha256": "3a2a96a1bba8cc5de9f2f48931b31b92705db727bcc20626a136c8bd5a59a75a",
+      "bytes": 29281,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "focus-confirmation-target-redacted-static-labels-ja-390.png",
+      "sha256": "afad6aabb0d6235335eb85ec7df969f7e71134f0662fe07fe1dd9cd88f534d72",
+      "bytes": 30596,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "focus-confirmation-target-redacted-static-labels-ko-1440.png",
+      "sha256": "7466fa83a30d085e293f0051bc1533ea32b5c7e6722d50bebb021a1986c81c21",
+      "bytes": 38573,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "focus-confirmation-target-redacted-static-labels-ko-320.png",
+      "sha256": "7e424e443880e068ae4ac98ff9bb6faca1a7a6ef2a0dfbd7d27bd6b86e046fbc",
+      "bytes": 19023,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "focus-confirmation-target-redacted-static-labels-ko-390.png",
+      "sha256": "94f9c41440ae5294cdaf21f8c7e1c6390dcb50567f1a21e1baf7cc975da22c84",
+      "bytes": 20032,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "focus-gallery-target-redacted-static-labels-ja-1440.png",
+      "sha256": "90d601ee40a3e01df838aae574c5d7c02f7ef211df9353b92a9dc78954464f07",
+      "bytes": 47472,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "focus-gallery-target-redacted-static-labels-ja-320.png",
+      "sha256": "9ec87abae36037279c9ef94f928aaad676feca178ce49c5284b76a10673961bb",
+      "bytes": 24609,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "focus-gallery-target-redacted-static-labels-ja-390.png",
+      "sha256": "050dbe505784036f1b3ca8d89dc8d9d0e3c4adc7b7718f272a32ca3fd69b7688",
+      "bytes": 22882,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    }
+  ]
+}

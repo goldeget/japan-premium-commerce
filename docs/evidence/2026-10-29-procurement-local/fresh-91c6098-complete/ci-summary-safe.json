@@ -1,0 +1,165 @@
+{
+  "source_sha": "91c6098c6b551946cc8291b31c868656d50c9b34",
+  "workflow_run": 40763074207,
+  "workflow_url": "https://github.com/goldeget/japan-premium-commerce/actions/runs/40763074207",
+  "job_id": 123079863350,
+  "job_outcome": "success",
+  "artifact_id": 12850640042,
+  "artifact_name": "procurement-safe-40763074207-1",
+  "artifact_bytes": 989119,
+  "artifact_sha256": "5c01e0d4b070875e3bac1e75b4586ee20113748a298039dc1a2f5589c4c69802",
+  "artifact_digest_verified": true,
+  "artifact_expires_at": "2026-11-04T20:35:55Z",
+  "aggregate_passed": true,
+  "cleanup": "success",
+  "required_phase_count": 38,
+  "passed_phase_count": 38,
+  "artifact_json_count": 12,
+  "artifact_png_count": 24,
+  "native_browser_stages": {
+    "passed": true,
+    "stages": {
+      "native_policy_invalid_csrf_no_write": true,
+      "native_policy_save_fresh_readback": true,
+      "admin_assign_product": true,
+      "reviewed_category_navigation_filters": true,
+      "customer_a_confirm_submit": true,
+      "customer_b_owner_denials": true,
+      "native_readonly_review_denial": true,
+      "admin_manual_review": true,
+      "native_readonly_award_denial": true,
+      "admin_explicit_award": true,
+      "customer_fresh_login_award": true,
+      "native_readonly_correction_denial": true,
+      "admin_linked_correction": true,
+      "request_native_support_owner_isolation": true,
+      "private_noindex_and_retail_denials": true,
+      "responsive_keyboard_private_captures": true
+    },
+    "failed_stage": null
+  },
+  "quality": {
+    "passed": true,
+    "measured_locale": "ja",
+    "privacy_checks": 7,
+    "layout_cells": 84,
+    "axe_cells": 84,
+    "axe_violations": 0,
+    "axe_manual_incomplete_cells": 84,
+    "interaction_checks": 14,
+    "lighthouse_checks": 14,
+    "performance_min": 100.0,
+    "accessibility_min": 100.0,
+    "public_policy_seo_scores": [
+      100.0,
+      100.0
+    ],
+    "max_lcp_ms": 1747.3,
+    "max_cls": 0.0001,
+    "max_scripted_interaction_bound_ms": 24.0,
+    "required_widths": [
+      320,
+      360,
+      375,
+      390,
+      430,
+      768,
+      1024,
+      1280,
+      1440,
+      1920
+    ],
+    "field_inp_status": "NOT_TESTED_requires_field_observation"
+  },
+  "source_gates": {
+    "native_source": {
+      "application_source_files": 1140,
+      "classified_extra_counts": {
+        "generated_child_ccc": 0,
+        "native_parent_prebuilt_assets": 83
+      },
+      "matches": {
+        "bundled_equals_runtime_push_vendor": true,
+        "host_equals_bundled_application": true,
+        "host_equals_runtime_application": true,
+        "no_unclassified_runtime_files": true
+      },
+      "passed": true,
+      "phase": "native_source",
+      "push_vendor_files": 1426,
+      "source_sha": "91c6098c6b551946cc8291b31c868656d50c9b34",
+      "unclassified_extra_count": 0
+    },
+    "restart_source": {
+      "application_source_files": 1140,
+      "classified_extra_counts": {
+        "generated_child_ccc": 3,
+        "native_parent_prebuilt_assets": 83
+      },
+      "matches": {
+        "bundled_equals_runtime_push_vendor": true,
+        "host_equals_bundled_application": true,
+        "host_equals_runtime_application": true,
+        "no_unclassified_runtime_files": true
+      },
+      "passed": true,
+      "phase": "restart_source",
+      "push_vendor_files": 1426,
+      "source_sha": "91c6098c6b551946cc8291b31c868656d50c9b34",
+      "unclassified_extra_count": 0
+    }
+  },
+  "qualification": [
+    "Synthetic reviewed original CI artwork and parsed fixture; not live Amazon/Rakuten source acceptance",
+    "Automated axe incomplete review remains; field INP and physical devices not tested",
+    "Four broad points screenshots excluded from semantic/geometry evidence because legacy text replacement changes layout; not an application defect"
+  ],
+  "files": {
+    "accounts-outcome.json": "3254cfcdf3c8dd4eb07119f506a699e01d47c2b8c4eb6b55570e7d95b85a4813",
+    "acl-browser.json": "740e40431fb54025bad66f14ddb8e5d5b70d445900acc5c923331224f8954938",
+    "browser-outcome.json": "74f3eb975b695218fb841ad2bb60219cf840aae0557aed785e6c748ac96ababe",
+    "cache-warmup-outcome.json": "940e4451f3812fcaf909a05d654803417d44eb05c57aa8ecc5777360f6955386",
+    "categories-target-redacted-static-labels-en-1440.png": "e9077aff77d519ac041e288975b54612954face2b980089c55312322f0268d2c",
+    "categories-target-redacted-static-labels-en-320.png": "3d1af3605c9ac7362cdd1d7b0a9850922e71521a024065b3243af7188b07e0da",
+    "categories-target-redacted-static-labels-en-390.png": "fd5db9ab64a61e02d84ec08d8a2f17f6dc8f21754eb1c36ca849fd0dda5330fe",
+    "categories-target-redacted-static-labels-ja-1440.png": "bcabb6caf40c93c9e4fbc74c39a2983de0abb0feafb0d8896dec9391c6a8108f",
+    "categories-target-redacted-static-labels-ja-320.png": "640d9af97ba651d8b4c79c290b75d5d1ad8b0ef2baac608845186519f02a680e",
+    "categories-target-redacted-static-labels-ja-390.png": "01f839deb39534f6a7bff1472d834705714bd019207b3a37ccdadc92b0174ecf",
+    "categories-target-redacted-static-labels-ko-1440.png": "5f43c2317014188ff14a30a9cc55bd33ec9747780c93603540b4f00614e5a43f",
+    "categories-target-redacted-static-labels-ko-320.png": "61315e2cfb1da124226cef963cc0cf417ed543fb726ab7a57dda976d642b0744",
+    "categories-target-redacted-static-labels-ko-390.png": "ee454b4bdd4d23c05c77ea693c33643f4490580ae7fb4fd0f5947a72666392df",
+    "confirmation-en-target-redacted-static-labels-1440.png": "6a1db47920dad892b2a554be3b1de622f0f32295e69f2eacbcedcd9cf3ade6dc",
+    "confirmation-en-target-redacted-static-labels-320.png": "cea7d96740041a80cd076329e168eaf42e8970fa259bcd02a25a265df5d2caea",
+    "confirmation-en-target-redacted-static-labels-390.png": "b2e7044f4ceca769bdd271edac007997c0682e3c57be788b4477a51da3ef468b",
+    "confirmation-ja-target-redacted-static-labels-1440.png": "bdc05e9f4f2b766f825820e6e711d747ae4811396d921580a9942383c6551108",
+    "confirmation-ja-target-redacted-static-labels-320.png": "543daa07f7760973bdb57002ad9802d33e7330552d96d90ce04551346fd5eae3",
+    "confirmation-ja-target-redacted-static-labels-390.png": "bca1070f593acffa894542be3770565b86eb2d34087cae92e4335e17f1664399",
+    "confirmation-ko-target-redacted-static-labels-1440.png": "39328ee5d2cb55d4de45ee0fd692656e490cc033e11f3432ec8f5904bbb46e8a",
+    "confirmation-ko-target-redacted-static-labels-320.png": "ce8b988f4d52a97fcf7ba18fa475a7ffbb8564f8949905e23c48cf1cc120f1a5",
+    "confirmation-ko-target-redacted-static-labels-390.png": "40e3dc600ddde7063fe7a49d375977c26708148dbe405a213b56e6bab968a610",
+    "fonts-cjk-outcome.json": "1137c93af4b41b860b7fa239ccc16629d01eac152d89cec2a0efbdbd158b9d69",
+    "gallery-dark-target-redacted-static-labels-390.png": "b418baa2d92374167c17f366721450d978d4d987d62ca8fd17a57f182c4d3465",
+    "gallery-light-target-redacted-static-labels-1440.png": "941ee1cd53d294090a561551687476061e20a4ce47e668a84df0ec6e9ab09177",
+    "image-build-outcome.json": "bb0e8307eed0be3dbc9caa9d181be9aaeb598305dc5c278eb40e913107c76d6b",
+    "native_source-outcome.json": "f7cefd4fb705edcfe740b02a8f0e478ace9f0e9da14182049e901da323ccd1eb",
+    "outcome.json": "c0bd0636bbb3d6d480d71e60afad57bd1b2efc5d3283e0358b619ecb20901c38",
+    "points-redacted-1440-dark.png": "6ae8142ed28aa53f0e159209c2f5a2c24dcc8f6c8a36c0418f23f5bbc5977297",
+    "points-redacted-1440-light.png": "6ae8142ed28aa53f0e159209c2f5a2c24dcc8f6c8a36c0418f23f5bbc5977297",
+    "points-redacted-390-dark.png": "1de671d421b065be53aedd0c4f38438d9e41efbb9843acaf51d79dedc85abc5a",
+    "points-redacted-390-light.png": "1de671d421b065be53aedd0c4f38438d9e41efbb9843acaf51d79dedc85abc5a",
+    "procurement-quality-outcome.json": "88a697b69401240440cb2594460faf56b7590a7a7c0aadd273c1f1a86d0f0fc0",
+    "restart_source-outcome.json": "d40f18e013067e32f864e6b2e7b0918eb2d4f08a1c104b742aaf7056011c55df",
+    "runtime-start-outcome.json": "d7d714d9742311ed30ec056146a2ed4a6d2fd70b9acf07fe6c226b66705bdfd0",
+    "seed-metadata-outcome.json": "c88a3167246e43b917ab1e7b11854e9e855948cd31f51961dc4a01f2deceaea2"
+  },
+  "independent_visual_review": {
+    "all_artifact_png_opened": 24,
+    "accepted_target_png": 20,
+    "cjk_readable_ja_ko": true,
+    "two_level_category_targets": 9,
+    "confirmation_control_targets": 9,
+    "two_photo_gallery_targets": 2,
+    "broad_points_png_excluded": 4,
+    "new_browser_or_ci_required": false
+  }
+}

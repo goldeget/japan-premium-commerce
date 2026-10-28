@@ -1,0 +1,270 @@
+{
+  "exact_current_helper_sha256": "65d7fdc25b3ba142b57a5b90436315fb577c3236a062127bace2da4f61685cbf",
+  "real_fixture_no_dom_simulation": true,
+  "no_final_submit": true,
+  "checks": [
+    {
+      "ordinal": 1,
+      "function": "native_page_url",
+      "line": 78,
+      "passed": true
+    },
+    {
+      "ordinal": 2,
+      "function": "native_page_url",
+      "line": 79,
+      "passed": true
+    },
+    {
+      "ordinal": 3,
+      "function": "login_customer",
+      "line": 91,
+      "passed": true
+    },
+    {
+      "ordinal": 4,
+      "function": "native_page_url",
+      "line": 78,
+      "passed": true
+    },
+    {
+      "ordinal": 5,
+      "function": "native_page_url",
+      "line": 79,
+      "passed": true
+    },
+    {
+      "ordinal": 6,
+      "function": "native_identity",
+      "line": 114,
+      "passed": true
+    },
+    {
+      "ordinal": 7,
+      "function": "native_identity",
+      "line": 115,
+      "passed": true
+    },
+    {
+      "ordinal": 8,
+      "function": "capture_static",
+      "line": 206,
+      "passed": true
+    },
+    {
+      "ordinal": 9,
+      "function": "viewport",
+      "line": 181,
+      "passed": true
+    },
+    {
+      "ordinal": 10,
+      "function": "capture_static",
+      "line": 211,
+      "passed": true
+    },
+    {
+      "ordinal": 11,
+      "function": "capture_static",
+      "line": 215,
+      "passed": true
+    },
+    {
+      "ordinal": 12,
+      "function": "capture_static",
+      "line": 234,
+      "passed": true
+    },
+    {
+      "ordinal": 13,
+      "function": "capture_static",
+      "line": 238,
+      "passed": true
+    },
+    {
+      "ordinal": 14,
+      "function": "capture_static",
+      "line": 244,
+      "passed": false
+    }
+  ],
+  "positive_native_d_identity": true,
+  "real_parent_leaf_xpath_positive": true,
+  "leaf_href_category_matches_native_leaf": true,
+  "first_false_check": {
+    "ordinal": 14,
+    "function": "capture_static",
+    "line": 244,
+    "passed": false
+  },
+  "first_false_safe_locals": {
+    "width": 320,
+    "target_state": true,
+    "stable": false,
+    "geometry": {
+      "before": [
+        320,
+        1930
+      ],
+      "after": [
+        320,
+        1930
+      ],
+      "controls": true,
+      "mask_rectangles": 31,
+      "scroll": 329
+    }
+  },
+  "exact_capture_pass": false,
+  "failure_stage": "exact_capture_static_ja320",
+  "failure_type": "AssertionError",
+  "fixed_selector_geometry": {
+    "rows": [
+      {
+        "node_count": 1,
+        "selector_kind": "nav_all"
+      },
+      {
+        "blocker": "none",
+        "client_rects": [
+          {
+            "bottom": 554.15625,
+            "height": 44,
+            "left": 12,
+            "right": 111.75,
+            "top": 510.15625,
+            "width": 99.75
+          }
+        ],
+        "computed_display": "block",
+        "css_visible": true,
+        "fragment_center_hits": [
+          true
+        ],
+        "hit_contained": true,
+        "hit_equal": true,
+        "hit_is_parent": false,
+        "index": 0,
+        "inside_viewport": true,
+        "rect": {
+          "bottom": 554.15625,
+          "height": 44,
+          "left": 12,
+          "right": 111.75,
+          "top": 510.15625,
+          "width": 99.75
+        },
+        "selector_kind": "nav_all"
+      },
+      {
+        "node_count": 3,
+        "selector_kind": "nav_category"
+      },
+      {
+        "blocker": "none",
+        "client_rects": [
+          {
+            "bottom": 604.546875,
+            "height": 44,
+            "left": 12,
+            "right": 74.765625,
+            "top": 560.546875,
+            "width": 62.765625
+          }
+        ],
+        "computed_display": "block",
+        "css_visible": true,
+        "fragment_center_hits": [
+          true
+        ],
+        "hit_contained": true,
+        "hit_equal": true,
+        "hit_is_parent": false,
+        "index": 0,
+        "inside_viewport": true,
+        "rect": {
+          "bottom": 604.546875,
+          "height": 44,
+          "left": 12,
+          "right": 74.765625,
+          "top": 560.546875,
+          "width": 62.765625
+        },
+        "selector_kind": "nav_category"
+      },
+      {
+        "blocker": "none",
+        "client_rects": [
+          {
+            "bottom": 604.546875,
+            "height": 44,
+            "left": 82.765625,
+            "right": 158.328125,
+            "top": 560.546875,
+            "width": 75.5625
+          }
+        ],
+        "computed_display": "block",
+        "css_visible": true,
+        "fragment_center_hits": [
+          true
+        ],
+        "hit_contained": true,
+        "hit_equal": true,
+        "hit_is_parent": false,
+        "index": 1,
+        "inside_viewport": true,
+        "rect": {
+          "bottom": 604.546875,
+          "height": 44,
+          "left": 82.765625,
+          "right": 158.328125,
+          "top": 560.546875,
+          "width": 75.5625
+        },
+        "selector_kind": "nav_category"
+      },
+      {
+        "blocker": "none",
+        "client_rects": [
+          {
+            "bottom": 659.734375,
+            "height": 44,
+            "left": 110.953125,
+            "right": 212.109375,
+            "top": 615.734375,
+            "width": 101.15625
+          }
+        ],
+        "computed_display": "block",
+        "css_visible": true,
+        "fragment_center_hits": [
+          true
+        ],
+        "hit_contained": true,
+        "hit_equal": true,
+        "hit_is_parent": false,
+        "index": 2,
+        "inside_viewport": true,
+        "rect": {
+          "bottom": 659.734375,
+          "height": 44,
+          "left": 110.953125,
+          "right": 212.109375,
+          "top": 615.734375,
+          "width": 101.15625
+        },
+        "selector_kind": "nav_category"
+      }
+    ],
+    "viewport": {
+      "document_height": 1924,
+      "document_width": 320,
+      "height": 1000,
+      "scroll_x": 0,
+      "scroll_y": 326,
+      "width": 320
+    }
+  },
+  "saved_pngs": 0
+}

@@ -1,0 +1,2966 @@
+{
+  "exact_current_helper_sha256": "65d7fdc25b3ba142b57a5b90436315fb577c3236a062127bace2da4f61685cbf",
+  "real_fixture_no_dom_simulation": true,
+  "no_final_submit": true,
+  "checks": [
+    {
+      "ordinal": 1,
+      "function": "native_page_url",
+      "line": 78,
+      "passed": true
+    },
+    {
+      "ordinal": 2,
+      "function": "native_page_url",
+      "line": 79,
+      "passed": true
+    },
+    {
+      "ordinal": 3,
+      "function": "login_customer",
+      "line": 91,
+      "passed": true
+    },
+    {
+      "ordinal": 4,
+      "function": "native_page_url",
+      "line": 78,
+      "passed": true
+    },
+    {
+      "ordinal": 5,
+      "function": "native_page_url",
+      "line": 79,
+      "passed": true
+    },
+    {
+      "ordinal": 6,
+      "function": "native_identity",
+      "line": 114,
+      "passed": true
+    },
+    {
+      "ordinal": 7,
+      "function": "native_identity",
+      "line": 115,
+      "passed": true
+    },
+    {
+      "ordinal": 8,
+      "function": "capture_static",
+      "line": 206,
+      "passed": true
+    },
+    {
+      "ordinal": 9,
+      "function": "viewport",
+      "line": 181,
+      "passed": true
+    },
+    {
+      "ordinal": 10,
+      "function": "capture_static",
+      "line": 211,
+      "passed": true
+    },
+    {
+      "ordinal": 11,
+      "function": "capture_static",
+      "line": 215,
+      "passed": true
+    },
+    {
+      "ordinal": 12,
+      "function": "capture_static",
+      "line": 234,
+      "passed": true
+    },
+    {
+      "ordinal": 13,
+      "function": "capture_static",
+      "line": 238,
+      "passed": true
+    },
+    {
+      "ordinal": 14,
+      "function": "capture_static",
+      "line": 244,
+      "passed": false
+    }
+  ],
+  "positive_native_d_identity": true,
+  "real_parent_leaf_xpath_positive": true,
+  "leaf_href_category_matches_native_leaf": true,
+  "screenshot_layout_snapshots": [
+    {
+      "before": {
+        "animations": [
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "maxHeight"
+            ],
+            "selector_index": -1,
+            "transition_property": "max-height"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "fontSize"
+            ],
+            "selector_index": 12,
+            "transition_property": "font-size"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingBottom"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-bottom"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingLeft"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-left"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingRight"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-right"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingTop"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-top"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "textUnderlineOffset"
+            ],
+            "selector_index": 12,
+            "transition_property": "text-underline-offset"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "fontSize"
+            ],
+            "selector_index": 12,
+            "transition_property": "font-size"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingBottom"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-bottom"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingLeft"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-left"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingRight"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-right"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingTop"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-top"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "textUnderlineOffset"
+            ],
+            "selector_index": 12,
+            "transition_property": "text-underline-offset"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "fontSize"
+            ],
+            "selector_index": 12,
+            "transition_property": "font-size"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingBottom"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-bottom"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingLeft"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-left"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingRight"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-right"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingTop"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-top"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "textUnderlineOffset"
+            ],
+            "selector_index": 12,
+            "transition_property": "text-underline-offset"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "fontSize"
+            ],
+            "selector_index": 12,
+            "transition_property": "font-size"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingBottom"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-bottom"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingLeft"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-left"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingRight"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-right"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingTop"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-top"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "textUnderlineOffset"
+            ],
+            "selector_index": 12,
+            "transition_property": "text-underline-offset"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "fontSize"
+            ],
+            "selector_index": 13,
+            "transition_property": "font-size"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingBottom"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-bottom"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingLeft"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-left"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingRight"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-right"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingTop"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-top"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "textUnderlineOffset"
+            ],
+            "selector_index": 13,
+            "transition_property": "text-underline-offset"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "fontSize"
+            ],
+            "selector_index": 13,
+            "transition_property": "font-size"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingBottom"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-bottom"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingLeft"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-left"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingRight"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-right"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingTop"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-top"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "textUnderlineOffset"
+            ],
+            "selector_index": 13,
+            "transition_property": "text-underline-offset"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "fontSize"
+            ],
+            "selector_index": 13,
+            "transition_property": "font-size"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingBottom"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-bottom"
+          },
+          {
+            "current_time_ms": 99.89999999999999,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.49913793158430075,
+            "property_names": [
+              "paddingLeft"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-left"
+          }
+        ],
+        "elements": [
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": -260.8125,
+                "font_size_px": 16,
+                "height": 68.1875,
+                "left": 0,
+                "line_height_px": 24,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 320,
+                "top": -329,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 320
+              }
+            ],
+            "selector_index": 0
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 1200.0625,
+                "font_size_px": 15.2,
+                "height": 1331.078125,
+                "left": 12,
+                "line_height_px": 25.08,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 308,
+                "top": -131.015625,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 296
+              }
+            ],
+            "selector_index": 1
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 29.390625,
+                "font_size_px": 15.2,
+                "height": 160.40625,
+                "left": 12,
+                "line_height_px": 25.08,
+                "padding": [
+                  19.2,
+                  0,
+                  19.2,
+                  0
+                ],
+                "right": 308,
+                "top": -131.015625,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 296
+              }
+            ],
+            "selector_index": 2
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 137.390625,
+                "font_size_px": 15.2,
+                "height": 108,
+                "left": 12,
+                "line_height_px": 25.08,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 308,
+                "top": 29.390625,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 296
+              }
+            ],
+            "selector_index": 3
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 436.890625,
+                "font_size_px": 15.2,
+                "height": 270.703125,
+                "left": 12,
+                "line_height_px": 25.08,
+                "padding": [
+                  16,
+                  16,
+                  16,
+                  16
+                ],
+                "right": 308,
+                "top": 166.1875,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 296
+              }
+            ],
+            "selector_index": 4
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 667.578125,
+                "font_size_px": 15.2,
+                "height": 157.578125,
+                "left": 12,
+                "line_height_px": 25.08,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 308,
+                "top": 510,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 296
+              }
+            ],
+            "selector_index": 5
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 1200.0625,
+                "font_size_px": 15.2,
+                "height": 508.484375,
+                "left": 12,
+                "line_height_px": 25.08,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 308,
+                "top": 691.578125,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 296
+              }
+            ],
+            "selector_index": 6
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 1200.0625,
+                "font_size_px": 15.2,
+                "height": 508.484375,
+                "left": 12,
+                "line_height_px": 25.08,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 308,
+                "top": 691.578125,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 296
+              }
+            ],
+            "selector_index": 7
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 923.578125,
+                "font_size_px": 15.2,
+                "height": 231,
+                "left": 13,
+                "line_height_px": 25.08,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 307,
+                "top": 692.578125,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 294
+              }
+            ],
+            "selector_index": 8
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 1471.71875,
+                "font_size_px": 16,
+                "height": 207.65625,
+                "left": 0,
+                "line_height_px": 24,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 320,
+                "top": 1264.0625,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 320
+              }
+            ],
+            "selector_index": 9
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 1000,
+                "font_size_px": 16,
+                "height": 69.59375,
+                "left": 0,
+                "line_height_px": 24,
+                "padding": [
+                  6.4,
+                  4,
+                  5.6,
+                  4
+                ],
+                "right": 320,
+                "top": 930.40625,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 320
+              }
+            ],
+            "selector_index": 10
+          },
+          {
+            "count": 2,
+            "rects": [
+              {
+                "bottom": 667.578125,
+                "font_size_px": 15.2,
+                "height": 107.1875,
+                "left": 12,
+                "line_height_px": 25.08,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 308,
+                "top": 560.390625,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 296
+              },
+              {
+                "bottom": 659.578125,
+                "font_size_px": 15.2,
+                "height": 44,
+                "left": 99.5625,
+                "line_height_px": 25.08,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  16
+                ],
+                "right": 225.71875,
+                "top": 615.578125,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 126.15625
+              }
+            ],
+            "selector_index": 11
+          },
+          {
+            "count": 4,
+            "rects": [
+              {
+                "bottom": 82.890625,
+                "font_size_px": 15.6007,
+                "height": 53.5,
+                "left": 12,
+                "line_height_px": 25.7411,
+                "padding": [
+                  12.4007,
+                  12.811,
+                  12.4007,
+                  12.811
+                ],
+                "right": 160,
+                "top": 29.390625,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 148
+              },
+              {
+                "bottom": 82.890625,
+                "font_size_px": 15.6007,
+                "height": 53.5,
+                "left": 160,
+                "line_height_px": 25.7411,
+                "padding": [
+                  12.4007,
+                  12.811,
+                  12.4007,
+                  12.811
+                ],
+                "right": 308,
+                "top": 29.390625,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 148
+              },
+              {
+                "bottom": 136.390625,
+                "font_size_px": 15.6007,
+                "height": 53.5,
+                "left": 12,
+                "line_height_px": 25.7411,
+                "padding": [
+                  12.4007,
+                  12.811,
+                  12.4007,
+                  12.811
+                ],
+                "right": 160,
+                "top": 82.890625,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 148
+              },
+              {
+                "bottom": 136.390625,
+                "font_size_px": 15.6007,
+                "height": 53.5,
+                "left": 160,
+                "line_height_px": 25.7411,
+                "padding": [
+                  12.4007,
+                  12.811,
+                  12.4007,
+                  12.811
+                ],
+                "right": 308,
+                "top": 82.890625,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 148
+              }
+            ],
+            "selector_index": 12
+          },
+          {
+            "count": 4,
+            "rects": [
+              {
+                "bottom": 554,
+                "font_size_px": 13.6014,
+                "height": 44,
+                "left": 12,
+                "line_height_px": 22.4423,
+                "padding": [
+                  6.80069,
+                  12.8028,
+                  6.80069,
+                  12.8028
+                ],
+                "right": 119.671875,
+                "top": 510,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 107.671875
+              },
+              {
+                "bottom": 604.390625,
+                "font_size_px": 13.6014,
+                "height": 44,
+                "left": 12,
+                "line_height_px": 22.4423,
+                "padding": [
+                  6.80069,
+                  12.8028,
+                  6.80069,
+                  12.8028
+                ],
+                "right": 80.375,
+                "top": 560.390625,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 68.375
+              },
+              {
+                "bottom": 604.390625,
+                "font_size_px": 13.6014,
+                "height": 44,
+                "left": 88.375,
+                "line_height_px": 22.4423,
+                "padding": [
+                  6.80069,
+                  12.8028,
+                  6.80069,
+                  12.8028
+                ],
+                "right": 170.34375,
+                "top": 560.390625,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 81.96875
+              },
+              {
+                "bottom": 659.578125,
+                "font_size_px": 13.6014,
+                "height": 44,
+                "left": 116.5625,
+                "line_height_px": 22.4423,
+                "padding": [
+                  6.80069,
+                  12.8028,
+                  6.80069,
+                  12.8028
+                ],
+                "right": 225.71875,
+                "top": 615.578125,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 109.15625
+              }
+            ],
+            "selector_index": 13
+          },
+          {
+            "count": 13,
+            "rects": [
+              {
+                "bottom": 1313.390625,
+                "font_size_px": 16,
+                "height": 24,
+                "left": 12,
+                "line_height_px": 24,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 92.015625,
+                "top": 1289.390625,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 80.015625
+              },
+              {
+                "bottom": 0,
+                "font_size_px": 16,
+                "height": 0,
+                "left": 0,
+                "line_height_px": 24,
+                "padding": [
+                  4,
+                  0,
+                  4,
+                  0
+                ],
+                "right": 0,
+                "top": 0,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 0
+              },
+              {
+                "bottom": 0,
+                "font_size_px": 16,
+                "height": 0,
+                "left": 0,
+                "line_height_px": 24,
+                "padding": [
+                  4,
+                  0,
+                  4,
+                  0
+                ],
+                "right": 0,
+                "top": 0,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 0
+              },
+              {
+                "bottom": 0,
+                "font_size_px": 16,
+                "height": 0,
+                "left": 0,
+                "line_height_px": 24,
+                "padding": [
+                  4,
+                  0,
+                  4,
+                  0
+                ],
+                "right": 0,
+                "top": 0,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 0
+              },
+              {
+                "bottom": 1362.71875,
+                "font_size_px": 16,
+                "height": 24,
+                "left": 12,
+                "line_height_px": 24,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 172.015625,
+                "top": 1338.71875,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 160.015625
+              },
+              {
+                "bottom": 1362.71875,
+                "font_size_px": 16,
+                "height": 24,
+                "left": 175.609375,
+                "line_height_px": 24,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 239.625,
+                "top": 1338.71875,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 64.015625
+              },
+              {
+                "bottom": 1386.71875,
+                "font_size_px": 16,
+                "height": 48,
+                "left": 12,
+                "line_height_px": 24,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 306.90625,
+                "top": 1338.71875,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 294.90625
+              },
+              {
+                "bottom": 1386.71875,
+                "font_size_px": 16,
+                "height": 24,
+                "left": 47.609375,
+                "line_height_px": 24,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 175.625,
+                "top": 1362.71875,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 128.015625
+              },
+              {
+                "bottom": 1446.21875,
+                "font_size_px": 15.0017,
+                "height": 43.5,
+                "left": 45.9375,
+                "line_height_px": 22.5026,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 274.0625,
+                "top": 1402.71875,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 228.125
+              },
+              {
+                "bottom": 994.40625,
+                "font_size_px": 10.56,
+                "height": 56.609375,
+                "left": 4,
+                "line_height_px": 12.672,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 82,
+                "top": 937.796875,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 78
+              },
+              {
+                "bottom": 994.40625,
+                "font_size_px": 10.56,
+                "height": 56.609375,
+                "left": 82,
+                "line_height_px": 12.672,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 160,
+                "top": 937.796875,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 78
+              },
+              {
+                "bottom": 994.40625,
+                "font_size_px": 10.56,
+                "height": 56.609375,
+                "left": 160,
+                "line_height_px": 12.672,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 238,
+                "top": 937.796875,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 78
+              },
+              {
+                "bottom": 994.40625,
+                "font_size_px": 10.56,
+                "height": 56.609375,
+                "left": 238,
+                "line_height_px": 12.672,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 316,
+                "top": 937.796875,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 78
+              }
+            ],
+            "selector_index": 14
+          }
+        ],
+        "font_status": "loaded",
+        "images": [
+          {
+            "bottom": -275.40625,
+            "complete": true,
+            "height": 40,
+            "index": 0,
+            "natural_height": 250,
+            "natural_width": 800,
+            "top": -315.40625,
+            "visible": true,
+            "width": 128
+          },
+          {
+            "bottom": 923.578125,
+            "complete": true,
+            "height": 231,
+            "index": 1,
+            "natural_height": 800,
+            "natural_width": 800,
+            "top": 692.578125,
+            "visible": true,
+            "width": 294
+          }
+        ],
+        "ready_state": "complete",
+        "time_ms": 365.19999999925494,
+        "viewport": {
+          "body_client_height": 1930,
+          "body_scroll_height": 1930,
+          "document_client_height": 1000,
+          "document_client_width": 320,
+          "document_scroll_height": 1930,
+          "document_scroll_width": 320,
+          "height": 1000,
+          "scroll_x": 0,
+          "scroll_y": 329,
+          "visual_height": 1000,
+          "visual_offset_top": 0,
+          "visual_page_top": 329,
+          "visual_scale": 1,
+          "visual_width": 320,
+          "width": 320
+        }
+      },
+      "after": {
+        "animations": [
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "maxHeight"
+            ],
+            "selector_index": -1,
+            "transition_property": "max-height"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "fontSize"
+            ],
+            "selector_index": 12,
+            "transition_property": "font-size"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingBottom"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-bottom"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingLeft"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-left"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingRight"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-right"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingTop"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-top"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "textUnderlineOffset"
+            ],
+            "selector_index": 12,
+            "transition_property": "text-underline-offset"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "fontSize"
+            ],
+            "selector_index": 12,
+            "transition_property": "font-size"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingBottom"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-bottom"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingLeft"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-left"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingRight"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-right"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingTop"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-top"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "textUnderlineOffset"
+            ],
+            "selector_index": 12,
+            "transition_property": "text-underline-offset"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "fontSize"
+            ],
+            "selector_index": 12,
+            "transition_property": "font-size"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingBottom"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-bottom"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingLeft"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-left"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingRight"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-right"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingTop"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-top"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "textUnderlineOffset"
+            ],
+            "selector_index": 12,
+            "transition_property": "text-underline-offset"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "fontSize"
+            ],
+            "selector_index": 12,
+            "transition_property": "font-size"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingBottom"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-bottom"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingLeft"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-left"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingRight"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-right"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingTop"
+            ],
+            "selector_index": 12,
+            "transition_property": "padding-top"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "textUnderlineOffset"
+            ],
+            "selector_index": 12,
+            "transition_property": "text-underline-offset"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "fontSize"
+            ],
+            "selector_index": 13,
+            "transition_property": "font-size"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingBottom"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-bottom"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingLeft"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-left"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingRight"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-right"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingTop"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-top"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "textUnderlineOffset"
+            ],
+            "selector_index": 13,
+            "transition_property": "text-underline-offset"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "fontSize"
+            ],
+            "selector_index": 13,
+            "transition_property": "font-size"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingBottom"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-bottom"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingLeft"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-left"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingRight"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-right"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingTop"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-top"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "textUnderlineOffset"
+            ],
+            "selector_index": 13,
+            "transition_property": "text-underline-offset"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "fontSize"
+            ],
+            "selector_index": 13,
+            "transition_property": "font-size"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingBottom"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-bottom"
+          },
+          {
+            "current_time_ms": 166.59999999999997,
+            "delay_ms": 0,
+            "duration_ms": 200,
+            "kind": "transition",
+            "pending": false,
+            "play_state": "running",
+            "progress": 0.9436382643927047,
+            "property_names": [
+              "paddingLeft"
+            ],
+            "selector_index": 13,
+            "transition_property": "padding-left"
+          }
+        ],
+        "elements": [
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": -258.8125,
+                "font_size_px": 16,
+                "height": 68.1875,
+                "left": 0,
+                "line_height_px": 24,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 320,
+                "top": -327,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 320
+              }
+            ],
+            "selector_index": 0
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 1198.9375,
+                "font_size_px": 15.2,
+                "height": 1327.953125,
+                "left": 12,
+                "line_height_px": 25.08,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 308,
+                "top": -129.015625,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 296
+              }
+            ],
+            "selector_index": 1
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 31.390625,
+                "font_size_px": 15.2,
+                "height": 160.40625,
+                "left": 12,
+                "line_height_px": 25.08,
+                "padding": [
+                  19.2,
+                  0,
+                  19.2,
+                  0
+                ],
+                "right": 308,
+                "top": -129.015625,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 296
+              }
+            ],
+            "selector_index": 2
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 136.828125,
+                "font_size_px": 15.2,
+                "height": 105.4375,
+                "left": 12,
+                "line_height_px": 25.08,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 308,
+                "top": 31.390625,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 296
+              }
+            ],
+            "selector_index": 3
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 436.328125,
+                "font_size_px": 15.2,
+                "height": 270.703125,
+                "left": 12,
+                "line_height_px": 25.08,
+                "padding": [
+                  16,
+                  16,
+                  16,
+                  16
+                ],
+                "right": 308,
+                "top": 165.625,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 296
+              }
+            ],
+            "selector_index": 4
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 667.015625,
+                "font_size_px": 15.2,
+                "height": 157.578125,
+                "left": 12,
+                "line_height_px": 25.08,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 308,
+                "top": 509.4375,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 296
+              }
+            ],
+            "selector_index": 5
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 1198.9375,
+                "font_size_px": 15.2,
+                "height": 507.921875,
+                "left": 12,
+                "line_height_px": 25.08,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 308,
+                "top": 691.015625,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 296
+              }
+            ],
+            "selector_index": 6
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 1198.9375,
+                "font_size_px": 15.2,
+                "height": 507.921875,
+                "left": 12,
+                "line_height_px": 25.08,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 308,
+                "top": 691.015625,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 296
+              }
+            ],
+            "selector_index": 7
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 923.015625,
+                "font_size_px": 15.2,
+                "height": 231,
+                "left": 13,
+                "line_height_px": 25.08,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 307,
+                "top": 692.015625,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 294
+              }
+            ],
+            "selector_index": 8
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 1467.90625,
+                "font_size_px": 16,
+                "height": 204.96875,
+                "left": 0,
+                "line_height_px": 24,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 320,
+                "top": 1262.9375,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 320
+              }
+            ],
+            "selector_index": 9
+          },
+          {
+            "count": 1,
+            "rects": [
+              {
+                "bottom": 1000,
+                "font_size_px": 16,
+                "height": 69.59375,
+                "left": 0,
+                "line_height_px": 24,
+                "padding": [
+                  6.4,
+                  4,
+                  5.6,
+                  4
+                ],
+                "right": 320,
+                "top": 930.40625,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 320
+              }
+            ],
+            "selector_index": 10
+          },
+          {
+            "count": 2,
+            "rects": [
+              {
+                "bottom": 667.015625,
+                "font_size_px": 15.2,
+                "height": 107.1875,
+                "left": 12,
+                "line_height_px": 25.08,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 308,
+                "top": 559.828125,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 296
+              },
+              {
+                "bottom": 659.015625,
+                "font_size_px": 15.2,
+                "height": 44,
+                "left": 94.578125,
+                "line_height_px": 25.08,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  16
+                ],
+                "right": 213.59375,
+                "top": 615.015625,
+                "transition_delay": "0s",
+                "transition_duration": "0s",
+                "transition_property": "all",
+                "width": 119.015625
+              }
+            ],
+            "selector_index": 11
+          },
+          {
+            "count": 4,
+            "rects": [
+              {
+                "bottom": 83.609375,
+                "font_size_px": 15.2451,
+                "height": 52.21875,
+                "left": 12,
+                "line_height_px": 25.1544,
+                "padding": [
+                  12.0451,
+                  7.12143,
+                  12.0451,
+                  7.12143
+                ],
+                "right": 160,
+                "top": 31.390625,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 148
+              },
+              {
+                "bottom": 83.609375,
+                "font_size_px": 15.2451,
+                "height": 52.21875,
+                "left": 160,
+                "line_height_px": 25.1544,
+                "padding": [
+                  12.0451,
+                  7.12143,
+                  12.0451,
+                  7.12143
+                ],
+                "right": 308,
+                "top": 31.390625,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 148
+              },
+              {
+                "bottom": 135.828125,
+                "font_size_px": 15.2451,
+                "height": 52.21875,
+                "left": 12,
+                "line_height_px": 25.1544,
+                "padding": [
+                  12.0451,
+                  7.12143,
+                  12.0451,
+                  7.12143
+                ],
+                "right": 160,
+                "top": 83.609375,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 148
+              },
+              {
+                "bottom": 135.828125,
+                "font_size_px": 15.2451,
+                "height": 52.21875,
+                "left": 160,
+                "line_height_px": 25.1544,
+                "padding": [
+                  12.0451,
+                  7.12143,
+                  12.0451,
+                  7.12143
+                ],
+                "right": 308,
+                "top": 83.609375,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 148
+              }
+            ],
+            "selector_index": 12
+          },
+          {
+            "count": 4,
+            "rects": [
+              {
+                "bottom": 553.4375,
+                "font_size_px": 12.8902,
+                "height": 44,
+                "left": 12,
+                "line_height_px": 21.2688,
+                "padding": [
+                  6.44509,
+                  11.3804,
+                  6.44509,
+                  11.3804
+                ],
+                "right": 112.59375,
+                "top": 509.4375,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 100.59375
+              },
+              {
+                "bottom": 603.828125,
+                "font_size_px": 12.8902,
+                "height": 44,
+                "left": 12,
+                "line_height_px": 21.2688,
+                "padding": [
+                  6.44509,
+                  11.3804,
+                  6.44509,
+                  11.3804
+                ],
+                "right": 75.390625,
+                "top": 559.828125,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 63.390625
+              },
+              {
+                "bottom": 603.828125,
+                "font_size_px": 12.8902,
+                "height": 44,
+                "left": 83.390625,
+                "line_height_px": 21.2688,
+                "padding": [
+                  6.44509,
+                  11.3804,
+                  6.44509,
+                  11.3804
+                ],
+                "right": 159.65625,
+                "top": 559.828125,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 76.265625
+              },
+              {
+                "bottom": 659.015625,
+                "font_size_px": 12.8902,
+                "height": 44,
+                "left": 111.578125,
+                "line_height_px": 21.2688,
+                "padding": [
+                  6.44509,
+                  11.3804,
+                  6.44509,
+                  11.3804
+                ],
+                "right": 213.59375,
+                "top": 615.015625,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 102.015625
+              }
+            ],
+            "selector_index": 13
+          },
+          {
+            "count": 13,
+            "rects": [
+              {
+                "bottom": 1312.265625,
+                "font_size_px": 16,
+                "height": 24,
+                "left": 12,
+                "line_height_px": 24,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 92.015625,
+                "top": 1288.265625,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 80.015625
+              },
+              {
+                "bottom": 0,
+                "font_size_px": 16,
+                "height": 0,
+                "left": 0,
+                "line_height_px": 24,
+                "padding": [
+                  4,
+                  0,
+                  4,
+                  0
+                ],
+                "right": 0,
+                "top": 0,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 0
+              },
+              {
+                "bottom": 0,
+                "font_size_px": 16,
+                "height": 0,
+                "left": 0,
+                "line_height_px": 24,
+                "padding": [
+                  4,
+                  0,
+                  4,
+                  0
+                ],
+                "right": 0,
+                "top": 0,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 0
+              },
+              {
+                "bottom": 0,
+                "font_size_px": 16,
+                "height": 0,
+                "left": 0,
+                "line_height_px": 24,
+                "padding": [
+                  4,
+                  0,
+                  4,
+                  0
+                ],
+                "right": 0,
+                "top": 0,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 0
+              },
+              {
+                "bottom": 1361.59375,
+                "font_size_px": 16,
+                "height": 24,
+                "left": 12,
+                "line_height_px": 24,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 172.015625,
+                "top": 1337.59375,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 160.015625
+              },
+              {
+                "bottom": 1361.59375,
+                "font_size_px": 16,
+                "height": 24,
+                "left": 175.609375,
+                "line_height_px": 24,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 239.625,
+                "top": 1337.59375,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 64.015625
+              },
+              {
+                "bottom": 1385.59375,
+                "font_size_px": 16,
+                "height": 48,
+                "left": 12,
+                "line_height_px": 24,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 306.90625,
+                "top": 1337.59375,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 294.90625
+              },
+              {
+                "bottom": 1385.59375,
+                "font_size_px": 16,
+                "height": 24,
+                "left": 47.609375,
+                "line_height_px": 24,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 175.625,
+                "top": 1361.59375,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 128.015625
+              },
+              {
+                "bottom": 1442.75,
+                "font_size_px": 14.1127,
+                "height": 41.15625,
+                "left": 52.703125,
+                "line_height_px": 21.1691,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 267.28125,
+                "top": 1401.59375,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 214.578125
+              },
+              {
+                "bottom": 994.40625,
+                "font_size_px": 10.56,
+                "height": 56.609375,
+                "left": 4,
+                "line_height_px": 12.672,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 82,
+                "top": 937.796875,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 78
+              },
+              {
+                "bottom": 994.40625,
+                "font_size_px": 10.56,
+                "height": 56.609375,
+                "left": 82,
+                "line_height_px": 12.672,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 160,
+                "top": 937.796875,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 78
+              },
+              {
+                "bottom": 994.40625,
+                "font_size_px": 10.56,
+                "height": 56.609375,
+                "left": 160,
+                "line_height_px": 12.672,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 238,
+                "top": 937.796875,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 78
+              },
+              {
+                "bottom": 994.40625,
+                "font_size_px": 10.56,
+                "height": 56.609375,
+                "left": 238,
+                "line_height_px": 12.672,
+                "padding": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "right": 316,
+                "top": 937.796875,
+                "transition_delay": "0s",
+                "transition_duration": "0.2s",
+                "transition_property": "all",
+                "width": 78
+              }
+            ],
+            "selector_index": 14
+          }
+        ],
+        "font_status": "loaded",
+        "images": [
+          {
+            "bottom": -273.40625,
+            "complete": true,
+            "height": 40,
+            "index": 0,
+            "natural_height": 250,
+            "natural_width": 800,
+            "top": -313.40625,
+            "visible": true,
+            "width": 128
+          },
+          {
+            "bottom": 923.015625,
+            "complete": true,
+            "height": 231,
+            "index": 1,
+            "natural_height": 800,
+            "natural_width": 800,
+            "top": 692.015625,
+            "visible": true,
+            "width": 294
+          }
+        ],
+        "ready_state": "complete",
+        "time_ms": 439.19999999925494,
+        "viewport": {
+          "body_client_height": 1925,
+          "body_scroll_height": 1925,
+          "document_client_height": 1000,
+          "document_client_width": 320,
+          "document_scroll_height": 1925,
+          "document_scroll_width": 320,
+          "height": 1000,
+          "scroll_x": 0,
+          "scroll_y": 327,
+          "visual_height": 1000,
+          "visual_offset_top": 0,
+          "visual_page_top": 327,
+          "visual_scale": 1,
+          "visual_width": 320,
+          "width": 320
+        }
+      }
+    }
+  ],
+  "first_false_check": {
+    "ordinal": 14,
+    "function": "capture_static",
+    "line": 244,
+    "passed": false
+  },
+  "first_false_safe_locals": {
+    "width": 320,
+    "target_state": true,
+    "stable": false,
+    "geometry": {
+      "before": [
+        320,
+        1932
+      ],
+      "after": [
+        320,
+        1932
+      ],
+      "controls": true,
+      "mask_rectangles": 31,
+      "scroll": 330
+    }
+  },
+  "exact_capture_pass": false,
+  "failure_stage": "exact_capture_static_ja320",
+  "failure_type": "AssertionError",
+  "fixed_selector_geometry": {
+    "rows": [
+      {
+        "node_count": 1,
+        "selector_kind": "nav_all"
+      },
+      {
+        "blocker": "none",
+        "client_rects": [
+          {
+            "bottom": 554.15625,
+            "height": 44,
+            "left": 12,
+            "right": 111.9375,
+            "top": 510.15625,
+            "width": 99.9375
+          }
+        ],
+        "computed_display": "block",
+        "css_visible": true,
+        "fragment_center_hits": [
+          true
+        ],
+        "hit_contained": true,
+        "hit_equal": true,
+        "hit_is_parent": false,
+        "index": 0,
+        "inside_viewport": true,
+        "rect": {
+          "bottom": 554.15625,
+          "height": 44,
+          "left": 12,
+          "right": 111.9375,
+          "top": 510.15625,
+          "width": 99.9375
+        },
+        "selector_kind": "nav_all"
+      },
+      {
+        "node_count": 3,
+        "selector_kind": "nav_category"
+      },
+      {
+        "blocker": "none",
+        "client_rects": [
+          {
+            "bottom": 604.546875,
+            "height": 44,
+            "left": 12,
+            "right": 74.921875,
+            "top": 560.546875,
+            "width": 62.921875
+          }
+        ],
+        "computed_display": "block",
+        "css_visible": true,
+        "fragment_center_hits": [
+          true
+        ],
+        "hit_contained": true,
+        "hit_equal": true,
+        "hit_is_parent": false,
+        "index": 0,
+        "inside_viewport": true,
+        "rect": {
+          "bottom": 604.546875,
+          "height": 44,
+          "left": 12,
+          "right": 74.921875,
+          "top": 560.546875,
+          "width": 62.921875
+        },
+        "selector_kind": "nav_category"
+      },
+      {
+        "blocker": "none",
+        "client_rects": [
+          {
+            "bottom": 604.546875,
+            "height": 44,
+            "left": 82.921875,
+            "right": 158.65625,
+            "top": 560.546875,
+            "width": 75.734375
+          }
+        ],
+        "computed_display": "block",
+        "css_visible": true,
+        "fragment_center_hits": [
+          true
+        ],
+        "hit_contained": true,
+        "hit_equal": true,
+        "hit_is_parent": false,
+        "index": 1,
+        "inside_viewport": true,
+        "rect": {
+          "bottom": 604.546875,
+          "height": 44,
+          "left": 82.921875,
+          "right": 158.65625,
+          "top": 560.546875,
+          "width": 75.734375
+        },
+        "selector_kind": "nav_category"
+      },
+      {
+        "blocker": "none",
+        "client_rects": [
+          {
+            "bottom": 659.734375,
+            "height": 44,
+            "left": 111.109375,
+            "right": 212.46875,
+            "top": 615.734375,
+            "width": 101.359375
+          }
+        ],
+        "computed_display": "block",
+        "css_visible": true,
+        "fragment_center_hits": [
+          true
+        ],
+        "hit_contained": true,
+        "hit_equal": true,
+        "hit_is_parent": false,
+        "index": 2,
+        "inside_viewport": true,
+        "rect": {
+          "bottom": 659.734375,
+          "height": 44,
+          "left": 111.109375,
+          "right": 212.46875,
+          "top": 615.734375,
+          "width": 101.359375
+        },
+        "selector_kind": "nav_category"
+      }
+    ],
+    "viewport": {
+      "document_height": 1924,
+      "document_width": 320,
+      "height": 1000,
+      "scroll_x": 0,
+      "scroll_y": 326,
+      "width": 320
+    }
+  },
+  "saved_pngs": 0
+}

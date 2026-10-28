@@ -1,32 +1,37 @@
 # ORDENOWA 개발 현황
 
-## 2026-10-29 현재 발주 플랫폼 구현·검증 상태
+### 최종 검증 후보 — 91c6098 / 전체 격리 QA SUCCESS
 
-제품은 **운영자 상품 안내/배정 → 고객 상품·수량 확인 및 발주 요청 → 운영자 수동 검토 → 별도 명시적 수당 포인트 지급 → 본인 잔액·내역 조회**다. 배송·반품·환불·판매결제·포인트 사용/출금은 확정 범위 제외다.
+검증 코드 **`91c6098c6b551946cc8291b31c868656d50c9b34`**를 원격 work에 저장하고 변경 파일 재조회·새 원격 복제본으로 일치 확인했다. main **`ee02a3657448d563508687614a246e05ac61eecd`**와 원래 사용자 체크아웃/운영 DB·volume은 보존했다. 이후 문서 저장 HEAD와 검증 코드 SHA는 구분한다.
 
-검증 후보 **`8663e96cdd240be52cd812f4e1d62e1edaa55ee4`**를 원격 work에 저장하고 SHA 및 변경 파일을 다시 읽어 일치 확인했다. main `ee02a3657448d563508687614a246e05ac61eecd`와 기존 사용자 체크아웃을 보존했다. 최신 전체38phase [#40756263392](https://github.com/goldeget/japan-premium-commerce/actions/runs/40756263392)는 진행 중이며 아직 전체 PASS가 아니다.
+전체 [#40763074207](https://github.com/goldeget/japan-premium-commerce/actions/runs/40763074207)는 최종 **SUCCESS**, 실제 **38/38 phase PASS / aggregate passed=true / cleanup success**다. native browser16단계·3언어 회원/reset·공식 ACL·메일/Push mock·재시작/독립 복원까지 통과했다. 초기/재시작 앱1140·Pushvendor1426 파일이 정확한91코드와 일치했다. [artifact12850640042](https://github.com/goldeget/japan-premium-commerce/actions/runs/40763074207/artifacts/12850640042), ZIP SHA256 **`5c01e0d4b070875e3bac1e75b4586ee20113748a298039dc1a2f5589c4c69802`**를 직접 확인했고 [원본12JSON·24PNG·무결성 명세](evidence/2026-10-29-procurement-local/fresh-91c6098-complete/)를 보존했다.
 
-전용12테이블, 원장/잔액/감사/outbox 원자적 저장, owner/shop/직원 권한, 요청·지급·정정 멱등/동시성, 요청별 문의, 정책, 메일/Push, JA/EN/KO 화면과 검수 native 상품·이미지·분류 연결을 구현했다. 실제 로컬 native 브라우저에서 수량2 요청, B GET/POST 거부·B인증 유지·A원본 보존, 제한 직원403, 승인0P→별도100P→재로그인100P→연결정정80P를 확인했다. 문의 공개/내부 분리, Mailpit5건·재전달0건, 3언어 회원/재설정, native ACL 실제6변경/감사6행, 재시작·독립 복원 hash 일치도 통과했다.
+직전 실패는 실제200ms 링크 font/padding 전환이 끝나기 전에 캡처한 QA 순서 문제였다. 기존30초와 full rect/center hit/privacy geometry/enabled/stable scroll·권한 조건을 유지한 수정으로13unit·실제D20target·저장 재조회가 통과했다. 별도 GPT는 **새 hosted24PNG를 모두 실제 열었고 핵심20target(3언어9메뉴·9요청확인·2사진)을 인수**했다. JA/KO 글리프·부모/하위 분류·최종 버튼/사진쌍이 보인다. 전체 텍스트를 치환한 나머지4포인트 PNG는 의미/geometry 인수 근거로 쓰지 않는다. [독립 실제 검수](evidence/2026-10-29-procurement-local/fresh-91c6098-complete/ordenowa-independent-final-hosted-40763074207-review.md).
 
-### 이번 원인 수정과 집중 완료
+최신 품질은 JA7경로/10폭+일부dark의7privacy·84layout·84axe·14실제클릭·14Lighthouse PASS다.14건 성능/접근성100, 공개정책SEO100, 모바일LCP최대1747.3ms/CLS0.0001이다. axe위반0이지만84셀 incomplete와 기존 제한된13패턴 수동 검토를 유지한다. 전체WCAG·실사용INP·실기기 성공으로 확대하지 않는다.
 
-- hosted Bake host network/외부CA 권한 요구는6f9c301에서 표준 CI 설정으로 분리했다. 이후 실제 fresh build/install/source/검수2단계분류/warmup 포함28phase가 통과했다.
-- raw authentication+id_lang404는 native 생성 auth/identity URL로 수정했다. 실제 수정 helper의 A/B 정확 본인 확인·unsafe URL 거부·데이터 무변경을 통과했다.
-- 정책 저장 click 반환 뒤 POST가 시작되는 순서 문제를 실제 timing으로 확인했다. 이전 form 교체와 새 문서 complete를 같은30초 안에 기다리며 원래 새 세션 version/값 검사는 유지한다. 실제 단1회 합성 정책 저장과 필수11+선택2값의 새 세션 재조회, 정책1+감사1만 추가됨을 확인했다.
-- 관리자 기존17화면 외69개 메뉴노드 GET를 점검했다(60개 정규화 목적지, 부모/별칭 포함).66건은200·한국어·인증 본문이었다. 확인된 영문69source/domain 번역과13개 정확 메뉴 보정을1.0.8에 묶었다. 변경 영향19건 집중 재조회에서 한국어/정확 라벨/선택값·권한·업무/메뉴 데이터 보존을 확인했다. From/To 날짜 번역은 건드리지 않고 해당 언어 복사 폼의 두 raw label만 수정했다.
-- 로컬 최종 host/opt/live 앱1140개·Push vendor1426개 일치/unknown0, 기본512M warmup 성공. 새 native FormFactory62·CAS DB33·locale Python60·audit13·CI9계약과 현재 소스 경량 workflow24명령군이 통과했다.
+로컬D의 요청/원장/포인트계정0·ACTIVE1과 원래A/B/C/80P·업무12/ACL감사8/메뉴2/상품·사진 보존을 확인했다. 새D의 native언어 전환 `id_lang/date_upd`와 접속/session telemetry만 별도 기록했다. [로컬 집중·정확한 보존 범위](evidence/2026-10-29-procurement-local/real-two-level-category-focus/). **핵심 구현과 명시한 합성 격리 검증은 완료했으며, 실제 상품·운영 정책/환경·기기 인수는 남아 있다. 운영 출시 완료는 아니다.**
 
-품질3은 기존 bd1ced8 frontend의 실제 JA7경로·10폭 및 일부dark에서 layout/axe 각84건·실제 클릭14·Lighthouse14 PASS(성능99–100/접근성100/공개정책SEO100)다. 후속 frontend aria는 별도 native computed name/키보드로 확인했다. 별도 GPT가 고객·정적·언어 선택기120PNG와 관리자12PNG를 실제 열어 제한된 범위를 검수했다. 자동 incomplete84셀은 보존하며 전체WCAG/실기기/field INP 완료로 확대하지 않는다.
 
-[증거 목록](evidence/2026-10-29-procurement-local/README.md)과 [테스트 결과](TEST_RESULTS.md)를 따른다. 로컬은 기존 bd1ced8 이미지+명시적 최신 overlay 검증이며 단일 immutable 후보 전체 인수와 구분한다. native 외부 테마 마켓플레이스503 및 Facebook모듈500은 외부 의존 경로로 분리 기록했다.
+## 구현과 검증 범위
 
-실제 Amazon Japan/Rakuten은 관리망 CONNECT403으로 실제 가격·상세·사진·원문 분류 인수가 미완료다. 실제 운영자·승인 정책·HTTPS/SMTP/비밀값·실기기도 별도 대기다. 실제 파싱 필수 요구를 합성 성공으로 완료 처리하지 않는다. 운영 배포·실결제·실거래·유료 서비스는 실행하지 않았다. 아래는 이전 시점의 이력이다.
+운영자 상품 배정 → 고객 상품·수량 확인/발주 요청 → 운영자 수동 검토 → 별도 수동 포인트 지급 → 고객 잔액·내역 조회를 구현했다. 판매결제·배송·반품·상품환불·포인트 사용/출금은 확정 범위 제외다. 일반 업무 결과·증거 제출 플랫폼으로 확장하지 않는다.
 
-### 최신 fresh 초기값 불일치와 증거 수집
+전용12테이블의 저장/rollback·동시성·멱등, owner/shop/역할/CSRF, 원본 연결 정정과 원장 대조, 요청별 공개 문의/내부 메모, 정책 버전·감사·outbox를 검증했다. 실제 native A의 수량2 요청·승인0P→명시적100P→새 로그인100P→정정80P, B GET/POST 거부·본인 인증 유지·A원본 보존, 유효 native 토큰을 사용한 제한 직원 변경403을 확인했다.
 
-ad51cff의 전체 #40755121454는 **3phase PASS/module_seed FAIL/후속34not_run/cleanup success**다. 새13메뉴의 엄격한 한국어 초기값 assertion에서 실패했고 당시 로그에는 대상 클래스가 없어, 올바른 기존 한국어 표현 보존과의 기대값 충돌인지 실제 초기화 결함인지 아직 확정하지 않는다. artifact12845373313 SHA256 `115a8c0c4d9e4c4a112b3814aaead0feed688a4e02c54134753cc12620786cca`.
+3언어 회원/reset·Mailpit5건/재전달0·실제 ACL6변경/감사6행·재시작/독립 복원 집중 결과를 보존한다. 관리자69메뉴노드(60목적지) 중66건200KO,69번역·13Tab CAS·범위가 고정된 언어복사 라벨 수정 후19건 재조회와 native폼62/DB33/locale61검사를 통과했다. 외부2페이지와 미진입 오류 분기는 전체 한국어 인수 미완료다.
 
-8663e96은 앱을 바꾸지 않고, 원래 엄격한13개 assertion 전에 고정 클래스의 존재/owner/일치/기본영문/Hangul/중복 여부만 안전하게 보존한다. 이름 원문·ID·토큰은 넣지 않고 실패 후에도 JSON을 복사한다.5개 진단 fixture/기존9계약·lint 통과 후 위 실행에서 새 증거를 수집 중이다. 실패를 성공으로 바꾸거나 확인되지 않은 원인을 수정했다고 기록하지 않는다. 앱1140파일은 ad51cff와 동일하다.
+이전 품질3은 JA7경로/10폭·84layout/axe·14클릭·14Lighthouse PASS(성능99–100/접근성100/공개SEO100)다. 자동 incomplete84셀과 제한된 수동 검토를 구분하며 전체WCAG·실기기·field INP 인증은 주장하지 않는다. 로컬 overlay 검사와 최신 immutable fresh 결과도 구분한다.
+
+## 남은 출시 조건
+
+1. Amazon Japan/Rakuten 실제 가격·상세·사진·원문 분류 호환: 현재 관리망 CONNECT403으로 차단. 합성 결과로 대체하지 않는다.
+2. 관리자 외부2페이지와 미진입 오류 분기의 전체 한국어 인수. 접근성 incomplete84셀과 제한된 수동13패턴도 보존한다.
+3. 실제 운영자/지원·상품/참여 고객·검토/수당 기준과9개 JA/EN/KO 정책 초안 승인.
+4. 승인 운영 환경의 HTTPS/SMTP·secret 참조·불변 이미지 digest·scheduler·감시·복원/롤백 연결과 인수. 단순 값 입력만 남은 상태가 아니다.
+5. 실제 iOS/Android PWA·Push 설치/업데이트/수신/철회 인수.
+
+[요구사항표](RELEASE_REQUIREMENTS_MATRIX.md)·[정확한 QA 이력](TEST_RESULTS.md)·[증거 목록](evidence/2026-10-29-procurement-local/README.md)·[단일 운영 입력표](PRODUCTION_DEPLOYMENT.md#현재-서비스의-운영-입력-체크리스트)를 따른다. 운영 배포·실결제·실거래·유료 서비스는 실행하지 않았다.
 
 ---
 

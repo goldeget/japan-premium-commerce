@@ -1,0 +1,46 @@
+{
+  "exact_current_helper": true,
+  "no_post_or_permission_changes": true,
+  "fresh_reader_login_pass": true,
+  "target_sidebar_link_present": false,
+  "current_query_token_present": true,
+  "current_query_masked_token_present": true,
+  "current_document_status": 403,
+  "own_policy_form_token_present": false,
+  "native_owned_procurement_panel_present": true,
+  "prospective_href_available": true,
+  "prospective_href_same_origin": true,
+  "checks": [
+    {
+      "ordinal": 1,
+      "passed": true
+    },
+    {
+      "ordinal": 2,
+      "passed": true
+    },
+    {
+      "ordinal": 3,
+      "passed": true
+    },
+    {
+      "ordinal": 4,
+      "passed": true
+    },
+    {
+      "ordinal": 5,
+      "passed": false
+    }
+  ],
+  "owned_panel_wait_started": true,
+  "owned_panel_visible": true,
+  "native_form_action_directory_path": true,
+  "native_form_action_index_path": false,
+  "native_form_action_known_target_controller": true,
+  "native_form_action_same_origin": true,
+  "exact_helper_pass": false,
+  "failure_stage": "exact_admin_page_reader_policies",
+  "failure_type": "AssertionError",
+  "final_document_status": 403,
+  "final_native_login_form_present": false
+}

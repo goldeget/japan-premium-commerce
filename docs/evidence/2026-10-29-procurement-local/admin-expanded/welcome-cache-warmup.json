@@ -1,0 +1,1 @@
+{"debug": false, "duration_seconds": 5.68, "exit_code": 0, "memory_override": false, "metadata_repair": false, "native_default_cli_memory_limit": "512M", "native_user": "www-data", "passed": true, "warmup_enabled": true}

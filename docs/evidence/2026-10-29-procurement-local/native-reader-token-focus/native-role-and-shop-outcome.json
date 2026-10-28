@@ -1,0 +1,34 @@
+{
+  "valid_active_native_reader": true,
+  "read_scope": {
+    "AdminOrdenowaProcurement": {
+      "native_read_role_rows": 1,
+      "native_write_role_rows": 0,
+      "native_runtime_read": true
+    },
+    "AdminOrdenowaProcurementReviews": {
+      "native_read_role_rows": 1,
+      "native_write_role_rows": 0,
+      "native_runtime_read": true
+    },
+    "AdminOrdenowaProcurementPoints": {
+      "native_read_role_rows": 1,
+      "native_write_role_rows": 0,
+      "native_runtime_read": true
+    },
+    "AdminOrdenowaProcurementAudit": {
+      "native_read_role_rows": 1,
+      "native_write_role_rows": 0,
+      "native_runtime_read": true
+    },
+    "AdminOrdenowaProcurementPolicies": {
+      "native_read_role_rows": 1,
+      "native_write_role_rows": 0,
+      "native_runtime_read": true
+    }
+  },
+  "native_current_shop_association_rows": 1,
+  "native_employee_actor_valid": false,
+  "missing_shop_access_error_match": false,
+  "cli_actor_check_qualification": "Native Employee object in CLI has no browser login cookie, so employeeActor authentication rejects it before shop check; this is not browser failure evidence. Explicit DB association count and web rendered readonly policy form establish the separate facts."
+}

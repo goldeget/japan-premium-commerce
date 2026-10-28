@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "read_only": true,
+  "browser_closed": true,
+  "source_sha": "d4e470ae005a27568b260653107dfe62074fbc6a",
+  "controller": "AdminPsClassicEditionHomepageController",
+  "final_path_normalized": "/admin-kuranea/modules/psclassicedition/homepage",
+  "actual_html_language": "ko-KR",
+  "checks": {
+    "one_native_destination_only": true,
+    "http_200": true,
+    "authenticated_main": true,
+    "korean_document": true,
+    "welcome_canonical_positive": true,
+    "care_center_positive": true,
+    "no_static_english": true
+  },
+  "expected_static_pairs": 2,
+  "positively_verified_static_pairs": 2,
+  "korean_overlay_sha256": "e347f12b1c2c4a220935c33df58b4fd03223d68fd573e59d363201db74fd6721",
+  "data_preservation": "separate_FINALAFTER13_manifest_check_by_customer_browser",
+  "new_captures": 0
+}

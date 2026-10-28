@@ -1,0 +1,15 @@
+{
+  "readonly_untouched_native_form_action_get": true,
+  "landing_status": 403,
+  "initial_policy_status": 403,
+  "policy_form_present_on_initial_status": true,
+  "initial_error_alert_present": false,
+  "initial_native_deny_read_message_present": false,
+  "native_login_form_absent": true,
+  "own_current_native_form_token_present": true,
+  "reader_save_button_absent": true,
+  "native_form_action_control_status": 200,
+  "native_form_action_control_private": true,
+  "native_form_action_control_policy_present": true,
+  "native_form_action_control_login_absent": true
+}

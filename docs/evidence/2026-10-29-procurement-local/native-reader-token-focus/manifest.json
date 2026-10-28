@@ -1,0 +1,45 @@
+{
+  "scope": "sanitized outcomes only; no raw logs, references, identities or tokens",
+  "files": [
+    {
+      "file": "browser-first-outcome.json",
+      "sha256": "28c409888123c26b708063ec4eb68ce684746c313039fd7632cef55c3ba22dee"
+    },
+    {
+      "file": "current-helper-denial-outcome.json",
+      "sha256": "b6d4ae064421465c7076f228d2f2b1111ff19648d6812ec5e326846a1a5817e4"
+    },
+    {
+      "file": "current-helper-protected-domain-outcome.json",
+      "sha256": "94e609550193f50dfecf634c610e637775fc4e98a2416e65f70be260de0d59a6"
+    },
+    {
+      "file": "current-native-form-guard-outcome.json",
+      "sha256": "b5aa6e327ba34d92428d86cefbdf97368d729dce24467c11b7314071bf563238"
+    },
+    {
+      "file": "initial-index-path-guard-failure.json",
+      "sha256": "274e605455a70cb8707358f5e75754723f0e2b351d7cb048fec9a3c499f9825a"
+    },
+    {
+      "file": "native-form-action-control-outcome.json",
+      "sha256": "366bee71d2bc02672af90848999ba0b90ede02f078b7e30f347dcd4a91110964"
+    },
+    {
+      "file": "native-role-and-shop-outcome.json",
+      "sha256": "929807731c08c9213068deb29548195ffa6f98d2df424ab6a3bb3c1f97fb7cd5"
+    },
+    {
+      "file": "native-role-outcome.json",
+      "sha256": "773defc85b3ae23f8e1b7eb0c927552dda50903d9772801ff0d9a36ab8873008"
+    },
+    {
+      "file": "native-token-control-outcome.json",
+      "sha256": "391121e190bf75bde991e6da7e28440c94dbc65340a6be27776b09f6aa832ead"
+    },
+    {
+      "file": "protected-domain-outcome.json",
+      "sha256": "94e609550193f50dfecf634c610e637775fc4e98a2416e65f70be260de0d59a6"
+    }
+  ]
+}

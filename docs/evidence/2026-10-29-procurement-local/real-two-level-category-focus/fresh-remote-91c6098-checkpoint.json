@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "code_sha": "91c6098c6b551946cc8291b31c868656d50c9b34",
+  "fresh_remote_clone": true,
+  "no_checkout": true,
+  "files": [
+    {
+      "path": "tests/procurement/ci_browser.py",
+      "byte_match": true,
+      "sha256": "43cfb52d9c95ad5c11ff2ba88603c5ae6db1f72b9153d0b8271556282a810f80"
+    },
+    {
+      "path": "tests/procurement/test_ci_native_routes.py",
+      "byte_match": true,
+      "sha256": "e98f667e53993745e4f0e40c2ff9ab3983139dcd459dba23d2c138216f9aff48"
+    },
+    {
+      "path": "modules/ordenowaprocurement/ordenowaprocurement.php",
+      "byte_match": true,
+      "sha256": "1c836557e91754e0cdd9f14d851462fe8e129fa48d6b9de0587586c9e4396fb6"
+    }
+  ],
+  "hummingbird_gitlink": "4e52b64d3c772f19d9974409b73d55fb532e9e22",
+  "production_actions": false
+}

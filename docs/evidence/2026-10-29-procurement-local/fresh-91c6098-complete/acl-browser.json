@@ -1,0 +1,1 @@
+{"failed_stage": null, "native_ui_ajax": {"grant": [{"ok": true, "status": 200}, {"ok": true, "status": 200}, {"ok": true, "status": 200}], "revoke": [{"ok": true, "status": 200}, {"ok": true, "status": 200}, {"ok": true, "status": 200}]}, "passed": true, "stages": {"acl_official_hook_native_grant": true, "acl_official_hook_native_revoke": true}}

@@ -1,0 +1,60 @@
+{
+  "helper_source_sha256": "65d7fdc25b3ba142b57a5b90436315fb577c3236a062127bace2da4f61685cbf",
+  "exact_current_helpers": true,
+  "read_only_except_four_expected_denied_posts": true,
+  "get_pages": {
+    "AdminOrdenowaProcurementPolicies": {
+      "actual_native_document_200": true,
+      "owned_panel_visible": true,
+      "native_login_absent": true,
+      "write_forms_absent": {
+        "save_policy": true
+      }
+    },
+    "AdminOrdenowaProcurementReviews": {
+      "actual_native_document_200": true,
+      "owned_panel_visible": true,
+      "native_login_absent": true,
+      "write_forms_absent": {
+        "review": true
+      }
+    },
+    "AdminOrdenowaProcurementPoints": {
+      "actual_native_document_200": true,
+      "owned_panel_visible": true,
+      "native_login_absent": true,
+      "write_forms_absent": {
+        "award": true,
+        "correct": true
+      }
+    }
+  },
+  "denials": {
+    "policy_save": {
+      "target_body_token_independently_valid_get_200": true,
+      "valid_get_private": true,
+      "post_status": 403,
+      "post_private": true
+    },
+    "review": {
+      "target_body_token_independently_valid_get_200": true,
+      "valid_get_private": true,
+      "post_status": 403,
+      "post_private": true
+    },
+    "award": {
+      "target_body_token_independently_valid_get_200": true,
+      "valid_get_private": true,
+      "post_status": 403,
+      "post_private": true
+    },
+    "correct": {
+      "target_body_token_independently_valid_get_200": true,
+      "valid_get_private": true,
+      "post_status": 403,
+      "post_private": true
+    }
+  },
+  "fresh_native_reader_login_pass": true,
+  "passed": true
+}
