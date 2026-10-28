@@ -367,7 +367,22 @@ abstract class AbstractProductPageParser implements ProductPageParserInterface
             }
 
             $currency = strtoupper($this->cleanText($offer['priceCurrency'] ?? ''));
-            $amount = $offer['price'] ?? $offer['lowPrice'] ?? null;
+            $amount = $offer['price'] ?? null;
+            if ($this->hasSchemaType($offer, 'AggregateOffer') || array_key_exists('lowPrice', $offer) || array_key_exists('highPrice', $offer)) {
+                // A minimum is not a single product/variant price. Never flatten a range
+                // into the exact reference-price field or fall back to unrelated metadata.
+                $bounds = [];
+                foreach (['lowPrice', 'highPrice'] as $bound) {
+                    $value = $offer[$bound] ?? null;
+                    if (!is_string($value) && !is_int($value)) throw new CatalogParseException('집계 가격의 최저·최고 정수 엔 가격을 모두 확인해야 합니다.');
+                    $bounds[] = $this->toJpyAmount((string) $value);
+                }
+                if ($bounds[0] !== $bounds[1]) throw new CatalogParseException('집계 가격 범위가 달라 단일 참고 가격을 확정할 수 없습니다.');
+                if ($amount !== null && ((!is_string($amount) && !is_int($amount)) || $this->toJpyAmount((string) $amount) !== $bounds[0])) {
+                    throw new CatalogParseException('명시 가격과 집계 가격이 달라 단일 참고 가격을 확정할 수 없습니다.');
+                }
+                $amount = (string) $bounds[0];
+            }
             if ($currency === '' || (!is_string($amount) && !is_int($amount) && !is_float($amount))) {
                 continue;
             }

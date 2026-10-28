@@ -79,6 +79,8 @@ try {
     if (!is_string($amazonHtml) || !is_string($rakutenHtml)) {
         throw new RuntimeException('Could not read the checked-in synthetic catalog documents.');
     }
+    $ambiguousRakutenHtml = $rakutenHtml;
+    $rakutenHtml = str_replace('"highPrice": "2980"', '"highPrice": "2480"', $rakutenHtml);
 
     $fetcher = new CatalogImportFixtureFetcher();
     $fetcher->documents = [$amazonUrl => $amazonHtml, $rakutenUrl => $rakutenHtml];
@@ -123,6 +125,7 @@ try {
     if (!is_string($merchantIdentifiersHtml)) {
         throw new RuntimeException('Could not read the synthetic Rakuten merchant identifier document.');
     }
+    $merchantIdentifiersHtml = str_replace('"highPrice": "2980"', '"highPrice": "2480"', $merchantIdentifiersHtml);
     $fetcher->documents[$rakutenUrl] = $merchantIdentifiersHtml;
     $merchantIdentifiersBatch = $service->createBatch([$rakutenUrl]);
     $merchantIdentifiersBatch = $service->processNext($merchantIdentifiersBatch->id);
@@ -215,6 +218,12 @@ try {
     assertCatalogImportSame($reimportedSnapshot?->contentHash, $reimportedEntry?->snapshot->contentHash,
         'The review queue should contain the exact successful reimport snapshot.');
     assertCatalogImportSame(10, count($fetcher->requests), 'Each queued process call should fetch exactly one URL.');
+    $priorRakutenHash = $queue->find('rakuten_ichiba:fixture-shop:synthetic-case-b')?->snapshot->contentHash;
+    $fetcher->documents[$rakutenUrl] = $ambiguousRakutenHtml;
+    $ambiguous = $service->processNext($service->createBatch([$rakutenUrl])->id);
+    assertCatalogImportSame(CatalogImportBatchItem::STATUS_FAILED, $ambiguous->items[0]->status, 'An unequal aggregate range must fail parsing, not import its minimum.');
+    assertCatalogImportSame(CatalogImportBatchItem::FAILURE_PARSE_FAILED, $ambiguous->items[0]->failureCategory, 'An ambiguous aggregate range has a fixed safe parse-failure outcome.');
+    assertCatalogImportSame($priorRakutenHash, $queue->find('rakuten_ichiba:fixture-shop:synthetic-case-b')?->snapshot->contentHash, 'An ambiguous observation must preserve the earlier exact reviewed snapshot.');
 } finally {
     foreach (glob($privateDirectory . '/*') ?: [] as $path) {
         if (is_file($path) || is_link($path)) {

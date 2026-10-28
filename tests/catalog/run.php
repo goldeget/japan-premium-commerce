@@ -95,21 +95,30 @@ $updatedQueueEntry = $reviewQueue->enqueue($amazonPriceChanged, $amazonPriceChan
 assertCatalogSame(1, count($reviewQueue->pending()), 'Changed source content should update, not duplicate, a pending review entry.');
 assertCatalogSame($amazonPriceChanged->contentHash, $updatedQueueEntry->snapshot->contentHash, 'A changed snapshot should replace the queued content.');
 
-$rakuten = (new RakutenHtmlParser())->parse(
-    fixture('rakuten-product.synthetic.html'),
+$rakutenParser = new RakutenHtmlParser();
+$rakutenUrl = 'https://item.rakuten.co.jp/fixture-shop/synthetic-case-b/';
+assertCatalogThrows(
+    static fn () => $rakutenParser->parse(fixture('rakuten-product.synthetic.html'), $rakutenUrl, $fetchedAt),
+    'An aggregate price range must be rejected rather than reported as an exact minimum price.'
+);
+// Keep the historical unequal-range fixture as a rejection case. A separate
+// observed equal-bound document supplies an unambiguous price for identity tests.
+$exactRakutenFixture = static fn (string $name): string => str_replace('"highPrice": "2980"', '"highPrice": "2480"', fixture($name));
+$rakuten = $rakutenParser->parse(
+    $exactRakutenFixture('rakuten-product.synthetic.html'),
     'https://item.rakuten.co.jp/fixture-shop/synthetic-case-b/',
     $fetchedAt
 );
 assertCatalogSame('rakuten_ichiba', $rakuten->source, 'Rakuten parser should retain the source provider.');
 assertCatalogSame('fixture-shop:synthetic-case-b', $rakuten->sourceProductId, 'Rakuten product ID should remain provider-specific.');
 assertCatalogSame('rakuten_ichiba:fixture-shop:synthetic-case-b', $rakuten->deduplicationKey, 'Rakuten deduplication identity should include provider and product code.');
-assertCatalogSame(2480, $rakuten->priceJpy, 'An aggregate offer should use its minimum JPY price for the initial snapshot.');
+assertCatalogSame(2480, $rakuten->priceJpy, 'Equal aggregate bounds establish one exact JPY reference price.');
 assertCatalogSame('生成り', $rakuten->options[0]->values[0], 'Rakuten options should normalize from structured properties.');
 assertCatalogSame([], $rakuten->reviews, 'Missing provider reviews should remain empty rather than fabricated.');
 
 // Merchant identifiers must not replace the URL identity used by batch imports.
 $rakutenMerchantIdentifiers = (new RakutenHtmlParser())->parse(
-    fixture('rakuten-merchant-identifiers.synthetic.html'),
+    $exactRakutenFixture('rakuten-merchant-identifiers.synthetic.html'),
     'https://item.rakuten.co.jp/fixture-shop/synthetic-case-b/',
     $fetchedAt
 );
@@ -117,7 +126,7 @@ assertCatalogSame('fixture-shop:synthetic-case-b', $rakutenMerchantIdentifiers->
 assertCatalogSame('rakuten_ichiba:fixture-shop:synthetic-case-b', $rakutenMerchantIdentifiers->deduplicationKey, 'Merchant identifiers must not change the Rakuten deduplication key.');
 assertCatalogSame($rakuten->toArray(), $rakutenMerchantIdentifiers->toArray(), 'Changing merchant identifiers alone must preserve the normalized source metadata and content fingerprint.');
 $rakutenSkuOnly = (new RakutenHtmlParser())->parse(
-    str_replace('"productID": "SYNTHETIC-MERCHANT-PRODUCT-ID",', '', fixture('rakuten-merchant-identifiers.synthetic.html')),
+    str_replace('"productID": "SYNTHETIC-MERCHANT-PRODUCT-ID",', '', $exactRakutenFixture('rakuten-merchant-identifiers.synthetic.html')),
     'https://item.rakuten.co.jp/fixture-shop/synthetic-case-b/',
     $fetchedAt
 );

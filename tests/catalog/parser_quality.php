@@ -24,7 +24,7 @@ function qualityReject(callable $operation): void {
     throw new RuntimeException('Unsafe or ambiguous source was accepted.');
 }
 function qualityHtml(array $data): string {
-    return '<html><head><script type="application/ld+json">' . json_encode($data, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . '</script></head></html>';
+    return '<html><head><script type="application/ld+json">' . json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR) . '</script></head></html>';
 }
 $parser = new AmazonJapanHtmlParser();
 $url = 'https://www.amazon.co.jp/dp/B0KURANEA1';
@@ -77,6 +77,27 @@ qualityCase('Rakuten explicit Product microdata metadata', function (): void {
 });
 qualityCase('JSON numeric fractional price is never accepted after float rounding', fn () => qualityReject(fn () => $parser->parse('<script type="application/ld+json">{"@type":"Product","name":"synthetic","offers":{"price":999999999.000000001,"priceCurrency":"JPY"}}</script>', $url)));
 qualityCase('conflicting JPY variant offers require review instead of picking first', fn () => qualityReject(fn () => $parser->parse(qualityHtml(array_replace($product, ['offers' => [['price' => '2000', 'priceCurrency' => 'JPY'], ['price' => '2500', 'priceCurrency' => 'JPY']]])), $url)));
+$aggregate = ['@type' => 'AggregateOffer', 'priceCurrency' => 'JPY', 'lowPrice' => '2000', 'highPrice' => '3500', 'offerCount' => 3];
+qualityCase('unequal aggregate bounds are not an exact minimum reference price', fn () => qualityReject(fn () => $parser->parse(qualityHtml(array_replace($product, ['offers' => $aggregate])), $url)));
+qualityCase('ambiguous aggregate cannot fall back to exact-looking Open Graph metadata', fn () => qualityReject(fn () => $parser->parse(qualityHtml(array_replace($product, ['offers' => $aggregate])) . '<meta property="product:price:amount" content="2000"><meta property="product:price:currency" content="JPY">', $url)));
+qualityCase('aggregate equal normalized integer bounds establish one exact price', fn () => qualitySame(2000, $parser->parse(qualityHtml(array_replace($product, ['offers' => array_replace($aggregate, ['highPrice' => '2,000.00'])])), $url)->priceJpy));
+qualityCase('aggregate bounds missing either endpoint are rejected', function () use ($parser, $url, $product, $aggregate): void {
+    foreach (['lowPrice', 'highPrice'] as $missing) {
+        $offer = $aggregate; unset($offer[$missing]);
+        qualityReject(fn () => $parser->parse(qualityHtml(array_replace($product, ['offers' => $offer])), $url));
+    }
+});
+qualityCase('aggregate type without bounds cannot use a price field as range evidence', fn () => qualityReject(fn () => $parser->parse(qualityHtml(array_replace($product, ['offers' => ['@type' => 'AggregateOffer', 'price' => '2000', 'priceCurrency' => 'JPY']])), $url)));
+qualityCase('aggregate bounds without an explicit type remain subject to ambiguity checks', fn () => qualityReject(fn () => $parser->parse(qualityHtml(array_replace($product, ['offers' => ['lowPrice' => '2000', 'highPrice' => '3500', 'priceCurrency' => 'JPY']])), $url)));
+qualityCase('explicit price cannot conceal a contradictory aggregate range', fn () => qualityReject(fn () => $parser->parse(qualityHtml(array_replace($product, ['offers' => array_replace($aggregate, ['price' => '2000'])])), $url)));
+qualityCase('explicit price must agree with equal aggregate bounds', fn () => qualityReject(fn () => $parser->parse(qualityHtml(array_replace($product, ['offers' => array_replace($aggregate, ['price' => '3500', 'highPrice' => '2000'])])), $url)));
+qualityCase('aggregate malformed fractional float or overflowing bounds are rejected', function () use ($parser, $url, $product, $aggregate): void {
+    foreach (['2,00', '2000.01', 2000.0, (string)PHP_INT_MAX . '0', null] as $invalid) {
+        qualityReject(fn () => $parser->parse(qualityHtml(array_replace($product, ['offers' => array_replace($aggregate, ['lowPrice' => $invalid, 'highPrice' => $invalid])])), $url));
+    }
+});
+qualityCase('an exact sibling offer cannot hide an ambiguous aggregate', fn () => qualityReject(fn () => $parser->parse(qualityHtml(array_replace($product, ['offers' => [$product['offers'], $aggregate]])), $url)));
+qualityCase('Rakuten ambiguous aggregate is rejected through the same parser boundary', fn () => qualityReject(fn () => (new RakutenHtmlParser())->parse(qualityHtml(array_replace($product, ['offers' => $aggregate])), 'https://item.rakuten.co.jp/fixture-shop/synthetic-case-b/')));
 qualityCase('unrelated external Product URL is rejected', fn () => qualityReject(fn () => $parser->parse(qualityHtml(array_replace($product, ['url' => 'https://unrelated.example.test/product'])), $url)));
 qualityCase('source snapshot larger than fetch limit is rejected directly', fn () => qualityReject(fn () => $parser->parse(qualityHtml($product) . str_repeat(' ', 2097152), $url)));
 qualityCase('Product category array and BreadcrumbList coexist without inventing a taxonomy', function () use ($parser, $url, $product): void {
