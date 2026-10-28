@@ -75,6 +75,24 @@ qualityCase('Rakuten explicit Product microdata metadata', function (): void {
     qualitySame('日本語の詳細説明', $snapshot->description);
     qualitySame(['生活用品 > 収納'], $snapshot->categories);
 });
+qualityCase('Amazon HTML breadcrumb is retained as one ordered source category path', function () use ($parser, $url): void {
+    $snapshot = $parser->parse(file_get_contents(__DIR__ . '/fixtures/amazon-jp-native-gallery.synthetic.html'), $url);
+    qualitySame('[TEST FIXTURE] 合成メッシュペンケース', $snapshot->name);
+    qualitySame(['文房具・オフィス用品 > 事務用品 > 文具収納 > ペンケース'], $snapshot->categories);
+});
+qualityCase('Amazon HTML gallery chooses one canonical image per ordered gallery entry', function () use ($parser, $url): void {
+    $snapshot = $parser->parse(file_get_contents(__DIR__ . '/fixtures/amazon-jp-native-gallery.synthetic.html'), $url);
+    qualitySame([
+        'https://images.example.test/gallery-1.jpg',
+        'https://images.example.test/gallery-2.jpg',
+        'https://images.example.test/gallery-3.jpg',
+        'https://images.example.test/gallery-4.jpg',
+        'https://images.example.test/gallery-5.jpg',
+        'https://images.example.test/gallery-6.jpg',
+        'https://images.example.test/gallery-7.jpg',
+    ], array_map(static fn ($image) => $image->url, $snapshot->images));
+});
+qualityCase('Amazon page without a visible exact JPY offer remains unimportable', fn () => qualityReject(fn () => $parser->parse('<html><head><meta name="title" content="Amazon | [TEST FIXTURE] unavailable"></head><body><span id="productTitle">[TEST FIXTURE] unavailable</span><div id="priceNotAvailable_feature_div">[TEST FIXTURE] price unavailable</div></body></html>', $url)));
 qualityCase('JSON numeric fractional price is never accepted after float rounding', fn () => qualityReject(fn () => $parser->parse('<script type="application/ld+json">{"@type":"Product","name":"synthetic","offers":{"price":999999999.000000001,"priceCurrency":"JPY"}}</script>', $url)));
 qualityCase('conflicting JPY variant offers require review instead of picking first', fn () => qualityReject(fn () => $parser->parse(qualityHtml(array_replace($product, ['offers' => [['price' => '2000', 'priceCurrency' => 'JPY'], ['price' => '2500', 'priceCurrency' => 'JPY']]])), $url)));
 $aggregate = ['@type' => 'AggregateOffer', 'priceCurrency' => 'JPY', 'lowPrice' => '2000', 'highPrice' => '3500', 'offerCount' => 3];
