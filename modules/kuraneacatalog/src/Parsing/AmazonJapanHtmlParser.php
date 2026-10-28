@@ -30,14 +30,7 @@ final class AmazonJapanHtmlParser extends AbstractProductPageParser
             }
             $description = implode(' ', $parts);
         }
-        $images = [];
-        foreach ($xpath->query('//img[@id="landingImage" or @id="imgBlkFront"]') ?: [] as $image) {
-            if (!$image instanceof DOMElement) continue;
-            $dynamic = json_decode($image->getAttribute('data-a-dynamic-image'), true);
-            if (is_array($dynamic)) foreach (array_keys($dynamic) as $url) if (is_string($url)) $images[] = $url;
-            $imageUrl = $image->getAttribute('data-old-hires') ?: $image->getAttribute('src');
-            if ($imageUrl !== '') $images[] = $imageUrl;
-        }
+        $images = $this->amazonImageUrls($xpath);
         $properties = [];
         foreach ($xpath->query('//*[starts-with(@id,"variation_")][.//select]') ?: [] as $group) {
             $label = rtrim($this->nodeValue($xpath, './/label', $group), ':： ');
@@ -50,8 +43,92 @@ final class AmazonJapanHtmlParser extends AbstractProductPageParser
             }
             if ($values !== []) $properties[] = ['name' => $label, 'value' => $values];
         }
-        return ['name' => $name, 'description' => $description, 'image' => $images,
+        $categoryLabels = [];
+        foreach ($xpath->query('//*[@id="wayfinding-breadcrumbs_feature_div"]//li/a') ?: [] as $breadcrumb) {
+            if (!$breadcrumb instanceof DOMElement) continue;
+            $label = $this->cleanText($breadcrumb->textContent);
+            if ($label !== '' && $label !== $name && !in_array($label, $categoryLabels, true)) $categoryLabels[] = $label;
+        }
+        $categories = $categoryLabels === [] ? [] : [implode(' > ', $categoryLabels)];
+        return ['name' => $name, 'category' => $categories, 'description' => $description, 'image' => $images,
             'offers' => ['price' => $price, 'priceCurrency' => $currency], 'additionalProperty' => $properties];
+    }
+
+    /** @return list<string> */
+    private function amazonImageUrls(DOMXPath $xpath): array
+    {
+        $galleryItems = $xpath->query('//*[@id="altImages"]//li[@data-csa-c-media-type="IMAGE"]');
+        if ($galleryItems !== false && $galleryItems->length > 0) {
+            $images = [];
+            foreach ($galleryItems as $item) {
+                if (!$item instanceof DOMElement) continue;
+                $url = $this->preferredAmazonGalleryUrl($xpath, $item);
+                if ($url !== '') $images[] = $url;
+            }
+            return $images;
+        }
+
+        // Older rendered pages have no per-photo gallery list; preserve their existing metadata behavior.
+        $images = [];
+        foreach ($xpath->query('//img[@id="landingImage" or @id="imgBlkFront"]') ?: [] as $image) {
+            if (!$image instanceof DOMElement) continue;
+            $dynamic = json_decode($image->getAttribute('data-a-dynamic-image'), true);
+            if (is_array($dynamic)) foreach (array_keys($dynamic) as $url) if (is_string($url)) $images[] = $url;
+            $imageUrl = $image->getAttribute('data-old-hires') ?: $image->getAttribute('src');
+            if ($imageUrl !== '') $images[] = $imageUrl;
+        }
+        return $images;
+    }
+
+    private function preferredAmazonGalleryUrl(DOMXPath $xpath, DOMElement $item): string
+    {
+        $direct = trim($item->getAttribute('data-old-hires'));
+        if ($direct !== '') return $direct;
+
+        foreach ($xpath->query('.//*[@data-old-hires]', $item) ?: [] as $node) {
+            if (!$node instanceof DOMElement) continue;
+            $direct = trim($node->getAttribute('data-old-hires'));
+            if ($direct !== '') return $direct;
+        }
+
+        $dynamicNodes = [];
+        if ($item->hasAttribute('data-a-dynamic-image')) $dynamicNodes[] = $item;
+        foreach ($xpath->query('.//*[@data-a-dynamic-image]', $item) ?: [] as $node) {
+            if ($node instanceof DOMElement) $dynamicNodes[] = $node;
+        }
+        foreach ($dynamicNodes as $node) {
+            $url = $this->largestAmazonDynamicImageUrl($node->getAttribute('data-a-dynamic-image'));
+            if ($url !== '') return $url;
+        }
+
+        foreach ($xpath->query('.//img[@data-src or @src]', $item) ?: [] as $node) {
+            if (!$node instanceof DOMElement) continue;
+            $url = trim($node->getAttribute('data-src') ?: $node->getAttribute('src'));
+            if ($url !== '') return $url;
+        }
+        return '';
+    }
+
+    private function largestAmazonDynamicImageUrl(string $encodedImages): string
+    {
+        $images = json_decode($encodedImages, true);
+        if (!is_array($images)) return '';
+
+        $bestUrl = '';
+        $bestArea = 0;
+        foreach ($images as $url => $dimensions) {
+            if (!is_string($url) || !is_array($dimensions)) continue;
+            $width = $dimensions[0] ?? null;
+            $height = $dimensions[1] ?? null;
+            if ((!is_int($width) && !is_float($width)) || (!is_int($height) && !is_float($height))
+                || $width <= 0 || $height <= 0 || $width > 10000 || $height > 10000) continue;
+            $area = $width * $height;
+            if ($area > $bestArea) {
+                $bestArea = $area;
+                $bestUrl = $url;
+            }
+        }
+        return $bestUrl;
     }
 
     protected function extractProductId(array $product, string $sourceUrl): string
