@@ -9,7 +9,7 @@
       </trans-unit>
       <trans-unit id="expanded-native-0e2226b5235f0ff94a27" approved="yes">
         <source>Welcome</source>
-        <target state="final">시작 안내</target>
+        <target state="final">시작하기</target>
         <note>Source-verified static administrator label observed through an authenticated native default menu GET. Translation only; stored data and feature settings remain unchanged.</note>
       </trans-unit>
     </body>

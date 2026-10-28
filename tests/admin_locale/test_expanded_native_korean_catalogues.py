@@ -26,6 +26,7 @@ EXPECTED = {
     "Modules.Classicedition.Admin": 2,
     "Modules.Onepagecheckout.Admin": 11,
 }
+CANONICAL_SYSTEM_COPY = {("Modules.Classicedition.Admin", "Welcome"): "시작하기"}
 
 
 def units(path: Path):
@@ -59,6 +60,9 @@ class ExpandedNativeKoreanCatalogueTests(unittest.TestCase):
                     self.assertTrue(source(unit).strip())
                     self.assertRegex(target(unit), r"[가-힣]")
                     self.assertNotEqual(source(unit), target(unit))
+                    canonical = CANONICAL_SYSTEM_COPY.get((domain, source(unit)))
+                    if canonical is not None:
+                        self.assertEqual(canonical, target(unit))
                 total += len(observed)
         self.assertEqual(69, total)
 
@@ -85,6 +89,18 @@ class ExpandedNativeKoreanCatalogueTests(unittest.TestCase):
         self.assertEqual("이메일", navigation["E-mail"])
         self.assertEqual("시작일", general["From"])
         self.assertEqual("종료일", general["To"])
+
+    def test_home_copy_matches_native_module_translation_cas_and_strict_fresh_seed(self):
+        canonical = CANONICAL_SYSTEM_COPY[("Modules.Classicedition.Admin", "Welcome")]
+        catalogue = {source(u): target(u) for u in units(FOLDER / "ModulesClassiceditionAdmin.ko-KR.xlf")}
+        repair = (MODULE / "src/Admin/KoreanAdminTabLabels.php").read_text()
+        seed = (ROOT / "tests/procurement/ci_seed.php").read_text()
+        expected_names = seed.split("$expectedKoreanTabs = [", 1)[1].split("];", 1)[0]
+        repair_targets = re.findall(r"\['HOME',\s*'ps_classic_edition',\s*'Welcome',\s*'([^']+)'\]", repair)
+        seed_targets = re.findall(r"(?m)^\s*'HOME'\s*=>\s*'([^']+)'\s*,", expected_names)
+        self.assertEqual([canonical], repair_targets)
+        self.assertEqual([canonical], seed_targets)
+        self.assertEqual(canonical, catalogue["Welcome"])
 
 
 if __name__ == "__main__":
