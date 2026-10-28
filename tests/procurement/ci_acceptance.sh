@@ -128,7 +128,7 @@ compose exec -T prestashop mkdir -p /tmp/ordenowa-procurement-ci/catalog /var/ww
 for source in tests/procurement/ci_*.php; do
   compose cp "$source" prestashop:/tmp/ordenowa-procurement-ci/
 done
-for source in tests/procurement/requests*.php tests/procurement/points*.php tests/procurement/native*.php tests/procurement/customer*.php tests/procurement/notifications*.php tests/procurement/policies*.php tests/procurement/support*.php tests/procurement/navigation*.php tests/procurement/signin*.php; do
+for source in tests/procurement/requests*.php tests/procurement/points*.php tests/procurement/native*.php tests/procurement/customer*.php tests/procurement/notifications*.php tests/procurement/policies*.php tests/procurement/support*.php tests/procurement/navigation*.php tests/procurement/signin*.php tests/procurement/language*.php; do
   compose cp "$source" prestashop:/var/www/html/tests/procurement/
 done
 compose cp tests/catalog/. prestashop:/tmp/ordenowa-procurement-ci/catalog/
@@ -187,7 +187,11 @@ run_phase support_controller behavior support_controller
 run_phase support_smarty behavior support_smarty
 run_phase customer_ui behavior customer_ui
 run_phase customer_smarty behavior customer_smarty
-run_phase navigation_smarty behavior navigation_smarty
+navigation_contracts() {
+  behavior navigation_smarty || return "$?"
+  behavior language_selector_smarty
+}
+run_phase navigation_smarty navigation_contracts
 run_phase signin_smarty behavior signin_smarty
 run_phase pwa_worker node tests/procurement/pwa_worker.cjs
 run_phase pwa_registration node tests/procurement/pwa_registration.cjs

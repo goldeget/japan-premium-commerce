@@ -156,7 +156,7 @@ class EmployeeProfileAuditContractTests(unittest.TestCase):
 
     def test_module_installs_additive_audit_schema_tab_and_employee_hooks(self) -> None:
         module = (MODULE / "kuraneabackoffice.php").read_text(encoding="utf-8")
-        self.assertIn("$this->version = '1.0.6';", module)
+        self.assertIn("$this->version = '1.0.7';", module)
         self.assertIn("installEmployeeProfileAudit", module)
         self.assertIn("installEmployeeProfileAuditTab", module)
         self.assertIn("AdminKuraneaEmployeeProfileAudit", module)
@@ -181,6 +181,10 @@ class EmployeeProfileAuditContractTests(unittest.TestCase):
         self.assertIn("upgrade_module_1_0_5", audit_upgrade)
         self.assertIn("installEmployeeProfileAuditTab", audit_upgrade)
         self.assertNotRegex(audit_upgrade, re.compile(r"DROP\s+TABLE", re.I))
+        labels_upgrade = (MODULE / "upgrade" / "upgrade-1.0.7.php").read_text(encoding="utf-8")
+        self.assertIn("upgrade_module_1_0_7", labels_upgrade)
+        self.assertIn("installKoreanAdminTabLabels", labels_upgrade)
+        self.assertNotRegex(labels_upgrade, re.compile(r"DROP\s+TABLE", re.I))
 
     def test_native_acl_upgrade_registers_official_hooks_without_core_mutations(self) -> None:
         module = (MODULE / "kuraneabackoffice.php").read_text(encoding="utf-8")
