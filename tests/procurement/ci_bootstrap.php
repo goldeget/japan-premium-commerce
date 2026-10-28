@@ -66,3 +66,31 @@ function ciDomainHash(Ordenowa\Procurement\Infrastructure\Database $database, st
     unset($row);
     return hash('sha256', json_encode($rows, JSON_THROW_ON_ERROR));
 }
+
+/**
+ * Native support bodies/tokens and ACL audit identities are part of restoration.
+ * Only hashes enter the private manifest; rows and schema never reach artifacts.
+ */
+function ciNativeCriticalManifest(Ordenowa\Procurement\Infrastructure\Database $database): array
+{
+    $prefix = (string) _DB_PREFIX_;
+    ciAssert(preg_match('/\A[A-Za-z0-9_]*\z/D', $prefix) === 1, 'Native manifest prefix invalid');
+    $manifest = [];
+    foreach (['customer_thread' => 'id_customer_thread', 'customer_message' => 'id_customer_message',
+        'kuraneabackoffice_native_acl_audit' => 'id_event'] as $suffix => $primary) {
+        $table = '`' . $prefix . $suffix . '`';
+        $schema = $database->one('SHOW CREATE TABLE ' . $table);
+        ciAssert(is_array($schema) && is_string($schema['Create Table'] ?? null), 'Native critical schema missing');
+        $rows = $database->all('SELECT * FROM ' . $table . ' ORDER BY `' . $primary . '`');
+        foreach ($rows as &$row) {
+            foreach ($row as &$value) $value = $value === null ? null : (string) $value;
+            unset($value);
+        }
+        unset($row);
+        $manifest[$suffix] = [
+            'schema' => hash('sha256', $schema['Create Table']),
+            'data' => hash('sha256', json_encode($rows, JSON_THROW_ON_ERROR)),
+        ];
+    }
+    return $manifest;
+}

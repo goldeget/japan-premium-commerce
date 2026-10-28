@@ -28,10 +28,10 @@ try {
 }
 $db = Runtime::database();
 $tables = ['assignment', 'request', 'review', 'point_account', 'point_award', 'point_ledger', 'activity', 'notification', 'notification_delivery', 'policy', 'support_link', 'support_post'];
-$manifest = [];
+$manifest = ['domain' => [], 'native' => ciNativeCriticalManifest($db)];
 foreach ($tables as $suffix) {
     // Hashes stay in private temp storage, never in uploaded artifacts.
-    $manifest[$suffix] = ciDomainHash($db, $suffix);
+    $manifest['domain'][$suffix] = ciDomainHash($db, $suffix);
 }
 if (($argv[1] ?? '') === 'manifest') {
     file_put_contents(__DIR__ . '/domain-manifest.json', json_encode($manifest, JSON_THROW_ON_ERROR));
@@ -40,4 +40,4 @@ if (($argv[1] ?? '') === 'manifest') {
     $expected = json_decode((string) file_get_contents(__DIR__ . '/domain-manifest.json'), true, 32, JSON_THROW_ON_ERROR);
     ciAssert($manifest === $expected, 'Domain restore hashes changed');
 }
-echo "PASS durable request, point ledger, owner isolation and domain readback\n";
+echo "PASS durable request, point ledger, owner isolation, domain and critical native support/ACL readback\n";
