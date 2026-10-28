@@ -1,0 +1,6 @@
+ORDENOWA 알림
+
+{event_message}
+로그인하여 자세한 내용을 확인해 주세요.
+
+워크스페이스 열기: {workspace_url_text}

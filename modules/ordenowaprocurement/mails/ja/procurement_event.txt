@@ -1,0 +1,6 @@
+ORDENOWA お知らせ
+
+{event_message}
+ログインして詳細をご確認ください。
+
+ワークスペースを開く: {workspace_url_text}

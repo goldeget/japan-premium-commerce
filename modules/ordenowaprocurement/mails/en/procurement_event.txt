@@ -1,0 +1,6 @@
+ORDENOWA notification
+
+{event_message}
+Sign in to view the details.
+
+Open workspace: {workspace_url_text}

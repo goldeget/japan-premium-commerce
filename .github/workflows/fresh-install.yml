@@ -1,9 +1,10 @@
-name: Isolated fresh install
+name: Legacy retail isolated fresh install
 
 on:
+  # Retained legacy retail acceptance. Current work releases use procurement-platform.yml.
   workflow_dispatch:
   push:
-    branches: [work, qa/ordenowa-product-browser-20261022]
+    branches: [qa/ordenowa-product-browser-20261022]
     paths:
       - '.github/workflows/fresh-install.yml'
       - 'compose.yaml'
@@ -74,7 +75,7 @@ on:
       - 'tests/e2e/**'
       - 'tests/catalog/verify_native_registration.php'
   pull_request:
-    branches: [work, qa/ordenowa-product-browser-20261022]
+    branches: [qa/ordenowa-product-browser-20261022]
     paths:
       - '.github/workflows/fresh-install.yml'
       - 'compose.yaml'
@@ -154,6 +155,7 @@ jobs:
     timeout-minutes: 60
     env:
       CI_COMPOSE_PROJECT_NAME: kuranea-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      ORDENOWA_APP_MODE: legacy_retail
       SHOP_PORT: 18080
       KURANEA_ISOLATED_CI: '1'
       KURANEA_ADMIN_LOCALE_DIAGNOSTICS: '1'
