@@ -41,6 +41,7 @@
           </a>
         </li>
 
+        {if empty($ordenowaProcurementEnabled)}
         {if $customer.addresses|count}
           <li>
             <a href="{$urls.pages.addresses}" rel="nofollow">
@@ -87,6 +88,7 @@
           </li>
         {/if}
 
+        {/if}
         {hook h='displayMyAccountBlock'}
 
         <li>
@@ -96,6 +98,7 @@
         </li>
 
       {else}
+        {if empty($ordenowaProcurementEnabled)}
         <li>
           <a href="{$urls.pages.guest_tracking}" rel="nofollow">
             {if $language.locale == 'ja-JP'}注文状況の確認
@@ -103,6 +106,7 @@
             {else}{l s='Order tracking' d='Shop.Theme.Customeraccount'}{/if}
           </a>
         </li>
+        {/if}
         <li>
           <a href="{$urls.pages.my_account}" rel="nofollow">
             {if $language.locale == 'ja-JP'}サインイン

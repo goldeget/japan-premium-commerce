@@ -11,6 +11,9 @@ final class CommerceGate
     /** Enable storefront commerce in the approved shop or its matching disposable Actions project. */
     public static function isIsolatedCiCheckoutEnabled(): bool
     {
+        if (getenv('ORDENOWA_APP_MODE') === 'procurement') {
+            return false;
+        }
         $runId = (string) getenv('GITHUB_RUN_ID');
         $runAttempt = (string) getenv('GITHUB_RUN_ATTEMPT');
         if (preg_match('/\\A[0-9]+\\z/D', $runId) !== 1
@@ -27,6 +30,9 @@ final class CommerceGate
 
     public static function isEnabled(?array $publishedProfile, bool $externalAuthorizationConfirmed = false): bool
     {
+        if (getenv('ORDENOWA_APP_MODE') === 'procurement') {
+            return false;
+        }
         if (!$externalAuthorizationConfirmed
             || $publishedProfile === null
             || ($publishedProfile['seller']['authorization_status'] ?? 'pending') !== 'approved'
@@ -41,7 +47,8 @@ final class CommerceGate
         ?array $publishedProfile,
         bool $externalAuthorizationConfirmed = false
     ): bool {
-        return self::isEnabled($publishedProfile, $externalAuthorizationConfirmed)
+        return getenv('ORDENOWA_APP_MODE') === 'procurement'
+            || self::isEnabled($publishedProfile, $externalAuthorizationConfirmed)
             || self::isIsolatedCiCheckoutEnabled();
     }
 }

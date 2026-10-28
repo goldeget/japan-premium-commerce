@@ -3,6 +3,7 @@
 **/.git/**
 node_modules
 **/node_modules
+modules/kuraneapush/vendor
 .env
 .env.*
 !.env.example

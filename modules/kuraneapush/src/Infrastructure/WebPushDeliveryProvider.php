@@ -38,10 +38,19 @@ final class WebPushDeliveryProvider implements PushDeliveryProvider
         $options = ['verify' => true, 'allow_redirects' => false, 'http_errors' => false,
             'timeout' => 10.0, 'connect_timeout' => 3.0];
         if ($this->httpHandler !== null) $options['handler'] = $this->httpHandler;
+        // The library's optional acceleration notice must not write into HTTP headers or JSON.
+        $previousHandler = null;
+        $previousHandler = set_error_handler(static function (int $level, string $message, string $file, int $line) use (&$previousHandler): bool {
+            if ($level === E_USER_NOTICE && str_ends_with(str_replace('\\', '/', $file), '/minishlink/web-push/src/Utils.php')
+                && $message === 'It is highly recommended to install the GMP or BCMath extension to speed up calculations. The fastest available calculator implementation will be automatically selected at runtime.') return true;
+            return is_callable($previousHandler) ? (bool)$previousHandler($level,$message,$file,$line) : false;
+        });
         try {
             $this->client = new WebPush(['VAPID' => $this->vapid], ['TTL' => 300, 'urgency' => 'normal'], 10, $options);
         } catch (\Throwable) {
             $this->client = null;
+        } finally {
+            restore_error_handler();
         }
         return $this->client !== null;
     }

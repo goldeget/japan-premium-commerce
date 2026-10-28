@@ -62,7 +62,7 @@ function pointTestReject(callable $operation, string $message, ?int $code = null
 
 function pointTestCleanup(Database $db): void
 {
-    foreach (['policy', 'notification_delivery', 'notification', 'activity', 'point_ledger', 'point_award', 'point_account', 'review', 'request', 'assignment'] as $suffix) {
+    foreach (['support_post', 'support_link', 'policy', 'notification_delivery', 'notification', 'activity', 'point_ledger', 'point_award', 'point_account', 'review', 'request', 'assignment'] as $suffix) {
         $db->execute('DROP TABLE IF EXISTS ' . $db->table($suffix));
     }
 }

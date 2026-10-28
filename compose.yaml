@@ -45,6 +45,13 @@ services:
       # files there until the official installer has completed its assets.
       PS_FOLDER_ADMIN: admin-dev
       KURANEA_ADMIN_FOLDER: admin-kuranea
+      ORDENOWA_APP_MODE: ${ORDENOWA_APP_MODE:-procurement}
+      # Secrets are injected only at runtime. Live delivery stays disabled until
+      # a privileged operator validates this shop's HTTPS and consent settings.
+      ORDENOWA_PUSH_STORAGE_KEY: ${ORDENOWA_PUSH_STORAGE_KEY:-}
+      ORDENOWA_PUSH_VAPID_PUBLIC_KEY: ${ORDENOWA_PUSH_VAPID_PUBLIC_KEY:-}
+      ORDENOWA_PUSH_VAPID_PRIVATE_KEY: ${ORDENOWA_PUSH_VAPID_PRIVATE_KEY:-}
+      ORDENOWA_PUSH_VAPID_SUBJECT: ${ORDENOWA_PUSH_VAPID_SUBJECT:-}
       KURANEA_CATALOG_QUEUE_DIR: /var/lib/kuranea/catalog-review
       KURANEA_CATALOG_TEST_DEMO_APPROVAL: ${KURANEA_CATALOG_TEST_DEMO_APPROVAL:-0}
       # Checkout stays disabled in the base project. The isolated browser-order

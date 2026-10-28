@@ -44,6 +44,7 @@ sync_module kuraneabackoffice
 sync_module kuraneabusinessprofile
 sync_module kuraneacatalog
 sync_module kuraneapush
+sync_module ordenowaprocurement
 
 php /usr/local/bin/sync-ordenowa-brand-assets.php
 

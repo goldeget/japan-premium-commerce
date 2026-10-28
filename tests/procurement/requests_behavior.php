@@ -15,7 +15,7 @@ if (!$dsn || !str_contains($dsn, 'dbname=ordenowa_procurement_test')) {
 $pdo = new PDO($dsn, getenv('PROCUREMENT_TEST_USER') ?: 'root', getenv('PROCUREMENT_TEST_PASSWORD') ?: '');
 $prefix = 'requests_' . bin2hex(random_bytes(5)) . '_';
 $db = new Database($pdo, $prefix);
-$tables = ['policy','notification_delivery','notification','activity','point_ledger','point_award','point_account','review','request','assignment'];
+$tables = ['support_post','support_link','policy','notification_delivery','notification','activity','point_ledger','point_award','point_account','review','request','assignment'];
 try {
     Schema::install($db);
     $service = new RequestService($db);
@@ -49,6 +49,14 @@ try {
     requestsAssert($rightsRequest['product_snapshot']['image_rights'] === $rightsProduct['image_rights'], 'Submitted image rights snapshot preserved');
     $rightsProduct['image_rights']['id_employee'] = 11;
     requestsReject(fn () => $service->createAssignment($manager, 101, $rightsProduct, []), 422, 'Image attestation must identify verified issuing employee');
+    $galleryProduct = $product;
+    $galleryProduct['image_url'] = '/img/p/1/2/12-home_default.jpg';
+    $galleryProduct['image_urls'] = ['/img/p/1/2/12-home_default.jpg','/img/p/1/3/13-home_default.webp'];
+    $gallery = $service->createAssignment($manager, 101, $galleryProduct, []);
+    requestsAssert($gallery['product_snapshot']['image_urls'] === $galleryProduct['image_urls'], 'Approved canonical native gallery paths preserved');
+    foreach (['/img/p/../private.jpg','/img/p/12-home_default.jpg?token=private','data:image/png;base64,AAAA','/account/customer.jpg'] as $unsafeImage) {
+        requestsReject(fn () => $service->createAssignment($manager, 101, array_replace($galleryProduct, ['image_urls'=>[$unsafeImage]]), []), 422, 'Private or noncanonical gallery image denied');
+    }
     requestsReject(fn () => $service->submit($a, $id, 2, 1, 'stale'), 409, 'Stale assignment');
     foreach ([0, 6] as $quantity) { requestsReject(fn () => $service->submit($a, $id, 1, $quantity, 'badqty'), 422, 'Quantity bounds'); }
     $request = $service->submit($a, $id, 1, 3, 'submit-one');

@@ -157,7 +157,7 @@ shop/customer/status/time/key 인덱스와 pagination을 사용한다. 지급 �
 
 현재 모듈 `kuraneabusinessprofile.php:352-359`는 회원등록을 seller gate에 연결하고 `ProfileValidator.php:10,33,102` 이후는 판매/배송/환불을 요구한다. 새 WorkspaceAccessPolicy와 운영자/발주·포인트 정책 validator를 분리해야 한다. legacy retail은 메뉴만 숨기지 말고 서버에서도 차단한다.
 
-native product를 reference로 사용할 때 기존 inactive/hidden/non-orderable 보존이 가능하며, 고객의 권한 있는 module 상세를 위해 판매flag를 켜지 않는다. `AssignedProductViewBuilder`가 same-shop 상품/옵션과 배정 snapshot을 검증해 필요한 표시값만 만들며, 기존 ProductController를 공개하거나 parent presenter의 판매 가능 필터를 임의로 완화하지 않는다. 필요 자료는 운영자 수동등록으로 제공할 수 있다. 외부 자동수집은 핵심 발주흐름의 필수전제가 아니며 사용할 때만 허가원문/feed·이미지권리를 검사한다.100k판매SKU acceptance를 새 출시에 그대로 강제하지 않고 실제 상품/요청량으로 성능기준을 정한다.
+native product를 reference로 사용할 때 기존 inactive/hidden/non-orderable 보존이 가능하며, 고객의 권한 있는 module 상세를 위해 판매flag를 켜지 않는다. `AssignedProductViewBuilder`가 same-shop 상품/옵션과 배정 snapshot을 검증해 필요한 표시값만 만들며, 기존 ProductController를 공개하거나 parent presenter의 판매 가능 필터를 임의로 완화하지 않는다. 필요 자료는 운영자 수동등록으로 제공할 수 있다. 후속 사용자 지시로 Amazon Japan·Rakuten 가격·상세 설명·사진·원본 카테고리 수집 및 검수 후 분류 연결을 필수 범위에 추가한다. 수동 상품등록 경로도 유지하며 실제 원문 호환과 이미지 공개 권리 근거를 따로 검사한다.100k판매SKU acceptance를 새 출시에 그대로 강제하지 않고 실제 상품/요청량으로 성능기준을 정한다.
 
 운영 정보는 플랫폼 운영자 신원·고객지원·업무/포인트/개인정보·문의정책이다. LOGISTEED reference가 운영권한 증거가 되지는 않는다. 판매자계좌·배송/반품/환불 validator가 현재서비스 게시를 막아서는 안 된다.
 
@@ -180,7 +180,7 @@ native product를 reference로 사용할 때 기존 inactive/hidden/non-orderabl
 | 과거 검사 | 현재 출시 처리 |
 | --- | --- |
 | account 배송주소POST | 회원/login/reset유지, 불필요주소노출차단. 핵심owner검사는 배정상품·발주요청·원장GET/POST |
-| catalog import/review/publication | 상품등록/참조·배정상세·고객발주요청·운영검토 재조회. 판매게시/외부자동수집은 별도조건부 |
+| catalog import/review/publication | 상품등록/참조·배정상세·고객발주요청·운영검토 재조회. 외부수집·검수·카테고리/하위메뉴 연결은 후속 필수 범위, 판매 checkout 게시 제외 |
 | storefront search | 본인안내상품/요청검색과 운영상품/요청검색·고객범위 검사 |
 | order rawMIME | 발주안내/요청/검토/포인트알림MIME. reset유지 |
 | checkout gate-after-order | retail직접URL거부 + 독립회원/상품요청진입 검증 |
@@ -191,7 +191,7 @@ native product를 reference로 사용할 때 기존 inactive/hidden/non-orderabl
 
 ## 12. 현재 구현 상태와 출시 잔여
 
-**현재 상품·회원·관리자·문의 기반은 있으나, 고객별 상품발주안내/전용발주요청/수동검토와 연결된 포인트원장은 완성돼 있지 않다.** 따라서 배송·환불 요구를 제거해도 현재 즉시 출시 완료는 아니다.
+**설계 작성 시점에는 핵심 기능이 미구현이었다. 후속 구현으로 상품발주안내·전용요청·수동검토·포인트 원장/정정·감사·알림이 추가됐으며 집중 검사를 통과했다. 현재 통합 검증과 운영 인수 상태는 RELEASE_REQUIREMENTS_MATRIX와 TEST_RESULTS를 따른다.** 따라서 배송·환불 요구를 제거해도 현재 즉시 출시 완료는 아니다.
 
 | 우선순위 | 남은 작업 | 완료 조건 |
 | --- | --- | --- |

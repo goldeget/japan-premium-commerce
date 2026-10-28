@@ -100,7 +100,7 @@ final class RequestService
     {
         $this->customer($actor);
         $this->key($key);
-        return $this->db->transaction(function () use ($actor, $id, $version, $quantity, $key): array {
+        return $this->submissionTransaction(function () use ($actor, $id, $version, $quantity, $key): array {
             // Submission and revocation serialize on the same immutable assignment owner.
             $assignment = $this->assignmentRow($actor, $id, true);
             $hash = hash('sha256', json_encode([$actor->shopId,$actor->id,$id,$version,$quantity], JSON_THROW_ON_ERROR));
@@ -240,10 +240,21 @@ final class RequestService
         foreach (['image_url'=>2048,'reference'=>255,'source_url'=>2048] as $field => $limit) {
             $result[$field] = $this->text($product[$field] ?? '', $limit, false);
         }
-        foreach (['image_url','source_url'] as $field) {
-            if ($result[$field] !== '' && (!filter_var($result[$field], FILTER_VALIDATE_URL) || !in_array(strtolower((string)parse_url($result[$field], PHP_URL_SCHEME)), ['https','http'], true))) {
-                $this->invalid('Product URLs must be approved HTTP references.');
-            }
+        if ($result['source_url'] !== '' && (!filter_var($result['source_url'], FILTER_VALIDATE_URL)
+            || !in_array(strtolower((string)parse_url($result['source_url'], PHP_URL_SCHEME)), ['https','http'], true))) {
+            $this->invalid('Product source must be an approved HTTP reference.');
+        }
+        if ($result['image_url'] !== '' && !$this->imageUrl($result['image_url'])) { $this->invalid('Invalid approved product image.'); }
+        $images = $product['image_urls'] ?? ($result['image_url'] === '' ? [] : [$result['image_url']]);
+        if (!is_array($images) || count($images) > 20) { $this->invalid('Invalid approved product gallery.'); }
+        $result['image_urls'] = [];
+        foreach ($images as $image) {
+            $image = $this->text($image, 2048, true);
+            if (!$this->imageUrl($image)) { $this->invalid('Invalid approved gallery image.'); }
+            if (!in_array($image, $result['image_urls'], true)) { $result['image_urls'][] = $image; }
+        }
+        if ($result['image_url'] !== '' && !in_array($result['image_url'], $result['image_urls'], true)) {
+            $this->invalid('The cover must belong to the approved gallery.');
         }
         // Optional reviewed source price is descriptive only; it never creates a payment or award amount.
         $price = $product['reference_price'] ?? '';
@@ -275,6 +286,14 @@ final class RequestService
             $result['categories'][] = ['id_category'=>$category['id_category'],'id_parent'=>$category['id_parent'],'names'=>$names];
         }
         return $result;
+    }
+
+    private function imageUrl(string $url): bool
+    {
+        if (preg_match('~\A/img/p/(?:[0-9]+/)+[0-9]+(?:-[A-Za-z0-9_]+)?\.(?:jpg|jpeg|png|webp)\z~D', $url)) { return true; }
+        return filter_var($url, FILTER_VALIDATE_URL) !== false
+            && in_array(strtolower((string)parse_url($url, PHP_URL_SCHEME)), ['http','https'], true)
+            && parse_url($url, PHP_URL_USER) === null && parse_url($url, PHP_URL_PASS) === null;
     }
 
     private function limit(array $filters): int
@@ -320,6 +339,28 @@ final class RequestService
     private function customer(Actor $actor): void
     {
         if ($actor->type !== 'customer') { throw new \RuntimeException('Customer access required.', 403); }
+    }
+
+    private function submissionTransaction(callable $operation): array
+    {
+        // Separate assignments can contend on the same customer/key uniqueness
+        // constraint. Every callback effect is transactional, so lock retries
+        // cannot repeat an externally visible action.
+        for ($attempt = 0; ; ++$attempt) {
+            try {
+                return $this->db->transaction($operation);
+            } catch (\Throwable $error) {
+                $current = $error;
+                $code = 0;
+                do {
+                    $driver = $current instanceof \PDOException ? (int)($current->errorInfo[1] ?? 0) : (int)$current->getCode();
+                    if (in_array($driver, [1062,1205,1213], true)) { $code = $driver; break; }
+                    $current = $current->getPrevious();
+                } while ($current !== null);
+                if ($code === 1062) { $this->conflict('This assignment or submission key has already been used.'); }
+                if ($attempt >= 2 || !in_array($code, [1205,1213], true)) { throw $error; }
+            }
+        }
     }
 
     private function readPermission(Actor $actor): void

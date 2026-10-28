@@ -31,7 +31,7 @@ final class LiveSubscriptionReadiness
     public static function isHttpsOrigin(string $canonicalBase, array $server): bool
     {
         $secure = strtolower((string) ($server['HTTPS'] ?? ''));
-        if (!in_array($secure, ['on', '1'], true) && (string) ($server['SERVER_PORT'] ?? '') !== '443') return false;
+        if (!in_array($secure, ['on', '1'], true)) return false;
         $parts = parse_url($canonicalBase);
         $authority = (string) ($server['HTTP_HOST'] ?? '');
         if (!is_array($parts) || strtolower((string) ($parts['scheme'] ?? '')) !== 'https'

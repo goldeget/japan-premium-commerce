@@ -39,7 +39,11 @@ foreach ([201 => PushDeliveryResult::DELIVERED, 302 => PushDeliveryResult::RETRY
     $stack = HandlerStack::create($mock);
     $stack->push(\GuzzleHttp\Middleware::history($observed));
     $provider = new WebPushDeliveryProvider($auth, $stack);
-    liveSame(true, $provider->available());
+    ob_start();
+    $available = $provider->available();
+    $availabilityOutput = ob_get_clean();
+    liveSame('', $availabilityOutput);
+    liveSame(true, $available);
     liveSame($expected, $provider->send($subscription, $payload)->status);
     liveSame(1, count($observed));
     $options = $observed[0]['options'];

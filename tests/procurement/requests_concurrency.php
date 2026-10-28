@@ -41,7 +41,7 @@ $db = new Database($connect(), 'rq_race_' . bin2hex(random_bytes(5)) . '_');
 // Retain only the generated identifier, never any connection credentials.
 $prefix = trim($db->table('assignment'), '`');
 $prefix = substr($prefix, 0, -strlen('ordenowa_procurement_assignment'));
-$tables = ['policy','notification_delivery','notification','activity','point_ledger','point_award','point_account','review','request','assignment'];
+$tables = ['support_post','support_link','policy','notification_delivery','notification','activity','point_ledger','point_award','point_account','review','request','assignment'];
 $gates = [];
 try {
     Schema::install($db);
@@ -49,15 +49,16 @@ try {
     $manager = Actor::employee(1, 10, ['procurement.read','procurement.manage']);
     $product = ['shop_id'=>1,'id_product'=>7,'id_product_attribute'=>0,'names'=>['en'=>'Synthetic race product'],
         'descriptions'=>[],'image_url'=>'','reference'=>'SYNTHETIC','source_url'=>''];
-    foreach (['same-key','different-key','revoke'] as $mode) {
+    foreach (['same-key','different-key','revoke','shared-key-different-assignment'] as $mode) {
         for ($round = 0; $round < 3; ++$round) {
             $assignment = $service->createAssignment($manager, 101, $product, []);
+            $secondAssignment = $mode === 'shared-key-different-assignment' ? $service->createAssignment($manager, 101, $product, []) : $assignment;
             $gate = sys_get_temp_dir() . '/ordenowa-requests-' . bin2hex(random_bytes(8));
             $gates[] = $gate;
             $processes = [];
             foreach ([0,1] as $worker) {
-                $key = $mode . '-' . $round . ($mode === 'same-key' ? '' : '-' . $worker);
-                $command = [PHP_BINARY,__FILE__,'worker',$prefix,(string)$assignment['id_assignment'],
+                $key = $mode . '-' . $round . (in_array($mode, ['same-key','shared-key-different-assignment'], true) ? '' : '-' . $worker);
+                $command = [PHP_BINARY,__FILE__,'worker',$prefix,(string)($worker === 1 ? $secondAssignment['id_assignment'] : $assignment['id_assignment']),
                     $mode === 'revoke' && $worker === 1 ? 'revoke' : 'submit',$key,$gate,(string)$worker];
                 $process = proc_open($command, [0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']], $pipes);
                 requestsAssert(is_resource($process), 'Race worker starts');
@@ -83,6 +84,12 @@ try {
             if ($mode === 'same-key') {
                 requestsAssert($results[0]['exit'] === 0 && $results[1]['exit'] === 0, 'Same-key retry succeeds for both clients');
                 requestsAssert($results[0]['data']['id_request'] === $results[1]['data']['id_request'] && $requests === 1, 'Concurrent retry resolves same request');
+            } elseif ($mode === 'shared-key-different-assignment') {
+                $exits = array_column($results, 'exit'); sort($exits);
+                requestsAssert($exits === [0,9], 'Concurrent key reuse on different assignments returns one conflict');
+                $count = (int)$db->value('SELECT COUNT(*) FROM ' . $db->table('request') . ' WHERE id_assignment IN ('
+                    . $assignment['id_assignment'] . ',' . $secondAssignment['id_assignment'] . ')');
+                requestsAssert($count === 1, 'Concurrent key reuse saves one request across assignments');
             } else {
                 $exits = array_column($results, 'exit'); sort($exits);
                 requestsAssert($exits === [0,9], 'Exactly one mutation wins race');
@@ -91,7 +98,7 @@ try {
             }
         }
     }
-    fwrite(STDOUT, "PASS requests concurrency: same-key, different-key and revoke races (nine barriers)\n");
+    fwrite(STDOUT, "PASS requests concurrency: same-key, different-key, revoke and cross-assignment key races (twelve barriers)\n");
 } finally {
     foreach ($gates as $gate) { foreach ([$gate,$gate.'.ready.0',$gate.'.ready.1'] as $file) { if (is_file($file)) { unlink($file); } } }
     foreach ($tables as $table) { $db->execute('DROP TABLE IF EXISTS ' . $db->table($table)); }

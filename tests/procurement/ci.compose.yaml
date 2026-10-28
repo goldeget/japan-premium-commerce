@@ -1,0 +1,38 @@
+# Use only with the exact disposable project validated by ci_acceptance.sh.
+services:
+  prestashop:
+    build:
+      network: host
+      extra_hosts:
+        - '${ORDENOWA_BUILD_PROXY_HOST:-host.docker.internal}:${ORDENOWA_BUILD_PROXY_ADDRESS:-host-gateway}'
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+      secrets:
+        - composer_ca
+    environment:
+      ORDENOWA_APP_MODE: procurement
+      CI: 'true'
+      GITHUB_ACTIONS: 'true'
+      GITHUB_RUN_ID: ${GITHUB_RUN_ID:?numeric run identity required}
+      GITHUB_RUN_ATTEMPT: ${GITHUB_RUN_ATTEMPT:?numeric attempt required}
+      KURANEA_CI_RUN_ID: ${GITHUB_RUN_ID:?numeric run identity required}
+      KURANEA_CI_RUN_ATTEMPT: ${GITHUB_RUN_ATTEMPT:?numeric attempt required}
+      KURANEA_ISOLATED_CI: '1'
+      KURANEA_CI_PROJECT_NAME: ${CI_COMPOSE_PROJECT_NAME:?disposable project required}
+      KURANEA_CATALOG_TEST_DEMO_APPROVAL: '1'
+      KURANEA_CATALOG_QUEUE_DIR: /var/lib/kuranea/procurement-ci-review
+  mailpit:
+    image: axllent/mailpit:v1.31.6
+    ports:
+      - '127.0.0.1:18025:8025'
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: '100'
+    tmpfs:
+      - /data:rw,noexec,nosuid,size=32m,mode=1777
+
+secrets:
+  composer_ca:
+    file: ${HOST_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}

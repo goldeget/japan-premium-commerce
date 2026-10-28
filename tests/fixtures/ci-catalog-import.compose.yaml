@@ -2,6 +2,7 @@
 services:
   prestashop:
     environment:
+      ORDENOWA_APP_MODE: legacy_retail
       CI: "true"
       GITHUB_ACTIONS: "true"
       GITHUB_RUN_ID: ${GITHUB_RUN_ID:?GitHub Actions run ID is required for isolated catalog QA}

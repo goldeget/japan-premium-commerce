@@ -54,7 +54,14 @@
           </a>
         </div>
 
-        {hook h='displayTop'}
+        {if !empty($ordenowaProcurementEnabled)}
+          <nav class="col d-flex align-items-center justify-content-end" aria-label="{$ordenowaWorkspaceLabel|escape:'htmlall':'UTF-8'}">
+            <a class="btn btn-link ordenowa-workspace-link" href="{$ordenowaWorkspaceUrl|escape:'htmlall':'UTF-8'}">{$ordenowaWorkspaceLabel|escape:'htmlall':'UTF-8'}</a>
+            <a class="btn btn-link" href="{$urls.pages.my_account}">{l s='Your account' d='Shop.Theme.Customeraccount'}</a>
+          </nav>
+        {else}
+          {hook h='displayTop'}
+        {/if}
 
         <div id="_mobile_ps_customersignin" class="d-md-none d-flex col-auto">
           {* JUST PLACEHOLDER FOR RESPONSIVE COMPONENT TO LOAD REAL ONE *}
@@ -66,7 +73,7 @@
           {* JUST PLACEHOLDER FOR RESPONSIVE COMPONENT TO LOAD REAL ONE *}
         </div>
 
-        {if !$configuration.is_catalog}
+        {if !$configuration.is_catalog && empty($ordenowaProcurementEnabled)}
           <div id="_mobile_ps_shoppingcart" class="d-md-none d-flex col-auto">
             {* JUST PLACEHOLDER FOR RESPONSIVE COMPONENT TO LOAD REAL ONE *}
             <div class="header-block">
@@ -82,7 +89,7 @@
     </div>
   </div>
 
-  {capture name="nav_full_width"}{hook h='displayNavFullWidth'}{/capture}
+  {capture name="nav_full_width"}{if empty($ordenowaProcurementEnabled)}{hook h='displayNavFullWidth'}{/if}{/capture}
   {if !empty($smarty.capture.nav_full_width)}
     <div class="{$headerNavFullWidth}">
       {$smarty.capture.nav_full_width nofilter}

@@ -38,7 +38,7 @@ $context->cart = new Cart();
 $context->currency = kuraneaConfigureJapaneseCurrency($context);
 $kernel->getContainer()->get(ContextBuilderPreparer::class)->prepareFromLegacyContext($context);
 
-foreach (['kuraneapostcode', 'kuraneabackoffice', 'kuraneabusinessprofile', 'kuraneacatalog', 'kuraneapush'] as $moduleName) {
+foreach (['kuraneapostcode', 'kuraneabackoffice', 'kuraneabusinessprofile', 'kuraneacatalog', 'kuraneapush', 'ordenowaprocurement'] as $moduleName) {
     $module = Module::getInstanceByName($moduleName);
     if (!$module) {
         throw new RuntimeException(sprintf('The bundled %s module could not be loaded.', $moduleName));
@@ -51,6 +51,11 @@ foreach (['kuraneapostcode', 'kuraneabackoffice', 'kuraneabusinessprofile', 'kur
     } elseif (!(bool) $module->active && !$module->enable()) {
         throw new RuntimeException(sprintf('Could not enable the %s module.', $moduleName));
     }
+}
+
+$procurementModule = Module::getInstanceByName('ordenowaprocurement');
+if (!$procurementModule || !$procurementModule->ensureInfrastructure()) {
+    throw new RuntimeException('Could not ensure procurement schema, native permissions and tabs.');
 }
 
 // The core installer can mark bundled modules installed before the project

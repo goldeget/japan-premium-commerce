@@ -64,6 +64,16 @@ final class Schema
             'policy' => "id_policy BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,id_shop INT UNSIGNED NOT NULL,
                 version INT UNSIGNED NOT NULL,payload LONGTEXT NOT NULL,id_employee INT UNSIGNED NOT NULL,
                 created_at DATETIME NOT NULL,UNIQUE shop_version(id_shop,version),INDEX shop_policy(id_shop,id_policy)",
+            'support_link' => "id_support_link BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                id_shop INT UNSIGNED NOT NULL,id_customer INT UNSIGNED NOT NULL,id_request BIGINT UNSIGNED NOT NULL,
+                id_customer_thread INT UNSIGNED NOT NULL,UNIQUE shop_request(id_shop,id_request),
+                UNIQUE native_thread(id_customer_thread),INDEX customer_link(id_shop,id_customer,id_support_link)",
+            'support_post' => "id_support_post BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                id_shop INT UNSIGNED NOT NULL,id_customer INT UNSIGNED NOT NULL,id_request BIGINT UNSIGNED NOT NULL,
+                id_customer_thread INT UNSIGNED NOT NULL,id_customer_message INT UNSIGNED NOT NULL,
+                key_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+                payload_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,created_at DATETIME NOT NULL,
+                UNIQUE customer_key(id_shop,id_customer,key_hash),INDEX request_posts(id_shop,id_request)",
         ];
         foreach ($tables as $suffix => $columns) {
             $db->execute('CREATE TABLE IF NOT EXISTS ' . $db->table($suffix) . ' (' . $columns

@@ -29,9 +29,13 @@ final class PushTransport implements Transport
         }
         $outbox = ($this->factory)($shop);
         $eventId = 'procurement:' . $event['event_key'];
-        $result = $outbox->receive($shop, $customer, $eventId, new DeliveryPayload($category, $recipient['locale']));
-        if (($result['status'] ?? '') === 'duplicate') {
-            $result = $outbox->retry($shop, $customer, $eventId);
+        // Retry the immutable existing receipt before constructing a payload from today's locale.
+        $result = $outbox->retry($shop, $customer, $eventId);
+        if (($result['status'] ?? '') === 'not_found') {
+            $result = $outbox->receive($shop, $customer, $eventId, new DeliveryPayload($category, $recipient['locale']));
+            if (($result['status'] ?? '') === 'duplicate') {
+                $result = $outbox->retry($shop, $customer, $eventId);
+            }
         }
         if (($result['interrupted'] ?? 0) > 0 || ($result['status'] ?? '') === 'storage_unavailable') {
             return new DeliveryResult('uncertain', 'push_delivery_uncertain');

@@ -51,23 +51,28 @@ try {
     $fakePush = new class {
         public array $payloads = [];
         public int $retries = 0;
-        public bool $duplicate = false;
+        public array $receipts = [];
         public function receive(int $shop, int $customer, string $id, object $payload): array
         {
-            $this->payloads[] = [$shop, $customer, $id, json_decode($payload->toJson(), true)];
-            return ['status' => $this->duplicate ? 'duplicate' : 'completed'];
+            $incoming = json_decode($payload->toJson(), true);
+            if (isset($this->receipts[$id]) && $this->receipts[$id] !== $incoming) { throw new InvalidArgumentException('Immutable receipt payload conflict'); }
+            if (isset($this->receipts[$id])) { return ['status' => 'duplicate']; }
+            $this->receipts[$id] = $incoming;
+            $this->payloads[] = [$shop, $customer, $id, $incoming];
+            return ['status' => 'completed'];
         }
-        public function retry(int $shop, int $customer, string $id): array { ++$this->retries; return ['status' => 'completed']; }
+        public function retry(int $shop, int $customer, string $id): array { if (!isset($this->receipts[$id])) { return ['status' => 'not_found']; } ++$this->retries; return ['status' => 'completed']; }
     };
     $push = new PushTransport($resolver, static fn(int $shop): object => $fakePush, static fn(int $shop, string $category): bool => true);
     pointTestAssert($push->send($event)->status === 'sent', 'procurement push delivered');
     pointTestAssert($fakePush->payloads[0][3] === ['event' => 'procurement', 'locale' => 'ko'], 'push exact generic enum and customer locale only');
     pointTestAssert($fakePush->payloads[0][0] === 1 && $fakePush->payloads[0][1] === 13, 'push owner exact');
-    $fakePush->duplicate = true;
     pointTestAssert($push->send($event)->status === 'sent' && $fakePush->retries === 1, 'existing push receipt retries through push outbox');
+    $db->execute('UPDATE `' . $prefix . 'customer` SET id_lang=2 WHERE id_customer=13');
+    pointTestAssert($push->send($event)->status === 'sent' && $fakePush->retries === 2, 'locale change retries immutable receipt without payload conflict');
+    $db->execute('UPDATE `' . $prefix . 'customer` SET id_lang=3 WHERE id_customer=13');
     $award = (new \Ordenowa\Procurement\Points\PointService($db))->award(pointTestEmployee(), (int) $request['id_request'], 100, 'Synthetic allowance', 'notice-base');
     $pointEvent = $db->one('SELECT * FROM ' . $db->table('notification') . " WHERE event='points.awarded' AND target_id=" . (int) $award['id_ledger']);
-    $fakePush->duplicate = false;
     pointTestAssert($push->send($pointEvent)->status === 'sent', 'points notice delivered');
     pointTestAssert(end($fakePush->payloads)[3] === ['event' => 'points', 'locale' => 'ko'], 'points push contains no balance or amount');
     pointTestAssert($transport->send($pointEvent)->status === 'sent' && str_ends_with(end($sent)['variables']['{workspace_url_text}'], '&view=points'), 'points mail targets points workspace');

@@ -2,7 +2,7 @@
  * For the full copyright and license information, please view the
  * LICENSE.md file that was distributed with this source code.
  *}
-{capture name="footer_before"}{hook h='displayFooterBefore'}{/capture}
+{capture name="footer_before"}{if empty($ordenowaProcurementEnabled)}{hook h='displayFooterBefore'}{/if}{/capture}
 {if $smarty.capture.footer_before}
   {block name='hook_footer_before'}
     <div class="footer footer__before">
@@ -14,7 +14,14 @@
 {block name='footer_main'}
   <div class="footer footer__main">
     <div class="container">
-      {capture name="footer_main_top"}{hook h='displayFooter'}{/capture}
+      {capture name="footer_main_top"}
+        {if !empty($ordenowaProcurementEnabled)}
+          {hook h='displayFooter' mod='ps_customeraccountlinks'}
+          {hook h='displayFooter' mod='ordenowaprocurement'}
+        {else}
+          {hook h='displayFooter'}
+        {/if}
+      {/capture}
       {if $smarty.capture.footer_main_top}
         {block name='hook_footer_main'}
           <div class="footer__main-top row">
@@ -23,7 +30,7 @@
         {/block}
       {/if}
 
-      {capture name="footer_main_bottom"}{hook h='displayFooterAfter'}{/capture}
+      {capture name="footer_main_bottom"}{if empty($ordenowaProcurementEnabled)}{hook h='displayFooterAfter'}{/if}{/capture}
       {if isset($smarty.capture.footer_main_bottom) && $smarty.capture.footer_main_bottom}
         {block name='hook_footer_after'}
           <div class="footer__main-bottom row">
@@ -37,6 +44,33 @@
   </div>
 {/block}
 
+{if !empty($ordenowaProcurementEnabled)}
+  {if $language.locale == 'ja-JP'}
+    {$mobileNavLabel = 'プラットフォームメニュー'}
+    {$mobileHome = '発注案内'}
+    {$mobileRequests = '依頼履歴'}
+    {$mobilePoints = 'ポイント'}
+    {$mobileAccount = 'マイページ'}
+  {elseif $language.locale == 'ko-KR'}
+    {$mobileNavLabel = '플랫폼 메뉴'}
+    {$mobileHome = '발주 안내'}
+    {$mobileRequests = '요청 내역'}
+    {$mobilePoints = '포인트'}
+    {$mobileAccount = '내 계정'}
+  {else}
+    {$mobileNavLabel = 'Platform navigation'}
+    {$mobileHome = 'Products'}
+    {$mobileRequests = 'Requests'}
+    {$mobilePoints = 'Points'}
+    {$mobileAccount = 'Account'}
+  {/if}
+  <nav class="kuranea-mobile-nav" aria-label="{$mobileNavLabel|escape:'htmlall':'UTF-8'}">
+    <a href="{$ordenowaWorkspaceUrl|escape:'htmlall':'UTF-8'}" class="kuranea-mobile-nav__item"><i class="material-icons" aria-hidden="true">&#xe88a;</i><span>{$mobileHome|escape:'htmlall':'UTF-8'}</span></a>
+    <a href="{$ordenowaWorkspaceRequestsUrl|escape:'htmlall':'UTF-8'}" class="kuranea-mobile-nav__item"><i class="material-icons" aria-hidden="true">&#xe85d;</i><span>{$mobileRequests|escape:'htmlall':'UTF-8'}</span></a>
+    <a href="{$ordenowaWorkspacePointsUrl|escape:'htmlall':'UTF-8'}" class="kuranea-mobile-nav__item"><i class="material-icons" aria-hidden="true">&#xe8d0;</i><span>{$mobilePoints|escape:'htmlall':'UTF-8'}</span></a>
+    <a href="{$urls.pages.my_account|escape:'htmlall':'UTF-8'}" class="kuranea-mobile-nav__item"><i class="material-icons" aria-hidden="true">&#xe853;</i><span>{$mobileAccount|escape:'htmlall':'UTF-8'}</span></a>
+  </nav>
+{else}
 {if $language.locale == 'ja-JP'}
   {$mobileNavLabel = 'ストアメニュー'}
   {$mobileHome = 'ホーム'}
@@ -74,3 +108,4 @@
     <span>{$mobileCart|escape:'htmlall':'UTF-8'}</span>
   </a>
 </nav>
+{/if}

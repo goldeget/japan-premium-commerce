@@ -27,6 +27,16 @@ const offlinePage = (language) => {
 };
 
 const PRIVATE_RETURN_ROUTES = new Set([
+  'module',
+  'modules',
+  'ordenowaprocurement',
+  'workspace',
+  'assignment',
+  'assignments',
+  'request',
+  'requests',
+  'points',
+  'notifications',
   'address',
   'addresses',
   'cart',
@@ -64,6 +74,7 @@ const isPrivateReturnRoute = (value) => {
     const target = new URL(value, self.location.origin);
     if (target.origin !== self.location.origin) return false;
     const controllers = target.searchParams.getAll('controller');
+    if (target.searchParams.getAll('module').some((name) => name.toLowerCase() === 'ordenowaprocurement')) return true;
     if (controllers.some((controller) => PRIVATE_RETURN_ROUTES.has(controller.trim().toLowerCase()))) {
       return true;
     }
@@ -76,6 +87,55 @@ const isPrivateReturnRoute = (value) => {
     });
   } catch (_error) {
     return false;
+  }
+};
+
+// Only the explicitly enabled platform caches public static files. Dynamic
+// documents, module endpoints, query strings and submitted data never enter it.
+const PROCUREMENT_STATIC_CACHE = new URL(self.location.href || '/sw.js', self.location.origin)
+  .searchParams.get('platform') === 'procurement';
+const STATIC_CACHE_PREFIX = 'ordenowa-public-static-';
+const STATIC_CACHE_NAME = `${STATIC_CACHE_PREFIX}v1`;
+const STATIC_CACHE_MAX_ENTRIES = 64;
+const publicAsset = (request, url) => PROCUREMENT_STATIC_CACHE
+  && request.method === 'GET' && request.mode !== 'navigate'
+  && url.origin === self.location.origin && !url.username && !url.password && !url.search
+  && !request.headers.get('Authorization') && !request.headers.get('Range')
+  && (/^\/themes\/(?:kuranea|hummingbird)\/assets\/(?:css|js|img|fonts|cache)\/[A-Za-z0-9_./-]+\.(?:css|js|woff2?|png|jpe?g|webp|avif|svg|ico)$/i.test(url.pathname)
+    || /^\/modules\/ordenowaprocurement\/views\/(?:css|js)\/[A-Za-z0-9_./-]+\.(?:css|js)$/i.test(url.pathname));
+
+const publicAssetResponse = async (request) => {
+  try {
+    const response = await fetch(request);
+    const mime = response.headers.get('Content-Type') || '';
+    const policy = response.headers.get('Cache-Control') || '';
+    const vary = response.headers.get('Vary') || '';
+    const extension = new URL(request.url).pathname.split('.').pop().toLowerCase();
+    const validMime = extension === 'css' ? /^text\/css\b/i.test(mime)
+      : extension === 'js' ? /^(?:text|application)\/(?:x-)?javascript\b/i.test(mime)
+        : /^woff2?$/.test(extension) ? /^(?:font\/|application\/(?:font|x-font|vnd\.ms-fontobject))/i.test(mime)
+          : /^image\//i.test(mime);
+    if (response.ok && !response.redirected && ['basic', 'default'].includes(response.type)
+      && validMime && !/(?:private|no-store|no-cache)/i.test(policy)
+      && !/(?:\*|cookie|authorization)/i.test(vary)) {
+      try {
+        const cache = await caches.open(STATIC_CACHE_NAME);
+        await cache.put(request, response.clone());
+        const keys = await cache.keys();
+        for (const key of keys.slice(0, Math.max(0, keys.length - STATIC_CACHE_MAX_ENTRIES))) await cache.delete(key);
+      } catch (_error) {
+        // Quota or storage denial must leave the successful network response intact.
+      }
+    }
+    return response;
+  } catch (networkError) {
+    try {
+      const cached = await (await caches.open(STATIC_CACHE_NAME)).match(request);
+      if (cached) return cached;
+    } catch (_error) {
+      // Unavailable storage is equivalent to a cache miss.
+    }
+    throw networkError;
   }
 };
 
@@ -117,12 +177,27 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil((async () => {
+    if (PROCUREMENT_STATIC_CACHE) {
+      try {
+        const keys = await caches.keys();
+        await Promise.all(keys.filter((key) => key.startsWith(STATIC_CACHE_PREFIX) && key !== STATIC_CACHE_NAME)
+          .map((key) => caches.delete(key)));
+      } catch (_error) {
+        // Storage restrictions must not stop an updated worker from activating.
+      }
+    }
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
+  if (publicAsset(request, url)) {
+    event.respondWith(publicAssetResponse(request));
+    return;
+  }
   const isLogoutAction = url.searchParams.has('mylogout');
   const isSameOriginGetNavigation = request.method === 'GET'
     && request.mode === 'navigate'
@@ -193,16 +268,22 @@ self.addEventListener('fetch', (event) => {
 
 const PUSH_BODY_BY_LOCALE = {
   ja: {
+    procurement: '発注依頼に関するお知らせがあります。',
+    points: '手当ポイントに関するお知らせがあります。',
     order: 'ご注文に関するお知らせがあります。',
     delivery: '配送に関するお知らせがあります。',
     support: 'サポートに関するお知らせがあります。',
   },
   en: {
+    procurement: 'You have a procurement request update.',
+    points: 'You have an allowance points update.',
     order: 'You have an order update.',
     delivery: 'You have a delivery update.',
     support: 'You have a support update.',
   },
   ko: {
+    procurement: '발주 요청 관련 알림이 있습니다.',
+    points: '수당 포인트 관련 알림이 있습니다.',
     order: '주문 관련 알림이 있습니다.',
     delivery: '배송 관련 알림이 있습니다.',
     support: '고객 지원 관련 알림이 있습니다.',
@@ -223,19 +304,24 @@ self.addEventListener('push', (event) => {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return;
   const keys = Object.keys(payload);
   if (keys.length !== 2 || !keys.includes('event') || !keys.includes('locale')) return;
-  if (!['order', 'delivery', 'support'].includes(payload.event)
+  if (!['order', 'delivery', 'support', 'procurement', 'points'].includes(payload.event)
     || !['ja', 'en', 'ko'].includes(payload.locale)) return;
 
   event.waitUntil(self.registration.showNotification('ORDENOWA', {
     body: PUSH_BODY_BY_LOCALE[payload.locale][payload.event],
-    data: {route: 'my-account'},
+    data: {route: payload.event === 'points' ? 'procurement-points'
+      : payload.event === 'procurement' ? 'procurement-requests' : 'my-account'},
   }));
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   event.waitUntil((async () => {
-    const destination = new URL('/index.php?controller=my-account', self.location.origin).href;
+    const route = event.notification.data?.route;
+    const target = route === 'procurement-points' ? '/index.php?fc=module&module=ordenowaprocurement&controller=workspace&view=points'
+      : route === 'procurement-requests' ? '/index.php?fc=module&module=ordenowaprocurement&controller=workspace&view=requests'
+        : '/index.php?controller=my-account';
+    const destination = new URL(target, self.location.origin).href;
     const windows = await self.clients.matchAll({type: 'window', includeUncontrolled: true});
     for (const client of windows) {
       try {

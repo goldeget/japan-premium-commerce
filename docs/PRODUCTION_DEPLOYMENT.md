@@ -1,10 +1,84 @@
-# ORDENOWA 운영 배포 준비 안내
+# ORDENOWA 상품 발주·수당 포인트 운영 준비
 
-## 현재 경계
+## 현재 구현과 배포 상태
+
+2026-10-29 구현 후보는 PrestaShop 9.2.0·Hummingbird 자식 테마와 `ordenowaprocurement` 전용 데이터 모델을 사용한다. 상품 안내 → 고객 발주 요청 → 수동 검토 → 별도 수동 포인트 지급·연결 정정, 정책 버전과 commit 후 메일/Push worker가 구현되어 있다. 발주 요청·포인트·알림의 PHP8.3/MariaDB10.11 격리 검사는 통과했으며 통합 QA와 실제 런타임 증거는 현재 진행 중이다. 전체 동일 SHA 인수, 운영 배포, 실제 발신 SMTP, 공개 HTTPS 및 실제 기기 Push 전달을 완료했다고 주장하지 않는다.
+
+현재 Compose와 테스트 DB·named volume은 개발·격리 QA 대상이다. 운영 서버·운영 DB·`main`을 이 문서 작업에서 변경하지 않았다. 실제 배포 전에 승인된 코드 SHA·이미지 digest·migration 집합·복구 절차와 담당자를 정한다. `ORDENOWA_APP_MODE=procurement`는 전용 회원·발주 경로와 legacy retail 차단을 선택하는 서버 설정이다. 상품 판매·결제·배송·반품·상품 환불·현금 환산·출금은 현재 서비스 범위에 없다.
+
+## 현재 서비스의 운영 입력 체크리스트
+
+아래는 현 플랫폼의 실제 외부 입력 목록이다. 값 자체가 없으면 표의 해당 작업을 인수할 수 없다. 비밀은 값 대신 비밀 저장소 참조와 담당자만 문서에 남긴다. 아래 보관자료의 과거 seller·세금·배송·결제 입력은 현 목록에 추가하지 않는다.
+
+| 실제 입력 이름·자료 | 사용 위치 | 없을 때 차단되는 작업 |
+| --- | --- | --- |
+| `operator_name`, `support_email`; 선택 `support_phone`, HTTPS `support_url`; 초기 운영자·참여 고객과 권한 담당자 | **서비스 운영자·지원·정책**, 계정·문의 운영 | 실제 운영자·지원 공개와 운영 인수. LOGISTEED 참조정보에서 신원·권한을 추정하지 않는다. |
+| `terms`, `privacy`, `points` 각각 `ja/en/ko`; 지급·정정·이의 문의·보존 기준과 승인자 | 정책 버전·공개 링크, 검토·수당·개인정보 운영 | 정책 공개 준비와 실제 참여자 운영 인수 |
+| 안내할 실제 상품·정확한 옵션·기본/최대 수량·참여 고객·검토 기준·승인된 발주 샘플·원문/이미지 사용 근거 | 상품 등록/수집 검토, 고객별 안내와 수동 승인·지급 | 실제 상품 안내와 파싱 지원 범위 인수. 합성 성공을 실제 출처 승인으로 대체하지 않는다. |
+| 운영 host/project/volume 식별, `PS_DOMAIN`, DNS/TLS·proxy 담당자, `SHOP_BIND_ADDRESS`, `SHOP_PORT`, `HOST_CA_BUNDLE`; 승인 SHA·app/DB image digest·registry 참조 | 배포 정의·도메인·접근·승격·롤백 | 공개 운영 배포. `.env`만 바꿔 기존 설치 DB의 도메인 이전을 완료했다고 보지 않는다. |
+| `MARIADB_DATABASE`, `MARIADB_USER`, `MARIADB_PASSWORD`, `MARIADB_ROOT_PASSWORD`, `ADMIN_MAIL`, `ADMIN_PASSWD`; 실제 네이티브 SMTP 설정·발신 도메인·수신 검증·담당자 | 비밀 저장소, native 계정/DB, reset·발주·포인트 메일 | 운영 설치·계정 복구 및 실제 메일 전달 인수 |
+| `ORDENOWA_PUSH_STORAGE_KEY`, `ORDENOWA_PUSH_VAPID_PUBLIC_KEY`, `ORDENOWA_PUSH_VAPID_PRIVATE_KEY`, `ORDENOWA_PUSH_VAPID_SUBJECT`; 승인 HTTPS host·실기기·동의 문구·Push 담당자 | 암호화 구독 저장소, Web Push 인증·실제 전달·철회 검증 | 구독 저장과 실제 기기 Push 인수. 비밀값을 Git·채팅·로그에 기록하지 않는다. |
+| 비공개 scheduler 담당자, DB/disk/error·알림 채널 감시, 암호화 백업 저장소·접근자·보존기간·RPO/RTO·복구 대상/승인자·migration 호환성 | worker 운영, 감시·백업·복원·롤백 | 지속 운영과 복원/배포 인수. 실제 값과 담당자를 임의로 정하지 않는다. |
+
+## 후보 준비와 인수 순서
+
+1. 승인된 Git SHA, Hummingbird gitlink와 app/DB 불변 image digest를 기록한다. 운영과 다른 project/DB/volume으로 staging을 준비한다. 실제 운영 고객 데이터나 기존 운영 volume을 테스트 대상으로 쓰지 않는다. 이 저장소의 local build·mutable tag만으로 production artifact 승격을 완료할 수 없다.
+2. 공식 기반·자식 테마·전용 모듈을 배치하고 전용 Schema를 추가 설치한다. 기존 상거래 테이블을 변환하거나 초기화하지 않는다. 현재 전용 테이블은 assignment, request, review, point_account, point_award, point_ledger, activity, notification, notification_delivery, policy, support_link, support_post이며 설치 prefix가 붙는다.
+3. 실제 운영자·지원·세 언어 정책을 입력하고 버전과 공개 링크를 확인한다. 해당 쇼핑몰의 담당자에게 메뉴별 READ/ADD/EDIT와 정책 권한을 부여한다. 고객을 판매자 gate와 분리해 native 가입/login/reset을 확인하고 retail 직접 진입 차단을 확인한다.
+4. 같은 후보에서 고객 A 상품 안내·수량 확인·요청 → 운영자 승인 → 별도 합성 100P 지급 → A 새 로그인 100P → -20P 정정·원장/잔액 80P를 확인한다. 고객 B 접근 거부, 미승인 지급 거부, 동시·재시도 중복 방지, 단계별 rollback, 원장 대조와 검색·pagination도 확인한다. 이 수치는 QA용 합성값이다.
+5. native SMTP로 reset 및 발주/검토/포인트 이벤트의 실제 수신자·언어·MIME를 확인한다. 채널 재시도가 포인트나 메일 중복을 만들지 않는지 조사한다. 격리 Mailpit 증거와 운영 SMTP 수신 증거를 구분한다.
+6. 공개 HTTPS와 실기기에서 동의·구독·전달·철회·재시도, PWA 설치/업데이트, PC/모바일·키보드·세 언어 화면을 확인한다. 단위 검사·MockHandler·브라우저 에뮬레이션을 실제 Push 기기 전달의 증거로 대체하지 않는다.
+7. 동일 snapshot set의 격리 복원·재시작 후 소유권·검토·원장 합계·정책·알림 상태를 재조회한다. 승인된 migration/rollback 호환성, 감시와 담당자 인수가 확보된 뒤에만 별도 운영 변경 승인을 진행한다. 이 문서는 운영 시작 명령이나 배포 승인을 발행하지 않는다.
+
+## 메일·알림 scheduler
+
+전용 outbox는 도메인 transaction에서 기록된다. 실제 외부 전달은 commit 후 비공개 서버 CLI에서 실행한다. 직접 HTTP endpoint나 고객 요청에서 dispatch하지 않는다. native 비밀번호 재설정은 기존 기능을 유지한다.
+
+```sh
+php modules/ordenowaprocurement/bin/dispatch-notifications.php --shop=1 --channels=mail,push --limit=25
+```
+
+서버 담당자가 실제 확인한 쇼핑몰 번호별로 1분 간격의 scheduler를 구성하고 명령의 종료 상태와 안전한 집계만 수집한다. 채널을 명시해야 하며 `mail` 또는 `push`만 별도로 실행할 수 있다. native SMTP·고객의 현재 same-shop 이메일/언어·실제 수신을 먼저 확인한다. 예시는 scheduler를 설치하거나 운영 배포를 수행하지 않는다.
+
+채널 상태는 `notification_delivery`에 독립적으로 남는다. 성공은 재전송하지 않고 확정 실패는 backoff와 최대 5회 시도를 적용한다. 전송 중 crash·불확실한 결과는 `UNCERTAIN`이며 자동 재전송하지 않는다. 실제 provider/mail 기록을 조사하고 중복 가능성을 받아들이는 경우에만 지정 delivery를 명시적으로 요청한다.
+
+```sh
+php modules/ordenowaprocurement/bin/dispatch-notifications.php --shop=1 --channels=mail --retry-uncertain=DELIVERY_ID --ack-possible-duplicate --limit=25
+```
+
+이 명령도 시도 횟수를 초기화하지 않는다. `FAILED`·`UNCERTAIN` 감시 담당자와 조사 절차를 운영 인수에 포함한다. in-app 알림과 포인트 commit은 메일/Push 실패와 독립적이다. [worker 상세](../modules/ordenowaprocurement/bin/NOTIFICATIONS.md)를 참조한다.
+
+## Web Push 활성 조건
+
+`modules/kuraneapush/composer.json`·lock의 `minishlink/web-push` 9 계열 실제 라이브러리와 vendor를 승인 이미지에 포함한다. `LivePushFactory`는 다음 조건을 모두 충족할 때 live provider를 선택한다.
+
+- 해당 쇼핑몰 설정 `ORDENOWA_PUSH_LIVE_ENABLED=1`, `ORDENOWA_PUSH_HTTPS_VALIDATED=1`.
+- 실제 HTTPS·인증서·service worker·subscription 경로를 검증한 환경. HTTPS 검증 플래그는 그 증거를 남긴 뒤에만 설정한다.
+- 비밀 저장소에서 주입한 `ORDENOWA_PUSH_VAPID_PUBLIC_KEY`, `ORDENOWA_PUSH_VAPID_PRIVATE_KEY`, 유효한 `ORDENOWA_PUSH_VAPID_SUBJECT`.
+- `ORDENOWA_PUSH_STORAGE_KEY`: base64로 인코딩한 32바이트 구독 암호화 키. 재시작·복구에서 같은 키를 유지하고 교체는 별도 migration 절차로 다룬다.
+- 쇼핑몰별 `ORDENOWA_PUSH_EVENT_PROCUREMENT`, `ORDENOWA_PUSH_EVENT_POINTS` 활성, `ORDENOWA_PUSH_CONSENT_NOTICE_JA/EN/KO`, 해당 고객의 현재 동의와 유효한 기기 구독.
+
+실제 값이 없거나 gate가 닫히면 provider는 unavailable 상태를 유지한다. `procurement`/`points`와 locale만 Push payload에 들어가며 잔액·금액·상품·고객 식별정보는 넣지 않는다. worker의 목적지는 로그인 후 요청/포인트 워크스페이스다. endpoint 만료, 철회, 불확실한 전송과 기기별 전달을 실제 환경에서 확인해야 운영 Push를 인수할 수 있다. library 암호화/MockHandler 검사의 성공은 그 실기기 인수를 대신하지 않는다.
+
+## 일관된 백업·복원·롤백
+
+기존 native 고객·설정·상품을 보존하면서 새 안내·요청·스냅샷·최종 검토·지급·원장·잔액·정책·감사·인앱/채널 outbox·Push 구독/receipt, webroot·수집 검토 자료와 필요한 암호화 키 참조를 같은 복구 시점으로 묶는다. 승인된 maintenance/쓰기 gate를 사용하고 release SHA·image digest·schema/migration·시각·checksum을 manifest로 연결한다.
+
+복원은 다른 host/project/DB/volume에서 수행한다. 복구본의 외부 메일/Push 발신을 닫고 A/B 소유권·최종 상태·기본 지급 한 번·`SUM(ledger.delta)=point_account.balance`·채널 불확실성을 조사한다. 이미 발신했을 수 있는 outbox를 복원했다는 이유로 자동 재전송하지 않는다. 재시작 뒤 같은 검사를 반복하고 restore 승인자가 수락하기 전에는 원본 운영 상태를 덮어쓰지 않는다.
+
+장애 시 쓰기/traffic gate를 닫고 실패 시각·SHA/digest·migration과 개인정보를 제거한 증거를 보존한다. 호환성이 검증된 경우만 이전 app digest로 되돌린다. DB·파일·정책·원장이 이전 코드와 호환되지 않으면 image만 되돌리지 않는다. `down -v`, prune, volume 재생성 또는 운영 DB 초기화로 복구하지 않는다. snapshot set·소유권·원장·알림 상태가 맞지 않으면 공개 트래픽을 열지 않는다.
+
+## 보관자료 — 이전 소매 상거래 배포 안내
+
+아래는 이전 판매·주문·배송·환불 설계와 당시 QA 증거의 보관자료다. 현 상품 발주·수당 포인트의 출시 요구·입력·완료 증거로 적용하지 않는다. 과거 실행 URL과 성공 기록은 해당 과거 범위만 설명한다. 현재 누락 입력은 위 표, 현재 acceptance는 현재 후보의 실제 결과로 판단한다.
+
+### ORDENOWA 운영 배포 준비 안내
+
+#### 현재 경계
 
 현재 Compose는 로컬 개발과 격리 QA용이다. 기본 웹 포트는 loopback 주소에만 바인딩되고, 기본 `PS_DOMAIN`은 `localhost:<SHOP_PORT>`다. 이 저장소에서 실제 운영 서버, 공개 DNS, TLS 종료 프록시, 운영 메일 발신 또는 배포 롤백을 검증하지 않았다. 이 안내는 운영 배포 승인이 아니며 운영 배포를 실행하지 않는다.
 
-## 최초 설치 시 필요한 값
+#### 최초 설치 시 필요한 값
 
 `.env.example`에는 로컬 접속을 위한 안전한 loopback 기본값이 있다. `PS_DOMAIN`은 고정하지 않아 `SHOP_PORT`를 바꾸면 Compose 기본 host도 따라간다. 별도 도메인은 승인된 환경의 `.env`에 명시한다. 실제 설치 전에 `.env`를 만들고 다음 값을 비밀 저장소 또는 로컬 전용 파일로 채운다. 비밀값은 Git에 커밋하거나 명령 출력·Actions 로그·브라우저 증거에 기록하지 않는다.
 
@@ -20,7 +94,7 @@
 
 현재 `.env.example` 값은 **로컬 전용 예시**다. 운영 도메인, 공개 bind 주소, 관리자 계정, 실제 데이터베이스 암호를 추정해 넣지 않는다. `PS_DOMAIN`은 첫 설치 전에 결정하고, 해당 값으로 `docker compose config --quiet`를 확인한 후 승인된 배포 호스트에서 설치 절차를 수행한다. 설치 후 도메인 변경은 별도 점검된 유지보수 절차가 필요하다.
 
-## 조건부 배포 실행 순서 템플릿 (실행·검증되지 않음)
+#### 조건부 배포 실행 순서 템플릿 (실행·검증되지 않음)
 
 아래 명령은 환경 담당자가 승인한 호스트와 비밀 파일을 준비한 뒤 참고할 구성 템플릿이다. 이 저장소의 Compose는 컨테이너 포트 80의 HTTP만 제공하며 DNS, TLS 종료 프록시, 방화벽, 발신 메일 또는 롤백을 설정하지 않는다. `docker compose config --quiet`는 구성이 해석되는지만 확인하며 안전한 운영 구성이나 실제 배포를 증명하지 않는다.
 
@@ -39,11 +113,11 @@
 
 이 템플릿은 개발·격리 QA 설정에서 파생한 사전 준비 자료다. 현재 구성은 검증된 production release/upgrade/rollback 절차가 아니며, 운영 호스트, proxy/TLS, 비밀값, 메일, durable backup, 보존기간, RPO/RTO와 restore owner가 정해져야 실제 runbook을 완성할 수 있다. 로컬 테스트의 named volume 또는 데이터베이스를 운영 데이터로 승격하거나, volume 이름을 바꿔 초기 설치를 시작하지 않는다.
 
-## 조건부 운영 runbook
+#### 조건부 운영 runbook
 
 이 순서는 배포 승인이 아니라, 필요한 운영 값과 담당자가 정해진 뒤 환경 담당자가 구체화할 절차다. 아래 필수 입력 중 하나라도 비어 있으면 해당 단계에서 멈춘다. 임시 주소, 임의 seller/tax 값, placeholder 비밀값으로 실제 서비스를 시작하지 않는다.
 
-### 배포 전 필수 입력과 중단 조건
+##### 배포 전 필수 입력과 중단 조건
 
 | 준비 항목 | 배포 전에 남길 증거 | 중단 조건 |
 | --- | --- | --- |
@@ -55,7 +129,7 @@
 | 메일·결제 경계 | 발신 domain 및 authorized SMTP/mail service owner, reset/주문 메일 수신 검증, 결제 provider 계약·실거래 승인자, checkout gate의 관리 책임자 | 운영 메일 권한/전달 검증 전 reset·주문 메일을 인수 처리하지 않는다. 실결제는 별도 명시 승인이 없으면 계속 비활성으로 둔다. |
 | 백업·롤백 | 암호화 저장소와 접근자, 보존기간, 실제 승인 RPO/RTO, restore 승인자, 복구 target, schema migration과 이전 릴리스의 호환성 판정 | 저장소, 보존정책, 승인된 RPO/RTO 또는 복구 책임자가 없으면 쓰기 트래픽을 받지 않는다. RPO/RTO는 판매자/운영자가 정하며 이 문서에서 기본값을 정하지 않는다. |
 
-### 배포 순서
+##### 배포 순서
 
 1. **Release 고정:** 승인자가 Git SHA, Hummingbird gitlink, app image digest, DB image digest, migration 집합을 함께 기록한다. staging과 production에서 같은 digest를 승격한다. staging/production이 다른 이미지를 다시 빌드하지 않는다.
 2. **격리 staging 배포:** 운영과 다른 project/DB/volume을 쓰고 운영 고객·계정·주문 데이터를 복사하지 않는다. secret은 승인된 비밀 저장소에서 주입한다. 현재 `compose.yaml`은 local build 및 mutable image 예시이므로, immutable reference를 주입할 승인된 배포 정의가 준비되기 전에는 production 명령으로 사용하지 않는다.
@@ -64,7 +138,7 @@
 5. **동일 artifact 운영 배포:** 승인된 변경 시간과 담당자가 확보되고 모든 prerequisite 증거가 있을 때만 staging에서 확인한 immutable digest를 사용한다. project 이름과 volume mapping을 staging과 혼동하지 않는다. 사전 DB/webroot/queue snapshot과 복구 확인 결과를 기록하고, 승인된 maintenance/traffic gate를 사용한다.
 6. **Post-deploy acceptance:** health 상태 이외에 실제 public HTTPS host, 인증서, redirect/canonical host, 관리자 접근 제한, reset/주문 mail 수신, shop 기본 화면과 비밀 없는 운영 로그를 확인한다. 승인된 seller/product/tax/shipping/policy가 고객 화면에 보이는지 read-only로 대조한다. 이 확인 중 하나라도 실패하면 traffic gate를 열거나 checkout을 활성화하지 않는다.
 
-### 롤백 순서
+##### 롤백 순서
 
 1. 담당자가 traffic/checkout gate를 닫고 실패 시각, release SHA/digest, migration 단계 및 비밀을 제외한 오류 증거를 보존한다. 실패한 데이터 volume을 삭제하거나 덮어쓰지 않는다.
 2. 승인된 호환성표가 application-only rollback을 허용할 때만 이전 digest로 되돌린다. DB schema 또는 webroot state가 이전 release와 호환되지 않으면 app image만 되돌리지 않는다.
@@ -73,7 +147,7 @@
 
 이 저장소에는 승인된 immutable production image, 실제 운영 환경값, migration rollback contract, provider별 deploy 명령이 없다. 따라서 위 절차는 host-agnostic checklist이며 현재 구현으로 수행 가능한 운영 배포/rollback 절차라고 주장하지 않는다.
 
-## 백업과 복원
+#### 백업과 복원
 
 `tests/smoke/backup_restore_drill.sh`는 GitHub Actions의 해당 실행 전용 `kuranea-ci-<run id>-<attempt>` 프로젝트만 복제해 DB·PrestaShop 파일·카탈로그 검토 queue를 별도 임시 프로젝트에 복원한다. 스냅샷에는 CI 계정 설정과 합성 고객 데이터가 포함될 수 있으므로 `$RUNNER_TEMP` 밖으로 내보내거나 Artifact에 올리지 않는다. 이 검사는 운영 백업이나 운영 복원이 아니다.
 
@@ -89,7 +163,7 @@
 
 운영 복구 runbook을 확정하려면 백업 저장 위치와 접근권한, 보존기간, 암호화, RPO/RTO, 백업 담당자, 복원 승인과 격리 복원 대상이 먼저 정해져야 한다. 이 항목들이 없으므로 실제 운영 DB 또는 named volume에 백업·복원을 실행하지 않는다.
 
-## 배포 전 확인이 필요한 외부 준비
+#### 배포 전 확인이 필요한 외부 준비
 
 - 외부 값·사용 위치·차단 작업의 유일한 체크리스트는 [RELEASE_REQUIREMENTS_MATRIX.md의 외부 입력 대기 목록](RELEASE_REQUIREMENTS_MATRIX.md#외부-입력-대기-목록)이다. 이 runbook은 해당 승인 값을 받은 뒤 단계와 owner만 기록하며 같은 입력 목록을 복제하지 않는다.
 - Production owner는 배포 승인 때 matrix의 각 항목을 승인 자료/secret-store reference와 연결한다. 실제 secret은 이 문서, 채팅, Git, CI artifact에 복사하지 않는다.
