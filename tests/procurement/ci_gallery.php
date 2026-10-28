@@ -35,7 +35,12 @@ $expectedNames = [
 $found = [];
 foreach ($reference['categories'] ?? [] as $category) {
     foreach ($expectedNames as $level => $names) {
-        if (($category['names'] ?? []) == $names) $found[$level] = $category;
+        $actualNames = $category['names'] ?? null;
+        if (!is_array($actualNames)) continue;
+        $expectedNamesSorted = $names;
+        ksort($actualNames, SORT_STRING);
+        ksort($expectedNamesSorted, SORT_STRING);
+        if ($actualNames === $expectedNamesSorted) $found[$level] = $category;
     }
 }
 // Fresh acceptance requires a genuinely reviewed parent/leaf path.

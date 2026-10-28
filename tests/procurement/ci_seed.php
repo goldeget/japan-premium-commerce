@@ -3,6 +3,23 @@
 declare(strict_types=1);
 require __DIR__ . '/ci_bootstrap.php';
 
+// Assert the fresh native bootstrap repaired only its known Korean fallbacks.
+// Do not repair here: a missing install/upgrade path must fail acceptance.
+$koreanLanguage = (int) Language::getIdByIso('ko', true);
+ciAssert($koreanLanguage > 0, 'Fresh native Korean language missing');
+foreach ([
+    'AdminPsdistributionapiclientCommunity' => '커뮤니티',
+    'AdminPsdistributionapiclient' => '명예의 전당',
+    'AdminSecurity' => '보안',
+    'AdminParentSecurity' => '보안',
+    'AdminExtraPropertyDefinitions' => '추가 속성',
+] as $tabClass => $expectedName) {
+    $actualName = Db::getInstance()->getValue('SELECT tl.name FROM `' . _DB_PREFIX_ . 'tab` t'
+        . ' INNER JOIN `' . _DB_PREFIX_ . 'tab_lang` tl ON tl.id_tab=t.id_tab'
+        . ' WHERE t.class_name=\'' . pSQL($tabClass) . '\' AND tl.id_lang=' . $koreanLanguage, false);
+    ciAssert($actualName === $expectedName, 'Fresh native Korean tab metadata bootstrap incomplete');
+}
+
 $module = Module::getInstanceByName('ordenowaprocurement');
 ciAssert($module instanceof Module, 'Module missing');
 if (!Module::isInstalled('ordenowaprocurement')) {

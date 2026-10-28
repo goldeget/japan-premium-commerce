@@ -160,14 +160,14 @@ def safe_capture(driver, name):
     driver.execute_script('document.body.innerHTML=arguments[0]', original_body)
 
 
-def capture_confirmation(driver, artifact_prefix='confirmation'):
+def capture_static(driver, artifact_prefix='confirmation', extra_labels=(), widths=(320, 390, 1440), artifact_locale=None):
     command = ['docker', 'compose', '-f', 'compose.yaml', '-f', 'tests/procurement/ci.compose.yaml', '-p', os.environ['CI_COMPOSE_PROJECT_NAME'],
                'exec', '-T', '-u', 'www-data', 'prestashop', 'php', '/tmp/ordenowa-procurement-ci/ci_labels.php']
     result = subprocess.run(command, capture_output=True, timeout=60)
     check(result.returncode == 0)
-    labels = json.loads(result.stdout)
+    labels = json.loads(result.stdout) + list(extra_labels)
     original_body = driver.execute_script('return document.body.innerHTML')
-    for width in (320, 390, 1440):
+    for width in widths:
         viewport(driver, width)
         check(driver.execute_script('return document.documentElement.scrollWidth<=innerWidth+1'))
         driver.execute_script("scrollTo({top:0,behavior:'instant'})")
@@ -176,7 +176,7 @@ def capture_confirmation(driver, artifact_prefix='confirmation'):
         # form values/enabled state, or modify source geometry.
         geometry = driver.execute_script("\nconst old=document.getElementById('owa-safe-pixel-mask');if(old)old.remove();\nconst before=[document.documentElement.scrollWidth,document.documentElement.scrollHeight];\nconst controls=[...document.querySelectorAll('input,textarea,button,select')].map(e=>e.disabled);\nconst allowed=arguments[0].filter(x=>x.trim().length>=2).sort((a,b)=>b.length-a.length);\nfor(const e of document.querySelectorAll('input:not([type=hidden]),textarea')){e.style.color='transparent';e.style.caretColor='transparent';e.style.webkitTextFillColor='transparent';}\nfor(const e of document.querySelectorAll('img')){const keep=e.matches('.ow-product-media img,.ow-gallery-images img,.kuranea-brand__image')&&e.complete&&e.naturalWidth>0;if(!keep)e.style.visibility='hidden';}\nfor(const e of document.querySelectorAll('[title]'))e.removeAttribute('title');\nconst masks=[];const walk=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);let node;\nwhile(node=walk.nextNode()){\n if(!node.textContent.trim()||['SCRIPT','STYLE','OPTION'].includes(node.parentElement?.tagName)||node.parentElement?.closest('#owa-safe-pixel-mask'))continue;\n const text=node.textContent;let pos=0;\n while(pos<text.length){let at=text.length,label='';for(const value of allowed){const found=text.indexOf(value,pos);if(found>=0&&(found<at||(found===at&&value.length>label.length))){at=found;label=value;}}\n  if(at>pos&&text.slice(pos,at).trim()){const range=document.createRange();range.setStart(node,pos);range.setEnd(node,at);for(const rect of range.getClientRects())if(rect.width&&rect.height)masks.push({x:rect.left,y:rect.top,w:rect.width,h:rect.height});range.detach();}\n  pos=label?at+label.length:text.length;\n }\n}\nconst canvas=document.createElement('canvas');canvas.id='owa-safe-pixel-mask';canvas.width=innerWidth;canvas.height=innerHeight;canvas.setAttribute('aria-hidden','true');canvas.style.cssText='position:fixed!important;inset:0!important;width:'+innerWidth+'px!important;height:'+innerHeight+'px!important;pointer-events:none!important;z-index:2147483647!important;margin:0!important;padding:0!important;border:0!important';\nconst ctx=canvas.getContext('2d');ctx.fillStyle='#dce3eb';for(const r of masks)ctx.fillRect(Math.floor(r.x)-1,Math.floor(r.y)-1,Math.ceil(r.w)+2,Math.ceil(r.h)+2);document.body.appendChild(canvas);\nreturn {before,after:[document.documentElement.scrollWidth,document.documentElement.scrollHeight],scroll:scrollY,controls:controls.every((state,index)=>state===[...document.querySelectorAll('input,textarea,button,select')][index].disabled),mask_rectangles:masks.length};\n", labels)
         check(abs(geometry['before'][0]-geometry['after'][0])<=1 and abs(geometry['before'][1]-geometry['after'][1])<=1 and geometry['controls'])
-        path = DEST / (artifact_prefix + '-redacted-static-labels-' + str(width) + '.png')
+        path = DEST / (artifact_prefix + '-redacted-static-labels-' + ((artifact_locale + '-') if artifact_locale else '') + str(width) + '.png')
         driver.save_screenshot(str(path))
         stable = driver.execute_script('return scrollY') == geometry['scroll']
         if not stable:
@@ -319,6 +319,7 @@ def main():
         native_identity(a, 'a')
         category_path = IDENTITY['category_path']
         check(len(category_path) == 2 and category_path[1]['id_parent'] == category_path[0]['id_category'])
+        category_labels = [name for node in category_path for name in node['names'].values()]
         for locale in ('ja', 'en', 'ko'):
             route = IDENTITY['routes'][locale]['workspace']
             a.get(route)
@@ -327,6 +328,9 @@ def main():
             leaf = parent.find_element(By.XPATH, './ul/li/a[text()=' + json.dumps(category_path[1]['names'][locale],ensure_ascii=False) + ']')
             leaf_url = leaf.get_attribute('href')
             check(parse_qs(urlparse(leaf_url).query).get('category') == [str(category_path[1]['id_category'])])
+            # Only explicitly reviewed synthetic category names join the static
+            # copy allowlist. Preserve real controls/photos and mask other data.
+            capture_static(a, 'categories', extra_labels=category_labels, artifact_locale=locale)
             a.get(leaf_url)
             check(len(a.find_elements(By.CSS_SELECTOR, '[data-testid="assignment-card"]')) == 1)
             a.get(with_query(route, category=2147483647))
@@ -350,7 +354,7 @@ def main():
             photos = a.find_elements(By.CSS_SELECTOR, '[data-testid="product-photo"] img')
             check(len(photos) >= 2)
             WebDriverWait(a, 30).until(lambda d: all(d.execute_script('return arguments[0].complete && arguments[0].naturalWidth > 0', photo) for photo in photos))
-            safe_capture(a, 'gallery-redacted-' + str(width) + '-' + color)
+            capture_static(a, 'gallery-' + color, extra_labels=category_labels, widths=(width,))
         viewport(a, 1440)
         a.execute_cdp_cmd('Emulation.setEmulatedMedia', {'features': [{'name': 'prefers-color-scheme', 'value': 'light'}]})
         for locale in ('ja', 'en', 'ko'):
@@ -362,7 +366,7 @@ def main():
             confirmation = visible(a, '[data-testid="confirm-request"]')
             check(a.find_element(By.TAG_NAME, 'html').get_attribute('lang').startswith(locale))
             version = confirmation.find_element(By.CSS_SELECTOR, '[name="version"]').get_attribute('value')
-            capture_confirmation(a, 'confirmation-' + locale)
+            capture_static(a, 'confirmation-' + locale)
         # The three confirmations only render a preview. Submit exactly once.
         visible(a, '[data-testid="submit-request"]').send_keys(Keys.ENTER)
         visible(a, '[data-testid="request-detail"]')

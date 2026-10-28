@@ -124,7 +124,7 @@ compose cp themes/kuranea/templates/_partials/footer.tpl prestashop:/var/www/htm
 compose cp themes/kuranea/templates/_partials/header.tpl prestashop:/var/www/html/themes/kuranea/templates/_partials/header.tpl
 compose cp themes/kuranea/templates/customer/my-account.tpl prestashop:/var/www/html/themes/kuranea/templates/customer/my-account.tpl
 compose exec -T prestashop sh -ec 'chown www-data:www-data /var/www/html/themes/kuranea/templates/_partials/footer.tpl /var/www/html/themes/kuranea/templates/_partials/header.tpl /var/www/html/themes/kuranea/templates/customer/my-account.tpl; chmod 0644 /var/www/html/themes/kuranea/templates/_partials/footer.tpl /var/www/html/themes/kuranea/templates/_partials/header.tpl /var/www/html/themes/kuranea/templates/customer/my-account.tpl; chown -R www-data:www-data /var/www/html/modules/ordenowaprocurement; find /var/www/html/modules/ordenowaprocurement -type d -exec chmod 0755 {} +; find /var/www/html/modules/ordenowaprocurement -type f -exec chmod 0644 {} +'
-compose exec -T prestashop mkdir -p /tmp/ordenowa-procurement-ci/catalog /var/www/html/tests/procurement /var/www/html/tests/catalog /var/www/html/tests/admin_audit
+compose exec -T prestashop mkdir -p /tmp/ordenowa-procurement-ci/catalog /var/www/html/tests/procurement /var/www/html/tests/catalog /var/www/html/tests/admin_audit /var/www/html/tests/admin_locale
 for source in tests/procurement/ci_*.php; do
   compose cp "$source" prestashop:/tmp/ordenowa-procurement-ci/
 done
@@ -134,6 +134,7 @@ done
 compose cp tests/catalog/. prestashop:/tmp/ordenowa-procurement-ci/catalog/
 compose cp tests/catalog/. prestashop:/var/www/html/tests/catalog/
 compose cp tests/admin_audit/. prestashop:/var/www/html/tests/admin_audit/
+compose cp tests/admin_locale/. prestashop:/var/www/html/tests/admin_locale/
 compose cp tests/procurement/accounts_native.php prestashop:/tmp/ordenowa-procurement-ci/accounts_native.php
 compose exec -T prestashop sh -ec 'find /var/www/html/tests /tmp/ordenowa-procurement-ci -type d -exec chmod 0755 {} +; find /var/www/html/tests /tmp/ordenowa-procurement-ci -type f -exec chmod 0644 {} +'
 compose exec -T prestashop chown -R www-data:www-data /tmp/ordenowa-procurement-ci
@@ -156,7 +157,12 @@ run_phase points_concurrency behavior points_concurrency
 run_phase notifications_behavior behavior notifications_behavior
 run_phase notifications_native behavior notifications_native
 run_phase notifications_concurrency behavior notifications_concurrency
-run_phase native_boundary behavior native_integration_test
+native_boundaries() {
+  behavior native_integration_test || return "$?"
+  compose exec -T -u www-data -e PROCUREMENT_TEST_DSN='mysql:host=mariadb;dbname=ordenowa_procurement_test;charset=utf8mb4' \
+    -e PROCUREMENT_TEST_USER=root -e "PROCUREMENT_TEST_PASSWORD=$MARIADB_ROOT_PASSWORD" prestashop php /var/www/html/tests/admin_locale/korean_tab_labels.php
+}
+run_phase native_boundary native_boundaries
 run_phase native_push_settings behavior native_push_settings
 run_phase policies_behavior behavior policies_behavior
 run_phase policies_concurrency behavior policies_concurrency
