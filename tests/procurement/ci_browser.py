@@ -69,8 +69,18 @@ def fill(form, name, value):
         element.send_keys(str(value))
 
 
+def native_page_url(controller, locale='ja'):
+    # Friendly native account routes are authoritative. Appending id_lang to
+    # the legacy raw auth query can produce a native 404 on multilingual shops.
+    route = IDENTITY['routes'][locale][controller]
+    target, base = urlparse(route), urlparse(BASE)
+    check(target.scheme == base.scheme and target.netloc == base.netloc)
+    check(not target.username and not target.password and target.path.startswith('/'))
+    return route
+
+
 def login_customer(driver, side):
-    driver.get(BASE + '/index.php?controller=authentication&id_lang=' + str(IDENTITY['languages']['ja']))
+    driver.get(native_page_url('authentication'))
     visible(driver, 'input[name="email"]').send_keys(IDENTITY['customers'][side]['email'])
     visible(driver, 'input[name="password"],input[name="passwd"]').send_keys(IDENTITY['password'])
     visible(driver, 'button[data-link-action="sign-in"],button[name="submitLogin"]').click()
@@ -97,7 +107,7 @@ def denied_admin_action(driver, controller, action, fields):
 
 
 def native_identity(driver, side):
-    driver.get(BASE + '/index.php?controller=identity')
+    driver.get(native_page_url('identity'))
     email = visible(driver, 'form input[name="email"]').get_attribute('value')
     check(email == IDENTITY['customers'][side]['email'])
     check(not driver.find_elements(By.CSS_SELECTOR, '#login-form'))

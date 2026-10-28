@@ -106,6 +106,9 @@ $identity = ['languages' => ['ja' => (int) Language::getIdByIso('ja', true), 'en
 $identity['mail_subject_prefix'] = '[' . strip_tags((string) Configuration::get('PS_SHOP_NAME')) . '] ';
 $identity['routes'] = [];
 foreach ($identity['languages'] as $locale => $languageId) {
+    foreach (['authentication', 'identity'] as $controller) {
+        $identity['routes'][$locale][$controller] = $context->link->getPageLink($controller, null, $languageId);
+    }
     foreach (['workspace', 'policy', 'support'] as $controller) {
         $identity['routes'][$locale][$controller] = $context->link->getModuleLink('ordenowaprocurement', $controller, [], null, $languageId, 1);
     }
