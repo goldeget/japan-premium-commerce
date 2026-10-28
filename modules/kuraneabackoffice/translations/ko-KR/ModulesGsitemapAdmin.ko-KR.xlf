@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="ModulesGsitemapAdmin.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="inventory-19246645115f2d0cb10a" approved="yes">
+        <source>Generates an XML sitemap for your shop and keeps it up to date. Compatible with all major search engines.</source>
+        <target state="final">XML 사이트맵을 생성하고 최신 상태로 유지합니다. 주요 검색 엔진과 호환됩니다.</target>
+        <note>Exact static label observed in the isolated native administrator inventory; no stored customer or category data replacement.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

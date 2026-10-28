@@ -21,6 +21,26 @@
         <target state="final">결제 수단</target>
         <note>PrestaShop 9.2 Admin.Navigation.Menu catalogue entry.</note>
       </trans-unit>
+      <trans-unit id="inventory-554e79be8e4a24a6b307" approved="yes">
+        <source>Extra Properties</source>
+        <target state="final">추가 속성</target>
+        <note>Exact static label observed in the isolated native administrator inventory; no stored customer or category data replacement.</note>
+      </trans-unit>
+      <trans-unit id="inventory-3a066768fcbb8b48401b" approved="yes">
+        <source>Security</source>
+        <target state="final">보안</target>
+        <note>Exact static label observed in the isolated native administrator inventory; no stored customer or category data replacement.</note>
+      </trans-unit>
+      <trans-unit id="inventory-df114b5bf68d982496e6" approved="yes">
+        <source>Administration</source>
+        <target state="final">관리</target>
+        <note>Exact static label observed in the isolated native administrator inventory; no stored customer or category data replacement.</note>
+      </trans-unit>
+      <trans-unit id="inventory-e5db4228bbb994a89667" approved="yes">
+        <source>Payment</source>
+        <target state="final">결제</target>
+        <note>Exact static label observed in the isolated native administrator inventory; no stored customer or category data replacement.</note>
+      </trans-unit>
     </body>
   </file>
 </xliff>

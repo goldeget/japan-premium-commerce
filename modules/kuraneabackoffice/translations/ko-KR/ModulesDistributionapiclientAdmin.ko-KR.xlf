@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="ModulesDistributionapiclientAdmin.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="inventory-457accfca3236d8ea929" approved="yes">
+        <source>Community</source>
+        <target state="final">커뮤니티</target>
+        <note>Exact static label observed in the isolated native administrator inventory; no stored customer or category data replacement.</note>
+      </trans-unit>
+      <trans-unit id="inventory-9e2a4dc83e63639b0a4b" approved="yes">
+        <source>Wall of Fame</source>
+        <target state="final">명예의 전당</target>
+        <note>Exact static label observed in the isolated native administrator inventory; no stored customer or category data replacement.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

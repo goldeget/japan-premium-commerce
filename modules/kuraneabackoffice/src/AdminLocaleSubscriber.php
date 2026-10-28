@@ -343,6 +343,11 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
             'Admin.Navigation.Menu' => 'AdminNavigationMenu.ko-KR.xlf',
             'Admin.Notifications.Success' => 'AdminNotificationsSuccess.ko-KR.xlf',
             'Admin.Orderscustomers.Feature' => 'AdminOrderscustomersFeature.ko-KR.xlf',
+            'Admin.Shopparameters.Help' => 'AdminShopparametersHelp.ko-KR.xlf',
+            'Modules.Distributionapiclient.Admin' => 'ModulesDistributionapiclientAdmin.ko-KR.xlf',
+            'Modules.Gsitemap.Admin' => 'ModulesGsitemapAdmin.ko-KR.xlf',
+            'Modules.Onepagecheckout.Admin' => 'ModulesOnepagecheckoutAdmin.ko-KR.xlf',
+            'Modules.Apiresources.Admin' => 'ModulesApiresourcesAdmin.ko-KR.xlf',
             'Modules.Mbo.Recommendedmodulesandservices' => 'ModulesMboRecommendedmodulesandservices.ko-KR.xlf',
             'messages' => 'messages.ko-KR.xlf',
         ] as $domain => $filename) {

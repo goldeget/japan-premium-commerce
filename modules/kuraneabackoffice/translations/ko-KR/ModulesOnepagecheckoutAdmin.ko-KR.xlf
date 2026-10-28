@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="ModulesOnepagecheckoutAdmin.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="inventory-1b8486fad3ea887fe4b9" approved="yes">
+        <source>Native one-page checkout.</source>
+        <target state="final">기본 단일 페이지 주문 기능입니다.</target>
+        <note>Exact static label observed in the isolated native administrator inventory; no stored customer or category data replacement.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

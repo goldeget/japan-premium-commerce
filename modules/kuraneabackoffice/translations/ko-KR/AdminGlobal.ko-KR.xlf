@@ -22,6 +22,21 @@
         <target state="final">평균 주문 금액</target>
         <note>PrestaShop AdminOrders KPI title.</note>
       </trans-unit>
+      <trans-unit id="inventory-192e1c532e46e92cf5f1" approved="yes">
+        <source>All time</source>
+        <target state="final">전체 기간</target>
+        <note>Exact static label observed in the isolated native administrator inventory; no stored customer or category data replacement.</note>
+      </trans-unit>
+      <trans-unit id="inventory-17dee9ed0aa2e1ef6d43" approved="yes">
+        <source>Other</source>
+        <target state="final">기타</target>
+        <note>Exact static label observed in the isolated native administrator inventory; no stored customer or category data replacement.</note>
+      </trans-unit>
+      <trans-unit id="inventory-7558647e747f5e797892" approved="yes">
+        <source>Payment</source>
+        <target state="final">결제</target>
+        <note>Exact static label observed in the isolated native administrator inventory; no stored customer or category data replacement.</note>
+      </trans-unit>
     </body>
   </file>
 </xliff>

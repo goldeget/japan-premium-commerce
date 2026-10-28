@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="AdminShopparametersHelp.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="inventory-f7e83e16d7f5d32e678f" approved="yes">
+        <source>Enables or disables the best sellers page in your shop. When disabled, the page and related links are also removed from the sitemap and other sections.</source>
+        <target state="final">인기 상품 페이지를 사용하거나 사용하지 않습니다. 사용하지 않으면 사이트맵과 다른 영역에서도 해당 페이지 및 관련 링크가 제거됩니다.</target>
+        <note>Exact static label observed in the isolated native administrator inventory; no stored customer or category data replacement.</note>
+      </trans-unit>
+      <trans-unit id="inventory-171f1e27ec6f42e91c54" approved="yes">
+        <source>Enables or disables the brands listing in your shop. When disabled, brands are also removed from the sitemap and other related sections.</source>
+        <target state="final">브랜드 목록을 사용하거나 사용하지 않습니다. 사용하지 않으면 사이트맵과 다른 관련 영역에서도 브랜드가 제거됩니다.</target>
+        <note>Exact static label observed in the isolated native administrator inventory; no stored customer or category data replacement.</note>
+      </trans-unit>
+      <trans-unit id="inventory-8f592bbebbdb3e3fb3b8" approved="yes">
+        <source>Enables or disables the suppliers listing in your shop. When disabled, suppliers are also removed from the sitemap and other related sections.</source>
+        <target state="final">공급업체 목록을 사용하거나 사용하지 않습니다. 사용하지 않으면 사이트맵과 다른 관련 영역에서도 공급업체가 제거됩니다.</target>
+        <note>Exact static label observed in the isolated native administrator inventory; no stored customer or category data replacement.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

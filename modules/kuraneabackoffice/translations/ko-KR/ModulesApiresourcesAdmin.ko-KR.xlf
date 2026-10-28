@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="ModulesApiresourcesAdmin.xlf" source-language="en" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="inventory-c1b368d02080ae799115" approved="yes">
+        <source>PrestaShop API Resources</source>
+        <target state="final">PrestaShop API 리소스</target>
+        <note>Exact static label observed in the isolated native administrator inventory; no stored customer or category data replacement.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>
