@@ -7,7 +7,7 @@ require __DIR__ . '/ci_bootstrap.php';
 // Do not repair here: a missing install/upgrade path must fail acceptance.
 $koreanLanguage = (int) Language::getIdByIso('ko', true);
 ciAssert($koreanLanguage > 0, 'Fresh native Korean language missing');
-foreach ([
+$expectedKoreanTabs = [
     'AdminPsdistributionapiclientCommunity' => '커뮤니티',
     'AdminPsdistributionapiclient' => '명예의 전당',
     'AdminSecurity' => '보안',
@@ -21,14 +21,51 @@ foreach ([
     'AdminPsThemeCustoAdvanced' => '고급 사용자 정의',
     'HOME' => '시작하기',
     'AdminEmails' => '이메일',
-] as $tabClass => $expectedName) {
-    $optionalOwner = [
+];
+$optionalKoreanTabOwners = [
         'AdminPsMboTheme' => 'ps_mbo',
         'AdminPsClassicEditionHomepageController' => 'ps_classic_edition',
         'AdminPsThemeCustoConfiguration' => 'ps_themecusto',
         'AdminPsThemeCustoAdvanced' => 'ps_themecusto',
         'HOME' => 'ps_classic_edition',
-    ][$tabClass] ?? null;
+];
+
+// Fixed public system classes only. Preserve bounded booleans before the
+// strict assertions so an isolated fresh failure survives container cleanup.
+$metadataChecks = [];
+$knownEnglishFallbacks = ['Community', 'Wall of Fame', 'Security', 'Extra Properties', 'Themes Catalog',
+    'Employee Sessions', 'Customer Sessions', 'Care Center', 'Pages Configuration',
+    'Advanced Customization', 'Welcome', 'E-mail', 'Epos'];
+foreach ($expectedKoreanTabs as $tabClass => $expectedName) {
+    $expectedOwner = in_array($tabClass, ['AdminPsdistributionapiclientCommunity', 'AdminPsdistributionapiclient'], true)
+        ? 'ps_distributionapiclient' : ($optionalKoreanTabOwners[$tabClass] ?? '');
+    $rows = Db::getInstance()->executeS('SELECT t.module, tl.name FROM `' . _DB_PREFIX_ . 'tab` t'
+        . ' LEFT JOIN `' . _DB_PREFIX_ . 'tab_lang` tl ON tl.id_tab=t.id_tab AND tl.id_lang=' . $koreanLanguage
+        . ' WHERE t.class_name=\'' . pSQL($tabClass) . '\'', true, false);
+    $rows = is_array($rows) ? $rows : [];
+    $observations = [];
+    foreach (array_slice($rows, 0, 3) as $row) {
+        $name = is_string($row['name'] ?? null) ? $row['name'] : null;
+        $owner = (string) ($row['module'] ?? '');
+        $observations[] = [
+            'korean_row_present' => $name !== null,
+            'owner_expected' => $owner === $expectedOwner,
+            'owner_type' => $owner === '' ? 'core' : ($owner === $expectedOwner ? 'expected_module' : 'other'),
+            'exact_target' => $name === $expectedName,
+            'known_english_fallback' => in_array($name, $knownEnglishFallbacks, true),
+            'has_hangul' => $name !== null && preg_match('/[\x{AC00}-\x{D7A3}]/u', $name) === 1,
+            'name_bytes' => $name === null ? 0 : strlen($name),
+        ];
+    }
+    $metadataChecks[$tabClass] = ['tab_present' => $rows !== [], 'row_count' => count($rows),
+        'observations_truncated' => count($rows) > 3, 'observations' => $observations];
+}
+ciAssert(file_put_contents(__DIR__ . '/seed-metadata-outcome.json', json_encode([
+    'schema_version' => 1, 'stage' => 'before_strict_metadata_assertions',
+    'raw_values_included' => false, 'original_assertions_unchanged' => true, 'checks' => $metadataChecks,
+], JSON_THROW_ON_ERROR)) !== false, 'Safe native metadata evidence write failed');
+foreach ($expectedKoreanTabs as $tabClass => $expectedName) {
+    $optionalOwner = $optionalKoreanTabOwners[$tabClass] ?? null;
     if ($optionalOwner !== null && (int) Tab::getIdFromClassName($tabClass) < 1) {
         ciAssert(!Module::isEnabled($optionalOwner), 'Enabled bundled module Korean navigation missing');
         continue;

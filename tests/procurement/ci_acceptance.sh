@@ -174,7 +174,17 @@ compose exec -T prestashop sh -ec 'find /var/www/html/tests /tmp/ordenowa-procur
 compose exec -T prestashop chown -R www-data:www-data /tmp/ordenowa-procurement-ci
 # No credentials/identity data are emitted; only a private file crosses the
 # container boundary and is deleted at the end of this acceptance process.
-run_phase module_seed compose exec -T -u www-data prestashop php /tmp/ordenowa-procurement-ci/ci_seed.php
+seed_module() {
+  local seed_status=0
+  compose exec -T -u www-data prestashop php /tmp/ordenowa-procurement-ci/ci_seed.php || seed_status=$?
+  # This file contains only fixed public class names, enums, counts and booleans.
+  # Copy it on failure as well, before the private log/container cleanup.
+  if ! compose cp prestashop:/tmp/ordenowa-procurement-ci/seed-metadata-outcome.json "$QA_ARTIFACT_DIR/seed-metadata-outcome.json" >/dev/null 2>&1; then
+    if (( seed_status == 0 )); then return 1; fi
+  fi
+  return "$seed_status"
+}
+run_phase module_seed seed_module
 run_phase native_gallery compose exec -T -u www-data prestashop php /tmp/ordenowa-procurement-ci/ci_gallery.php
 compose cp prestashop:/tmp/ordenowa-procurement-ci/identity.json "$PROCUREMENT_IDENTITY_FILE" > /dev/null
 phase=behavior_database
