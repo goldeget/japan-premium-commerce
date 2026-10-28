@@ -647,3 +647,12 @@
 - Current QA run scope remains: update requirement/test/handoff records, run preflight on the stable tree, then one full isolated install suite. Historical member/address, shipping, return, tracking and backup success remains preserved. Full-run result will decide any focused follow-up; no rerun without a changed cause or evidence.
 - Browser artifact [12745089136](https://github.com/goldeget/japan-premium-commerce/actions/runs/40530519482/artifacts/12745089136) is ready for independent visual review. It contains synthetic address/account flow captures; address fields are masked. The work-mode reviewer should not edit code or rerun CI. The changed audit/catalog/business-profile admin screens need the full candidate artifact and exact tested SHA. No handoff has been sent to another GPT.
 - Candidate diff review found no blocker. External/live gates remain actual seller/catalog approval, commercial/legal/operational input, production mail and HTTPS/VAPID, backup ownership, connected iOS/Android devices, measured accessibility/performance and staging/production infrastructure. Wallet/earnings/withdrawal remain excluded by prior agreement. No deployment or live transaction occurred.
+
+
+## 2026-10-29 — 출시 잔여 작업 전수조사 (한국시간)
+
+- 조사 기준 remote work e357b8b, 실행 코드364ba34, main ee02a36. 별도 checkout에서 6 GPT 에이전트가 catalog/search/SEO, account/security/mail, admin/audit, commerce, frontend/PWA/quality, operations를 읽기 전용 조사했다.
+- 최신 전체40559740938 aggregate의7 failure와 dependency skips를 원문 로그로 재확인했다. 성능4/6은 통과 수가 아닌 생성 report 수다. 이전 전체405081 성공 및 scoped GET405305 성공은 보존한다.
+- 이전 /tmp 미커밋 패치는 원격에 없으며 현 머신에서 확인하지 못했다. 현재 셸/연결은 복구됐다. 해당 focused PASS 보고를 현재 코드 완료로 사용하지 않았다.
+- 39개 matrix ID를 5개 상태로 대조하고 실제 Push/PWA static cache·안내/감사 coverage/운영 배포·승인 신호/불변 app artifact·감시 및 외부 입력을 보고서에 기록했다. 코드·테스트·CI·배포/운영 DB/실거래는 변경·실행하지 않았다.
+- docs/RELEASE_READINESS_AUDIT_2026-10-29.md를 최신 판정으로 연결했다. 현재 공개판매 NO-GO이며 당일 가능 여부는 코드·같은 SHA의 인수·승인자료·운영 전환 조건 완료로 판정한다. 독립 시각 검수/실기기 검수 또는 타GPT 전달 완료를 주장하지 않았다.

@@ -1,5 +1,7 @@
 # ORDENOWA AI Browser QA Handoff
 
+> **2026-10-29 출시 전수조사 갱신:** 조사 기준 work `e357b8b`(실행 코드 `364ba34`)의 최신 전체 QA #40559740938은 실제 aggregate **FAILURE**다. 현재 구현·39개 추적 항목·실패/skip·운영 대기는 [출시 잔여 작업 전수조사](RELEASE_READINESS_AUDIT_2026-10-29.md)를 최신 판정으로 사용한다. 아래 과거 candidate/실행 중/완료 표기는 해당 기록 당시 범위이며 최신 통합 PASS가 아니다. Indexed DB catalog/규모검사 소스는 이미 구현됐고, 검증기 실패와 운영 미구현은 구분한다. 이번 조사에서 새 CI나 운영 배포는 실행하지 않았다.
+
 ## Latest isolated browser evidence
 
 - Latest completed full run [#40508152705](https://github.com/goldeget/japan-premium-commerce/actions/runs/40508152705), source `f5b1cca49805b130b57f86746f025713580f0e39`, ended **SUCCESS** at Step 101 aggregate; cleanup Step 104 passed. Business-profile [#40508152784](https://github.com/goldeget/japan-premium-commerce/actions/runs/40508152784) passed on the same SHA.

@@ -79,7 +79,7 @@
 
 - 계정: PC/모바일 모두 `customer_address_cross_owner_foreign_address_create`, substage `foreign_address_create`에서 TimeoutException. B 주소 저장 단계라 교차 고객 POST 거부와 A 최종 재조회까지 도달하지 못했다.
 - 기존 GET 증거: 동일 쇼핑몰의 네트워크 요청, 302→404, A 편집 폼/주소 내용 없음. 요청 후 B 인증과 최종 A 저장 상태를 포함한 전체 POST acceptance는 아직 닫히지 않았다. 이후 200 응답 거부/별칭 제한 등의 후보 수정은 미회수 상태이므로 적용·브라우저 통과를 가정하지 않는다.
-- 상품 검수: batch submit 이후 URL/진행 상태 대기 실패, 안전 진단의 문서 상태 200. 과거 HTTP 500과 동일 원인으로 단정하지 않는다.
+- 상품 검수: unsupported URL 거부 알림 기대 문구에서 중단됐다. 검증기는 `Amazon Japan 또는 Rakuten`, controller는 `아마존 일본 또는 라쿠텐`으로 소스가 불일치하며 안전 진단의 문서 상태는 200이다. 이후 batch/검수/게시 통과는 입증되지 않았고, 과거 HTTP 500과 동일 원인으로 단정하지 않는다.
 - 검색: 모바일 partial/search_submit. document_changed=false, input_readback_matches=false, query_readback_matches=false, response_status=unavailable.
 - 메일: JA `order_confirmation_raw_mime` RuntimeError. 기존 reset 메일 성공과 새 주문 메일 MIME 검증을 구분한다.
 - 성능/접근성, sitemap HTTP, 주문 후 checkout gate는 해당 로그/산출물과 테스트 소스를 추가 확인하여 원인을 확정한다.
