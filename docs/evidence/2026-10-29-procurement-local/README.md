@@ -41,3 +41,33 @@
 ## 한국어 native 관리자 화면 집중 검수
 
 `reviewed-admin-native/`: 배정·검토·포인트·감사·정책5화면 ×1440/768의 실제HTTP200과 잘못된 POST body token의 실제403·새GET후 정책version 보존을 확인했다. domain12/ACL·감사8/critical manifest3의 요청 전후 hash가 같았다. 동적 값/토큰/신원은 가리고 geometry·enabled·scroll 상태를 유지했다. 별도 GPT가12PNG를 모두 실제 열어 top viewport의 가독성/폼/표를 검수했고 확정 새 결함은 없었다. 스크롤 아래 정책 필드·저장 버튼과 비어 있던 pending review 조작의 시각 검수는 해당 캡처 범위 밖이다. 원래 기능 저장/재조회 근거와 이 제한된 시각 검수를 구분한다.
+
+## 최초 native 로그인 진입 실패
+
+`remote-40749362584-*.json`: 6f9c301 실제 hosted 빌드·fresh 설치·소스·bootstrap·검수 이미지/2단계 카테고리·기본512M warmup 포함28phase PASS, native_browser FAIL/후행9 not_run, cleanup success. artifact12843502379 ZIP SHA256 `13978d20868ce9629743cafd1c8c283167d1ca49a360e63b0b470cdf58feaef0`. browser 단계명은 category이지만 실제 최초 실패는 그 전 login_customer의 이메일 입력란 대기였다. 카테고리 UI에는 도달하지 않았다.
+
+`login-route-focus/`: 같은 소유 격리 설치에서 정책9경로200 후 raw authentication+id_lang는404/폼0, id_lang 없는 raw route와 native 생성 JA 로그인은200/폼1로 대조했다. 첫 이동만 native 링크로 바꾼 기존 helper와 정확 A 신원 검사가 통과했다. domain12/ACL·감사8/critical3은 불변이다. 비밀번호 입력 전 실패였으며 인증 실패나 정보 유출로 판정하지 않는다. CI는 native Link 생성 URL과 same-origin 검사를 사용하도록 수정하며 기존 로그인/고객 격리/시간 제한은 유지한다. 실제 수정 helper 재검증·새 전체 결과는 후속 기록을 따른다.
+
+## 정책 저장 완료 대기 원인
+
+`remote-40750834639-*.json`은1aca9e9의 실제28phase PASS/native_browser FAIL/9not_run/cleanup success다. native_policy_save_fresh_readback의 새 세션 version==1에서 실패했다. artifact12844705387 ZIP SHA256 `2ea6f0f498b26eefc800b4b23c6adfbcf85d78d8276caad84e7db089f9b8c795`.
+
+`policy-submit-focus/` 실제 native 단1회 합성 저장에서 click RPC가27.52ms에 끝나고 정책 POST가33.33ms에 시작,302는161.79ms·최종200문서는4313.06ms에 도착함을 확인했다. 즉시 브라우저 종료/이전 문서 readyState 검사에는 저장 완료 근거가 없었다. 새 관리자 세션의 version+1/필수11+선택2값 일치, 정확1policy+1audit 추가·기존행 보존·다른10domain/9native ACL·고객/3critical 무변경을 확인했다. 초기 진단은 배경 Ajax까지4POST를 세어 false였으며 그 false와 원인을 원본결론에 보존한다. 저장 횟수는 실제 DB delta로 검증했다. 운영 정책 변경이 아닌 소유 격리 합성값의 동일내용 새 버전이다.
+
+후속 CI는 정책과 공통 관리자 저장에서 이전 form의 stale 및 새 문서 complete를 **같은30초** 안에 함께 기다린다. 새 helper의 순서/거부 계약은 오프라인 검증했고 실제 수정 helper의 full native 실행은 후속 후보에서 판정한다. 무조건 재시도/timeout 연장/저장값 assertion 생략은 없다.
+
+## ad51cff 관리자 확장 검증과 최신 후보
+
+`admin-expanded/`: 최초17화면 외 실제 sidebar의69메뉴노드(부모/별칭 포함, 정규화60목적지)를3독립브라우저가 읽었다.66건은HTTP200·한국어·인증 본문,3실패는2외부 목적지다. source/domain에 맞는69Korean 추가와13Tab의 정확CAS, nativeCopyLanguageType의 rawFrom/To만 보강해 변경 영향19건을 실제 재조회했다. 사용자 지정/다른 언어/177Tab/ACL/12domain/critical manifest 보존 및 idempotence를 확인했다. dateFrom/To·WebP/AVIF·문서URL은 보존한다.
+
+원본 whole-label strict false는 native 필수표시 span `*` 때문임을 실제 direct textnode로 구분했다. 각 라벨은 정확원본 언어/대상 언어이고, 두 select의 visible/enabled/4options를 확인했다. 느슨한 contains나 단순영문부재만으로 통과시키지 않았다. 단위검사도 실제nativeFormFactory62체크로 choices/selectedvalues/CSRF/모든 viewvars/custom/다른locale 보존을 검증한다.
+
+최종 source1140/vendor1426 정렬/unknown0, 기본512M에서 onecache warmup5.9초, fresh현재소스의 경량24workflow명령군·locale60/audit13/CI9 및CAS33 PASS를 별도JSON에 보존한다. 로컬base imagebd1ced8+명시적ad51cffoverlay이며 깨끗한 이미지의 전체 성공이 아니다. codead51cff15f58778a5454a8b5d93014ca91740e04의 원격 #40755121454 전체38phase는 진행 중, 경량#40755121457은SUCCESS다.
+
+외부 테마 marketplace503은 native retrieval circuit fallback(기저transport상세미확정), Facebook500은 기존로그 cURL56 CONNECT403으로 분리했다. 2외부페이지가 정상가용하거나 시각검수됐다고 주장하지 않는다. 실제Amazon/Rakuten원문/물리기기/운영정책승인과도 구분한다.
+
+## 신규 설치 metadata assertion 원인 미확정 기록
+
+`remote-40755121454-*.json` 원본은 ad51cff의3phase PASS/module_seed FAIL/후속34not_run/cleanup success다. artifact12845373313 ZIP SHA256 `115a8c0c4d9e4c4a112b3814aaead0feed688a4e02c54134753cc12620786cca`. 새13메뉴 엄격 기대값의 어느 클래스가 달랐는지는 원래로그에 없다. 보존되는 올바른 한국어 기본값과 검증 기대값 차이인지 실제 bootstrap 결함인지 추정으로 확정하지 않는다.
+
+8663e96/#40756263392는 앱 변경 없이 원래 assertion 전에 고정13클래스 상태의 bounded 비식별 JSON을 보존해 새 증거를 수집한다. rawname/IDs/tokens를 기록하지 않고 최대3중복행의 boolean·enum·count만 보존한다. 진단 fixture5cases PASS이며, 이 변경만으로 이전 실패가 해결됐다고 선언하지 않는다.

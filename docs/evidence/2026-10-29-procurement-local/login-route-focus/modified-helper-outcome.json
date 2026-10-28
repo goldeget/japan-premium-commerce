@@ -1,0 +1,30 @@
+{
+  "current_helper_source_sha256": "42c2128a0e5227abf68ee12fbda16c5a8c7bea7ee0ad6d902e195e8df825c0ea",
+  "native_routes_generated_readonly": true,
+  "fixture_modified": false,
+  "sides": {
+    "a": {
+      "nine_policy_routes_200_with_native_locale": true,
+      "exact_current_login_helper_pass": true,
+      "exact_current_identity_helper_pass": true,
+      "native_identity_document_200": true,
+      "positive_native_identity": true,
+      "identity_locale_ja": true
+    },
+    "b": {
+      "nine_policy_routes_200_with_native_locale": true,
+      "exact_current_login_helper_pass": true,
+      "exact_current_identity_helper_pass": true,
+      "native_identity_document_200": true,
+      "positive_native_identity": true,
+      "identity_locale_ja": true
+    }
+  },
+  "origin_guards": {
+    "cross_origin": true,
+    "url_userinfo": true,
+    "wrong_scheme": true,
+    "relative_path": true
+  },
+  "passed": true
+}

@@ -20,6 +20,8 @@
 | `ORDENOWA_PUSH_STORAGE_KEY`, `ORDENOWA_PUSH_VAPID_PUBLIC_KEY`, `ORDENOWA_PUSH_VAPID_PRIVATE_KEY`, `ORDENOWA_PUSH_VAPID_SUBJECT`; 승인 HTTPS host·실기기·동의 문구·Push 담당자 | 암호화 구독 저장소, Web Push 인증·실제 전달·철회 검증 | 구독 저장과 실제 기기 Push 인수. 비밀값을 Git·채팅·로그에 기록하지 않는다. |
 | 비공개 scheduler 담당자, DB/disk/error·알림 채널 감시, 암호화 백업 저장소·접근자·보존기간·RPO/RTO·복구 대상/승인자·migration 호환성 | worker 운영, 감시·백업·복원·롤백 | 지속 운영과 복원/배포 인수. 실제 값과 담당자를 임의로 정하지 않는다. |
 
+정책 문안은 [JA/EN/KO 이용약관·개인정보·포인트 9개 검토 초안](POLICY_DRAFTS_JA_EN_KO.md)을 재사용한다. 운영자는 초안을 확인·수정하고 위 단일 입력표의 운영자·연락처·보존·위탁/국가·이의 처리 미확정 값만 보완한 뒤, 승인된 본문만 기존 정책 버전 경로로 저장·게시한다. 초안 작성은 승인이나 게시가 아니며, 자리표시가 남은 문구를 운영 정책으로 저장하지 않는다.
+
 ## 후보 준비와 인수 순서
 
 1. 승인된 Git SHA, Hummingbird gitlink와 app/DB 불변 image digest를 기록한다. 운영과 다른 project/DB/volume으로 staging을 준비한다. 실제 운영 고객 데이터나 기존 운영 volume을 테스트 대상으로 쓰지 않는다. 이 저장소의 local build·mutable tag만으로 production artifact 승격을 완료할 수 없다.

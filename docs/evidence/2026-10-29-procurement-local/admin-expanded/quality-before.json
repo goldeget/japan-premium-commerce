@@ -1,0 +1,653 @@
+{
+  "read_only": true,
+  "no_captures": true,
+  "catalogue_source_sha256": "737d54d2b9f07bc25abac7e726f36d019a1cbfde2c37787589f28db62b0ea603",
+  "catalogue_key_count": 6155,
+  "pages": [
+    {
+      "controller": "AdminCatalog",
+      "navigation_class_path": [
+        "SELL",
+        "AdminCatalog"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/sell/catalog/products/",
+      "final_query_controller": "",
+      "destination_qualification": "navigation_parent_default_or_alias",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [
+        {
+          "reason": "data_cell_potential_dynamic",
+          "tag": "TD"
+        },
+        {
+          "reason": "catalog_match_unknown_context_needs_review",
+          "tag": "SPAN"
+        }
+      ],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminInvoices",
+      "navigation_class_path": [
+        "SELL",
+        "AdminParentOrders",
+        "AdminInvoices"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/sell/orders/invoices/",
+      "final_query_controller": "",
+      "destination_qualification": "native_rendered_default_destination",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminCarts",
+      "navigation_class_path": [
+        "SELL",
+        "AdminParentOrders",
+        "AdminCarts"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/sell/orders/carts/",
+      "final_query_controller": "",
+      "destination_qualification": "native_rendered_default_destination",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [
+        {
+          "reason": "catalog_match_unknown_context_needs_review",
+          "tag": "A"
+        }
+      ],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminTracking",
+      "navigation_class_path": [
+        "SELL",
+        "AdminCatalog",
+        "AdminTracking"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/sell/catalog/monitoring/",
+      "final_query_controller": "",
+      "destination_qualification": "native_rendered_default_destination",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminAttachments",
+      "navigation_class_path": [
+        "SELL",
+        "AdminCatalog",
+        "AdminAttachments"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/sell/attachments/",
+      "final_query_controller": "",
+      "destination_qualification": "native_rendered_default_destination",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminAddresses",
+      "navigation_class_path": [
+        "SELL",
+        "AdminParentCustomer",
+        "AdminAddresses"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/sell/addresses/",
+      "final_query_controller": "",
+      "destination_qualification": "native_rendered_default_destination",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminParentModulesSf",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentModulesSf"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/modules/mbo/modules/catalog/",
+      "final_query_controller": "",
+      "destination_qualification": "navigation_parent_default_or_alias",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [
+        {
+          "reason": "catalog_match_unknown_context_needs_review",
+          "tag": "A"
+        }
+      ],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminParentPayment",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentPayment"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/improve/payment/payment_methods",
+      "final_query_controller": "",
+      "destination_qualification": "navigation_parent_default_or_alias",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [
+        {
+          "reason": "catalog_match_unknown_context_needs_review",
+          "tag": "A"
+        }
+      ],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminPsMboModuleParent",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentModulesSf",
+        "AdminPsMboModuleParent"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/modules/mbo/modules/catalog/",
+      "final_query_controller": "",
+      "destination_qualification": "native_rendered_default_destination",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [
+        {
+          "reason": "catalog_match_unknown_context_needs_review",
+          "tag": "A"
+        }
+      ],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminParentMailTheme",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentThemes",
+        "AdminParentMailTheme"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/improve/design/mail_theme/",
+      "final_query_controller": "",
+      "destination_qualification": "navigation_parent_default_or_alias",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [
+        {
+          "reason": "catalog_match_unknown_context_needs_review",
+          "tag": "A"
+        }
+      ],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [
+        {
+          "context": "semantic_static_control_or_heading",
+          "label": "Email theme",
+          "tag": "H1",
+          "source_domains": [
+            "AdminNavigationMenu"
+          ]
+        }
+      ],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminImages",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentThemes",
+        "AdminImages"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/improve/design/image-settings/",
+      "final_query_controller": "",
+      "destination_qualification": "native_rendered_default_destination",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [
+        {
+          "reason": "data_cell_potential_dynamic",
+          "tag": "TD"
+        },
+        {
+          "reason": "catalog_match_unknown_context_needs_review",
+          "tag": "SPAN"
+        }
+      ],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [
+        {
+          "context": "semantic_static_control_or_heading",
+          "label": "Image fitment",
+          "tag": "SPAN",
+          "source_domains": [
+            "AdminDesignFeature"
+          ]
+        },
+        {
+          "context": "static_help_or_alert",
+          "label": "Most common setup is to have the base JPG/PNG format and one modern WebP or AVIF format - the browser will choose the format it likes the most.",
+          "tag": "P",
+          "source_domains": [
+            "AdminDesignHelp"
+          ]
+        },
+        {
+          "context": "static_help_or_alert",
+          "label": "Beware that to benefit from modern image formats, they must be supported by your theme.",
+          "tag": "P",
+          "source_domains": [
+            "AdminDesignHelp"
+          ]
+        },
+        {
+          "context": "semantic_static_control_or_heading",
+          "label": "WebP",
+          "tag": "LABEL",
+          "source_domains": [
+            "AdminDesignFeature"
+          ]
+        },
+        {
+          "context": "semantic_static_control_or_heading",
+          "label": "AVIF",
+          "tag": "LABEL",
+          "source_domains": [
+            "AdminDesignFeature"
+          ]
+        },
+        {
+          "context": "static_help_or_alert",
+          "label": "AVIF is disabled because it's not supported on your server, check your configuration if you want to use it.",
+          "tag": "STRONG",
+          "source_domains": [
+            "AdminDesignHelp"
+          ]
+        }
+      ],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminCarriers",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentShipping",
+        "AdminCarriers"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/improve/shipping/carriers/",
+      "final_query_controller": "",
+      "destination_qualification": "native_rendered_default_destination",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [
+        {
+          "reason": "data_cell_potential_dynamic",
+          "tag": "TD"
+        }
+      ],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminPaymentPreferences",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentPayment",
+        "AdminPaymentPreferences"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/improve/payment/preferences",
+      "final_query_controller": "",
+      "destination_qualification": "native_rendered_default_destination",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminParentTaxes",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminInternational",
+        "AdminParentTaxes"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/improve/international/taxes/",
+      "final_query_controller": "",
+      "destination_qualification": "navigation_parent_default_or_alias",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [
+        {
+          "context": "semantic_static_control_or_heading",
+          "label": "Based on",
+          "tag": "LABEL",
+          "source_domains": [
+            "AdminInternationalFeature"
+          ]
+        }
+      ],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminKlaviyoPsConfig",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminKlaviyoPsConfig"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/",
+      "final_query_controller": "AdminKlaviyoPsConfig",
+      "destination_qualification": "native_rendered_default_destination",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminParentCustomerPreferences",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "ShopParameters",
+        "AdminParentCustomerPreferences"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/configure/shop/customer-preferences/",
+      "final_query_controller": "",
+      "destination_qualification": "navigation_parent_default_or_alias",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [
+        {
+          "context": "static_help_or_alert",
+          "label": "If this option is enabled, the customer's last cart will be restored when they log back in. Otherwise, a new, empty cart will be created.",
+          "tag": "SMALL",
+          "source_domains": [
+            "AdminShopparametersHelp"
+          ]
+        }
+      ],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminParentSearchConf",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "ShopParameters",
+        "AdminParentSearchConf"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/",
+      "final_query_controller": "AdminSearchConf",
+      "destination_qualification": "navigation_parent_default_or_alias",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminKuraneaPush",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "ShopParameters",
+        "AdminKuraneaPush"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/",
+      "final_query_controller": "AdminKuraneaPush",
+      "destination_qualification": "native_rendered_default_destination",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminAdminPreferences",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminAdminPreferences"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/configure/advanced/administration/",
+      "final_query_controller": "",
+      "destination_qualification": "native_rendered_default_destination",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminParentRequestSql",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminParentRequestSql"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/configure/advanced/sql-requests/",
+      "final_query_controller": "",
+      "destination_qualification": "navigation_parent_default_or_alias",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [
+        {
+          "context": "semantic_static_control_or_heading",
+          "label": "Select your default file separator",
+          "tag": "LABEL",
+          "source_domains": [
+            "AdminAdvparametersFeature"
+          ]
+        }
+      ],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminExtraPropertyDefinitions",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminExtraPropertyDefinitions"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/configure/advanced/extra-property-definitions/",
+      "final_query_controller": "",
+      "destination_qualification": "native_rendered_default_destination",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [
+        {
+          "reason": "catalog_match_unknown_context_needs_review",
+          "tag": "A"
+        }
+      ],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [
+        {
+          "context": "semantic_static_control_or_heading",
+          "label": "Extra property definitions",
+          "tag": "H1",
+          "source_domains": [
+            "AdminAdvparametersFeature"
+          ]
+        },
+        {
+          "context": "static_help_or_alert",
+          "label": "Extra properties extend existing entities (products, customers, orders…) with custom fields stored in dedicated database columns.",
+          "tag": "P",
+          "source_domains": [
+            "AdminAdvparametersFeature"
+          ]
+        },
+        {
+          "context": "static_help_or_alert",
+          "label": "Properties owned by a module (column \"Module\" is not empty) are read-only: the module is responsible for registering and removing them.",
+          "tag": "P",
+          "source_domains": [
+            "AdminAdvparametersFeature"
+          ]
+        },
+        {
+          "context": "static_help_or_alert",
+          "label": "Where each field is exposed (front-office, forms, grids, Admin API) is configured from the edit form.",
+          "tag": "P",
+          "source_domains": [
+            "AdminAdvparametersFeature"
+          ]
+        }
+      ],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminParentSecurity",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminParentSecurity"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/configure/advanced/security/",
+      "final_query_controller": "",
+      "destination_qualification": "navigation_parent_default_or_alias",
+      "actual_html_language": "ko-KR",
+      "excluded_dynamic_candidates": [],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [],
+      "positive_native_page": true
+    },
+    {
+      "controller": "AdminPsClassicEditionHomepageController",
+      "navigation_class_path": [
+        "HOME",
+        "AdminPsClassicEditionHomepageController"
+      ],
+      "route_provenance": "own_authenticated_rendered_native_menu_href",
+      "final_path_normalized": "/admin-kuranea/modules/psclassicedition/homepage",
+      "final_query_controller": "",
+      "destination_qualification": "native_rendered_default_destination",
+      "actual_html_language": "ko",
+      "excluded_dynamic_candidates": [],
+      "has_main": true,
+      "http_status": 200,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_candidates": [
+        {
+          "context": "navigation",
+          "label": "Welcome",
+          "tag": "LI",
+          "source_domains": [
+            "Modules.Classicedition.Admin"
+          ]
+        },
+        {
+          "context": "navigation",
+          "label": "Care Center",
+          "tag": "A",
+          "source_domains": [
+            "Modules.Classicedition.Admin"
+          ]
+        }
+      ],
+      "positive_native_page": true
+    }
+  ],
+  "own_rendered_navigation_count": 85,
+  "complete": true
+}

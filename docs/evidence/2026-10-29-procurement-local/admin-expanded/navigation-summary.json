@@ -1,0 +1,881 @@
+{
+  "read_only": true,
+  "all_three_browser_workers_stopped": true,
+  "all_three_after_cas_preservation_checks_passed": true,
+  "baseline_scope": "12 domain tables,8 ACL/audit tables,full tab/tab_lang,3 critical native table/schema/data sets; post-policy and post-CAS named baseline",
+  "shared_catalogue_key_count": 6155,
+  "shared_catalogue_sha256": "737d54d2b9f07bc25abac7e726f36d019a1cbfde2c37787589f28db62b0ea603",
+  "metadata_link_candidates": 87,
+  "additional_navigation_node_candidates": 69,
+  "actual_default_native_get_nodes": 69,
+  "http_status_counts": {
+    "200": 66,
+    "500": 2,
+    "503": 1
+  },
+  "positive_http200_korean_authenticated_main": 66,
+  "normalized_destination_groups": 60,
+  "unique_leaf_route_claim": false,
+  "deeper46_metadata_tabs_not_forced_as_routes": true,
+  "parent_default_aliases": [
+    {
+      "normalized_destination": [
+        "/admin-kuranea/sell/orders/",
+        ""
+      ],
+      "controllers": [
+        "AdminParentOrders",
+        "AdminOrders"
+      ]
+    },
+    {
+      "normalized_destination": [
+        "/admin-kuranea/sell/catalog/products/",
+        ""
+      ],
+      "controllers": [
+        "AdminProducts",
+        "AdminCatalog"
+      ]
+    },
+    {
+      "normalized_destination": [
+        "/admin-kuranea/improve/shipping/carriers/",
+        ""
+      ],
+      "controllers": [
+        "AdminParentShipping",
+        "AdminCarriers"
+      ]
+    },
+    {
+      "normalized_destination": [
+        "/admin-kuranea/",
+        "AdminPsfacebookModule"
+      ],
+      "controllers": [
+        "Marketing",
+        "AdminPsfacebookModule"
+      ]
+    },
+    {
+      "normalized_destination": [
+        "/admin-kuranea/improve/payment/payment_methods",
+        ""
+      ],
+      "controllers": [
+        "AdminPayment",
+        "AdminParentPayment"
+      ]
+    },
+    {
+      "normalized_destination": [
+        "/admin-kuranea/configure/advanced/system-information/",
+        ""
+      ],
+      "controllers": [
+        "AdminAdvancedParameters",
+        "AdminInformation"
+      ]
+    },
+    {
+      "normalized_destination": [
+        "/admin-kuranea/modules/mbo/modules/catalog/",
+        ""
+      ],
+      "controllers": [
+        "AdminParentModulesSf",
+        "AdminPsMboModuleParent"
+      ]
+    },
+    {
+      "normalized_destination": [
+        "/admin-kuranea/improve/design/themes/",
+        ""
+      ],
+      "controllers": [
+        "AdminParentThemes",
+        "AdminThemesParent"
+      ]
+    },
+    {
+      "normalized_destination": [
+        "/admin-kuranea/improve/international/localization/",
+        ""
+      ],
+      "controllers": [
+        "AdminInternational",
+        "AdminParentLocalization"
+      ]
+    }
+  ],
+  "unavailable_pages": [
+    {
+      "controller": "Marketing",
+      "status": 500,
+      "normalized_destination": [
+        "/admin-kuranea/",
+        "AdminPsfacebookModule"
+      ]
+    },
+    {
+      "controller": "AdminPsMboTheme",
+      "status": 503,
+      "normalized_destination": [
+        "/admin-kuranea/modules/mbo/themes/catalog/",
+        ""
+      ]
+    },
+    {
+      "controller": "AdminPsfacebookModule",
+      "status": 500,
+      "normalized_destination": [
+        "/admin-kuranea/",
+        "AdminPsfacebookModule"
+      ]
+    }
+  ],
+  "static_source_occurrences": 73,
+  "unique_source_phrases_including_technical": 72,
+  "source_domain_candidate_pairs": 76,
+  "source_domain_pairs_are_catalogue_candidates_not_all_verified_callsites": true,
+  "source_candidate_pages": [
+    "AdminAdminAPI",
+    "AdminEmails",
+    "AdminExtraPropertyDefinitions",
+    "AdminFeatureFlag",
+    "AdminImages",
+    "AdminImport",
+    "AdminLogs",
+    "AdminModulesPositions",
+    "AdminPPreferences",
+    "AdminParentCustomerPreferences",
+    "AdminParentMailTheme",
+    "AdminParentMeta",
+    "AdminParentOrderPreferences",
+    "AdminParentRequestSql",
+    "AdminParentTaxes",
+    "AdminPerformance",
+    "AdminPsClassicEditionHomepageController",
+    "AdminPsOnePageCheckout",
+    "AdminShipping",
+    "AdminTranslations"
+  ],
+  "technical_records_retained_separately": [
+    {
+      "controller": "AdminImport",
+      "context": "static_help_or_alert",
+      "label": "https://docs.prestashop-project.org/v.8-documentation/user-guide/configuring-shop/advanced-parameters/import",
+      "tag": "A",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminImport",
+      "context": "static_help_or_alert",
+      "label": "https://en.wikipedia.org/wiki/Comma-separated_values",
+      "tag": "A",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminImages",
+      "context": "semantic_static_control_or_heading",
+      "label": "WebP",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminDesignFeature"
+      ]
+    },
+    {
+      "controller": "AdminImages",
+      "context": "semantic_static_control_or_heading",
+      "label": "AVIF",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminDesignFeature"
+      ]
+    }
+  ],
+  "first_marketing_filter_skip_preserved": {
+    "controller": "Marketing",
+    "opened": false,
+    "classification": "not_exposed_in_own_rendered_navigation"
+  },
+  "marketing_followup_scope": "one known-class own-native-DOM follow-up; first Admin-only filter skip was a harness diagnostic, not absence",
+  "epos_specific_target_probe": "epos-target-outcome-safe.json; canonical E-mail/Admin.Navigation.Menu, known bad Korean target observed in navigation; not counted as base English source key",
+  "no_full_admin_locale_completion_claim": true,
+  "no_data_values_tokens_or_personal_identifiers": true,
+  "source_files": [
+    "customer-browser-safe.json",
+    "quality-safe.json",
+    "admin-readiness-outcome-safe.json",
+    "customer-browser-marketing-followup-safe.json",
+    "epos-target-outcome-safe.json"
+  ],
+  "static_source_evidence": [
+    {
+      "controller": "AdminModulesPositions",
+      "context": "semantic_static_control_or_heading",
+      "label": "Module positions",
+      "tag": "H1",
+      "source_domains": [
+        "AdminNavigationMenu"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "context": "semantic_static_control_or_heading",
+      "label": "Checkout layout",
+      "tag": "H3",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "context": "semantic_static_control_or_heading",
+      "label": "Recommended",
+      "tag": "SPAN",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "context": "semantic_static_control_or_heading",
+      "label": "Propose the best checkout experience to your clients with the one-page layout. All the payment steps will be displayed in one page and let you benefit from:",
+      "tag": "P",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "context": "semantic_static_control_or_heading",
+      "label": "Reduced time spent, less clicks & no extra-step",
+      "tag": "LI",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "context": "semantic_static_control_or_heading",
+      "label": "Increased conversion with a seamless and frictionless experience",
+      "tag": "LI",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "context": "semantic_static_control_or_heading",
+      "label": "Mobile-friendly checkout",
+      "tag": "LI",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "context": "semantic_static_control_or_heading",
+      "label": "Four-page checkout",
+      "tag": "SPAN",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "context": "semantic_static_control_or_heading",
+      "label": "Propose a step-by-step checkout experience. All the usual payment steps will be displayed on different screens. Choose this method if:",
+      "tag": "P",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "context": "semantic_static_control_or_heading",
+      "label": "You need flexibility for complex or specific information",
+      "tag": "LI",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "context": "semantic_static_control_or_heading",
+      "label": "You're under regulatory compliance",
+      "tag": "LI",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "context": "semantic_static_control_or_heading",
+      "label": "You want to integrate upsell & cross-sell strategies",
+      "tag": "LI",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPPreferences",
+      "context": "semantic_static_control_or_heading",
+      "label": "Quantity discounts based on",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminShopparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminPPreferences",
+      "context": "semantic_static_control_or_heading",
+      "label": "Category used in breadcrumbs",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminShopparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminPPreferences",
+      "context": "static_help_or_alert",
+      "label": "In the product page, feature values can be sorted alphabetically by value or by position.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminShopparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminPPreferences",
+      "context": "semantic_static_control_or_heading",
+      "label": "Default pack stock behavior",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminShopparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminPPreferences",
+      "context": "static_help_or_alert",
+      "label": "Allow or deny customers to order products that are out of stock. Further customization is possible for each product.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminShopparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminPPreferences",
+      "context": "static_help_or_alert",
+      "label": "The default order in which products are displayed in listings. The available sorting methods differ based on the page type.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminShopparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminParentMeta",
+      "context": "static_help_or_alert",
+      "label": "Only available keywords for a given route can be used",
+      "tag": "LI",
+      "source_domains": [
+        "AdminShopparametersNotification"
+      ]
+    },
+    {
+      "controller": "AdminParentMeta",
+      "context": "static_help_or_alert",
+      "label": "It's regenerated automatically during certain actions in the back office, but you can manually regenerate it using the button below if needed.",
+      "tag": "DIV",
+      "source_domains": [
+        "AdminShopparametersNotification"
+      ]
+    },
+    {
+      "controller": "AdminParentMeta",
+      "context": "static_help_or_alert",
+      "label": "Don't edit this file manually - use the appropriate hooks to modify its content.",
+      "tag": "DIV",
+      "source_domains": [
+        "AdminShopparametersNotification"
+      ]
+    },
+    {
+      "controller": "AdminPerformance",
+      "context": "static_help_or_alert",
+      "label": "(Optional) Insert a cookie name to enable the debug mode only when this cookie is set.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminPerformance",
+      "context": "static_help_or_alert",
+      "label": "(Optional) Insert a value to enable the debug mode only when the cookie configured above is set to this value.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminImport",
+      "context": "static_help_or_alert",
+      "label": "https://docs.prestashop-project.org/v.8-documentation/user-guide/configuring-shop/advanced-parameters/import",
+      "tag": "A",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminImport",
+      "context": "static_help_or_alert",
+      "label": "https://en.wikipedia.org/wiki/Comma-separated_values",
+      "tag": "A",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the merchandise return page.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the tag page.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "context": "semantic_static_control_or_heading",
+      "label": "Hook a module",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminDesignFeature"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "context": "semantic_static_control_or_heading",
+      "label": "Quick access",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminAdvparametersFeature",
+        "AdminNavigationMenu"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the migrated quick access page.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "context": "static_help_or_alert",
+      "label": "Experimental API endpoints are disabled by default in prod environment, this configuration allows to forcefully enable them.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the new front container.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the customer group page.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the store page.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "context": "semantic_static_control_or_heading",
+      "label": "Improved shipment",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminAdvparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the newly improved shipment system.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the new discount system.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "context": "semantic_static_control_or_heading",
+      "label": "New pricing",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminAdvparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the new pricing system. This feature introduces an improved pricing engine.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminParentMailTheme",
+      "context": "semantic_static_control_or_heading",
+      "label": "Email theme",
+      "tag": "H1",
+      "source_domains": [
+        "AdminNavigationMenu"
+      ]
+    },
+    {
+      "controller": "AdminImages",
+      "context": "semantic_static_control_or_heading",
+      "label": "Image fitment",
+      "tag": "SPAN",
+      "source_domains": [
+        "AdminDesignFeature"
+      ]
+    },
+    {
+      "controller": "AdminImages",
+      "context": "static_help_or_alert",
+      "label": "Most common setup is to have the base JPG/PNG format and one modern WebP or AVIF format - the browser will choose the format it likes the most.",
+      "tag": "P",
+      "source_domains": [
+        "AdminDesignHelp"
+      ]
+    },
+    {
+      "controller": "AdminImages",
+      "context": "static_help_or_alert",
+      "label": "Beware that to benefit from modern image formats, they must be supported by your theme.",
+      "tag": "P",
+      "source_domains": [
+        "AdminDesignHelp"
+      ]
+    },
+    {
+      "controller": "AdminImages",
+      "context": "semantic_static_control_or_heading",
+      "label": "WebP",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminDesignFeature"
+      ]
+    },
+    {
+      "controller": "AdminImages",
+      "context": "semantic_static_control_or_heading",
+      "label": "AVIF",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminDesignFeature"
+      ]
+    },
+    {
+      "controller": "AdminImages",
+      "context": "static_help_or_alert",
+      "label": "AVIF is disabled because it's not supported on your server, check your configuration if you want to use it.",
+      "tag": "STRONG",
+      "source_domains": [
+        "AdminDesignHelp"
+      ]
+    },
+    {
+      "controller": "AdminParentTaxes",
+      "context": "semantic_static_control_or_heading",
+      "label": "Based on",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminInternationalFeature"
+      ]
+    },
+    {
+      "controller": "AdminParentCustomerPreferences",
+      "context": "static_help_or_alert",
+      "label": "If this option is enabled, the customer's last cart will be restored when they log back in. Otherwise, a new, empty cart will be created.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminShopparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminParentRequestSql",
+      "context": "semantic_static_control_or_heading",
+      "label": "Select your default file separator",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminAdvparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminExtraPropertyDefinitions",
+      "context": "semantic_static_control_or_heading",
+      "label": "Extra property definitions",
+      "tag": "H1",
+      "source_domains": [
+        "AdminAdvparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminExtraPropertyDefinitions",
+      "context": "static_help_or_alert",
+      "label": "Extra properties extend existing entities (products, customers, orders…) with custom fields stored in dedicated database columns.",
+      "tag": "P",
+      "source_domains": [
+        "AdminAdvparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminExtraPropertyDefinitions",
+      "context": "static_help_or_alert",
+      "label": "Properties owned by a module (column \"Module\" is not empty) are read-only: the module is responsible for registering and removing them.",
+      "tag": "P",
+      "source_domains": [
+        "AdminAdvparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminExtraPropertyDefinitions",
+      "context": "static_help_or_alert",
+      "label": "Where each field is exposed (front-office, forms, grids, Admin API) is configured from the edit form.",
+      "tag": "P",
+      "source_domains": [
+        "AdminAdvparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminPsClassicEditionHomepageController",
+      "context": "navigation",
+      "label": "Welcome",
+      "tag": "LI",
+      "source_domains": [
+        "Modules.Classicedition.Admin"
+      ]
+    },
+    {
+      "controller": "AdminPsClassicEditionHomepageController",
+      "context": "navigation",
+      "label": "Care Center",
+      "tag": "A",
+      "source_domains": [
+        "Modules.Classicedition.Admin"
+      ]
+    },
+    {
+      "controller": "AdminShipping",
+      "context": "static_help_or_alert",
+      "label": "Optional additional fee added to carriers with handling charges enabled. This fee is not applied when shipping is free due to options below.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminShippingHelp"
+      ]
+    },
+    {
+      "controller": "AdminShipping",
+      "context": "semantic_static_control_or_heading",
+      "label": "Free shipping starts at",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminShippingFeature"
+      ]
+    },
+    {
+      "controller": "AdminShipping",
+      "context": "static_help_or_alert",
+      "label": "Shipping is free for all zones when the cart total reaches or exceeds this amount.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminShippingHelp"
+      ]
+    },
+    {
+      "controller": "AdminShipping",
+      "context": "static_help_or_alert",
+      "label": "Shipping is free for all zones when the total cart weight reaches or exceeds this value.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminShippingHelp"
+      ]
+    },
+    {
+      "controller": "AdminShipping",
+      "context": "static_help_or_alert",
+      "label": "Default carrier that will be pre-selected for customers in the checkout process.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminShippingHelp"
+      ]
+    },
+    {
+      "controller": "AdminShipping",
+      "context": "static_help_or_alert",
+      "label": "Determines how carriers are sorted in the checkout.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminShippingHelp"
+      ]
+    },
+    {
+      "controller": "AdminShipping",
+      "context": "static_help_or_alert",
+      "label": "Sets the sorting direction of carriers in the checkout.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminShippingHelp"
+      ]
+    },
+    {
+      "controller": "AdminTranslations",
+      "context": "semantic_static_control_or_heading",
+      "label": "From",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminGlobal",
+        "AdminOrderscustomersFeature",
+        "ModulesDashproductsAdmin",
+        "messages"
+      ]
+    },
+    {
+      "controller": "AdminParentOrderPreferences",
+      "context": "semantic_static_control_or_heading",
+      "label": "Minimum order value",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminShopparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminParentOrderPreferences",
+      "context": "static_help_or_alert",
+      "label": "Require customers to accept terms of service before processing an order.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminShopparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminEmails",
+      "context": "semantic_static_control_or_heading",
+      "label": "Send emails to",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminAdvparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminEmails",
+      "context": "semantic_static_control_or_heading",
+      "label": "Both, with text format automatically generated",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminAdvparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminEmails",
+      "context": "semantic_static_control_or_heading",
+      "label": "Send a test email to",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminAdvparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminLogs",
+      "context": "semantic_static_control_or_heading",
+      "label": "Severity (0-4)",
+      "tag": "SPAN",
+      "source_domains": [
+        "AdminAdvparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminLogs",
+      "context": "static_help_or_alert",
+      "label": "Indicate the minimum log levels that will be saved in database.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminLogs",
+      "context": "semantic_static_control_or_heading",
+      "label": "Send emails to",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminAdvparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminAdminAPI",
+      "context": "static_help_or_alert",
+      "label": "Before enabling the Admin API, you must be sure to:",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminAdminAPI",
+      "context": "static_help_or_alert",
+      "label": "Admin API forces the use of HTTPS with TLSv1.2 or higher, you can disable this check for debug mode only.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    }
+  ]
+}

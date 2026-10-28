@@ -2,19 +2,31 @@
 
 ## 2026-10-29 현재 발주 플랫폼 구현·검증 상태
 
-제품은 운영자 상품 안내/배정 → 고객 상품·수량 확인 및 발주 요청 → 운영자 수동 검토 → 별도 명시적 수당 포인트 지급이다. 고객은 잔액·내역만 조회한다. 배송·반품·환불·판매결제·포인트 사용/출금은 확정 범위 제외다.
+제품은 **운영자 상품 안내/배정 → 고객 상품·수량 확인 및 발주 요청 → 운영자 수동 검토 → 별도 명시적 수당 포인트 지급 → 본인 잔액·내역 조회**다. 배송·반품·환불·판매결제·포인트 사용/출금은 확정 범위 제외다.
 
-현재 코드 체크포인트는 `6f9c301d6cb4070c2fb440400a0c2a86e2a5ff8b`이며 원격 work 재조회가 일치했다. main `ee02a3657448d563508687614a246e05ac61eecd`와 기존 사용자 체크아웃을 보존했다. 전용12테이블, 원장/잔액/감사/outbox 원자적 저장, 고객·shop·직원 권한, 수동 지급/연결 정정·멱등·동시성, 요청별 문의, 정책, 알림, JA/EN/KO 고객 화면, 한국어 관리 화면, 검수 상품/카테고리 연결과 파서를 구현했다.
+검증 후보 **`8663e96cdd240be52cd812f4e1d62e1edaa55ee4`**를 원격 work에 저장하고 SHA 및 변경 파일을 다시 읽어 일치 확인했다. main `ee02a3657448d563508687614a246e05ac61eecd`와 기존 사용자 체크아웃을 보존했다. 최신 전체38phase [#40756263392](https://github.com/goldeget/japan-premium-commerce/actions/runs/40756263392)는 진행 중이며 아직 전체 PASS가 아니다.
 
-실제 격리 native 브라우저에서 수량2 요청, B의 GET/POST 거부·B인증 유지·A원본 보존, 조회 전용 직원의 검토/지급/정정403, 승인0P → 별도 지급100P → 재로그인100P → 연결정정80P를 확인했다. 문의 공개답변/내부메모 분리, Mailpit5건·재전달0건, 3언어 회원/재설정, native ACL 저장+감사 원자성, 재시작 및 독립 복원 후 데이터 hash 일치를 확인했다.
+전용12테이블, 원장/잔액/감사/outbox 원자적 저장, owner/shop/직원 권한, 요청·지급·정정 멱등/동시성, 요청별 문의, 정책, 메일/Push, JA/EN/KO 화면과 검수 native 상품·이미지·분류 연결을 구현했다. 실제 로컬 native 브라우저에서 수량2 요청, B GET/POST 거부·B인증 유지·A원본 보존, 제한 직원403, 승인0P→별도100P→재로그인100P→연결정정80P를 확인했다. 문의 공개/내부 분리, Mailpit5건·재전달0건, 3언어 회원/재설정, native ACL 실제6변경/감사6행, 재시작·독립 복원 hash 일치도 통과했다.
 
-품질3은 실제 native JA7경로, 10폭 및 일부 dark 조건에서 layout/axe 각84건, 실제 클릭14회, Lighthouse14회 PASS: 성능99–100·접근성100·공개정책SEO100. 실제 별도 GPT가 고객21+54PNG, 공개 정적 구성요소42PNG, 최종 언어 선택기3PNG를 열어 검수했다. 자동 incomplete 원본84셀은 유지하며 전체 WCAG/실기기/실사용 INP 완료로 확대하지 않는다. 한국어 관리자17경로를 재조회했고 발견된 정적 영문7종을 수정했다. 모든 관리자 오류 상태의 전수 검증을 뜻하지 않는다.
+### 이번 원인 수정과 집중 완료
 
-증거는 [로컬 검증 묶음](evidence/2026-10-29-procurement-local/README.md)에 있다. 로컬은 bd1ced8 이미지+후속 소스 정렬/집중 검증이며 최종 immutable SHA 전체 성공과 구분한다. 파일1128개와 Push vendor1426개 정렬, 기본512M에서 실제 cache:clear+warmup 통과를 확인했다. 후속 cc99bbb 언어 aria 변경은 computed accessible name·키보드·카탈로그 병합·동작 보존으로 집중 검증했다.
+- hosted Bake host network/외부CA 권한 요구는6f9c301에서 표준 CI 설정으로 분리했다. 이후 실제 fresh build/install/source/검수2단계분류/warmup 포함28phase가 통과했다.
+- raw authentication+id_lang404는 native 생성 auth/identity URL로 수정했다. 실제 수정 helper의 A/B 정확 본인 확인·unsafe URL 거부·데이터 무변경을 통과했다.
+- 정책 저장 click 반환 뒤 POST가 시작되는 순서 문제를 실제 timing으로 확인했다. 이전 form 교체와 새 문서 complete를 같은30초 안에 기다리며 원래 새 세션 version/값 검사는 유지한다. 실제 단1회 합성 정책 저장과 필수11+선택2값의 새 세션 재조회, 정책1+감사1만 추가됨을 확인했다.
+- 관리자 기존17화면 외69개 메뉴노드 GET를 점검했다(60개 정규화 목적지, 부모/별칭 포함).66건은200·한국어·인증 본문이었다. 확인된 영문69source/domain 번역과13개 정확 메뉴 보정을1.0.8에 묶었다. 변경 영향19건 집중 재조회에서 한국어/정확 라벨/선택값·권한·업무/메뉴 데이터 보존을 확인했다. From/To 날짜 번역은 건드리지 않고 해당 언어 복사 폼의 두 raw label만 수정했다.
+- 로컬 최종 host/opt/live 앱1140개·Push vendor1426개 일치/unknown0, 기본512M warmup 성공. 새 native FormFactory62·CAS DB33·locale Python60·audit13·CI9계약과 현재 소스 경량 workflow24명령군이 통과했다.
 
-최신 전체 [#40749362584](https://github.com/goldeget/japan-premium-commerce/actions/runs/40749362584)는 6f9c301 검증 중이다. 앞선 #40746215184/#40747596953/#40748071562는 앱 설치 전 빌드 실패였으며 마지막 실행에서 Compose/Bake host network·외부 CA 파일 권한 요구를 확인했다. 6f9c301은 hosted CI를 표준 네트워크/이미지 CA로 분리했으며 관련5검사 PASS다. 실패한 실행의 aggregate를 성공으로 바꾸지 않는다. 기존 business-profile #40746034641(cc99bbb) SUCCESS와 과거 쇼핑몰 전체 #40508152705(f5b1cca) SUCCESS는 각 범위의 근거로 보존한다.
+품질3은 기존 bd1ced8 frontend의 실제 JA7경로·10폭 및 일부dark에서 layout/axe 각84건·실제 클릭14·Lighthouse14 PASS(성능99–100/접근성100/공개정책SEO100)다. 후속 frontend aria는 별도 native computed name/키보드로 확인했다. 별도 GPT가 고객·정적·언어 선택기120PNG와 관리자12PNG를 실제 열어 제한된 범위를 검수했다. 자동 incomplete84셀은 보존하며 전체WCAG/실기기/field INP 완료로 확대하지 않는다.
 
-실제 Amazon Japan/Rakuten은 관리망 CONNECT403으로 접근 불가하여 실제 원문 가격·상세·사진·전체 분류 호환 인수는 미완료다. 합성 parser38행동·native 검수/분류 저장과 구분한다. 운영자/정책 승인자료·운영 HTTPS/SMTP/비밀값·실기기는 별도 운영 대기다. [요구사항표](RELEASE_REQUIREMENTS_MATRIX.md)와 [잔여 작업표](RELEASE_READINESS_AUDIT_2026-10-29.md)를 따른다. 운영 배포·실결제·실거래·유료 서비스는 실행하지 않았다.
+[증거 목록](evidence/2026-10-29-procurement-local/README.md)과 [테스트 결과](TEST_RESULTS.md)를 따른다. 로컬은 기존 bd1ced8 이미지+명시적 최신 overlay 검증이며 단일 immutable 후보 전체 인수와 구분한다. native 외부 테마 마켓플레이스503 및 Facebook모듈500은 외부 의존 경로로 분리 기록했다.
+
+실제 Amazon Japan/Rakuten은 관리망 CONNECT403으로 실제 가격·상세·사진·원문 분류 인수가 미완료다. 실제 운영자·승인 정책·HTTPS/SMTP/비밀값·실기기도 별도 대기다. 실제 파싱 필수 요구를 합성 성공으로 완료 처리하지 않는다. 운영 배포·실결제·실거래·유료 서비스는 실행하지 않았다. 아래는 이전 시점의 이력이다.
+
+### 최신 fresh 초기값 불일치와 증거 수집
+
+ad51cff의 전체 #40755121454는 **3phase PASS/module_seed FAIL/후속34not_run/cleanup success**다. 새13메뉴의 엄격한 한국어 초기값 assertion에서 실패했고 당시 로그에는 대상 클래스가 없어, 올바른 기존 한국어 표현 보존과의 기대값 충돌인지 실제 초기화 결함인지 아직 확정하지 않는다. artifact12845373313 SHA256 `115a8c0c4d9e4c4a112b3814aaead0feed688a4e02c54134753cc12620786cca`.
+
+8663e96은 앱을 바꾸지 않고, 원래 엄격한13개 assertion 전에 고정 클래스의 존재/owner/일치/기본영문/Hangul/중복 여부만 안전하게 보존한다. 이름 원문·ID·토큰은 넣지 않고 실패 후에도 JSON을 복사한다.5개 진단 fixture/기존9계약·lint 통과 후 위 실행에서 새 증거를 수집 중이다. 실패를 성공으로 바꾸거나 확인되지 않은 원인을 수정했다고 기록하지 않는다. 앱1140파일은 ad51cff와 동일하다.
 
 ---
 

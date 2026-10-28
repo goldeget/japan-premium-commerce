@@ -1,0 +1,30 @@
+{
+  "routes": [
+    {
+      "route_kind": "raw_no_lang",
+      "email_fields": 1,
+      "lang": "ja-JP",
+      "login_forms": 1,
+      "password_fields": 1,
+      "status": 200
+    },
+    {
+      "route_kind": "raw_explicit_ja",
+      "email_fields": 0,
+      "lang": "ja-JP",
+      "login_forms": 0,
+      "password_fields": 0,
+      "status": 404
+    },
+    {
+      "route_kind": "native_generated_ja_signin",
+      "email_fields": 1,
+      "lang": "ja-JP",
+      "login_forms": 1,
+      "password_fields": 1,
+      "status": 200
+    }
+  ],
+  "native_route_helper_pass": true,
+  "positive_native_identity_A": true
+}

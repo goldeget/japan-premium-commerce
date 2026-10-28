@@ -1,0 +1,80 @@
+{
+  "original_helper_unchanged": true,
+  "policy_reads": [
+    {
+      "locale": "ja",
+      "section": "terms",
+      "http_200": true,
+      "actual_lang": "ja-JP"
+    },
+    {
+      "locale": "ja",
+      "section": "privacy",
+      "http_200": true,
+      "actual_lang": "ja-JP"
+    },
+    {
+      "locale": "ja",
+      "section": "points",
+      "http_200": true,
+      "actual_lang": "ja-JP"
+    },
+    {
+      "locale": "en",
+      "section": "terms",
+      "http_200": true,
+      "actual_lang": "en-US"
+    },
+    {
+      "locale": "en",
+      "section": "privacy",
+      "http_200": true,
+      "actual_lang": "en-US"
+    },
+    {
+      "locale": "en",
+      "section": "points",
+      "http_200": true,
+      "actual_lang": "en-US"
+    },
+    {
+      "locale": "ko",
+      "section": "terms",
+      "http_200": true,
+      "actual_lang": "ko-KR"
+    },
+    {
+      "locale": "ko",
+      "section": "privacy",
+      "http_200": true,
+      "actual_lang": "ko-KR"
+    },
+    {
+      "locale": "ko",
+      "section": "points",
+      "http_200": true,
+      "actual_lang": "ko-KR"
+    }
+  ],
+  "events": [
+    {
+      "predicate": "email",
+      "state": "waiting",
+      "elapsed_ms": 1330
+    }
+  ],
+  "helper_pass": false,
+  "failure_stage": "exact_original_login_customer_A",
+  "failure_type": "TimeoutException",
+  "failure_safe_state": {
+    "email_fields": 0,
+    "error_nodes": 0,
+    "form_valid": null,
+    "lang": "ja-JP",
+    "login_forms": 0,
+    "password_fields": 0,
+    "ready_complete": true,
+    "status": 404
+  },
+  "elapsed_seconds": 31.62
+}

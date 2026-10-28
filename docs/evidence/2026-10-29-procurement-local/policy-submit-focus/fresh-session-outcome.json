@@ -1,0 +1,9 @@
+{
+  "readonly_after_unique_authorized_click": true,
+  "passed": true,
+  "fresh_admin_session": true,
+  "native_document_200": true,
+  "exact_version_increment_one": true,
+  "exact_all_13_fields": true,
+  "exact_required_11_fields": true
+}

@@ -2,13 +2,19 @@
 
 ## 현재 Cloud Codex 실행 handoff — 2026-10-29
 
-코드 work `6f9c301d6cb4070c2fb440400a0c2a86e2a5ff8b` 원격 저장 확인, main 원본/기존 사용자 파일 보존. 현재 범위는 상품 안내/고객 발주요청/운영 검토/별도 수동 포인트·연결 정정/감사/알림/정책/요청별 문의/PWA/파싱·native 분류 연결이다. 배송·반품·환불·판매결제·포인트 사용/출금은 제외다.
+검증 후보 **`8663e96cdd240be52cd812f4e1d62e1edaa55ee4`** 원격 work 저장/파일 재조회 확인, main 원본/기존 사용자 파일 보존. 현재 범위는 상품 안내/고객 발주요청/운영자 수동 검토/별도 포인트·연결 정정/감사/알림/정책/요청별 문의/PWA/파싱·native 분류 연결이다. 판매결제·배송·반품·환불·포인트 사용/출금은 제외다.
 
-실제 native 핵심 브라우저100→80P·고객 격리·제한 직원403·메일/3언어 계정/복원 검증, 품질3 84DOM/axe·14Lighthouse, 관리자17경로 한국어 재조회, 1128app/1426vendor 소스 정렬·기본512M cache warmup을 통과했다. 독립 GPT가 안전한 고객/정적/언어 선택기120PNG와 native 관리자12PNG를 실제 열어 제한된 범위를 검수했다. [정확한 범위/증거](TEST_RESULTS.md)와 [화면 handoff](AI_BROWSER_QA_HANDOFF.md)를 사용한다.
+실제 로컬 core100→80P·A/B 격리·제한 직원403·Mailpit·3언어 회원·재시작/복원, 품질3 84DOM/axe·14Lighthouse와 독립132PNG를 확인했다. 이번에는 native69메뉴노드 대조 후69정적 번역·정확13메뉴 CAS·언어 복사 폼의 raw label을 보강하고 변경 영향19건의 한국어/데이터 보존을 집중 확인했다. 최종소스1140/vendor1426 정렬·기본512M warmup, 현재 소스 경량24명령군/native폼62/DB33/locale60/audit13/CI9계약 PASS다.
 
-Cloud Codex가 코드·커밋·CI를 담당한다. 현재 immutable fresh [#40749362584](https://github.com/goldeget/japan-premium-commerce/actions/runs/40749362584),6f9c301은 진행 중. 앞선3fresh실패는 앱 설치 전 Bake host network/외부 CA 권한 요구였으며 portable hosted 설정으로 수정하고5집중검사 통과했다. 실제 aggregate 확정 전 전체 PASS로 기록하지 않는다. 외부 Work Mode에 직접 전달하지 않았으며 독립 GPT 검수와 구분한다. 동일 코드 수정/동일 목적CI를 중복 실행하지 않는다.
+전체38phase [#40756263392](https://github.com/goldeget/japan-premium-commerce/actions/runs/40756263392)는 진행 중이다. 앞선5실행의 FAIL은 원본대로 보존한다. Bake 준비 권한, raw 언어 auth URL404, 정책 클릭 뒤 POST 시작 전에 종료할 수 있는 QA 순서를 원인별로 수정했다. [테스트 결과](TEST_RESULTS.md), [요구사항표](RELEASE_REQUIREMENTS_MATRIX.md), [화면 handoff](AI_BROWSER_QA_HANDOFF.md)의 정확한 범위·artifact를 사용한다.
 
-실제 Amazon/Rakuten 원문은 관리망 CONNECT403 미검증. 실제 운영자/정책 승인자료·HTTPS/SMTP/비밀값·실기기 인수는 [운영 준비](PRODUCTION_DEPLOYMENT.md)의 단일 목록으로 관리한다. 운영 DB/volume 변경·실배포·실결제·실거래·유료 서비스는 수행하지 않았다. 아래 과거 쇼핑몰 작업은 이력으로 보존한다.
+Cloud Codex가 코드/커밋/CI를 맡고 독립 GPT는 실제 이미지·사용성/코드를 검수한다. 외부 Work Mode 직접 전달은 수행하지 않았다. 동일 코드/CI를 중복 실행하지 않는다. 실상품 원문은 관리망 CONNECT403 미검증, 실제 정책/운영HTTPS·SMTP·비밀값/실기기는 [단일 운영 입력표](PRODUCTION_DEPLOYMENT.md)에 따라 별도 인수한다. 실제 운영 배포·DB/volume 변경·실결제·실거래·유료 서비스는 수행하지 않았다. 아래 과거 쇼핑몰 기록은 이력이다.
+
+### 최신 fresh 초기값 불일치와 증거 수집
+
+ad51cff의 전체 #40755121454는 **3phase PASS/module_seed FAIL/후속34not_run/cleanup success**다. 새13메뉴의 엄격한 한국어 초기값 assertion에서 실패했고 당시 로그에는 대상 클래스가 없어, 올바른 기존 한국어 표현 보존과의 기대값 충돌인지 실제 초기화 결함인지 아직 확정하지 않는다. artifact12845373313 SHA256 `115a8c0c4d9e4c4a112b3814aaead0feed688a4e02c54134753cc12620786cca`.
+
+8663e96은 앱을 바꾸지 않고, 원래 엄격한13개 assertion 전에 고정 클래스의 존재/owner/일치/기본영문/Hangul/중복 여부만 안전하게 보존한다. 이름 원문·ID·토큰은 넣지 않고 실패 후에도 JSON을 복사한다.5개 진단 fixture/기존9계약·lint 통과 후 위 실행에서 새 증거를 수집 중이다. 실패를 성공으로 바꾸거나 확인되지 않은 원인을 수정했다고 기록하지 않는다. 앱1140파일은 ad51cff와 동일하다.
 
 ---
 

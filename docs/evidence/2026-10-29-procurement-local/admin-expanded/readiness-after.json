@@ -1,0 +1,109 @@
+{
+  "passed": true,
+  "browser_closed": true,
+  "affected_native_pages": 6,
+  "all_http200_korean_authenticated_native_main": true,
+  "remaining_source_english_candidates": 0,
+  "original_source_occurrences_positively_korean": 17,
+  "unique_original_sources_positively_korean": 16,
+  "copy_language_both_exact_direct_label_nodes_and_only_native_required_marker": true,
+  "original_whole_label_strict_false_preserved": true,
+  "both_native_selects_visible_enabled_four_options": true,
+  "email_expected_korean_visible_bad_target_absent": true,
+  "final_named_baseline_after_passed": true,
+  "baseline_scope": "12domain+8ACL/audit+fullTab/TabLang+3critical native schema/data",
+  "overlay_sha256": "e5a16d0da4fc56979c35d8f481be23db98dd00849f1e16d625c4f030ac5a0556",
+  "source_evidence": [
+    {
+      "controller": "AdminShipping",
+      "source": "Optional additional fee added to carriers with handling charges enabled. This fee is not applied when shipping is free due to options below.",
+      "positively_korean": true
+    },
+    {
+      "controller": "AdminShipping",
+      "source": "Free shipping starts at",
+      "positively_korean": true
+    },
+    {
+      "controller": "AdminShipping",
+      "source": "Shipping is free for all zones when the cart total reaches or exceeds this amount.",
+      "positively_korean": true
+    },
+    {
+      "controller": "AdminShipping",
+      "source": "Shipping is free for all zones when the total cart weight reaches or exceeds this value.",
+      "positively_korean": true
+    },
+    {
+      "controller": "AdminShipping",
+      "source": "Default carrier that will be pre-selected for customers in the checkout process.",
+      "positively_korean": true
+    },
+    {
+      "controller": "AdminShipping",
+      "source": "Determines how carriers are sorted in the checkout.",
+      "positively_korean": true
+    },
+    {
+      "controller": "AdminShipping",
+      "source": "Sets the sorting direction of carriers in the checkout.",
+      "positively_korean": true
+    },
+    {
+      "controller": "AdminParentOrderPreferences",
+      "source": "Minimum order value",
+      "positively_korean": true
+    },
+    {
+      "controller": "AdminParentOrderPreferences",
+      "source": "Require customers to accept terms of service before processing an order.",
+      "positively_korean": true
+    },
+    {
+      "controller": "AdminEmails",
+      "source": "Send emails to",
+      "positively_korean": true
+    },
+    {
+      "controller": "AdminEmails",
+      "source": "Both, with text format automatically generated",
+      "positively_korean": true
+    },
+    {
+      "controller": "AdminEmails",
+      "source": "Send a test email to",
+      "positively_korean": true
+    },
+    {
+      "controller": "AdminLogs",
+      "source": "Severity (0-4)",
+      "positively_korean": true
+    },
+    {
+      "controller": "AdminLogs",
+      "source": "Indicate the minimum log levels that will be saved in database.",
+      "positively_korean": true
+    },
+    {
+      "controller": "AdminLogs",
+      "source": "Send emails to",
+      "positively_korean": true
+    },
+    {
+      "controller": "AdminAdminAPI",
+      "source": "Before enabling the Admin API, you must be sure to:",
+      "positively_korean": true
+    },
+    {
+      "controller": "AdminAdminAPI",
+      "source": "Admin API forces the use of HTTPS with TLSv1.2 or higher, you can disable this check for debug mode only.",
+      "positively_korean": true
+    }
+  ],
+  "inputs": [
+    "admin-readiness-outcome-safe.json",
+    "admin-readiness-six-focused-safe.json",
+    "copy-language-label-context-safe.json"
+  ],
+  "no_full_locale_coverage_claim": true
+}

@@ -1,0 +1,28 @@
+{
+  "passed": true,
+  "unique_authorized_native_click": true,
+  "exactly_one_policy_save_proven_by_append_and_version": true,
+  "native_click_return_ms": 27.52,
+  "native_form_post_started_after_click_return": true,
+  "first_form_post_request_relative_ms": 33.33,
+  "first_form_redirect_status": 302,
+  "first_form_redirect_relative_ms": 161.79,
+  "first_chain_document_status": 200,
+  "first_chain_document_relative_ms": 4313.06,
+  "fresh_admin_session_exact_13_fields": true,
+  "domain_proof": {
+    "passed": true,
+    "policy_rows_appended": 1,
+    "policy_audit_rows_appended": 1,
+    "all_prior_policy_audit_rows_preserved": true,
+    "unchanged_other_domain_tables": 10,
+    "unchanged_native_acl_audit_and_customer_tables": 9,
+    "unchanged_native_critical_manifests": 3,
+    "policy_version_increment_exactly_one": true,
+    "identical_policy_payload": true
+  },
+  "initial_diagnostic_failure_preserved": "browser-initial-auxiliary-post-count-failure.json",
+  "initial_failure_qualification": "Instrumentation counted all four browser POST request IDs, not only the native policy form. Three later POST targets were not retained and are not classified here. Exact policy save count is instead independently proven by one version increment and one policy/audit append. No second save occurred.",
+  "modified_ci_wait_executed_on_native_old_form": false,
+  "modified_wait_qualification": "Browser had already closed before ci_finish added stale-old-form completion helper; this focus proves the race and explicit version completion, not actual execution of the later helper. Fresh full QA owns that coverage."
+}

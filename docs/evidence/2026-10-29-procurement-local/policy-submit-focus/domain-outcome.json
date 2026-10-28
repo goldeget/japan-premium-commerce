@@ -1,0 +1,1 @@
+{"passed":true,"policy_rows_appended":1,"policy_audit_rows_appended":1,"all_prior_policy_audit_rows_preserved":true,"unchanged_other_domain_tables":10,"unchanged_native_acl_audit_and_customer_tables":9,"unchanged_native_critical_manifests":3,"policy_version_increment_exactly_one":true,"identical_policy_payload":true}

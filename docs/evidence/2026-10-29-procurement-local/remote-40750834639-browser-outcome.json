@@ -1,0 +1,1 @@
+{"passed": false, "stages": {"native_policy_invalid_csrf_no_write": true}, "failed_stage": "native_policy_save_fresh_readback"}

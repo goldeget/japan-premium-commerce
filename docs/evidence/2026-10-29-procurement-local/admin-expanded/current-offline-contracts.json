@@ -1,0 +1,1 @@
+{"cached_results_reused": false, "fresh_current_source": true, "groups": [{"exit_code": 0, "passed": true, "scope": "procurement", "tests": 9}, {"exit_code": 0, "passed": true, "scope": "admin_locale", "tests": 60}], "passed": true}

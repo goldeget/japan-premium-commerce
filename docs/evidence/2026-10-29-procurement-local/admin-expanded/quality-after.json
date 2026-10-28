@@ -1,0 +1,115 @@
+{
+  "passed": true,
+  "read_only": true,
+  "browser_closed": true,
+  "scope": "seven_previously_observed_native_destinations_only_no_full23_repeat",
+  "source_catalogue_sha256": "737d54d2b9f07bc25abac7e726f36d019a1cbfde2c37787589f28db62b0ea603",
+  "korean_overlay_sha256": "e5a16d0da4fc56979c35d8f481be23db98dd00849f1e16d625c4f030ac5a0556",
+  "known_korean_source_pairs": 69,
+  "pages": [
+    {
+      "controller": "AdminParentMailTheme",
+      "final_path_normalized": "/admin-kuranea/improve/design/mail_theme/",
+      "actual_html_language": "ko-KR",
+      "http_status": 200,
+      "positive_native_page": true,
+      "expected_original_static_pairs": 1,
+      "positively_translated_original_pairs": 1,
+      "missing_static_pairs": [],
+      "remaining_nontechnical_english": [],
+      "preserved_technical_format_labels": [],
+      "email_navigation_positive": false
+    },
+    {
+      "controller": "AdminImages",
+      "final_path_normalized": "/admin-kuranea/improve/design/image-settings/",
+      "actual_html_language": "ko-KR",
+      "http_status": 200,
+      "positive_native_page": true,
+      "expected_original_static_pairs": 4,
+      "positively_translated_original_pairs": 4,
+      "missing_static_pairs": [],
+      "remaining_nontechnical_english": [],
+      "preserved_technical_format_labels": [
+        "WebP",
+        "AVIF"
+      ],
+      "email_navigation_positive": false
+    },
+    {
+      "controller": "AdminParentTaxes",
+      "final_path_normalized": "/admin-kuranea/improve/international/taxes/",
+      "actual_html_language": "ko-KR",
+      "http_status": 200,
+      "positive_native_page": true,
+      "expected_original_static_pairs": 1,
+      "positively_translated_original_pairs": 1,
+      "missing_static_pairs": [],
+      "remaining_nontechnical_english": [],
+      "preserved_technical_format_labels": [],
+      "email_navigation_positive": false
+    },
+    {
+      "controller": "AdminParentCustomerPreferences",
+      "final_path_normalized": "/admin-kuranea/configure/shop/customer-preferences/",
+      "actual_html_language": "ko-KR",
+      "http_status": 200,
+      "positive_native_page": true,
+      "expected_original_static_pairs": 1,
+      "positively_translated_original_pairs": 1,
+      "missing_static_pairs": [],
+      "remaining_nontechnical_english": [],
+      "preserved_technical_format_labels": [],
+      "email_navigation_positive": false
+    },
+    {
+      "controller": "AdminParentRequestSql",
+      "final_path_normalized": "/admin-kuranea/configure/advanced/sql-requests/",
+      "actual_html_language": "ko-KR",
+      "http_status": 200,
+      "positive_native_page": true,
+      "expected_original_static_pairs": 1,
+      "positively_translated_original_pairs": 1,
+      "missing_static_pairs": [],
+      "remaining_nontechnical_english": [],
+      "preserved_technical_format_labels": [],
+      "email_navigation_positive": true
+    },
+    {
+      "controller": "AdminExtraPropertyDefinitions",
+      "final_path_normalized": "/admin-kuranea/configure/advanced/extra-property-definitions/",
+      "actual_html_language": "ko-KR",
+      "http_status": 200,
+      "positive_native_page": true,
+      "expected_original_static_pairs": 4,
+      "positively_translated_original_pairs": 4,
+      "missing_static_pairs": [],
+      "remaining_nontechnical_english": [],
+      "preserved_technical_format_labels": [],
+      "email_navigation_positive": true
+    },
+    {
+      "controller": "AdminPsClassicEditionHomepageController",
+      "final_path_normalized": "/admin-kuranea/modules/psclassicedition/homepage",
+      "actual_html_language": "ko-KR",
+      "http_status": 200,
+      "positive_native_page": true,
+      "expected_original_static_pairs": 2,
+      "positively_translated_original_pairs": 2,
+      "missing_static_pairs": [],
+      "remaining_nontechnical_english": [],
+      "preserved_technical_format_labels": [],
+      "email_navigation_positive": false
+    }
+  ],
+  "original_pairs_expected": 14,
+  "original_pairs_positively_translated": 14,
+  "storage": {
+    "passed": true,
+    "unchanged_domain_tables": 12,
+    "unchanged_native_acl_audit_tables": 8,
+    "unchanged_native_navigation_tables": 2,
+    "unchanged_native_critical_manifests": 3
+  },
+  "new_captures": 0
+}

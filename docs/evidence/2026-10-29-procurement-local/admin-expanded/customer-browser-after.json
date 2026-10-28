@@ -1,0 +1,89 @@
+{
+  "pages": [
+    {
+      "controller": "AdminModulesPositions",
+      "native_http_200": true,
+      "actual_html_language": "ko-KR",
+      "authenticated_native_main": true,
+      "expected_sources": 1,
+      "positively_translated_sources": 1,
+      "missing_source_evidence": [],
+      "original_english_remaining": [],
+      "all_static_english_candidates": 0
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "native_http_200": true,
+      "actual_html_language": "ko-KR",
+      "authenticated_native_main": true,
+      "expected_sources": 11,
+      "positively_translated_sources": 11,
+      "missing_source_evidence": [],
+      "original_english_remaining": [],
+      "all_static_english_candidates": 0
+    },
+    {
+      "controller": "AdminPPreferences",
+      "native_http_200": true,
+      "actual_html_language": "ko-KR",
+      "authenticated_native_main": true,
+      "expected_sources": 6,
+      "positively_translated_sources": 6,
+      "missing_source_evidence": [],
+      "original_english_remaining": [],
+      "all_static_english_candidates": 0
+    },
+    {
+      "controller": "AdminParentMeta",
+      "native_http_200": true,
+      "actual_html_language": "ko-KR",
+      "authenticated_native_main": true,
+      "expected_sources": 3,
+      "positively_translated_sources": 3,
+      "missing_source_evidence": [],
+      "original_english_remaining": [],
+      "all_static_english_candidates": 0
+    },
+    {
+      "controller": "AdminPerformance",
+      "native_http_200": true,
+      "actual_html_language": "ko-KR",
+      "authenticated_native_main": true,
+      "expected_sources": 2,
+      "positively_translated_sources": 2,
+      "missing_source_evidence": [],
+      "original_english_remaining": [],
+      "all_static_english_candidates": 0
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "native_http_200": true,
+      "actual_html_language": "ko-KR",
+      "authenticated_native_main": true,
+      "expected_sources": 14,
+      "positively_translated_sources": 14,
+      "missing_source_evidence": [],
+      "original_english_remaining": [],
+      "all_static_english_candidates": 0
+    }
+  ],
+  "expected_original_static_english_sources": 37,
+  "same_native_authenticated_admin_session": true,
+  "read_only": true,
+  "no_screenshots": true,
+  "actual_source_catalog_sha256": "737d54d2b9f07bc25abac7e726f36d019a1cbfde2c37787589f28db62b0ea603",
+  "actual_korean_overlay_sha256": "e5a16d0da4fc56979c35d8f481be23db98dd00849f1e16d625c4f030ac5a0556",
+  "original_23_scan_preserved": true,
+  "positively_translated_original_sources": 37,
+  "storage": {
+    "passed": true,
+    "unchanged_domain_tables": 12,
+    "unchanged_native_acl_audit_tables": 8,
+    "unchanged_native_navigation_tables": 2,
+    "unchanged_native_critical_manifests": 3
+  },
+  "passed": true,
+  "browser_closed": true,
+  "exact_original_source_domain_pairs_verified": 37,
+  "missing_original_source_domain_pairs": []
+}

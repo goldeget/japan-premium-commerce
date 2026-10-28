@@ -1,14 +1,22 @@
 # ORDENOWA AI Browser QA Handoff
 
-## 현재 Codex·독립 화면 검수 연결 — 2026-10-29
+## 현재 Cloud Codex·독립 화면 검수 — 2026-10-29
 
-코드 체크포인트 work `6f9c301d6cb4070c2fb440400a0c2a86e2a5ff8b`, main 원본 유지. Cloud Codex가 실제 로컬 Chromium/ChromeDriver로 HTTP·DOM·입력·키보드·저장/재조회 검증을 수행했다. 고객 핵심: 배정→수량2확인/요청→승인0P→명시적100P→재로그인100P→연결정정80P. B의 foreign GET/POST 거부·B인증 유지·A원본 보존과 제한 직원403을 실제 확인했다.
+검증 코드 **`8663e96cdd240be52cd812f4e1d62e1edaa55ee4`**, 원격 work 저장·파일 재조회 일치, main 원본 유지. 전체38phase [#40756263392](https://github.com/goldeget/japan-premium-commerce/actions/runs/40756263392)는 진행 중이다. Cloud Codex는 실제 Chromium/ChromeDriver로 HTTP/DOM/입력/키보드·저장/재조회를 수행했다. 외부 Work Mode 세션에 직접 전달하지 않았다. Codex 패널 요청의 queued/무응답은 GUI 접근·검수 성공의 근거가 아니다.
 
-UI를 작성하지 않은 독립 GPT에 실제 안전한 PNG를 전달했고 고객21+54장, 공개 정적 구성요소42장, 언어 선택기3장을 실제 열어 검수했다. 확인된 모바일 header/계정 접근성 문제는 수정 후 재검수했다. 증거: [검수 묶음](evidence/2026-10-29-procurement-local/README.md), [독립 검수](evidence/2026-10-29-procurement-local/INDEPENDENT_REVIEW.md), [제한된 수동 판정](evidence/2026-10-29-procurement-local/BOUNDED_MANUAL_REVIEW.md). 동적 개인정보/토큰/고객 값은 마스킹한다. 관리자5개 화면 PC/tablet과 bad body token403의12PNG도 별도 GPT가 모두 열어 top viewport를 검수했다. 아래 정책 필드/저장버튼·비어 있던 pending 검토 조작은 이 시각 범위 밖이다.
+검수한 핵심: 배정→수량2확인/요청→승인0P→별도100P→재로그인100P→정정80P, B foreign GET/POST 거부·B인증 유지·A원본 보존, 제한 직원403, 문의 공개/내부 분리. 기대 결과는 본인 상품/요청만 표시하고 cart/shipping/payment/withdraw 흐름이 없는 것이다.
 
-품질3 JA7경로·84 DOM/axe·14실제 클릭·14 Lighthouse PASS. JA/EN/KO 시각/확인폼은 별도 브라우저 결과다. 전체WCAG·실기기·실사용INP·실제 Amazon/Rakuten 원문 완료로 확대하지 않는다. 로컬 이미지 bd1ced8+최종 소스 정렬/집중 검사 근거이며 전체 immutable candidate 인수는 [#40749362584](https://github.com/goldeget/japan-premium-commerce/actions/runs/40749362584),6f9c301 진행 결과로 판정한다. 앞선3run은 앱 설치 전 빌드 FAIL이고 원인을 portable CI 설정으로 수정했다.
+UI를 작성하지 않은 별도 GPT가 안전한 고객21+54PNG, 공개 정적 구성요소42PNG, 최종 언어 선택기3PNG 및 native 관리자12PNG를 모두 실제 열어 검수했다. [독립 결과](evidence/2026-10-29-procurement-local/INDEPENDENT_REVIEW.md), [제한된 접근성 판정](evidence/2026-10-29-procurement-local/BOUNDED_MANUAL_REVIEW.md), [관리자 top viewport](evidence/2026-10-29-procurement-local/reviewed-admin-native/INDEPENDENT_REVIEW.md)를 따른다. 관리자 하단 정책 필드/저장 버튼·일부 비어 있던 pending 조작은 그 캡처 범위 밖이며 실제 기능 E2E와 구분한다.
 
-외부 Work Mode 세션 직접 전달은 수행하지 않았다. Codex 패널 열기 요청·queued 또는 무응답은 실제 GUI 검수 완료 근거가 아니다. 동일 코드 수정·CI 실행을 중복하지 말고 새 artifact의 SHA·실제 outcome·aggregate를 확인한 뒤 독립 시각/사용성 검수만 수행한다. 변경 화면/기대결과: 상품·하위카테고리·사진·수량확인/요청상태·문의/포인트·정정연결/알림/정책/한국어 배정·검토·지급·감사·정책관리. 본인 상품/요청만 보이며 cart/shipping/payment/withdraw 링크가 없어야 한다.
+이번 변경 화면은 한국어 native 이미지/모듈/상품설정/SEO/성능/실험기능/배송설정/메일/로그/API/언어복사/CareCenter 및 메뉴명이다. 기존 노출 UI의 번역만 보강하며 배송·반품·checkout을 새 출시 기능으로 추가하지 않는다.69개 메뉴노드의 현재 화면을 대조한 뒤 변경 영향19건을 실제 집중 재검증했다. 한국어69번역·이메일 메뉴·원본/대상 언어 라벨, 선택값/CSRF/업무·권한/TabLang 보존을 확인했다. [안전한 DOM 결과](evidence/2026-10-29-procurement-local/admin-expanded/)는 캡처 시각 인수와 구분한다.
+
+최종 full artifact가 나오면 동일 SHA의 실제 category/하위메뉴9PNG·확인9PNG·gallery2PNG를 독립 검수한다. 아직 새 fresh category 이미지를 열었다고 주장하지 않는다. 실제 Amazon/Rakuten·실기기·전체WCAG/실사용INP 완료로 확대하지 않는다. 같은 코드 수정·동일 CI를 중복 실행하지 않고 artifact SHA·실제 outcome·aggregate·cleanup을 확인한다.
+
+### 최신 fresh 초기값 불일치와 증거 수집
+
+ad51cff의 전체 #40755121454는 **3phase PASS/module_seed FAIL/후속34not_run/cleanup success**다. 새13메뉴의 엄격한 한국어 초기값 assertion에서 실패했고 당시 로그에는 대상 클래스가 없어, 올바른 기존 한국어 표현 보존과의 기대값 충돌인지 실제 초기화 결함인지 아직 확정하지 않는다. artifact12845373313 SHA256 `115a8c0c4d9e4c4a112b3814aaead0feed688a4e02c54134753cc12620786cca`.
+
+8663e96은 앱을 바꾸지 않고, 원래 엄격한13개 assertion 전에 고정 클래스의 존재/owner/일치/기본영문/Hangul/중복 여부만 안전하게 보존한다. 이름 원문·ID·토큰은 넣지 않고 실패 후에도 JSON을 복사한다.5개 진단 fixture/기존9계약·lint 통과 후 위 실행에서 새 증거를 수집 중이다. 실패를 성공으로 바꾸거나 확인되지 않은 원인을 수정했다고 기록하지 않는다. 앱1140파일은 ad51cff와 동일하다.
 
 ---
 

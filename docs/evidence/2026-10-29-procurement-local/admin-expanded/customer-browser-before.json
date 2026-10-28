@@ -1,0 +1,586 @@
+{
+  "read_only": true,
+  "candidate_controllers": 23,
+  "actual_owned_native_gets": 23,
+  "http_200": 21,
+  "http_500": 1,
+  "http_503": 1,
+  "positive_authenticated_main_pages": 21,
+  "actual_html_languages": [
+    "ko-KR"
+  ],
+  "confirmed_static_english_occurrences": 37,
+  "static_english_pages": [
+    "AdminFeatureFlag",
+    "AdminModulesPositions",
+    "AdminPPreferences",
+    "AdminParentMeta",
+    "AdminPerformance",
+    "AdminPsOnePageCheckout"
+  ],
+  "static_english_evidence": [
+    {
+      "controller": "AdminModulesPositions",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentThemes",
+        "AdminModulesPositions"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "Module positions",
+      "tag": "H1",
+      "source_domains": [
+        "AdminNavigationMenu"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentThemes",
+        "AdminPsOnePageCheckout"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "Checkout layout",
+      "tag": "H3",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentThemes",
+        "AdminPsOnePageCheckout"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "Recommended",
+      "tag": "SPAN",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentThemes",
+        "AdminPsOnePageCheckout"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "Propose the best checkout experience to your clients with the one-page layout. All the payment steps will be displayed in one page and let you benefit from:",
+      "tag": "P",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentThemes",
+        "AdminPsOnePageCheckout"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "Reduced time spent, less clicks & no extra-step",
+      "tag": "LI",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentThemes",
+        "AdminPsOnePageCheckout"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "Increased conversion with a seamless and frictionless experience",
+      "tag": "LI",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentThemes",
+        "AdminPsOnePageCheckout"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "Mobile-friendly checkout",
+      "tag": "LI",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentThemes",
+        "AdminPsOnePageCheckout"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "Four-page checkout",
+      "tag": "SPAN",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentThemes",
+        "AdminPsOnePageCheckout"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "Propose a step-by-step checkout experience. All the usual payment steps will be displayed on different screens. Choose this method if:",
+      "tag": "P",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentThemes",
+        "AdminPsOnePageCheckout"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "You need flexibility for complex or specific information",
+      "tag": "LI",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentThemes",
+        "AdminPsOnePageCheckout"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "You're under regulatory compliance",
+      "tag": "LI",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPsOnePageCheckout",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentThemes",
+        "AdminPsOnePageCheckout"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "You want to integrate upsell & cross-sell strategies",
+      "tag": "LI",
+      "source_domains": [
+        "ModulesOnepagecheckoutAdmin"
+      ]
+    },
+    {
+      "controller": "AdminPPreferences",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "ShopParameters",
+        "AdminPPreferences"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "Quantity discounts based on",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminShopparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminPPreferences",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "ShopParameters",
+        "AdminPPreferences"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "Category used in breadcrumbs",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminShopparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminPPreferences",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "ShopParameters",
+        "AdminPPreferences"
+      ],
+      "context": "static_help_or_alert",
+      "label": "In the product page, feature values can be sorted alphabetically by value or by position.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminShopparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminPPreferences",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "ShopParameters",
+        "AdminPPreferences"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "Default pack stock behavior",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminShopparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminPPreferences",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "ShopParameters",
+        "AdminPPreferences"
+      ],
+      "context": "static_help_or_alert",
+      "label": "Allow or deny customers to order products that are out of stock. Further customization is possible for each product.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminShopparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminPPreferences",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "ShopParameters",
+        "AdminPPreferences"
+      ],
+      "context": "static_help_or_alert",
+      "label": "The default order in which products are displayed in listings. The available sorting methods differ based on the page type.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminShopparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminParentMeta",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "ShopParameters",
+        "AdminParentMeta"
+      ],
+      "context": "static_help_or_alert",
+      "label": "Only available keywords for a given route can be used",
+      "tag": "LI",
+      "source_domains": [
+        "AdminShopparametersNotification"
+      ]
+    },
+    {
+      "controller": "AdminParentMeta",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "ShopParameters",
+        "AdminParentMeta"
+      ],
+      "context": "static_help_or_alert",
+      "label": "It's regenerated automatically during certain actions in the back office, but you can manually regenerate it using the button below if needed.",
+      "tag": "DIV",
+      "source_domains": [
+        "AdminShopparametersNotification"
+      ]
+    },
+    {
+      "controller": "AdminParentMeta",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "ShopParameters",
+        "AdminParentMeta"
+      ],
+      "context": "static_help_or_alert",
+      "label": "Don't edit this file manually - use the appropriate hooks to modify its content.",
+      "tag": "DIV",
+      "source_domains": [
+        "AdminShopparametersNotification"
+      ]
+    },
+    {
+      "controller": "AdminPerformance",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminPerformance"
+      ],
+      "context": "static_help_or_alert",
+      "label": "(Optional) Insert a cookie name to enable the debug mode only when this cookie is set.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminPerformance",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminPerformance"
+      ],
+      "context": "static_help_or_alert",
+      "label": "(Optional) Insert a value to enable the debug mode only when the cookie configured above is set to this value.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminFeatureFlag"
+      ],
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the merchandise return page.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminFeatureFlag"
+      ],
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the tag page.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminFeatureFlag"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "Hook a module",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminDesignFeature"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminFeatureFlag"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "Quick access",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminAdvparametersFeature",
+        "AdminNavigationMenu"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminFeatureFlag"
+      ],
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the migrated quick access page.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminFeatureFlag"
+      ],
+      "context": "static_help_or_alert",
+      "label": "Experimental API endpoints are disabled by default in prod environment, this configuration allows to forcefully enable them.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminFeatureFlag"
+      ],
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the new front container.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminFeatureFlag"
+      ],
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the customer group page.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminFeatureFlag"
+      ],
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the store page.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminFeatureFlag"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "Improved shipment",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminAdvparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminFeatureFlag"
+      ],
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the newly improved shipment system.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminFeatureFlag"
+      ],
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the new discount system.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminFeatureFlag"
+      ],
+      "context": "semantic_static_control_or_heading",
+      "label": "New pricing",
+      "tag": "LABEL",
+      "source_domains": [
+        "AdminAdvparametersFeature"
+      ]
+    },
+    {
+      "controller": "AdminFeatureFlag",
+      "navigation_class_path": [
+        "CONFIGURE",
+        "AdminAdvancedParameters",
+        "AdminFeatureFlag"
+      ],
+      "context": "static_help_or_alert",
+      "label": "Enable / Disable the new pricing system. This feature introduces an improved pricing engine.",
+      "tag": "SMALL",
+      "source_domains": [
+        "AdminAdvparametersHelp"
+      ]
+    }
+  ],
+  "technical_documentation_url_occurrences": 2,
+  "unavailable_pages": [
+    {
+      "controller": "AdminPsMboTheme",
+      "navigation_class_path": [
+        "IMPROVE",
+        "AdminParentThemes",
+        "AdminPsMboTheme"
+      ],
+      "final_path_normalized": "/admin-kuranea/modules/mbo/themes/catalog/",
+      "final_query_controller": "",
+      "actual_html_language": "ko-KR",
+      "has_main": true,
+      "http_status": 503,
+      "login_redirect": false
+    },
+    {
+      "controller": "Marketing",
+      "navigation_class_path": [
+        "IMPROVE",
+        "Marketing"
+      ],
+      "final_path_normalized": "/admin-kuranea/",
+      "final_query_controller": "AdminPsfacebookModule",
+      "actual_html_language": "ko-KR",
+      "has_main": false,
+      "http_status": 500,
+      "login_redirect": false
+    }
+  ],
+  "source_catalogue_sha256": "737d54d2b9f07bc25abac7e726f36d019a1cbfde2c37787589f28db62b0ea603",
+  "catalogue_key_count": 6155,
+  "first_diagnostic_marketing_skip_preserved": true,
+  "marketing_followup_qualification": "Initial harness retained only Admin-prefixed menu IDs. Exactly one Marketing-only follow-up accepted this source-known native Tab classname; other22 destinations were not repeated.",
+  "no_full_admin_korean_completion_claim": true,
+  "no_unique_leaf_claim_parent_aliases_preserved": true,
+  "storage": {
+    "passed": true,
+    "unchanged_domain_tables": 12,
+    "unchanged_native_acl_audit_tables": 8,
+    "unchanged_native_navigation_tables": 2,
+    "unchanged_native_critical_manifests": 3
+  },
+  "browser_closed": true
+}

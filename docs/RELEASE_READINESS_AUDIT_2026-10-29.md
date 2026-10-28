@@ -2,91 +2,65 @@
 
 ## 현재 판정과 코드 기준
 
-**새 플랫폼의 출시 인수는 아직 완료되지 않았다. 현재 차단점은 동일 후보의 fresh 통합 QA와 실제 상품·운영 환경·기기 인수다.** 현재까지 관측한 앱 결함은 원인별로 수정하고 아래 범위의 실제 결과를 남겼다. 로컬 집중 성공을 최종 새 이미지의 전체 성공으로 확대하지 않는다.
+**핵심 기능의 구현·로컬 집중 검증을 완료했고, 고정 후보 전체 인수와 실제 상품/운영 환경 인수는 남아 있다. 운영 출시 완료는 아니다.** 검증 후보 `8663e96cdd240be52cd812f4e1d62e1edaa55ee4`를 원격 work에 저장하고 변경 파일을 다시 읽어 일치 확인했다. main `ee02a3657448d563508687614a246e05ac61eecd`와 기존 사용자 파일/DB/volume을 보존했다.
 
-제품은 **운영자 상품 안내·배정 → 고객 상품/수량 확인·발주 요청 → 운영자 수동 검토 → 별도 명시적 포인트 지급·정정 → 고객 잔액/내역 표시**다. 판매 checkout·배송·반품/상품환불·포인트 사용/현금 환산/송금/출금은 확정된 범위 제외다. 기존 코드와 과거 QA 성공은 보존한다.
+제품은 **운영자 상품 안내·배정 → 고객 상품/수량 확인·발주 요청 → 수동 검토 → 별도 명시적 포인트 지급·연결 정정 → 본인 잔액/내역 표시**다. 판매결제·배송·반품/상품환불·포인트 충전/사용/양도/현금환산/송금/출금은 확정 범위 제외다. 이전 소매 코드·데이터·QA 성공은 보존한다.
 
-- 이번 재확인 기준 로컬/원격 `work`: **`6f9c301d6cb4070c2fb440400a0c2a86e2a5ff8b`**. 원격 `main`: **`ee02a3657448d563508687614a246e05ac61eecd`**, 보존 확인.
-- 실제 로컬 소스 정렬 체크포인트는 `cc99bbb42031a03493dc2df3969d8c6caf00abd2`다. `cc99bbb..6f9c301`의 차이는 workflow와 CI 실패 진단/실행기 파일이며 앱 모듈·테마는 바뀌지 않았다. CI 실행기 변경은 fresh 검증으로 확인해야 한다.
-- [승인 설계](superpowers/specs/2026-10-29-ordenowa-procurement-points-platform-design.md), [현 요구사항표](RELEASE_REQUIREMENTS_MATRIX.md), [보존된 로컬 증거](evidence/2026-10-29-procurement-local/README.md)를 대조했다. 아래 보관자료의 소매39행과 당시7개 실패는 현 범위의 새 미구현 목록이 아니다.
+## 실제 원격 QA와 원인 수정
 
-## 최신 hosted QA — 성공으로 바꾸지 않은 결과
-
-Actions의 실제 status/conclusion과 실행 SHA, artifact 목록을 재조회했다. 세 fresh 실행은 모두 build/up 준비 중 실패했으며 **새 native 기능 전체 PASS는 없다**.
-
-| 실행·검증 SHA | 실제 결과 | 사용할 수 있는 근거 |
-| --- | --- | --- |
-| [#40746215184](https://github.com/goldeget/japan-premium-commerce/actions/runs/40746215184) · `4f8c18e` | FAILURE | `fresh_install` 이전 준비 실패, 후속36단계 not_run, cleanup 성공. 당시 private build 로그가 보존되지 않아 첫 직접 원인은 확정하지 않는다. [artifact12840743415](https://github.com/goldeget/japan-premium-commerce/actions/runs/40746215184/artifacts/12840743415), [보존 outcome](evidence/2026-10-29-procurement-local/remote-first-fresh-outcome.json). |
-| [#40747596953](https://github.com/goldeget/japan-premium-commerce/actions/runs/40747596953) · `77b2ceb` | FAILURE | 후속 hosted build/up 준비 실패. native 기능 인수에 도달한 증거가 아니다. [artifact12841243413](https://github.com/goldeget/japan-premium-commerce/actions/runs/40747596953/artifacts/12841243413). |
-| [#40748071562](https://github.com/goldeget/japan-premium-commerce/actions/runs/40748071562) · `4faa400` | FAILURE | 불필요한 Compose Bake host-network 및 외부 CA 파일 관련 entitlement가 확인된 준비 실패. 6f9c301에서 managed 전용 설정을 분리하고 hosted 표준 network/이미지 CA로 수정했다(집중5검사 PASS). 앱 기능 실패나 전체 통과로 판정하지 않는다. [artifact12841443567](https://github.com/goldeget/japan-premium-commerce/actions/runs/40748071562/artifacts/12841443567). |
-| [#40746034641](https://github.com/goldeget/japan-premium-commerce/actions/runs/40746034641) · `cc99bbb` | SUCCESS | 해당 저비용 집중/사전 검사 범위. fresh 이미지·브라우저·전체 native aggregate를 대신하지 않는다. |
-| 과거 전체 [#40508152705](https://github.com/goldeget/japan-premium-commerce/actions/runs/40508152705) · `f5b1cca` | SUCCESS 보존 | 당시 소매 범위의 회원·주소·검색·SEO·검수·보안·PWA·합성 Push·메일·상담·계좌이체·배송·반품·복원 성공. 현재 발주/포인트 후보 전체 성공을 뜻하지 않는다. |
-
-**최종 CI 결과: [#40749362584](https://github.com/goldeget/japan-premium-commerce/actions/runs/40749362584),6f9c301 검증 중.** CI 수정 후 안정된 work 후보의 새 실행 SHA·run·실제 phase outcome/aggregate·cleanup·artifact를 주담당이 이 자리에 연결한다. 실행 시작이나 녹색 개별 step만으로 완료 처리하지 않는다. 새 증거 없이 같은 실패 검사를 반복하거나 권한·CSRF·고객 격리·assertion을 약화하지 않는다.
-
-## 다섯 상태와 현재 기능별 판정
-
-| 상태 | 뜻 |
+| 실행/코드 | 실제 결과·사용 가능한 근거 |
 | --- | --- |
-| 구현과 해당 범위 검증 완료 | 명시된 실제 집중 검증 범위의 완료. 전체 출시 완료와 구분한다. |
-| 구현됐으나 검증 미완료 | 동작 코드와 부분 근거가 있으나 필요한 통합·실물·현장 근거가 남는다. |
-| 구현 미완료 | 현재 필수 동작에서 확인한 코드 공백. 추정이나 파일 부재만으로 지정하지 않는다. |
-| 외부 자료·운영 환경 대기 | 실제 원문 접근·승인 자료·실기기·운영값/접근에 의존한다. |
-| 기존에 명시적으로 확정된 범위 제외 | 최신 사용자 정의의 제외 범위. 출시 개발 잔여에 합산하지 않는다. |
+| [#40756263392](https://github.com/goldeget/japan-premium-commerce/actions/runs/40756263392),8663e96 | 최신 전체38phase 진행 중. 원래13개 초기값 assertion 유지, 실패 후에도 안전한 클래스별 metadata 상태를 보존. 앱은 ad51cff 동일. |
+| [#40755121454](https://github.com/goldeget/japan-premium-commerce/actions/runs/40755121454),ad51cff |3phase PASS/module_seed FAIL/34not_run/cleanup success. 새13메뉴 초기값 불일치의 대상이 원래 로그에 없어 원인 미확정. artifact12845373313. |
+| [#40755121457](https://github.com/goldeget/japan-premium-commerce/actions/runs/40755121457),ad51cff | 경량 business-profile 실제 SUCCESS. 전체 native 인수를 대신하지 않는다. |
+| #40750834639,1aca9e9 |28phase PASS/native_browser FAIL/후행9 not_run/cleanup success. 정책 저장 뒤 즉시 종료할 수 있는 순서 문제를 실제 POST timing으로 대조했다. artifact12844705387. |
+| #40749362584,6f9c301 |28phase PASS/native_browser FAIL/후행9 not_run/cleanup success. raw auth+id_lang404를 native 생성 경로로 고쳐 실제 A/B 신원을 확인했다. artifact12843502379. |
+| #40748071562,4faa400 / #40747596953,77b2ceb | image_build FAIL/나머지37 not_run/cleanup success. 마지막 안전 tail로 Bake host network/외부CA entitlement 요구 확인 후 표준 hosted 설정으로 수정. artifacts12841443567/12841243413. |
+| #40746215184,4f8c18e | 초기37phase 중 fresh_install 준비 FAIL/후속36 not_run/cleanup success. private 로그 미보존으로 해당 최초 build 원인은 미확정. artifact12840743415. |
+| #40746034641,cc99bbb / 과거 #40508152705,f5b1cca | 각각 이전 경량 검사 SUCCESS / 당시 소매 전체 SUCCESS 보존. 현 발주/포인트 전체 PASS로 확대하지 않는다. |
 
-| 현재 범위 | 상태 | 실제 완료 근거와 한계 |
-| --- | --- | --- |
-| 상품 안내·수량/기한/version·요청 snapshot·owner/shop/role·멱등 | 구현과 해당 범위 검증 완료 | PHP8.3/MariaDB 행동·실패 rollback·12개 동시 경합 통과. 실제 native A 요청, 고객 B GET/POST 거부와 요청 후 본인 인증·원본 보존, READ 전용 직원 쓰기403을 확인했다. 최종 fresh 후보의 반복 인수는 아래 통합 gate다. |
-| 승인·명시적 수동 지급·연결 정정·잔액/원장 대조 | 구현과 해당 범위 검증 완료 | 실제 native 승인만으로0P → 명시100P → 새 고객 로그인100P → -20P 정정80P. 기본 지급1회·멱등/충돌·실제 경합·정수 한계·각 쓰기 rollback·새 연결 합계 대조 통과. approval과 지급을 같은 동작으로 바꾸지 않았다. |
-| 정책·요청별 문의·공개 답변/내부메모 분리 | 구현과 해당 범위 검증 완료 | 정상 masked body token 저장0→1·새 로그인11필드 유지, 잘못된 body token은 유효한 URL token 유무와 관계없이403/무변경. 실제 문의 저장·replay·고객 B 거부·공개 답변 반영·내부메모 비노출과 정책/문의 각6개 경합 통과. 실제 운영 문안 승인은 별도다. |
-| 알림/outbox·native 메일·유지보수 중단 복구 | 구현과 해당 범위 검증 완료 | 독립 채널·최대5회 backoff·중복 방지·killed sender UNCERTAIN·명시적 재시도 통과. 실제 native outbox5건·재실행 추가0·Mailpit EN1/KO1/JA3 MIME, locale 변경 후 Push receipt 재시도 회귀 통과. 운영 SMTP·실기기 전달은 별도다. |
-| 상품 parser→검수→native 참조·분류/이미지·고객 안내 | 구현됐으나 검증 미완료 | 합성 parser·검수 evidence·same-shop 상품/옵션 경계·native 로컬 이미지2장·고객 안내 연결을 확인했다. 독립 코드 검수에서 AggregateOffer 가격 범위 모호성을 고쳐 불일치/누락 범위는 명시적으로 거부한다. 원문 breadcrumb는 provenance이며 native 분류는 운영자 검토다. fresh 부모/leaf 생성·하위 메뉴/filter/배치 및 실제 Amazon/Rakuten 원문·이미지 호환은 아직 인수되지 않았다. |
-| native 설치·retail 차단·회원/reset·재시작·독립 복원 | 구현됐으나 검증 미완료 | 로컬 실제 boundary, JA/EN 회원 및 KO 수정 집중 검사, 재시작/별도 DB 복원 범위 성공을 보존했다. [기능별 로컬 outcome](evidence/2026-10-29-procurement-local/README.md)은 기존 DB와 당시 수정 runtime의 근거다. 최종 SHA의 clean 설치·전 단계 aggregate·cleanup은 hosted 준비 실패로 미완료다. |
-| 10폭·성능/접근성·키보드·독립 시각 | 구현과 해당 범위 검증 완료 | 소스 일치한 bd1ced8 frontend의 quality3:7경로×원본10폭/밝음·어둠의 layout84·axe84·trusted lab click14·Lighthouse14 통과, 성능99–100·접근성100·공개 SEO100·LCP최대2131.1ms·CLS최대0.0001. 실제54PNG를 별도 GPT가 검수했고 수동27대표 셀/42정적 crop의13개 incomplete 패턴을 판정했다. 자동 incomplete는 지우지 않았다. cc99bbb 언어 선택기 접근성 이름 현지화와 native 옵션/키보드·기존8개 Global key 보존도 집중 확인했다. 전체 WCAG·모든 상태·field INP·실기기 인증은 아니다. |
-| 관리자 한국어·권한 변경 감사 | 구현과 해당 범위 검증 완료 | 실제17관리자 페이지+로그인, 확인한7개 정적 미번역 종료. known native5Tab의 한국어 fallback만 CAS 수정하고 다른 언어/사용자 지정 값/Tab metadata/ACL/직원 profile/12domain 불변과 멱등을 확인했다. locale43·실제 DB12·XLIFF15 parse 통과. 공식 native permission grid의 부모 재귀 READ grant3/revoke3·감사6행·새 조회·원래 ACL/직원 보존 통과. 전체 숨은 오류/메일/보고서의100% 한국어 또는 최종 fresh hook 설치 성공으로 확대하지 않는다. |
-| 안전한 PWA cache·설치 안내·Push provider 구현 | 구현과 해당 범위 검증 완료 | 새 Node2·기존 SW73검사, 실제 native autoload/locked vendor 공존·VAPID ES256·AES128GCM·mock201/410/503·TLS/timeout·Configuration/원장/outbox 무변경 통과. 공개 static cache와 private bypass, 실제 HTTPS/live gate를 유지한다. 실제 기기 설치/수신·철회·업데이트 인수는 외부 대기다. |
-| 실제 상품·운영 정책·운영 환경·기기 | 외부 자료·운영 환경 대기 | 관리망의 Amazon/Rakuten CONNECT403, 실제 사용 근거/상품 샘플·운영 신원/문안·SMTP/HTTPS/keys·배포/감시/복원/기기 근거가 남는다. 자료 목록은 아래 단일 운영 입력표를 재사용한다. |
-| 판매 결제·배송·반품/상품환불·포인트 사용/환전·현금 지갑·출금 | 기존에 명시적으로 확정된 범위 제외 | 발주 요청·수동 수당 원장과 구분한다. 기존 소매 기능을 중복 제작하거나 현 출시 요구로 되돌리지 않는다. |
+[정확한 원본 결과·artifact digest·집중 재검증](TEST_RESULTS.md)을 따른다. 정책 클릭 반환27.52ms 뒤 POST33.33ms 시작·최종200문서4313.06ms를 실제 확인했다. ad51cff는 이전 form의 stale와 새 문서 complete를 **같은30초**에 기다리며 기존 새 세션 버전/값 assertion을 유지한다. 단1회 합성 저장의 정책1+감사1만 추가, 기존행/다른 데이터 보존과 새 세션13값 일치를 확인했다. assertion 생략·무조건 재시도·timeout 연장은 없다.
 
-범위별 행은 크기와 포함 관계가 달라 완료율로 환산하지 않는다. 현재 확인하지 못한 코드 공백을 임의로 만들지 않으며, 부분 검증이 곧 전체 필수 요구 완료라는 주장도 하지 않는다.
+## 구현과 검증 상태
 
-## 소스·화면·검증 증거의 경계
+다섯 상태는 **구현과 해당 범위 검증 완료 / 구현됐으나 검증 미완료 / 구현 미완료 / 외부 자료·운영 환경 대기 / 기존 명시적 범위 제외**다. 완료는 아래의 실제 집중 범위에 한정한다. 전체 원본 요구사항은 [요구사항표](RELEASE_REQUIREMENTS_MATRIX.md)에 유지한다.
 
-이전 hotcopy runtime은 재시작 때 옛 이미지의 entrypoint가 덮어쓴 사례가 있었다. **quality2와 초기 캡처는 당시 상태의 역사적 근거이며 최신 후보 성공이 아니다.** 이후 bd1ced8 이미지 재빌드로 기존 DB/volume을 보존하고 host→image bundle→webroot 일치 및 재시작 전후 데이터를 확인했다. 후속 관리자/캐시/언어 선택기 수정은 명시된 overlay로 반영했다.
+| 기능 | 현재 상태와 근거 |
+| --- | --- |
+| 상품 안내/요청·검토·수동 포인트/정정 | 구현과 해당 범위 검증 완료. PHP8.3/MariaDB rollback·멱등·동시성, 실제 native 수량2 요청·승인0P→별도100P→새 로그인100P→정정80P 확인. B GET/POST 거부·B인증 유지·A원본 보존, 제한 직원403 확인. |
+| 정책·문의·메일/알림·감사 | 구현과 해당 범위 검증 완료. 정상 masked body token 저장/새 조회·잘못된 body403/무변경, 문의 public/private·owner/shop·멱등/6경합, native Mailpit5건·재실행0·JA/EN/KO MIME, 실제 ACL6변경/감사6행 및 원자성31검사. killed sender UNCERTAIN와 독립 채널 재시도도 확인. |
+| 회원/reset·retail 차단·복원/재시작 | 구현과 해당 범위 검증 완료. 3언어 actual account/reset, private/noindex·7경로404와 order의 본인 workspace redirect/commerce5테이블 불변,12domain+native 상담/ACL의 독립 복원·재시작 hash 일치. 최종 immutable 반복 인수는 최신 전체 run에서 판정. |
+| parser→검수→상품/사진/분류 연결 | 구현됐으나 검증 미완료. 합성38행동·모호 AggregateOffer 거부·native inactive/private 상품·승인 로컬2사진·배정 snapshot 확인. fresh 서버의 부모/leaf 저장은 앞선 run에서 통과; 새 고객 하위메뉴/filter·9category PNG 및 실제 쇼핑몰 원문 호환은 아직 미완료. |
+| 관리자 한국어·폼 | 구현과 해당 집중 범위 검증 완료. 기존17화면 외69노드(60정규화 목적지/별칭 포함) GET에서66건200KOmain 확인.69source/domain 번역·13Tab CAS·범위가 고정된 CopyLanguageType raw 라벨을 수정한 뒤 영향19건을 재조회해 한국어/선택값/데이터 보존 확인. locale60/native폼62/DB33/audit13/경량24명령군 통과. 외부2페이지 가용/시각과 모든 미진입 분기의100% 인증은 남는다. |
+| 품질·독립 시각 | 구현과 해당 범위 검증 완료. bd1ced8 frontend 품질3의 JA7경로/10폭+dark 일부:84layout/axe·14실제 클릭·14Lighthouse PASS(성능99–100/접근성100/공개SEO100). 별도 GPT가132safePNG를 실제 검수. 자동 incomplete84셀은 유지,13공통패턴만 수동 판정. 전체WCAG·실사용INP·실기기 인증 아님. |
+| PWA·실제 Push | 정적 cache/개인정보 제외·안내/업데이트와 실제 locked library/mock201/410/503·VAPID/AES128GCM 검증 완료. HTTPS/VAPID/동의/실제 기기 전달·설치·철회는 외부 환경 대기. |
+| 운영 정책·환경 | 외부 자료·운영 환경 대기. 운영자와 LOGISTEED company_reference를 분리하고 승인 정보/SMTP·HTTPS·secret-store·digest/worker/monitoring/backup의 운영 연결은 단일 입력표에서 추적. |
+| 배송·반품·환불·판매결제·포인트 사용/출금 | 기존에 명시적으로 확정된 범위 제외. 기존 화면의 번역은 보존 UI 정비이며 기능 재추가나 운영 자료 요구가 아니다. |
 
-최종 local 정렬 근거는 [cc99bbb source alignment](evidence/2026-10-29-procurement-local/cc99bbb-source-alignment-outcome.json)의 앱1128개/vendor1426개다. 기존 설치 보존과 overlay 조합이므로 immutable fresh 설치 성공을 뜻하지 않는다. hosted fresh run은 같은 후보에서 새로 build·설치·저장/재조회·복원·재시작 지속성을 확인해야 한다.
+## 소스·화면·외부 오류의 증거 경계
 
-- [실제 로컬 기능·품질·이미지 증거 목록](evidence/2026-10-29-procurement-local/README.md)
-- [독립 코드/54PNG 검수와 한계](evidence/2026-10-29-procurement-local/INDEPENDENT_REVIEW.md)
+현재 local1140app/1426vendor의 host→opt→live exact alignment/unknown0, 기본512M/nooverride/www-data cache:clear WITHwarmup5.9초 PASS다. 기존 bd1ced8 이미지에 명시적 ad51cff overlay를 반영한 결과로, 깨끗한 단일 SHA 이미지 설치 성공과 구분한다. 예전 재시작 sync로 hotcopy가 돌아간 사실과 quality2/초기 FAIL은 원본 기록을 유지한다.
+
+- [검증 결과·독립132PNG·원본 실패](evidence/2026-10-29-procurement-local/README.md)
+- [확장 native 관리자/13CAS/19집중/현재소스 preflight](evidence/2026-10-29-procurement-local/admin-expanded/)
 - [bounded 수동 접근성 판정](evidence/2026-10-29-procurement-local/BOUNDED_MANUAL_REVIEW.md)
-- [관리자 한국어와 native CAS proof](evidence/2026-10-29-procurement-local/admin-korean/)
-- [native cache warmup outcome](evidence/2026-10-29-procurement-local/native-cache-warmup-outcome.json): 상류 iterator가 module vendor의 비-template까지 읽던 원인을 module-owned `*.twig` iterator로 교정. core/runtime loader나 메모리 한도를 바꾸지 않고 기본512MB CLI warmup 및 실제 관리자 화면을 확인했다.
+- 테마 마켓플레이스503은 native external-content circuit fallback이며 하위 transport 상세는 미확정이다. Facebook모듈500은 기존 로그의 cURL56 CONNECT403 외부통신 실패다.69조회에서 Facebook별칭2건을 별도 결함2개로 세지 않았다. 관련 native 부가 페이지의 정상 가용/시각 인수는 외부 의존 대기이며, 발주/포인트 controller 결함이나 실제 상품 원문 인수 성공으로 단정하지 않는다.
 
-별도 GPT 팀 내부 검수는 실제 수행했다. **외부 Work Mode 세션에 직접 전달하거나 인수가 완료됐다고 기록하지 않는다.** Codex browser 열기 요청의 queued 응답도 실제 화면 접근 증거로 사용하지 않는다. 비밀값·원문 MIME·주소·고객 이름/ID·토큰은 일반 로그와 공유 산출물에 남기지 않는다.
+별도 GPT 내부 독립 검수는 실제 수행했다. **외부 Work Mode 직접 전달/인수 완료는 수행하지 않았다.** Codex panel queued/무응답도 GUI 접근 성공이 아니다. 비밀값·원문 MIME·개인정보·토큰은 일반 로그와 공유 산출물에 남기지 않는다.
 
 ## 출시를 막는 잔여 — 다섯 범주
 
-| 범주 | 현재 차단 내용 | 닫는 조건 |
+| 범주 | 현재 차단 | 닫는 조건 |
 | --- | --- | --- |
-| 1. 동일 후보의 hosted fresh 통합 | 세 실행이 모두 build 준비에서 중단됐다. 로컬 근거를 대체할 최종37단계 native 전체 결과가 없다. | 실제 필요 범위의 build/CA 권한 경로 수정 → 안정 SHA 한 번의 fresh QA → 전 phase 실제 outcome·aggregate·cleanup·artifact 확인. fresh native hook과 분류 부모/leaf·고객 하위 메뉴/filter 연결도 포함한다. |
-| 2. 실제 상품 원문·분류/사진 인수 | 실제 Amazon Japan/Rakuten은 관리망 CONNECT403으로 미검증이다. 합성 source/기하학 사진은 원문 호환과 이미지 사용 근거가 아니다. | 허용되는 실제 원문/피드/내보내기 접근과 사용 근거 아래 출시 상품의 가격·상세·옵션·사진·분류/검수/snapshot을 대조한다. 차단 우회·임의 최저가 확정·자동 분류 신뢰로 대체하지 않는다. |
-| 3. 실제 운영자·참여자·정책 | 운영자/지원·실제 안내 대상/수량·검토/수당 기준·세 언어 정책의 운영 승인이 남는다. LOGISTEED reference는 운영자 신원이 아니다. | 저장소/대화의 기존 승인 자료를 재사용하고 단일 운영 입력표의 남은 값만 승인 자료와 연결해 native 저장·새 조회·고객 반영을 확인한다. |
-| 4. 운영 환경과 전환 인수 | 실제 domain/HTTPS·SMTP·비밀 저장소·불변 app digest·worker·감시·backup/RPO-RTO/restore owner의 운영 연결 근거가 없다. | 승인 staging의 같은 digest와 최소 권한 구성에서 메일·scheduler·감시·별도 복원/rollback·담당자 인수를 확인한 뒤 기존 운영 전환 승인 절차를 따른다. 이번 작업은 배포 승인이 아니다. |
-| 5. 실기기 전달·PWA 인수 | Chromium/합성 Push·mock HTTP는 실제 iOS/Android 설치·업데이트·수신/철회를 대신하지 않는다. | 승인 HTTPS와 실제 기기로 PWA 설치/standalone/복귀/업데이트 및 동의·Push 수신·철회·재시도를 확인한다. field INP는 현재 미측정으로 남기고 운영 계측과 구분한다. |
+| 1. 고정 후보 통합 검증 | 8663e96 전체38phase 진행 중. | 실제 outcome/aggregate·cleanup·artifact와 fresh category/확인/gallery 독립 시각 검수 확정. 최초 실패만 원인별 집중 해결 후 영향에 따라 검증. |
+| 2. 실제 상품 인수 | Amazon Japan/Rakuten 관리망 CONNECT403. | 승인된 원문/피드/내보내기 접근·이미지 사용 근거에서 출시 상품 가격/상세/옵션/사진/분류/검수/snapshot 대조. 임의 최저가·합성 source·차단 우회로 대체하지 않음. 사용자에게 동일 URL 전체를 다시 요청하지 않음. |
+| 3. 운영자·참여자·정책 승인 | 실제 운영 주체/지원·대상 상품/수량·검토/수당 기준·3언어 정책 승인 대기. | 기존 승인자료 재사용, 미확정 값만 연결해 native 저장/새 조회/고객 반영. LOGISTEED 참조정보를 운영자 신원으로 추정하지 않음. |
+| 4. 운영 환경/전환 | domain/HTTPS·SMTP·비밀 참조·불변 digest·scheduler·감시·백업/RPO-RTO 담당 인수 대기. | 승인 staging에서 같은 digest의 메일·worker·복원/rollback·담당자 검증 후 별도 운영 변경 승인. 이번 작업은 운영 배포 승인이 아님. |
+| 5. 실기기 | iOS/Android 설치·업데이트·Push 실제 수신/철회 미검증. | 승인 HTTPS/기기에서 인수, field INP는 실사용 계측 전까지 미측정으로 분리. |
 
-이 다섯 범주는 같은 미완료를 여러 기능으로 중복 세지 않기 위한 분류다. 선택 디자인이나 새 기능을 추가한 종료 조건이 아니다. 개발/합성 검증과 실제 자료/현장 인수를 구분한 채 독립적으로 가능한 CI 수정은 계속한다.
+## 운영 입력과 종료 기준
 
-## 외부 입력은 한 목록만 사용
-
-필요 값·사용 위치·없어서 막히는 작업은 기존 [현재 서비스의 운영 입력 체크리스트](PRODUCTION_DEPLOYMENT.md#현재-서비스의-운영-입력-체크리스트)에 한 번만 관리한다. 승인된 브랜드·로고·대화/저장소의 자료는 재사용하며 같은 운영 자료 전체를 다시 요청하지 않는다. 실제 비밀은 값 대신 승인 secret-store 참조와 담당자만 기록한다. 과거 보관자료의 seller·세금·carrier·배송/반품/환불·계좌 입력을 현 목록에 다시 넣지 않는다.
-
-## 종료·운영 전환 기준
-
-1. CI 준비 원인을 수정한 최종 후보의 fresh 통합 outcome/aggregate와 artifact를 확정한다. 실패하면 그 최초 원인과 영향을 집중 재검증한다. 초록 step·not_run·무조건 재시도·timeout 증가를 성공으로 바꾸지 않는다.
-2. 위 실제 상품·승인 운영 자료·운영 환경·기기 인수를 같은 승인 release SHA/digest에 연결한다. 전체와 집중, 합성과 실제 원문, 시각과 기능, browser emulation과 실기기를 구분한다.
-3. handoff에는 최종 SHA·원격 저장·artifact·변경 화면·기대 결과·잔여 조건·실제 전달 여부를 남긴다. 운영 DB/volume·main·사용자 파일을 보존하고 별도 승인 없는 운영 배포/실결제/실거래/유료 서비스 사용은 진행하지 않는다.
-
-현재는 이 조건들이 모두 닫히지 않았으므로 출시 완료를 선언하지 않는다. 기존 개발 필수 항목이 실제로 완료되면 그 범위는 완료로 명시하고, 운영 자료 대기는 별도로 표시한다. 검증 뒤 선택 개선을 계속 추가해 작업을 무기한 연장하지 않는다.
+필요 값·사용 위치·차단 작업은 [단일 운영 입력표](PRODUCTION_DEPLOYMENT.md#현재-서비스의-운영-입력-체크리스트)에서 관리한다. 이전 seller/세금/carrier/배송·반품·환불/은행 정보를 현 요구로 다시 넣지 않는다. 새 선택 기능을 추가하지 않고, 고정 후보의 실제 전체 결과·증거·원격 저장을 확정한 뒤 구현 완료와 운영 자료 대기를 구분해 보고한다. 실행하지 않은 배포·실거래·실기기 인수는 완료로 표시하지 않는다.
 
 ## 보관자료 — 이전 소매 39항목 조사와 당시 QA
 

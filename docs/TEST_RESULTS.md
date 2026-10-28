@@ -2,7 +2,7 @@
 
 ## 2026-10-29 현재 발주 플랫폼 검증
 
-코드 체크포인트: `6f9c301d6cb4070c2fb440400a0c2a86e2a5ff8b` (원격 work 일치). 최종 단일 SHA 전체 [#40749362584](https://github.com/goldeget/japan-premium-commerce/actions/runs/40749362584)는 검증 중이며 아직 전체 PASS가 아니다.
+검증 코드: **`8663e96cdd240be52cd812f4e1d62e1edaa55ee4`** (원격 work 저장·변경 파일 일치). 최종 단일 SHA 전체38phase [#40756263392](https://github.com/goldeget/japan-premium-commerce/actions/runs/40756263392)는 진행 중이며 아직 전체 PASS가 아니다.
 
 | 검증 | 실제 결과와 범위 |
 |---|---|
@@ -28,6 +28,26 @@
 - 두 번째 #40747596953(77b2ceb): image_build FAIL/나머지37 not_run/cleanup success; artifact12841243413.
 - 세 번째 #40748071562(4faa400): image_build FAIL/나머지37 not_run/cleanup success; artifact12841443567, ZIP SHA256 `a6f591c558a19097bed40e68a5187d0750bc3410357a7d110637386918cee930`. 보존된 안전 tail에서 host network/외부CA 파일 Bake 권한 요구 확인. 앱 실행 전 실패이며 개인정보 유출·앱 결함으로 단정하지 않는다. 6f9c301에서 원인 수정 후 위 최신 run 검증 중.
 - 과거 쇼핑몰 전체 [#40508152705](https://github.com/goldeget/japan-premium-commerce/actions/runs/40508152705), f5b1cca: 당시 범위 SUCCESS 유지. 아래 ‘최신’ 표기는 각 기록 시점에 한정한다.
+
+### 최신 로그인 진입 원인 수정과 재검증
+
+실제 fresh #40749362584(6f9c301)는 **28phase PASS / native_browser FAIL / 후행9 not_run / cleanup success**다. 빌드·설치·1128app/1426vendor·한국어 bootstrap·검수 상품의2단계 카테고리·기본512M warmup은 통과했다. 최초 브라우저 실패는 category UI 전 `login_customer`의 이메일 입력란 대기였다. raw authentication+id_lang의 실제404/폼0과 native 생성 링크200/폼1을 대조했고, **수정한 helper로 A/B 각각 새 브라우저의 정책9경로→로그인→정확 본인 확인이 PASS**했다. 12domain/8ACL·감사/3critical hash 불변이다. 1aca9e9은 네이티브 생성 auth/identity URL과 same-origin guard를 사용하며 원래 로그인·신원·타임아웃 조건을 유지한다. 오프라인8계약 PASS 및 CI 사전 실행을 추가했다. 후속 #40750834639는 정책 저장 새 세션 version 재조회에서 FAIL했고 아래 원인 수정과 구분한다. 이전 실행은 FAIL로 보존한다. [안전한 집중 증거](evidence/2026-10-29-procurement-local/login-route-focus/modified-helper-outcome.json), artifact12843502379/ZIP SHA256 `13978d20868ce9629743cafd1c8c283167d1ca49a360e63b0b470cdf58feaef0`.
+
+### ad51cff 최종 수정 묶음과 집중 결과
+
+- #40750834639/1aca9e9:28phase PASS/native_browser FAIL/후행9 not_run/cleanup success. artifact12844705387 SHA256 `2ea6f0f498b26eefc800b4b23c6adfbcf85d78d8276caad84e7db089f9b8c795`. 실제 클릭27.52ms 뒤 정책POST33.33ms 시작·302161.79ms·최종200문서4313.06ms를 확인했다. 단1회 저장/정확1policy+1audit/새 세션13값/다른 데이터 보존 PASS. 수정은 이전 form stale와 새 문서 complete를 같은30초에 기다리며 모든 저장값/버전 검사를 유지한다.
+- native 관리자69노드 GET:66건200·KO·인증 본문,3실패는2외부 목적지(별칭 포함), 정규화60목적지다. 최초17개 화면만으로 전체 관리자 완료를 선언하지 않고 범위를 확장했다. 원문/도메인 확인된69번역, 정확13Tab CAS, KO CopyLanguageType raw From/To만 수정했다. 기존 글로벌 날짜From/To·다른 언어·custom labels·선택값·CSRF는 보존한다.
+- 영향19건 집중 GET(6+7+6) 모두200·KO·인증 본문. 원문/도메인에 맞는 한국어와 Email 메뉴를 긍정 검증했고 비기술 영문 잔존0이다. 언어 복사 라벨의 direct text는 정확히 원본 언어/대상 언어, 추가 node는 native 필수표시 `*`뿐이다. 초기 whole-label strict false와 원인을 보존하며 느슨한 contains로 대체하지 않았다. 두 select의 visible/enabled/4options와 전후12domain/ACL·감사/Tab·TabLang/critical hash가 일치한다.
+- native FormFactory62 / CAS 실제 MariaDB33 / locale Python60 / audit계약13 / CI계약9 / fresh 현재소스 경량 workflow24명령군 PASS. host/opt/live 앱1140·locked Push vendor1426 일치·unknown0, 기본512M/nooverride/www-data cache:clear WITHwarmup5.9초 PASS. 새62폼 검사는 기존38phase native_boundary에 포함했다.
+- 테마 마켓플레이스503은 native external-content circuit fallback(하위 transport상세 미확정), Facebook모듈500은 기존 로그의 cURL56 CONNECT403 외부 통신 실패다. 발주/포인트 controller 결함으로 단정하지 않고 외부 페이지의 가용/시각 인수는 남긴다. 재시도·유료 서비스·우회 호출은 실행하지 않았다.
+
+[최종 관리자 결과와 원본 실패](evidence/2026-10-29-procurement-local/admin-expanded/), [정책 저장 단1회 증거](evidence/2026-10-29-procurement-local/policy-submit-focus/). 위 로컬1140파일은 bd1ced8 이미지+명시적 ad51cff 소스 overlay이며, 현재 실행 중인 immutable fresh aggregate와 구분한다.
+
+### 최신 fresh 초기값 불일치와 증거 수집
+
+ad51cff의 전체 #40755121454는 **3phase PASS/module_seed FAIL/후속34not_run/cleanup success**다. 새13메뉴의 엄격한 한국어 초기값 assertion에서 실패했고 당시 로그에는 대상 클래스가 없어, 올바른 기존 한국어 표현 보존과의 기대값 충돌인지 실제 초기화 결함인지 아직 확정하지 않는다. artifact12845373313 SHA256 `115a8c0c4d9e4c4a112b3814aaead0feed688a4e02c54134753cc12620786cca`.
+
+8663e96은 앱을 바꾸지 않고, 원래 엄격한13개 assertion 전에 고정 클래스의 존재/owner/일치/기본영문/Hangul/중복 여부만 안전하게 보존한다. 이름 원문·ID·토큰은 넣지 않고 실패 후에도 JSON을 복사한다.5개 진단 fixture/기존9계약·lint 통과 후 위 실행에서 새 증거를 수집 중이다. 실패를 성공으로 바꾸거나 확인되지 않은 원인을 수정했다고 기록하지 않는다. 앱1140파일은 ad51cff와 동일하다.
 
 ---
 
