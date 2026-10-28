@@ -30,7 +30,7 @@ outcomes = {}
 for line in Path(sys.argv[1]).read_text().splitlines():
     phase, status = line.split('\t')
     outcomes[phase] = status
-required = ('fresh_install','module_seed','native_gallery','requests_database','requests_behavior','requests_concurrency','points_behavior','points_concurrency','notifications_behavior','notifications_native','notifications_concurrency','native_boundary','native_push_settings','policies_behavior','policies_concurrency','policies_smarty','support_database','support_concurrency_review','support_controller','support_smarty','customer_ui','customer_smarty','navigation_smarty','signin_smarty','pwa_worker','pwa_registration','native_browser','native_notifications','native_push_provider','native_accounts','native_acl','native_quality','durable_readback','restart_readback','restore')
+required = ('fresh_install','native_source','module_seed','native_gallery','requests_database','requests_behavior','requests_concurrency','points_behavior','points_concurrency','notifications_behavior','notifications_native','notifications_concurrency','native_boundary','native_push_settings','policies_behavior','policies_concurrency','policies_smarty','support_database','support_concurrency_review','support_controller','support_smarty','customer_ui','customer_smarty','navigation_smarty','signin_smarty','pwa_worker','pwa_registration','native_browser','native_notifications','native_push_provider','native_accounts','native_acl','native_quality','durable_readback','restart_readback','restart_source','restore')
 Path(sys.argv[2]).write_text(json.dumps({'passed':int(sys.argv[3]) == 0 and all(outcomes.get(x) == 'passed' for x in required),
     'phases':{x:outcomes.get(x,'not_run') for x in required}}, sort_keys=True) + '\n')
 PY
@@ -60,6 +60,8 @@ for line in content.splitlines():
     elif re.fullmatch(r'FAIL procurement browser source=ci_browser\.py:[0-9]+',line):
         print(line, file=sys.stderr)
     elif re.fullmatch(r'FAIL procurement accounts (?:stage=[a-z_]+ type=[A-Za-z_]+|source=accounts_browser\.py:[0-9]+)',line):
+        print(line, file=sys.stderr)
+    elif re.fullmatch(r'FAIL procurement source integrity phase=(?:native_source|restart_source)',line):
         print(line, file=sys.stderr)
     elif re.fullmatch(r'FAIL procurement quality stage=[a-z_]+',line):
         print(line, file=sys.stderr)
@@ -113,6 +115,7 @@ done
 compose config --quiet
 compose up --detach --build >"$private_dir/install.log" 2>&1
 run_phase fresh_install wait_install
+run_phase native_source python3 tests/procurement/source_integrity.py native_source
 phase=copy_acceptance
 # The integration diagnostic may run while peers finish source changes. A
 # committed Actions checkout copies identical module files from the same SHA.
@@ -178,5 +181,6 @@ run_phase durable_readback compose exec -T -u www-data prestashop php /tmp/orden
 phase=restart
 compose restart mariadb prestashop >"$private_dir/restart.log" 2>&1
 run_phase restart_readback wait_install
+run_phase restart_source python3 tests/procurement/source_integrity.py restart_source
 run_phase restart_readback compose exec -T -u www-data prestashop php /tmp/ordenowa-procurement-ci/ci_readback.php compare
 run_phase restore bash tests/procurement/ci_restore.sh
