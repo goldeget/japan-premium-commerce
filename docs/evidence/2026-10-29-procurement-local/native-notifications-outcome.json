@@ -1,0 +1,1 @@
+{"passed":true,"scope":"native isolated SMTP/Mailpit","messages":5,"locales":["ja","en","ko"],"replay_duplicates":0,"native_delivery_readback":true,"recipient_isolation":true,"token_and_amount_redaction":true,"native_friendly_routes":true,"native_subject_prefix":true,"candidate_runtime":"working tree with scoped hot copies"}

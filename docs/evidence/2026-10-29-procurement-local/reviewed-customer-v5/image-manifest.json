@@ -1,0 +1,175 @@
+{
+  "source_qualifier": "Existing native installation based on a9fe3a0 plus copied task fixes; not clean final-candidate installation",
+  "directory": "/tmp/ordenowa-customer-browser-evidence-20261029-v5",
+  "image_count": 21,
+  "images": [
+    {
+      "file": "en_1440_light_assignment-gallery-static-labels.png",
+      "sha256": "928fc320538c10d5a748bcfd72916d8f4da59a4bc78711ac82081a43a5473b3b",
+      "bytes": 47605,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_1440_light_points-top-static-labels.png",
+      "sha256": "6207f715fcdc3c35661f0f6b56a73d78e59f46dde178ff89c267bcbce1155528",
+      "bytes": 69213,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_320_light_assignment-gallery-static-labels.png",
+      "sha256": "2ce1a5af32edcbacf2a11b72a4ccad64605e024726109c2c15433838d44ce8b7",
+      "bytes": 24331,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_320_light_points-top-static-labels.png",
+      "sha256": "ec6a75f9909c462a552e37299328ed97f216b275c91ba14b5bdc2d0ca9f5dbfc",
+      "bytes": 48597,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_390_dark_points-top-static-labels.png",
+      "sha256": "2d85734b60b87264c377a931dc55df48e1b8cf5be36d1d4397cd36a4f3e6ae9f",
+      "bytes": 50602,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_390_light_assignment-gallery-static-labels.png",
+      "sha256": "e3be812b4f7dbef081e68fcd84a6e60936419976d9d41b233804ce5a52f760f2",
+      "bytes": 24653,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_390_light_points-top-static-labels.png",
+      "sha256": "2d85734b60b87264c377a931dc55df48e1b8cf5be36d1d4397cd36a4f3e6ae9f",
+      "bytes": 50602,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_1440_light_assignment-gallery-static-labels.png",
+      "sha256": "2d70ccece268ed2e354d1f93acca6d6a6ae3e1fbc828017076aaa7114b234718",
+      "bytes": 52188,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_1440_light_points-top-static-labels.png",
+      "sha256": "875dcd2058106e73735575333998d160a7b668c187259b7db14bd07542ae549e",
+      "bytes": 80921,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_320_light_assignment-gallery-static-labels.png",
+      "sha256": "3c5b543564195c5452aca8c4d1a235148d54b7383fdd41dce1c7ea6ef15436ff",
+      "bytes": 28119,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_320_light_points-top-static-labels.png",
+      "sha256": "4cfdf6482390c1173066ab88158183a110d16e3a509095d5d926ac9c0c156d41",
+      "bytes": 60020,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_390_dark_points-top-static-labels.png",
+      "sha256": "3c578bc75651cee6d731d03d1e761102962081189389f89522b457fe7af586f7",
+      "bytes": 64494,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_390_light_assignment-gallery-static-labels.png",
+      "sha256": "9007e506f21e67a7799b87d45c5ccdad578baa454ab8fb48e72c2892bfc187be",
+      "bytes": 26344,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_390_light_points-top-static-labels.png",
+      "sha256": "3c578bc75651cee6d731d03d1e761102962081189389f89522b457fe7af586f7",
+      "bytes": 64494,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_1440_light_assignment-gallery-static-labels.png",
+      "sha256": "016e4837acf52a9bb2d4862c13ae7e041f1bc75b7d37978ad28c24b14c23b107",
+      "bytes": 40614,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_1440_light_points-top-static-labels.png",
+      "sha256": "0ab4c305435307eceb07a76fcbf327776b3fecd4e3b41579709873fbac51755a",
+      "bytes": 59358,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_320_light_assignment-gallery-static-labels.png",
+      "sha256": "593d6453a35f8ad73962cb29d540434f1325d450b831e54fd7bdf995ed98caf4",
+      "bytes": 23150,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_320_light_points-top-static-labels.png",
+      "sha256": "7f8d26ff3ee015e7cad01fdf74791ea0dbce0e783ec2f10da9ddf3e35be73369",
+      "bytes": 42315,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_390_dark_points-top-static-labels.png",
+      "sha256": "3de1f08f4ffe21d01958a942c3597d00c4255ea4cd4ddef2947274050ea88a52",
+      "bytes": 43959,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_390_light_assignment-gallery-static-labels.png",
+      "sha256": "1997835ef7135d7b52031d6bfa473ac7fe73f0047992ef97f3fd5d34f8d1b579",
+      "bytes": 21822,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_390_light_points-top-static-labels.png",
+      "sha256": "3de1f08f4ffe21d01958a942c3597d00c4255ea4cd4ddef2947274050ea88a52",
+      "bytes": 43959,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    }
+  ]
+}

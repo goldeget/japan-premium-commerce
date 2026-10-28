@@ -1,0 +1,19 @@
+{
+  "recorded_utc": "2026-10-28T17:50:06.180362+00:00",
+  "base_commit": "ff5d9c957fd65d9d634be343ed82cf5ddb218dbe",
+  "code_state": "base commit plus uncommitted native integration and child-theme fixes; local owned container hotpatched, not a clean candidate build",
+  "scope": "actual native Selenium/Chromium browser; isolated synthetic fixture; JA/EN/KO; 320/390/1440 light plus 390 dark media emulation; not physical-device testing",
+  "privacy": "opaque pixel masks on dynamic text ranges with unchanged DOM layout, unchanged enabled states, and stable scroll-position assertions; no private DOM/cookies/tokens persisted",
+  "checks_passed": 124,
+  "png_count": 21,
+  "confirmation_visual_status": "NOT_REVIEWED: fixture request already submitted; fresh candidate CI must capture before POST",
+  "actual_product_source_validation": "NOT_TESTED: approved native geometric fixture images only",
+  "source_sha256_recorded_after_capture": {
+    "themes/kuranea/templates/_partials/header.tpl": "2d9f781e2ebcf71def3561438457b09e526a19a6c06d0f7005be07bc216dec7e",
+    "themes/kuranea/modules/ps_customersignin/ps_customersignin.tpl": "7c1e16fe6516678212eb7d298fe6da632f4af8adc1118e2c2dc842b259edcdb3",
+    "modules/ordenowaprocurement/views/templates/front/workspace.tpl": "2ded52270a419297bc90492772ee9cd901895eef438ba8577ffd4a12c1018826",
+    "modules/ordenowaprocurement/views/templates/front/product.tpl": "795aa4ba74689117950272f4ab4d381a648fae1f61dab9f7b2e2a4d6a76ab7bb",
+    "modules/ordenowaprocurement/views/templates/front/support.tpl": "f6c137113d84ff01173c6d5987196d1528d8c3082fe83d0b5e8b145dcbd11c74",
+    "modules/ordenowaprocurement/views/css/workspace.css": "e20fb404adfa8cc5740d8bf4345e05f7a5caf9a3d19e0b19912278e3b6157072"
+  }
+}

@@ -1,0 +1,1 @@
+{"checks": {"duplicate_email_denied_ko": true, "logout_login_ko": true, "reset_mime_and_new_login_ko": true, "signup_without_address_ko": true}, "passed": true}

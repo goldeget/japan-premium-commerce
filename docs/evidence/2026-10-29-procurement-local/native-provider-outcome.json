@@ -1,0 +1,35 @@
+{
+  "passed": true,
+  "scope": "actual PrestaShop 9.2 PHP native autoload plus module locked Web Push vendor coexistence; ephemeral in-memory keys and mock HTTP only",
+  "source_head": "3035be7ab96f59c003eac4c50651550d08f51e97",
+  "worktree_has_uncommitted_changes": true,
+  "project": "ordenowa-procurement-ci-20261029-3",
+  "native_execution_user": "www-data",
+  "mock_http_statuses": [
+    201,
+    410,
+    503
+  ],
+  "checks": [
+    "native autoload coexistence",
+    "generic event+locale payload only",
+    "AES128GCM RFC8188 encrypted body",
+    "ES256 VAPID signature verification",
+    "audience subject bounded lifetime",
+    "TLS verify redirect denial timeout TTL boundaries",
+    "no unexpected provider output",
+    "native Configuration unchanged",
+    "point account/award/ledger and notification/delivery hashes unchanged"
+  ],
+  "not_tested": [
+    "real provider networking",
+    "customer device receipt",
+    "production configuration"
+  ],
+  "source_sha256": {
+    "tests/procurement/ci_push_provider.php": "587186155bd9137172a40b363e6ca774583cc273993bd8394a8ad71cbd63d99c",
+    "tests/procurement/ci_bootstrap.php": "b3f9f86645f83cab54bdb4b81d851fb1056d3cb9c603895b5392533747051a07",
+    "modules/kuraneapush/src/Infrastructure/WebPushDeliveryProvider.php": "b0a5f6c61a575c4138cf3c96cac9124808fbed45592537613179d5dcfcee39c8",
+    "modules/kuraneapush/composer.lock": "03c4b41dd152b1d68e7ceb240072e923a0e1e1b1629dbba982a79fadd349e9a0"
+  }
+}
