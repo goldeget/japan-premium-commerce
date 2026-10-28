@@ -1,0 +1,142 @@
+name: Procurement platform acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [work]
+    paths:
+      - '.github/workflows/procurement-platform.yml'
+      - 'modules/ordenowaprocurement/**'
+      - 'modules/kuraneabusinessprofile/**'
+      - 'modules/kuraneabackoffice/**'
+      - 'modules/kuraneacatalog/**'
+      - 'modules/kuraneapush/**'
+      - 'tests/pwa/**'
+      - 'tests/procurement/**'
+      - 'tests/catalog/**'
+      - 'tests/admin_audit/**'
+      - 'tests/performance/**'
+      - 'tests/e2e/**'
+      - 'docker/**'
+      - 'compose.yaml'
+      - 'themes/kuranea/**'
+      - '.dockerignore'
+      - '.env.example'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: procurement-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  procurement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      KURANEA_ISOLATED_CI: '1'
+      CI_COMPOSE_PROJECT_NAME: ordenowa-procurement-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      SHOP_PORT: '18081'
+      SHOP_BASE_URL: http://localhost:18081
+      PS_DOMAIN: localhost:18081
+      ORDENOWA_APP_MODE: procurement
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Prepare ephemeral credentials and private artifact directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          python3 - <<'PY'
+          import os, secrets
+          from pathlib import Path
+          values = {
+              'MARIADB_DATABASE': 'prestashop', 'MARIADB_USER': 'prestashop',
+              'MARIADB_PASSWORD': secrets.token_urlsafe(32),
+              'MARIADB_ROOT_PASSWORD': secrets.token_urlsafe(32),
+              'ADMIN_MAIL': 'procurement-admin-' + os.environ['GITHUB_RUN_ID'] + '-' + os.environ['GITHUB_RUN_ATTEMPT'] + '@example.invalid',
+              'ADMIN_PASSWD': secrets.token_urlsafe(32),
+          }
+          for key in ('MARIADB_PASSWORD','MARIADB_ROOT_PASSWORD','ADMIN_MAIL','ADMIN_PASSWD'):
+              print('::add-mask::' + values[key])
+          Path('.env').write_text(''.join(key + '=' + value + '\n' for key,value in values.items()))
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              for key,value in values.items():
+                  env.write(key + '=' + value + '\n')
+              env.write('QA_ARTIFACT_DIR=' + os.environ['RUNNER_TEMP'] + '/procurement-safe-artifacts\n')
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+          cache: npm
+          cache-dependency-path: tests/performance/package-lock.json
+
+      - name: Install pinned free quality tools
+        run: npm ci --prefix tests/performance --ignore-scripts --no-audit --no-fund
+
+      - name: Use free runner browser tooling
+        run: python3 -m pip install --disable-pip-version-check selenium==4.38.0
+
+      - name: Run fresh native install, behavioral and browser acceptance, restart and restore
+        id: acceptance
+        run: bash tests/procurement/ci_acceptance.sh
+
+      - name: Remove only this run's containers and volumes
+        id: cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$CI_COMPOSE_PROJECT_NAME" = "ordenowa-procurement-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          docker compose -f compose.yaml -f tests/procurement/ci.compose.yaml -p "$CI_COMPOSE_PROJECT_NAME" down --volumes --remove-orphans
+          restore_container="${CI_COMPOSE_PROJECT_NAME}-restore"
+          if docker container inspect "$restore_container" >/dev/null 2>&1; then
+            docker rm -f "$restore_container"
+          fi
+          rm -f .env
+
+      - name: Publish actual aggregate outcome
+        if: always()
+        shell: bash
+        env:
+          ACCEPTANCE_OUTCOME: ${{ steps.acceptance.outcome }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['QA_ARTIFACT_DIR'])
+          root.mkdir(parents=True, exist_ok=True)
+          path = root/'outcome.json'
+          if not path.exists():
+              path.write_text(json.dumps({'passed':False,'phases':{'acceptance':'not_run'}})+'\n')
+          result = json.loads(path.read_text())
+          result['cleanup'] = os.environ['CLEANUP_OUTCOME']
+          passed = result.get('passed') is True and os.environ['ACCEPTANCE_OUTCOME'] == 'success' and result['cleanup'] == 'success'
+          result['passed'] = passed
+          path.write_text(json.dumps(result, sort_keys=True)+'\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as summary:
+              summary.write('Procurement runtime acceptance: ' + ('PASS' if passed else 'FAIL') + '\n\n')
+              for phase,status in result.get('phases',{}).items():
+                  summary.write('- ' + phase + ': ' + status + '\n')
+          if not passed:
+              raise SystemExit(1)
+          PY
+
+      - name: Upload redacted outcomes and captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: procurement-safe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/procurement-safe-artifacts/*.json
+            ${{ runner.temp }}/procurement-safe-artifacts/*-redacted-*.png
+          if-no-files-found: error
+          retention-days: 7
+
