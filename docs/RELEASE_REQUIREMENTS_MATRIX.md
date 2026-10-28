@@ -1,5 +1,15 @@
 # ORDENOWA 상품 발주 요청·검토·수동 포인트 출시 요구사항표
 
+## 2026-10-29 최신 Amazon HTML 파서·격리 QA
+
+검증 코드 [`d107cf9042c1a041c7c32b820c10e0b3874056e9`](https://github.com/goldeget/japan-premium-commerce/commit/d107cf9042c1a041c7c32b820c10e0b3874056e9)는 원격 `work`의 현재 애플리케이션 후보이며 `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지된다. Amazon HTML fallback은 `#wayfinding-breadcrumbs_feature_div`의 순서 경로와 `#altImages`의 `IMAGE` 사진별 대표 URL을 읽는다. 사진 크기 후보를 한 사진으로 합치고, 기존 가격·상품명 확인과 옵션 추론 금지 동작은 유지한다.
+
+집중 [파서/접근 제한/워크플로 검사 #40774173388](https://github.com/goldeget/japan-premium-commerce/actions/runs/40774173388)은 **SUCCESS**: PHP lint, 합성 offline parser 41개 동작, challenge rejection 및 workflow 계약을 통과했다. 전체 [격리 fresh-install #40774173140](https://github.com/goldeget/japan-premium-commerce/actions/runs/40774173140)은 **SUCCESS**: 38/38 단계 PASS, aggregate `passed=true`, run-scope cleanup 성공. [artifact #12855260313](https://github.com/goldeget/japan-premium-commerce/actions/runs/40774173140/artifacts/12855260313)의 GitHub SHA-256 digest는 `sha256:1b5aa21a03492ed6ad631ea0710f04ae968af45914b81e969cad196cea0bae4a`다.
+
+이 결과는 격리·합성 데이터 검증이다. Amazon [B0H4V3GT4J](https://www.amazon.co.jp/dp/B0H4V3GT4J)는 Product JSON-LD/microdata 없이 `#productTitle`, HTML breadcrumb와 7개 이미지 항목을 보였지만 정확한 현재 JPY 가격은 페이지에서 확인되지 않아 계속 fail-closed로 거부한다. 이 페이지 본문 timestamp는 2026-10-20이라 현재 재고/가격 근거로 쓰지 않는다. Rakuten 후보는 원문 페이지 응답이 시간 초과되어 정확 가격·옵션을 검증하지 못했다. 어떤 상품/이미지도 승인되거나 가져오지 않았다.
+
+따라서 CAT-001/CAT-002/CAT-ENV-001, LOCALE-001, OPS-001, PUSH-001, DEVICE-001의 실제 원문·권리·관리자 외부오류·운영환경·기기 인수는 계속 남는다. production deploy, production DB 변경, 실제 거래/결제는 실행하지 않았다. 세부 입력은 [운영 배포 체크리스트](PRODUCTION_DEPLOYMENT.md)를 따른다.
+
 2026-10-29 한국시간 사용자 최종 정의: **운영자가 고객에게 상품 발주를 안내 → 고객이 쇼핑몰 주문하듯 상품·수량을 확인하고 발주 요청 → 운영자 수동 검토 → 운영자 수동 포인트 지급 → 고객 잔액·내역 조회**.
 
 [최종 아키텍처](superpowers/specs/2026-10-29-ordenowa-procurement-points-platform-design.md)가 기준이다. 일반 업무 결과/증거 제출 시스템으로 확장하지 않는다. 포인트는 잔액/내역만 표시하며 외부 별도 처리는 운영자가 맡는다. 쇼핑형 상품 UX는 필요하지만 판매 checkout·배송·반품·상품 환불·충전/사용/양도·현금환산/출금은 현재 범위에 없다.
@@ -39,10 +49,10 @@
 | DEVICE-001 | native 설치·standalone/복귀 | 외부 자료·운영 환경 대기 | HTTPS·승인 iOS/Android기기, 에뮬레이션 대체불가 |
 | BACKUP-001 | 새요청·snapshot·원장/잔액·감사 복구 | 구현과 해당 범위 검증 완료 | 소유 격리 환경 실제 durable/restart/독립 DB restore 통과. 전용12테이블과 native 문의 스레드/메시지·ACL 감사의 private 스키마/데이터 hash,80P 합계·요청 owner·inactive 상품 검증. 운영 volume 복구훈련과 최종 immutable fresh gate는 별도 |
 | OPS-001 | 운영정책·환경·digest/rollback/감시 | 외부 자료·운영 환경 대기 | 운영자/발주·포인트/개인정보정책·HTTPS/SMTP/secrets/backup 연결과 검증 |
-| RELEASE-001 | 새집중/통합 QA·증거/handoff | 구현과 해당 범위 검증 완료 |91c6098 전체#40763074207 실제38/38/aggregate true/cleanup success,13unit·로컬실제D20target·hosted20target 독립 검수,24원본PNG/12JSON·artifact digest 보존. 외부 Work Mode 직접 전달/인수는 수행하지 않음 |
-| CAT-001 | Amazon Japan·Rakuten 가격·상세·사진 후보·출처 파싱 | 구현됐으나 검증 미완료 | 합성38행동·기존 parser·차단/인증/서로 다른 가격 거부·검수 evidence 통과. AggregateOffer 범위/누락을 단일 참고가격으로 축약하지 않도록 수정·독립 검토, 모호한 재수집 시 기존 검수 snapshot 보존 확인. 실제 원문 HTTPS는 관리망 CONNECT403으로 미검증 |
-| CAT-002 | 검수 카테고리·하위메뉴·고객별 상품 배치 | 구현됐으나 검증 미완료 | 합성parser→검수→native부모/하위2단계 저장·snapshot·배치·본인 메뉴/검색 구현. 실제D20target/보호데이터 및 최신91 fresh3언어 메뉴/filter/9PNG 인수 완료. 실제 쇼핑몰 원문 분류 대조는 CAT-ENV와 함께 남음 |
-| CAT-ENV-001 | 실제 쇼핑몰 접근·상품/사진 게시 근거 | 외부 자료·운영 환경 대기 | 실제 원문 도메인 허용·공개 이미지 사용 근거가 필요. 차단 우회·합성 상품을 실상품 성공으로 보고하지 않음 |
+| RELEASE-001 | 새집중/통합 QA·증거/handoff | 구현과 해당 범위 검증 완료 | 코드 `d107cf9042c1a041c7c32b820c10e0b3874056e9`: 전체 #40774173140 38/38단계·aggregate true·cleanup success, 집중 #40774173388 parser 41개 동작 PASS. artifact #12855260313 digest `sha256:1b5aa21a03492ed6ad631ea0710f04ae968af45914b81e969cad196cea0bae4a`. 기존 91c 시각검수는 UI 무변경 범위만 유지하며 실제 원문·운영·기기 인수는 별도 |
+| CAT-001 | Amazon Japan·Rakuten 가격·상세·사진 후보·출처 파싱 | 구현됐으나 검증 미완료 | `d107cf9042c1a041c7c32b820c10e0b3874056e9` parser change, 집중 #40774173388의 41 synthetic offline behaviors PASS. Amazon sample `B0H4V3GT4J`는 HTML breadcrumb·7 image entry를 보였지만 exact current JPY offer 없음이라 정상 거부; Rakuten 후보 응답 timeout. 현재 판매 SKU·정확 가격/옵션·원문 권한 미검증, 상품 미수입 |
+| CAT-002 | 검수 카테고리·하위메뉴·고객별 상품 배치 | 구현됐으나 검증 미완료 | 합성 parser→검수→native 2단계 저장/배치 기존 검증 유지. Amazon source breadcrumb `文房具・オフィス用品 > 事務用品 > 文具収納 > ペンケース`는 출처 경로로만 보존하며 native taxonomy로 자동 매핑하지 않음. 실 SKU 대조와 운영자 분류 승인 필요 |
+| CAT-ENV-001 | 실제 쇼핑몰 접근·상품/사진 게시 근거 | 외부 자료·운영 환경 대기 | 승인된 현행 source access/feed, exact in-stock SKU 및 공개 이미지 사용권 증거가 필요. sample/cache/synthetic 결과는 판매·게시 권한이 아님; 접근 차단을 우회하거나 상품을 가져오지 않음 |
 | SCOPE-001 | 판매결제·배송·반품/상품환불·충전/사용/양도/출금 | 기존에 명시적으로 확정된 범위 제외 | 사용자 최신 정의 적용, 기존데이터/코드 보존·retail 직접노출차단 |
 
 ## 이전39항목 이관
@@ -52,10 +62,20 @@
 - 현재출시 제외·노출차단회귀: LOCALE-002, LOCALE-003, DISC-001, ADDR-001, OPS-RET-001, OPS-SHIP-001.
 - 후속 사용자 지시로 필수 추가: CAT-001, CAT-002, CAT-ENV-001. Amazon Japan·Rakuten 파싱·분류 연결을 구현하고 실제 원문 검증을 별도로 남긴다. 수동 상품등록 경로도 유지한다.
 
-## 최소 운영 입력
+## 필요한 운영 입력 — 미정이면 ‘미정’으로 표시
 
-운영자 신원·고객지원/초기권한, 안내할 상품/수량·참여고객·실제발주요청샘플, 수동검토기준·포인트지급/정정/이의문의/보존·개인정보정책, host/domain/TLS/SMTP/secrets/registry·backup/감시/복구 담당·기기다. 승인된 브랜드자료는 재사용한다. **판매자계좌·상품판매세금표·배송지·운송계약·배송/반품/환불조건은 요구하지 않는다.**
+아래 항목을 한 줄씩 채우면 된다. 비밀값 자체는 보내지 말고 승인된 secret-store 참조와 담당자만 적는다. 이미 승인된 브랜드 표기·자산, 일본어 설명, JPY 세금포함 표시와 지원 지역 무료배송은 다시 적지 않아도 된다.
 
-핵심 코드의 명시한 합성 집중 범위와91c6098 전체38단계 통합 검증을 완료했다. 실제 원문·운영·기기 인수는 남는다. 운영 배포·운영 DB 변경·실결제·실거래는 실행하지 않았다. 실제 코드/QA SHA·artifact는 TEST_RESULTS와 handoff 최신 절에 기록했다.
+1. **상품 검증:** Amazon Japan/Rakuten에서 각각 확인할 현행 판매 SKU URL, 현재 JPY 가격·옵션, 상품 분류, 사진을 사이트에 게시할 권한 근거. 아직 고르지 않았으면 `미정`.
+2. **운영 환경:** HTTPS staging/production 도메인과 host 담당자, immutable app/DB image registry와 SHA/digest, 승격·롤백 승인자.
+3. **메일·Push:** SMTP 발신 도메인과 수신 테스트 담당자, VAPID/storage key의 secret-store reference, Push 책임자. 비밀값은 보내지 않는다.
+4. **스케줄·감시·복원:** scheduler 담당자, 오류/DB/disk 알림 채널과 수신자, 암호화 backup 저장소·보존기간·승인 RPO/RTO·restore 담당자.
+5. **실기기:** 승인된 iPhone/iOS와 Android 기기 및 테스트 계정 접근 경로(테스트 자격정보는 secret store로 전달).
+6. **서비스 책임자:** 운영자/고객지원 연락처, 초기 역할 승인자, 수동 검토·포인트 지급/정정·문의/보존정책 승인자.
+
+**판매자 계좌, 실제 판매 세금표, 배송지/운송 계약, 배송·반품·환불 조건은 현재 범위에서 요청하지 않는다.**
+
+
+코드 d107cf9042c1a041c7c32b820c10e0b3874056e9의 38단계 전체 격리 검증과 41개 파서 행동 집중 검증을 완료했다. 실제 원문·상품/이미지 권리·운영·기기 인수는 남는다. 운영 배포·운영 DB 변경·실결제·실거래는 실행하지 않았다. 실제 코드/QA SHA·artifact는 TEST_RESULTS와 handoff 최신 절에 기록했다.
 
 현재 변경 범위와 원본 FAIL·집중 결과는 [테스트 결과](TEST_RESULTS.md)를 따른다. 배송/반품/판매결제는 기존 UI 번역을 정비했어도 출시 기능으로 다시 추가하지 않는다.

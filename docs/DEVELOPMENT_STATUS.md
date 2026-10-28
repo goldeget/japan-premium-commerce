@@ -1,6 +1,12 @@
 # ORDENOWA 개발 현황
 
-### 최종 검증 후보 — 91c6098 / 전체 격리 QA SUCCESS
+## 2026-10-29 최신 변경·검증
+
+원격 `work` code SHA `d107cf9042c1a041c7c32b820c10e0b3874056e9` adds Amazon Japan HTML breadcrumb and per-photo gallery parsing. Focused parser run #40774173388 passed 41 synthetic behaviors; full isolated acceptance #40774173140 passed 38/38 phases, aggregate, and cleanup. Main remains `ee02a3657448d563508687614a246e05ac61eecd`.
+
+Actual current catalog source/price/image rights, external admin error-page Korean rendering, production HTTPS/SMTP/secrets/scheduler/monitoring/backup operations, real Push delivery and physical iOS/Android acceptance remain open. No production deployment, production DB edit, sale, or payment ran. See the release matrix and production deployment checklist.
+
+### 이전 통합 검증 기준점 — 91c6098 / 전체 격리 QA SUCCESS
 
 검증 코드 **`91c6098c6b551946cc8291b31c868656d50c9b34`**를 원격 work에 저장하고 변경 파일 재조회·새 원격 복제본으로 일치 확인했다. main **`ee02a3657448d563508687614a246e05ac61eecd`**와 원래 사용자 체크아웃/운영 DB·volume은 보존했다. 이후 문서 저장 HEAD와 검증 코드 SHA는 구분한다.
 

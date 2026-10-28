@@ -1,8 +1,18 @@
 # ORDENOWA 테스트 결과
 
+## 2026-10-29 Amazon parser regression and latest acceptance
+
+Code under test is [`d107cf9042c1a041c7c32b820c10e0b3874056e9`](https://github.com/goldeget/japan-premium-commerce/commit/d107cf9042c1a041c7c32b820c10e0b3874056e9) on remote `work`. It adds source breadcrumb paths and one canonical image URL per visible Amazon image gallery entry. It keeps `#productTitle` as the selected HTML title, keeps exact JPY parsing fail-closed, leaves option inference unchanged, and treats image URLs as source metadata rather than reuse permission.
+
+- Test-only commit [`a62e902`](https://github.com/goldeget/japan-premium-commerce/commit/a62e902eae5082c655e16fa04914757696c0b1c1) added a synthetic Amazon gallery/breadcrumb fixture. Its focused pre-fix run [#40772668598](https://github.com/goldeget/japan-premium-commerce/actions/runs/40772668598) failed after PHP lint, confirming the regression gate was red before the parser patch. The workflow redacts assertion details; it reported `UNKNOWN/source unavailable`.
+- Post-fix focused run [#40774173388](https://github.com/goldeget/japan-premium-commerce/actions/runs/40774173388) passed PHP lint, **41 parser quality behaviors**, synthetic marketplace access-challenge rejection, and workflow contract tests.
+- Post-fix full isolated platform run [#40774173140](https://github.com/goldeget/japan-premium-commerce/actions/runs/40774173140) passed **38/38 unique phases**, aggregate `passed=true`, and run-owned cleanup. Artifact [#12855260313](https://github.com/goldeget/japan-premium-commerce/actions/runs/40774173140/artifacts/12855260313) has SHA-256 digest `sha256:1b5aa21a03492ed6ad631ea0710f04ae968af45914b81e969cad196cea0bae4a`.
+
+Live-source limitation remains: Amazon [B0H4V3GT4J](https://www.amazon.co.jp/dp/B0H4V3GT4J) showed no exact current price; parser rejection is expected. Page metadata timestamp was 2026-10-20. Rakuten candidate timed out; no live price/options/image rights were verified. No source product was imported. The patch changes only the parser; no public UI changed. Main SHA remains `ee02a3657448d563508687614a246e05ac61eecd`.
+
 ## 2026-10-29 현재 발주 플랫폼 검증
 
-### 최종 검증 후보 — 91c6098 / 전체 격리 QA SUCCESS
+### 이전 통합 검증 기준점 — 91c6098 / 전체 격리 QA SUCCESS
 
 검증 코드 **`91c6098c6b551946cc8291b31c868656d50c9b34`**를 원격 work에 저장하고 변경 파일 재조회·새 원격 복제본으로 일치 확인했다. main **`ee02a3657448d563508687614a246e05ac61eecd`**와 원래 사용자 체크아웃/운영 DB·volume은 보존했다. 이후 문서 저장 HEAD와 검증 코드 SHA는 구분한다.
 

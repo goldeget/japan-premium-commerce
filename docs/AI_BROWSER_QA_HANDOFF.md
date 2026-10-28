@@ -1,6 +1,17 @@
 # ORDENOWA AI Browser QA Handoff
 
-### 최종 검증 후보 — 91c6098 / 전체 격리 QA SUCCESS
+### 최신 파서·수용시험 업데이트 — d107cf9042c1a041c7c32b820c10e0b3874056e9
+
+Amazon Japan fallback parser에 HTML breadcrumb 경로와 사진별 단일 대표 gallery URL 추출을 추가했다. 이 변경은 상품명·정확 가격 정책을 바꾸지 않으며, native 상품 분류를 자동 지정하거나 사진 사용권을 부여하지 않는다.
+
+- [집중 parser run #40774173388](https://github.com/goldeget/japan-premium-commerce/actions/runs/40774173388): SUCCESS — PHP lint, 41 synthetic parser behaviors, access challenge guard, workflow contracts.
+- [전체 isolated acceptance #40774173140](https://github.com/goldeget/japan-premium-commerce/actions/runs/40774173140): SUCCESS — 38/38 unique phases, `passed=true`, cleanup success. [Artifact #12855260313](https://github.com/goldeget/japan-premium-commerce/actions/runs/40774173140/artifacts/12855260313), digest `sha256:1b5aa21a03492ed6ad631ea0710f04ae968af45914b81e969cad196cea0bae4a`.
+- Public sample [Amazon B0H4V3GT4J](https://www.amazon.co.jp/dp/B0H4V3GT4J) has `#productTitle`, HTML breadcrumb and 7 image entries, with no Product JSON-LD/microdata. No exact current JPY price was visible; the parser correctly rejects import. Captured page metadata is dated 2026-10-20, so this is not current inventory/price evidence.
+- The Rakuten sample page did not return within the fetch window. Snippet-only price is not accepted as verified. No sample was imported and no image rights were inferred.
+- Production remains blocked on approved source/product/image rights, two external admin error routes, approved operations environment, live provider delivery, and physical iOS/Android acceptance. `main` remains `ee02a...`; no production host, DB, sale, or payment was changed.
+- `F:\japan-premium-commerce` local checkout remains at `c6acfc35c47cc106397a43f4bd53b98fd603f243`; direct GitHub fetch failed, so the local checkout was not changed. The remotely verified source is `work` at the commit recorded above.
+
+### 이전 통합 검증 기준점 — 91c6098 / 전체 격리 QA SUCCESS
 
 검증 코드 **`91c6098c6b551946cc8291b31c868656d50c9b34`**를 원격 work에 저장하고 변경 파일 재조회·새 원격 복제본으로 일치 확인했다. main **`ee02a3657448d563508687614a246e05ac61eecd`**와 원래 사용자 체크아웃/운영 DB·volume은 보존했다. 이후 문서 저장 HEAD와 검증 코드 SHA는 구분한다.
 
