@@ -40,10 +40,19 @@ class SafeFailureTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertEqual(evidence(raw, 'image_build', 1, {})['error_category'], expected)
 
+    def test_non_keyword_fatal_tail_is_retained_after_redaction(self):
+        raw = '#1 [internal] load local bake definitions\nreading from stdin 3.41kB\nterminal stream interruption password-value'
+        result = evidence(raw, 'image_build', 1, {'ADMIN_PASSWD':'password-value'})
+        self.assertEqual(result['error_category'], 'unclassified')
+        self.assertTrue(any('terminal stream interruption' in line for line in result['safe_tail_lines']))
+        self.assertNotIn('password-value', json.dumps(result))
+
     def test_output_is_bounded_and_success_is_not_a_failure(self):
         raw = '\n'.join('ERROR ' + str(index) + ' ' + ('!' * 1000) for index in range(100))
         result = evidence(raw, 'runtime_start', 1, {})
         self.assertLessEqual(len(result['safe_error_lines']), 24)
+        self.assertLessEqual(len(result['safe_tail_lines']), 12)
+        self.assertTrue(all(len(line) <= 400 for line in result['safe_tail_lines']))
         self.assertTrue(all(len(line) <= 400 for line in result['safe_error_lines']))
         passed = evidence(raw, 'image_build', 0, {})
         self.assertTrue(passed['passed'])

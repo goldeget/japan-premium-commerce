@@ -49,16 +49,19 @@ def evidence(raw: str, phase: str, status: int, environment: dict[str, str]) -> 
         raise ValueError('Unknown safe evidence phase')
     category = 'none' if status == 0 else next((label for label, pattern in CATEGORIES if re.search(pattern, raw, re.I)), 'unclassified')
     safe = redact(raw, environment)
-    stages, errors = [], []
+    stages, errors, tail = [], [], []
     if status:
         for line in safe.splitlines():
             line = line.strip()
+            if line:
+                tail.append(line[:400])
             if ERROR.search(line) and line not in errors:
                 errors.append(line[:400])
             elif STAGE.search(line) and line not in stages:
                 stages.append(line[:240])
     return {'passed': status == 0, 'phase': phase, 'exit_code': status, 'error_category': category,
             'safe_error_lines': errors[-24:], 'safe_build_stage_lines': stages[-8:],
+            'safe_tail_lines': tail[-12:],
             'raw_log_uploaded': False}
 
 
@@ -74,7 +77,8 @@ def main() -> None:
         if phase not in ('image_build', 'runtime_start'):
             raise ValueError('Unknown safe evidence phase')
         print('FAIL procurement setup phase=' + phase + ' category=' + result['error_category'])
-        for line in result.get('safe_build_stage_lines', []) + result.get('safe_error_lines', []):
+        lines = result.get('safe_build_stage_lines', []) + result.get('safe_error_lines', []) + result.get('safe_tail_lines', [])
+        for line in dict.fromkeys(lines):
             print('SAFE setup error: ' + str(line)[:400])
         return
     if len(sys.argv) != 5:
