@@ -60,7 +60,7 @@ foreach (Language::getLanguages(false) as $language) {
     $profile->name[(int) $language['id_lang']] = '합성 CI 조회 전용';
 }
 ciAssert($profile->add(), 'Native read profile create failed');
-foreach (['AdminOrdenowaProcurement', 'AdminOrdenowaProcurementReviews', 'AdminOrdenowaProcurementPoints', 'AdminOrdenowaProcurementAudit'] as $tabName) {
+foreach (['AdminOrdenowaProcurement', 'AdminOrdenowaProcurementReviews', 'AdminOrdenowaProcurementPoints', 'AdminOrdenowaProcurementAudit', 'AdminOrdenowaProcurementPolicies'] as $tabName) {
     $tab = (int) Tab::getIdFromClassName($tabName);
     ciAssert($tab > 0, 'Native procurement tab missing');
     foreach (['view' => true, 'add' => false, 'edit' => false, 'delete' => false] as $action => $allow) {
@@ -83,9 +83,16 @@ $reader->bo_css = (string) ($context->employee->bo_css ?: 'theme.css');
 $reader->bo_width = max(0, (int) $context->employee->bo_width);
 $reader->bo_menu = (bool) $context->employee->bo_menu;
 ciAssert($reader->add(), 'Native read employee create failed');
-$identity = ['run' => $runLabel, 'customers' => $customers, 'password' => $password,
+$identity = ['languages' => ['ja' => (int) Language::getIdByIso('ja', true), 'en' => (int) Language::getIdByIso('en', true), 'ko' => (int) Language::getIdByIso('ko', true)], 'run' => $runLabel, 'customers' => $customers, 'password' => $password,
     'reader' => ['id' => (int) $reader->id, 'email' => $reader->email],
     'product_id' => $productId, 'product_attribute_id' => $attributeId, 'employee_id' => 1];
+$identity['mail_subject_prefix'] = '[' . strip_tags((string) Configuration::get('PS_SHOP_NAME')) . '] ';
+$identity['routes'] = [];
+foreach ($identity['languages'] as $locale => $languageId) {
+    foreach (['workspace', 'policy', 'support'] as $controller) {
+        $identity['routes'][$locale][$controller] = $context->link->getModuleLink('ordenowaprocurement', $controller, [], null, $languageId, 1);
+    }
+}
 $path = __DIR__ . '/identity.json';
 ciAssert(file_put_contents($path, json_encode($identity, JSON_THROW_ON_ERROR)) !== false, 'Private identity write failed');
 chmod($path, 0600);

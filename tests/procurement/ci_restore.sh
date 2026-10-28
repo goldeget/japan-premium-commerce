@@ -20,7 +20,7 @@ cleanup() {
   exit "$result"
 }
 trap cleanup EXIT
-compose exec -T prestashop php /tmp/ordenowa-procurement-ci/ci_readback.php manifest
+compose exec -T -u www-data prestashop php /tmp/ordenowa-procurement-ci/ci_readback.php manifest
 # Include native identities/products and parser provenance at the same point.
 # Dump remains private and is erased even when the restoration fails.
 compose exec -T mariadb sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb-dump -uroot --single-transaction --skip-comments "$MARIADB_DATABASE"' > "$private_dir/backup.sql"
@@ -35,5 +35,5 @@ done
 docker exec -i "$restore_project" sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb -uroot prestashop' < "$private_dir/backup.sql"
 # Point a one-off PHP process at the independent restored connection without
 # modifying the installed shop's parameters or the original database.
-compose exec -T -e PROCUREMENT_RESTORE_HOST=procurement-restore -e "MARIADB_ROOT_PASSWORD=$MARIADB_ROOT_PASSWORD" prestashop php /tmp/ordenowa-procurement-ci/ci_restore_readback.php
+compose exec -T -u www-data -e PROCUREMENT_RESTORE_HOST=procurement-restore -e "MARIADB_ROOT_PASSWORD=$MARIADB_ROOT_PASSWORD" prestashop php /tmp/ordenowa-procurement-ci/ci_restore_readback.php
 printf 'PASS independent database restore of native references and procurement domain\n'

@@ -4,11 +4,13 @@ import email.policy
 from email.parser import BytesParser
 from email.utils import getaddresses
 import json
+import html
 import os
 from pathlib import Path
 import re
 import sys
 from urllib.request import urlopen
+from urllib.parse import urlparse, parse_qs
 
 STAGE = 'guard'
 try:
@@ -34,10 +36,22 @@ try:
         recipients = [address for _, address in getaddresses(mime.get_all('To', []))]
         assert recipients == [fixture['customers']['a']['email']]
         assert not mime.get('Bcc')
-        subjects.add(str(mime['Subject']))
+        subject = str(mime['Subject'])
+        assert subject.startswith(fixture['mail_subject_prefix'])
+        subjects.add(subject[len(fixture['mail_subject_prefix']):])
         STAGE = 'private_safe_template'
         text = '\n'.join(part.get_content() for part in mime.walk() if part.get_content_type() in ('text/plain', 'text/html'))
-        assert 'module=ordenowaprocurement' in text and 'controller=workspace' in text
+        # Native Link chooses locale-aware friendly paths; raw query-string
+        # substrings reject valid native links and do not prove destination.
+        urls = re.findall(r'''https?://[^\s<>"']+''', html.unescape(text))
+        expected_paths = {urlparse(route['workspace']).path for route in fixture['routes'].values()}
+        assert urls
+        for url in urls:
+            parsed = urlparse(url)
+            assert parsed.scheme in ('http', 'https') and parsed.netloc == 'localhost:18081'
+            assert parsed.path in expected_paths and not parsed.fragment
+            query = parse_qs(parsed.query)
+            assert set(query) == {'view'} and query['view'] in (['assignments'], ['requests'], ['points'])
         assert not re.search(r'(?:100|80|-20)\s*P\b', text)
         assert not re.search(r'[?&](?:token|id_customer|id_request|id_assignment)=', text)
         assert fixture['customers']['b']['email'] not in text

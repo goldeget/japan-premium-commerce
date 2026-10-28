@@ -30,7 +30,7 @@ outcomes = {}
 for line in Path(sys.argv[1]).read_text().splitlines():
     phase, status = line.split('\t')
     outcomes[phase] = status
-required = ('fresh_install','module_seed','requests_database','requests_behavior','requests_concurrency','points_behavior','points_concurrency','notifications_behavior','notifications_native','notifications_concurrency','native_boundary','native_push_settings','policies_behavior','policies_concurrency','support_database','support_concurrency_review','support_controller','support_smarty','customer_ui','customer_smarty','navigation_smarty','pwa_worker','pwa_registration','native_browser','native_notifications','durable_readback','restart_readback','restore')
+required = ('fresh_install','module_seed','native_gallery','requests_database','requests_behavior','requests_concurrency','points_behavior','points_concurrency','notifications_behavior','notifications_native','notifications_concurrency','native_boundary','native_push_settings','policies_behavior','policies_concurrency','policies_smarty','support_database','support_concurrency_review','support_controller','support_smarty','customer_ui','customer_smarty','navigation_smarty','signin_smarty','pwa_worker','pwa_registration','native_browser','native_notifications','native_push_provider','native_accounts','native_acl','native_quality','durable_readback','restart_readback','restore')
 Path(sys.argv[2]).write_text(json.dumps({'passed':int(sys.argv[3]) == 0 and all(outcomes.get(x) == 'passed' for x in required),
     'phases':{x:outcomes.get(x,'not_run') for x in required}}, sort_keys=True) + '\n')
 PY
@@ -56,6 +56,14 @@ from pathlib import Path
 content = Path(sys.argv[1]).read_text(errors='replace')
 for line in content.splitlines():
     if re.fullmatch(r'FAIL procurement (?:browser|MIME) stage=[a-z_]+ type=[A-Za-z_]+',line):
+        print(line, file=sys.stderr)
+    elif re.fullmatch(r'FAIL procurement browser source=ci_browser\.py:[0-9]+',line):
+        print(line, file=sys.stderr)
+    elif re.fullmatch(r'FAIL procurement accounts (?:stage=[a-z_]+ type=[A-Za-z_]+|source=accounts_browser\.py:[0-9]+)',line):
+        print(line, file=sys.stderr)
+    elif re.fullmatch(r'FAIL procurement quality stage=[a-z_]+',line):
+        print(line, file=sys.stderr)
+    elif re.fullmatch(r'FAIL native ACL browser stage=[a-z_]+',line):
         print(line, file=sys.stderr)
     elif re.fullmatch(r'FAIL procurement native acceptance: [A-Za-z_\\]+ source=[A-Za-z0-9_.-]+:[0-9]+',line):
         print(line, file=sys.stderr)
@@ -110,23 +118,31 @@ phase=copy_acceptance
 # committed Actions checkout copies identical module files from the same SHA.
 compose cp modules/ordenowaprocurement/. prestashop:/var/www/html/modules/ordenowaprocurement/
 compose cp themes/kuranea/templates/_partials/footer.tpl prestashop:/var/www/html/themes/kuranea/templates/_partials/footer.tpl
-compose exec -T prestashop sh -ec 'chown -R www-data:www-data /var/www/html/modules/ordenowaprocurement; find /var/www/html/modules/ordenowaprocurement -type d -exec chmod 0755 {} +; find /var/www/html/modules/ordenowaprocurement -type f -exec chmod 0644 {} +'
-compose exec -T prestashop mkdir -p /tmp/ordenowa-procurement-ci/catalog /var/www/html/tests/procurement
+compose cp themes/kuranea/templates/_partials/header.tpl prestashop:/var/www/html/themes/kuranea/templates/_partials/header.tpl
+compose cp themes/kuranea/templates/customer/my-account.tpl prestashop:/var/www/html/themes/kuranea/templates/customer/my-account.tpl
+compose exec -T prestashop sh -ec 'chown www-data:www-data /var/www/html/themes/kuranea/templates/_partials/footer.tpl /var/www/html/themes/kuranea/templates/_partials/header.tpl /var/www/html/themes/kuranea/templates/customer/my-account.tpl; chmod 0644 /var/www/html/themes/kuranea/templates/_partials/footer.tpl /var/www/html/themes/kuranea/templates/_partials/header.tpl /var/www/html/themes/kuranea/templates/customer/my-account.tpl; chown -R www-data:www-data /var/www/html/modules/ordenowaprocurement; find /var/www/html/modules/ordenowaprocurement -type d -exec chmod 0755 {} +; find /var/www/html/modules/ordenowaprocurement -type f -exec chmod 0644 {} +'
+compose exec -T prestashop mkdir -p /tmp/ordenowa-procurement-ci/catalog /var/www/html/tests/procurement /var/www/html/tests/catalog /var/www/html/tests/admin_audit
 for source in tests/procurement/ci_*.php; do
   compose cp "$source" prestashop:/tmp/ordenowa-procurement-ci/
 done
-for source in tests/procurement/requests*.php tests/procurement/points*.php tests/procurement/native*.php tests/procurement/customer*.php tests/procurement/notifications*.php tests/procurement/policies*.php tests/procurement/support*.php tests/procurement/navigation*.php; do
+for source in tests/procurement/requests*.php tests/procurement/points*.php tests/procurement/native*.php tests/procurement/customer*.php tests/procurement/notifications*.php tests/procurement/policies*.php tests/procurement/support*.php tests/procurement/navigation*.php tests/procurement/signin*.php; do
   compose cp "$source" prestashop:/var/www/html/tests/procurement/
 done
 compose cp tests/catalog/. prestashop:/tmp/ordenowa-procurement-ci/catalog/
+compose cp tests/catalog/. prestashop:/var/www/html/tests/catalog/
+compose cp tests/admin_audit/. prestashop:/var/www/html/tests/admin_audit/
+compose cp tests/procurement/accounts_native.php prestashop:/tmp/ordenowa-procurement-ci/accounts_native.php
+compose exec -T prestashop sh -ec 'find /var/www/html/tests /tmp/ordenowa-procurement-ci -type d -exec chmod 0755 {} +; find /var/www/html/tests /tmp/ordenowa-procurement-ci -type f -exec chmod 0644 {} +'
+compose exec -T prestashop chown -R www-data:www-data /tmp/ordenowa-procurement-ci
 # No credentials/identity data are emitted; only a private file crosses the
 # container boundary and is deleted at the end of this acceptance process.
-run_phase module_seed compose exec -T prestashop php /tmp/ordenowa-procurement-ci/ci_seed.php
+run_phase module_seed compose exec -T -u www-data prestashop php /tmp/ordenowa-procurement-ci/ci_seed.php
+run_phase native_gallery compose exec -T -u www-data prestashop php /tmp/ordenowa-procurement-ci/ci_gallery.php
 compose cp prestashop:/tmp/ordenowa-procurement-ci/identity.json "$PROCUREMENT_IDENTITY_FILE" > /dev/null
 phase=behavior_database
 compose exec -T mariadb sh -ec 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb -uroot -e "CREATE DATABASE ordenowa_procurement_test CHARACTER SET utf8mb4"'
 behavior() {
-  compose exec -T -e PROCUREMENT_TEST_DSN='mysql:host=mariadb;dbname=ordenowa_procurement_test;charset=utf8mb4' \
+  compose exec -T -u www-data -e PROCUREMENT_TEST_DSN='mysql:host=mariadb;dbname=ordenowa_procurement_test;charset=utf8mb4' \
     -e PROCUREMENT_TEST_USER=root -e "PROCUREMENT_TEST_PASSWORD=$MARIADB_ROOT_PASSWORD" prestashop php "/var/www/html/tests/procurement/$1.php"
 }
 run_phase requests_database behavior requests_database
@@ -141,6 +157,7 @@ run_phase native_boundary behavior native_integration_test
 run_phase native_push_settings behavior native_push_settings
 run_phase policies_behavior behavior policies_behavior
 run_phase policies_concurrency behavior policies_concurrency
+run_phase policies_smarty behavior policies_smarty
 run_phase support_database behavior support_database
 run_phase support_concurrency_review behavior support_concurrency_review
 run_phase support_controller behavior support_controller
@@ -148,13 +165,18 @@ run_phase support_smarty behavior support_smarty
 run_phase customer_ui behavior customer_ui
 run_phase customer_smarty behavior customer_smarty
 run_phase navigation_smarty behavior navigation_smarty
+run_phase signin_smarty behavior signin_smarty
 run_phase pwa_worker node tests/procurement/pwa_worker.cjs
 run_phase pwa_registration node tests/procurement/pwa_registration.cjs
 run_phase native_browser python3 tests/procurement/ci_browser.py
 run_phase native_notifications bash tests/procurement/ci_notification_flow.sh
-run_phase durable_readback compose exec -T prestashop php /tmp/ordenowa-procurement-ci/ci_readback.php
+run_phase native_push_provider compose exec -T -u www-data prestashop php /tmp/ordenowa-procurement-ci/ci_push_provider.php
+run_phase native_accounts python3 tests/procurement/accounts_browser.py
+run_phase native_acl python3 tests/procurement/acl_browser.py
+run_phase native_quality python3 tests/procurement/quality_browser.py
+run_phase durable_readback compose exec -T -u www-data prestashop php /tmp/ordenowa-procurement-ci/ci_readback.php manifest
 phase=restart
 compose restart mariadb prestashop >"$private_dir/restart.log" 2>&1
 run_phase restart_readback wait_install
-run_phase restart_readback compose exec -T prestashop php /tmp/ordenowa-procurement-ci/ci_readback.php
+run_phase restart_readback compose exec -T -u www-data prestashop php /tmp/ordenowa-procurement-ci/ci_readback.php compare
 run_phase restore bash tests/procurement/ci_restore.sh
