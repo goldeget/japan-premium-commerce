@@ -1,7 +1,7 @@
 {extends file='page.tpl'}
 {block name='page_title'}{$ordenowa_support.copy.title|escape:'htmlall':'UTF-8'}{/block}
 {block name='page_content'}
-<section class="ordenowa-support container" data-testid="support-thread">
+<section class="ordenowa-support container" {if $ordenowa_support.allowed}data-testid="support-thread"{/if}>
   {if $ordenowa_support.error}
     <p class="alert alert-danger" role="alert" data-testid="support-error">{$ordenowa_support.error|escape:'htmlall':'UTF-8'}</p>
   {/if}
