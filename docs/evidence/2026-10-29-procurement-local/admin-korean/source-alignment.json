@@ -1,0 +1,42 @@
+{
+  "passed": true,
+  "app_backend_commit": "bc4769ccd1c97264a7957cf793427fcf91248b2b",
+  "image_base_frontend_commit": "bd1ced8",
+  "qualification": "explicit owned backend opt/webroot and installed bootstrap copy; final fresh image QA pending",
+  "files": {
+    "modules/kuraneabackoffice/kuraneabackoffice.php": {
+      "source_sha256": "439afa6e7986bdbe318e02d698d429c18bab234a78e940215eec7b85a1373331",
+      "opt_matches": true,
+      "webroot_matches": true
+    },
+    "modules/kuraneabackoffice/src/AdminLocaleSubscriber.php": {
+      "source_sha256": "c9edd5498b54e865e18e5bc6473675cd56d594eb305fa96dd44a5495ff64903b",
+      "opt_matches": true,
+      "webroot_matches": true
+    },
+    "modules/kuraneabackoffice/src/Admin/KoreanAdminTabLabels.php": {
+      "source_sha256": "ded315af80f7573d79c8fdd20191ee9d3651d7536fc8f1cba38ee81859b0ede6",
+      "opt_matches": true,
+      "webroot_matches": true
+    },
+    "modules/kuraneabackoffice/translations/ko-KR/AdminModulesFeature.ko-KR.xlf": {
+      "source_sha256": "04745ff8fc4d6d7e5ead22cc373b63c5039207819d917f249a49a8b04316d0cf",
+      "opt_matches": true,
+      "webroot_matches": true
+    },
+    "modules/kuraneabackoffice/upgrade/upgrade-1.0.7.php": {
+      "source_sha256": "c84fa5ffc5a6ddab8abb7ddd21c2b771cf105566d70f9f7f3539cb83ac588f97",
+      "opt_matches": true,
+      "webroot_matches": true
+    },
+    "modules/kuraneabackoffice/README.md": {
+      "source_sha256": "cbd77e7a9ecaddc5e6d684029c02ad85eef7a400b4fd8f69496f65d65fb77e02",
+      "opt_matches": true,
+      "webroot_matches": true
+    },
+    "docker/kuran-install-modules.php": {
+      "source_sha256": "dae6f69a3b13bdb62c64e2ac4835d634d625a83dc78e1cf9110994d41e9ae198",
+      "installed_usr_local_bin_matches": true
+    }
+  }
+}

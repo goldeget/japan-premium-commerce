@@ -1,6 +1,18 @@
 # ORDENOWA AI Browser QA Handoff
 
-> **최종 제품 기준 — 2026-10-29:** 운영자가 고객에게 특정 상품 발주를 안내하고, 고객이 쇼핑몰 주문하듯 해당 상품·수량을 확인해 발주 요청하면 운영자가 수동 검토 후 포인트 잔액을 지급 반영한다. 고객은 잔액·내역만 표시받고 별도 처리는 운영자가 맡는다. 일반 작업결과/증거 제출 시스템으로 확장하지 않는다. 배송·반품·상품환불·판매결제/출금은 제외하고 수동수당포인트는 필수다. [최종 아키텍처](superpowers/specs/2026-10-29-ordenowa-procurement-points-platform-design.md)와 [새 요구사항표](RELEASE_REQUIREMENTS_MATRIX.md)가 우선한다. 아래 쇼핑몰 기록은 과거 해당범위 증거이며 새출시 PASS/FAIL이 아니다. 신규 발주요청·포인트핵심 구현/검증은 아직 미완료다.
+## 현재 Codex·독립 화면 검수 연결 — 2026-10-29
+
+코드 체크포인트 work `6f9c301d6cb4070c2fb440400a0c2a86e2a5ff8b`, main 원본 유지. Cloud Codex가 실제 로컬 Chromium/ChromeDriver로 HTTP·DOM·입력·키보드·저장/재조회 검증을 수행했다. 고객 핵심: 배정→수량2확인/요청→승인0P→명시적100P→재로그인100P→연결정정80P. B의 foreign GET/POST 거부·B인증 유지·A원본 보존과 제한 직원403을 실제 확인했다.
+
+UI를 작성하지 않은 독립 GPT에 실제 안전한 PNG를 전달했고 고객21+54장, 공개 정적 구성요소42장, 언어 선택기3장을 실제 열어 검수했다. 확인된 모바일 header/계정 접근성 문제는 수정 후 재검수했다. 증거: [검수 묶음](evidence/2026-10-29-procurement-local/README.md), [독립 검수](evidence/2026-10-29-procurement-local/INDEPENDENT_REVIEW.md), [제한된 수동 판정](evidence/2026-10-29-procurement-local/BOUNDED_MANUAL_REVIEW.md). 동적 개인정보/토큰/고객 값은 마스킹한다. 관리자5개 화면 PC/tablet과 bad body token403의12PNG도 별도 GPT가 모두 열어 top viewport를 검수했다. 아래 정책 필드/저장버튼·비어 있던 pending 검토 조작은 이 시각 범위 밖이다.
+
+품질3 JA7경로·84 DOM/axe·14실제 클릭·14 Lighthouse PASS. JA/EN/KO 시각/확인폼은 별도 브라우저 결과다. 전체WCAG·실기기·실사용INP·실제 Amazon/Rakuten 원문 완료로 확대하지 않는다. 로컬 이미지 bd1ced8+최종 소스 정렬/집중 검사 근거이며 전체 immutable candidate 인수는 [#40749362584](https://github.com/goldeget/japan-premium-commerce/actions/runs/40749362584),6f9c301 진행 결과로 판정한다. 앞선3run은 앱 설치 전 빌드 FAIL이고 원인을 portable CI 설정으로 수정했다.
+
+외부 Work Mode 세션 직접 전달은 수행하지 않았다. Codex 패널 열기 요청·queued 또는 무응답은 실제 GUI 검수 완료 근거가 아니다. 동일 코드 수정·CI 실행을 중복하지 말고 새 artifact의 SHA·실제 outcome·aggregate를 확인한 뒤 독립 시각/사용성 검수만 수행한다. 변경 화면/기대결과: 상품·하위카테고리·사진·수량확인/요청상태·문의/포인트·정정연결/알림/정책/한국어 배정·검토·지급·감사·정책관리. 본인 상품/요청만 보이며 cart/shipping/payment/withdraw 링크가 없어야 한다.
+
+---
+
+> **최종 제품 기준 — 2026-10-29:** 운영자가 고객에게 특정 상품 발주를 안내하고, 고객이 쇼핑몰 주문하듯 해당 상품·수량을 확인해 발주 요청하면 운영자가 수동 검토 후 포인트 잔액을 지급 반영한다. 고객은 잔액·내역만 표시받고 별도 처리는 운영자가 맡는다. 일반 작업결과/증거 제출 시스템으로 확장하지 않는다. 배송·반품·상품환불·판매결제/출금은 제외하고 수동수당포인트는 필수다. [최종 아키텍처](superpowers/specs/2026-10-29-ordenowa-procurement-points-platform-design.md)와 [새 요구사항표](RELEASE_REQUIREMENTS_MATRIX.md)가 우선한다. 아래 쇼핑몰 기록은 과거 해당범위 증거이며 새출시 PASS/FAIL이 아니다. 현재 구현 및 검증 상태는 이 문서 맨 위와 새 요구사항표를 따른다. 아래 기록의 미구현·최신 실패 표기는 당시 범위에 한정한다.
 
 > **2026-10-29 출시 전수조사 갱신:** 조사 기준 work `e357b8b`(실행 코드 `364ba34`)의 최신 전체 QA #40559740938은 실제 aggregate **FAILURE**다. 현재 구현·39개 추적 항목·실패/skip·운영 대기는 [출시 잔여 작업 전수조사](RELEASE_READINESS_AUDIT_2026-10-29.md)를 최신 판정으로 사용한다. 아래 과거 candidate/실행 중/완료 표기는 해당 기록 당시 범위이며 최신 통합 PASS가 아니다. Indexed DB catalog/규모검사 소스는 이미 구현됐고, 검증기 실패와 운영 미구현은 구분한다. 이번 조사에서 새 CI나 운영 배포는 실행하지 않았다.
 

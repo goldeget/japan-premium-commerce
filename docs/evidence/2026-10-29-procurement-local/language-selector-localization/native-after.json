@@ -1,0 +1,114 @@
+{
+  "mode": "after",
+  "locales": {
+    "ja": {
+      "aria_label": "\u8a00\u8a9e\u3092\u5909\u66f4",
+      "computed_accessible_name": "\u8a00\u8a9e\u3092\u5909\u66f4",
+      "normalized_outer_html_sha256": "d2db8d15cfe679ecb22ad88cbedd95dd20818655d9ccb6545fa2e734ea1ffbcc",
+      "options": [
+        {
+          "locale": "ja",
+          "label": "\u65e5\u672c\u8a9e",
+          "value_sha256": "c7bfc8485def53d19d482b610112f5d81b481a171e70226de2104c452324263a",
+          "selected": true
+        },
+        {
+          "locale": "en",
+          "label": "English",
+          "value_sha256": "08257561eae21c1356e1476743fb4ef1cb1626e089bed59a3301f686ea49372f",
+          "selected": false
+        },
+        {
+          "locale": "ko",
+          "label": "\ud55c\uad6d\uc5b4",
+          "value_sha256": "5e0134599d7d197aaf31a716a11c36ee7272e713a7c5d59f39393622285123e7",
+          "selected": false
+        }
+      ],
+      "visible": true,
+      "enabled": true,
+      "only_aria_attribute_changed": true,
+      "axe": {
+        "incomplete_rules": [
+          "color-contrast"
+        ],
+        "violation_rules": []
+      },
+      "native_keyboard_language_change": true,
+      "keyboard_target_locale": "en"
+    },
+    "en": {
+      "aria_label": "Change language",
+      "computed_accessible_name": "Change language",
+      "normalized_outer_html_sha256": "790482855b86ff1c4423c473fca660bdf1c4ded5cb776f7c0abccde5d3ec89a1",
+      "options": [
+        {
+          "locale": "ja",
+          "label": "\u65e5\u672c\u8a9e",
+          "value_sha256": "c7bfc8485def53d19d482b610112f5d81b481a171e70226de2104c452324263a",
+          "selected": false
+        },
+        {
+          "locale": "en",
+          "label": "English",
+          "value_sha256": "08257561eae21c1356e1476743fb4ef1cb1626e089bed59a3301f686ea49372f",
+          "selected": true
+        },
+        {
+          "locale": "ko",
+          "label": "\ud55c\uad6d\uc5b4",
+          "value_sha256": "5e0134599d7d197aaf31a716a11c36ee7272e713a7c5d59f39393622285123e7",
+          "selected": false
+        }
+      ],
+      "visible": true,
+      "enabled": true,
+      "only_aria_attribute_changed": true,
+      "axe": {
+        "incomplete_rules": [
+          "color-contrast"
+        ],
+        "violation_rules": []
+      },
+      "native_keyboard_language_change": true,
+      "keyboard_target_locale": "ko"
+    },
+    "ko": {
+      "aria_label": "\uc5b8\uc5b4 \ubcc0\uacbd",
+      "computed_accessible_name": "\uc5b8\uc5b4 \ubcc0\uacbd",
+      "normalized_outer_html_sha256": "bf135dec68f791d6e648a4d1dff1da0d9a000f30adcfd080455aaf8c14a78acf",
+      "options": [
+        {
+          "locale": "ja",
+          "label": "\u65e5\u672c\u8a9e",
+          "value_sha256": "c7bfc8485def53d19d482b610112f5d81b481a171e70226de2104c452324263a",
+          "selected": false
+        },
+        {
+          "locale": "en",
+          "label": "English",
+          "value_sha256": "08257561eae21c1356e1476743fb4ef1cb1626e089bed59a3301f686ea49372f",
+          "selected": false
+        },
+        {
+          "locale": "ko",
+          "label": "\ud55c\uad6d\uc5b4",
+          "value_sha256": "5e0134599d7d197aaf31a716a11c36ee7272e713a7c5d59f39393622285123e7",
+          "selected": true
+        }
+      ],
+      "visible": true,
+      "enabled": true,
+      "only_aria_attribute_changed": true,
+      "axe": {
+        "incomplete_rules": [
+          "color-contrast"
+        ],
+        "violation_rules": []
+      },
+      "native_keyboard_language_change": true,
+      "keyboard_target_locale": "en"
+    }
+  },
+  "passed": true
+}

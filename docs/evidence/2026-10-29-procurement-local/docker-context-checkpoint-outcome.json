@@ -1,0 +1,1 @@
+{"checked_paths": 22, "missing_paths": [], "passed": true, "scope": "fresh remote clone tracked source paths required by Docker COPY; from-stage paths excluded"}

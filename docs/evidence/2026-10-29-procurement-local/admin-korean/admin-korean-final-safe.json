@@ -1,0 +1,292 @@
+{
+  "read_only": true,
+  "full_korean_acceptance": false,
+  "pages": {
+    "login": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": true,
+      "static_english_labels": [],
+      "scope": "visible_exact_static_catalogue_text_only"
+    },
+    "dashboard": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "route_provenance": "native_menu_href",
+      "positive_native_page": true
+    },
+    "product_manager": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [
+        {
+          "label": "Art",
+          "source_domains": [
+            "AdminCatalogFeature"
+          ]
+        },
+        {
+          "label": "Clothes",
+          "source_domains": [
+            "AdminCatalogFeature"
+          ]
+        },
+        {
+          "label": "Home Accessories",
+          "source_domains": [
+            "AdminCatalogFeature"
+          ]
+        },
+        {
+          "label": "Men",
+          "source_domains": [
+            "AdminCatalogFeature"
+          ]
+        },
+        {
+          "label": "Stationery",
+          "source_domains": [
+            "AdminCatalogFeature"
+          ]
+        },
+        {
+          "label": "Women",
+          "source_domains": [
+            "AdminCatalogFeature"
+          ]
+        }
+      ],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "route_provenance": "native_menu_href",
+      "positive_native_page": true
+    },
+    "catalog_review": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "route_provenance": "native_menu_href",
+      "positive_native_page": true
+    },
+    "categories": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [
+        {
+          "label": "Art",
+          "source_domains": [
+            "AdminCatalogFeature"
+          ]
+        },
+        {
+          "label": "Clothes",
+          "source_domains": [
+            "AdminCatalogFeature"
+          ]
+        }
+      ],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "route_provenance": "native_menu_href",
+      "positive_native_page": true
+    },
+    "customers": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "route_provenance": "native_menu_href",
+      "positive_native_page": true,
+      "stored_data_exclusion": {
+        "element_tag": "TD",
+        "element_class": "column-lastname",
+        "native_source_table": "customer",
+        "native_source_column": "lastname",
+        "values_ids_and_counts_omitted": true,
+        "static_catalogue_key_collision_is_not_a_ui_translation_failure": true
+      }
+    },
+    "support": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [
+        {
+          "label": "Dear Customer, Regards, Customer service",
+          "source_domains": [
+            "AdminShopparametersFeature"
+          ]
+        },
+        {
+          "label": "IMAP URL",
+          "source_domains": [
+            "AdminCatalogFeature"
+          ]
+        }
+      ],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "route_provenance": "native_menu_href",
+      "positive_native_page": true
+    },
+    "support_assignments": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "route_provenance": "native_menu_href",
+      "positive_native_page": true
+    },
+    "employees": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "route_provenance": "native_menu_href",
+      "positive_native_page": true
+    },
+    "profiles": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "route_provenance": "known_controller_current_session_token",
+      "positive_native_page": true
+    },
+    "permissions": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "route_provenance": "known_controller_current_session_token",
+      "positive_native_page": true
+    },
+    "modules": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "route_provenance": "native_menu_href",
+      "positive_native_page": true
+    },
+    "general_settings": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "route_provenance": "native_menu_href",
+      "positive_native_page": true
+    },
+    "procurement_assignments": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "route_provenance": "native_menu_href",
+      "positive_native_page": true
+    },
+    "procurement_reviews": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "route_provenance": "native_menu_href",
+      "positive_native_page": true
+    },
+    "procurement_points": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "route_provenance": "native_menu_href",
+      "positive_native_page": true
+    },
+    "procurement_audit": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "route_provenance": "native_menu_href",
+      "positive_native_page": true
+    },
+    "procurement_policies": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "route_provenance": "native_menu_href",
+      "positive_native_page": true
+    }
+  },
+  "source_qualification": {
+    "backend_commit": "bc4769ccd1c97264a7957cf793427fcf91248b2b",
+    "base_image_frontend_commit": "bd1ced8",
+    "additional_backend_fix": "module-owned Twig warmup iterator decorator; source-qualified safe proof /workspace/scratch/ordenowa-cache-warmup-safe.json",
+    "runtime": "committed backend files same host/opt/webroot plus new decorator; final fresh image QA pending",
+    "not_final_remote_full_qa": true
+  },
+  "summary": {
+    "passed_bounded_inventory": true,
+    "administrator_pages": 17,
+    "login_http200_korean": true,
+    "all_admin_http200_native_main_korean_no_login_redirect": true,
+    "all_seven_confirmed_static_ui_phrases_resolved": true,
+    "remaining_confirmed_static_ui_phrases": [],
+    "scope": "visible source-controlled exact catalogue strings across named seventeen pages; all error/toast/mail/report/hidden state and 100% Korean coverage not asserted",
+    "runtime_loader_smoke": "actual first authenticated dashboard HTTP200 Korean native main after successful standard cache warmup",
+    "business_data_and_technical_terms_preserved": true,
+    "customer_record_values_omitted": true
+  }
+}

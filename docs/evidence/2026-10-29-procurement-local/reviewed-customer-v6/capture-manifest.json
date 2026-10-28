@@ -1,0 +1,31 @@
+{
+  "recorded_utc": "2026-10-28T18:07:09.291021+00:00",
+  "code_sha": "bd1ced815093df2fadc21b521cdb01bdd546ed0a",
+  "runtime_image_revision": "bd1ced8",
+  "runtime_alignment": "CI owner verified 1122 host/opt/webroot app files and 1426 Push vendor files before this run; rebuilt owned image, preserved existing database/volumes",
+  "scope": "Actual native Chromium/Selenium; isolated synthetic data. C confirmation JA/EN/KO at 320/390/1440; original A support/request/notification and all four public policy sections JA/EN/KO at 390/1440. Not physical-device testing.",
+  "confirmation": "Created separate native synthetic customer C and assignment through authenticated native admin UI. Quantity 2 entered and confirmation displayed 9 times. Final submit button verified enabled and NEVER clicked.",
+  "browser_passed": true,
+  "browser_boolean_checks": 318,
+  "domain_verification": {
+    "passed": true,
+    "unchanged_domain_tables": 12,
+    "visual_customer_requests": 0,
+    "visual_customer_points": 0,
+    "original_request_ledger_preserved": true
+  },
+  "setup_preservation": "Exactly one assignment, audit row and inbox notification added for C; all existing rows in all 12 domain tables preserved, then all complete domain hashes unchanged through previews and read-only capture.",
+  "synthetic_notification_scope": "Additional C assignment inbox notification occurs after the earlier exact-five mail acceptance; no additional delivery worker run during this capture.",
+  "png_count": 54,
+  "privacy": "Opaque pixel masks on dynamic text, input values hidden without disabling controls, original DOM layout and scroll stability asserted; no identities/tokens/addresses/DOM/cookies persisted in artifacts. Some masked underlying text overlaps the fixed bottom navigation in captures; this is a capture overlay artifact, not evidence of application layout failure.",
+  "source_sha256_after_capture": {
+    "themes/kuranea/templates/_partials/header.tpl": "2d9f781e2ebcf71def3561438457b09e526a19a6c06d0f7005be07bc216dec7e",
+    "themes/kuranea/modules/ps_customersignin/ps_customersignin.tpl": "7c1e16fe6516678212eb7d298fe6da632f4af8adc1118e2c2dc842b259edcdb3",
+    "modules/ordenowaprocurement/src/Integration/Runtime.php": "5792ac2bafcb46062457d8eb7fcbefeef11155da27ede7fd30b0b20f6e43bd65",
+    "modules/ordenowaprocurement/views/templates/front/workspace.tpl": "2ded52270a419297bc90492772ee9cd901895eef438ba8577ffd4a12c1018826",
+    "modules/ordenowaprocurement/views/templates/front/product.tpl": "795aa4ba74689117950272f4ab4d381a648fae1f61dab9f7b2e2a4d6a76ab7bb",
+    "modules/ordenowaprocurement/views/templates/front/support.tpl": "f6c137113d84ff01173c6d5987196d1528d8c3082fe83d0b5e8b145dcbd11c74",
+    "modules/ordenowaprocurement/views/templates/front/policy.tpl": "ab6963376554d47ed25895ab373ddb32167b240631684df4d2668dc13f9f7763",
+    "modules/ordenowaprocurement/views/css/workspace.css": "e20fb404adfa8cc5740d8bf4345e05f7a5caf9a3d19e0b19912278e3b6157072"
+  }
+}

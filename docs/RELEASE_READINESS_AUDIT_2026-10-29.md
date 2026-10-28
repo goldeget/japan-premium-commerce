@@ -1,14 +1,108 @@
-# ORDENOWA 출시 잔여 작업 전수조사 — 2026-10-29 한국시간
+# ORDENOWA 발주·수동 수당 포인트 플랫폼 출시 준비 — 2026-10-29
+
+## 현재 판정과 코드 기준
+
+**새 플랫폼의 출시 인수는 아직 완료되지 않았다. 현재 차단점은 동일 후보의 fresh 통합 QA와 실제 상품·운영 환경·기기 인수다.** 현재까지 관측한 앱 결함은 원인별로 수정하고 아래 범위의 실제 결과를 남겼다. 로컬 집중 성공을 최종 새 이미지의 전체 성공으로 확대하지 않는다.
+
+제품은 **운영자 상품 안내·배정 → 고객 상품/수량 확인·발주 요청 → 운영자 수동 검토 → 별도 명시적 포인트 지급·정정 → 고객 잔액/내역 표시**다. 판매 checkout·배송·반품/상품환불·포인트 사용/현금 환산/송금/출금은 확정된 범위 제외다. 기존 코드와 과거 QA 성공은 보존한다.
+
+- 이번 재확인 기준 로컬/원격 `work`: **`6f9c301d6cb4070c2fb440400a0c2a86e2a5ff8b`**. 원격 `main`: **`ee02a3657448d563508687614a246e05ac61eecd`**, 보존 확인.
+- 실제 로컬 소스 정렬 체크포인트는 `cc99bbb42031a03493dc2df3969d8c6caf00abd2`다. `cc99bbb..6f9c301`의 차이는 workflow와 CI 실패 진단/실행기 파일이며 앱 모듈·테마는 바뀌지 않았다. CI 실행기 변경은 fresh 검증으로 확인해야 한다.
+- [승인 설계](superpowers/specs/2026-10-29-ordenowa-procurement-points-platform-design.md), [현 요구사항표](RELEASE_REQUIREMENTS_MATRIX.md), [보존된 로컬 증거](evidence/2026-10-29-procurement-local/README.md)를 대조했다. 아래 보관자료의 소매39행과 당시7개 실패는 현 범위의 새 미구현 목록이 아니다.
+
+## 최신 hosted QA — 성공으로 바꾸지 않은 결과
+
+Actions의 실제 status/conclusion과 실행 SHA, artifact 목록을 재조회했다. 세 fresh 실행은 모두 build/up 준비 중 실패했으며 **새 native 기능 전체 PASS는 없다**.
+
+| 실행·검증 SHA | 실제 결과 | 사용할 수 있는 근거 |
+| --- | --- | --- |
+| [#40746215184](https://github.com/goldeget/japan-premium-commerce/actions/runs/40746215184) · `4f8c18e` | FAILURE | `fresh_install` 이전 준비 실패, 후속36단계 not_run, cleanup 성공. 당시 private build 로그가 보존되지 않아 첫 직접 원인은 확정하지 않는다. [artifact12840743415](https://github.com/goldeget/japan-premium-commerce/actions/runs/40746215184/artifacts/12840743415), [보존 outcome](evidence/2026-10-29-procurement-local/remote-first-fresh-outcome.json). |
+| [#40747596953](https://github.com/goldeget/japan-premium-commerce/actions/runs/40747596953) · `77b2ceb` | FAILURE | 후속 hosted build/up 준비 실패. native 기능 인수에 도달한 증거가 아니다. [artifact12841243413](https://github.com/goldeget/japan-premium-commerce/actions/runs/40747596953/artifacts/12841243413). |
+| [#40748071562](https://github.com/goldeget/japan-premium-commerce/actions/runs/40748071562) · `4faa400` | FAILURE | 불필요한 Compose Bake host-network 및 외부 CA 파일 관련 entitlement가 확인된 준비 실패. 6f9c301에서 managed 전용 설정을 분리하고 hosted 표준 network/이미지 CA로 수정했다(집중5검사 PASS). 앱 기능 실패나 전체 통과로 판정하지 않는다. [artifact12841443567](https://github.com/goldeget/japan-premium-commerce/actions/runs/40748071562/artifacts/12841443567). |
+| [#40746034641](https://github.com/goldeget/japan-premium-commerce/actions/runs/40746034641) · `cc99bbb` | SUCCESS | 해당 저비용 집중/사전 검사 범위. fresh 이미지·브라우저·전체 native aggregate를 대신하지 않는다. |
+| 과거 전체 [#40508152705](https://github.com/goldeget/japan-premium-commerce/actions/runs/40508152705) · `f5b1cca` | SUCCESS 보존 | 당시 소매 범위의 회원·주소·검색·SEO·검수·보안·PWA·합성 Push·메일·상담·계좌이체·배송·반품·복원 성공. 현재 발주/포인트 후보 전체 성공을 뜻하지 않는다. |
+
+**최종 CI 결과: [#40749362584](https://github.com/goldeget/japan-premium-commerce/actions/runs/40749362584),6f9c301 검증 중.** CI 수정 후 안정된 work 후보의 새 실행 SHA·run·실제 phase outcome/aggregate·cleanup·artifact를 주담당이 이 자리에 연결한다. 실행 시작이나 녹색 개별 step만으로 완료 처리하지 않는다. 새 증거 없이 같은 실패 검사를 반복하거나 권한·CSRF·고객 격리·assertion을 약화하지 않는다.
+
+## 다섯 상태와 현재 기능별 판정
+
+| 상태 | 뜻 |
+| --- | --- |
+| 구현과 해당 범위 검증 완료 | 명시된 실제 집중 검증 범위의 완료. 전체 출시 완료와 구분한다. |
+| 구현됐으나 검증 미완료 | 동작 코드와 부분 근거가 있으나 필요한 통합·실물·현장 근거가 남는다. |
+| 구현 미완료 | 현재 필수 동작에서 확인한 코드 공백. 추정이나 파일 부재만으로 지정하지 않는다. |
+| 외부 자료·운영 환경 대기 | 실제 원문 접근·승인 자료·실기기·운영값/접근에 의존한다. |
+| 기존에 명시적으로 확정된 범위 제외 | 최신 사용자 정의의 제외 범위. 출시 개발 잔여에 합산하지 않는다. |
+
+| 현재 범위 | 상태 | 실제 완료 근거와 한계 |
+| --- | --- | --- |
+| 상품 안내·수량/기한/version·요청 snapshot·owner/shop/role·멱등 | 구현과 해당 범위 검증 완료 | PHP8.3/MariaDB 행동·실패 rollback·12개 동시 경합 통과. 실제 native A 요청, 고객 B GET/POST 거부와 요청 후 본인 인증·원본 보존, READ 전용 직원 쓰기403을 확인했다. 최종 fresh 후보의 반복 인수는 아래 통합 gate다. |
+| 승인·명시적 수동 지급·연결 정정·잔액/원장 대조 | 구현과 해당 범위 검증 완료 | 실제 native 승인만으로0P → 명시100P → 새 고객 로그인100P → -20P 정정80P. 기본 지급1회·멱등/충돌·실제 경합·정수 한계·각 쓰기 rollback·새 연결 합계 대조 통과. approval과 지급을 같은 동작으로 바꾸지 않았다. |
+| 정책·요청별 문의·공개 답변/내부메모 분리 | 구현과 해당 범위 검증 완료 | 정상 masked body token 저장0→1·새 로그인11필드 유지, 잘못된 body token은 유효한 URL token 유무와 관계없이403/무변경. 실제 문의 저장·replay·고객 B 거부·공개 답변 반영·내부메모 비노출과 정책/문의 각6개 경합 통과. 실제 운영 문안 승인은 별도다. |
+| 알림/outbox·native 메일·유지보수 중단 복구 | 구현과 해당 범위 검증 완료 | 독립 채널·최대5회 backoff·중복 방지·killed sender UNCERTAIN·명시적 재시도 통과. 실제 native outbox5건·재실행 추가0·Mailpit EN1/KO1/JA3 MIME, locale 변경 후 Push receipt 재시도 회귀 통과. 운영 SMTP·실기기 전달은 별도다. |
+| 상품 parser→검수→native 참조·분류/이미지·고객 안내 | 구현됐으나 검증 미완료 | 합성 parser·검수 evidence·same-shop 상품/옵션 경계·native 로컬 이미지2장·고객 안내 연결을 확인했다. 독립 코드 검수에서 AggregateOffer 가격 범위 모호성을 고쳐 불일치/누락 범위는 명시적으로 거부한다. 원문 breadcrumb는 provenance이며 native 분류는 운영자 검토다. fresh 부모/leaf 생성·하위 메뉴/filter/배치 및 실제 Amazon/Rakuten 원문·이미지 호환은 아직 인수되지 않았다. |
+| native 설치·retail 차단·회원/reset·재시작·독립 복원 | 구현됐으나 검증 미완료 | 로컬 실제 boundary, JA/EN 회원 및 KO 수정 집중 검사, 재시작/별도 DB 복원 범위 성공을 보존했다. [기능별 로컬 outcome](evidence/2026-10-29-procurement-local/README.md)은 기존 DB와 당시 수정 runtime의 근거다. 최종 SHA의 clean 설치·전 단계 aggregate·cleanup은 hosted 준비 실패로 미완료다. |
+| 10폭·성능/접근성·키보드·독립 시각 | 구현과 해당 범위 검증 완료 | 소스 일치한 bd1ced8 frontend의 quality3:7경로×원본10폭/밝음·어둠의 layout84·axe84·trusted lab click14·Lighthouse14 통과, 성능99–100·접근성100·공개 SEO100·LCP최대2131.1ms·CLS최대0.0001. 실제54PNG를 별도 GPT가 검수했고 수동27대표 셀/42정적 crop의13개 incomplete 패턴을 판정했다. 자동 incomplete는 지우지 않았다. cc99bbb 언어 선택기 접근성 이름 현지화와 native 옵션/키보드·기존8개 Global key 보존도 집중 확인했다. 전체 WCAG·모든 상태·field INP·실기기 인증은 아니다. |
+| 관리자 한국어·권한 변경 감사 | 구현과 해당 범위 검증 완료 | 실제17관리자 페이지+로그인, 확인한7개 정적 미번역 종료. known native5Tab의 한국어 fallback만 CAS 수정하고 다른 언어/사용자 지정 값/Tab metadata/ACL/직원 profile/12domain 불변과 멱등을 확인했다. locale43·실제 DB12·XLIFF15 parse 통과. 공식 native permission grid의 부모 재귀 READ grant3/revoke3·감사6행·새 조회·원래 ACL/직원 보존 통과. 전체 숨은 오류/메일/보고서의100% 한국어 또는 최종 fresh hook 설치 성공으로 확대하지 않는다. |
+| 안전한 PWA cache·설치 안내·Push provider 구현 | 구현과 해당 범위 검증 완료 | 새 Node2·기존 SW73검사, 실제 native autoload/locked vendor 공존·VAPID ES256·AES128GCM·mock201/410/503·TLS/timeout·Configuration/원장/outbox 무변경 통과. 공개 static cache와 private bypass, 실제 HTTPS/live gate를 유지한다. 실제 기기 설치/수신·철회·업데이트 인수는 외부 대기다. |
+| 실제 상품·운영 정책·운영 환경·기기 | 외부 자료·운영 환경 대기 | 관리망의 Amazon/Rakuten CONNECT403, 실제 사용 근거/상품 샘플·운영 신원/문안·SMTP/HTTPS/keys·배포/감시/복원/기기 근거가 남는다. 자료 목록은 아래 단일 운영 입력표를 재사용한다. |
+| 판매 결제·배송·반품/상품환불·포인트 사용/환전·현금 지갑·출금 | 기존에 명시적으로 확정된 범위 제외 | 발주 요청·수동 수당 원장과 구분한다. 기존 소매 기능을 중복 제작하거나 현 출시 요구로 되돌리지 않는다. |
+
+범위별 행은 크기와 포함 관계가 달라 완료율로 환산하지 않는다. 현재 확인하지 못한 코드 공백을 임의로 만들지 않으며, 부분 검증이 곧 전체 필수 요구 완료라는 주장도 하지 않는다.
+
+## 소스·화면·검증 증거의 경계
+
+이전 hotcopy runtime은 재시작 때 옛 이미지의 entrypoint가 덮어쓴 사례가 있었다. **quality2와 초기 캡처는 당시 상태의 역사적 근거이며 최신 후보 성공이 아니다.** 이후 bd1ced8 이미지 재빌드로 기존 DB/volume을 보존하고 host→image bundle→webroot 일치 및 재시작 전후 데이터를 확인했다. 후속 관리자/캐시/언어 선택기 수정은 명시된 overlay로 반영했다.
+
+최종 local 정렬 근거는 [cc99bbb source alignment](evidence/2026-10-29-procurement-local/cc99bbb-source-alignment-outcome.json)의 앱1128개/vendor1426개다. 기존 설치 보존과 overlay 조합이므로 immutable fresh 설치 성공을 뜻하지 않는다. hosted fresh run은 같은 후보에서 새로 build·설치·저장/재조회·복원·재시작 지속성을 확인해야 한다.
+
+- [실제 로컬 기능·품질·이미지 증거 목록](evidence/2026-10-29-procurement-local/README.md)
+- [독립 코드/54PNG 검수와 한계](evidence/2026-10-29-procurement-local/INDEPENDENT_REVIEW.md)
+- [bounded 수동 접근성 판정](evidence/2026-10-29-procurement-local/BOUNDED_MANUAL_REVIEW.md)
+- [관리자 한국어와 native CAS proof](evidence/2026-10-29-procurement-local/admin-korean/)
+- [native cache warmup outcome](evidence/2026-10-29-procurement-local/native-cache-warmup-outcome.json): 상류 iterator가 module vendor의 비-template까지 읽던 원인을 module-owned `*.twig` iterator로 교정. core/runtime loader나 메모리 한도를 바꾸지 않고 기본512MB CLI warmup 및 실제 관리자 화면을 확인했다.
+
+별도 GPT 팀 내부 검수는 실제 수행했다. **외부 Work Mode 세션에 직접 전달하거나 인수가 완료됐다고 기록하지 않는다.** Codex browser 열기 요청의 queued 응답도 실제 화면 접근 증거로 사용하지 않는다. 비밀값·원문 MIME·주소·고객 이름/ID·토큰은 일반 로그와 공유 산출물에 남기지 않는다.
+
+## 출시를 막는 잔여 — 다섯 범주
+
+| 범주 | 현재 차단 내용 | 닫는 조건 |
+| --- | --- | --- |
+| 1. 동일 후보의 hosted fresh 통합 | 세 실행이 모두 build 준비에서 중단됐다. 로컬 근거를 대체할 최종37단계 native 전체 결과가 없다. | 실제 필요 범위의 build/CA 권한 경로 수정 → 안정 SHA 한 번의 fresh QA → 전 phase 실제 outcome·aggregate·cleanup·artifact 확인. fresh native hook과 분류 부모/leaf·고객 하위 메뉴/filter 연결도 포함한다. |
+| 2. 실제 상품 원문·분류/사진 인수 | 실제 Amazon Japan/Rakuten은 관리망 CONNECT403으로 미검증이다. 합성 source/기하학 사진은 원문 호환과 이미지 사용 근거가 아니다. | 허용되는 실제 원문/피드/내보내기 접근과 사용 근거 아래 출시 상품의 가격·상세·옵션·사진·분류/검수/snapshot을 대조한다. 차단 우회·임의 최저가 확정·자동 분류 신뢰로 대체하지 않는다. |
+| 3. 실제 운영자·참여자·정책 | 운영자/지원·실제 안내 대상/수량·검토/수당 기준·세 언어 정책의 운영 승인이 남는다. LOGISTEED reference는 운영자 신원이 아니다. | 저장소/대화의 기존 승인 자료를 재사용하고 단일 운영 입력표의 남은 값만 승인 자료와 연결해 native 저장·새 조회·고객 반영을 확인한다. |
+| 4. 운영 환경과 전환 인수 | 실제 domain/HTTPS·SMTP·비밀 저장소·불변 app digest·worker·감시·backup/RPO-RTO/restore owner의 운영 연결 근거가 없다. | 승인 staging의 같은 digest와 최소 권한 구성에서 메일·scheduler·감시·별도 복원/rollback·담당자 인수를 확인한 뒤 기존 운영 전환 승인 절차를 따른다. 이번 작업은 배포 승인이 아니다. |
+| 5. 실기기 전달·PWA 인수 | Chromium/합성 Push·mock HTTP는 실제 iOS/Android 설치·업데이트·수신/철회를 대신하지 않는다. | 승인 HTTPS와 실제 기기로 PWA 설치/standalone/복귀/업데이트 및 동의·Push 수신·철회·재시도를 확인한다. field INP는 현재 미측정으로 남기고 운영 계측과 구분한다. |
+
+이 다섯 범주는 같은 미완료를 여러 기능으로 중복 세지 않기 위한 분류다. 선택 디자인이나 새 기능을 추가한 종료 조건이 아니다. 개발/합성 검증과 실제 자료/현장 인수를 구분한 채 독립적으로 가능한 CI 수정은 계속한다.
+
+## 외부 입력은 한 목록만 사용
+
+필요 값·사용 위치·없어서 막히는 작업은 기존 [현재 서비스의 운영 입력 체크리스트](PRODUCTION_DEPLOYMENT.md#현재-서비스의-운영-입력-체크리스트)에 한 번만 관리한다. 승인된 브랜드·로고·대화/저장소의 자료는 재사용하며 같은 운영 자료 전체를 다시 요청하지 않는다. 실제 비밀은 값 대신 승인 secret-store 참조와 담당자만 기록한다. 과거 보관자료의 seller·세금·carrier·배송/반품/환불·계좌 입력을 현 목록에 다시 넣지 않는다.
+
+## 종료·운영 전환 기준
+
+1. CI 준비 원인을 수정한 최종 후보의 fresh 통합 outcome/aggregate와 artifact를 확정한다. 실패하면 그 최초 원인과 영향을 집중 재검증한다. 초록 step·not_run·무조건 재시도·timeout 증가를 성공으로 바꾸지 않는다.
+2. 위 실제 상품·승인 운영 자료·운영 환경·기기 인수를 같은 승인 release SHA/digest에 연결한다. 전체와 집중, 합성과 실제 원문, 시각과 기능, browser emulation과 실기기를 구분한다.
+3. handoff에는 최종 SHA·원격 저장·artifact·변경 화면·기대 결과·잔여 조건·실제 전달 여부를 남긴다. 운영 DB/volume·main·사용자 파일을 보존하고 별도 승인 없는 운영 배포/실결제/실거래/유료 서비스 사용은 진행하지 않는다.
+
+현재는 이 조건들이 모두 닫히지 않았으므로 출시 완료를 선언하지 않는다. 기존 개발 필수 항목이 실제로 완료되면 그 범위는 완료로 명시하고, 운영 자료 대기는 별도로 표시한다. 검증 뒤 선택 개선을 계속 추가해 작업을 무기한 연장하지 않는다.
+
+## 보관자료 — 이전 소매 39항목 조사와 당시 QA
+
+아래 전체 기록은 이전 `e357b8b`/실행 코드 `364ba34` 시점의 소매 조사다. 아래의 “현재”, “최신”, “NO-GO”, “미구현”, 39행 집계·7개 실패와 외부 입력은 **그 과거 범위/시점에 한정**한다. 위 현 플랫폼 판정과 최신 승인 설계가 우선하며, 아래 배송·반품·세금·판매자 승인·출금 자료를 현 출시 입력으로 재적용하지 않는다. 기존 증거와 당시 요구의 추적을 위해 삭제하지 않고 보존한다.
+
+### ORDENOWA 출시 잔여 작업 전수조사 — 2026-10-29 한국시간
 
 > **최종 제품 기준 — 2026-10-29:** 운영자가 고객에게 특정 상품 발주를 안내하고, 고객이 쇼핑몰 주문하듯 해당 상품·수량을 확인해 발주 요청하면 운영자가 수동 검토 후 포인트 잔액을 지급 반영한다. 고객은 잔액·내역만 표시받고 별도 처리는 운영자가 맡는다. 일반 작업결과/증거 제출 시스템으로 확장하지 않는다. 배송·반품·상품환불·판매결제/출금은 제외하고 수동수당포인트는 필수다. [최종 아키텍처](superpowers/specs/2026-10-29-ordenowa-procurement-points-platform-design.md)와 [새 요구사항표](RELEASE_REQUIREMENTS_MATRIX.md)가 우선한다. 아래 쇼핑몰 기록은 과거 해당범위 증거이며 새출시 PASS/FAIL이 아니다. 신규 발주요청·포인트핵심 구현/검증은 아직 미완료다.
 
-## 판정과 조사 범위
+#### 판정과 조사 범위
 
 **현재 공개 판매 출시: NO-GO. 오늘 완료를 보증할 근거가 없다.** 최신 전체 QA의 7개 범위가 실패했고, 필수 Push 발송·일부 PWA·감사 범위·운영 배포 구성이 미완료다. 실제 판매자 승인과 출시 상품·운영 환경도 확인되지 않았다. 기존 필수 요구사항을 줄이거나 합성 검증을 실거래 인수로 대체해서 출시 가능으로 판정하지 않는다.
 
 이번 작업은 6개 GPT 서브에이전트의 독립 영역 조사와 주담당의 원격 SHA·Actions 로그·artifact 목록 대조로 수행했다. 읽은 기준은 AGENTS.md, Master 원본, 관리자 한국어 원본, 일본 주소 요구사항, 최신 Architecture, business-profile/PWA spec, RELEASE_REQUIREMENTS_MATRIX, 현황·테스트·handoff·운영 문서 및 실제 모듈/테마/검증 소스다. 이 보고서는 코드 수정이나 신규 QA 통과 보고가 아니다. 새 전체 QA·배포·운영 DB 변경·실거래·유료 서비스는 실행하지 않았다.
 
-### 확인한 기준
+##### 확인한 기준
 
 - 원격 work HEAD: `e357b8b30f62949d96b0e5339c4925d3fffddc86`. 마지막 변경은 Cursor 인계 문서뿐이다. 실제 실행 코드 기준은 부모 `364ba341009c83ba9dbabd93aa95bfffa6171455`다.
 - 원격 main: `ee02a3657448d563508687614a246e05ac61eecd`. 이번 조사는 원본 checkout을 이동시키지 않고 별도 `/workspace/ordenowa-release-audit`에서 했다.
@@ -17,7 +111,7 @@
 - 현재 담당 전환 문서 `CURSOR_HANDOFF.md:25-28`은 코드 주담당 Cursor를 명시한다. 이번 위임은 전수조사이며 같은 브랜치에 병렬 코드 수정/CI를 하지 않았다.
 - 원본 지갑·수익·출금 요구는 이후 확정된 범위 제외를 유지한다. 카드 PG·자동 은행 API·조건부 실시간 채팅을 새 필수 결함으로 만들어 넣지 않는다.
 
-## 실제 QA 결과와 산출물
+#### 실제 QA 결과와 산출물
 
 | 증거 | 실제 판정 | 사용할 수 있는 범위 |
 | --- | --- | --- |
@@ -32,7 +126,7 @@
 - [비식별 진단 artifact 12761073334](https://github.com/goldeget/japan-premium-commerce/actions/runs/40559740938/artifacts/12761073334): 3,889 bytes, 조회 시 만료 아님. 만료 예정 **2026-10-30 03:46:40 한국시간**.
 - artifact 목록과 job 원문 로그를 재조회했다. 이번 조사에서 전체 캡처를 열어 독립 시각 PASS로 판정하거나 개별 Lighthouse JSON 점수를 추출하지 않았다. 보고서 생성 수를 점수 통과 수로 해석하지 않는다.
 
-## 7개 실패: 최초 지점·분류·닫히는 조건
+#### 7개 실패: 최초 지점·분류·닫히는 조건
 
 | 순서 | 확인한 최초 실패와 근거 | 현재 분류 | 필요한 수정/확인과 통과 조건 |
 | --- | --- | --- | --- |
@@ -48,7 +142,7 @@
 
 성능 로그 `lighthouse=4/6 axe=4/6 interaction_lab_proxy=0/2`는 `run_quality_audit.py:503-505`의 **생성된 측정 항목 수**다. 4개가 통과했다는 뜻이 아니다. 현 보고서 범위는 home/product/contact × 390/1440px이며 실제 INP field measurement는 없다(:413). 클릭→paint proxy는 INP 달성 근거가 아니다. 원본 목표는 mobile90/desktop95, A11Y/SEO95, LCP≤2.5s, CLS≤0.1, INP≤200ms이며 목표/측정 가능 범위를 명시한다. 실제 사용자 field INP는 출시 전 합성 검사로 생성할 수 없으므로 측정 없음과 운영 계측을 구분한다.
 
-## 기존 요구사항표 39개 추적 항목 전수 대조
+#### 기존 요구사항표 39개 추적 항목 전수 대조
 
 상태는 사용자 지정 5개 값이다. 한 행의 상태는 전체 해당 요구를 기준으로 하고, 이미 통과한 하위 범위는 증거/잔여 열에 보존한다. 새로운 독립 결함 없이 기존 성공 기능을 재개발 대상으로 돌리지 않는다. 집계는 해당 범위 검증 완료14, 검증 미완료15, 구현 미완료4, 외부 대기5, 제외1이다. 추적 항목별 크기와 하위 범위가 달라 이 숫자로 플랫폼 완료율을 계산하지 않는다.
 
@@ -94,7 +188,7 @@
 | VIS-001 | 구현됐으나 검증 미완료 | 기존 캡처 존재. 최신 안정 SHA 전체 주요화면·3언어·PC/mobile·밝고 어두운 배경 독립 검수/실제 전달 근거 없음 |
 | OPS-ENV-001 | 구현 미완료 | local/CI Compose·운영 runbook만 존재. 운영 artifact/promotion·승인신호 주입·TLS/SMTP/backup/rollback/monitoring 구성/실증 없음. host/owners 외부 대기 |
 
-## 관리자와 감사의 남은 구체적 범위
+#### 관리자와 감사의 남은 구체적 범위
 
 원본 ADMIN_KOREAN_REQUIREMENTS:233-254의16동선 중 지갑/수익/출금9-11은 제외다. 나머지는 로그인/복구, 대시보드, 상품등록/편집/수집, 주문, 입금, 상담, 배송, 직원/권한, 회사정보, 시스템설정, 오류/알림이다. 선택된 화면 성공을 유지하면서 다음 공백을 닫아야 한다.
 
@@ -105,7 +199,7 @@
 - 보존기간/독자역할/DB 운영자 변경통제·대량이력 조회/복구 정책은 운영 책임과 개발 양쪽이 필요하다. 모든 DB를 무조건 변경 불가능하게 만들거나 새 유료 ledger를 도입해야 한다는 뜻은 아니다.
 - ProfileVersionService:54-93,236-279와 VersionedProfileRepository:40-112의 draft/publish/history/새 draft restore·은행 전용권한 분리는 이미 구현됐다. 재제작 대신 locale/role/고객반영 인수를 보완한다.
 
-## 요구사항표 밖으로 빠뜨리면 안 되는 작업
+#### 요구사항표 밖으로 빠뜨리면 안 되는 작업
 
 1. **안전한 public static cache·설치 안내:** Master:777-791 요구. SW:167-191은 network fetch와503 fallback이며 CacheStorage가 없다. private cache 금지 유지하면서 원본 요구를 처리해야 한다.
 2. **실제 Push:** PushOutboxService:9-16 default는 DisabledPushDeliveryProvider이고 native producer도 provider 없이 enqueue만 한다. provider/worker/retry 실행·승인 consent/VAPID/HTTPS·기기 수신이 남는다.
@@ -116,7 +210,7 @@
 7. **조건부 실시간 채팅:** Master:631의 “가능하면 자체 상담 기능” 아래 실시간 채팅이 있다. 구현은 비동기 thread 상담이다. 확정 필수 blocker나 확정 범위 제외로 임의 변경하지 않고 조건부 미구현 요구로 남긴다.
 8. **실제 옵션 한계:** catalog README:25는 Cartesian/균일가격 형태만 지원. sparse/조합별 차등가격 출시 SKU가 필요하면 adapter 구현이 추가로 필요하다. SKU 자료 없이 전체 실상품 호환을 완료 처리하지 않는다.
 
-## 외부 입력 — 이미 승인된 자료를 재요청하지 않는 단일 목록
+#### 외부 입력 — 이미 승인된 자료를 재요청하지 않는 단일 목록
 
 재사용 가능한 승인 자료는 ORDENOWA 표기/JA 설명·슬로건, 공식 원본3종/파생17종, JPY 세금포함 표시, 지원 일본지역 무료배송 정책이다. 다음은 저장소에서 실제 운영값/연결 증거를 확인하지 못한 항목이다. 외부 시스템에 전혀 없다는 단정은 아니다. 비밀값은 채팅/Git가 아닌 승인 secret-store reference로 연결한다.
 
@@ -133,7 +227,7 @@
 | high-impact event 범위·감사 독자role·보존/예외정책·감사책임자·장애알림 수신자 | audit/monitoring | 이력 인수·감시/대응 운영 |
 | 승인 HTTPS target·iOS/iPadOS/Android 실기기 또는 승인 원격기기 | native PWA install/standalone/update/resume | 실기기 인수. Chromium mobile emulation으로 대체 불가 |
 
-## 완료 순서와 오늘 출시를 위한 판정문
+#### 완료 순서와 오늘 출시를 위한 판정문
 
 동시에 진행할 수 있는 것은 (A) 코드/집중검증, (B) 승인 자료/운영 준비, (C) 독립 화면·실기기 검수다. A가 통과해도 B/C의 증거를 대신하지 않는다. 원본 요구를 축소하는 범위 결정이 없으므로 선택사항으로 몰래 이관하지 않는다.
 
@@ -146,7 +240,7 @@
 
 **오늘 출시 가능 조건:** 위 개발·검증·운영 입력이 오늘 실제로 모두 닫히고 동일 artifact의 전환 인수가 통과한 경우에만 가능 판정한다. 현재는 미구현·실패 원인 미확정·자료 대기가 함께 있어 일정 확약이나 임의 시간 추정은 하지 않는다. 즉시 서버에 local Compose를 올리는 것만으로 기존 필수 요구를 충족한 출시가 되지는 않는다. 외부 자료가 전부 준비돼도 남은 코드/검증 공백은 독립적으로 해결해야 한다.
 
-## 기록 교정·이번 조사 한계
+#### 기록 교정·이번 조사 한계
 
 - 기존 matrix의 JSON 기본/scale 구현 미완료는 현재 indexed DB 및 scale acceptance 소스와 불일치한다. 반대로 최신 검색 완료·새 메일 미실행·과거 candidate32ab를 최신으로 쓰는 상태도 실제 최신 결과와 불일치한다. 이 보고서의39행 대조와 실제 run 결과를 최신 판정으로 사용한다.
 - CURSOR_HANDOFF의 catalog 최초 실패가 batch 이후라는 서술은 unsupported URL 알림 locale drift 증거로 교정해 읽어야 한다.

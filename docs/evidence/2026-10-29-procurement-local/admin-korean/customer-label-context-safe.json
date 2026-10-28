@@ -1,0 +1,40 @@
+{
+  "read_only": true,
+  "full_korean_acceptance": false,
+  "pages": {
+    "login": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": true,
+      "static_english_labels": [],
+      "scope": "visible_exact_static_catalogue_text_only"
+    },
+    "customers": {
+      "opened": true,
+      "http_status": 200,
+      "has_main": true,
+      "korean_document": true,
+      "login_redirect": false,
+      "static_english_labels": [],
+      "scope": "visible_exact_static_catalogue_text_only",
+      "customer_label_context": {
+        "element_tag": "TD",
+        "element_class": "column-lastname",
+        "known_source_field": "customer.lastname",
+        "values_ids_and_counts_omitted": true
+      },
+      "route_provenance": "native_menu_href",
+      "positive_native_page": true,
+      "stored_data_exclusion": {
+        "element_tag": "TD",
+        "element_class": "column-lastname",
+        "native_source_table": "customer",
+        "native_source_column": "lastname",
+        "values_ids_and_counts_omitted": true,
+        "static_catalogue_key_collision_is_not_a_ui_translation_failure": true
+      }
+    }
+  }
+}

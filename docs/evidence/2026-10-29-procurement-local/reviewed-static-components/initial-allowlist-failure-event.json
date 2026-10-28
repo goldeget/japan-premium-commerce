@@ -1,0 +1,13 @@
+{
+  "evidence_type": "historical diagnostic event summary; original raw partial JSON was overwritten by resume and is not reconstructed here",
+  "source": "Actual exec output and retained previous_diagnostic_failure in final outcome",
+  "passed": false,
+  "cells_completed_at_failure": 25,
+  "public_static_crops_completed_at_failure": 28,
+  "failure_stage": "ko_320_static_crops",
+  "failure_type": "AssertionError",
+  "classification": "Known public account translation absent from screenshot static allowlist; no application failure",
+  "resolution": "Official public KO translation Your account = \ub2f9\uc2e0\uc758 \uacc4\uc815 was added to screenshot privacy allowlist; only KO was resumed; no application code or assertions were weakened",
+  "application_failure": false,
+  "final_outcome_file": "static-incomplete-outcome.json"
+}

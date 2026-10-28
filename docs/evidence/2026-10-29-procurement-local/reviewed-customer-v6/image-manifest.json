@@ -1,0 +1,440 @@
+{
+  "source_sha": "bd1ced815093df2fadc21b521cdb01bdd546ed0a",
+  "source_qualifier": "Latest rebuilt image with host/opt/webroot1122file alignment reported by CI owner; existing isolated test database, not a fresh installation proof",
+  "directory": "/tmp/ordenowa-customer-browser-evidence-20261029-v6",
+  "image_count": 54,
+  "images": [
+    {
+      "file": "en_1440_confirmation-controls-static-labels.png",
+      "sha256": "221e8116e978a60e5822843857bef92875d510a716868b195cdd7de25900d5f2",
+      "bytes": 46805,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_1440_notifications-static-labels.png",
+      "sha256": "ce2c401fcf479bc1cdb514c98c7504747265b5a39babb0fe677758ee907307bf",
+      "bytes": 71386,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_1440_policy_operator-static-labels.png",
+      "sha256": "4e8f59110faaadd1a4fabf51920182ae6761415a76e22a51ef7c0d05e820c0ff",
+      "bytes": 37271,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_1440_policy_points-static-labels.png",
+      "sha256": "7742b67060885b437ad61cf179dbdaa3515486d93a01e1e56f174da817dbf252",
+      "bytes": 44244,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_1440_policy_privacy-static-labels.png",
+      "sha256": "a4b9464715fea4fce6812d3582309ef6ffe320008af907221d1025f378df9cdd",
+      "bytes": 41564,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_1440_policy_terms-static-labels.png",
+      "sha256": "cd76e0d496df8be834c90bd397afce755084046f2347e1602127109c6a76deb5",
+      "bytes": 38879,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_1440_request-static-labels.png",
+      "sha256": "6b1cf488a4eb8de2f7ed6bddc3243fc0b301963bd14d85aea1fee0dc86a69095",
+      "bytes": 48811,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_1440_support-static-labels.png",
+      "sha256": "f87708ad6b6f28ed511f9ee7f20cbe2ddde1cdec5078a7053a02d99eba35d59a",
+      "bytes": 44005,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_320_confirmation-controls-static-labels.png",
+      "sha256": "57f8da66020b8981706772e2af9ffa497a402f5105a2a147cdb7c544b45d8aa8",
+      "bytes": 29905,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_390_confirmation-controls-static-labels.png",
+      "sha256": "0eeab182715e1549b23706781852feb80c45a2b3b847c0527c914a4ff7f0a99f",
+      "bytes": 31521,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_390_confirmation-product-static-labels.png",
+      "sha256": "f429e8aa06ad87ea688e302d445e41f107ce684550625f12cdacea32d280b954",
+      "bytes": 30945,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_390_notifications-static-labels.png",
+      "sha256": "79561e0f8c77516aa150b8b90a194d4e49f23aac4004075c3b336e5401956748",
+      "bytes": 46676,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_390_policy_operator-static-labels.png",
+      "sha256": "b91a1ce8bcf51a518dcaa969778277cb6bdc4ac4499cfa815570980a917b7491",
+      "bytes": 21812,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_390_policy_points-static-labels.png",
+      "sha256": "861c04788fcd3a9f3c108d85e7996d8039420145c86f933a147d69396fc2b207",
+      "bytes": 26661,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_390_policy_privacy-static-labels.png",
+      "sha256": "f54d8686eb1fb2fdd44700dcbdaec0105767daf723982ab36832995ab0551974",
+      "bytes": 24459,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_390_policy_terms-static-labels.png",
+      "sha256": "868924bbd3c8efb0c50c1207eff8d128a9cb238655d482b2aa0b3174cfc74da1",
+      "bytes": 23084,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_390_request-static-labels.png",
+      "sha256": "129c86a341b211c5b6af5ade76c9bed62d8603105660246c12ed4c8455b58350",
+      "bytes": 32997,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_390_support-static-labels.png",
+      "sha256": "746bcff01f30ea1606ffb34b740027142e7ff465300c98ad5fd76bf63a58be60",
+      "bytes": 39038,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_1440_confirmation-controls-static-labels.png",
+      "sha256": "db0c2b5e3bd1d7983e252bc3ec63cd24f50867a5dd53c0712978df789d8b1f1a",
+      "bytes": 48142,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_1440_notifications-static-labels.png",
+      "sha256": "4ec65ea85b808c08a7dadcca55ebcf30fbaba00203ebbe63934077e636074b25",
+      "bytes": 81177,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_1440_policy_operator-static-labels.png",
+      "sha256": "720656fe5f757e9613b80f43e084e35541f3d41e1f4c750ea22cd9294bdd4125",
+      "bytes": 48583,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_1440_policy_points-static-labels.png",
+      "sha256": "2bbc389f97a735ab32fce6b19579bec0bd3b2540a5bb89269df35757db3cea9f",
+      "bytes": 47301,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_1440_policy_privacy-static-labels.png",
+      "sha256": "149b716da6e7b6162f4695f2c403553089c44ae4513063280cd64df59b1ccd67",
+      "bytes": 46199,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_1440_policy_terms-static-labels.png",
+      "sha256": "166071f0da708794f2f6ead66812668e4427e538c8f45990d2276b47dda71247",
+      "bytes": 44915,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_1440_request-static-labels.png",
+      "sha256": "5b0b409bd6f8225f857481211219efdad5f9583e64dba0491b41f5a822e22bc3",
+      "bytes": 58025,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_1440_support-static-labels.png",
+      "sha256": "8e3d9c3e2882ee1494c8389015cfe2cc4b26b22f208e5a6644e045bceec0c59f",
+      "bytes": 61552,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_320_confirmation-controls-static-labels.png",
+      "sha256": "919f4c41a9770a02dd631129e474171aa444aea52ae7c99e9ac7cfc84a7c2201",
+      "bytes": 33664,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_390_confirmation-controls-static-labels.png",
+      "sha256": "2a48f00717d3a855fe55d30e5b20e0597c5f35284228baa948f9def80375e421",
+      "bytes": 34552,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_390_confirmation-product-static-labels.png",
+      "sha256": "b3aec1ed6af566187a034b405e6181cb8b5969d9c66fca2355679a3566374967",
+      "bytes": 37239,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_390_notifications-static-labels.png",
+      "sha256": "8f592471a1458b4bcfa66133ab6f4d9c730ea9fba1ad37e28870be871db68498",
+      "bytes": 58927,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_390_policy_operator-static-labels.png",
+      "sha256": "26bbf6f0885e8f45ba7cbdff8498c5a133a1da5cbc38c288e0e72f19367da8ce",
+      "bytes": 31279,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_390_policy_points-static-labels.png",
+      "sha256": "e9638bd20507148aac7363797e80578c8b45b656b2f780ac346fd01f16e4238f",
+      "bytes": 30469,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_390_policy_privacy-static-labels.png",
+      "sha256": "16d639cf060a972dc7ea43736b54bc69f87fc30f2370bc9d24e14e35d5720b8c",
+      "bytes": 29665,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_390_policy_terms-static-labels.png",
+      "sha256": "400344ed9fa43cf3a9456948178177d9a9c01674505ff2feba5208af656fb35b",
+      "bytes": 28948,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_390_request-static-labels.png",
+      "sha256": "30a3b9ae2b531bd71993586e3d73983997d912cdd67e03ca8e86bd5099b64e4e",
+      "bytes": 38679,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_390_support-static-labels.png",
+      "sha256": "de368d5cb0a794dca69b40bef16ba4e763c27841d1d8adb90aeb5398f65fd8e0",
+      "bytes": 53761,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_1440_confirmation-controls-static-labels.png",
+      "sha256": "f13245772ce4a54ed723136ab812961048a3fea9dbd9e445853e2dc0f8fc52d5",
+      "bytes": 38739,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_1440_notifications-static-labels.png",
+      "sha256": "9a3047da952ae43e1b2a4df5b729192c535be28893e01c5090ce51306b539180",
+      "bytes": 51129,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_1440_policy_operator-static-labels.png",
+      "sha256": "44a5879daaa73b818c13f304dc0d8f771f04d37af4b47e827b6e6a10efb98ca1",
+      "bytes": 42393,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_1440_policy_points-static-labels.png",
+      "sha256": "e5323cac56294491a56387651179e993a29d8547f8e1e155c860f1e72c6d55c6",
+      "bytes": 40277,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_1440_policy_privacy-static-labels.png",
+      "sha256": "a1cc612d2134161894b674e8a49da7903da637f1bc5e1296afdcc235df4366cc",
+      "bytes": 40743,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_1440_policy_terms-static-labels.png",
+      "sha256": "d2bf3f956006e7d8d013c25112ec74b07ab692f5c9883bdc59430da09be0c872",
+      "bytes": 39382,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_1440_request-static-labels.png",
+      "sha256": "ef5375fa5b23dd5f1c76f590f8f904f0f6f7913314d91634434427d61c2342d7",
+      "bytes": 38143,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_1440_support-static-labels.png",
+      "sha256": "62f8aa1601572f9814ed5cd06d9d53c4ddf3d49b63201ea8826d731d5937cc7f",
+      "bytes": 38534,
+      "width": 1440,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_320_confirmation-controls-static-labels.png",
+      "sha256": "dd31ba916d9160d1e31104b4097722f8c9442883cdebcfe0bb65ff59cd7958e8",
+      "bytes": 24328,
+      "width": 320,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_390_confirmation-controls-static-labels.png",
+      "sha256": "b2c1ae35bca22c63f61db2073a00eb01f669806e45ce5ced93a3f1f627ee1041",
+      "bytes": 25235,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_390_confirmation-product-static-labels.png",
+      "sha256": "04f801d500610ca2d1369954fce33d0e1e4fdb91b8cf6e363435e946c0a761c7",
+      "bytes": 30116,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_390_notifications-static-labels.png",
+      "sha256": "02e81d30aec6168116fb0e6c94b900e14b9470c22b751d31777bc648a3648a58",
+      "bytes": 32312,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_390_policy_operator-static-labels.png",
+      "sha256": "69837d4d579a2f4bd8e23f96a0c55e76949e596e0dce610ed1b0589d5bdc4d3f",
+      "bytes": 26930,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_390_policy_points-static-labels.png",
+      "sha256": "12bae727db41a4b26bf12844e5236f71d0c14f76056cadb541c827685cacaafa",
+      "bytes": 25669,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_390_policy_privacy-static-labels.png",
+      "sha256": "5a8396a3cff31ed042f9a7222852dc67a69b64f7dad9c6b4a3c5e1efcfaf1cc3",
+      "bytes": 26034,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_390_policy_terms-static-labels.png",
+      "sha256": "5f7e4bf26c1e6b4afb8284b6fe9d7922a3f3684a110e582332a76c85892e4b01",
+      "bytes": 24965,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_390_request-static-labels.png",
+      "sha256": "3fa67c6f3db31a5454bd39441fe194d05ffa8c324d3c21dad841ab66662070c9",
+      "bytes": 25965,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_390_support-static-labels.png",
+      "sha256": "98373e308e50ab66c583f8a8661e8a022107891cefe06dfb2add46cb0c8e8401",
+      "bytes": 35475,
+      "width": 390,
+      "height": 1000,
+      "independent_viewed": true
+    }
+  ]
+}

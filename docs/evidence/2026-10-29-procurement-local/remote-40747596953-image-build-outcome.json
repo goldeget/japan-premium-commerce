@@ -1,0 +1,1 @@
+{"error_category": "unclassified", "exit_code": 1, "passed": false, "phase": "image_build", "raw_log_uploaded": false, "safe_build_stage_lines": ["#1 [internal] load local bake definitions"], "safe_error_lines": []}

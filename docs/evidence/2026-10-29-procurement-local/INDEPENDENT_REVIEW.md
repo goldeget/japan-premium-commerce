@@ -2,6 +2,10 @@
 
 Reviewer: `/root/independent_review` (did not author customer UI).
 
+## Latest visual status
+
+**The v6 section supersedes earlier missing confirmation/support/policy/request/notification visual coverage.** Independently inspected all 54 actual saved v6 PNGs from source `bd1ced815093df2fadc21b521cdb01bdd546ed0a`. No new confirmed visual blocker in the visible regions. Product/customer values, message contents and policy bodies are masked, so this is review of layout/static UI rather than approval of actual business or legal content. Existing isolated DB was preserved; this is not a fresh-installation proof.
+
 ## Code review completed
 
 - Reviewed Amazon Japan/Rakuten parsing, source URL validation, public fetch guards, plain text normalization, native product draft persistence, reviewed evidence bridge, native category ancestry, customer category tree and assignment filter.
@@ -52,8 +56,39 @@ Source remains the running native installation based on `a9fe3a0` plus task hotf
 
 ## Bounded contrast calculation
 
-Independently calculated WCAG relative-luminance ratios for the safe computed color pairs supplied by the customer/quality reviewers: header RGB(20,38,60) on white 15.30:1; language select on RGB(247,249,252) 14.51:1; white footer on RGB(7,27,61) 17.03:1; mobile nav text RGB(7,27,61) on 97%-opaque RGB(248,251,254) over navy 15.46:1. These pairs exceed text/non-text contrast thresholds. The supplied metadata was bounded to five ancestors and from an older cache state; it does not prove every actual background, SVG overlap, icon state or all automated incomplete findings. No full WCAG claim.
+The first calculation used older, five-ancestor-bounded metadata. It was subsequently superseded by actual current native 27-cell component metadata reaching opaque surfaces, independent inspection of all 42 JA/EN/KO static component crops, and conservative mobile-nav bounds over any physical backdrop. Final observed patterns have header 15.303:1, language text 14.510:1, SVG chevron 10.908:1, footer chevron 17.029:1, mobile icons at least 15.356:1 and mobile text at least 13.800:1.
+
+See `/workspace/scratch/ordenowa-bounded-manual-incomplete-review.md` for the separate manual adjudication of the 13 known component patterns behind `color-contrast` and mobile `label-content-name-mismatch`. Actual DOM ARIA/visible-label/source semantics were inspected; a full accessibility tree was not. The original 84 automated incomplete cells remain recorded, full WCAG compliance is not claimed, and field INP remains NOT TESTED. Source frontend is unchanged from `bd1ced8`; the backend Twig warmup correction does not change these components.
+
+Follow-up `cc99bbb42031a03493dc2df3969d8c6caf00abd2` adds only Japanese/Korean language-selector ARIA translations. Independently reviewed those XLF files and actual safe before/after native evidence: normalized selector HTML/options/selection preserved, localized actual ARIA plus Selenium computed names correct, three keyboard transitions passed, eight other existing Global keys per locale preserved. Independently opened all three new selector crops. This closes the English-only accessible-label qualification; it does not alter the prior 42 component images or claim they already showed the new invisible ARIA labels.
 
 Old core screenshots with broad replacement of text/removal of images and disabled controls are rejected as visual acceptance evidence. They cannot establish real layout, photo rendering or native enabled state.
 
 No external Work Mode handoff or external browser inspection has been performed by this reviewer.
+
+## Latest actual visual batch: v6
+
+Capture owner supplied exact source `bd1ced815093df2fadc21b521cdb01bdd546ed0a`, rebuilt native image revision `bd1ced8`, and pre-run alignment of host/opt/webroot 1122 application files plus 1426 Push vendor files. Existing isolated database and volumes were retained. These source/alignment assertions belong to the CI owner's evidence; this reviewer independently inspected the saved PNGs.
+
+Actually opened **all 54 PNGs** under `/tmp/ordenowa-customer-browser-evidence-20261029-v6/` with `view_image`:
+
+| Step | Saved file pattern | Actual coverage | General health / evidence limits |
+| --- | --- | --- | --- |
+| 1 | `{ja,en,ko}_{320,390,1440}_confirmation-controls-static-labels.png` | 9 captures | Submit and change-quantity controls are clear and fit mobile/desktop widths. Quantity label and operator instructions are present. Exact quantity value is masked and relies on the capture owner's native assertions. No submission was performed by this reviewer. |
+| 2 | `{ja,en,ko}_390_confirmation-product-static-labels.png` | 3 captures | Confirmation instructions visibly explain that submitted details cannot be changed. Main product photo and both thumbnails render; dynamic product wording is masked. |
+| 3 | `{ja,en,ko}_{390,1440}_request-static-labels.png` | 6 captures | Approved request state, awarded-points state, reason/instructions block and request-specific support action fit. Dynamic request/quantity/reason values are masked. |
+| 4 | `{ja,en,ko}_{390,1440}_support-static-labels.png` | 6 captures | Customer/support message roles, back link, textarea, 2000-character/no-attachment instruction and send action are visible and fit. Some mobile capture starts below the page-title top to show controls; that cropped title region is not independently reviewed there. Message contents are masked. |
+| 5 | `{ja,en,ko}_{390,1440}_notifications-static-labels.png` | 6 captures | Localized point-history, review-result and request-received notifications form clear cards and fit. IDs/timestamps are masked. Screenshot inspection does not verify delivery or click destination. |
+| 6 | `{ja,en,ko}_{390,1440}_policy_{operator,terms,privacy,points}-static-labels.png` | 24 captures | Policy headings, page structure and footer fit. Operator identity/contact and supplied policy content are masked, so actual legal/business text is not visually approved. The English operator heading is also fully covered by the privacy mask; exact text of that heading is not independently reviewed. |
+
+**Result:** no new confirmed visual defect in the inspected v6 regions. The prior v4 mobile header problem was corrected and independently verified in v5. Privacy-mask rectangles covering some fixed-navigation pixels are known capture overlays; they are excluded from app-defect findings. Native bottom navigation was separately reviewed in v5.
+
+Capture owner's retained `evidence-manifest.json`, `visual-outcome.json` and `domain-outcome.json` report 318 browser checks passing, all 12 domain-table hashes unchanged through previews/captures, customer C with zero requests/points, and original A/B state preserved. Setup added a separate C assignment through native admin UI; confirmation was shown without final submission. This reviewer read those safe outcomes but did not rerun or independently query the database.
+
+Independent integrity manifest: `/workspace/scratch/ordenowa-independent-v6-image-manifest.json` lists SHA256, byte count and actual dimensions for every inspected PNG. Earlier 21 v5 images have a separate manifest at `/workspace/scratch/ordenowa-independent-v5-image-manifest.json`.
+
+Still outside visual approval: fresh category/submenu/filter state, native admin pages, actual marketplace source/product/image compatibility, real legal policy/identity content, physical devices, full user interactions and assistive technology. Public-policy/meta-description source review is separate below. No production deployment, transaction or external Work Mode handoff was performed.
+
+## Additional source review: public policy metadata
+
+Reviewed the localized policy-page description override and corresponding controller/Smarty test seam. Verified the installed PrestaShop 9.2 native `FrontController::getTemplateVarPage()` signature by a read-only file inspection executed as `www-data`. The override preserves native parent page fields, accepts only the supported locale and section, and uses generic purpose descriptions without inventing operator identity or policy terms. No confirmed blocker in that change. The focused native public-page Lighthouse rerun remains separate execution evidence; the test's controller parent is a stub with actual Smarty rendering.

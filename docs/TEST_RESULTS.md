@@ -1,6 +1,37 @@
 # ORDENOWA 테스트 결과
 
-> **최종 제품 기준 — 2026-10-29:** 운영자가 고객에게 특정 상품 발주를 안내하고, 고객이 쇼핑몰 주문하듯 해당 상품·수량을 확인해 발주 요청하면 운영자가 수동 검토 후 포인트 잔액을 지급 반영한다. 고객은 잔액·내역만 표시받고 별도 처리는 운영자가 맡는다. 일반 작업결과/증거 제출 시스템으로 확장하지 않는다. 배송·반품·상품환불·판매결제/출금은 제외하고 수동수당포인트는 필수다. [최종 아키텍처](superpowers/specs/2026-10-29-ordenowa-procurement-points-platform-design.md)와 [새 요구사항표](RELEASE_REQUIREMENTS_MATRIX.md)가 우선한다. 아래 쇼핑몰 기록은 과거 해당범위 증거이며 새출시 PASS/FAIL이 아니다. 신규 발주요청·포인트핵심 구현/검증은 아직 미완료다.
+## 2026-10-29 현재 발주 플랫폼 검증
+
+코드 체크포인트: `6f9c301d6cb4070c2fb440400a0c2a86e2a5ff8b` (원격 work 일치). 최종 단일 SHA 전체 [#40749362584](https://github.com/goldeget/japan-premium-commerce/actions/runs/40749362584)는 검증 중이며 아직 전체 PASS가 아니다.
+
+| 검증 | 실제 결과와 범위 |
+|---|---|
+| 도메인·저장 | PHP8.3/MariaDB 요청 snapshot·권한·rollback·12개 동시 경합, 수동 지급/연결 정정·원장 대조·동시 지급, 채널별 outbox·UNCERTAIN 중단 복구 PASS |
+| 정책·문의·보안 | 정책 저장/새 연결/감사 rollback·6경합, native 문의 연결/본인·shop·공개/내부·멱등·6경합 PASS. 실제 잘못된 POST body token403/무변경, 정상 정책 저장/새 관리자11필드 재조회 PASS |
+| 실제 브라우저 핵심 | 운영 배정→수량2 요청, 고객B GET/POST 거부·본인 인증 유지·A원본 보존, 제한 직원 검토/지급/정정403, 승인0P→별도100P→재로그인100P→정정80P, 문의 공개/내부 분리 PASS |
+| 메일·계정 | 실제 native Mailpit5건(EN1/KO1/JA3)·재전달0·raw MIME 링크/제목/비노출 PASS. JA/EN/KO 가입·중복 거부·주소 없음·login/logout/reset·이전 비밀번호 거부/새 로그인 PASS. 운영 SMTP 미검증 |
+| 관리자·감사 | 공식 native ACL 실제 브라우저 grant/revoke·정확6감사·다른 권한 보존 PASS, 실제 DB 원자성31검사 PASS. 한국어17경로 재조회·정적 누락7종 수정·실제5Tab CAS/멱등·DB12검사 PASS |
+| 파싱·Push | 합성 parser38행동·기존 catalog suite·명시적 fixture smoke77 PASS. AggregateOffer 모호 가격 거부. 실제 locked minishlink9.0.4 VAPID/AES128GCM+mock201/410/503/native autoload PASS. 실제 상품 원문·기기 수신 미검증 |
+| 렌더·PWA | 실제 Smarty 고객72/정책169/문의18/메뉴24/signin81/언어선택41 PASS. 새 PWA Node2·기존 SW73 PASS. 최종3언어 computed name/키보드·카탈로그 병합 보존 PASS |
+| 품질3 | 실제 native JA7경로·10폭+dark 일부: layout84/axe84/실제 클릭14/Lighthouse14 PASS. 성능99–100·접근성100·공개정책SEO100·최대LCP2131.1ms·CLS0.0001. field INP 미측정 |
+| 독립 시각 | 별도 GPT가 안전한 고객21+54PNG, 정적 구성요소42PNG, 언어선택3PNG를 실제 열어 검수. 추가 native 관리자12PNG의 top viewport도 독립 검수. 관측13패턴에 확정 결함 없음. 자동 incomplete84셀 유지, 전체WCAG·보조기술·실기기 PASS 아님 |
+| 소스·복원 | 최종 app1128/vendor1426 정렬, native 기준 파일/CCC 분류·unknown0; 재시작과 별도 복원 DB12테이블+native 상담/ACL hash 일치 PASS. 기본512M 실제 cache:clear WITH warmup PASS |
+| CI 수정 | 6f9c301 portable build/sanitized evidence5검사 PASS. root 최초 unittest module경로 호출은 import 오류였고 표준 discover 경로에서5PASS; 제품 실패가 아니다 |
+
+[안전한 결과·캡처·독립 검수](evidence/2026-10-29-procurement-local/README.md)를 보존한다. 로컬 집중 검증은 bd1ced8 이미지+후속 정렬/부분 수정 결과이며 최신 immutable fresh aggregate와 동일시하지 않는다. 초기 품질1 실제 label mismatch·품질2 이전 소스 결과 및 중간 continuation FAIL은 기록을 유지하고 최신 품질3/집중 후속 결과와 구분한다.
+
+### 실제 원격 결과
+
+- business-profile [#40746034641](https://github.com/goldeget/japan-premium-commerce/actions/runs/40746034641), cc99bbb: SUCCESS.
+- parser [#40737085749](https://github.com/goldeget/japan-premium-commerce/actions/runs/40737085749), 3035be7: SUCCESS.
+- 첫 fresh #40746215184(4f8c18e): FAIL/cleanup success; artifact12840743415.
+- 두 번째 #40747596953(77b2ceb): image_build FAIL/나머지37 not_run/cleanup success; artifact12841243413.
+- 세 번째 #40748071562(4faa400): image_build FAIL/나머지37 not_run/cleanup success; artifact12841443567, ZIP SHA256 `a6f591c558a19097bed40e68a5187d0750bc3410357a7d110637386918cee930`. 보존된 안전 tail에서 host network/외부CA 파일 Bake 권한 요구 확인. 앱 실행 전 실패이며 개인정보 유출·앱 결함으로 단정하지 않는다. 6f9c301에서 원인 수정 후 위 최신 run 검증 중.
+- 과거 쇼핑몰 전체 [#40508152705](https://github.com/goldeget/japan-premium-commerce/actions/runs/40508152705), f5b1cca: 당시 범위 SUCCESS 유지. 아래 ‘최신’ 표기는 각 기록 시점에 한정한다.
+
+---
+
+> **최종 제품 기준 — 2026-10-29:** 운영자가 고객에게 특정 상품 발주를 안내하고, 고객이 쇼핑몰 주문하듯 해당 상품·수량을 확인해 발주 요청하면 운영자가 수동 검토 후 포인트 잔액을 지급 반영한다. 고객은 잔액·내역만 표시받고 별도 처리는 운영자가 맡는다. 일반 작업결과/증거 제출 시스템으로 확장하지 않는다. 배송·반품·상품환불·판매결제/출금은 제외하고 수동수당포인트는 필수다. [최종 아키텍처](superpowers/specs/2026-10-29-ordenowa-procurement-points-platform-design.md)와 [새 요구사항표](RELEASE_REQUIREMENTS_MATRIX.md)가 우선한다. 아래 쇼핑몰 기록은 과거 해당범위 증거이며 새출시 PASS/FAIL이 아니다. 현재 구현 및 검증 상태는 이 문서 맨 위와 새 요구사항표를 따른다. 아래 기록의 미구현·최신 실패 표기는 당시 범위에 한정한다.
 
 > **2026-10-29 출시 전수조사 갱신:** 조사 기준 work `e357b8b`(실행 코드 `364ba34`)의 최신 전체 QA #40559740938은 실제 aggregate **FAILURE**다. 현재 구현·39개 추적 항목·실패/skip·운영 대기는 [출시 잔여 작업 전수조사](RELEASE_READINESS_AUDIT_2026-10-29.md)를 최신 판정으로 사용한다. 아래 과거 candidate/실행 중/완료 표기는 해당 기록 당시 범위이며 최신 통합 PASS가 아니다. Indexed DB catalog/규모검사 소스는 이미 구현됐고, 검증기 실패와 운영 미구현은 구분한다. 이번 조사에서 새 CI나 운영 배포는 실행하지 않았다.
 

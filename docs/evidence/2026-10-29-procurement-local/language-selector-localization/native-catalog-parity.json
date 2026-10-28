@@ -1,0 +1,27 @@
+{
+  "passed": true,
+  "locales": {
+    "ja": {
+      "localized_label": true,
+      "eight_existing_global_keys_preserved": true
+    },
+    "en": {
+      "localized_label": true,
+      "eight_existing_global_keys_preserved": true
+    },
+    "ko": {
+      "localized_label": true,
+      "eight_existing_global_keys_preserved": true
+    }
+  },
+  "existing_keys_checked": [
+    "Contact us",
+    "Language",
+    "Search",
+    "Home",
+    "Close",
+    "Cancel",
+    "Save",
+    "Product"
+  ]
+}

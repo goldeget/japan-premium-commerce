@@ -39,45 +39,54 @@ Namespace `Ordenowa\Procurement`, module root `modules/ordenowaprocurement`.
 
 ## Task 1 — Assignments/requests/reviews and shared persistence
 Files owned: src/Infrastructure/{Database,Schema,Recorder}.php, src/Security/Actor.php, src/Requests/**, tests/procurement/requests*.php and supporting PHP test bootstrap.
-- [ ] Write real behavioral tests for ownership, quantity/version/revoke/expiry, immutable snapshot, unique submit, final review and audit/outbox rollback.
-- [ ] Implement shared interfaces and dedicated indexed schema. Communicate concrete fields/any necessary signature corrections to peers immediately.
-- [ ] Run PHP syntax and isolated DB tests, report actual results, no production target.
+- [x] Write real behavioral tests for ownership, quantity/version/revoke/expiry, immutable snapshot, unique submit, final review and audit/outbox rollback.
+- [x] Implement shared interfaces and dedicated indexed schema. Communicate concrete fields/any necessary signature corrections to peers immediately.
+- [x] Run PHP syntax and isolated DB tests, report actual results, no production target.
 
 ## Task 2 — Points
 Files owned: src/Points/**, tests/procurement/points*.php.
-- [ ] Test approved-only manual award, different/same-key duplicates, concurrent award, correction limits, integer overflow, A/B isolation, rollback and sum readback.
-- [ ] Implement PointService against shared Database/Schema. Request unique anchor, request->account lock order; base/correction hashes; ledger/account/audit/notification atomic.
-- [ ] Test against isolated MariaDB/PHP, report results and no cash semantics.
+- [x] Test approved-only manual award, different/same-key duplicates, concurrent award, correction limits, integer overflow, A/B isolation, rollback and sum readback.
+- [x] Implement PointService against shared Database/Schema. Request unique anchor, request->account lock order; base/correction hashes; ledger/account/audit/notification atomic.
+- [x] Test against isolated MariaDB/PHP, report results and no cash semantics.
 
 ## Task 3 — Customer UI
 Files owned: controllers/front/**, views/templates/front/**, views/css/**, views/js/**, src/Presentation/**.
-- [ ] Implement assigned product cards/detail/quantity/confirmation, requests, points and notification history with JA/EN/KO.
-- [ ] Use Runtime/RequestService/PointService contracts; native session/token and no-store/noindex; no raw product/recipient/point inputs trusted.
-- [ ] Verify escaping, customer isolation and mobile/keyboard interaction with relevant checks.
+- [x] Implement assigned product cards/detail/quantity/confirmation, requests, points and notification history with JA/EN/KO.
+- [x] Use Runtime/RequestService/PointService contracts; native session/token and no-store/noindex; no raw product/recipient/point inputs trusted.
+- [x] Verify escaping, customer isolation and mobile/keyboard interaction with relevant checks (actual Smarty/native A-B GET+POST; 10-width/keyboard and bounded independent visuals).
 
 ## Task 4 — Module/native integration/admin
 Files owned: ordenowaprocurement.php, autoload.php, src/Integration/**, controllers/admin/**, docker install wiring, compose mode config, scoped businessprofile gate changes.
-- [ ] Module install schema/tabs/permissions, Runtime actors/native product snapshots and module settings.
-- [ ] Korean admin assignment, review, points award/correction/audit with native CSRF/ACL; safe rendering and fresh reads.
-- [ ] Decouple member/work entry from seller validation without enabling retail; hide/deny old checkout/address/bank/returns route and link new workspace in child theme via owned narrowly scoped integration.
-- [ ] Preserve legacy mode/regressions; platform mode explicit; real runtime test in disposable install.
+- [x] Module install schema/tabs/permissions, Runtime actors/native product snapshots and module settings.
+- [x] Korean admin assignment, review, points award/correction/audit with native CSRF/ACL; safe rendering and fresh reads.
+- [x] Decouple member/work entry from seller validation without enabling retail; hide/deny old checkout/address/bank/returns route and link new workspace in child theme via owned narrowly scoped integration.
+- [x] Preserve legacy mode and existing data; explicit platform mode; actual owned disposable native boundary test plus offline legacy preflight. Historical full retail QA remains separate.
 
 ## Task 5 — Parsing
 Files owned: modules/kuraneacatalog parser/fetch integration and tests/catalog/**, relevant parser browser locale drift correction; dedicated procurement parser adapter may live src/Catalog/**.
-- [ ] Audit existing AmazonJapan/Rakuten structured/HTML variants; meaningful fixtures for supported prices/options/images/descriptions, missing/hostile/blocked/locale cases.
-- [ ] Fix observed parser or catalog verification defects, preserve safety bounds/provenance/rights; do not manufacture values.
-- [ ] Connect reviewed native inactive products as trusted procurement references; no customer retail flags required.
+- [x] Audit existing AmazonJapan/Rakuten structured/HTML variants; meaningful fixtures for supported prices/options/images/descriptions, missing/hostile/blocked/locale cases.
+- [x] Fix observed parser or catalog verification defects, preserve safety bounds/provenance/rights; do not manufacture values.
+- [x] Connect reviewed native inactive products as trusted procurement references; no customer retail flags required.
 - [ ] Record source support matrix and actual approved source evidence; real sample limitations remain explicit.
 
 ## Task 6 — New CI/runtime acceptance
 Files owned: .github/workflows/procurement-platform.yml, tests/procurement/CI seed/runtime/browser files, backup smoke extension as isolated new scripts. No legacy workflow assertion weakening.
 - [ ] Run behavioral DB tests and fresh install+module/runtime browser flow with exact run synthetic identity.
-- [ ] Admin assign A, B deny, A confirm/submit, admin review then explicit100P, A relogin100P, correction-20P, ledger80P; rejected/unapproved/revoked cases and no retail access.
+- [x] Local focused evidence: admin assign A, B GET/POST deny with identity+owner preservation, A confirm/submit, admin review0P then explicit100P, relogin100P, correction-20P/80P; domain rejected/unapproved/revoked tests and actual retail boundary. Immutable fresh execution remains unchecked above.
 - [ ] Concurrency/rollback/restart/new-domain restore checks; parser/native reference connection; redacted artifacts and actual outcome aggregate/cleanup.
-- [ ] Add new workflow push scope only relevant files, reuse free installed runner tools; no duplicate full acceptance.
+- [x] Add new workflow push scope only relevant files, reuse free installed runner tools; no duplicate full acceptance.
+
+
+## Execution evidence checkpoint — 2026-10-29 KST
+
+Committed checkpoints: `887b256` domain, `d994c99` parser/provider, `100e8b7` native/UI, `a9fe3a0` atomic native ACL, `0236afc` strict masked POST CSRF/status, `bd1ced8` full CI harness, `bc4769c` Korean native CAS, `e7513c4` bounded Twig warmup, `cc99bbb` accessible language selector, `6f9c301` portable hosted build configuration.
+
+Checked boxes mean their stated focused scope. Actual local native core/3-language account+Mailpit, restart+independent restored DB, official ACL six audited edits, source1128/vendor1426 alignment, default512M warmup, quality3 (84 layout/axe +14 Lighthouse) and independent120 safe images have passed. Local image bd1ced8 plus verified later source overlays is distinct from an immutable fresh candidate. Three hosted attempts failed before Dockerfile/app execution; actual Bake entitlement cause fixed6f9c301 with5 tests. Exact full #40749362584 is in progress. See TEST_RESULTS and durable evidence README; never infer full PASS from local results.
+
+Real marketplace original pages are blocked at managed CONNECT403. Remote image URL collection is distinct from rights-reviewed native image publication. Original-source compatibility/rights and approved operational inputs/physical-device checks remain open; synthetic fixtures do not close them. No production action is authorized or performed.
 
 ## Integration and release
-- [ ] Root reviews all interfaces/diffs, source lint and focused behavioral tests; repair evidenced failures.
-- [ ] Preserve work in cohesive commits, verify remote SHA. One stable candidate runtime CI after focused preflight.
+- [x] Root reviews interfaces/diffs, source lint and focused behavioral tests; observed source defects repaired with focused evidence. Final fresh gate remains open.
+- [x] Preserve work in cohesive commits, verify remote SHA; run one candidate CI at a time after focused preflight. Exact current run6f9c301/#40749362584 remains in progress.
 - [ ] Fix first runtime failures via focused evidence; never assertion bypass/timeout-only fix.
 - [ ] Update architecture/matrix/status/tests/handoff with actual SHA/outcomes/artifacts, parsing supported boundaries, external operational inputs. Do not claim live production release absent approved environment and completed acceptance.

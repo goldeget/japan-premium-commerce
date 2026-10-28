@@ -2,7 +2,7 @@
 
 ## 현재 구현과 배포 상태
 
-2026-10-29 구현 후보는 PrestaShop 9.2.0·Hummingbird 자식 테마와 `ordenowaprocurement` 전용 데이터 모델을 사용한다. 상품 안내 → 고객 발주 요청 → 수동 검토 → 별도 수동 포인트 지급·연결 정정, 정책 버전과 commit 후 메일/Push worker가 구현되어 있다. 발주 요청·포인트·알림의 PHP8.3/MariaDB10.11 격리 검사는 통과했으며 통합 QA와 실제 런타임 증거는 현재 진행 중이다. 전체 동일 SHA 인수, 운영 배포, 실제 발신 SMTP, 공개 HTTPS 및 실제 기기 Push 전달을 완료했다고 주장하지 않는다.
+2026-10-29 구현 후보는 PrestaShop 9.2.0·Hummingbird 자식 테마와 `ordenowaprocurement` 전용 데이터 모델을 사용한다. 상품 안내 → 고객 발주 요청 → 수동 검토 → 별도 수동 포인트 지급·연결 정정, 정책 버전과 commit 후 메일/Push worker가 구현되어 있다. 발주 요청·포인트·알림의 PHP8.3/MariaDB10.11 격리 검사는 통과했으며 실제 격리 native 발주/수동100→80P·고객/직원 격리·Mailpit·3언어 계정·재시작/복원과 품질3 검증도 통과했다. 로컬 이미지와 최종 소스 overlay 검증이며 최신 immutable 후보의 전체 fresh QA는 진행 중이다. 정확한 SHA·run·증거는 TEST_RESULTS.md를 따른다. 전체 동일 SHA 인수, 운영 배포, 실제 발신 SMTP, 공개 HTTPS 및 실제 기기 Push 전달을 완료했다고 주장하지 않는다.
 
 현재 Compose와 테스트 DB·named volume은 개발·격리 QA 대상이다. 운영 서버·운영 DB·`main`을 이 문서 작업에서 변경하지 않았다. 실제 배포 전에 승인된 코드 SHA·이미지 digest·migration 집합·복구 절차와 담당자를 정한다. `ORDENOWA_APP_MODE=procurement`는 전용 회원·발주 경로와 legacy retail 차단을 선택하는 서버 설정이다. 상품 판매·결제·배송·반품·상품 환불·현금 환산·출금은 현재 서비스 범위에 없다.
 

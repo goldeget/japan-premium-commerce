@@ -1,0 +1,159 @@
+{
+  "pages": {
+    "assignments_1440": {
+      "http_status": 200,
+      "native_korean_document": true,
+      "native_procurement_panel": true,
+      "no_login_redirect": true
+    },
+    "assignments_768": {
+      "http_status": 200,
+      "native_korean_document": true,
+      "native_procurement_panel": true,
+      "no_login_redirect": true
+    },
+    "reviews_1440": {
+      "http_status": 200,
+      "native_korean_document": true,
+      "native_procurement_panel": true,
+      "no_login_redirect": true
+    },
+    "reviews_768": {
+      "http_status": 200,
+      "native_korean_document": true,
+      "native_procurement_panel": true,
+      "no_login_redirect": true
+    },
+    "points_1440": {
+      "http_status": 200,
+      "native_korean_document": true,
+      "native_procurement_panel": true,
+      "no_login_redirect": true
+    },
+    "points_768": {
+      "http_status": 200,
+      "native_korean_document": true,
+      "native_procurement_panel": true,
+      "no_login_redirect": true
+    },
+    "audit_1440": {
+      "http_status": 200,
+      "native_korean_document": true,
+      "native_procurement_panel": true,
+      "no_login_redirect": true
+    },
+    "audit_768": {
+      "http_status": 200,
+      "native_korean_document": true,
+      "native_procurement_panel": true,
+      "no_login_redirect": true
+    },
+    "policies_1440": {
+      "http_status": 200,
+      "native_korean_document": true,
+      "native_procurement_panel": true,
+      "no_login_redirect": true
+    },
+    "policies_768": {
+      "http_status": 200,
+      "native_korean_document": true,
+      "native_procurement_panel": true,
+      "no_login_redirect": true
+    }
+  },
+  "captures": [
+    {
+      "file": "assignments_1440-static-ko.png",
+      "geometry_preserved": true,
+      "enabled_states_preserved": true,
+      "scroll_stable": true,
+      "width": 1440
+    },
+    {
+      "file": "assignments_768-static-ko.png",
+      "geometry_preserved": true,
+      "enabled_states_preserved": true,
+      "scroll_stable": true,
+      "width": 768
+    },
+    {
+      "file": "reviews_1440-static-ko.png",
+      "geometry_preserved": true,
+      "enabled_states_preserved": true,
+      "scroll_stable": true,
+      "width": 1440
+    },
+    {
+      "file": "reviews_768-static-ko.png",
+      "geometry_preserved": true,
+      "enabled_states_preserved": true,
+      "scroll_stable": true,
+      "width": 768
+    },
+    {
+      "file": "points_1440-static-ko.png",
+      "geometry_preserved": true,
+      "enabled_states_preserved": true,
+      "scroll_stable": true,
+      "width": 1440
+    },
+    {
+      "file": "points_768-static-ko.png",
+      "geometry_preserved": true,
+      "enabled_states_preserved": true,
+      "scroll_stable": true,
+      "width": 768
+    },
+    {
+      "file": "audit_1440-static-ko.png",
+      "geometry_preserved": true,
+      "enabled_states_preserved": true,
+      "scroll_stable": true,
+      "width": 1440
+    },
+    {
+      "file": "audit_768-static-ko.png",
+      "geometry_preserved": true,
+      "enabled_states_preserved": true,
+      "scroll_stable": true,
+      "width": 768
+    },
+    {
+      "file": "policies_1440-static-ko.png",
+      "geometry_preserved": true,
+      "enabled_states_preserved": true,
+      "scroll_stable": true,
+      "width": 1440
+    },
+    {
+      "file": "policies_768-static-ko.png",
+      "geometry_preserved": true,
+      "enabled_states_preserved": true,
+      "scroll_stable": true,
+      "width": 768
+    },
+    {
+      "file": "policy-wrong-body-403_1440-static-ko.png",
+      "geometry_preserved": true,
+      "enabled_states_preserved": true,
+      "scroll_stable": true,
+      "width": 1440
+    },
+    {
+      "file": "policy-wrong-body-403_768-static-ko.png",
+      "geometry_preserved": true,
+      "enabled_states_preserved": true,
+      "scroll_stable": true,
+      "width": 768
+    }
+  ],
+  "wrong_token": {
+    "actual_native_document_status": 403,
+    "valid_query_token_preserved": true,
+    "invalid_body_token_only": true,
+    "native_form_post": true,
+    "no_login_redirect": true,
+    "policy_version_unchanged_after_fresh_get": true
+  },
+  "passed": true
+}

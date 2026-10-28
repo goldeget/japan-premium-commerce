@@ -1,0 +1,343 @@
+{
+  "source_frontend_sha": "bd1ced815093df2fadc21b521cdb01bdd546ed0a",
+  "scope": "42 public static component crops; all independently viewed; existing native isolated environment, not physical devices",
+  "image_count": 42,
+  "images": [
+    {
+      "file": "en_1440_static_crops_account.png",
+      "sha256": "612d8c3d871b77a624a7b134dbb66fc133c348f1d8f50c9418f774098b45f68c",
+      "bytes": 2225,
+      "width": 167,
+      "height": 40,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_1440_static_crops_language.png",
+      "sha256": "15e84ae0b1e6e907485095341c3d61f2a343c541456f3c37db5a4ce99f40ac88",
+      "bytes": 1243,
+      "width": 101,
+      "height": 36,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_1440_static_crops_pwa_closed.png",
+      "sha256": "7c7f3dd08e68ee2848f8b440c09b5eab1f82f88f3aaabacf88111f0d7af5c596",
+      "bytes": 4612,
+      "width": 896,
+      "height": 24,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_1440_static_crops_pwa_open.png",
+      "sha256": "2c6f1b6e5d218c9839d2b1f68402198482d6587e598e54260609fbe4efc4206a",
+      "bytes": 10534,
+      "width": 896,
+      "height": 48,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_320_static_crops_account.png",
+      "sha256": "886c67e9005ad349d9c4d5afc64ca161b7a1c85aaa40a00f9eefe6a3d0c4f530",
+      "bytes": 775,
+      "width": 34,
+      "height": 34,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_320_static_crops_footer_account.png",
+      "sha256": "55b1e104fd1b180f0c66fd0b28533912997b0dfd3682a6b78986a71549cdf9b2",
+      "bytes": 1600,
+      "width": 296,
+      "height": 25,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_320_static_crops_mobile_navigation.png",
+      "sha256": "9ead01a44ea80b1fe16ae8525761d3a32ebdfd6d36c769a1a1e30bb615b32843",
+      "bytes": 3983,
+      "width": 320,
+      "height": 70,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_320_static_crops_pwa_closed.png",
+      "sha256": "ae1811a101ad6791431db6cbf806ce4209350316d49c81b8a124edf101848518",
+      "bytes": 4503,
+      "width": 320,
+      "height": 48,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_320_static_crops_pwa_open.png",
+      "sha256": "432785e51ae57f3e49c71a7fc96e88e0cc8466cdb09454817ca2c03fd05e1207",
+      "bytes": 10079,
+      "width": 320,
+      "height": 96,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_390_static_crops_account.png",
+      "sha256": "886c67e9005ad349d9c4d5afc64ca161b7a1c85aaa40a00f9eefe6a3d0c4f530",
+      "bytes": 775,
+      "width": 34,
+      "height": 34,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_390_static_crops_footer_account.png",
+      "sha256": "068b6ba207fd120d4ba6e4a456c3f9d6b7a8727d5a2374c7e545fece60b79be0",
+      "bytes": 1619,
+      "width": 366,
+      "height": 25,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_390_static_crops_mobile_navigation.png",
+      "sha256": "8df98237d839b9627bc587ba20aedad620adf6d843e56199018b3a5effb750d9",
+      "bytes": 4009,
+      "width": 390,
+      "height": 70,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_390_static_crops_pwa_closed.png",
+      "sha256": "e0a8891f9d03935d045369689673e6da8c3cd5ec8c97b99d421112f721749f33",
+      "bytes": 4354,
+      "width": 390,
+      "height": 24,
+      "independent_viewed": true
+    },
+    {
+      "file": "en_390_static_crops_pwa_open.png",
+      "sha256": "532ab092f656d5f2df7e3e58029d574bc547edd791c08b153920ded55414ea89",
+      "bytes": 9383,
+      "width": 390,
+      "height": 72,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_1440_static_crops_account.png",
+      "sha256": "aa58e71104dda115b76b07ed64941a9bdb81a9793d26536ad582161a56f02018",
+      "bytes": 2060,
+      "width": 154,
+      "height": 40,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_1440_static_crops_language.png",
+      "sha256": "bd311b4785a547455dcccbb9984b9f6f80dbe160bdf56f0234f3def78ba0ae75",
+      "bytes": 1212,
+      "width": 103,
+      "height": 36,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_1440_static_crops_pwa_closed.png",
+      "sha256": "ad7d9f21c0ac2780f9b1287589837656f0b726daf110c8042c49596815cb38e3",
+      "bytes": 4412,
+      "width": 896,
+      "height": 24,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_1440_static_crops_pwa_open.png",
+      "sha256": "058e7cd7bced2540b688c8c528be4648be507bf3c0ee38cad1ff7236a9af6dae",
+      "bytes": 14473,
+      "width": 896,
+      "height": 48,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_320_static_crops_account.png",
+      "sha256": "886c67e9005ad349d9c4d5afc64ca161b7a1c85aaa40a00f9eefe6a3d0c4f530",
+      "bytes": 775,
+      "width": 34,
+      "height": 34,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_320_static_crops_footer_account.png",
+      "sha256": "8e60754a0379336a7854471058200d561c537446b2ab47bc740da64474a50c48",
+      "bytes": 1779,
+      "width": 296,
+      "height": 27,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_320_static_crops_mobile_navigation.png",
+      "sha256": "af67efa6f4bcb9002c84ebc882710efd969ac303d00cbbcce2bd6b55b6a2b64d",
+      "bytes": 5034,
+      "width": 320,
+      "height": 70,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_320_static_crops_pwa_closed.png",
+      "sha256": "09b4af7b143f2a9b8932131e0db7065f4732be850f7d8b83a33fd99237a2dd56",
+      "bytes": 4103,
+      "width": 320,
+      "height": 24,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_320_static_crops_pwa_open.png",
+      "sha256": "079e3f72acd94127962d2717db2ecf86e5e6c200e8ab6613719359cbc8ee4161",
+      "bytes": 14388,
+      "width": 320,
+      "height": 96,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_390_static_crops_account.png",
+      "sha256": "886c67e9005ad349d9c4d5afc64ca161b7a1c85aaa40a00f9eefe6a3d0c4f530",
+      "bytes": 775,
+      "width": 34,
+      "height": 34,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_390_static_crops_footer_account.png",
+      "sha256": "7f2922a85a5a04a01152cd256b09df771b8753741fb5e702e46b8d8865bc689e",
+      "bytes": 1822,
+      "width": 366,
+      "height": 27,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_390_static_crops_mobile_navigation.png",
+      "sha256": "64e913fed45a29cdac966cd2ed6fb5a79ead662681c19b25cc7c49112094c4d3",
+      "bytes": 5194,
+      "width": 390,
+      "height": 70,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_390_static_crops_pwa_closed.png",
+      "sha256": "a5af62f6d050761cf6bfff308615458707268c6ee2179484e75496331dc6ee55",
+      "bytes": 4153,
+      "width": 390,
+      "height": 24,
+      "independent_viewed": true
+    },
+    {
+      "file": "ja_390_static_crops_pwa_open.png",
+      "sha256": "f5b1b6d5c668a852a0f59d376950c48f87a7ff1ba27efc8c3fa8cf065384512d",
+      "bytes": 14414,
+      "width": 390,
+      "height": 96,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_1440_static_crops_account.png",
+      "sha256": "6d8f496623bc6831ae664e930d31f77bf98257afc8803d5307fca7913cd994c6",
+      "bytes": 2255,
+      "width": 152,
+      "height": 40,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_1440_static_crops_language.png",
+      "sha256": "f0ecc9e912bf87926c6c70ab101136a357d4c889fac877ad7259eda1a54bbff8",
+      "bytes": 1199,
+      "width": 103,
+      "height": 36,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_1440_static_crops_pwa_closed.png",
+      "sha256": "2bd250bf606c095634bbc9c589d6482533cb3e0817e0e7c413438d3c7ba785ca",
+      "bytes": 3742,
+      "width": 896,
+      "height": 24,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_1440_static_crops_pwa_open.png",
+      "sha256": "fe5a20325d4c9ea342d0966dacc2f2551fc47b65611b26e7ed863c2eda982e24",
+      "bytes": 9530,
+      "width": 896,
+      "height": 48,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_320_static_crops_account.png",
+      "sha256": "886c67e9005ad349d9c4d5afc64ca161b7a1c85aaa40a00f9eefe6a3d0c4f530",
+      "bytes": 775,
+      "width": 34,
+      "height": 34,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_320_static_crops_footer_account.png",
+      "sha256": "ddd063c06d3ad2b3ed363a7b622a4010a38f0dd851285e1228fc7abd64e6c81f",
+      "bytes": 1278,
+      "width": 296,
+      "height": 27,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_320_static_crops_mobile_navigation.png",
+      "sha256": "7e54199d64a41f2947b5f59f5dc1936161bdd975bbfc09e4e9da6b7dd03709a9",
+      "bytes": 3917,
+      "width": 320,
+      "height": 70,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_320_static_crops_pwa_closed.png",
+      "sha256": "80b36f00b3bd8dd8055e68763b20d5b367d8752436131aeefbdadf5cef3e2633",
+      "bytes": 3501,
+      "width": 320,
+      "height": 24,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_320_static_crops_pwa_open.png",
+      "sha256": "c517ade2725a289e2ec0513bcc31c5962211aebaf02f90210058779de283c7cf",
+      "bytes": 8636,
+      "width": 320,
+      "height": 72,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_390_static_crops_account.png",
+      "sha256": "886c67e9005ad349d9c4d5afc64ca161b7a1c85aaa40a00f9eefe6a3d0c4f530",
+      "bytes": 775,
+      "width": 34,
+      "height": 34,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_390_static_crops_footer_account.png",
+      "sha256": "840252776db7601f0a2c31e42bb525da1ee71e302ac605b2ecee7830f1ac32c4",
+      "bytes": 1307,
+      "width": 366,
+      "height": 27,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_390_static_crops_mobile_navigation.png",
+      "sha256": "c301383fa0bcfe5bd3b3d355ccf5648f97bf91f4cb7641f7bbe2a46822148c07",
+      "bytes": 4169,
+      "width": 390,
+      "height": 70,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_390_static_crops_pwa_closed.png",
+      "sha256": "2cd1b2d1d2edd6f5042f64ee6def3e24c11208a27209edd34dbc10eece58dd69",
+      "bytes": 3547,
+      "width": 390,
+      "height": 24,
+      "independent_viewed": true
+    },
+    {
+      "file": "ko_390_static_crops_pwa_open.png",
+      "sha256": "f2ffaca6f22081ee5426b75959a6b16d17b144ed9fb1c43293ce02f51db53912",
+      "bytes": 8531,
+      "width": 390,
+      "height": 72,
+      "independent_viewed": true
+    }
+  ]
+}

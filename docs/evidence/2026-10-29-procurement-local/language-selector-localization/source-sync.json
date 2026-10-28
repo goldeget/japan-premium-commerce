@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "files": {
+    "themes/kuranea/translations/ja-JP/ShopThemeGlobal.ja-JP.xlf": {
+      "sha256": "a84e0eb906a3b0da79d3067c561bc8fc42beab98e370ae968bd0b39b64ef86aa",
+      "host_opt_webroot_equal": true
+    },
+    "themes/kuranea/translations/ko-KR/ShopThemeGlobal.ko-KR.xlf": {
+      "sha256": "ec87ca9dded9418924281fef12949ba6fd8cba7c9da0e19faeb310c726f09d1b",
+      "host_opt_webroot_equal": true
+    }
+  }
+}
