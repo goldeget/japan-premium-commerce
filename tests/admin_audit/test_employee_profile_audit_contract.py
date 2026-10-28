@@ -156,7 +156,7 @@ class EmployeeProfileAuditContractTests(unittest.TestCase):
 
     def test_module_installs_additive_audit_schema_tab_and_employee_hooks(self) -> None:
         module = (MODULE / "kuraneabackoffice.php").read_text(encoding="utf-8")
-        self.assertIn("$this->version = '1.0.5';", module)
+        self.assertIn("$this->version = '1.0.6';", module)
         self.assertIn("installEmployeeProfileAudit", module)
         self.assertIn("installEmployeeProfileAuditTab", module)
         self.assertIn("AdminKuraneaEmployeeProfileAudit", module)
@@ -181,6 +181,27 @@ class EmployeeProfileAuditContractTests(unittest.TestCase):
         self.assertIn("upgrade_module_1_0_5", audit_upgrade)
         self.assertIn("installEmployeeProfileAuditTab", audit_upgrade)
         self.assertNotRegex(audit_upgrade, re.compile(r"DROP\s+TABLE", re.I))
+
+    def test_native_acl_upgrade_registers_official_hooks_without_core_mutations(self) -> None:
+        module = (MODULE / "kuraneabackoffice.php").read_text(encoding="utf-8")
+        for hook in ("actionAdminUpdateAccessBefore", "actionAdminUpdateModuleAccessBefore"):
+            self.assertIn(hook, module)
+        self.assertIn("NativeAclAuditSchema::tableSql", module)
+        self.assertIn("installNativeAclAudit", (MODULE / "upgrade/upgrade-1.0.6.php").read_text(encoding="utf-8"))
+        observer = (MODULE / "src/Admin/NativeAclAuditObserver.php").read_text(encoding="utf-8")
+        self.assertIn("$controller->checkToken()", observer)
+        self.assertIn("$controller->access('edit')", observer)
+        self.assertIn("register_shutdown_function", observer)
+        self.assertIn("$repository->commit()", observer)
+        self.assertIn("$repository->rollback()", observer)
+        self.assertIn("$body !== 'ok'", observer)
+        self.assertIn("ob_start", observer)
+        self.assertNotIn("updateLgcAccess(", observer)
+        self.assertNotIn("updateLgcModuleAccess(", observer)
+        fixture = (ROOT / "tests/admin_audit/native_acl_atomic.php").read_text(encoding="utf-8")
+        self.assertIn("synthetic audit persistence failure", fixture)
+        self.assertIn("worker-fatal", fixture)
+        self.assertIn("worker-die", fixture)
 
     def test_php_fixture_and_source_contract_run_in_existing_business_profile_workflow(self) -> None:
         fixture = (ROOT / "tests" / "admin_audit" / "employee_profile_audit.php").read_text(encoding="utf-8")

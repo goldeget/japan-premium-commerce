@@ -68,7 +68,7 @@ if (!$businessProfileModule || !$businessProfileModule->ensureBankTransferInfras
 
 // The official installer may pre-register a bundled module before project hooks are added.
 $backofficeModule = Module::getInstanceByName('kuraneabackoffice');
-if (!$backofficeModule || !$backofficeModule->installSupportContactPrivacy()) {
+if (!$backofficeModule || !$backofficeModule->installSupportContactPrivacy() || !$backofficeModule->installNativeAclAudit()) {
     throw new RuntimeException('Could not ensure the account-owned contact privacy hook.');
 }
 

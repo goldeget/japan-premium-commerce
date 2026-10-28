@@ -12,7 +12,7 @@ class Kuraneabackoffice extends Module
     {
         $this->name = 'kuraneabackoffice';
         $this->tab = 'administration';
-        $this->version = '1.0.5';
+        $this->version = '1.0.6';
         $this->author = 'ORDENOWA';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -130,7 +130,27 @@ class Kuraneabackoffice extends Module
         return $this->registerHook([
             'actionObjectEmployeeUpdateBefore',
             'actionObjectEmployeeUpdateAfter',
-        ]) && $this->installEmployeeProfileAuditTab();
+        ]) && $this->installEmployeeProfileAuditTab() && $this->installNativeAclAudit();
+    }
+
+    /** Native AdminAccess has official Before hooks; its die() requires shutdown readback. */
+    public function installNativeAclAudit(): bool
+    {
+        require_once __DIR__ . '/vendor/autoload.php';
+        return Db::getInstance()->execute(\Kuranea\Backoffice\Infrastructure\NativeAclAuditSchema::tableSql(_DB_PREFIX_))
+            && $this->registerHook(['actionAdminUpdateAccessBefore', 'actionAdminUpdateModuleAccessBefore']);
+    }
+
+    public function hookActionAdminUpdateAccessBefore(array $params): void
+    {
+        require_once __DIR__ . '/vendor/autoload.php';
+        \Kuranea\Backoffice\Admin\NativeAclAuditObserver::before($params, 'TAB');
+    }
+
+    public function hookActionAdminUpdateModuleAccessBefore(array $params): void
+    {
+        require_once __DIR__ . '/vendor/autoload.php';
+        \Kuranea\Backoffice\Admin\NativeAclAuditObserver::before($params, 'MODULE');
     }
 
     /** The tab grants no permissions; PrestaShop's existing profile access remains authoritative. */

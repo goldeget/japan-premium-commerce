@@ -64,14 +64,14 @@ class AdminKuraneaEmployeeProfileAuditController extends ModuleAdminController
             $result = (new AdminAuditEventRepository())->pageForShop($shopId, $page, $authorizedSources);
             $baseUrl = (string) $this->context->link->getAdminLink('AdminKuraneaEmployeeProfileAudit');
             $this->content .= '<div class="panel"><h3>관리자 감사 기록</h3>'
-                . '<p>이 화면은 현재 계정이 조회할 수 있는 기존 기록만 출처별로 표시합니다. 권한 설정 표의 개별 접근 권한 변경이나 기록되지 않은 작업은 포함되지 않습니다.</p>'
+                . '<p>이 화면은 현재 계정이 조회할 수 있는 기존 기록만 출처별로 표시합니다. 기존 관리자 활동과 감사 기능 설치 후 실제로 저장된 접근 권한 변경을 표시합니다.</p>'
                 . $this->renderEvents($result['rows']);
             $this->content .= $this->renderPagination(
                 $baseUrl,
                 $page,
                 $result['has_next']
             )
-                . '</div>';
+                . $this->renderNativeAclChanges($shopId, $baseUrl) . '</div>';
         } catch (Throwable) {
             http_response_code(503);
             $this->content .= '<div class="alert alert-danger">관리자 감사 기록을 불러오지 못했습니다.</div>';
@@ -171,6 +171,28 @@ class AdminKuraneaEmployeeProfileAuditController extends ModuleAdminController
         $page = (int) $value;
 
         return $page > 0 && $page <= intdiv(PHP_INT_MAX, self::PAGE_SIZE) ? $page : 1;
+    }
+
+    /** Native profile permissions are global; viewing them also requires native AdminAccess READ. */
+    private function renderNativeAclChanges(int $shopId, string $baseUrl): string
+    {
+        if (!$this->canViewSourceTab('ADMINACCESS')) return '';
+        $raw = $_GET['acl_page'] ?? '1';
+        $page = is_string($raw) && preg_match('/\A[1-9][0-9]{0,5}\z/D', $raw) === 1 ? (int)$raw : 1;
+        $result = (new \Kuranea\Backoffice\Infrastructure\NativeAclAuditRepository())->pageForShop($shopId,$page);
+        $html = '<h3>접근 권한 변경 이력</h3><p>관리자 권한 표에서 실제로 저장된 변경만 표시합니다. 프로필의 접근 권한은 모든 쇼핑몰에 적용되며, 작업 당시 선택한 쇼핑몰을 함께 기록합니다.</p>';
+        if ($result['rows'] === []) return $html . '<p>저장된 접근 권한 변경이 없습니다.</p>';
+        $html .= '<div class="table-responsive"><table class="table"><thead><tr><th>기록 시각 (UTC)</th><th>처리 관리자</th><th>대상 프로필</th><th>권한 유형</th><th>권한 식별자</th><th>이전</th><th>변경 후</th><th>작업 쇼핑몰</th></tr></thead><tbody>';
+        foreach ($result['rows'] as $row) {
+            $html .= '<tr><td>' . $this->escape((string)$row['changed_at_utc']) . '</td><td>#' . (int)$row['actor_employee_id'] . '</td><td>#' . (int)$row['target_profile_id'] . '</td><td>'
+                . ($row['access_kind'] === 'TAB' ? '관리자 메뉴' : '모듈') . '</td><td>' . $this->escape((string)$row['role_slug']) . '</td><td>'
+                . ((int)$row['old_granted'] === 1 ? '허용' : '거부') . '</td><td>' . ((int)$row['new_granted'] === 1 ? '허용' : '거부') . '</td><td>'
+                . ((int)$row['context_shop_id'] > 0 ? '#' . (int)$row['context_shop_id'] : '전체 쇼핑몰') . '</td></tr>';
+        }
+        $html .= '</tbody></table></div>';
+        if ($page > 1) $html .= '<a class="btn btn-default" href="' . $this->escape($baseUrl . '&acl_page=' . ($page-1)) . '">권한 이력 이전</a> ';
+        if ($result['has_next']) $html .= '<a class="btn btn-default" href="' . $this->escape($baseUrl . '&acl_page=' . ($page+1)) . '">권한 이력 다음</a>';
+        return $html;
     }
 
     private function canView(): bool
