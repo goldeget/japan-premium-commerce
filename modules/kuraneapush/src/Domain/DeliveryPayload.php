@@ -11,7 +11,7 @@ final class DeliveryPayload
 
     public function __construct(string $event, string $locale)
     {
-        if (!in_array($event, ['order', 'delivery', 'support'], true)
+        if (!in_array($event, ['order', 'delivery', 'support', 'procurement', 'points'], true)
             || !in_array($locale, ['ja', 'en', 'ko'], true)) {
             throw new \InvalidArgumentException('Invalid delivery payload.');
         }

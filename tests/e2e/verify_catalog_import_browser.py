@@ -2109,7 +2109,11 @@ def edit_imported_draft(driver, manager_link, product_id, expected_category_ids,
     state['last_completed_substage'] = 'manager_edit_save_click'
 
     state['current_substage'] = 'manager_edit_save_confirmation'
-    expected_notice = f'상품 ID {product_id}를 비활성 상태로 저장했습니다.'
+    expected_notice = (
+        f'상품 ID {product_id}의 변경 사항을 비활성 상태로 저장했습니다. '
+        '가져온 초안에는 이 화면에서 새 이미지를 추가하지 않았습니다. '
+        '출처 이미지 검수에서 사용권을 기록한 뒤 연결해 주세요.'
+    )
 
     assert WebDriverWait(driver, 45).until(
         lambda browser: manager_save_confirmation(browser, expected_notice)

@@ -158,5 +158,6 @@ require __DIR__ . '/review_queue_persistence.php';
 require __DIR__ . '/review_queue_limits.php';
 require __DIR__ . '/product_image_rights_evidence.php';
 require __DIR__ . '/catalog_import_service.php';
+require __DIR__ . '/parser_quality.php';
 
 echo "PASS: offline Amazon JP and Rakuten synthetic catalog parser, fetch, persistence, and review checks\n";

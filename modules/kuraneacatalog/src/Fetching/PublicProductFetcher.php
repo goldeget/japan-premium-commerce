@@ -95,14 +95,16 @@ final class PublicProductFetcher implements ProductPageFetcherInterface
             if ($response->status !== 200 || !in_array($mediaType, ['text/html', 'application/xhtml+xml'], true) || $response->body === '') {
                 throw new FetchException('Product response is not an HTML document.');
             }
+            $body = \Kuranea\Catalog\Parsing\HtmlDocumentEncoding::utf8($response->body, $response->contentType);
+            if (strlen($body) > self::MAX_DECODED_BYTES) throw new FetchException('Decoded product response exceeded the size limit.');
             // A challenge can retain product metadata, so classify it before parsing.
             if (preg_match(
                 '~(?:validateCaptcha|captchaContainer|captcha\.amazon\.com|robot\s+check|画像認証|アクセスを確認してください|不正なアクセスを検知)~iu',
-                $response->body
-            ) === 1) {
+                $body
+            ) === 1 || AuthenticationPage::present($body)) {
                 throw new FetchException('Marketplace access was blocked.', FetchException::FAILURE_ACCESS_BLOCKED);
             }
-            return new FetchedProduct($target['url'], $response->body, new \DateTimeImmutable('now', new \DateTimeZone('UTC')), $redirects);
+            return new FetchedProduct($target['url'], $body, new \DateTimeImmutable('now', new \DateTimeZone('UTC')), $redirects);
         }
     }
 

@@ -5,6 +5,7 @@ require_once dirname(__FILE__, 3) . '/autoload.php';
 use Kuranea\Push\Domain\Readiness;
 use Kuranea\Push\Domain\SubscriptionApi;
 use Kuranea\Push\Infrastructure\PushSettings;
+use Kuranea\Push\Infrastructure\LiveSubscriptionReadiness;
 use Kuranea\Push\Infrastructure\SubscriptionCipher;
 use Kuranea\Push\Infrastructure\SubscriptionRepository;
 
@@ -57,7 +58,7 @@ class KuraneapushSubscriptionModuleFrontController extends ModuleFrontController
                 (string) ($_SERVER['HTTP_ORIGIN'] ?? ''),
                 (string) $this->context->link->getBaseLink($shop),
                 (string) Tools::getToken('kuraneapush', $this->context),
-                Readiness::canSubscribe(null, $notice, $cipher !== null), $notice, $trustedLocale);
+                LiveSubscriptionReadiness::canSubscribe($shop, $notice, $cipher !== null), $notice, $trustedLocale);
             $this->respond($status, $result);
         } catch (\Throwable $e) {
             $this->respond(400, ['error' => 'invalid_request']);

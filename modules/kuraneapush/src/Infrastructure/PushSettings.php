@@ -5,7 +5,7 @@ namespace Kuranea\Push\Infrastructure;
 
 final class PushSettings
 {
-    public const EVENTS = ['ORDER', 'DELIVERY', 'SUPPORT'];
+    public const EVENTS = ['ORDER', 'DELIVERY', 'SUPPORT', 'PROCUREMENT', 'POINTS'];
     public const LOCALES = ['ja', 'en', 'ko'];
 
     public static function initialize(int $shop): bool
@@ -13,6 +13,11 @@ final class PushSettings
         $ok = true;
         foreach (self::EVENTS as $event) {
             $key = 'ORDENOWA_PUSH_EVENT_' . $event;
+            if (!\Configuration::hasKey($key, null, null, $shop)) {
+                $ok = \Configuration::updateValue($key, 0, false, null, $shop) && $ok;
+            }
+        }
+        foreach (['ORDENOWA_PUSH_LIVE_ENABLED', 'ORDENOWA_PUSH_HTTPS_VALIDATED'] as $key) {
             if (!\Configuration::hasKey($key, null, null, $shop)) {
                 $ok = \Configuration::updateValue($key, 0, false, null, $shop) && $ok;
             }

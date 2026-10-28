@@ -1,0 +1,15 @@
+{
+  "name": "ordenowa/customer-web-push",
+  "description": "ORDENOWA customer Web Push transport",
+  "type": "library",
+  "license": "proprietary",
+  "require": {
+    "php": "^8.3",
+    "minishlink/web-push": "^9.0"
+  },
+  "config": {
+    "platform": {"php": "8.3.0"},
+    "sort-packages": true,
+    "allow-plugins": false
+  }
+}

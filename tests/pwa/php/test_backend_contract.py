@@ -143,7 +143,8 @@ class BackendContract(unittest.TestCase):
         synthetic = self.source('src/Infrastructure/IsolatedSyntheticPushDeliveryProvider.php')
         self.assertIn('function toJson(): string', payload)
         self.assertIn("['event' => $this->event, 'locale' => $this->locale]", payload)
-        self.assertIn("['order', 'delivery', 'support']", payload)
+        # Procurement and points notifications extend the existing wire contract.
+        self.assertIn("['order', 'delivery', 'support', 'procurement', 'points']", payload)
         self.assertIn("['ja', 'en', 'ko']", payload)
         self.assertIn('$payload->toJson()', synthetic)
         self.assertNotIn('public readonly string $body', payload)

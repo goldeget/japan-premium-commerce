@@ -26,7 +26,7 @@ $transport = new class implements TransportInterface {
     }
 };
 $fetcher = new PublicProductFetcher($resolver, $transport);
-foreach ([$challengeBody, '<html><body>Robot Check</body></html>'] as $body) {
+foreach ([$challengeBody, '<html><body>Robot Check</body></html>', '<html><form action="/ap/signin"><input type="password" name="password"></form></html>'] as $body) {
     $transport->body = $body;
     try {
         $fetcher->fetch('https://www.amazon.co.jp/dp/B0KURANEA1');

@@ -8,6 +8,8 @@ require_once __DIR__ . '/autoload.php';
 use Kuranea\Push\Domain\Readiness;
 use Kuranea\Push\Domain\ConsentNoticeVersion;
 use Kuranea\Push\Infrastructure\PushSettings;
+use Kuranea\Push\Infrastructure\LivePushFactory;
+use Kuranea\Push\Infrastructure\LiveSubscriptionReadiness;
 use Kuranea\Push\Infrastructure\SubscriptionCipher;
 use Kuranea\Push\Infrastructure\SubscriptionRepository;
 use Kuranea\Push\Infrastructure\PushOutboxRepository;
@@ -27,7 +29,7 @@ class Kuraneapush extends Module
         $this->ps_versions_compliancy = ['min' => '9.2.0', 'max' => '9.99.99'];
         parent::__construct();
         $this->displayName = '고객 알림 설정';
-        $this->description = '고객 알림 동의와 구독을 관리합니다. 실제 발송은 준비되지 않았습니다.';
+        $this->description = '고객 알림 동의·구독과 명시적으로 활성화한 HTTPS Push 발송을 관리합니다.';
     }
 
     public function install(): bool
@@ -111,10 +113,10 @@ class Kuraneapush extends Module
             'ordenowa_push_locale' => $locale,
             'ordenowa_push_consent_notice' => $notice,
             'ordenowa_push_consent_notice_version' => ConsentNoticeVersion::forNotice($notice, $locale),
-            'ordenowa_push_can_subscribe' => Readiness::canSubscribe(null, $notice, $keyAvailable),
+            'ordenowa_push_can_subscribe' => LiveSubscriptionReadiness::canSubscribe($shop, $notice, $keyAvailable),
             'ordenowa_push_active' => $active,
             'ordenowa_push_revocable' => $revocable,
-            'ordenowa_push_application_server_key' => '',
+            'ordenowa_push_application_server_key' => LiveSubscriptionReadiness::secureNativeRequest($shop) ? LivePushFactory::applicationServerKey($shop) : '',
         ]);
         $this->context->controller->registerJavascript('module-kuraneapush-account',
             'modules/' . $this->name . '/views/js/account-push.js', ['position' => 'bottom', 'priority' => 150]);

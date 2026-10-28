@@ -168,6 +168,6 @@ final class CatalogImportService
         return preg_match(
             '~(?:validateCaptcha|captchaContainer|captcha\.amazon\.com|robot\s+check|画像認証|アクセスを確認してください|不正なアクセスを検知)~iu',
             $html
-        ) === 1;
+        ) === 1 || \Kuranea\Catalog\Fetching\AuthenticationPage::present($html);
     }
 }
