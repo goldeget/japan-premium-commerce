@@ -183,8 +183,12 @@ compose() {
     def test_both_admin_probes_run_inside_the_required_native_boundary(self):
         source = (ROOT / 'tests/procurement/ci_acceptance.sh').read_text(encoding='utf-8')
         boundary = source.split('native_boundaries() {', 1)[1].split('\n}', 1)[0]
-        self.assertIn('authenticated_mbo_acceptance || return "$?"', boundary)
-        self.assertIn('authenticated_facebook_acceptance || return "$?"', boundary)
+        self.assertIn('authenticated_admin_pair_acceptance || return "$?"', boundary)
+        helper = HOST_HELPER.read_text(encoding='utf-8')
+        pair = helper.split('authenticated_admin_pair_acceptance() {', 1)[1].split('\n}', 1)[0]
+        self.assertIn('authenticated_mbo_acceptance || mbo_status=$?', pair)
+        self.assertIn('authenticated_facebook_acceptance || facebook_status=$?', pair)
+        self.assertIn('mbo_status != 0 || facebook_status != 0', pair)
 
     def test_git_fetch_failure_stops_before_any_container_dependency_copy(self):
         with tempfile.TemporaryDirectory() as directory:

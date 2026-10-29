@@ -312,7 +312,7 @@ def collect_cases(raw_cases: dict[str, bytes], statuses: dict[str, int]) -> dict
                 from safe_authenticated_outcome import _safe_failure
                 payload = _parse(raw_cases[name])
                 details = _safe_failure('helper_nonzero', statuses[name], payload, include_details=True)
-                for key in ('exception_class', 'cause_class', 'failure_source', 'failure_trace'):
+                for key in ('exception_class', 'cause_class', 'failure_source', 'failure_trace', 'auth_landing'):
                     if key in details: result[key] = details[key]
                 stage = payload.get('failed_stage')
                 allowed_stages = {

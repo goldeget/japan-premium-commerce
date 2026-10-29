@@ -1066,6 +1066,10 @@ try {
         'login_session_or_auth_audit_writes_possible' => true,
         'kernel_bootstrap_database_network_side_effects_instrumented' => false,
     ];
+    if (class_exists('NativeAdminHttpLogin', false)) {
+        $authLanding = NativeAdminHttpLogin::safeAuthLandingFacts();
+        if (is_array($authLanding)) $outcome['auth_landing'] = $authLanding;
+    }
     $cause = $error;
     for ($depth = 0; $depth < 6 && $cause->getPrevious() !== null; ++$depth) $cause = $cause->getPrevious();
     $causeClass = get_class($cause);

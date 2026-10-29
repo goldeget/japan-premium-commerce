@@ -66,10 +66,10 @@ namespace {
             return ['status' => 200, 'body' => 'LOGIN_FORM'];
         }
         if ($method === 'POST' && $uri === '/admin-kuranea/login') {
-            return ['status' => 303, 'location' => 'http://localhost:18081/admin-kuranea/index.php?controller=AdminDashboard', 'body' => ''];
+            return ['status' => 302, 'location' => 'http://localhost:18081/admin-kuranea/index.php?controller=AdminDashboard', 'body' => ''];
         }
         if ($method === 'GET' && $uri === '/admin-kuranea/index.php?controller=AdminDashboard') {
-            return ['status' => 200, 'body' => '<!doctype html><html><body data-token="a.' . str_repeat('b', 43) . '.' . str_repeat('c', 58) . '">AUTHENTICATED_DASHBOARD</body></html>'];
+            return ['status' => 200, 'body' => '<!doctype html><html><body class="admindashboard" data-token="a.' . str_repeat('b', 43) . '.' . str_repeat('c', 58) . '">AUTHENTICATED_DASHBOARD</body></html>'];
         }
         throw new RuntimeException('mock_request_out_of_contract');
     };
@@ -97,6 +97,26 @@ namespace {
         'authenticated native body token extracted in memory');
     $assert($login['redirects'] === 1, 'redirect count');
     $assert(count($requests) === 3, 'one GET, one form POST, one validated redirect GET');
+    $authFacts = NativeAdminHttpLogin::safeAuthLandingFacts();
+    $assert(is_array($authFacts), 'safe authenticated landing facts recorded');
+    $assert($authFacts === [
+        'post_status' => 302,
+        'redirect_count' => 1,
+        'final_status' => 200,
+        'final_path_kind' => 'index',
+        'final_controller_kind' => 'dashboard',
+        'redirect_token_kind' => 'missing',
+        'body_token_kind' => 'masked',
+        'body_page_kind' => 'dashboard',
+    ], 'landing facts reflect actual POST status and final native page without raw values');
+    $assert(array_keys($authFacts) === [
+        'post_status', 'redirect_count', 'final_status', 'final_path_kind', 'final_controller_kind',
+        'redirect_token_kind', 'body_token_kind', 'body_page_kind',
+    ], 'landing fact schema is exact');
+    $safeFactsJson = json_encode($authFacts, JSON_THROW_ON_ERROR);
+    foreach (['localhost', 'admin-kuranea', 'AdminDashboard', $login['native_body_token'], 'ci-admin@example.invalid', 'synthetic-password'] as $privateValue) {
+        $assert(!str_contains($safeFactsJson, $privateValue), 'safe landing facts omit URLs, token, identity, and password');
+    }
     $assert($requests[1][0] === 'POST' && $requests[1][2] === [
         'token' => 'native-csrf', 'email' => 'ci-admin@example.invalid', 'passwd' => 'synthetic-password',
     ], 'hidden CSRF/form fields preserved with real login credentials');
@@ -146,12 +166,70 @@ namespace {
             NativeAdminHttpLogin::extractNativeBodyToken($invalidBody);
         } catch (RuntimeException $error) {
             $assert(in_array($error->getMessage(), [
-                'native_http_authenticated_body_ambiguous', 'native_http_authenticated_body_token_invalid',
+                'native_http_authenticated_body_ambiguous', 'native_http_authenticated_body_token_missing',
+                'native_http_authenticated_body_token_invalid',
             ], true), 'missing, duplicate, or malformed native token rejected');
             continue;
         }
         throw new RuntimeException('invalid authenticated native body token was accepted');
     }
+
+    $unexpectedRequests = 0;
+    $unexpectedPost = static function (string $method, string $uri, ?array $fields) use (&$unexpectedRequests): array {
+        ++$unexpectedRequests;
+        if ($method === 'GET' && $uri === '/admin-kuranea/') return ['status' => 200, 'body' => 'LOGIN_FORM'];
+        if ($method === 'POST' && $uri === '/admin-kuranea/login') {
+            return ['status' => 200, 'body' => '<html><body class="adminlogin" data-token="' . str_repeat('x', 32) . '">unexpected</body></html>'];
+        }
+        throw new RuntimeException('mock_unexpected_post_followup');
+    };
+    try {
+        NativeAdminHttpLogin::authenticate(
+            '/admin-kuranea/', 'private@example.invalid', 'PRIVATE_PASSWORD', $unexpectedPost, $cookieReader,
+            $parseLoginForm, $hasLoginForm, $localAdminUri
+        );
+        throw new RuntimeException('HTTP 200 credential POST was accepted');
+    } catch (RuntimeException $error) {
+        $assert($error->getMessage() === 'native_http_login_post_status_not_302', 'native auth requires the success handler 302');
+    }
+    $unexpectedFacts = NativeAdminHttpLogin::safeAuthLandingFacts();
+    $assert($unexpectedRequests === 2, 'unexpected POST 200 is rejected without following a page');
+    $assert(is_array($unexpectedFacts) && $unexpectedFacts['post_status'] === 200
+        && $unexpectedFacts['redirect_count'] === 0 && $unexpectedFacts['final_status'] === 200
+        && $unexpectedFacts['final_path_kind'] === 'login' && $unexpectedFacts['body_page_kind'] === 'login'
+        && $unexpectedFacts['body_token_kind'] === 'plain_uri_safe',
+        'unexpected 200 is diagnosed using bounded enums only');
+    $assert(!str_contains(json_encode($unexpectedFacts, JSON_THROW_ON_ERROR), 'PRIVATE'), 'failed auth facts contain no submitted identity or password');
+
+    $redirectToken = 'q.' . str_repeat('r', 43) . '.' . str_repeat('s', 58);
+    $missingTokenRequest = static function (string $method, string $uri, ?array $fields) use ($redirectToken): array {
+        if ($method === 'GET' && $uri === '/admin-kuranea/') return ['status' => 200, 'body' => 'LOGIN_FORM'];
+        if ($method === 'POST' && $uri === '/admin-kuranea/login') {
+            return ['status' => 302, 'location' => '/admin-kuranea/index.php?controller=AdminLogin&_token=' . $redirectToken, 'body' => ''];
+        }
+        if ($method === 'GET' && $uri === '/admin-kuranea/index.php?controller=AdminLogin&_token=' . $redirectToken) {
+            return ['status' => 200, 'body' => '<html><body><main id="security-compromised-page">security warning</main></body></html>'];
+        }
+        throw new RuntimeException('mock_missing_token_out_of_contract');
+    };
+    try {
+        NativeAdminHttpLogin::authenticate(
+            '/admin-kuranea/', 'private@example.invalid', 'PRIVATE_PASSWORD', $missingTokenRequest, $cookieReader,
+            $parseLoginForm, $hasLoginForm, $localAdminUri
+        );
+        throw new RuntimeException('missing native session token was accepted');
+    } catch (RuntimeException $error) {
+        $assert($error->getMessage() === 'native_http_authenticated_body_token_missing', 'missing body token has a distinct failure');
+    }
+    $missingFacts = NativeAdminHttpLogin::safeAuthLandingFacts();
+    $assert(is_array($missingFacts) && $missingFacts['post_status'] === 302
+        && $missingFacts['final_status'] === 200 && $missingFacts['redirect_count'] === 1
+        && $missingFacts['final_path_kind'] === 'login' && $missingFacts['final_controller_kind'] === 'login'
+        && $missingFacts['body_page_kind'] === 'security_warning'
+        && $missingFacts['redirect_token_kind'] === 'masked' && $missingFacts['body_token_kind'] === 'missing',
+        'missing body-token diagnosis distinguishes a masked token on native redirect');
+    $assert(!str_contains(json_encode($missingFacts, JSON_THROW_ON_ERROR), $redirectToken),
+        'redirect token value is never included in safe authentication facts');
 
     $getMethodOptions = NativeAdminHttpCurlOptions::forRequest('GET', 'http://127.0.0.1:18080/probe');
     $assert(array_keys($getMethodOptions) === [CURLOPT_URL, CURLOPT_POSTFIELDS, CURLOPT_POST, CURLOPT_HTTPGET]

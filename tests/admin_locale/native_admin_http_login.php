@@ -11,6 +11,13 @@ final class NativeAdminHttpLogin
     private const MAX_REDIRECTS = 6;
     public const MAX_COOKIES = 20;
     private const MAX_COOKIE_VALUE_BYTES = 4096;
+    private static ?array $safeAuthLandingFacts = null;
+
+    /** Safe, fixed-schema diagnosis of the latest login POST landing. */
+    public static function safeAuthLandingFacts(): ?array
+    {
+        return self::$safeAuthLandingFacts;
+    }
 
     /**
      * @return array{login_form_posted: bool, final_uri: string, native_body_token: string, redirects: int, cookies: array<int, array{name: string, value: string, domain: string, path: string, expires: ?int, secure: bool, http_only: bool}>}
@@ -26,6 +33,7 @@ final class NativeAdminHttpLogin
         callable $localAdminUri,
         ?callable $stageObserver = null
     ): array {
+        self::$safeAuthLandingFacts = null;
         if ($stageObserver !== null) $stageObserver('native_login_get');
         $uri = $localAdminUri($loginUri, $loginUri);
         $response = $request('GET', $uri, null);
@@ -48,9 +56,29 @@ final class NativeAdminHttpLogin
         if ($stageObserver !== null) $stageObserver('native_login_post');
         $postResponse = $request('POST', $postUri, $fields);
         if ($stageObserver !== null) $stageObserver('native_login_post_redirects');
+        if (!isset($postResponse['status'], $postResponse['body'])
+            || !is_int($postResponse['status']) || $postResponse['status'] < 100 || $postResponse['status'] > 599
+            || !is_string($postResponse['body'])) {
+            throw new RuntimeException('native_http_response_contract_invalid');
+        }
+        $postLoginPage = (bool) $hasLoginForm($postResponse['body']);
+        self::recordSafeAuthLandingFacts(
+            $postResponse['status'], $postResponse['status'], $postUri, 0, $postResponse['body'], $postLoginPage
+        );
+        // PrestaShop's native authentication success handler answers the
+        // credential POST with an HTTP 302. Do not treat a rendered 200 page as
+        // proof of a successful login or use its session token.
+        if ($postResponse['status'] !== 302) {
+            throw new RuntimeException('native_http_login_post_status_not_302');
+        }
         $authenticated = self::followRedirects($postResponse, $postUri, $request, $localAdminUri);
+        $authenticatedLoginPage = (bool) $hasLoginForm($authenticated['response']['body']);
+        self::recordSafeAuthLandingFacts(
+            $postResponse['status'], $authenticated['response']['status'], $authenticated['uri'], $authenticated['redirects'],
+            $authenticated['response']['body'], $authenticatedLoginPage
+        );
         if ($authenticated['response']['status'] !== 200 || !is_string($authenticated['response']['body'])
-            || $hasLoginForm($authenticated['response']['body'])) {
+            || $authenticatedLoginPage) {
             throw new RuntimeException('native_http_admin_authentication_not_established');
         }
 
@@ -99,6 +127,10 @@ final class NativeAdminHttpLogin
             }
 
             $token = $bodies->item(0)->getAttribute('data-token');
+            $tokenKind = self::classifyToken($token);
+            if ($tokenKind === 'missing') {
+                throw new RuntimeException('native_http_authenticated_body_token_missing');
+            }
             if (!self::isSymfonyUriSafeToken($token)) {
                 throw new RuntimeException('native_http_authenticated_body_token_invalid');
             }
@@ -114,6 +146,145 @@ final class NativeAdminHttpLogin
     public static function isSymfonyUriSafeToken(string $token): bool
     {
         return preg_match('/\A[A-Za-z0-9_-]{1,32}\.[A-Za-z0-9_-]{43}\.[A-Za-z0-9_-]{43,256}\z/D', $token) === 1;
+    }
+
+    /** @return array<string, int|string> */
+    private static function safeAuthLandingFactDefaults(
+        int $postStatus,
+        int $finalStatus,
+        string $uri,
+        int $redirectCount,
+        string $body,
+        bool $loginPage
+    ): array
+    {
+        $controller = self::safeControllerKind($uri);
+        $bodyPage = self::safeBodyPageKind($body, $loginPage);
+        $path = self::safePathKind($uri, $bodyPage);
+        return [
+            'post_status' => $postStatus,
+            'redirect_count' => $redirectCount,
+            'final_status' => $finalStatus,
+            'final_path_kind' => $path,
+            'final_controller_kind' => $controller,
+            'redirect_token_kind' => self::safeUriTokenKind($uri),
+            'body_token_kind' => self::safeBodyTokenKind($body),
+            'body_page_kind' => $bodyPage,
+        ];
+    }
+
+    private static function recordSafeAuthLandingFacts(
+        int $postStatus,
+        int $finalStatus,
+        string $uri,
+        int $redirectCount,
+        string $body,
+        bool $loginPage
+    ): void {
+        self::$safeAuthLandingFacts = self::safeAuthLandingFactDefaults(
+            $postStatus, $finalStatus, $uri, $redirectCount, $body, $loginPage
+        );
+    }
+
+    private static function safeControllerKind(string $uri): string
+    {
+        $query = parse_url($uri, PHP_URL_QUERY);
+        if (!is_string($query)) return 'none';
+        parse_str($query, $parameters);
+        $controller = $parameters['controller'] ?? null;
+        if (!is_string($controller) || $controller === '') return 'none';
+        if ($controller === 'AdminLogin') return 'login';
+        if ($controller === 'AdminDashboard') return 'dashboard';
+        return 'other';
+    }
+
+    private static function safePathKind(string $uri, string $bodyPage): string
+    {
+        if ($bodyPage === 'login' || self::safeControllerKind($uri) === 'login') return 'login';
+        $path = parse_url($uri, PHP_URL_PATH);
+        if (is_string($path) && preg_match('~\A/admin-kuranea(?:/index\.php)?/?\z~D', $path)) return 'index';
+        return 'other_admin';
+    }
+
+    private static function safeUriTokenKind(string $uri): string
+    {
+        $query = parse_url($uri, PHP_URL_QUERY);
+        if (!is_string($query)) return 'missing';
+        $tokens = [];
+        foreach (explode('&', $query) as $field) {
+            [$key, $value] = array_pad(explode('=', $field, 2), 2, '');
+            $decodedKey = rawurldecode(str_replace('+', ' ', $key));
+            if (in_array($decodedKey, ['_token', 'token'], true)) {
+                $tokens[] = rawurldecode(str_replace('+', ' ', $value));
+            }
+        }
+        if ($tokens === []) return 'missing';
+        if (count($tokens) !== 1) return 'other';
+        return self::classifyToken($tokens[0]);
+    }
+
+    private static function safeBodyPageKind(string $html, bool $loginForm): string
+    {
+        if ($loginForm) return 'login';
+        if (!class_exists(DOMDocument::class) || !class_exists(DOMXPath::class)) return 'other';
+        $previousLibxmlState = libxml_use_internal_errors(true);
+        libxml_clear_errors();
+        try {
+            $document = new DOMDocument();
+            if (!$document->loadHTML($html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) return 'other';
+            $securityWarning = (new DOMXPath($document))->query('//*[@id="security-compromised-page"]');
+            if ($securityWarning !== false && $securityWarning->length === 1) return 'security_warning';
+            $bodies = (new DOMXPath($document))->query('/html/body');
+            if ($bodies === false || $bodies->length !== 1 || !$bodies->item(0) instanceof DOMElement) return 'other';
+            $classes = preg_split('/\s+/', strtolower(trim($bodies->item(0)->getAttribute('class'))), -1, PREG_SPLIT_NO_EMPTY);
+            if (!is_array($classes)) return 'other';
+            $isLogin = (bool) array_intersect($classes, [
+                'login', 'adminlogin', 'page-login', 'admin-login', 'admin_login', 'page-admin-login',
+                'page-adminlogin', 'controller-admin-login', 'controller-adminlogin',
+            ]);
+            $isDashboard = (bool) array_intersect($classes, [
+                'dashboard', 'admindashboard', 'page-dashboard', 'admin-dashboard', 'admin_dashboard',
+                'page-admin-dashboard', 'page-admindashboard', 'controller-admin-dashboard',
+                'controller-admindashboard',
+            ]);
+            if ($isLogin === $isDashboard) return 'other';
+            return $isLogin ? 'login' : 'dashboard';
+        } catch (Throwable) {
+            return 'other';
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previousLibxmlState);
+        }
+    }
+
+    private static function safeBodyTokenKind(string $html): string
+    {
+        if (!class_exists(DOMDocument::class) || !class_exists(DOMXPath::class)) return 'other';
+        $previousLibxmlState = libxml_use_internal_errors(true);
+        libxml_clear_errors();
+        try {
+            $document = new DOMDocument();
+            if (!$document->loadHTML($html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) return 'other';
+            $bodies = (new DOMXPath($document))->query('/html/body');
+            if ($bodies === false || $bodies->length !== 1 || !$bodies->item(0) instanceof DOMElement) return 'other';
+            $body = $bodies->item(0);
+            if (!$body->hasAttribute('data-token')) return 'missing';
+            return self::classifyToken($body->getAttribute('data-token'));
+        } catch (Throwable) {
+            return 'other';
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previousLibxmlState);
+        }
+    }
+
+    private static function classifyToken(string $token): string
+    {
+        if ($token === '') return 'missing';
+        if (self::isSymfonyUriSafeToken($token)) return 'masked';
+        if (preg_match('/\A[a-f0-9]{32}\z/iD', $token)) return 'plain_hex32';
+        if (preg_match('/\A[A-Za-z0-9_-]{20,128}\z/D', $token)) return 'plain_uri_safe';
+        return 'other';
     }
 
     /**

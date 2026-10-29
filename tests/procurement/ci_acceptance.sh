@@ -304,8 +304,7 @@ native_boundaries() {
   # No memory override, no --no-warmup, and no hidden failed command.
   compose exec -T -u www-data prestashop php /var/www/html/bin/console cache:clear --env=prod --no-debug || return "$?"
   compose exec -T -u www-data prestashop php /var/www/html/tests/admin_locale/native_mbo_error_render.php >"$QA_ARTIFACT_DIR/native-mbo-error-render.json" || return "$?"
-  authenticated_mbo_acceptance || return "$?"
-  authenticated_facebook_acceptance || return "$?"
+  authenticated_admin_pair_acceptance || return "$?"
   python3 - "$QA_ARTIFACT_DIR/cache-warmup-outcome.json" "$native_cli_memory_limit" <<'PYCACHE'
 import json,sys
 from pathlib import Path

@@ -57,6 +57,14 @@ TWIG_TEMPLATE_RE = re.compile(
     r"@(?:PrestaShop/Admin|Modules/ps_mbo)/(?:[A-Za-z0-9_-]+/)*"
     r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.twig\Z"
 )
+AUTH_LANDING_KEYS = {
+    "post_status", "redirect_count", "final_status", "final_path_kind",
+    "final_controller_kind", "redirect_token_kind", "body_token_kind", "body_page_kind",
+}
+AUTH_PATH_KINDS = {"login", "index", "other_admin"}
+AUTH_CONTROLLER_KINDS = {"login", "dashboard", "other", "none"}
+AUTH_TOKEN_KINDS = {"missing", "masked", "plain_hex32", "plain_uri_safe", "other"}
+AUTH_PAGE_KINDS = {"login", "dashboard", "security_warning", "other"}
 
 
 class _DuplicateJsonKey(ValueError):
@@ -70,6 +78,33 @@ def _object_without_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, An
             raise _DuplicateJsonKey
         result[key] = value
     return result
+
+
+def _safe_auth_landing_facts(value: Any) -> dict[str, Any] | None:
+    """Accept only the fixed, enum-only native-login landing diagnostics."""
+    if not isinstance(value, dict) or set(value) != AUTH_LANDING_KEYS:
+        return None
+    for key in ("post_status", "final_status"):
+        status = value[key]
+        if type(status) is not int or not 100 <= status <= 599:
+            return None
+    redirect_count = value["redirect_count"]
+    if type(redirect_count) is not int or not 0 <= redirect_count <= 6:
+        return None
+    if not isinstance(value["final_path_kind"], str) or value["final_path_kind"] not in AUTH_PATH_KINDS:
+        return None
+    if not isinstance(value["final_controller_kind"], str) or value["final_controller_kind"] not in AUTH_CONTROLLER_KINDS:
+        return None
+    if not isinstance(value["redirect_token_kind"], str) or value["redirect_token_kind"] not in AUTH_TOKEN_KINDS:
+        return None
+    if not isinstance(value["body_token_kind"], str) or value["body_token_kind"] not in AUTH_TOKEN_KINDS:
+        return None
+    if not isinstance(value["body_page_kind"], str) or value["body_page_kind"] not in AUTH_PAGE_KINDS:
+        return None
+    return {key: value[key] for key in (
+        "post_status", "redirect_count", "final_status", "final_path_kind",
+        "final_controller_kind", "redirect_token_kind", "body_token_kind", "body_page_kind",
+    )}
 
 
 def _reject_json_constant(_: str) -> None:
@@ -148,6 +183,9 @@ def _safe_failure(
         twig_line = payload.get("twig_template_line")
         if type(twig_line) is int and 1 <= twig_line <= 100_000:
             result["twig_template_line"] = twig_line
+        auth_landing = _safe_auth_landing_facts(payload.get("auth_landing"))
+        if auth_landing is not None:
+            result["auth_landing"] = auth_landing
     return result
 
 

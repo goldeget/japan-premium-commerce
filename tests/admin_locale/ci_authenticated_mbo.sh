@@ -7,6 +7,17 @@ authenticated_facebook_acceptance() {
   authenticated_admin_probe facebook
 }
 
+# Keep evidence for both independent probes, while requiring both to pass.
+authenticated_admin_pair_acceptance() {
+  local mbo_status=0 facebook_status=0
+  authenticated_mbo_acceptance || mbo_status=$?
+  authenticated_facebook_acceptance || facebook_status=$?
+  if (( mbo_status != 0 || facebook_status != 0 )); then
+    return 1
+  fi
+  return 0
+}
+
 authenticated_admin_probe() {
   local probe=$1 php_helper collector artifact
   case "$probe" in

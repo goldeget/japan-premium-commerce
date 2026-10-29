@@ -576,6 +576,10 @@ try {
         'test_dependency_sources' => $testDependencySources,
         'module_inventory' => $moduleInventory,
     ];
+    if (class_exists('NativeAdminHttpLogin', false)) {
+        $authLanding = NativeAdminHttpLogin::safeAuthLandingFacts();
+        if (is_array($authLanding)) $outcome['auth_landing'] = $authLanding;
+    }
     if ($error instanceof Twig\Error\Error) {
         $sourceName = $error->getSourceContext()?->getName() ?? '';
         if (preg_match('~\A@(?:PrestaShop/Admin|PrestaShopCore|Modules/ps_mbo)/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.twig\z~D', $sourceName)) {

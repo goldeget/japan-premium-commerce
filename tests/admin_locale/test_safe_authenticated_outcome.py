@@ -73,6 +73,58 @@ def raw_json(payload):
 
 
 class SafeAuthenticatedOutcomeTests(unittest.TestCase):
+    def test_failed_helper_emits_only_fixed_native_auth_landing_facts(self):
+        auth_landing = {
+            "post_status": 302,
+            "redirect_count": 1,
+            "final_status": 200,
+            "final_path_kind": "index",
+            "final_controller_kind": "dashboard",
+            "redirect_token_kind": "masked",
+            "body_token_kind": "missing",
+            "body_page_kind": "dashboard",
+        }
+        payload = {
+            "schema": 1,
+            "passed": False,
+            "failed_stage": "native_login_post_redirects",
+            "auth_landing": auth_landing,
+            "final_uri": "http://localhost/admin-kuranea/index.php?token=PRIVATE_URL_TOKEN",
+            "native_body_token": "PRIVATE_BODY_TOKEN",
+            "email": "PRIVATE_EMAIL",
+        }
+        result = MODULE.collect_safe_outcome(raw_json(payload), 1)
+        self.assertEqual(result["auth_landing"], auth_landing)
+        encoded = json.dumps(result)
+        for secret in ("localhost", "admin-kuranea", "PRIVATE_URL_TOKEN", "PRIVATE_BODY_TOKEN", "PRIVATE_EMAIL"):
+            self.assertNotIn(secret, encoded)
+
+    def test_malformed_or_extended_auth_landing_fact_object_is_dropped_as_a_whole(self):
+        facts = {
+            "post_status": 200,
+            "redirect_count": 0,
+            "final_status": 200,
+            "final_path_kind": "login",
+            "final_controller_kind": "none",
+            "redirect_token_kind": "missing",
+            "body_token_kind": "plain_hex32",
+            "body_page_kind": "login",
+        }
+        invalid = [
+            {**facts, "url": "http://localhost/PRIVATE"},
+            {**facts, "final_status": True},
+            {**facts, "redirect_count": 7},
+            {**facts, "body_token_kind": "PRIVATE_TOKEN"},
+            {**facts, "body_page_kind": []},
+        ]
+        for value in invalid:
+            with self.subTest(value=value):
+                result = MODULE.collect_safe_outcome(raw_json({"schema": 1, "passed": False, "auth_landing": value}), 1)
+                self.assertNotIn("auth_landing", result)
+                serialized = json.dumps(result)
+                self.assertNotIn("PRIVATE", serialized)
+                self.assertNotIn("localhost", serialized)
+
     def test_success_rebuilds_a_whitelist_and_discards_raw_extra_fields(self):
         payload = valid_helper_payload()
         payload["password"] = "PRIVATE_TOP_LEVEL_SECRET"

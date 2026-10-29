@@ -107,6 +107,34 @@ def good_inputs() -> tuple[dict[str, bytes], dict[str, int]]:
 
 
 class SafeNativeFacebookCasesTests(unittest.TestCase):
+    def test_failed_case_carries_only_sanitized_native_auth_landing_facts(self) -> None:
+        facts = {
+            "post_status": 302,
+            "redirect_count": 1,
+            "final_status": 200,
+            "final_path_kind": "index",
+            "final_controller_kind": "dashboard",
+            "redirect_token_kind": "masked",
+            "body_token_kind": "missing",
+            "body_page_kind": "dashboard",
+        }
+        raw, statuses = good_inputs()
+        raw["curl_transport"] = json.dumps({
+            "schema": 1,
+            "passed": False,
+            "failed_stage": "native_login_post_redirects",
+            "exception_class": "RuntimeException",
+            "auth_landing": facts,
+            "final_uri": "http://localhost/admin-kuranea/index.php?token=PRIVATE_URL_TOKEN",
+            "native_body_token": "PRIVATE_BODY_TOKEN",
+        }).encode()
+        statuses["curl_transport"] = 1
+        result = MODULE.collect_cases(raw, statuses)
+        self.assertEqual(result["auth_landing"], facts)
+        encoded = json.dumps(result)
+        for secret in ("localhost", "admin-kuranea", "PRIVATE_URL_TOKEN", "PRIVATE_BODY_TOKEN"):
+            self.assertNotIn(secret, encoded)
+
     def test_aggregates_exact_five_fresh_process_results_and_filters_to_safe_fields(self) -> None:
         raw, statuses = good_inputs()
         result = MODULE.collect_cases(raw, statuses)
