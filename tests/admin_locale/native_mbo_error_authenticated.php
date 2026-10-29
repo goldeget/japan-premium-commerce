@@ -24,6 +24,7 @@ $nativeHttpTransport = null;
 $nativeHttpLoginResult = null;
 $nativeLoginCookies = [];
 $nativeLoopbackHttpRequestCount = 0;
+$isolatedCiGuardPassed = false;
 $shopRoot = dirname(__DIR__, 2);
 
 /** Fail with a fixed stage only; exception text and request data can carry secrets. */
@@ -197,6 +198,7 @@ try {
         && preg_match('/\A[A-Za-z0-9_-]{32,128}\z/D', $adminPassword) === 1,
         'isolated_ci_auth_guard'
     );
+    $isolatedCiGuardPassed = true;
 
     $stage = 'admin_bootstrap_path';
     $adminRoot = realpath($shopRoot . '/admin-kuranea');
@@ -576,6 +578,34 @@ try {
         'test_dependency_sources' => $testDependencySources,
         'module_inventory' => $moduleInventory,
     ];
+    if ($isolatedCiGuardPassed && $stage === 'native_login_post_redirects'
+        && class_exists('NativeAdminHttpLogin', false)) {
+        try {
+            $privateResponse = NativeAdminHttpLogin::privateLastHttpResponse();
+            $authFacts = NativeAdminHttpLogin::safeAuthLandingFacts();
+            if (is_array($privateResponse) && is_array($authFacts)
+                && is_int($privateResponse['status'] ?? null)
+                && is_string($privateResponse['request_uri'] ?? null)
+                && is_string($privateResponse['body'] ?? null)
+                && strlen($privateResponse['body']) <= 2 * 1024 * 1024
+                && ($authFacts['post_status'] ?? null) === 302) {
+                $privateEnvelope = json_encode([
+                    'scope' => 'mbo_native_auth_landing_failure',
+                    'status' => $privateResponse['status'],
+                    'request_uri' => $privateResponse['request_uri'],
+                    'body_base64' => base64_encode($privateResponse['body']),
+                ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+                require_once __DIR__ . '/native_admin_private_snapshot.php';
+                persistNativeAdminSnapshot(
+                    'mbo-auth-landing', $privateEnvelope,
+                    '/tmp/owned/kuranea-admin-test-deps', $expectedProject
+                );
+            }
+        } catch (Throwable) {
+            // The functional probe remains failed. Capture is opportunistic and
+            // never exposes raw HTML or encryption metadata in public output.
+        }
+    }
     if (class_exists('NativeAdminHttpLogin', false)) {
         $authLanding = NativeAdminHttpLogin::safeAuthLandingFacts();
         if (is_array($authLanding)) $outcome['auth_landing'] = $authLanding;

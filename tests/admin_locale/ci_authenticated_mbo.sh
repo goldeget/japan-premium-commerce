@@ -18,6 +18,108 @@ authenticated_admin_pair_acceptance() {
   return 0
 }
 
+# Copy only a marker-owned private diagnostic capture, encrypt it to the
+# repository's pinned public recipient, and immediately remove runner plaintext.
+# This helper never prints response data, URLs, tokens, or encryption details.
+native_admin_encrypt_private_capture() {
+  local kind=$1 snapshot artifact container_path host_plain cipher_tmp recipient expected_fp actual_fp status=0
+  case "$kind" in
+    mbo-auth-landing)
+      snapshot='mbo-auth-landing.html'
+      artifact='mbo-auth-landing-encrypted.cms' ;;
+    facebook-unauthenticated)
+      snapshot='facebook-unauthenticated.html'
+      artifact='facebook-unauthenticated-encrypted.cms' ;;
+    *) return 64 ;;
+  esac
+
+  [[ ${CI:-} == true && ${KURANEA_ISOLATED_CI:-} == 1 && ${GITHUB_ACTIONS:-} == true ]] || return 1
+  [[ ${GITHUB_RUN_ID:-} =~ ^[0-9]{1,20}$ && ${GITHUB_RUN_ATTEMPT:-} =~ ^[0-9]{1,8}$ ]] || return 1
+  [[ ${CI_COMPOSE_PROJECT_NAME:-} == "ordenowa-procurement-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ]] || return 1
+  [[ ${RUNNER_TEMP:-} == /* && -d $RUNNER_TEMP && ! -L $RUNNER_TEMP ]] || return 1
+  [[ ${QA_ARTIFACT_DIR:-} == "$RUNNER_TEMP/procurement-safe-artifacts" && -d $QA_ARTIFACT_DIR && ! -L $QA_ARTIFACT_DIR ]] || return 1
+  [[ ${private_dir:-} == "$RUNNER_TEMP"/procurement-private.* && -d $private_dir && ! -L $private_dir ]] || return 1
+  [[ ${GITHUB_WORKSPACE:-} == /* && -d $GITHUB_WORKSPACE ]] || return 1
+
+  recipient="$GITHUB_WORKSPACE/tests/admin_locale/qa-debug-recipient.pem"
+  [[ ${ORDENOWA_NATIVE_AUTH_DEBUG_RECIPIENT:-} == "$recipient" && -f $recipient && ! -L $recipient ]] || return 1
+  [[ $(realpath "$recipient") == "$recipient" ]] || return 1
+  command -v openssl >/dev/null 2>&1 || return 1
+  expected_fp='sha256 Fingerprint=0C:8E:7D:03:B9:FE:49:A0:88:01:C7:0F:5C:06:16:CA:20:31:9F:1E:B2:6B:DB:AA:FD:CD:D8:59:92:D2:7C:0D'
+  actual_fp=$(openssl x509 -in "$recipient" -noout -fingerprint -sha256 2>/dev/null) || return 1
+  [[ $actual_fp == "$expected_fp" ]] || return 1
+
+  container_path="/tmp/owned/kuranea-admin-test-deps/private-snapshots/$snapshot"
+  host_plain="$private_dir/$kind.private.json"
+  [[ ! -e $host_plain && ! -L $host_plain ]] || return 1
+  [[ ! -e "$QA_ARTIFACT_DIR/$artifact" && ! -L "$QA_ARTIFACT_DIR/$artifact" ]] || return 1
+
+  compose exec -T -u root -e "ORDENOWA_EXPECTED_PROJECT=$CI_COMPOSE_PROJECT_NAME" prestashop sh -euc '
+    root=/tmp/owned/kuranea-admin-test-deps
+    file="$root/private-snapshots/$1"
+    test "$KURANEA_CI_PROJECT_NAME" = "$ORDENOWA_EXPECTED_PROJECT"
+    test ! -L /tmp/owned && test "$(realpath /tmp/owned)" = /tmp/owned
+    test ! -L "$root" && test "$(realpath "$root")" = "$root"
+    test -f "$root/.ordenowa-ci-project" && test ! -L "$root/.ordenowa-ci-project"
+    test "$(cat "$root/.ordenowa-ci-project")" = "$ORDENOWA_EXPECTED_PROJECT"
+    test ! -L "$root/private-snapshots" && test "$(realpath "$root/private-snapshots")" = "$root/private-snapshots"
+    test -f "$file" && test ! -L "$file" && test "$(realpath "$file")" = "$file"
+    size=$(wc -c < "$file")
+    test "$size" -ge 100 && test "$size" -le 8388608
+    test "$(stat -c %a "$file")" = 600
+  ' sh "$snapshot" >"$private_dir/$kind-source-check.log" 2>&1 || return 1
+
+  compose cp "prestashop:$container_path" "$host_plain" >"$private_dir/$kind-copy.log" 2>&1 || status=$?
+  if (( status == 0 )); then
+    chmod 0600 -- "$host_plain" || status=$?
+    if (( status == 0 )) && [[ -f $host_plain && ! -L $host_plain ]] \
+        && (( $(wc -c <"$host_plain") >= 100 && $(wc -c <"$host_plain") <= 8388608 )); then
+      compose exec -T -u root -e "ORDENOWA_EXPECTED_PROJECT=$CI_COMPOSE_PROJECT_NAME" prestashop sh -euc '
+        root=/tmp/owned/kuranea-admin-test-deps
+        file="$root/private-snapshots/$1"
+        test "$KURANEA_CI_PROJECT_NAME" = "$ORDENOWA_EXPECTED_PROJECT"
+        test ! -L "$root" && test "$(realpath "$root")" = "$root"
+        test -f "$root/.ordenowa-ci-project" && test ! -L "$root/.ordenowa-ci-project"
+        test "$(cat "$root/.ordenowa-ci-project")" = "$ORDENOWA_EXPECTED_PROJECT"
+        test -f "$file" && test ! -L "$file" && test "$(realpath "$file")" = "$file"
+        rm -f -- "$file"
+      ' sh "$snapshot" >"$private_dir/$kind-source-remove.log" 2>&1 || status=$?
+    else
+      status=1
+    fi
+  fi
+
+  cipher_tmp=''
+  if (( status == 0 )); then
+    cipher_tmp=$(mktemp "$QA_ARTIFACT_DIR/.${kind}-encrypted.XXXXXXXX") || status=$?
+  fi
+  if (( status == 0 )); then
+    openssl cms -encrypt -aes-256-gcm -binary -outform DER -recip "$recipient" \
+      -in "$host_plain" -out "$cipher_tmp" 2>"$private_dir/$kind-encrypt.stderr" || status=$?
+  fi
+  if (( status == 0 )) && [[ -f $cipher_tmp && ! -L $cipher_tmp ]] \
+      && (( $(wc -c <"$cipher_tmp") >= 100 && $(wc -c <"$cipher_tmp") <= 8388608 )) \
+      && [[ ! -e "$QA_ARTIFACT_DIR/$artifact" && ! -L "$QA_ARTIFACT_DIR/$artifact" ]]; then
+    chmod 0600 -- "$cipher_tmp" || status=$?
+    if (( status == 0 )); then
+      if mv -- "$cipher_tmp" "$QA_ARTIFACT_DIR/$artifact"; then
+        cipher_tmp=''
+      else
+        status=$?
+      fi
+    fi
+  else
+    status=1
+  fi
+
+  if [[ -n $cipher_tmp ]]; then rm -f -- "$cipher_tmp" || status=1; fi
+  rm -f -- "$host_plain" || status=1
+  if (( status == 0 )); then
+    [[ -f "$QA_ARTIFACT_DIR/$artifact" && ! -L "$QA_ARTIFACT_DIR/$artifact" ]] || status=1
+  fi
+  return "$status"
+}
+
 authenticated_admin_probe() {
   local probe=$1 php_helper collector artifact
   case "$probe" in
@@ -45,6 +147,24 @@ authenticated_admin_probe() {
         >"$raw" 2>"$private_dir/$probe-authenticated.stderr" || helper_status=$?
       python3 "tests/admin_locale/$collector" \
         --private-input "$raw" --safe-output "$safe" --helper-exit-status "$helper_status" || result=$?
+      if [[ "$probe" == mbo && $helper_status -ne 0 && -f $safe && ! -L $safe ]]; then
+        if python3 - "$safe" <<'PYADMINMBOAUTHCAPTURE' >/dev/null 2>&1
+import json, sys
+from pathlib import Path
+try:
+    value = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+    facts = value.get('auth_landing')
+    ok = (value.get('passed') is False and value.get('failed_stage') == 'native_login_post_redirects'
+          and isinstance(facts, dict) and facts.get('post_status') == 302
+          and type(facts.get('final_status')) is int and 100 <= facts['final_status'] <= 599)
+except (OSError, ValueError, TypeError, AttributeError):
+    ok = False
+raise SystemExit(0 if ok else 1)
+PYADMINMBOAUTHCAPTURE
+        then
+          native_admin_encrypt_private_capture mbo-auth-landing || :
+        fi
+      fi
     fi
   else
     helper_status=$?

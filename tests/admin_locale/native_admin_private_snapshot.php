@@ -2,11 +2,11 @@
 declare(strict_types=1);
 
 /** Test-only private handoff; never writes a raw native response to artifacts. */
-function persistNativeAdminSnapshot(string $kind, string $html, string $ownedRoot, string $project): void
+function persistNativeAdminSnapshot(string $kind, string $content, string $ownedRoot, string $project): void
 {
-    if (!in_array($kind, ['mbo', 'facebook'], true)
+    if (!in_array($kind, ['mbo', 'facebook', 'mbo-auth-landing', 'facebook-unauthenticated'], true)
         || !preg_match('/\Aordenowa-procurement-ci-[0-9]{1,20}-[0-9]{1,8}\z/D', $project)
-        || strlen($html) < 100 || strlen($html) > 8 * 1024 * 1024
+        || strlen($content) < 100 || strlen($content) > 8 * 1024 * 1024
         || is_link($ownedRoot) || realpath($ownedRoot) !== $ownedRoot
         || !is_file($ownedRoot . '/.ordenowa-ci-project')
         || is_link($ownedRoot . '/.ordenowa-ci-project')
@@ -29,7 +29,7 @@ function persistNativeAdminSnapshot(string $kind, string $html, string $ownedRoo
         $stream = @fopen($path, 'x+b');
         if ($stream === false) throw new RuntimeException('private_snapshot_create_failed');
         $created = true;
-        if (!chmod($path, 0600) || fwrite($stream, $html) !== strlen($html)
+        if (!chmod($path, 0600) || fwrite($stream, $content) !== strlen($content)
             || !fflush($stream) || (function_exists('fsync') && !fsync($stream))) {
             throw new RuntimeException('private_snapshot_write_failed');
         }

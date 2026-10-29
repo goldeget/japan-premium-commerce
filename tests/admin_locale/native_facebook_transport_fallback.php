@@ -36,6 +36,7 @@ $nativeLogin = null;
 $nativeCookies = [];
 $nativeHttpBodyToken = null;
 $nativeHttpBodyTokenApplied = false;
+$isolatedCiGuardPassed = false;
 $nativeLoginRequests = 0;
 $nativeLoginStages = [];
 $injectionCounts = [
@@ -329,6 +330,7 @@ try {
         'isolated_ci_auth_guard'
     );
     $require(array_key_exists($caseName, $caseModes), 'isolated_facebook_case_guard');
+    $isolatedCiGuardPassed = true;
 
     $stage = 'admin_bootstrap_path';
     $adminRoot = realpath($shopRoot . '/admin-kuranea');
@@ -1066,6 +1068,28 @@ try {
         'login_session_or_auth_audit_writes_possible' => true,
         'kernel_bootstrap_database_network_side_effects_instrumented' => false,
     ];
+    if ($isolatedCiGuardPassed && $caseName === 'unauthenticated'
+        && $stage === 'case_specific_semantic_assertions'
+        && isset($requestUri, $responseStatus, $body)
+        && is_string($requestUri) && preg_match('~\A/admin-kuranea(?:/|\z)~D', $requestUri) === 1
+        && is_int($responseStatus) && $responseStatus >= 100 && $responseStatus <= 599
+        && is_string($body) && strlen($body) <= 2 * 1024 * 1024) {
+        try {
+            $privateEnvelope = json_encode([
+                'scope' => 'facebook_unauthenticated_native_target_failure',
+                'status' => $responseStatus,
+                'request_uri' => $requestUri,
+                'body_base64' => base64_encode($body),
+            ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+            require_once __DIR__ . '/native_admin_private_snapshot.php';
+            persistNativeAdminSnapshot(
+                'facebook-unauthenticated', $privateEnvelope,
+                '/tmp/owned/kuranea-admin-test-deps', $expectedProject
+            );
+        } catch (Throwable) {
+            // Keep the original functional failure and never expose private HTML.
+        }
+    }
     if (class_exists('NativeAdminHttpLogin', false)) {
         $authLanding = NativeAdminHttpLogin::safeAuthLandingFacts();
         if (is_array($authLanding)) $outcome['auth_landing'] = $authLanding;

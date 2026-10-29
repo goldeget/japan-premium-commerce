@@ -95,6 +95,11 @@ namespace {
     $assert($login['final_uri'] === '/admin-kuranea/index.php?controller=AdminDashboard', 'same-admin final redirect');
     $assert($login['native_body_token'] === 'a.' . str_repeat('b', 43) . '.' . str_repeat('c', 58),
         'authenticated native body token extracted in memory');
+    $privateResponse = NativeAdminHttpLogin::privateLastHttpResponse();
+    $assert(is_array($privateResponse) && $privateResponse['status'] === 200
+        && $privateResponse['request_uri'] === '/admin-kuranea/index.php?controller=AdminDashboard'
+        && str_contains($privateResponse['body'], 'AUTHENTICATED_DASHBOARD'),
+        'latest raw HTTP response remains in process for private capture');
     $assert($login['redirects'] === 1, 'redirect count');
     $assert(count($requests) === 3, 'one GET, one form POST, one validated redirect GET');
     $authFacts = NativeAdminHttpLogin::safeAuthLandingFacts();
@@ -193,12 +198,17 @@ namespace {
         $assert($error->getMessage() === 'native_http_login_post_status_not_302', 'native auth requires the success handler 302');
     }
     $unexpectedFacts = NativeAdminHttpLogin::safeAuthLandingFacts();
+    $unexpectedPrivateResponse = NativeAdminHttpLogin::privateLastHttpResponse();
     $assert($unexpectedRequests === 2, 'unexpected POST 200 is rejected without following a page');
     $assert(is_array($unexpectedFacts) && $unexpectedFacts['post_status'] === 200
         && $unexpectedFacts['redirect_count'] === 0 && $unexpectedFacts['final_status'] === 200
         && $unexpectedFacts['final_path_kind'] === 'login' && $unexpectedFacts['body_page_kind'] === 'login'
         && $unexpectedFacts['body_token_kind'] === 'plain_uri_safe',
         'unexpected 200 is diagnosed using bounded enums only');
+    $assert(is_array($unexpectedPrivateResponse) && $unexpectedPrivateResponse['status'] === 200
+        && $unexpectedPrivateResponse['request_uri'] === '/admin-kuranea/login'
+        && !str_contains($unexpectedPrivateResponse['body'], 'AUTHENTICATED_DASHBOARD'),
+        'new auth attempt resets and replaces private last-response state');
     $assert(!str_contains(json_encode($unexpectedFacts, JSON_THROW_ON_ERROR), 'PRIVATE'), 'failed auth facts contain no submitted identity or password');
 
     $redirectToken = 'q.' . str_repeat('r', 43) . '.' . str_repeat('s', 58);

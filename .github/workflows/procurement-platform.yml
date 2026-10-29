@@ -50,6 +50,7 @@ jobs:
       CI_COMPOSE_PROJECT_NAME: ordenowa-procurement-ci-${{ github.run_id }}-${{ github.run_attempt }}
       SHOP_PORT: '18081'
       SHOP_BASE_URL: http://localhost:18081
+      ORDENOWA_NATIVE_AUTH_DEBUG_RECIPIENT: ${{ github.workspace }}/tests/admin_locale/qa-debug-recipient.pem
       PS_DOMAIN: localhost:18081
       ORDENOWA_APP_MODE: procurement
       DOCKER_CONTEXT: default
@@ -261,6 +262,7 @@ jobs:
           name: procurement-safe-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/procurement-safe-artifacts/*.json
+            ${{ runner.temp }}/procurement-safe-artifacts/*-encrypted.cms
             ${{ runner.temp }}/procurement-safe-artifacts/*-redacted-*.png
             ${{ github.workspace }}/release-artifacts/*.package.json
             ${{ github.workspace }}/release-artifacts/*.release.json

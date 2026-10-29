@@ -34,6 +34,21 @@ native_facebook_fresh_case_acceptance() {
       prestashop php /var/www/html/tests/admin_locale/native_facebook_transport_fallback.php \
       >"$raw" 2>"$stderr" || status=$?
     chmod 0600 -- "$raw" "$stderr" || result=1
+    if [[ "$case_name" == unauthenticated && $status -ne 0 && -f $raw && ! -L $raw ]]; then
+      if python3 - "$raw" <<'PYADMINFBUNAUTHCAPTURE' >/dev/null 2>&1
+import json, sys
+from pathlib import Path
+try:
+    value = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+    ok = (value.get('passed') is False and value.get('failed_stage') == 'case_specific_semantic_assertions')
+except (OSError, ValueError, TypeError, AttributeError):
+    ok = False
+raise SystemExit(0 if ok else 1)
+PYADMINFBUNAUTHCAPTURE
+      then
+        native_admin_encrypt_private_capture facebook-unauthenticated || :
+      fi
+    fi
     collector_args+=(--case-input "$case_name=$raw" --case-status "$case_name=$status")
     if (( status != 0 )); then result=1; fi
   done

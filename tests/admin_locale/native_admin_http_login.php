@@ -12,11 +12,18 @@ final class NativeAdminHttpLogin
     public const MAX_COOKIES = 20;
     private const MAX_COOKIE_VALUE_BYTES = 4096;
     private static ?array $safeAuthLandingFacts = null;
+    private static ?array $privateLastHttpResponse = null;
 
     /** Safe, fixed-schema diagnosis of the latest login POST landing. */
     public static function safeAuthLandingFacts(): ?array
     {
         return self::$safeAuthLandingFacts;
+    }
+
+    /** Raw response is available only in process for guarded encrypted CI capture. */
+    public static function privateLastHttpResponse(): ?array
+    {
+        return self::$privateLastHttpResponse;
     }
 
     /**
@@ -34,9 +41,11 @@ final class NativeAdminHttpLogin
         ?callable $stageObserver = null
     ): array {
         self::$safeAuthLandingFacts = null;
+        self::$privateLastHttpResponse = null;
         if ($stageObserver !== null) $stageObserver('native_login_get');
         $uri = $localAdminUri($loginUri, $loginUri);
         $response = $request('GET', $uri, null);
+        self::rememberPrivateResponse($uri, $response);
         if ($stageObserver !== null) $stageObserver('native_login_get_redirects');
         $page = self::followRedirects($response, $uri, $request, $localAdminUri);
         if ($page['response']['status'] !== 200 || !is_string($page['response']['body'])) {
@@ -56,6 +65,7 @@ final class NativeAdminHttpLogin
         if ($stageObserver !== null) $stageObserver('native_login_post');
         $postResponse = $request('POST', $postUri, $fields);
         if ($stageObserver !== null) $stageObserver('native_login_post_redirects');
+        self::rememberPrivateResponse($postUri, $postResponse);
         if (!isset($postResponse['status'], $postResponse['body'])
             || !is_int($postResponse['status']) || $postResponse['status'] < 100 || $postResponse['status'] > 599
             || !is_string($postResponse['body'])) {
@@ -184,6 +194,22 @@ final class NativeAdminHttpLogin
         self::$safeAuthLandingFacts = self::safeAuthLandingFactDefaults(
             $postStatus, $finalStatus, $uri, $redirectCount, $body, $loginPage
         );
+    }
+
+    private static function rememberPrivateResponse(string $uri, mixed $response): void
+    {
+        self::$privateLastHttpResponse = null;
+        if (!is_array($response) || !isset($response['status'], $response['body'])
+            || !is_int($response['status']) || $response['status'] < 100 || $response['status'] > 599
+            || !is_string($response['body']) || strlen($response['body']) > 8 * 1024 * 1024
+            || strlen($uri) > 8192 || !str_starts_with($uri, '/admin-kuranea')) {
+            return;
+        }
+        self::$privateLastHttpResponse = [
+            'status' => $response['status'],
+            'request_uri' => $uri,
+            'body' => $response['body'],
+        ];
     }
 
     private static function safeControllerKind(string $uri): string
@@ -415,6 +441,7 @@ final class NativeAdminHttpLogin
             }
             $uri = $localAdminUri($location, $uri);
             $response = $request('GET', $uri, null);
+            self::rememberPrivateResponse($uri, $response);
             ++$redirects;
         }
 
