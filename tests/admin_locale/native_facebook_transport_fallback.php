@@ -163,7 +163,7 @@ $applyNativeHttpBodyToken = static function (
     }
 
     $queryParts = explode('&', (string) $parts['query']);
-    $tokenIndex = null;
+    $tokenIndexes = ['token' => null, '_token' => null];
     foreach ($queryParts as $index => $queryPart) {
         if ($queryPart === '') {
             throw new RuntimeException('native_generated_admin_query_invalid');
@@ -172,20 +172,20 @@ $applyNativeHttpBodyToken = static function (
         $rawName = $separator === false ? $queryPart : substr($queryPart, 0, $separator);
         $rawValue = $separator === false ? '' : substr($queryPart, $separator + 1);
         $name = urldecode($rawName);
-        if (!in_array($name, ['token', '_token'], true)) {
+        if (!array_key_exists($name, $tokenIndexes)) {
             continue;
         }
-        if ($tokenIndex !== null) {
+        if ($tokenIndexes[$name] !== null) {
             throw new RuntimeException('native_generated_admin_token_field_ambiguous');
         }
         $generatedToken = urldecode($rawValue);
         if ($generatedToken !== '' && !NativeAdminHttpLogin::isSymfonyUriSafeToken($generatedToken)) {
             throw new RuntimeException('native_generated_admin_token_invalid');
         }
-        $tokenIndex = $index;
+        $tokenIndexes[$name] = $index;
         $queryParts[$index] = $rawName . '=' . rawurlencode($nativeBodyToken);
     }
-    if ($tokenIndex === null) {
+    if ($tokenIndexes['token'] === null && $tokenIndexes['_token'] === null) {
         throw new RuntimeException('native_generated_admin_token_field_missing');
     }
 
@@ -559,7 +559,7 @@ try {
     $stage = 'native_admin_kernel_browser_fixture';
     $browserServer = [
         'HTTP_HOST' => 'localhost:18081', 'SERVER_NAME' => 'localhost', 'SERVER_PORT' => '18081',
-        'SERVER_PROTOCOL' => 'HTTP/1.1', 'REQUEST_SCHEME' => 'http', 'HTTPS' => 'off',
+        'SERVER_PROTOCOL' => 'HTTP/1.1', 'REQUEST_SCHEME' => 'http', 'HTTPS' => false,
         'SCRIPT_NAME' => '/admin-kuranea/index.php', 'PHP_SELF' => '/admin-kuranea/index.php',
         'SCRIPT_FILENAME' => $adminRoot . '/index.php', 'REMOTE_ADDR' => '127.0.0.1',
         'HTTP_ACCEPT' => 'text/html,application/xhtml+xml', 'HTTP_USER_AGENT' => 'ORDENOWA-isolated-ci-kernel-browser',
@@ -797,7 +797,7 @@ try {
             $oldLibxml = libxml_use_internal_errors(true);
             try {
                 $document = new DOMDocument();
-                if (!$document->loadHTML($html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) {
+                if (!$document->loadHTML($html, LIBXML_HTML_NOIMPLIED | LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) {
                     return;
                 }
                 $bodies = (new DOMXPath($document))->query('/html/body');
@@ -912,7 +912,7 @@ try {
         $errorFragment = '';
         try {
             $document = new DOMDocument();
-            if ($document->loadHTML($body, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) {
+            if ($document->loadHTML($body, LIBXML_HTML_NOIMPLIED | LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) {
                 $htmlNodes = (new DOMXPath($document))->query('/html');
                 if ($htmlNodes !== false && $htmlNodes->length === 1 && $htmlNodes->item(0) instanceof DOMElement) {
                     $documentLanguage = strtolower($htmlNodes->item(0)->getAttribute('lang'));

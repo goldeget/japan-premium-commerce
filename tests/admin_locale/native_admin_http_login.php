@@ -120,7 +120,8 @@ final class NativeAdminHttpLogin
     public static function extractNativeBodyToken(string $html): string
     {
         if (!class_exists(DOMDocument::class) || !class_exists(DOMXPath::class)
-            || !defined('LIBXML_NONET') || !defined('LIBXML_NOERROR') || !defined('LIBXML_NOWARNING')) {
+            || !defined('LIBXML_NONET') || !defined('LIBXML_NOERROR') || !defined('LIBXML_NOWARNING')
+            || !defined('LIBXML_HTML_NOIMPLIED')) {
             throw new RuntimeException('native_http_dom_unavailable');
         }
 
@@ -128,7 +129,7 @@ final class NativeAdminHttpLogin
         libxml_clear_errors();
         try {
             $document = new DOMDocument();
-            if (!$document->loadHTML($html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) {
+            if (!$document->loadHTML($html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING | LIBXML_HTML_NOIMPLIED)) {
                 throw new RuntimeException('native_http_authenticated_document_invalid');
             }
             $bodies = (new DOMXPath($document))->query('/html/body');
@@ -257,7 +258,7 @@ final class NativeAdminHttpLogin
         libxml_clear_errors();
         try {
             $document = new DOMDocument();
-            if (!$document->loadHTML($html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) return 'other';
+            if (!$document->loadHTML($html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING | LIBXML_HTML_NOIMPLIED)) return 'other';
             $securityWarning = (new DOMXPath($document))->query('//*[@id="security-compromised-page"]');
             if ($securityWarning !== false && $securityWarning->length === 1) return 'security_warning';
             $bodies = (new DOMXPath($document))->query('/html/body');
@@ -290,7 +291,7 @@ final class NativeAdminHttpLogin
         libxml_clear_errors();
         try {
             $document = new DOMDocument();
-            if (!$document->loadHTML($html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) return 'other';
+            if (!$document->loadHTML($html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING | LIBXML_HTML_NOIMPLIED)) return 'other';
             $bodies = (new DOMXPath($document))->query('/html/body');
             if ($bodies === false || $bodies->length !== 1 || !$bodies->item(0) instanceof DOMElement) return 'other';
             $body = $bodies->item(0);

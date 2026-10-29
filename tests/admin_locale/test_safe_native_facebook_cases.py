@@ -346,7 +346,7 @@ class SafeNativeFacebookCasesTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("ok", result.stdout)
 
-    def test_php_native_body_token_adapter_preserves_url_identity_and_rejects_ambiguous_fields(self) -> None:
+    def test_php_native_body_token_adapter_replaces_unique_dual_tokens_and_rejects_duplicates(self) -> None:
         php = os.environ.get("ORDENOWA_TEST_PHP") or shutil.which("php")
         if not php:
             self.skipTest("PHP required to execute the probe's actual native-token URL adapter")
@@ -366,11 +366,19 @@ if ($applyNativeHttpBodyToken($dashboard, $nativeToken, '/admin-kuranea/index.ph
 $existingNative = 'd.' . str_repeat('e', 43) . '.' . str_repeat('f', 58);
 if (!NativeAdminHttpLogin::isSymfonyUriSafeToken($existingNative)
     || !str_ends_with($applyNativeHttpBodyToken('/admin-kuranea/index.php?token=' . rawurlencode($existingNative), $nativeToken, '/admin-kuranea/index.php'), rawurlencode($nativeToken))) { exit(3); }
+$existingOther = 'g.' . str_repeat('h', 43) . '.' . str_repeat('i', 58);
+$dual = '/admin-kuranea/index.php?keep=a%2Fb&controller=AdminDashboard&token=' . rawurlencode($existingNative)
+    . '&_token=' . rawurlencode($existingOther) . '&flag=a+b&empty=';
+$expectedDual = '/admin-kuranea/index.php?keep=a%2Fb&controller=AdminDashboard&token=' . rawurlencode($nativeToken)
+    . '&_token=' . rawurlencode($nativeToken) . '&flag=a+b&empty=';
+if (!NativeAdminHttpLogin::isSymfonyUriSafeToken($existingOther)
+    || $applyNativeHttpBodyToken($dual, $nativeToken, '/admin-kuranea/index.php') !== $expectedDual) { exit(6); }
 foreach ([
     '/admin-kuranea/index.php?controller=AdminPsfacebookModule',
     '/admin-kuranea/index.php?token=bad',
-    '/admin-kuranea/index.php?token=&_token=',
     '/admin-kuranea/index.php?token=&token=',
+    '/admin-kuranea/index.php?_token=&_token=',
+    '/admin-kuranea/index.php?token=&%74oken=',
     'http://attacker.invalid/admin-kuranea/index.php?token=',
 ] as $invalidUri) {
     try { $applyNativeHttpBodyToken($invalidUri, $nativeToken, '/admin-kuranea/index.php'); exit(4); }

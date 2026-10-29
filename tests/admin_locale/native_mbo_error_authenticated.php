@@ -436,7 +436,7 @@ try {
             $oldLibxml = libxml_use_internal_errors(true);
             try {
                 $document = new DOMDocument();
-                if (!$document->loadHTML($html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) return;
+                if (!$document->loadHTML($html, LIBXML_HTML_NOIMPLIED | LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) return;
                 $bodies = (new DOMXPath($document))->query('/html/body');
                 if ($bodies === false || $bodies->length !== 1 || !$bodies->item(0) instanceof DOMElement) return;
                 $nativeToken = $bodies->item(0)->getAttribute('data-token');
@@ -462,7 +462,7 @@ try {
         'SERVER_PORT' => '18081',
         'SERVER_PROTOCOL' => 'HTTP/1.1',
         'REQUEST_SCHEME' => 'http',
-        'HTTPS' => 'off',
+        'HTTPS' => false,
         'SCRIPT_NAME' => '/admin-kuranea/index.php',
         'PHP_SELF' => '/admin-kuranea/index.php',
         'SCRIPT_FILENAME' => $adminRoot . '/index.php',
@@ -497,7 +497,7 @@ try {
     $previousLibxmlState = libxml_use_internal_errors(true);
     try {
         $document = new DOMDocument();
-        if ($document->loadHTML($body, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) {
+        if ($document->loadHTML($body, LIBXML_HTML_NOIMPLIED | LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) {
             $htmlNodes = (new DOMXPath($document))->query('/html');
             if ($htmlNodes !== false && $htmlNodes->length === 1 && $htmlNodes->item(0) instanceof DOMElement) {
                 $documentLanguage = strtolower($htmlNodes->item(0)->getAttribute('lang'));

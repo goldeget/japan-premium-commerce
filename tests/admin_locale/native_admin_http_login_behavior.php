@@ -129,6 +129,12 @@ namespace {
     $safeOutcome = json_encode(['login_form_posted' => $login['login_form_posted']], JSON_THROW_ON_ERROR);
     $assert(!str_contains($safeOutcome, $login['native_body_token']), 'native body token is absent from safe outcome fields');
     $nativeToken = 'z.' . str_repeat('y', 43) . '.' . str_repeat('x', 58);
+    // Native head hooks can contain an element that makes libxml invent an
+    // earlier body; browser HTML5 parsing keeps the actual body's attributes.
+    $headHookHtml = '<!doctype html><html><head><div id="native-hook">head hook</div></head>'
+        . '<body class="admindashboard" data-token="' . $nativeToken . '">native page</body></html>';
+    $assert(NativeAdminHttpLogin::extractNativeBodyToken($headHookHtml) === $nativeToken,
+        'head-hook markup must preserve the explicit native body token');
     $expectedMboUri = '/admin-kuranea/index.php/modules/mbo/themes/catalog/?_token=' . $nativeToken;
     $assert(NativeAdminMboRoute::nativeTargetUri($nativeToken) === $expectedMboUri,
         'native target URI carries the real in-memory session CSRF token');
