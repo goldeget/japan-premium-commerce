@@ -248,6 +248,8 @@ try {
             'PrestaShopBundle\\EventListener\\Admin\\Context\\CurrencyContextSubscriber',
             'PrestaShopBundle\\EventListener\\Admin\\Context\\EmployeeContextSubscriber',
             'PrestaShopBundle\\EventListener\\Admin\\Context\\LegacyControllerContextSubscriber',
+            'PrestaShopBundle\\EventListener\\Admin\\Context\\LegacyContextSubscriber',
+            'Kuranea\\Backoffice\\AdminLocaleSubscriber',
         ];
         $contextEvent = new \Symfony\Component\HttpKernel\Event\RequestEvent(
             $kernel,
@@ -271,7 +273,7 @@ try {
                 throw new RuntimeException('native_context_requested_redirect');
             }
         }
-        if (count($contextClassesSeen) !== count($contextClasses) || $contextListenerCalls !== 8) {
+        if (count($contextClassesSeen) !== count($contextClasses) || $contextListenerCalls !== 10) {
             throw new RuntimeException('native_context_listener_contract_mismatch');
         }
         $koLanguageId = (int) \Language::getIdByIso('ko', true);
@@ -279,6 +281,27 @@ try {
             throw new RuntimeException('native_korean_language_missing');
         }
         $container->get(\PrestaShop\PrestaShop\Core\Context\ContextBuilderPreparer::class)->prepareLanguageId($koLanguageId);
+
+        $controllerContextEvent = new \Symfony\Component\HttpKernel\Event\ControllerEvent(
+            $kernel,
+            [$controllerService, 'indexAction'],
+            $request,
+            \Symfony\Component\HttpKernel\HttpKernelInterface::MAIN_REQUEST
+        );
+        $legacyControllerContextCalls = 0;
+        foreach ($container->get('event_dispatcher')->getListeners(\Symfony\Component\HttpKernel\KernelEvents::CONTROLLER) as $listener) {
+            if (is_array($listener) && isset($listener[0], $listener[1]) && is_object($listener[0])
+                && get_class($listener[0]) === 'PrestaShopBundle\\EventListener\\Admin\\Context\\LegacyContextSubscriber') {
+                $listener($controllerContextEvent);
+                ++$legacyControllerContextCalls;
+            }
+        }
+        if ($legacyControllerContextCalls !== 1
+            || !\Context::getContext()->controller
+            || (int) \Context::getContext()->language->id !== $koLanguageId) {
+            throw new RuntimeException('native_legacy_context_sync_failed');
+        }
+
 
         $linksProvider = new class extends LinksProvider {
             public function __construct()
@@ -342,6 +365,7 @@ try {
             'request_session' => 'in_memory_fixture',
             'native_context_request_listener_calls' => $contextListenerCalls,
             'native_context_subscriber_classes' => count($contextClassesSeen),
+            'native_legacy_controller_listener_calls' => $legacyControllerContextCalls,
             'native_layout_variant' => 'lightDisplaying=1',
             'route' => 'admin_mbo_catalog_theme',
             'controller' => 'ThemeCatalogController::indexAction',
@@ -400,6 +424,18 @@ try {
     $causeClass = get_class($cause);
     if (preg_match('/\A[A-Za-z0-9_\\\\]{1,160}\z/D', $causeClass)) {
         $outcome['cause_class'] = $causeClass;
+    }
+    $causeBase = basename(str_replace('\\', '/', $cause->getFile()));
+    if (preg_match('/\A[A-Za-z0-9_.-]{1,180}\.php\z/D', $causeBase)) {
+        $outcome['cause_basename'] = $causeBase;
+        $outcome['cause_file_line'] = $cause->getLine();
+    }
+    $causeCall = $cause->getTrace()[0] ?? [];
+    foreach (['class', 'function'] as $symbol) {
+        if (isset($causeCall[$symbol]) && is_string($causeCall[$symbol])
+            && preg_match('/\A[A-Za-z0-9_\\\\]{1,160}\z/D', $causeCall[$symbol])) {
+            $outcome['cause_call_' . $symbol] = $causeCall[$symbol];
+        }
     }
     $causeFile = str_replace('\\', '/', $cause->getFile());
     $sourceRoot = str_replace('\\', '/', $shopRoot) . '/';
