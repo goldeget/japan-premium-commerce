@@ -6,6 +6,8 @@ use Ordenowa\Procurement\Infrastructure\{Database, Schema};
 use Ordenowa\Procurement\Integration\PolicyService;
 use Ordenowa\Procurement\Security\Actor;
 
+require __DIR__ . '/policies_readiness.php';
+
 $dsn = getenv('PROCUREMENT_TEST_DSN');
 if (!$dsn || !str_contains($dsn, 'dbname=ordenowa_procurement_test')) { fwrite(STDERR, "Isolated procurement test database required.\n"); exit(2); }
 $connect = static fn () => new PDO($dsn, getenv('PROCUREMENT_TEST_USER') ?: 'root', getenv('PROCUREMENT_TEST_PASSWORD') ?: '');
@@ -47,6 +49,18 @@ try {
     catch (Throwable $error) { requestsAssert(!str_contains($error->getMessage(), 'should rollback'), 'Expected injected audit failure'); }
     $pdo->exec('DROP TRIGGER ' . $trigger);
     requestsAssert((int) $db->value('SELECT COUNT(*) FROM ' . $db->table('policy')) === 2 && $fresh->current(1)['version'] === 2, 'Policy and audit rollback atomically');
+    $unresolved = $payload;
+    $unresolved['privacy']['ko'] .= ' {{retention_rules}}';
+    requestsReject(fn () => $service->save($editor, 2, $unresolved), 422, 'Unresolved draft must be rejected before actual policy/audit writes');
+    requestsAssert((int) $db->value('SELECT COUNT(*) FROM ' . $db->table('policy')) === 2
+        && (int) $db->value('SELECT COUNT(*) FROM ' . $db->table('activity')) === 2
+        && $fresh->current(1)['version'] === 2, 'Rejected placeholder creates neither policy revision nor audit row');
+    $db->execute('INSERT INTO ' . $db->table('policy') . ' (id_shop,version,payload,id_employee,created_at) VALUES (2,1,'
+        . $db->quote(json_encode($unresolved, JSON_THROW_ON_ERROR)) . ',10,UTC_TIMESTAMP())');
+    requestsAssert($fresh->current(2)['payload'] === $unresolved && $fresh->published(2) === null, 'Legacy unresolved database row remains editable but unpublished');
+    $resolved = $service->save(Actor::employee(2, 10, ['policy.read','policy.manage']), 1, $payload);
+    requestsAssert($resolved['version'] === 2 && $fresh->published(2)['payload'] === $payload
+        && count($service->history(Actor::employee(2, 10, ['policy.read']))) === 2, 'Correcting legacy draft appends a durable public revision without rewriting history');
     echo "policies_behavior: PASS missing readiness, scope, ACL, stale version, append history, durable public read and audit rollback\n";
 } finally {
     foreach ($tables as $table) $pdo->exec('DROP TABLE IF EXISTS ' . $db->table($table));

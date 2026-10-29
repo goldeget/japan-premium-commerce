@@ -41,6 +41,9 @@ final class PolicyService
         $actor->require('policy.manage');
         if ($version < 0) throw new \InvalidArgumentException('정책 버전을 확인해 주세요.', 422);
         $payload = $this->validate($payload);
+        if ($this->unresolvedFields($payload) !== []) {
+            throw new \InvalidArgumentException('미확정 자리표시를 실제 승인된 문구로 바꾼 뒤 저장해 주세요.', 422);
+        }
         try {
             return $this->db->transaction(function () use ($actor, $version, $payload): array {
             $current = $this->db->one('SELECT id_policy,version FROM ' . $this->db->table('policy') . ' WHERE id_shop=' . $actor->shopId . ' ORDER BY version DESC LIMIT 1 FOR UPDATE');
@@ -81,10 +84,29 @@ final class PolicyService
 
     public function missing(array $payload): array
     {
-        $missing = [];
+        $missing = $this->unresolvedFields($payload);
         foreach (['operator_name', 'support_email'] as $field) if (trim((string) ($payload[$field] ?? '')) === '') $missing[] = $field;
         foreach (self::SECTIONS as $section) foreach (self::LOCALES as $locale) if (trim((string) ($payload[$section][$locale] ?? '')) === '') $missing[] = $section . '.' . $locale;
-        return $missing;
+        return array_values(array_unique($missing));
+    }
+
+    /** Preserve old draft rows for editing while keeping them out of public reads. */
+    private function unresolvedFields(array $payload): array
+    {
+        $unresolved = [];
+        foreach (['operator_name', 'support_email', 'support_phone', 'support_url'] as $field) {
+            if ($this->hasUnresolvedMarker((string) ($payload[$field] ?? ''))) $unresolved[] = $field;
+        }
+        foreach (self::SECTIONS as $section) foreach (self::LOCALES as $locale) {
+            if ($this->hasUnresolvedMarker((string) ($payload[$section][$locale] ?? ''))) $unresolved[] = $section . '.' . $locale;
+        }
+        return $unresolved;
+    }
+
+    private function hasUnresolvedMarker(string $text): bool
+    {
+        // Include broken/unclosed markers, not only today's five draft tokens.
+        return str_contains($text, '{{') || str_contains($text, '}}');
     }
 
     private function validate(mixed $payload): array
