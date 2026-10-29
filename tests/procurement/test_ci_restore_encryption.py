@@ -47,6 +47,7 @@ class EncryptedRestoreContractTests(unittest.TestCase):
         result, root, expected_sql = self._run_restore(corrupt_ciphertext=False)
         self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
         self.assertTrue((root / "imported.marker").is_file())
+        self.assertFalse((root / "restore.present").exists())
         self.assertEqual((root / "imported.marker").read_bytes(), expected_sql)
         self._assert_safe_outcome(root, passed=True, roundtrip=True, tampered=True, wrong_key=True, restored=True)
         self.assertEqual(list((root / "procurement-safe-artifacts").iterdir()), [root / "procurement-safe-artifacts" / "encrypted-restore-outcome.json"])
@@ -65,7 +66,23 @@ class EncryptedRestoreContractTests(unittest.TestCase):
         self.assertNotIn(expected_sql, result.stdout)
         self.assertNotIn(expected_sql, result.stderr)
 
-    def _run_restore(self, *, corrupt_ciphertext: bool) -> tuple[subprocess.CompletedProcess[bytes], Path, bytes]:
+    @unittest.skipUnless(os.name != "nt" and shutil.which("bash"), "mocked shell protocol test requires Linux Bash")
+    def test_cleanup_query_failure_prevents_an_otherwise_verified_restore_passing(self) -> None:
+        result, root, _ = self._run_restore(corrupt_ciphertext=False, cleanup_failure='list')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((root / 'restore.present').exists())
+        self._assert_safe_outcome(root, passed=False, roundtrip=True, tampered=True, wrong_key=True, restored=True)
+        self.assertEqual(list(root.glob('procurement-restore.*')), [])
+
+    @unittest.skipUnless(os.name != "nt" and shutil.which("bash"), "mocked shell protocol test requires Linux Bash")
+    def test_cleanup_remove_failure_is_not_reported_as_resource_absence(self) -> None:
+        result, root, _ = self._run_restore(corrupt_ciphertext=False, cleanup_failure='remove')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((root / 'restore.present').exists())
+        self._assert_safe_outcome(root, passed=False, roundtrip=True, tampered=True, wrong_key=True, restored=True)
+        self.assertEqual(list(root.glob('procurement-restore.*')), [])
+
+    def _run_restore(self, *, corrupt_ciphertext: bool, cleanup_failure: str = '') -> tuple[subprocess.CompletedProcess[bytes], Path, bytes]:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
@@ -125,6 +142,9 @@ from pathlib import Path
 args = sys.argv[1:]
 expected = bytes.fromhex(os.environ["FAKE_SQL_HEX"])
 marker = Path(os.environ["FAKE_IMPORT_MARKER"])
+state = marker.with_name('restore.present')
+if args[:2] == ['--context', 'default']:
+    args = args[2:]
 if args and args[0] == "compose":
     if "ps" in args:
         print("source-mariadb-container")
@@ -142,6 +162,7 @@ if args and args[0] == "inspect":
     print("mariadb:10.11@sha256:" + "a" * 64)
     raise SystemExit(0)
 if args and args[0] == "run":
+    state.write_text('present', encoding='ascii')
     print("run-owned-restore-container")
     raise SystemExit(0)
 if args and args[0] == "exec":
@@ -152,8 +173,17 @@ if args and args[0] == "exec":
         marker.write_bytes(imported)
         raise SystemExit(0)
     raise SystemExit(0)
-if args[:2] == ["container", "inspect"]:
-    raise SystemExit(1)
+if args[:2] == ['container', 'ls']:
+    if os.environ.get('FAKE_CLEANUP_FAILURE') == 'list':
+        raise SystemExit(42)
+    if state.exists():
+        print('ordenowa-procurement-ci-431-2-restore ' + 'b' * 64)
+    raise SystemExit(0)
+if args[:3] == ['container', 'rm', '--force']:
+    if args[3:] != ['b' * 64] or os.environ.get('FAKE_CLEANUP_FAILURE') == 'remove':
+        raise SystemExit(43)
+    state.unlink()
+    raise SystemExit(0)
 if args[:2] == ["rm", "-f"]:
     raise SystemExit(0)
 raise SystemExit(2)
@@ -175,6 +205,7 @@ raise SystemExit(2)
             "MARIADB_ROOT_PASSWORD": "TEST_ONLY_DO_NOT_LOG",
             "FAKE_SQL_HEX": expected_sql.hex(),
             "FAKE_IMPORT_MARKER": str(marker),
+            "FAKE_CLEANUP_FAILURE": cleanup_failure,
         })
         if corrupt_ciphertext:
             env["FAKE_AGE_CORRUPT_ENCRYPT"] = "1"

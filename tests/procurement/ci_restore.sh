@@ -13,6 +13,7 @@ mkdir -p -- "$QA_ARTIFACT_DIR"
 
 source_project=$CI_COMPOSE_PROJECT_NAME
 restore_project="${source_project}-restore"
+cleanup_helper="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/ci_owned_resources_cleanup.py"
 private_dir=$(mktemp -d "$RUNNER_TEMP/procurement-restore.XXXXXXXX")
 chmod 700 "$private_dir"
 age_version=unknown
@@ -73,7 +74,7 @@ PY
 cleanup() {
   result=$?
   trap - EXIT
-  python3 tests/procurement/ci_owned_resources_cleanup.py container \
+  python3 "$cleanup_helper" container \
     --container-name "$restore_project" >"$private_dir/restore-container-cleanup.log" 2>&1 || result=1
   rm -rf -- "$private_dir" || result=1
   write_outcome "$result" || result=1

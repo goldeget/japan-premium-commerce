@@ -169,7 +169,8 @@ class OwnedResourceCleanupTests(unittest.TestCase):
 
         self.assertIn("ci_owned_resources_cleanup.py image", workflow)
         self.assertIn("ci_owned_resources_cleanup.py container", workflow)
-        self.assertIn("ci_owned_resources_cleanup.py container", restore)
+        self.assertIn('python3 "$cleanup_helper" container', restore)
+        self.assertIn('/ci_owned_resources_cleanup.py"', restore)
         self.assertNotIn('docker container inspect "$restore_container"', workflow)
         self.assertNotIn('docker image inspect --format', workflow)
         self.assertNotIn('docker container inspect "$restore_project"', restore)
