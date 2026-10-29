@@ -244,6 +244,7 @@ try {
                     null,
                     'Synthetic isolated-CI transport failure',
                     null,
+                    0,
                     ['X-ORDENOWA-CI-Injected-Failure' => '1']
                 );
             }
