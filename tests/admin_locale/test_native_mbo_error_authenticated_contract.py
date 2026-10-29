@@ -21,7 +21,10 @@ class AuthenticatedNativeMboErrorContract(unittest.TestCase):
                      'native_admin_private_snapshot_behavior.php', 'native_admin_http_login_behavior.php'):
             env = os.environ.copy()
             env.setdefault('ORDENOWA_TEST_REPO_ROOT', str(ROOT))
-            result = subprocess.run([php, '-n', str(Path(__file__).with_name(name))],
+            # Linux loads DOM from the configured XML extension; -n disables it.
+            # The real HTML/token behavior requires DOM and must still fail if absent.
+            php_options = [] if name == 'native_admin_http_login_behavior.php' else ['-n']
+            result = subprocess.run([php, *php_options, str(Path(__file__).with_name(name))],
                                     capture_output=True, text=True, timeout=20, env=env)
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
