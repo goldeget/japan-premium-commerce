@@ -170,6 +170,19 @@ class AuthenticatedNativeMboErrorContract(unittest.TestCase):
         self.assertIn("assert_authenticated_korean_error", Path(__file__).with_name('ci_authenticated_mbo.sh').read_text(encoding='utf-8'))
         self.assertIn("MBO_FAILURE_ASSERTIONS", Path(__file__).with_name('safe_authenticated_outcome.py').read_text(encoding='utf-8'))
 
+    def test_exception_observer_is_test_only_non_mutating_and_bounded(self):
+        start = SOURCE.index("KernelEvents::EXCEPTION")
+        end = SOURCE.index("require_once __DIR__ . '/native_admin_kernel_browser.php'", start)
+        observer = SOURCE[start:end]
+        self.assertIn("getMainRequest()", observer)
+        self.assertIn("admin_mbo_catalog_theme", observer)
+        self.assertIn("$depth < 4", observer)
+        self.assertIn("HttpExceptionInterface", observer)
+        self.assertIn("Twig\\Error\\Error", observer)
+        self.assertIn("PHP_INT_MAX", observer)
+        self.assertNotIn("setResponse(", observer)
+        self.assertIn("'exception_observation'", SOURCE)
+
     def test_native_token_is_private_and_route_is_module_prefixed(self):
         helper = Path(__file__).with_name('native_admin_http_login.php').read_text(encoding='utf-8')
         route_helper = Path(__file__).with_name('native_admin_mbo_route.php').read_text(encoding='utf-8')

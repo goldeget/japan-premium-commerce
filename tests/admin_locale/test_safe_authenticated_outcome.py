@@ -155,6 +155,53 @@ class SafeAuthenticatedOutcomeTests(unittest.TestCase):
         for secret in ("localhost", "admin-kuranea", "PRIVATE_TOKEN", "PRIVATE_HTML", "PRIVATE_MESSAGE"):
             self.assertNotIn(secret, encoded)
 
+    def test_native_exception_observation_keeps_only_bounded_safe_chain(self):
+        observation = {
+            "phase": "main_request",
+            "chain": [{
+                "class": "Symfony\\Component\\HttpKernel\\Exception\\ServiceUnavailableHttpException",
+                "source": "ThemeCatalogController.php:58",
+                "http_status": 503,
+                "twig_template": None,
+                "twig_line": None,
+            }, {
+                "class": "Twig\\Error\\RuntimeError",
+                "source": "Template.php:44",
+                "http_status": None,
+                "twig_template": "@PrestaShop/Admin/Layout/light_layout.html.twig",
+                "twig_line": 6,
+            }],
+        }
+        payload = {
+            "schema": 1, "passed": False, "failed_stage": "assert_authenticated_korean_error",
+            "exception_observation": observation,
+            "exception_message": "PRIVATE_MESSAGE", "request_uri": "PRIVATE_URL",
+        }
+        result = MODULE.collect_safe_outcome(raw_json(payload), 1)
+        self.assertEqual(result["exception_observation"], observation)
+        serialized = json.dumps(result)
+        self.assertNotIn("PRIVATE_MESSAGE", serialized)
+        self.assertNotIn("PRIVATE_URL", serialized)
+
+    def test_native_exception_observation_rejects_extra_fields_bad_pairs_and_long_chains(self):
+        entry = {
+            "class": "RuntimeException", "source": "ErrorController.php:27", "http_status": 500,
+            "twig_template": None, "twig_line": None,
+        }
+        invalid = [
+            {"phase": "main_request", "chain": [{**entry, "message": "PRIVATE"}]},
+            {"phase": "main_request", "chain": [{**entry, "twig_template": "@Modules/ps_mbo/error.html.twig"}]},
+            {"phase": "main_request", "chain": [{**entry, "source": "/private/ErrorController.php:27"}]},
+            {"phase": "main_request", "chain": [entry] * 5},
+            {"phase": "private_phase", "chain": [entry]},
+        ]
+        for observation in invalid:
+            with self.subTest(observation=observation):
+                payload = {"schema": 1, "passed": False, "exception_observation": observation}
+                result = MODULE.collect_safe_outcome(raw_json(payload), 1)
+                self.assertNotIn("exception_observation", result)
+                self.assertNotIn("PRIVATE", json.dumps(result))
+
     def test_malformed_mbo_assertion_metadata_is_dropped_without_crashing(self):
         facts = {
             "response_status": 503,

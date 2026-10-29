@@ -467,6 +467,70 @@ try {
         },
         -16
     );
+    $nativeExceptionObservation = null;
+    $container->get('event_dispatcher')->addListener(
+        \Symfony\Component\HttpKernel\KernelEvents::EXCEPTION,
+        static function (\Symfony\Component\HttpKernel\Event\ExceptionEvent $event) use (
+            $container, &$nativeExceptionObservation
+        ): void {
+            try {
+                $mainRequest = $container->get('request_stack')->getMainRequest();
+                if ($mainRequest === null
+                    || $mainRequest->attributes->get('_route') !== 'admin_mbo_catalog_theme') {
+                    return;
+                }
+
+                $chain = [];
+                $cause = $event->getThrowable();
+                for ($depth = 0; $cause !== null && $depth < 4; ++$depth, $cause = $cause->getPrevious()) {
+                    $class = get_class($cause);
+                    $file = basename(str_replace('\\', '/', $cause->getFile()));
+                    $line = $cause->getLine();
+                    if (preg_match('~\A[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*){0,10}\z~D', $class) !== 1
+                        || preg_match('~\A[A-Za-z0-9_.-]{1,160}\.php\z~D', $file) !== 1
+                        || !is_int($line) || $line < 1 || $line > 1000000) {
+                        continue;
+                    }
+
+                    $httpStatus = null;
+                    if ($cause instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) {
+                        $candidateStatus = $cause->getStatusCode();
+                        if (is_int($candidateStatus) && $candidateStatus >= 100 && $candidateStatus <= 599) {
+                            $httpStatus = $candidateStatus;
+                        }
+                    }
+
+                    $twigTemplate = null;
+                    $twigLine = null;
+                    if ($cause instanceof \Twig\Error\Error) {
+                        $templateName = $cause->getSourceContext()?->getName() ?? '';
+                        $candidateLine = $cause->getTemplateLine();
+                        if (preg_match('~\A@(?:PrestaShop/Admin|PrestaShopCore|Modules/(?:ps_mbo|ps_facebook))/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.twig\z~D', $templateName) === 1
+                            && is_int($candidateLine) && $candidateLine >= 1 && $candidateLine <= 100000) {
+                            $twigTemplate = $templateName;
+                            $twigLine = $candidateLine;
+                        }
+                    }
+
+                    $chain[] = [
+                        'class' => $class,
+                        'source' => $file . ':' . $line,
+                        'http_status' => $httpStatus,
+                        'twig_template' => $twigTemplate,
+                        'twig_line' => $twigLine,
+                    ];
+                }
+
+                $nativeExceptionObservation = [
+                    'phase' => $event->isMainRequest() ? 'main_request' : 'error_subrequest',
+                    'chain' => $chain,
+                ];
+            } catch (Throwable) {
+                // Diagnostic observation must never change native exception handling.
+            }
+        },
+        PHP_INT_MAX
+    );
 
     require_once __DIR__ . '/native_admin_kernel_browser.php';
     \Symfony\Component\HttpFoundation\Request::enableHttpMethodParameterOverride();
@@ -676,6 +740,9 @@ try {
         $outcome['failed_assertion'] = $failedAssertion;
     }
     if (is_array($failureFacts)) $outcome['failure_facts'] = $failureFacts;
+    if (is_array($nativeExceptionObservation ?? null)) {
+        $outcome['exception_observation'] = $nativeExceptionObservation;
+    }
     if ($error instanceof Twig\Error\Error) {
         $sourceName = $error->getSourceContext()?->getName() ?? '';
         if (preg_match('~\A@(?:PrestaShop/Admin|PrestaShopCore|Modules/ps_mbo)/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.twig\z~D', $sourceName)) {

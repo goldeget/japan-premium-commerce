@@ -82,6 +82,9 @@ MBO_FAILURE_FACT_KEYS = {
     "korean_document_language", "korean_message_occurrences", "english_source_present",
     "provider_calls", "csrf_verified", "csrf_probe_count", "body_token_present",
 }
+NATIVE_EXCEPTION_OBSERVATION_KEYS = {"phase", "chain"}
+NATIVE_EXCEPTION_PHASES = {"main_request", "error_subrequest"}
+NATIVE_EXCEPTION_ENTRY_KEYS = {"class", "source", "http_status", "twig_template", "twig_line"}
 
 
 class _DuplicateJsonKey(ValueError):
@@ -144,6 +147,49 @@ def _safe_mbo_failure_facts(value: Any) -> dict[str, Any] | None:
         "korean_document_language", "korean_message_occurrences", "english_source_present",
         "provider_calls", "csrf_verified", "csrf_probe_count", "body_token_present",
     )}
+
+
+def _safe_native_exception_observation(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or set(value) != NATIVE_EXCEPTION_OBSERVATION_KEYS:
+        return None
+    phase = value["phase"]
+    chain = value["chain"]
+    if not isinstance(phase, str) or phase not in NATIVE_EXCEPTION_PHASES:
+        return None
+    if not isinstance(chain, list) or len(chain) > 4:
+        return None
+
+    safe_chain = []
+    for entry in chain:
+        if not isinstance(entry, dict) or set(entry) != NATIVE_EXCEPTION_ENTRY_KEYS:
+            return None
+        class_name = entry["class"]
+        source = entry["source"]
+        status = entry["http_status"]
+        template = entry["twig_template"]
+        twig_line = entry["twig_line"]
+        if not isinstance(class_name, str) or not EXCEPTION_RE.fullmatch(class_name):
+            return None
+        if not isinstance(source, str) or not FAILURE_SOURCE_RE.fullmatch(source):
+            return None
+        if int(source.rsplit(":", 1)[1]) > 1_000_000:
+            return None
+        if status is not None and (type(status) is not int or not 100 <= status <= 599):
+            return None
+        if template is None or twig_line is None:
+            if template is not None or twig_line is not None:
+                return None
+        elif (not isinstance(template, str) or not TWIG_TEMPLATE_RE.fullmatch(template)
+              or type(twig_line) is not int or not 1 <= twig_line <= 100_000):
+            return None
+        safe_chain.append({
+            "class": class_name,
+            "source": source,
+            "http_status": status,
+            "twig_template": template,
+            "twig_line": twig_line,
+        })
+    return {"phase": phase, "chain": safe_chain}
 
 
 def _reject_json_constant(_: str) -> None:
@@ -231,6 +277,9 @@ def _safe_failure(
         failure_facts = _safe_mbo_failure_facts(payload.get("failure_facts"))
         if failure_facts is not None:
             result["failure_facts"] = failure_facts
+        exception_observation = _safe_native_exception_observation(payload.get("exception_observation"))
+        if exception_observation is not None:
+            result["exception_observation"] = exception_observation
     return result
 
 
