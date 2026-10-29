@@ -54,4 +54,4 @@ python3 -m unittest discover -s tests/release -p 'test_notification_scheduler.py
 
 ## Sample output
 
-`generated/ordenowa-kuranea-notify-shop1.service` and `generated/ordenowa-kuranea-notify-shop1.timer` use illustrative values (`/srv/ordenowa`, project `kuranea`, shop 1, `ordenowa-worker`, group `docker`). They are not installed or enabled on any host and are not production settings.
+`tools/release/scheduler/generated/ordenowa-kuranea-notify-shop1.service` and `tools/release/scheduler/generated/ordenowa-kuranea-notify-shop1.timer` use illustrative values (`/srv/ordenowa`, project `kuranea`, shop 1, `ordenowa-worker`, group `docker`). They are not installed or enabled on any host and are not production settings.

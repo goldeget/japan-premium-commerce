@@ -1,5 +1,18 @@
 # ORDENOWA 상품 발주 요청·검토·수동 포인트 출시 요구사항표
 
+## 2026-10-29 자동 실행·검증 업데이트
+
+검증 코드 [ae370bbb3a8aab98e3da7f33419b843618c5e508](https://github.com/goldeget/japan-premium-commerce/commit/ae370bbb3a8aab98e3da7f33419b843618c5e508)의 [전체 격리 검사 #40800924097](https://github.com/goldeget/japan-premium-commerce/actions/runs/40800924097)는 **39/39 고유 단계 PASS, aggregate passed=true, cleanup success**다. 새 알림 상태 점검, 설치된 MBO 컨트롤러/한국어 오류 Twig 렌더링, 실제 age 암호화·변조/잘못된 키 거부·독립 DB 복원을 포함한다. [artifact12866995280](https://github.com/goldeget/japan-premium-commerce/actions/runs/40800924097/artifacts/12866995280)를 다운로드해 SHA-256 `17c3c254e636dcf0d2762eb7122de38cf2a07fbce6461e1b8b026da607d9d533`와 안전한 결과 JSON을 직접 대조했다.
+
+별도 [배포 묶음 #40798367714](https://github.com/goldeget/japan-premium-commerce/actions/runs/40798367714)는 7de7538에서 실제 Docker build/save/load와 manifest 검증을 통과했다. 두 SHA 사이 변경은 관리자 QA 파일 하나뿐이지만 동일한 승격 artifact로 합쳐 주장하지 않는다. [정기 실행 설정 #40798061866](https://github.com/goldeget/japan-premium-commerce/actions/runs/40798061866)은 Linux 13검사와 systemd 분석을 통과했다. 서버 서비스 설치/활성화, registry 게시나 운영 전환은 수행하지 않았다.
+
+실제 MBO 오류 템플릿과 native light parent에서 한국어 문구 2회·영문 부재·503/헤더를 확인했다. 이는 시험용 실패 provider와 메모리 세션을 사용하는 직접 컨트롤러 검사이며, 인증 HTTP·전체 관리자 chrome/시각·외부 Addons/Facebook 정상 가용성 인수는 아니다. 상태 점검의 정상 결과와 암호화 복원은 격리 환경 결과다.
+
+GPT가 상품 URL 선정·원문 조사·설정 준비·구현·검사를 맡는다. 기존 표의 설정명은 사용자에게 전부 작성해 달라는 요청이 아니다. 승인된 브랜드·자산·일본어 설명·JPY 세금포함·지원 지역 무료배송을 재사용한다. 실제 상품의 현행 가격/옵션·사진 사용 근거, 실운영 계정/정책 승인·HTTPS/SMTP/Push 및 물리 기기 인수는 사실 확인이 남으며 완료로 만들지 않는다. 운영 배포·운영 DB 변경·실거래·실결제는 실행하지 않았고 main은 ee02a3657448d563508687614a246e05ac61eecd로 보존했다.
+
+[실행별 증거·실패 수정·환경 조사·정확한 한계](evidence/2026-10-29-release-automation.md)를 기준으로 한다. 아래의 이전 “최신/최종” 표기는 해당 시점 기록이며 이 절이 우선한다.
+
+
 ## 2026-10-29 최신 Amazon HTML 파서·격리 QA
 
 검증 코드 [`d107cf9042c1a041c7c32b820c10e0b3874056e9`](https://github.com/goldeget/japan-premium-commerce/commit/d107cf9042c1a041c7c32b820c10e0b3874056e9)는 원격 `work`의 현재 애플리케이션 후보이며 `main`은 `ee02a3657448d563508687614a246e05ac61eecd`로 유지된다. Amazon HTML fallback은 `#wayfinding-breadcrumbs_feature_div`의 순서 경로와 `#altImages`의 `IMAGE` 사진별 대표 URL을 읽는다. 사진 크기 후보를 한 사진으로 합치고, 기존 가격·상품명 확인과 옵션 추론 금지 동작은 유지한다.
@@ -48,11 +61,11 @@
 | PWA-001 | 공개정적cache·설치안내·업데이트/오프라인 | 구현과 해당 범위 검증 완료 | 공개 static64개 상한·MIME/no-store/Vary 방어·offline fallback/업데이트·사용자 클릭 설치 안내 구현, 새 Node2개+기존73개 회귀·실제 안내 화면 검수 통과. standalone 설치/복귀는 DEVICE-001 |
 | DEVICE-001 | native 설치·standalone/복귀 | 외부 자료·운영 환경 대기 | HTTPS·승인 iOS/Android기기, 에뮬레이션 대체불가 |
 | BACKUP-001 | 새요청·snapshot·원장/잔액·감사 복구 | 구현과 해당 범위 검증 완료 | 소유 격리 환경 실제 durable/restart/독립 DB restore 통과. 전용12테이블과 native 문의 스레드/메시지·ACL 감사의 private 스키마/데이터 hash,80P 합계·요청 owner·inactive 상품 검증. 운영 volume 복구훈련과 최종 immutable fresh gate는 별도 |
-| OPS-001 | 운영정책·환경·digest/rollback/감시 | 외부 자료·운영 환경 대기 | 운영자/발주·포인트/개인정보정책·HTTPS/SMTP/secrets/backup 연결과 검증 |
-| RELEASE-001 | 새집중/통합 QA·증거/handoff | 구현과 해당 범위 검증 완료 | 코드 `d107cf9042c1a041c7c32b820c10e0b3874056e9`: 전체 #40774173140 38/38단계·aggregate true·cleanup success, 집중 #40774173388 parser 41개 동작 PASS. artifact #12855260313 digest `sha256:1b5aa21a03492ed6ad631ea0710f04ae968af45914b81e969cad196cea0bae4a`. 기존 91c 시각검수는 UI 무변경 범위만 유지하며 실제 원문·운영·기기 인수는 별도 |
+| OPS-001 | 운영정책·환경·digest/rollback/감시 | 자동화 구현·격리 검증 완료 / 실운영 인수 남음 | release archive/manifest, scheduler 생성·Linux 검증, native health, age 암호화·독립 복원 증거 확보. 실제 운영 대상·정책·비밀 저장소·SMTP/HTTPS/backup 연결 및 승격/rollback 인수는 별도 |
+| RELEASE-001 | 새집중/통합 QA·증거/handoff | 구현과 해당 격리 범위 검증 완료 | ae370bbb3a8aab98e3da7f33419b843618c5e508 / #40800924097 39/39 unique phases·aggregate true·cleanup success, artifact12866995280 SHA256 17c3c254e636dcf0d2762eb7122de38cf2a07fbce6461e1b8b026da607d9d533. 이전 시각 검수와 실제 기기·운영 인수를 구분 |
 | CAT-001 | Amazon Japan·Rakuten 가격·상세·사진 후보·출처 파싱 | 구현됐으나 검증 미완료 | `d107cf9042c1a041c7c32b820c10e0b3874056e9` parser change, 집중 #40774173388의 41 synthetic offline behaviors PASS. Amazon sample `B0H4V3GT4J`는 HTML breadcrumb·7 image entry를 보였지만 exact current JPY offer 없음이라 정상 거부; Rakuten 후보 응답 timeout. 현재 판매 SKU·정확 가격/옵션·원문 권한 미검증, 상품 미수입 |
 | CAT-002 | 검수 카테고리·하위메뉴·고객별 상품 배치 | 구현됐으나 검증 미완료 | 합성 parser→검수→native 2단계 저장/배치 기존 검증 유지. Amazon source breadcrumb `文房具・オフィス用品 > 事務用品 > 文具収納 > ペンケース`는 출처 경로로만 보존하며 native taxonomy로 자동 매핑하지 않음. 실 SKU 대조와 운영자 분류 승인 필요 |
-| CAT-ENV-001 | 실제 쇼핑몰 접근·상품/사진 게시 근거 | 외부 자료·운영 환경 대기 | 승인된 현행 source access/feed, exact in-stock SKU 및 공개 이미지 사용권 증거가 필요. sample/cache/synthetic 결과는 판매·게시 권한이 아님; 접근 차단을 우회하거나 상품을 가져오지 않음 |
+| CAT-ENV-001 | 실제 쇼핑몰 접근·상품/사진 게시 근거 | GPT 원문 조사 / 유효 현행 SKU·권리 미확인 | 승인된 현행 source access/feed, exact in-stock SKU 및 공개 이미지 사용권 증거가 필요. sample/cache/synthetic 결과는 판매·게시 권한이 아님; 접근 차단을 우회하거나 상품을 가져오지 않음 |
 | SCOPE-001 | 판매결제·배송·반품/상품환불·충전/사용/양도/출금 | 기존에 명시적으로 확정된 범위 제외 | 사용자 최신 정의 적용, 기존데이터/코드 보존·retail 직접노출차단 |
 
 ## 이전39항목 이관
@@ -81,6 +94,6 @@ GPT는 기존 승인자료와 연결된 환경을 먼저 조사하고 다음 준
 
 이미 승인된 브랜드 표기·자산, 일본어 설명, JPY 세금포함 표시와 지원 지역 무료배송은 재사용한다. 판매자 계좌·실제 판매 세금표·배송/반품/환불 조건은 현재 범위에 추가하지 않는다.
 
-코드 d107cf9042c1a041c7c32b820c10e0b3874056e9의 38단계 전체 격리 검증과 41개 파서 행동 집중 검증을 완료했다. 실제 원문·상품/이미지 권리·운영·기기 인수는 남는다. 운영 배포·운영 DB 변경·실결제·실거래는 실행하지 않았다. 실제 코드/QA SHA·artifact는 TEST_RESULTS와 handoff 최신 절에 기록했다.
+최신 ae370bbb3a8aab98e3da7f33419b843618c5e508의 39단계 전체 격리 검증과 기존 d107의 41개 파서 행동 집중 검증을 기록했다. 실제 원문·상품/이미지 권리·운영·기기 인수는 남는다. 운영 배포·운영 DB 변경·실결제·실거래는 실행하지 않았다. 실제 코드/QA SHA·artifact는 TEST_RESULTS와 handoff 최신 절에 기록했다.
 
 현재 변경 범위와 원본 FAIL·집중 결과는 [테스트 결과](TEST_RESULTS.md)를 따른다. 배송/반품/판매결제는 기존 UI 번역을 정비했어도 출시 기능으로 다시 추가하지 않는다.

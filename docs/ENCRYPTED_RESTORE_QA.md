@@ -1,38 +1,15 @@
-# Run-scoped encrypted restore preparation
+# Encrypted restore acceptance
 
-This isolated check extends only `tests/procurement/ci_restore.sh`. It keeps
-the existing CI ownership guards and independent, run-owned temporary MariaDB
-restore. A run generates a fresh age identity under a mode-0700 directory in
-`RUNNER_TEMP`, encrypts the CI-only SQL snapshot, decrypts it, and requires an
-exact byte comparison before any import. It also confirms that a modified
-ciphertext and a separately generated wrong identity are rejected. Only then
-does it import into the existing independent temporary database and run its
-domain readback.
+`tests/procurement/ci_restore.sh` runs only for the exact run-owned disposable procurement project. It writes its SQL snapshot and per-run age identity to a mode-0700 runner-private directory, encrypts and decrypts the snapshot, and compares the decrypted bytes with the original before database import.
 
-The private SQL dump, age identity, ciphertext, and plaintext are removed by
-the exit trap. The only new artifact is
-`$QA_ARTIFACT_DIR/encrypted-restore-outcome.json`, containing booleans and the
-age CLI version. Nothing is written to production databases or uploaded from
-the private directory. This does not create or validate a production backup,
-full-volume snapshot, backup retention policy, or recovery-time objective.
+It verifies rejection of modified ciphertext and a separately generated wrong identity, then imports only the verified plaintext into an independent temporary MariaDB container. Native/domain readback verifies that restored database. The exit trap removes the run-private key, dump, ciphertext and plaintext, and the owned restore container. Keys and database bytes are never uploaded.
 
-The workflow adds the maintained `age` CLI to the existing apt
-install step. Contract tests verify that dependency and run the shell flow
-with mocked Docker/age commands on Linux; the mock tests exercise data ordering
-and failure handling but do not claim cryptographic runtime acceptance. The
-real age round-trip remains for the isolated GitHub Actions run. The current
-Windows host has no usable local Linux Bash or age runtime, so only static
-contract checks can run there.
+The retained `encrypted-restore-outcome.json` contains only the age version and bounded pass/fail booleans. Actual candidate/run/outcome and artifact digest are recorded in [TEST_RESULTS](TEST_RESULTS.md) and [release automation evidence](evidence/2026-10-29-release-automation.md).
 
-Staged files:
+The full acceptance workflow installs the maintained age CLI. `test_ci_restore_encryption.py` tests ordering, corruption rejection, safe artifacts and private-file cleanup through a fake Docker/age protocol on Linux. Those mocks do not establish cryptographic acceptance; the actual age/MariaDB round trip is a required runtime phase.
 
-- `ci_restore.sh` — proposed replacement for `tests/procurement/ci_restore.sh`
-- `procurement-platform.yml` — current workflow with only the apt dependency
-  line extended
-- `tests/procurement/test_ci_restore_encryption.py` — proposed contract test
+This validates a disposable database snapshot. It does not create a production backup destination, full-volume backup, retention policy, approved RPO/RTO, external key custody or independent production recovery acceptance. No production database or persistent backup key is changed.
 
-Run the staged tests from this directory with:
-
-```powershell
-py -3.12 -m unittest discover -s tests/procurement -p 'test_ci*.py' -v
+```sh
+python3 -m unittest discover -s tests/procurement -p 'test_ci_restore_encryption.py' -v
 ```

@@ -1,5 +1,18 @@
 # ORDENOWA 테스트 결과
 
+## 2026-10-29 자동 실행·검증 업데이트
+
+검증 코드 [ae370bbb3a8aab98e3da7f33419b843618c5e508](https://github.com/goldeget/japan-premium-commerce/commit/ae370bbb3a8aab98e3da7f33419b843618c5e508)의 [전체 격리 검사 #40800924097](https://github.com/goldeget/japan-premium-commerce/actions/runs/40800924097)는 **39/39 고유 단계 PASS, aggregate passed=true, cleanup success**다. 새 알림 상태 점검, 설치된 MBO 컨트롤러/한국어 오류 Twig 렌더링, 실제 age 암호화·변조/잘못된 키 거부·독립 DB 복원을 포함한다. [artifact12866995280](https://github.com/goldeget/japan-premium-commerce/actions/runs/40800924097/artifacts/12866995280)를 다운로드해 SHA-256 `17c3c254e636dcf0d2762eb7122de38cf2a07fbce6461e1b8b026da607d9d533`와 안전한 결과 JSON을 직접 대조했다.
+
+별도 [배포 묶음 #40798367714](https://github.com/goldeget/japan-premium-commerce/actions/runs/40798367714)는 7de7538에서 실제 Docker build/save/load와 manifest 검증을 통과했다. 두 SHA 사이 변경은 관리자 QA 파일 하나뿐이지만 동일한 승격 artifact로 합쳐 주장하지 않는다. [정기 실행 설정 #40798061866](https://github.com/goldeget/japan-premium-commerce/actions/runs/40798061866)은 Linux 13검사와 systemd 분석을 통과했다. 서버 서비스 설치/활성화, registry 게시나 운영 전환은 수행하지 않았다.
+
+실제 MBO 오류 템플릿과 native light parent에서 한국어 문구 2회·영문 부재·503/헤더를 확인했다. 이는 시험용 실패 provider와 메모리 세션을 사용하는 직접 컨트롤러 검사이며, 인증 HTTP·전체 관리자 chrome/시각·외부 Addons/Facebook 정상 가용성 인수는 아니다. 상태 점검의 정상 결과와 암호화 복원은 격리 환경 결과다.
+
+GPT가 상품 URL 선정·원문 조사·설정 준비·구현·검사를 맡는다. 기존 표의 설정명은 사용자에게 전부 작성해 달라는 요청이 아니다. 승인된 브랜드·자산·일본어 설명·JPY 세금포함·지원 지역 무료배송을 재사용한다. 실제 상품의 현행 가격/옵션·사진 사용 근거, 실운영 계정/정책 승인·HTTPS/SMTP/Push 및 물리 기기 인수는 사실 확인이 남으며 완료로 만들지 않는다. 운영 배포·운영 DB 변경·실거래·실결제는 실행하지 않았고 main은 ee02a3657448d563508687614a246e05ac61eecd로 보존했다.
+
+[실행별 증거·실패 수정·환경 조사·정확한 한계](evidence/2026-10-29-release-automation.md)를 기준으로 한다. 아래의 이전 “최신/최종” 표기는 해당 시점 기록이며 이 절이 우선한다.
+
+
 ## 2026-10-29 Amazon parser regression and latest acceptance
 
 Code under test is [`d107cf9042c1a041c7c32b820c10e0b3874056e9`](https://github.com/goldeget/japan-premium-commerce/commit/d107cf9042c1a041c7c32b820c10e0b3874056e9) on remote `work`. It adds source breadcrumb paths and one canonical image URL per visible Amazon image gallery entry. It keeps `#productTitle` as the selected HTML title, keeps exact JPY parsing fail-closed, leaves option inference unchanged, and treats image URLs as source metadata rather than reuse permission.
