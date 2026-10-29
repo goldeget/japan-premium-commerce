@@ -1,0 +1,2 @@
+# Docker entrypoints and acceptance scripts execute in Linux containers/runners.
+*.sh text eol=lf
