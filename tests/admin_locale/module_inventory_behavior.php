@@ -30,6 +30,27 @@ if ($start === false || $end === false) {
 }
 eval(substr($source, $start, $end + 3 - $start));
 $inventory = $readModule('kuraneabackoffice', true, ['kuraneabackoffice'], ['kuraneabackoffice'], realpath($root . '/modules'));
+// The native router includes RequestContext::baseUrl after a real admin login.
+$routeStart = strpos($source, '$canonicalMboUri = static function ');
+$routeEnd = $routeStart === false ? false : strpos($source, "\n};", $routeStart);
+if ($routeStart === false || $routeEnd === false) throw new RuntimeException('canonical_mbo_uri_closure_missing');
+eval(substr($source, $routeStart, $routeEnd + 3 - $routeStart));
+foreach (['/mbo/themes/catalog', '/admin-kuranea/index.php/mbo/themes/catalog'] as $path) {
+    if ($canonicalMboUri($path) !== '/admin-kuranea/index.php/mbo/themes/catalog') {
+        throw new RuntimeException('canonical_mbo_target_changed');
+    }
+}
+foreach (['', '/admin-kuranea/mbo/themes/catalog', '/mbo/themes/catalog?x=1',
+    'http://localhost:18081/admin-kuranea/index.php/mbo/themes/catalog',
+    '/admin-kuranea/index.php/admin-kuranea/index.php/mbo/themes/catalog',
+    '//example.org/mbo/themes/catalog', '/mbo/themes/catalog/'] as $path) {
+    try { $canonicalMboUri($path); }
+    catch (RuntimeException $error) {
+        if ($error->getMessage() === 'native_mbo_route_contract_mismatch') continue;
+        throw $error;
+    }
+    throw new RuntimeException('noncanonical_mbo_target_accepted');
+}
 if ($inventory !== ['installed' => true, 'active' => true, 'version' => (new Kuraneabackoffice())->version]) {
     throw new RuntimeException('native_project_metadata_not_used');
 }

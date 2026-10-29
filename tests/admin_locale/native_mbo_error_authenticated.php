@@ -33,6 +33,18 @@ $require = static function (bool $condition, string $reason): void {
     }
 };
 
+// Symfony may generate a route with or without the installed admin base URL.
+// Both must resolve to the same exact CI target; no arbitrary URI is accepted.
+$canonicalMboUri = static function (string $path): string {
+    if ($path === '/mbo/themes/catalog') {
+        return '/admin-kuranea/index.php/mbo/themes/catalog';
+    }
+    if ($path === '/admin-kuranea/index.php/mbo/themes/catalog') {
+        return $path;
+    }
+    throw new RuntimeException('native_mbo_route_contract_mismatch');
+};
+
 /**
  * Resolve a same-origin admin URI. Redirects and form actions may never send
  * the test client to another host or escape the installed admin path.
@@ -470,10 +482,7 @@ try {
     }
 
     $catalogPath = $container->get('router')->generate('admin_mbo_catalog_theme');
-    if ($catalogPath !== '/mbo/themes/catalog') {
-        throw new RuntimeException('native_mbo_route_contract_mismatch');
-    }
-    $catalogUri = '/admin-kuranea/index.php' . $catalogPath;
+    $catalogUri = $canonicalMboUri($catalogPath);
     if ($catalogUri !== $nativeTargetUri) {
         throw new RuntimeException('native_mbo_target_uri_mismatch');
     }
