@@ -129,14 +129,14 @@ if args and args[0] == "compose":
     if "ps" in args:
         print("source-mariadb-container")
         raise SystemExit(0)
-    if "mariadb-dump" in args:
+    if len(args) >= 4 and args[-4:-1] == ["mariadb", "sh", "-ec"] and args[-1] == 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb-dump -uroot --single-transaction --skip-comments "$MARIADB_DATABASE"':
         sys.stdout.buffer.write(expected)
         raise SystemExit(0)
-    if "ci_restore_readback.php" in args:
+    if args[-2:] == ["php", "/tmp/ordenowa-procurement-ci/ci_restore_readback.php"]:
         if not marker.is_file() or marker.read_bytes() != expected:
             raise SystemExit(9)
         raise SystemExit(0)
-    if "ci_readback.php" in args:
+    if args[-3:] == ["php", "/tmp/ordenowa-procurement-ci/ci_readback.php", "manifest"]:
         raise SystemExit(0)
 if args and args[0] == "inspect":
     print("mariadb:10.11@sha256:" + "a" * 64)
