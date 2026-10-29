@@ -315,6 +315,13 @@ try {
     require_once $shopRoot . '/config/config.inc.php';
     require_once $shopRoot . '/app/AppKernel.php';
     require_once $shopRoot . '/app/AdminKernel.php';
+    if (defined('_PS_APP_ID_') && _PS_APP_ID_ !== AdminKernel::APP_ID) {
+        throw new RuntimeException('native_admin_app_id_mismatch');
+    }
+    if (!defined('_PS_APP_ID_')) {
+        define('_PS_APP_ID_', AdminKernel::APP_ID);
+    }
+
     if (!defined('_PS_BO_ALL_THEMES_DIR_') || realpath(_PS_BO_ALL_THEMES_DIR_) !== realpath($adminRoot . '/themes')) {
         throw new RuntimeException('native_admin_theme_constant_missing');
     }
@@ -421,8 +428,10 @@ try {
         -16
     );
 
+    require_once __DIR__ . '/native_admin_kernel_browser.php';
+    \Symfony\Component\HttpFoundation\Request::enableHttpMethodParameterOverride();
     $stage = 'browserkit_authenticated_login';
-    $browser = new KernelBrowser($kernel, [
+    $browser = new NativeAdminKernelBrowser($kernel, [
         'HTTP_HOST' => 'localhost:18081',
         'SERVER_NAME' => 'localhost',
         'SERVER_PORT' => '18081',
@@ -442,7 +451,9 @@ try {
     }
 
     $loginUri = '/admin-kuranea/';
+    $stage = 'native_login_get';
     $browser->request('GET', $loginUri);
+    $stage = 'native_login_get_redirects';
     $loginUri = $followLocalRedirects($browser, $loginUri);
     $loginHtml = $browser->getResponse()->getContent();
     if (!is_string($loginHtml)) {
@@ -456,7 +467,9 @@ try {
     $loginFields = $loginForm['fields'];
     $loginFields[$loginForm['email_name']] = $adminEmail;
     $loginFields[$loginForm['password_name']] = $adminPassword;
+    $stage = 'native_login_post';
     $browser->request('POST', $loginTarget, $loginFields);
+    $stage = 'native_login_post_redirects';
     $postLoginUri = $followLocalRedirects($browser, $loginTarget);
     $postLoginResponse = $browser->getResponse();
     $postLoginBody = $postLoginResponse->getContent();
@@ -575,6 +588,19 @@ try {
     for ($depth = 0; $depth < 6 && $cause->getPrevious() !== null; ++$depth) $cause = $cause->getPrevious();
     $causeClass = get_class($cause);
     if (preg_match('/\A[A-Za-z0-9_\\\\]{1,160}\z/D', $causeClass)) $outcome['cause_class'] = $causeClass;
+    $outcome['failure_trace'] = [];
+    foreach (array_slice($cause->getTrace(), 0, 8) as $frame) {
+        $class = (string) ($frame['class'] ?? '');
+        $function = (string) ($frame['function'] ?? '');
+        $file = basename(str_replace('\\', '/', (string) ($frame['file'] ?? '')));
+        $line = $frame['line'] ?? 0;
+        if (strlen($class) <= 160 && preg_match('/\A[A-Za-z0-9_\\\\]{1,160}\z/D', $class)
+            && preg_match('/\A[A-Za-z_][A-Za-z0-9_]{0,79}\z/D', $function)
+            && preg_match('/\A[A-Za-z0-9_.-]{1,120}\.php\z/D', $file)
+            && is_int($line) && $line > 0 && $line <= 1000000) {
+            $outcome['failure_trace'][] = ['class' => $class, 'function' => $function, 'source' => $file . ':' . $line];
+        }
+    }
     $sourceBase = basename(str_replace('\\', '/', $cause->getFile()));
     if (preg_match('/\A[A-Za-z0-9_.-]{1,180}\.php\z/D', $sourceBase)
         && $cause->getLine() > 0 && $cause->getLine() <= 1000000) {

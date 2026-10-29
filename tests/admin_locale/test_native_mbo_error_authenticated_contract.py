@@ -14,13 +14,17 @@ class AuthenticatedNativeMboErrorContract(unittest.TestCase):
         php = os.environ.get('ORDENOWA_TEST_PHP') or shutil.which('php')
         if not php:
             self.skipTest('PHP required for actual module metadata regression')
-        result = subprocess.run([php, '-n', str(Path(__file__).with_name('module_inventory_behavior.php'))],
-                                capture_output=True, text=True, timeout=20)
-        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        for name in ('module_inventory_behavior.php', 'native_admin_kernel_browser_behavior.php'):
+            result = subprocess.run([php, '-n', str(Path(__file__).with_name(name))],
+                                    capture_output=True, text=True, timeout=20)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_uses_production_kernel_and_real_login_form(self):
         self.assertIn("new AdminKernel('prod', false)", SOURCE)
-        self.assertIn("new KernelBrowser($kernel", SOURCE)
+        self.assertIn("new NativeAdminKernelBrowser($kernel", SOURCE)
+        self.assertIn("define('_PS_APP_ID_', AdminKernel::APP_ID)", SOURCE)
+        self.assertIn('Request::enableHttpMethodParameterOverride()', SOURCE)
+        self.assertIn("require_once __DIR__ . '/native_admin_kernel_browser.php'", SOURCE)
         self.assertIn("Symfony\\Component\\BrowserKit\\AbstractBrowser::class", SOURCE)
         self.assertIn("Symfony\\Component\\DomCrawler\\Crawler::class", SOURCE)
         self.assertIn("Symfony\\Component\\CssSelector\\CssSelectorConverter::class", SOURCE)

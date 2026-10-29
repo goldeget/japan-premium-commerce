@@ -38,6 +38,7 @@ SHA256_RE = re.compile(r"[a-f0-9]{64}\Z")
 STAGE_RE = re.compile(r"[a-z_]{1,80}\Z")
 EXCEPTION_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\\[A-Za-z_][A-Za-z0-9_]*){0,10}\Z")
 FAILURE_STAGES = {
+    'native_login_get', 'native_login_get_redirects', 'native_login_post', 'native_login_post_redirects',
     "ci_guard",
     "admin_bootstrap_path",
     "bootstrap",
@@ -119,6 +120,19 @@ def _safe_failure(
         exception_class = payload.get("exception_class")
         if isinstance(exception_class, str) and len(exception_class) <= 160 and EXCEPTION_RE.fullmatch(exception_class):
             result["exception_class"] = exception_class
+        frames = payload.get('failure_trace')
+        if isinstance(frames, list) and len(frames) <= 8:
+            safe_frames = []
+            for frame in frames:
+                if not isinstance(frame, dict):
+                    continue
+                class_name, function, source = (frame.get(key) for key in ('class', 'function', 'source'))
+                if (isinstance(class_name, str) and len(class_name) <= 160 and EXCEPTION_RE.fullmatch(class_name)
+                        and isinstance(function, str) and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,79}', function)
+                        and isinstance(source, str) and len(source) <= 140 and FAILURE_SOURCE_RE.fullmatch(source)
+                        and int(source.rsplit(':', 1)[1]) <= 1_000_000):
+                    safe_frames.append({'class': class_name, 'function': function, 'source': source})
+            result['failure_trace'] = safe_frames
         cause_class = payload.get("cause_class")
         if isinstance(cause_class, str) and CAUSE_CLASS_RE.fullmatch(cause_class):
             result["cause_class"] = cause_class

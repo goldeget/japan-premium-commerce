@@ -313,6 +313,13 @@ try {
     require_once $shopRoot . '/config/config.inc.php';
     require_once $shopRoot . '/app/AppKernel.php';
     require_once $shopRoot . '/app/AdminKernel.php';
+    if (defined('_PS_APP_ID_') && _PS_APP_ID_ !== AdminKernel::APP_ID) {
+        throw new RuntimeException('native_admin_app_id_mismatch');
+    }
+    if (!defined('_PS_APP_ID_')) {
+        define('_PS_APP_ID_', AdminKernel::APP_ID);
+    }
+
     if (!defined('_PS_BO_ALL_THEMES_DIR_') || realpath(_PS_BO_ALL_THEMES_DIR_) !== realpath($adminRoot . '/themes')) {
         throw new RuntimeException('native_admin_theme_constant_missing');
     }
@@ -394,6 +401,8 @@ try {
         throw new RuntimeException('test_only_security_bridge_unavailable');
     }
 
+    require_once __DIR__ . '/native_admin_kernel_browser.php';
+    \Symfony\Component\HttpFoundation\Request::enableHttpMethodParameterOverride();
     $stage = 'login_browser_fixture';
     $browserServer = [
         'HTTP_HOST' => 'localhost:18081', 'SERVER_NAME' => 'localhost', 'SERVER_PORT' => '18081',
@@ -402,7 +411,7 @@ try {
         'SCRIPT_FILENAME' => $adminRoot . '/index.php', 'REMOTE_ADDR' => '127.0.0.1',
         'HTTP_ACCEPT' => 'text/html,application/xhtml+xml', 'HTTP_USER_AGENT' => 'ORDENOWA-isolated-ci-kernel-browser',
     ];
-    $browser = new KernelBrowser($kernel, $browserServer);
+    $browser = new NativeAdminKernelBrowser($kernel, $browserServer);
     $browser->disableReboot();
     $loginUri = '/admin-kuranea/';
     $browser->request('GET', $loginUri);
@@ -626,7 +635,7 @@ try {
     );
 
     $stage = 'unauthenticated_facebook_negative';
-    $unauthenticatedBrowser = new KernelBrowser($kernel, $browserServer);
+    $unauthenticatedBrowser = new NativeAdminKernelBrowser($kernel, $browserServer);
     $unauthenticatedBrowser->disableReboot();
     $mode = 'disabled';
     $beforeUnauthenticatedTargetEvents = $injectionCounts['known_facebook_request_controller_events'];

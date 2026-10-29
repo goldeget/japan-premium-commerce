@@ -163,6 +163,21 @@ class SafeAuthenticatedOutcomeTests(unittest.TestCase):
         self.assertEqual(result["failure_code"], "helper_exit_nonzero")
         for key in ("failed_stage", "cause_class", "failure_source", "twig_template", "twig_template_line"):
             self.assertNotIn(key, result)
+
+    def test_failure_stack_keeps_identifiers_only_and_discards_arguments_and_paths(self):
+        payload = {'schema': 1, 'passed': False, 'failure_trace': [
+            {'class': 'PrestaShop\\Core\\Context', 'function': 'getShop', 'source': 'ShopId.php:49',
+             'args': ['PRIVATE_PASSWORD'], 'file': '/private/config.php'},
+            {'class': 'PRIVATE:SECRET', 'function': 'getShop', 'source': 'ShopId.php:49'},
+            {'class': 'Context', 'function': 'getShop', 'source': '/private/ShopId.php:49'},
+            {'class': 'Context', 'function': 'PRIVATE SECRET', 'source': 'ShopId.php:49'},
+        ]}
+        result = MODULE.collect_safe_outcome(raw_json(payload), 1)
+        self.assertEqual(result['failure_trace'], [
+            {'class': 'PrestaShop\\Core\\Context', 'function': 'getShop', 'source': 'ShopId.php:49'}])
+        self.assertNotIn('PRIVATE', json.dumps(result))
+        payload['failure_trace'] *= 3
+        self.assertNotIn('failure_trace', MODULE.collect_safe_outcome(raw_json(payload), 1))
         self.assertNotIn("PRIVATE_", json.dumps(result))
 
     def test_missing_or_invalid_native_session_csrf_proof_fails_closed(self):
