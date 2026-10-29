@@ -31,6 +31,9 @@ from urllib.parse import urljoin, urlsplit
 
 
 APP_ORIGIN = "http://localhost:18081"
+# PS 9.2.0 config.yml uses Core\Version::VERSION as the Symfony asset version;
+# StaticVersionStrategy formats it as %s?%s. No runtime override is accepted.
+REVIEWED_ASSET_VERSION = '9.2.0'
 APP_DOCUMENT_BASE = APP_ORIGIN + "/admin-kuranea/index.php"
 ASSET_PREFIX = "/asset"
 MAX_HTML_BYTES = 8 * 1024 * 1024
@@ -225,7 +228,7 @@ def normalize_asset_url(raw_url: str, *, document_base: str = APP_DOCUMENT_BASE)
     parts = urlsplit(absolute)
     if (parts.scheme != "http" or parts.hostname != "localhost" or parts.port != 18081
             or parts.username is not None or parts.password is not None
-            or parts.query or parts.fragment or "%" in parts.path):
+            or parts.query not in ('', REVIEWED_ASSET_VERSION) or parts.fragment or "%" in parts.path):
         raise SnapshotError("asset_origin_or_query_rejected")
     path = parts.path
     if not ASSET_PATH_RE.fullmatch(path) or "//" in path or any(seg in {".", "..", ""} for seg in path.split("/")[1:]):

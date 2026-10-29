@@ -65,6 +65,16 @@ def native_snapshot(kind: str = "mbo", *, lang: str = "ko-KR", message: str | No
 
 
 class SnapshotSanitizerTests(unittest.TestCase):
+    def test_only_pinned_prestashop_asset_version_is_accepted_and_removed(self):
+        source = native_snapshot('mbo').replace(b'theme.css"', b'theme.css?9.2.0"')
+        result = visual.sanitize_snapshot(source, 'mbo')
+        self.assertNotIn('?9.2.0', result.html)
+        self.assertIn('/admin-kuranea/themes/new-theme/public/theme.css', result.asset_paths)
+        for query in ('9.2.1', 'token=private', '9.2.0&token=private', '9.2.0#private'):
+            with self.subTest(query=query):
+                with self.assertRaises(visual.SnapshotError):
+                    visual.normalize_asset_url('/admin-kuranea/themes/new-theme/public/theme.css?' + query)
+
     def test_mbo_keeps_native_toolbar_and_korean_card_but_removes_private_fields(self):
         result = visual.sanitize_snapshot(native_snapshot("mbo"), "mbo")
         text = result.html
