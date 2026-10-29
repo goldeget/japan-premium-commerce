@@ -13,6 +13,13 @@ BOOTSTRAP = Path(__file__).with_name("prepare_test_browserkit.sh").read_text(enc
 
 
 class AuthenticatedNativeMboErrorContract(unittest.TestCase):
+    def test_optional_ask_ai_is_disabled_for_native_admin_error_page_compatibility(self):
+        bootstrap = (ROOT / 'docker' / 'kuran-post-install.php').read_text(encoding='utf-8')
+        self.assertIn("Module::isInstalled('ps_ask_ai')", bootstrap)
+        self.assertIn("Module::getInstanceByName('ps_ask_ai')", bootstrap)
+        self.assertIn('$askAiModule->disable()', bootstrap)
+        self.assertIn("Could not disable the optional ps_ask_ai module", bootstrap)
+
     def test_project_inventory_uses_actual_native_module_without_optional_xml(self):
         php = os.environ.get('ORDENOWA_TEST_PHP') or shutil.which('php')
         if not php:

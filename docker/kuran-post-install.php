@@ -167,6 +167,19 @@ $context->cart = new Cart();
 $context->currency = kuraneaConfigureJapaneseCurrency($context);
 $container->get(ContextBuilderPreparer::class)->prepareFromLegacyContext($context);
 
+// PrestaShop 9.2's optional Ask AI module can throw a TypeError from its
+// actionAdminControllerSetMedia hook while native Symfony admin error pages
+// render. ORDENOWA does not depend on this optional feature. Disable it once
+// during initial setup; an administrator can re-enable it intentionally later.
+if (Module::isInstalled('ps_ask_ai')) {
+    $askAiModule = Module::getInstanceByName('ps_ask_ai');
+    if (!$askAiModule instanceof Module
+        || ((bool) $askAiModule->active && !$askAiModule->disable())
+        || (bool) $askAiModule->active) {
+        throw new RuntimeException('Could not disable the optional ps_ask_ai module for admin error-page compatibility.');
+    }
+}
+
 if (!is_file('/var/www/html/themes/hummingbird/assets/css/theme.css')
     || !is_file('/var/www/html/themes/kuranea/assets/css/custom.css')
 ) {

@@ -561,9 +561,10 @@ try {
     if (!method_exists($exceptionSubscriber, 'isAuthenticatedFacebookReadForIsolatedTest')) {
         throw new RuntimeException('test_only_security_bridge_unavailable');
     }
-    $securityHelper = $container->get('security.helper');
-    if (!is_object($securityHelper) || !method_exists($securityHelper, 'isGranted')) {
-        throw new RuntimeException('native_security_helper_unavailable');
+    $securityProperty = new ReflectionProperty($exceptionSubscriber, 'security');
+    $securityHelper = $securityProperty->getValue($exceptionSubscriber);
+    if (!$securityHelper instanceof Symfony\Bundle\SecurityBundle\Security) {
+        throw new RuntimeException('native_security_bridge_unavailable');
     }
 
     require_once __DIR__ . '/native_admin_kernel_browser.php';
