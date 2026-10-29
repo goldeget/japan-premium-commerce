@@ -2,7 +2,7 @@
 
 This is a private monitoring collector for `modules/ordenowaprocurement`, based on the database/schema/dispatcher and isolated-test contracts at candidate commit `769577577e2d545045cd6ee5e49264ca2f1cb91d`. The SQL collector is SELECT-only; native bootstrap side effects are not instrumented.
 
-## Proposed command
+## Private command
 
 `modules/ordenowaprocurement/bin/health-snapshot.php` is CLI-only and returns 404 under non-CLI PHP. It checks one `SELECT 1`, reads `disk_free_space` and `disk_total_space` for the PrestaShop root volume, and runs two aggregates scoped to one validated `id_shop`: a status/timing aggregate over only the five monitored `notification_delivery` states and an anti-join count of notification events with no delivery row of any channel.
 
@@ -35,19 +35,19 @@ php modules/ordenowaprocurement/bin/health-snapshot.php --shop=1 --disk-warning-
 
 `tests/procurement/notifications_health.php` uses the existing `points_support.php` test helper, `Database`, `Schema`, and a random test table prefix. It checks empty/backlog/failed/uncertain counts, shop isolation, threshold validation, output fields, before/after row hashes for read-only behavior, healthy/warning/critical/unavailable/invalid-usage exit codes, and redaction when the actual collector receives a database exception carrying a synthetic secret. Its isolated subprocess case also verifies that native bootstrap stdout is discarded and a premature bootstrap `exit(0)` is converted to unavailable exit `3` rather than false health.
 
-The existing `ci_acceptance.sh` copies `tests/procurement/notifications*.php` into the disposable PrestaShop container and exposes the isolated `ordenowa_procurement_test` DSN through its `behavior` helper. Once the source and test files are reviewed and copied into the candidate, the minimal CI addition is:
+`ci_acceptance.sh` copies `tests/procurement/notifications*.php` into the disposable PrestaShop container and exposes the isolated `ordenowa_procurement_test` DSN through its `behavior` helper. The integrated required phase runs behavior checks followed by the actual native CLI:
 
 ```sh
-run_phase notifications_health behavior notifications_health
+run_phase notifications_health health_snapshot_acceptance
 ```
 
-Place it beside `run_phase notifications_behavior behavior notifications_behavior`. This is a suggestion only; no CI file or application repository was modified here.
+The phase is included in the required aggregate phase set beside the notification behavior/concurrency checks. It captures native CLI output privately and validates exact keys, shop, numeric bounds and status/exit agreement before retaining the sanitized observation.
 
 ## Boundaries
 
 The database collector calls `Database::value()` once for `SELECT 1` and `Database::one()` twice for the shop/status and undelivered-event aggregates. The only write SQL is in the isolated test fixture setup and its cleanup. The collector itself has no DDL/DML, retry/acknowledgement options, provider transport, environment/secret output, or HTTP controller. The normal PrestaShop bootstrap still runs and is not claimed to be side-effect-free; the CLI entry point buffers and discards its stdout, and guards premature bootstrap termination so it cannot appear healthy. Disk and database runtime failures share a fixed redacted CLI failure response.
 
-The Windows host has no PHP CLI, so these PHP/MariaDB behavior tests were authored against the repository's existing isolated MariaDB test helper but were not executed in this workspace. The CI integration suggestion above is the actual behavior-test execution path; no result is claimed yet.
+The host has no standalone PHP CLI. Actual PHP/MariaDB and native bootstrap execution is performed by the isolated procurement acceptance workflow; exact tested commit, run and outcome are recorded in TEST_RESULTS.md.
 
 
 The native CLI output is first captured privately, validated for exact numeric schema/shop/exit status, and only the bounded observation is written to health-snapshot-outcome.json. Required phase notifications_health prevents an omitted check from passing the aggregate.
