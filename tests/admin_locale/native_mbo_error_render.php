@@ -228,17 +228,58 @@ try {
     // shell needs an authenticated employee/session; this direct controller
     // fixture deliberately renders its native light layout without faking one.
     $request = Request::create(
-        'http://localhost/admin-kuranea/index.php/mbo/themes/catalog?liteDisplaying=1',
+        'http://localhost:18081/admin-kuranea/index.php/mbo/themes/catalog?liteDisplaying=1',
         'GET'
     );
     $request->attributes->set('_route', 'admin_mbo_catalog_theme');
     $request->attributes->set('_legacy_controller', 'AdminPsMboTheme');
+    $request->attributes->set('_controller', ThemeCatalogController::class . '::indexAction');
     $request->setLocale('ko-KR');
     $request->setSession(new \Symfony\Component\HttpFoundation\Session\Session(new \Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage()));
     $requestStack = $container->get('request_stack');
     $requestStack->push($request);
 
     try {
+        $stage = 'prepare_native_admin_contexts';
+        $contextClasses = [
+            'PrestaShopBundle\\EventListener\\Admin\\Context\\LanguageContextSubscriber',
+            'PrestaShopBundle\\EventListener\\Admin\\Context\\ShopContextSubscriber',
+            'PrestaShopBundle\\EventListener\\Admin\\Context\\CountryContextSubscriber',
+            'PrestaShopBundle\\EventListener\\Admin\\Context\\CurrencyContextSubscriber',
+            'PrestaShopBundle\\EventListener\\Admin\\Context\\EmployeeContextSubscriber',
+            'PrestaShopBundle\\EventListener\\Admin\\Context\\LegacyControllerContextSubscriber',
+        ];
+        $contextEvent = new \Symfony\Component\HttpKernel\Event\RequestEvent(
+            $kernel,
+            $request,
+            \Symfony\Component\HttpKernel\HttpKernelInterface::MAIN_REQUEST
+        );
+        $contextListenerCalls = 0;
+        $contextClassesSeen = [];
+        foreach ($container->get('event_dispatcher')->getListeners(\Symfony\Component\HttpKernel\KernelEvents::REQUEST) as $listener) {
+            if (!is_array($listener) || !isset($listener[0], $listener[1]) || !is_object($listener[0])) {
+                continue;
+            }
+            $listenerClass = get_class($listener[0]);
+            if (!in_array($listenerClass, $contextClasses, true)) {
+                continue;
+            }
+            $listener($contextEvent);
+            ++$contextListenerCalls;
+            $contextClassesSeen[$listenerClass] = true;
+            if ($contextEvent->hasResponse()) {
+                throw new RuntimeException('native_context_requested_redirect');
+            }
+        }
+        if (count($contextClassesSeen) !== count($contextClasses) || $contextListenerCalls !== 8) {
+            throw new RuntimeException('native_context_listener_contract_mismatch');
+        }
+        $koLanguageId = (int) \Language::getIdByIso('ko', true);
+        if ($koLanguageId < 1) {
+            throw new RuntimeException('native_korean_language_missing');
+        }
+        $container->get(\PrestaShop\PrestaShop\Core\Context\ContextBuilderPreparer::class)->prepareLanguageId($koLanguageId);
+
         $linksProvider = new class extends LinksProvider {
             public function __construct()
             {
@@ -299,6 +340,8 @@ try {
             'mode' => 'direct_native_controller_call_with_test_only_provider',
             'authenticated_http_dispatch' => false,
             'request_session' => 'in_memory_fixture',
+            'native_context_request_listener_calls' => $contextListenerCalls,
+            'native_context_subscriber_classes' => count($contextClassesSeen),
             'native_layout_variant' => 'lightDisplaying=1',
             'route' => 'admin_mbo_catalog_theme',
             'controller' => 'ThemeCatalogController::indexAction',
