@@ -134,7 +134,9 @@ class NativeFacebookTransportFallbackContractTests(unittest.TestCase):
         self.assertNotIn("PsAccountsInstaller", self.probe)
         self.assertNotIn("getMessage()", self.probe)
         self.assertNotIn("echo $facebookToken", self.probe)
-        self.assertNotIn("$container->get('security.helper')", self.probe)
+        self.assertIn("$securityHelper->isGranted('IS_AUTHENTICATED_FULLY')", self.probe)
+        self.assertIn("$securityHelper->isGranted('read', 'AdminPsfacebookModule') !== false", self.probe)
+        self.assertIn("NativeFacebookReadAclDenial::run(", self.probe)
 
     def test_service_and_source_note_preserve_boundaries(self):
         self.assertIn("Kuranea\\Backoffice\\AdminFacebookTransportExceptionSubscriber", self.services)

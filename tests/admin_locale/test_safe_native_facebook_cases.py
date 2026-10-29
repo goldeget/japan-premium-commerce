@@ -25,7 +25,8 @@ def valid_case(case: str) -> dict:
     other = case == "other_route"
     generic = case == "generic_facebook"
     denied = case == "access_denied"
-    gate = int(case in {"generic_facebook", "access_denied", "curl_transport"})
+    gate = int(case in {"generic_facebook", "curl_transport"})
+    full_gate = int(case in {"generic_facebook", "access_denied", "curl_transport"})
     status = 503 if positive else 403 if denied else 500 if generic or other else 302
     language = "ko-kr" if positive else ""
     return {
@@ -59,12 +60,17 @@ def valid_case(case: str) -> dict:
             "controller": "not_observed" if case == "unauthenticated" else ("AdminDashboard" if other else "AdminPsfacebookModuleController"),
             "controller_action": "not_observed" if case == "unauthenticated" else ("not_applicable" if other else "read"),
             "authenticated_read_gate_passes": gate,
-            "known_facebook_request_controller_events": int(bool(gate)),
+            "authenticated_full_gate_passes": full_gate,
+            "known_facebook_request_controller_events": full_gate,
             "mismatched_facebook_route_events": 0,
             "disabled_mode_facebook_sentinels": 0,
             "other_route_exception_count": int(other),
             "generic_facebook_exception_count": int(generic),
-            "access_denied_exception_count": int(denied),
+            "native_legacy_access_denied_exception_count": int(denied),
+            "native_acl_denial_preconditions_verified": denied,
+            "read_permission_row_removed_before_request": denied,
+            "read_permission_row_restored": denied,
+            "native_access_denied_from_legacy_controller": denied,
             "test_transport_target": "run_owned_ipv4_loopback_bind_only",
             "stream_server_listen_used": False,
             "facebook_vendor_initContent_called_by_fixture": False,
@@ -226,6 +232,12 @@ class SafeNativeFacebookCasesTests(unittest.TestCase):
             ("unauthenticated", "route", "admin_legacy_controller_route"),
             ("unauthenticated", "attempted_controller", "AdminPsfacebookModuleController"),
             ("generic_facebook", "authenticated_read_gate_passes", 0),
+            ("access_denied", "authenticated_read_gate_passes", 1),
+            ("access_denied", "native_acl_denial_preconditions_verified", False),
+            ("access_denied", "read_permission_row_removed_before_request", False),
+            ("access_denied", "read_permission_row_restored", False),
+            ("access_denied", "native_access_denied_from_legacy_controller", False),
+            ("access_denied", "native_legacy_access_denied_exception_count", 0),
             ("generic_facebook", "authenticated_read_gate_passes", True),
             ("curl_transport", "installed_http_client_calls", True),
             ("curl_transport", "native_session_csrf_verified", False),

@@ -18,7 +18,8 @@ class AuthenticatedNativeMboErrorContract(unittest.TestCase):
         if not php:
             self.skipTest('PHP required for actual module metadata regression')
         for name in ('module_inventory_behavior.php', 'native_admin_kernel_browser_behavior.php',
-                     'native_admin_private_snapshot_behavior.php', 'native_admin_http_login_behavior.php'):
+                     'native_admin_private_snapshot_behavior.php', 'native_admin_http_login_behavior.php',
+                     'admin_media_hook_null_controller.php'):
             env = os.environ.copy()
             env.setdefault('ORDENOWA_TEST_REPO_ROOT', str(ROOT))
             # Linux loads DOM from the configured XML extension; -n disables it.
@@ -177,6 +178,8 @@ class AuthenticatedNativeMboErrorContract(unittest.TestCase):
         self.assertIn("getMainRequest()", observer)
         self.assertIn("admin_mbo_catalog_theme", observer)
         self.assertIn("$depth < 4", observer)
+        self.assertIn("array_slice($cause->getTrace(), 0, 6)", observer)
+        self.assertIn("'frames' => $frames", observer)
         self.assertIn("HttpExceptionInterface", observer)
         self.assertIn("Twig\\Error\\Error", observer)
         self.assertIn("PHP_INT_MAX", observer)

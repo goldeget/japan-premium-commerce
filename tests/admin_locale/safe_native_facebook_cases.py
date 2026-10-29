@@ -106,10 +106,12 @@ def _validate_case_facts(case_name: str, value: Any) -> dict[str, Any]:
         "framework_generated_legacy_link", "framework_link_has_token",
         "unauthenticated_link_token_validity_claimed", "case", "browserkit_target_get_count",
         "attempted_route", "attempted_controller", "route_observation", "route", "controller", "controller_action",
-        "authenticated_read_gate_passes",
+        "authenticated_read_gate_passes", "authenticated_full_gate_passes",
         "known_facebook_request_controller_events", "mismatched_facebook_route_events",
         "disabled_mode_facebook_sentinels", "other_route_exception_count", "generic_facebook_exception_count",
-        "access_denied_exception_count", "test_transport_target", "stream_server_listen_used",
+        "native_legacy_access_denied_exception_count", "native_acl_denial_preconditions_verified",
+        "read_permission_row_removed_before_request", "read_permission_row_restored",
+        "native_access_denied_from_legacy_controller", "test_transport_target", "stream_server_listen_used",
         "facebook_vendor_initContent_called_by_fixture", "script_initiated_external_transport_requests",
         "installed_http_client_calls", "response_status", "unauthenticated_status_not_converted",
         "unauthenticated_auth_rejection",
@@ -176,17 +178,20 @@ def _validate_case_facts(case_name: str, value: Any) -> dict[str, Any]:
         value["route_observation"], value["route"], value["controller"], value["controller_action"]
     ) != expected_observation:
         raise ValueError
-    expected_gate = 1 if case_name in {"generic_facebook", "access_denied", "curl_transport"} else 0
-    if type(value["authenticated_read_gate_passes"]) is not int or value["authenticated_read_gate_passes"] != expected_gate:
+    expected_full_gate = 1 if case_name in {"generic_facebook", "access_denied", "curl_transport"} else 0
+    expected_read_gate = 1 if case_name in {"generic_facebook", "curl_transport"} else 0
+    if type(value["authenticated_full_gate_passes"]) is not int or value["authenticated_full_gate_passes"] != expected_full_gate:
+        raise ValueError
+    if type(value["authenticated_read_gate_passes"]) is not int or value["authenticated_read_gate_passes"] != expected_read_gate:
         raise ValueError
     for key in ("known_facebook_request_controller_events", "mismatched_facebook_route_events", "disabled_mode_facebook_sentinels"):
-        expected = 1 if key == "known_facebook_request_controller_events" and expected_gate else 0
+        expected = 1 if key == "known_facebook_request_controller_events" and expected_full_gate else 0
         if type(value[key]) is not int or value[key] != expected:
             raise ValueError
     for key, should_inject in (
         ("other_route_exception_count", is_other),
         ("generic_facebook_exception_count", is_generic),
-        ("access_denied_exception_count", is_denied),
+        ("native_legacy_access_denied_exception_count", is_denied),
     ):
         if type(value[key]) is not int or value[key] != int(should_inject):
             raise ValueError
@@ -200,6 +205,10 @@ def _validate_case_facts(case_name: str, value: Any) -> dict[str, Any]:
         "other_route_status_not_converted": is_other,
         "generic_facebook_runtime_status_not_converted": is_generic,
         "access_denied_status_preserved": is_denied,
+        "native_acl_denial_preconditions_verified": is_denied,
+        "read_permission_row_removed_before_request": is_denied,
+        "read_permission_row_restored": is_denied,
+        "native_access_denied_from_legacy_controller": is_denied,
         "korean_safe_title": is_positive,
         "korean_safe_message": is_positive,
         "fixed_error_fragment_excludes_token_and_transport_details": is_positive,
@@ -266,7 +275,13 @@ def _validate_case_facts(case_name: str, value: Any) -> dict[str, Any]:
         "route": value["route"],
         "controller": value["controller"],
         "controller_action": value["controller_action"],
-        "authenticated_read_gate_passes": expected_gate,
+        "authenticated_read_gate_passes": expected_read_gate,
+        "authenticated_full_gate_passes": expected_full_gate,
+        "native_acl_denial_preconditions_verified": is_denied,
+        "read_permission_row_removed_before_request": is_denied,
+        "read_permission_row_restored": is_denied,
+        "native_access_denied_from_legacy_controller": is_denied,
+        "native_legacy_access_denied_exception_count": int(is_denied),
         "vendor_initContent_called_by_fixture": False,
         "script_initiated_external_transport_requests": 0,
         "installed_http_client_calls": int(is_positive),
@@ -373,7 +388,13 @@ def collect_cases(raw_cases: dict[str, bytes], statuses: dict[str, int]) -> dict
             "unauthenticated_status_not_converted": validated["unauthenticated"]["response_status"] != 503,
             "other_route_status_not_converted": validated["other_route"]["response_status"] != 503,
             "generic_facebook_status_not_converted": validated["generic_facebook"]["response_status"] != 503,
-            "access_denied_status_preserved": validated["access_denied"]["response_status"] == 403,
+            "access_denied_status_preserved": validated["access_denied"]["response_status"] == 403
+                and validated["access_denied"]["native_acl_denial_preconditions_verified"]
+                and validated["access_denied"]["read_permission_row_removed_before_request"]
+                and validated["access_denied"]["read_permission_row_restored"]
+                and validated["access_denied"]["native_access_denied_from_legacy_controller"]
+                and validated["access_denied"]["native_legacy_access_denied_exception_count"] == 1,
+            "native_legacy_acl_denial_verified": validated["access_denied"]["native_access_denied_from_legacy_controller"],
         },
     }
 

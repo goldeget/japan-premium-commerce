@@ -17,6 +17,7 @@ $emitSafeOutcome = static function (array $value) use ($probeBufferLevel): void 
 };
 
 require_once __DIR__ . '/native_admin_http_login.php';
+require_once __DIR__ . '/native_facebook_read_acl_denial.php';
 
 $stage = 'ci_guard';
 $shopRoot = dirname(__DIR__, 2);
@@ -46,12 +47,19 @@ $injectionCounts = [
     'disabled_mode_facebook_sentinels' => 0,
     'http_client_requests' => 0,
     'generic_facebook_exceptions' => 0,
-    'facebook_access_denied_exceptions' => 0,
+    'native_legacy_access_denied_exceptions' => 0,
     'other_route_exceptions' => 0,
 ];
 $nativeSessionCsrfVerified = false;
 $nativeSessionCsrfProbeCount = 0;
 $authenticatedReadGatePasses = 0;
+$authenticatedFullGatePasses = 0;
+$nativeAclDenialPreconditionsVerified = false;
+$aclEmployeeId = 0;
+$aclProfileId = 0;
+$readPermissionRowRemovedBeforeRequest = false;
+$readPermissionRowRestored = false;
+$nativeAccessDeniedFromLegacyController = false;
 $observedFacebookControllerEvent = false;
 $observedDashboardControllerEvent = false;
 $observedDashboardRouteName = 'not_observed';
@@ -553,6 +561,10 @@ try {
     if (!method_exists($exceptionSubscriber, 'isAuthenticatedFacebookReadForIsolatedTest')) {
         throw new RuntimeException('test_only_security_bridge_unavailable');
     }
+    $securityHelper = $container->get('security.helper');
+    if (!is_object($securityHelper) || !method_exists($securityHelper, 'isGranted')) {
+        throw new RuntimeException('native_security_helper_unavailable');
+    }
 
     require_once __DIR__ . '/native_admin_kernel_browser.php';
     \Symfony\Component\HttpFoundation\Request::enableHttpMethodParameterOverride();
@@ -621,11 +633,17 @@ try {
         &$mode,
         &$injectionCounts,
         &$authenticatedReadGatePasses,
+        &$authenticatedFullGatePasses,
+        &$nativeAclDenialPreconditionsVerified,
+        &$aclEmployeeId,
+        &$aclProfileId,
         &$observedFacebookControllerEvent,
         &$observedDashboardControllerEvent,
         &$observedDashboardRouteName,
         &$heldSockets,
         $exceptionSubscriber,
+        $securityHelper,
+        $adminEmail,
         $facebookUri,
         &$dashboardUri,
         $moduleInventory,
@@ -695,22 +713,37 @@ try {
         }
 
         $legacyController = $request->attributes->get('_legacy_controller_instance');
+        $nativeEmployee = Context::getContext()->employee;
+        $nativeEmployeeMatchesLogin = $nativeEmployee instanceof Employee
+            && (int) $nativeEmployee->id > 0
+            && (int) $nativeEmployee->id === $aclEmployeeId
+            && (int) $nativeEmployee->id_profile === $aclProfileId
+            && (int) $nativeEmployee->active === 1
+            && hash_equals($adminEmail, (string) $nativeEmployee->email);
         if (!$moduleInventory['ps_facebook']['active']
-            || !$exceptionSubscriber->isAuthenticatedFacebookReadForIsolatedTest($request)
+            || !$securityHelper->isGranted('IS_AUTHENTICATED_FULLY')
+            || !$nativeEmployeeMatchesLogin
             || !($legacyController instanceof AdminController)
             || !is_object(Context::getContext()->controller)
             || Context::getContext()->controller !== $legacyController) {
             throw new RuntimeException('native_facebook_auth_context_mismatch');
+        }
+        ++$authenticatedFullGatePasses;
+        if ($mode === 'facebook_access_denied') {
+            if ($securityHelper->isGranted('read', 'AdminPsfacebookModule') !== false) {
+                throw new RuntimeException('native_facebook_read_acl_denial_not_active');
+            }
+            $nativeAclDenialPreconditionsVerified = true;
+            return;
+        }
+        if (!$exceptionSubscriber->isAuthenticatedFacebookReadForIsolatedTest($request)) {
+            throw new RuntimeException('native_facebook_read_authorization_missing');
         }
         ++$authenticatedReadGatePasses;
 
         if ($mode === 'generic_facebook_runtime') {
             ++$injectionCounts['generic_facebook_exceptions'];
             throw new RuntimeException('Synthetic isolated-CI non-transport failure');
-        }
-        if ($mode === 'facebook_access_denied') {
-            ++$injectionCounts['facebook_access_denied_exceptions'];
-            throw new Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException('Synthetic isolated-CI access denial');
         }
         if ($mode !== 'curl_transport') {
             throw new RuntimeException('unknown_native_test_mode');
@@ -767,6 +800,25 @@ try {
         }
     };
     $dispatcher->addListener(KernelEvents::CONTROLLER, $controllerListener, PHP_INT_MIN);
+    $dispatcher->addListener(
+        KernelEvents::EXCEPTION,
+        static function (Symfony\Component\HttpKernel\Event\ExceptionEvent $event) use (
+            &$nativeAccessDeniedFromLegacyController,
+            &$injectionCounts,
+            $safeControllerEventTarget
+        ): void {
+            if (!$event->isMainRequest() || !$safeControllerEventTarget($event->getRequest())) {
+                return;
+            }
+            $error = $event->getThrowable();
+            if ($error instanceof Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException
+                && basename($error->getFile()) === 'LegacyController.php') {
+                ++$injectionCounts['native_legacy_access_denied_exceptions'];
+                $nativeAccessDeniedFromLegacyController = true;
+            }
+        },
+        PHP_INT_MIN
+    );
     $controllerListeners = $dispatcher->getListeners(KernelEvents::CONTROLLER);
     if ($controllerListeners === [] || end($controllerListeners) !== $controllerListener) {
         throw new RuntimeException('test_listener_priority_contract_mismatch');
@@ -846,7 +898,34 @@ try {
         $requestUri = $facebookUri;
     }
     $require(is_string($requestUri) && $requestUri !== '', 'case_request_uri_missing');
-    $browser->request('GET', $requestUri);
+    $targetRequest = static function (?int $employeeId = null, ?int $profileId = null) use (
+        &$aclEmployeeId,
+        &$aclProfileId,
+        $browser,
+        $requestUri
+    ) {
+        if ($employeeId !== null && $profileId !== null) {
+            $aclEmployeeId = $employeeId;
+            $aclProfileId = $profileId;
+        }
+        return $browser->request('GET', $requestUri);
+    };
+    if ($caseName === 'access_denied') {
+        $roleSlug = Access::sluggifyTab(['class_name' => 'AdminPsfacebookModule'], 'READ');
+        $aclLifecycle = NativeFacebookReadAclDenial::run(
+            $adminEmail,
+            $roleSlug,
+            _DB_PREFIX_,
+            static fn (string $sql): mixed => Db::getInstance()->executeS($sql),
+            static fn (string $value): string => Db::getInstance()->escape($value),
+            static fn (string $sql): bool => Db::getInstance()->execute($sql),
+            $targetRequest
+        );
+        $readPermissionRowRemovedBeforeRequest = $aclLifecycle['read_permission_row_removed_before_request'];
+        $readPermissionRowRestored = $aclLifecycle['read_permission_row_restored'];
+    } else {
+        $targetRequest();
+    }
     $browserRequests = $browser->nativeRequestCount;
     $require($browserRequests === 1, 'one_native_target_request_required');
     $response = $browser->getResponse();
@@ -898,10 +977,14 @@ try {
             && $responseStatus !== 503 && !str_contains($body, $safeTitle);
         $require($caseChecks['generic_facebook_status_not_converted'], 'generic_facebook_exception_was_converted');
     } elseif ($caseName === 'access_denied') {
-        $caseChecks['access_denied_status_preserved'] = $authenticatedReadGatePasses === 1
-            && $injectionCounts['facebook_access_denied_exceptions'] === 1
+        $caseChecks['access_denied_status_preserved'] = $authenticatedFullGatePasses === 1
+            && $authenticatedReadGatePasses === 0
+            && $nativeAclDenialPreconditionsVerified
+            && $readPermissionRowRemovedBeforeRequest && $readPermissionRowRestored
+            && $nativeAccessDeniedFromLegacyController
+            && $injectionCounts['native_legacy_access_denied_exceptions'] === 1
             && $responseStatus === 403 && !str_contains($body, $safeTitle);
-        $require($caseChecks['access_denied_status_preserved'], 'access_denied_was_converted_or_not_preserved');
+        $require($caseChecks['access_denied_status_preserved'], 'native_access_denied_was_converted_or_not_preserved');
     } elseif ($caseName === 'curl_transport') {
         if ($responseStatus !== 503 || $injectionCounts['http_client_requests'] !== 1
             || str_contains(strtolower((string) $response->headers->get('Cache-Control')), 'no-store') === false
@@ -1012,12 +1095,17 @@ try {
                 ? 'read'
                 : ($observedDashboardControllerEvent ? 'not_applicable' : 'not_observed'),
             'authenticated_read_gate_passes' => $authenticatedReadGatePasses,
+            'authenticated_full_gate_passes' => $authenticatedFullGatePasses,
             'known_facebook_request_controller_events' => $injectionCounts['known_facebook_request_controller_events'],
             'mismatched_facebook_route_events' => $injectionCounts['mismatched_facebook_route_events'],
             'disabled_mode_facebook_sentinels' => $injectionCounts['disabled_mode_facebook_sentinels'],
             'other_route_exception_count' => $injectionCounts['other_route_exceptions'],
             'generic_facebook_exception_count' => $injectionCounts['generic_facebook_exceptions'],
-            'access_denied_exception_count' => $injectionCounts['facebook_access_denied_exceptions'],
+            'native_legacy_access_denied_exception_count' => $injectionCounts['native_legacy_access_denied_exceptions'],
+            'native_acl_denial_preconditions_verified' => $nativeAclDenialPreconditionsVerified,
+            'read_permission_row_removed_before_request' => $readPermissionRowRemovedBeforeRequest,
+            'read_permission_row_restored' => $readPermissionRowRestored,
+            'native_access_denied_from_legacy_controller' => $nativeAccessDeniedFromLegacyController,
             'test_transport_target' => 'run_owned_ipv4_loopback_bind_only',
             'stream_server_listen_used' => false,
             'facebook_vendor_initContent_called_by_fixture' => false,

@@ -222,11 +222,13 @@ class Kuraneabackoffice extends Module
     public function hookActionAdminControllerSetMedia(): void
     {
         $languageIsoCode = strtolower((string) ($this->context->language->iso_code ?? ''));
-        if (!str_starts_with($languageIsoCode, 'ko') || get_class($this->context->controller) !== 'AdminDashboardController') {
+        $controller = $this->context->controller ?? null;
+        if (!str_starts_with($languageIsoCode, 'ko') || !is_object($controller)
+            || get_class($controller) !== 'AdminDashboardController') {
             return;
         }
 
-        $this->context->controller->addJs($this->_path . 'views/js/dashboard-korean.js');
+        $controller->addJs($this->_path . 'views/js/dashboard-korean.js');
     }
 
     public function hookDisplayAdminEndContent(array $params = []): string

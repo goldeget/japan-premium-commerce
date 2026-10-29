@@ -164,12 +164,18 @@ class SafeAuthenticatedOutcomeTests(unittest.TestCase):
                 "http_status": 503,
                 "twig_template": None,
                 "twig_line": None,
+                "frames": [{
+                    "class": "PrestaShop\\Module\\Mbo\\Controller\\Admin\\ThemeCatalogController",
+                    "function": "indexAction",
+                    "source": "ThemeCatalogController.php:54",
+                }],
             }, {
                 "class": "Twig\\Error\\RuntimeError",
                 "source": "Template.php:44",
                 "http_status": None,
                 "twig_template": "@PrestaShop/Admin/Layout/light_layout.html.twig",
                 "twig_line": 6,
+                "frames": [],
             }],
         }
         payload = {
@@ -186,12 +192,14 @@ class SafeAuthenticatedOutcomeTests(unittest.TestCase):
     def test_native_exception_observation_rejects_extra_fields_bad_pairs_and_long_chains(self):
         entry = {
             "class": "RuntimeException", "source": "ErrorController.php:27", "http_status": 500,
-            "twig_template": None, "twig_line": None,
+            "twig_template": None, "twig_line": None, "frames": [],
         }
         invalid = [
             {"phase": "main_request", "chain": [{**entry, "message": "PRIVATE"}]},
             {"phase": "main_request", "chain": [{**entry, "twig_template": "@Modules/ps_mbo/error.html.twig"}]},
             {"phase": "main_request", "chain": [{**entry, "source": "/private/ErrorController.php:27"}]},
+            {"phase": "main_request", "chain": [{**entry, "frames": [{"class": "RuntimeException", "function": "call", "source": "Frame.php:4", "args": ["PRIVATE"]}]}]},
+            {"phase": "main_request", "chain": [{**entry, "frames": [{"class": "RuntimeException", "function": "call", "source": "Frame.php:4"}] * 7}]},
             {"phase": "main_request", "chain": [entry] * 5},
             {"phase": "private_phase", "chain": [entry]},
         ]

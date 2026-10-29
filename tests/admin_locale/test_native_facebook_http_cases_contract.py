@@ -62,6 +62,25 @@ class NativeFacebookHttpCasesContractTests(unittest.TestCase):
         self.assertNotIn("Shop::setContext", PHP)
         self.assertNotIn("loginUser(", PHP)
 
+    def test_access_denied_uses_restored_native_legacy_acl_gate(self) -> None:
+        fixture = (ROOT / "native_facebook_read_acl_denial.php").read_text(encoding="utf-8")
+        self.assertIn("Access::sluggifyTab(['class_name' => 'AdminPsfacebookModule'], 'READ')", PHP)
+        self.assertIn("NativeFacebookReadAclDenial::run(", PHP)
+        self.assertIn("$securityHelper->isGranted('IS_AUTHENTICATED_FULLY')", PHP)
+        self.assertIn("$securityHelper->isGranted('read', 'AdminPsfacebookModule') !== false", PHP)
+        self.assertIn("$error instanceof Symfony\\Component\\HttpKernel\\Exception\\AccessDeniedHttpException", PHP)
+        self.assertIn("basename($error->getFile()) === 'LegacyController.php'", PHP)
+        self.assertIn("$responseStatus === 403", PHP)
+        self.assertIn("$readPermissionRowRemovedBeforeRequest && $readPermissionRowRestored", PHP)
+        self.assertIn("try {", fixture)
+        self.assertIn("} finally {", fixture)
+        self.assertIn("DELETE FROM `' . $tablePrefix . 'access`' . $where", fixture)
+        self.assertIn("INSERT INTO `' . $tablePrefix . 'access` (`id_profile`, `id_authorization_role`)", fixture)
+        self.assertIn("LIMIT 2", fixture)
+        self.assertNotIn("INSERT INTO", PHP)
+        self.assertNotIn("AccessDeniedHttpException('Synthetic isolated-CI access denial')", PHP)
+        self.assertIn("'native_acl_denial_preconditions_verified' => $nativeAclDenialPreconditionsVerified", PHP)
+
     def test_host_runner_executes_each_case_synchronously_to_private_files(self) -> None:
         for case in ("unauthenticated", "other_route", "generic_facebook", "access_denied", "curl_transport"):
             self.assertIn(case, RUNNER)

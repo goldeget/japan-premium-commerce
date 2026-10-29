@@ -84,7 +84,8 @@ MBO_FAILURE_FACT_KEYS = {
 }
 NATIVE_EXCEPTION_OBSERVATION_KEYS = {"phase", "chain"}
 NATIVE_EXCEPTION_PHASES = {"main_request", "error_subrequest"}
-NATIVE_EXCEPTION_ENTRY_KEYS = {"class", "source", "http_status", "twig_template", "twig_line"}
+NATIVE_EXCEPTION_ENTRY_KEYS = {"class", "source", "http_status", "twig_template", "twig_line", "frames"}
+NATIVE_EXCEPTION_FRAME_KEYS = {"class", "function", "source"}
 
 
 class _DuplicateJsonKey(ValueError):
@@ -168,6 +169,7 @@ def _safe_native_exception_observation(value: Any) -> dict[str, Any] | None:
         status = entry["http_status"]
         template = entry["twig_template"]
         twig_line = entry["twig_line"]
+        frames = entry["frames"]
         if not isinstance(class_name, str) or not EXCEPTION_RE.fullmatch(class_name):
             return None
         if not isinstance(source, str) or not FAILURE_SOURCE_RE.fullmatch(source):
@@ -182,12 +184,32 @@ def _safe_native_exception_observation(value: Any) -> dict[str, Any] | None:
         elif (not isinstance(template, str) or not TWIG_TEMPLATE_RE.fullmatch(template)
               or type(twig_line) is not int or not 1 <= twig_line <= 100_000):
             return None
+        if not isinstance(frames, list) or len(frames) > 6:
+            return None
+        safe_frames = []
+        for frame in frames:
+            if not isinstance(frame, dict) or set(frame) != NATIVE_EXCEPTION_FRAME_KEYS:
+                return None
+            frame_class = frame["class"]
+            function = frame["function"]
+            frame_source = frame["source"]
+            if (not isinstance(frame_class, str)
+                    or (frame_class != "" and not EXCEPTION_RE.fullmatch(frame_class))):
+                return None
+            if not isinstance(function, str) or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", function) is None:
+                return None
+            if not isinstance(frame_source, str) or not FAILURE_SOURCE_RE.fullmatch(frame_source):
+                return None
+            if int(frame_source.rsplit(":", 1)[1]) > 1_000_000:
+                return None
+            safe_frames.append({"class": frame_class, "function": function, "source": frame_source})
         safe_chain.append({
             "class": class_name,
             "source": source,
             "http_status": status,
             "twig_template": template,
             "twig_line": twig_line,
+            "frames": safe_frames,
         })
     return {"phase": phase, "chain": safe_chain}
 

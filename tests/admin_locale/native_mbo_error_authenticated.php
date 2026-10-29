@@ -512,12 +512,33 @@ try {
                         }
                     }
 
+                    $frames = [];
+                    foreach (array_slice($cause->getTrace(), 0, 6) as $frame) {
+                        $frameClass = (string) ($frame['class'] ?? '');
+                        $frameFunction = (string) ($frame['function'] ?? '');
+                        $frameFile = basename(str_replace('\\', '/', (string) ($frame['file'] ?? '')));
+                        $frameLine = $frame['line'] ?? null;
+                        if (($frameClass !== ''
+                                && preg_match('~\A[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*){0,10}\z~D', $frameClass) !== 1)
+                            || preg_match('~\A[A-Za-z_][A-Za-z0-9_]{0,79}\z~D', $frameFunction) !== 1
+                            || preg_match('~\A[A-Za-z0-9_.-]{1,160}\.php\z~D', $frameFile) !== 1
+                            || !is_int($frameLine) || $frameLine < 1 || $frameLine > 1000000) {
+                            continue;
+                        }
+                        $frames[] = [
+                            'class' => $frameClass,
+                            'function' => $frameFunction,
+                            'source' => $frameFile . ':' . $frameLine,
+                        ];
+                    }
+
                     $chain[] = [
                         'class' => $class,
                         'source' => $file . ':' . $line,
                         'http_status' => $httpStatus,
                         'twig_template' => $twigTemplate,
                         'twig_line' => $twigLine,
+                        'frames' => $frames,
                     ];
                 }
 
