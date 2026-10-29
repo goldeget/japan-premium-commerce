@@ -15,3 +15,6 @@
 # Test-tool caches
 node_modules/
 __pycache__/
+
+# Generated release archives and private build output
+release-artifacts/

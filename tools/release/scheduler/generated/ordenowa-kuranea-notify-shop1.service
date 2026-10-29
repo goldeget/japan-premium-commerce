@@ -1,0 +1,27 @@
+[Unit]
+Description=Ordenowa procurement notification dispatch for shop 1
+
+[Service]
+Type=oneshot
+User=ordenowa-worker
+Group=docker
+WorkingDirectory=/
+UMask=0077
+ExecStart=/usr/bin/docker --context=default compose --project-name=kuranea --project-directory=/srv/ordenowa --file=/srv/ordenowa/compose.yaml exec -T --user www-data prestashop php /var/www/html/modules/ordenowaprocurement/bin/dispatch-notifications.php --shop=1 --channels=mail,push --limit=25
+TimeoutStartSec=600s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ordenowa-kuranea-notify-shop1

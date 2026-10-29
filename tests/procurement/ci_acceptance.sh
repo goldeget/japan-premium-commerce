@@ -30,7 +30,7 @@ outcomes = {}
 for line in Path(sys.argv[1]).read_text().splitlines():
     phase, status = line.split('\t')
     outcomes[phase] = status
-required = ('image_build','fresh_install','native_source','module_seed','native_gallery','requests_database','requests_behavior','requests_concurrency','points_behavior','points_concurrency','notifications_behavior','notifications_native','notifications_concurrency','native_boundary','native_push_settings','policies_behavior','policies_concurrency','policies_smarty','support_database','support_concurrency_review','support_controller','support_smarty','customer_ui','customer_smarty','navigation_smarty','signin_smarty','pwa_worker','pwa_registration','native_browser','native_notifications','native_push_provider','native_accounts','native_acl','native_quality','durable_readback','restart_readback','restart_source','restore')
+required = ('image_build','fresh_install','native_source','module_seed','native_gallery','requests_database','requests_behavior','requests_concurrency','points_behavior','points_concurrency','notifications_behavior','notifications_native','notifications_concurrency','notifications_health','native_boundary','native_push_settings','policies_behavior','policies_concurrency','policies_smarty','support_database','support_concurrency_review','support_controller','support_smarty','customer_ui','customer_smarty','navigation_smarty','signin_smarty','pwa_worker','pwa_registration','native_browser','native_notifications','native_push_provider','native_accounts','native_acl','native_quality','durable_readback','restart_readback','restart_source','restore')
 Path(sys.argv[2]).write_text(json.dumps({'passed':int(sys.argv[3]) == 0 and all(outcomes.get(x) == 'passed' for x in required),
     'phases':{x:outcomes.get(x,'not_run') for x in required}}, sort_keys=True) + '\n')
 PY
@@ -201,6 +201,53 @@ run_phase points_concurrency behavior points_concurrency
 run_phase notifications_behavior behavior notifications_behavior
 run_phase notifications_native behavior notifications_native
 run_phase notifications_concurrency behavior notifications_concurrency
+
+health_snapshot_acceptance() {
+  behavior notifications_health || return "$?"
+  local health_exit=0
+  compose exec -T -u www-data prestashop php /var/www/html/modules/ordenowaprocurement/bin/health-snapshot.php --shop=1 >"$private_dir/health-native.json" || health_exit=$?
+  python3 - "$private_dir/health-native.json" "$QA_ARTIFACT_DIR/health-snapshot-outcome.json" "$health_exit" <<'PYHEALTH'
+import json, math, sys
+from pathlib import Path
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate key")
+        result[key] = value
+    return result
+
+outcome = {"schema": 1, "scope": "native_cli_snapshot_schema_and_exit", "passed": False,
+           "bootstrap_side_effects_instrumented": False}
+try:
+    data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+    required = {"status", "shop_id", "database_select_1", "disk_free_ratio", "notification_counts"}
+    count_keys = {"backlog", "future_retry", "undelivered_events", "failed", "uncertain", "oldest_stale_age_seconds"}
+    expected_exit = {"ok": 0, "warning": 1, "critical": 2}
+    if type(data) is not dict or set(data) != required:
+        raise ValueError("shape")
+    if data["status"] not in expected_exit or int(sys.argv[3]) != expected_exit[data["status"]]:
+        raise ValueError("status")
+    if type(data["shop_id"]) is not int or data["shop_id"] != 1 or data["database_select_1"] is not True:
+        raise ValueError("shop")
+    ratio = data["disk_free_ratio"]
+    if type(ratio) not in (int, float) or not math.isfinite(ratio) or not 0 <= ratio <= 1:
+        raise ValueError("disk")
+    counts = data["notification_counts"]
+    if type(counts) is not dict or set(counts) != count_keys:
+        raise ValueError("counts")
+    if any(type(value) is not int or not 0 <= value <= 2147483647 for value in counts.values()):
+        raise ValueError("count bounds")
+    outcome.update(passed=True, exit_code=int(sys.argv[3]), snapshot=data)
+except (OSError, UnicodeError, ValueError, TypeError, KeyError, OverflowError):
+    outcome["failure_code"] = "health_snapshot_schema_or_exit"
+Path(sys.argv[2]).write_text(json.dumps(outcome, sort_keys=True) + "\n", encoding="utf-8")
+raise SystemExit(0 if outcome["passed"] else 1)
+PYHEALTH
+}
+run_phase notifications_health health_snapshot_acceptance
+
 native_boundaries() {
   behavior native_integration_test || return "$?"
   compose exec -T -u www-data -e PROCUREMENT_TEST_DSN='mysql:host=mariadb;dbname=ordenowa_procurement_test;charset=utf8mb4' \
@@ -213,6 +260,7 @@ native_boundaries() {
   # Exercise the actual native warmer with the image's default CLI memory.
   # No memory override, no --no-warmup, and no hidden failed command.
   compose exec -T -u www-data prestashop php /var/www/html/bin/console cache:clear --env=prod --no-debug || return "$?"
+  compose exec -T -u www-data prestashop php /var/www/html/tests/admin_locale/native_mbo_error_render.php >"$QA_ARTIFACT_DIR/native-mbo-error-render.json" || return "$?"
   python3 - "$QA_ARTIFACT_DIR/cache-warmup-outcome.json" "$native_cli_memory_limit" <<'PYCACHE'
 import json,sys
 from pathlib import Path

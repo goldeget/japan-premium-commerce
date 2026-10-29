@@ -10,3 +10,4 @@ modules/kuraneapush/vendor
 var/cache
 var/logs
 assets/brand/legacy-kuranea-webroot-archive/
+release-artifacts/

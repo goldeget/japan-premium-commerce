@@ -1,0 +1,47 @@
+name: Release archive preparation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [work]
+    paths:
+      - 'tools/release/package_release.py'
+      - 'tools/release/release_manifest.py'
+      - 'tests/release/test_package_release.py'
+      - '.github/workflows/release-package.yml'
+      - 'docker/Dockerfile'
+      - '.gitignore'
+      - '.dockerignore'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check archive protocol and collision handling
+        run: python -m unittest discover -s tests/release -p 'test_package_release.py' -v
+      - name: Build export and reload the source candidate without publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/release/package_release.py --root "$GITHUB_WORKSPACE" --output-dir "$GITHUB_WORKSPACE/release-artifacts"
+          python tools/release/release_manifest.py --root "$GITHUB_WORKSPACE" --manifest "$GITHUB_WORKSPACE/release-artifacts/ordenowa-prestashop-sha-$GITHUB_SHA.release.json"
+      - name: Retain only small preparation records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-package-proof
+          path: |
+            release-artifacts/*.release.json
+            release-artifacts/*.package.json
+          if-no-files-found: warn
+          retention-days: 7

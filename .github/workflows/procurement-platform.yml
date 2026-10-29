@@ -87,7 +87,7 @@ jobs:
           set -euo pipefail
           umask 077
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends fonts-noto-cjk fontconfig
+          sudo apt-get install --yes --no-install-recommends fonts-noto-cjk fontconfig age
           fc-cache -f
           python3 - <<'PY'
           import json, os, subprocess

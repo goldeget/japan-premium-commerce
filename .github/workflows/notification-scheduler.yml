@@ -1,0 +1,44 @@
+name: Notification scheduler validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [work]
+    paths:
+      - 'tools/release/scheduler/**'
+      - 'tests/release/test_notification_scheduler.py'
+      - '.github/workflows/notification-scheduler.yml'
+      - 'modules/ordenowaprocurement/bin/dispatch-notifications.php'
+      - 'compose.yaml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Require a real systemd unit analyzer
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v systemd-analyze >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --yes --no-install-recommends systemd
+          fi
+          systemd-analyze --version
+      - name: Verify generator contracts and Linux units
+        run: python -m unittest discover -s tests/release -p 'test_notification_scheduler.py' -v
+      - name: Verify the CLI generated unit pair without starting a service
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=$(mktemp -d)
+          trap 'rm -rf -- "$out"' EXIT
+          python tools/release/scheduler/generate_units.py --project-dir /srv/ordenowa --project-name ordenowa-ci --docker-bin /usr/bin/true --shop-id 1 --channels mail,push --limit 25 --host-user ordenowa-worker --host-group docker --timeout-seconds 600 --output-dir "$out"
+          systemd-analyze verify "$out"/*.service "$out"/*.timer

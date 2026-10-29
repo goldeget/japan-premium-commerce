@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Ordenowa procurement notification dispatch after a one-minute idle interval for shop 1
+
+[Timer]
+OnBootSec=60s
+OnUnitInactiveSec=60s
+RandomizedDelaySec=3s
+AccuracySec=1s
+Unit=ordenowa-kuranea-notify-shop1.service
+
+[Install]
+WantedBy=timers.target
