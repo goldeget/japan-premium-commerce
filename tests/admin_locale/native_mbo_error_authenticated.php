@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use PrestaShop\Module\Mbo\Service\ExternalContentProvider\ExternalContentProvider;
 use PrestaShop\Module\Mbo\Service\ExternalContentProvider\ExternalContentProviderInterface;
+use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 
 ini_set('display_errors', '0');

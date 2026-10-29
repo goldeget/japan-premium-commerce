@@ -16,6 +16,13 @@ class Module
 $root = dirname(__DIR__, 2);
 require $root . '/modules/kuraneabackoffice/kuraneabackoffice.php';
 $source = file_get_contents(__DIR__ . '/native_mbo_error_authenticated.php');
+$headerEnd = strpos($source, "ini_set(");
+if ($headerEnd === false) throw new RuntimeException('native_probe_header_missing');
+$header = str_replace('<?php', '', substr($source, 0, $headerEnd));
+$browserAlias = eval($header . "\nreturn KernelBrowser::class;");
+if ($browserAlias !== 'Symfony\\Bundle\\FrameworkBundle\\KernelBrowser') {
+    throw new RuntimeException('native_kernel_browser_alias_must_resolve_to_framework_class');
+}
 $start = strpos($source, '$readModule = static function ');
 $end = strpos($source, "\n};", $start);
 if ($start === false || $end === false) {
