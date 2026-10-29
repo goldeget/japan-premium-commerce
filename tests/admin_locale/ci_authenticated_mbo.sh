@@ -280,6 +280,9 @@ try:
     else:
         code=value.get('failure_code')
         if isinstance(code,str) and re.fullmatch('[a-z_]{1,80}',code): result['failure_code']=code
+        hint=value.get('asset_path_prefix_hint')
+        if isinstance(hint,str) and re.fullmatch(r'/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+){0,2}',hint):
+            result['asset_path_prefix_hint']=hint
 except (OSError, ValueError, TypeError, AttributeError):
     pass
 with Path(sys.argv[2]).open('x',encoding='utf-8') as stream: stream.write(json.dumps(result,sort_keys=True)+'\n')

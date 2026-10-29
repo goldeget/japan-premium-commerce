@@ -33,6 +33,7 @@ $caseModes = [
     'curl_transport' => 'curl_transport',
 ];
 $mode = $caseModes[$caseName] ?? 'invalid';
+$failedAssertion = null;
 $nativeLogin = null;
 $nativeCookies = [];
 $nativeHttpBodyToken = null;
@@ -66,8 +67,9 @@ $observedDashboardRouteName = 'not_observed';
 $dashboardUri = null;
 $heldSockets = [];
 
-$require = static function (bool $condition, string $reason): void {
+$require = static function (bool $condition, string $reason) use (&$failedAssertion): void {
     if (!$condition) {
+        $failedAssertion = $reason;
         throw new RuntimeException($reason);
     }
 };
@@ -1157,6 +1159,19 @@ try {
         'login_session_or_auth_audit_writes_possible' => true,
         'kernel_bootstrap_database_network_side_effects_instrumented' => false,
     ];
+    if ($failedAssertion === 'generic_facebook_exception_was_converted') {
+        $outcome['failed_assertion'] = $failedAssertion;
+        if (isset($responseStatus) && is_int($responseStatus) && $responseStatus >= 100 && $responseStatus <= 599) {
+            $outcome['generic_facebook_case_facts'] = [
+                'authenticated_full_gate_passes' => min(100, $authenticatedFullGatePasses),
+                'authenticated_read_gate_passes' => min(100, $authenticatedReadGatePasses),
+                'generic_exception_count' => min(100, $injectionCounts['generic_facebook_exceptions']),
+                'response_status' => $responseStatus,
+                'safe_error_title_present' => is_string($body ?? null)
+                    && str_contains($body, 'Facebook 계정 연결을 일시적으로 사용할 수 없습니다'),
+            ];
+        }
+    }
     if ($error instanceof \Twig\Error\Error) {
         try {
             $sourceContext = $error->getSourceContext();

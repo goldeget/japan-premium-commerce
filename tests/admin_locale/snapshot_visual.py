@@ -97,6 +97,10 @@ VOID_TAGS = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input
 class SnapshotError(ValueError):
     """A fixed, safe-to-report snapshot validation failure."""
 
+    def __init__(self, code: str, *, asset_path_prefix_hint: str | None = None):
+        super().__init__(code)
+        self.asset_path_prefix_hint = asset_path_prefix_hint
+
 
 @dataclass
 class Node:
@@ -231,11 +235,29 @@ def normalize_asset_url(raw_url: str, *, document_base: str = APP_DOCUMENT_BASE)
             or parts.query not in ('', REVIEWED_ASSET_VERSION) or parts.fragment or "%" in parts.path):
         raise SnapshotError("asset_origin_or_query_rejected")
     path = parts.path
-    if not ASSET_PATH_RE.fullmatch(path) or "//" in path or any(seg in {".", "..", ""} for seg in path.split("/")[1:]):
+    if not ASSET_PATH_RE.fullmatch(path) or chr(92) in path or "//" in path:
         raise SnapshotError("asset_path_rejected")
+    segments = path.split("/")[1:]
+    canonical_segments = []
+    for segment in segments:
+        if segment in ("", "."):
+            raise SnapshotError("asset_path_rejected")
+        if segment == "..":
+            if not canonical_segments:
+                raise SnapshotError("asset_path_rejected")
+            canonical_segments.pop()
+            continue
+        canonical_segments.append(segment)
+    if not canonical_segments:
+        raise SnapshotError("asset_path_rejected")
+    path = "/" + "/".join(canonical_segments)
     ext = Path(path).suffix.lower()
-    if ext not in ALLOWED_ASSET_EXTENSIONS or not any(path.startswith(root) for root in ASSET_ROOTS):
-        raise SnapshotError("asset_path_rejected")
+    if ext not in ALLOWED_ASSET_EXTENSIONS:
+        raise SnapshotError("asset_type_rejected")
+    if not any(path.startswith(root) for root in ASSET_ROOTS):
+        segments = path.split("/")[1:]
+        prefix_hint = "/" + "/".join(segments[:3]) if segments else None
+        raise SnapshotError("asset_path_rejected", asset_path_prefix_hint=prefix_hint)
     if any(path.startswith(root) for root in CSS_ONLY_ROOTS) and ext != ".css":
         raise SnapshotError("asset_type_rejected")
     return path, ext
@@ -534,7 +556,9 @@ def fetch_static_asset(path: str) -> tuple[bytes, str]:
     if not ASSET_PATH_RE.fullmatch(path) or "?" in path or "#" in path or "%" in path or ".." in path.split("/"):
         raise SnapshotError("asset_path_rejected")
     if not any(path.startswith(root) for root in ASSET_ROOTS):
-        raise SnapshotError("asset_path_rejected")
+        segments = path.split("/")[1:]
+        prefix_hint = "/" + "/".join(segments[:3]) if segments else None
+        raise SnapshotError("asset_path_rejected", asset_path_prefix_hint=prefix_hint)
     ext = Path(path).suffix.lower()
     allowed_mime = _expected_mime(path)
     if ext not in ALLOWED_ASSET_EXTENSIONS or not allowed_mime:
@@ -849,6 +873,9 @@ def main(argv: list[str] | None = None) -> int:
         result = render_private_snapshot(args.private_html, args.private_dir, args.artifact_dir, args.runner_temp, args.kind, args.expected_sha256)
     except SnapshotError as error:
         safe = {"schema": 1, "passed": False, "kind": args.kind, "failure_code": str(error)}
+        hint = error.asset_path_prefix_hint
+        if isinstance(hint, str) and re.fullmatch(r"/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+){0,2}", hint):
+            safe["asset_path_prefix_hint"] = hint
         print(json.dumps(safe, sort_keys=True, separators=(",", ":")))
         return 1
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))

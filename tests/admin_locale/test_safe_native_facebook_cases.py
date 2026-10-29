@@ -199,6 +199,51 @@ class SafeNativeFacebookCasesTests(unittest.TestCase):
         self.assertEqual(result['failure_source'], 'native_facebook_transport_fallback.php:123')
         self.assertNotIn('PRIVATE', json.dumps(result))
 
+        raw, statuses = good_inputs()
+        raw['generic_facebook'] = json.dumps({
+            'schema': 1,
+            'passed': False,
+            'failed_stage': 'case_specific_semantic_assertions',
+            'failed_assertion': 'generic_facebook_exception_was_converted',
+            'generic_facebook_case_facts': {
+                'authenticated_full_gate_passes': 1,
+                'authenticated_read_gate_passes': 1,
+                'generic_exception_count': 1,
+                'response_status': 503,
+                'safe_error_title_present': True,
+            },
+            'exception_class': 'RuntimeException',
+            'failure_source': 'native_facebook_transport_fallback.php:123',
+        }).encode()
+        statuses['generic_facebook'] = 1
+        result = MODULE.collect_cases(raw, statuses)
+        self.assertEqual(result['failed_assertion'], 'generic_facebook_exception_was_converted')
+        self.assertEqual(result['generic_facebook_case_facts']['response_status'], 503)
+        self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_generic_facebook_diagnostics_are_ignored_for_other_failed_cases(self) -> None:
+        raw, statuses = good_inputs()
+        raw['access_denied'] = json.dumps({
+            'schema': 1,
+            'passed': False,
+            'failed_stage': 'case_specific_semantic_assertions',
+            'failed_assertion': 'generic_facebook_exception_was_converted',
+            'generic_facebook_case_facts': {
+                'authenticated_full_gate_passes': 1,
+                'authenticated_read_gate_passes': 1,
+                'generic_exception_count': 1,
+                'response_status': 503,
+                'safe_error_title_present': True,
+            },
+        }).encode()
+        statuses['access_denied'] = 1
+
+        result = MODULE.collect_cases(raw, statuses)
+
+        self.assertEqual(result['failed_case'], 'access_denied')
+        self.assertNotIn('failed_assertion', result)
+        self.assertNotIn('generic_facebook_case_facts', result)
+
     def test_rejects_duplicate_keys_and_case_name_substitution(self) -> None:
         raw, statuses = good_inputs()
         raw["unauthenticated"] = raw["unauthenticated"].replace(b'"schema":4,', b'"schema":4,"schema":4,', 1)

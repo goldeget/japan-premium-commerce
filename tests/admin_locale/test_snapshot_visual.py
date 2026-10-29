@@ -260,17 +260,31 @@ async function run(kind) {
         safe, ext = visual.normalize_asset_url("/admin-kuranea/themes/new-theme/public/theme.css")
         self.assertEqual("/admin-kuranea/themes/new-theme/public/theme.css", safe)
         self.assertEqual(".css", ext)
+        safe, ext = visual.normalize_asset_url(
+            "http://localhost:18081/admin-kuranea/../modules/ps_mbo/views/img/error.svg"
+        )
+        self.assertEqual("/modules/ps_mbo/views/img/error.svg", safe)
+        self.assertEqual(".svg", ext)
         for url in (
             "https://localhost:18081/admin-kuranea/themes/new-theme/public/theme.css",
             "http://user:pass@localhost:18081/admin-kuranea/themes/new-theme/public/theme.css",
             "http://localhost:18081/admin-kuranea/themes/new-theme/public/theme.css?x=1",
             "http://localhost:18081/admin-kuranea/themes/new-theme/public/%2e%2e/secret.css",
             "http://localhost:18082/admin-kuranea/themes/new-theme/public/theme.css",
+            "http://localhost:18081/admin-kuranea/../../etc/passwd",
+            "http://localhost:18081/admin-kuranea/../../private/token.css",
             "//evil.invalid/theme.css",
         ):
             with self.subTest(url=url):
                 with self.assertRaises(visual.SnapshotError):
                     visual.normalize_asset_url(url)
+
+    def test_unlisted_asset_failure_exposes_only_a_bounded_root_hint(self):
+        with self.assertRaises(visual.SnapshotError) as captured:
+            visual.normalize_asset_url("/themes/kuranea/assets/admin.css")
+        self.assertEqual("asset_path_rejected", str(captured.exception))
+        self.assertEqual("/themes/kuranea/assets", captured.exception.asset_path_prefix_hint)
+        self.assertNotIn("admin.css", str(captured.exception.asset_path_prefix_hint))
 
 
 class AssetProxyTests(unittest.TestCase):

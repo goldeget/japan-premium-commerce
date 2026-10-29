@@ -345,6 +345,19 @@ def collect_cases(raw_cases: dict[str, bytes], statuses: dict[str, int]) -> dict
                     'single_fresh_process_case_request', 'case_specific_semantic_assertions',
                 }
                 if isinstance(stage, str) and stage in allowed_stages: result['failed_stage'] = stage
+                if name == 'generic_facebook' and payload.get('failed_assertion') == 'generic_facebook_exception_was_converted':
+                    result['failed_assertion'] = 'generic_facebook_exception_was_converted'
+                generic_facts = payload.get('generic_facebook_case_facts')
+                if name == 'generic_facebook' and isinstance(generic_facts, dict) and set(generic_facts) == {
+                    'authenticated_full_gate_passes', 'authenticated_read_gate_passes',
+                    'generic_exception_count', 'response_status', 'safe_error_title_present',
+                }:
+                    if (all(type(generic_facts[key]) is int and 0 <= generic_facts[key] <= 100
+                            for key in ('authenticated_full_gate_passes', 'authenticated_read_gate_passes', 'generic_exception_count'))
+                            and type(generic_facts['response_status']) is int
+                            and 100 <= generic_facts['response_status'] <= 599
+                            and type(generic_facts['safe_error_title_present']) is bool):
+                        result['generic_facebook_case_facts'] = generic_facts
             except (ValueError, TypeError, UnicodeError, RecursionError):
                 pass
             return result

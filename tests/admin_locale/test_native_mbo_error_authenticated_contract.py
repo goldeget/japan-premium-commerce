@@ -19,6 +19,10 @@ class AuthenticatedNativeMboErrorContract(unittest.TestCase):
         self.assertIn("Module::getInstanceByName('ps_ask_ai')", bootstrap)
         self.assertIn('$askAiModule->disable()', bootstrap)
         self.assertIn("Could not disable the optional ps_ask_ai module", bootstrap)
+        self.assertLess(
+            bootstrap.index('$install->postInstall()'),
+            bootstrap.index("Module::isInstalled('ps_ask_ai')"),
+        )
 
     def test_project_inventory_uses_actual_native_module_without_optional_xml(self):
         php = os.environ.get('ORDENOWA_TEST_PHP') or shutil.which('php')
