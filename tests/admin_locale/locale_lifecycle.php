@@ -202,6 +202,7 @@ foreach ([
         same('변경 사항을 저장했습니다.', $translator->trans('Successful update', [], 'Admin.Notifications.Success', 'ko-KR'), $route . ' explicit Korean update confirmation');
         same('변경 사항을 저장했습니다.', $translator->trans('Successful update.', [], 'Admin.Notifications.Success', 'ko-KR'), $route . ' explicit Korean punctuated update confirmation');
         same('매출 늘리기', $translator->trans('Boost sales', [], 'Modules.Mbo.Recommendedmodulesandservices', 'ko-KR'), $route . ' explicit Korean recommended-module button');
+        same('Addons에 연결하는 데 문제가 있는 것 같습니다. 페이지를 새로고침하거나 방화벽 설정을 확인해 주세요.', $translator->trans('It looks like we have trouble connecting to Addons. Please refresh the page or check your firewall configuration.', [], 'Modules.Mbo.Errors', 'ko-KR'), $route . ' explicit Korean MBO error');
         if ($route === 'admin_orders_index') {
             same('평균 주문 금액', $translator->trans('Average Order Value', [], 'Admin.Global', 'ko-KR'), $route . ' explicit Admin.Global KPI translation');
         }
@@ -215,6 +216,7 @@ foreach ([
         same('변경 사항을 저장했습니다.', $translator->trans('Successful update', [], 'Admin.Notifications.Success'), $route . ' default Korean update confirmation');
         same('변경 사항을 저장했습니다.', $translator->trans('Successful update.', [], 'Admin.Notifications.Success'), $route . ' default Korean punctuated update confirmation');
         same('매출 늘리기', $translator->trans('Boost sales', [], 'Modules.Mbo.Recommendedmodulesandservices'), $route . ' default Korean recommended-module button');
+        same('Addons에 연결하는 데 문제가 있는 것 같습니다. 페이지를 새로고침하거나 방화벽 설정을 확인해 주세요.', $translator->trans('It looks like we have trouble connecting to Addons. Please refresh the page or check your firewall configuration.', [], 'Modules.Mbo.Errors'), $route . ' default Korean MBO error');
     }
     if ($activeModules !== [] && $route === 'admin_orders_index') {
         same('평균 주문 금액', $translator->trans('Average Order Value', [], 'Admin.Global'), $route . ' default Admin.Global KPI translation');

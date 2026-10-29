@@ -372,6 +372,7 @@ final class AdminLocaleSubscriber implements EventSubscriberInterface
             'Modules.Onepagecheckout.Admin' => 'ModulesOnepagecheckoutAdmin.ko-KR.xlf',
             'Modules.Apiresources.Admin' => 'ModulesApiresourcesAdmin.ko-KR.xlf',
             'Modules.Mbo.Recommendedmodulesandservices' => 'ModulesMboRecommendedmodulesandservices.ko-KR.xlf',
+            'Modules.Mbo.Errors' => 'ModulesMboErrors.ko-KR.xlf',
             'messages' => 'messages.ko-KR.xlf',
         ] as $domain => $filename) {
             $translationFile = $this->modulePath . '/translations/' . $locale . '/' . $filename;

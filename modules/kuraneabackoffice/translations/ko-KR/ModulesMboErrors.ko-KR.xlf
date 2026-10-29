@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="views/templates/admin/error.html.twig" source-language="en-US" target-language="ko-KR" datatype="plaintext">
+    <body>
+      <trans-unit id="8a5560b05facacdbc10e870b1152e41b" approved="yes">
+        <source>It looks like we have trouble connecting to Addons. Please refresh the page or check your firewall configuration.</source>
+        <target state="final">Addons에 연결하는 데 문제가 있는 것 같습니다. 페이지를 새로고침하거나 방화벽 설정을 확인해 주세요.</target>
+        <note>PrestaShopCorp/ps_mbo commit 7f694df47340d1399dd4ad8cb395bc4fc91d2ab1, translations/en-US/ModulesMboErrors.en-US.xlf; source ID and message are upstream-owned.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>
+

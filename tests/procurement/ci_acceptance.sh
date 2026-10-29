@@ -207,6 +207,7 @@ native_boundaries() {
     -e PROCUREMENT_TEST_USER=root -e "PROCUREMENT_TEST_PASSWORD=$MARIADB_ROOT_PASSWORD" prestashop php /var/www/html/tests/admin_locale/korean_tab_labels.php || return "$?"
   compose exec -T -u www-data prestashop php /var/www/html/tests/admin_locale/twig_warmup_templates.php || return "$?"
   compose exec -T -u www-data prestashop php /var/www/html/tests/admin_locale/copy_language_labels.php || return "$?"
+  compose exec -T -u www-data prestashop php /var/www/html/tests/admin_locale/locale_lifecycle.php /var/www/html/vendor/autoload.php /var/www/html || return "$?"
   local native_cli_memory_limit
   native_cli_memory_limit=$(compose exec -T -u www-data prestashop php -r 'echo ini_get("memory_limit");') || return "$?"
   # Exercise the actual native warmer with the image's default CLI memory.
