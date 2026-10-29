@@ -18,6 +18,10 @@ fixture_spec = importlib.util.spec_from_file_location('safe_mbo_fixture', ROOT /
 fixture_module = importlib.util.module_from_spec(fixture_spec)
 assert fixture_spec and fixture_spec.loader
 fixture_spec.loader.exec_module(fixture_module)
+facebook_spec = importlib.util.spec_from_file_location('safe_facebook_fixture', ROOT / 'tests/admin_locale/test_safe_native_facebook_outcome.py')
+facebook_fixture = importlib.util.module_from_spec(facebook_spec)
+assert facebook_spec and facebook_spec.loader
+facebook_spec.loader.exec_module(facebook_fixture)
 
 
 def shell_path(path: Path) -> str:
@@ -36,7 +40,7 @@ def bash_executable() -> str | None:
 
 @unittest.skipUnless(bash_executable(), 'Bash required')
 class AuthenticatedMboCiBoundaryTests(unittest.TestCase):
-    def run_host_boundary(self, raw: str, *, helper_status: int = 0, preparation_status: int = 0, cleanup_status: int = 0):
+    def run_host_boundary(self, raw: str, *, helper_status: int = 0, preparation_status: int = 0, cleanup_status: int = 0, probe: str = 'mbo'):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
@@ -51,6 +55,7 @@ class AuthenticatedMboCiBoundaryTests(unittest.TestCase):
             'TEST_CAPTURE': shell_path(capture), 'MOCK_COMPOSE_LOG': shell_path(root / 'compose.log'),
             'TEST_HELPER_STATUS': str(helper_status), 'TEST_PREPARATION_STATUS': str(preparation_status),
             'TEST_CLEANUP_STATUS': str(cleanup_status),
+            'TEST_PROBE': probe,
         })
         script = '''
 umask 077
@@ -62,16 +67,17 @@ bash() { return "$TEST_PREPARATION_STATUS"; }
 python3() { "$REAL_PY" "$@"; }
 compose() {
   printf '%s\\n' "$*" >> "$MOCK_COMPOSE_LOG"
-  if [[ "$*" == *native_mbo_error_authenticated.php* ]]; then
+  if [[ "$*" == *native_mbo_error_authenticated.php* || "$*" == *native_facebook_transport_fallback.php* ]]; then
     cat "$TEST_CAPTURE"
     return "$TEST_HELPER_STATUS"
   fi
   return "$TEST_CLEANUP_STATUS"
 }
-authenticated_mbo_acceptance
+"authenticated_${TEST_PROBE}_acceptance"
 '''
         result = subprocess.run([bash_executable(), '-c', script], cwd=ROOT, env=env, capture_output=True, text=True)
-        safe = json.loads((root / 'safe/native-mbo-authenticated-outcome.json').read_text(encoding='utf-8'))
+        artifact = 'native-mbo-authenticated-outcome.json' if probe == 'mbo' else 'native-facebook-transport-outcome.json'
+        safe = json.loads((root / 'safe' / artifact).read_text(encoding='utf-8'))
         log = (root / 'compose.log').read_text(encoding='utf-8')
         return result, safe, log
 
@@ -107,6 +113,31 @@ authenticated_mbo_acceptance
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(safe['passed'])
         self.assertEqual(safe['test_dependencies_cleanup'], 'failed')
+
+    def test_facebook_private_collection_and_dependency_cleanup_are_mandatory(self):
+        payload = facebook_fixture.valid_payload()
+        payload['raw_error'] = 'FACEBOOK_PRIVATE_SECRET'
+        result, safe, log = self.run_host_boundary(json.dumps(payload), probe='facebook')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(safe['passed'])
+        self.assertEqual(safe['test_dependencies_cleanup'], 'success')
+        self.assertIn('native_facebook_transport_fallback.php', log)
+        self.assertNotIn('FACEBOOK_PRIVATE_SECRET', json.dumps(safe) + result.stdout + result.stderr)
+        result, safe, log = self.run_host_boundary('<html>FACEBOOK_PRIVATE_SECRET</html>', probe='facebook')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(safe['passed'])
+        self.assertNotIn('FACEBOOK_PRIVATE_SECRET', json.dumps(safe) + result.stdout + result.stderr)
+        self.assertIn('.ordenowa-ci-project', log)
+        result, safe, _ = self.run_host_boundary(json.dumps(payload), probe='facebook', cleanup_status=31)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(safe['passed'])
+        self.assertEqual(safe['test_dependencies_cleanup'], 'failed')
+
+    def test_both_admin_probes_run_inside_the_required_native_boundary(self):
+        source = (ROOT / 'tests/procurement/ci_acceptance.sh').read_text(encoding='utf-8')
+        boundary = source.split('native_boundaries() {', 1)[1].split('\n}', 1)[0]
+        self.assertIn('authenticated_mbo_acceptance || return "$?"', boundary)
+        self.assertIn('authenticated_facebook_acceptance || return "$?"', boundary)
 
     def test_git_fetch_failure_stops_before_any_container_dependency_copy(self):
         with tempfile.TemporaryDirectory() as directory:

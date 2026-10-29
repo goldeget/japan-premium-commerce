@@ -1,19 +1,39 @@
 # Source from the guarded disposable procurement acceptance process only.
 authenticated_mbo_acceptance() {
+  authenticated_admin_probe mbo
+}
+
+authenticated_facebook_acceptance() {
+  authenticated_admin_probe facebook
+}
+
+authenticated_admin_probe() {
+  local probe=$1 php_helper collector artifact
+  case "$probe" in
+    mbo)
+      php_helper=native_mbo_error_authenticated.php
+      collector=safe_authenticated_outcome.py
+      artifact=native-mbo-authenticated-outcome.json ;;
+    facebook)
+      php_helper=native_facebook_transport_fallback.php
+      collector=safe_native_facebook_outcome.py
+      artifact=native-facebook-transport-outcome.json ;;
+    *) return 64 ;;
+  esac
   local helper_status=0 result=0 cleanup_status=0
-  local raw="$private_dir/mbo-authenticated.private.json"
-  local safe="$QA_ARTIFACT_DIR/native-mbo-authenticated-outcome.json"
+  local raw="$private_dir/$probe-authenticated.private.json"
+  local safe="$QA_ARTIFACT_DIR/$artifact"
   if KURANEA_CI_PROJECT_NAME="$CI_COMPOSE_PROJECT_NAME" bash tests/admin_locale/prepare_test_browserkit.sh \
       >"$private_dir/admin-test-dependencies.log" 2>&1; then
     compose exec -T -u www-data -e ADMIN_MAIL -e ADMIN_PASSWD prestashop \
-      php /var/www/html/tests/admin_locale/native_mbo_error_authenticated.php \
-      >"$raw" 2>"$private_dir/mbo-authenticated.stderr" || helper_status=$?
+      php "/var/www/html/tests/admin_locale/$php_helper" \
+      >"$raw" 2>"$private_dir/$probe-authenticated.stderr" || helper_status=$?
   else
     helper_status=$?
     printf '%s\n' '{"schema":1,"passed":false,"failed_stage":"test_only_dependency_bootstrap"}' >"$raw"
   fi
 
-  python3 tests/admin_locale/safe_authenticated_outcome.py \
+  python3 "tests/admin_locale/$collector" \
     --private-input "$raw" --safe-output "$safe" --helper-exit-status "$helper_status" || result=$?
 
   # The marker is created by this run's setup before any dependency files are

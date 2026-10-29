@@ -33,3 +33,13 @@ services:
       $activeModules: '%prestashop.active_modules%'
     tags:
       - { name: kernel.event_subscriber }
+
+  Kuranea\Backoffice\AdminFacebookTransportExceptionSubscriber:
+    autowire: true
+    arguments:
+      $security: '@security.helper'
+      $twig: '@twig'
+      $modulesPath: '%prestashop.module_dir%'
+      $activeModules: '%prestashop.active_modules%'
+    tags:
+      - { name: kernel.event_subscriber }
