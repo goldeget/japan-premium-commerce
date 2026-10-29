@@ -268,6 +268,9 @@ async function run(kind) {
         safe, ext = visual.normalize_asset_url("/modules/klaviyopsautomation/dist/admin.css")
         self.assertEqual("/modules/klaviyopsautomation/dist/admin.css", safe)
         self.assertEqual(".css", ext)
+        safe, ext = visual.normalize_asset_url("/admin-kuranea/themes/default/css/admin.css")
+        self.assertEqual("/admin-kuranea/themes/default/css/admin.css", safe)
+        self.assertEqual(".css", ext)
         for url in (
             "https://localhost:18081/admin-kuranea/themes/new-theme/public/theme.css",
             "http://user:pass@localhost:18081/admin-kuranea/themes/new-theme/public/theme.css",
@@ -278,6 +281,8 @@ async function run(kind) {
             "http://localhost:18081/admin-kuranea/../../private/token.css",
             "/modules/klaviyopsautomation/dist/admin.js",
             "/modules/klaviyopsautomation/dist/../private/admin.css",
+            "/admin-kuranea/themes/default/css/admin.php",
+            "/admin-kuranea/themes/default/../private/admin.css",
             "//evil.invalid/theme.css",
         ):
             with self.subTest(url=url):

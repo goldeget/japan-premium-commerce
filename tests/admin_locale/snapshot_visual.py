@@ -60,7 +60,7 @@ EXPECTED = {
 
 ASSET_ROOTS = (
     "/admin-kuranea/themes/new-theme/public/",
-    "/admin-kuranea/themes/default/public/",
+    "/admin-kuranea/themes/default/",
     "/themes/new-theme/public/",
     "/themes/default/public/",
     "/js/jquery/plugins/fancybox/",

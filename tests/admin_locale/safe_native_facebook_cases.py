@@ -347,6 +347,8 @@ def collect_cases(raw_cases: dict[str, bytes], statuses: dict[str, int]) -> dict
                 if isinstance(stage, str) and stage in allowed_stages: result['failed_stage'] = stage
                 if name == 'generic_facebook' and payload.get('failed_assertion') == 'generic_facebook_exception_was_converted':
                     result['failed_assertion'] = 'generic_facebook_exception_was_converted'
+                elif name == 'access_denied' and payload.get('failed_assertion') == 'native_access_denied_was_converted_or_not_preserved':
+                    result['failed_assertion'] = 'native_access_denied_was_converted_or_not_preserved'
                 generic_facts = payload.get('generic_facebook_case_facts')
                 if name == 'generic_facebook' and isinstance(generic_facts, dict) and set(generic_facts) == {
                     'authenticated_full_gate_passes', 'authenticated_read_gate_passes',
@@ -358,6 +360,28 @@ def collect_cases(raw_cases: dict[str, bytes], statuses: dict[str, int]) -> dict
                             and 100 <= generic_facts['response_status'] <= 599
                             and type(generic_facts['safe_error_title_present']) is bool):
                         result['generic_facebook_case_facts'] = generic_facts
+                access_facts = payload.get('access_denied_case_facts')
+                if name == 'access_denied' and isinstance(access_facts, dict) and set(access_facts) == {
+                    'authenticated_full_gate_passes', 'authenticated_read_gate_passes',
+                    'known_facebook_request_controller_events', 'native_acl_denial_preconditions_verified',
+                    'read_permission_row_removed_before_request', 'read_permission_row_restored',
+                    'native_access_denied_exception_count', 'native_access_denied_from_legacy_controller',
+                    'response_status', 'safe_error_title_present',
+                }:
+                    count_keys = (
+                        'authenticated_full_gate_passes', 'authenticated_read_gate_passes',
+                        'known_facebook_request_controller_events', 'native_access_denied_exception_count',
+                    )
+                    bool_keys = (
+                        'native_acl_denial_preconditions_verified', 'read_permission_row_removed_before_request',
+                        'read_permission_row_restored', 'native_access_denied_from_legacy_controller',
+                        'safe_error_title_present',
+                    )
+                    if (all(type(access_facts[key]) is int and 0 <= access_facts[key] <= 100 for key in count_keys)
+                            and all(type(access_facts[key]) is bool for key in bool_keys)
+                            and type(access_facts['response_status']) is int
+                            and 100 <= access_facts['response_status'] <= 599):
+                        result['access_denied_case_facts'] = access_facts
             except (ValueError, TypeError, UnicodeError, RecursionError):
                 pass
             return result

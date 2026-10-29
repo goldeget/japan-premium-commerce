@@ -244,6 +244,63 @@ class SafeNativeFacebookCasesTests(unittest.TestCase):
         self.assertNotIn('failed_assertion', result)
         self.assertNotIn('generic_facebook_case_facts', result)
 
+    def test_access_denied_failure_reports_only_bounded_acl_facts(self) -> None:
+        raw, statuses = good_inputs()
+        facts = {
+            'authenticated_full_gate_passes': 1,
+            'authenticated_read_gate_passes': 0,
+            'known_facebook_request_controller_events': 1,
+            'native_acl_denial_preconditions_verified': True,
+            'read_permission_row_removed_before_request': True,
+            'read_permission_row_restored': True,
+            'native_access_denied_exception_count': 1,
+            'native_access_denied_from_legacy_controller': True,
+            'response_status': 403,
+            'safe_error_title_present': False,
+        }
+        raw['access_denied'] = json.dumps({
+            'schema': 1,
+            'passed': False,
+            'failed_stage': 'case_specific_semantic_assertions',
+            'failed_assertion': 'native_access_denied_was_converted_or_not_preserved',
+            'access_denied_case_facts': facts,
+            'exception_message': 'PRIVATE_SESSION_TOKEN',
+        }).encode()
+        statuses['access_denied'] = 1
+
+        result = MODULE.collect_cases(raw, statuses)
+
+        self.assertEqual(result['failed_assertion'], 'native_access_denied_was_converted_or_not_preserved')
+        self.assertEqual(result['access_denied_case_facts'], facts)
+        self.assertNotIn('PRIVATE_SESSION_TOKEN', json.dumps(result))
+
+    def test_access_denied_diagnostics_are_ignored_for_other_failed_cases(self) -> None:
+        raw, statuses = good_inputs()
+        raw['generic_facebook'] = json.dumps({
+            'schema': 1,
+            'passed': False,
+            'failed_stage': 'case_specific_semantic_assertions',
+            'failed_assertion': 'native_access_denied_was_converted_or_not_preserved',
+            'access_denied_case_facts': {
+                'authenticated_full_gate_passes': 1,
+                'authenticated_read_gate_passes': 0,
+                'known_facebook_request_controller_events': 1,
+                'native_acl_denial_preconditions_verified': True,
+                'read_permission_row_removed_before_request': True,
+                'read_permission_row_restored': True,
+                'native_access_denied_exception_count': 1,
+                'native_access_denied_from_legacy_controller': True,
+                'response_status': 403,
+                'safe_error_title_present': False,
+            },
+        }).encode()
+        statuses['generic_facebook'] = 1
+
+        result = MODULE.collect_cases(raw, statuses)
+
+        self.assertNotIn('failed_assertion', result)
+        self.assertNotIn('access_denied_case_facts', result)
+
     def test_rejects_duplicate_keys_and_case_name_substitution(self) -> None:
         raw, statuses = good_inputs()
         raw["unauthenticated"] = raw["unauthenticated"].replace(b'"schema":4,', b'"schema":4,"schema":4,', 1)

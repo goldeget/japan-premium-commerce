@@ -1188,6 +1188,23 @@ try {
                     && str_contains($body, 'Facebook 계정 연결을 일시적으로 사용할 수 없습니다'),
             ];
         }
+    } elseif ($failedAssertion === 'native_access_denied_was_converted_or_not_preserved') {
+        $outcome['failed_assertion'] = $failedAssertion;
+        if (isset($responseStatus) && is_int($responseStatus) && $responseStatus >= 100 && $responseStatus <= 599) {
+            $outcome['access_denied_case_facts'] = [
+                'authenticated_full_gate_passes' => min(100, $authenticatedFullGatePasses),
+                'authenticated_read_gate_passes' => min(100, $authenticatedReadGatePasses),
+                'known_facebook_request_controller_events' => min(100, $injectionCounts['known_facebook_request_controller_events']),
+                'native_acl_denial_preconditions_verified' => $nativeAclDenialPreconditionsVerified,
+                'read_permission_row_removed_before_request' => $readPermissionRowRemovedBeforeRequest,
+                'read_permission_row_restored' => $readPermissionRowRestored,
+                'native_access_denied_exception_count' => min(100, $injectionCounts['native_legacy_access_denied_exceptions']),
+                'native_access_denied_from_legacy_controller' => $nativeAccessDeniedFromLegacyController,
+                'response_status' => $responseStatus,
+                'safe_error_title_present' => is_string($body ?? null)
+                    && str_contains($body, 'Facebook 계정 연결을 일시적으로 사용할 수 없습니다'),
+            ];
+        }
     }
     if ($error instanceof \Twig\Error\Error) {
         try {
