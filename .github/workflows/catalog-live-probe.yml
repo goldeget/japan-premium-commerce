@@ -1,0 +1,58 @@
+name: Fixed live marketplace catalog parser probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [work]
+    paths:
+      - '.github/workflows/catalog-live-probe.yml'
+      - 'tools/catalog/**'
+
+permissions:
+  contents: read
+
+jobs:
+  live-source-parser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Initialize a safe not-run artifact
+        shell: bash
+        run: |
+          printf '%s\n' '{"schema_version":1,"probe":"fixed_marketplace_item_html","probe_completed":false,"acceptance_status":"not_run","parser_accepted":false,"image_rights_approved":false,"catalog_imported":false,"failure_stage":"workflow","failure_code":"probe_not_run","items":[]}' > "$RUNNER_TEMP/catalog-live-probe.json"
+
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up PHP with DOM and cURL
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: curl, dom, mbstring
+          coverage: none
+
+      - name: Lint the fixed probe and its offline behavior test
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l tools/catalog/catalog_live_probe.php
+          php -l tools/catalog/catalog_live_probe_test.php
+
+      - name: Verify safe output and fail-closed acceptance behavior offline
+        shell: bash
+        run: php tools/catalog/catalog_live_probe_test.php
+
+      - name: Fetch and parse the three fixed public item pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          php tools/catalog/catalog_live_probe.php > "$RUNNER_TEMP/catalog-live-probe.json"
+
+      - name: Upload safe live source observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalog-live-source-parser-probe
+          path: ${{ runner.temp }}/catalog-live-probe.json
+          if-no-files-found: error
+          retention-days: 3
