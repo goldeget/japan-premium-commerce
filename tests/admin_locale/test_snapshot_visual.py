@@ -265,6 +265,9 @@ async function run(kind) {
         )
         self.assertEqual("/modules/ps_mbo/views/img/error.svg", safe)
         self.assertEqual(".svg", ext)
+        safe, ext = visual.normalize_asset_url("/modules/klaviyopsautomation/dist/admin.css")
+        self.assertEqual("/modules/klaviyopsautomation/dist/admin.css", safe)
+        self.assertEqual(".css", ext)
         for url in (
             "https://localhost:18081/admin-kuranea/themes/new-theme/public/theme.css",
             "http://user:pass@localhost:18081/admin-kuranea/themes/new-theme/public/theme.css",
@@ -273,6 +276,8 @@ async function run(kind) {
             "http://localhost:18082/admin-kuranea/themes/new-theme/public/theme.css",
             "http://localhost:18081/admin-kuranea/../../etc/passwd",
             "http://localhost:18081/admin-kuranea/../../private/token.css",
+            "/modules/klaviyopsautomation/dist/admin.js",
+            "/modules/klaviyopsautomation/dist/../private/admin.css",
             "//evil.invalid/theme.css",
         ):
             with self.subTest(url=url):

@@ -67,6 +67,7 @@ ASSET_ROOTS = (
     "/js/jquery/plugins/chosen/",
     "/img/admin/",
     "/modules/ps_mbo/views/img/",
+    "/modules/klaviyopsautomation/dist/",
 )
 ASSET_MIME = {
     ".css": {"text/css"},

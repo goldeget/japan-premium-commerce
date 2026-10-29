@@ -474,6 +474,23 @@ try {
 
     require_once $shopRoot . '/autoload.php';
     require_once $shopRoot . '/config/config.inc.php';
+    if ($caseName !== 'unauthenticated') {
+        // The fixture compares the native request's employee with the account
+        // used by the preceding real HTTP login. Load only that CI-owned
+        // employee record so each authenticated case has the exact identity
+        // pins expected by the controller-event gate.
+        $employee = new Employee();
+        $loggedInEmployee = $employee->getByEmail($adminEmail);
+        if (!$loggedInEmployee instanceof Employee
+            || (int) $loggedInEmployee->id < 1
+            || (int) $loggedInEmployee->id_profile < 1
+            || (int) $loggedInEmployee->active !== 1
+            || strtolower(trim((string) $loggedInEmployee->email)) !== strtolower($adminEmail)) {
+            throw new RuntimeException('native_http_login_employee_identity_unavailable');
+        }
+        $aclEmployeeId = (int) $loggedInEmployee->id;
+        $aclProfileId = (int) $loggedInEmployee->id_profile;
+    }
     require_once $shopRoot . '/app/AppKernel.php';
     require_once $shopRoot . '/app/AdminKernel.php';
     if (defined('_PS_APP_ID_') && _PS_APP_ID_ !== AdminKernel::APP_ID) {

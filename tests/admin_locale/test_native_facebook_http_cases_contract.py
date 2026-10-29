@@ -33,6 +33,23 @@ class NativeFacebookHttpCasesContractTests(unittest.TestCase):
         self.assertIn("$caseName !== 'unauthenticated'", PHP)
         self.assertIn("$_COOKIE = [];", PHP)
 
+    def test_authenticated_controller_fixture_uses_exact_http_login_employee(self) -> None:
+        config = PHP.index("require_once $shopRoot . '/config/config.inc.php'")
+        identity_lookup = PHP.index("$loggedInEmployee = $employee->getByEmail($adminEmail)")
+        listener = PHP.index("$controllerListener = static function")
+        self.assertLess(config, identity_lookup)
+        self.assertLess(identity_lookup, listener)
+        for required in (
+            "$loggedInEmployee instanceof Employee",
+            "(int) $loggedInEmployee->id_profile < 1",
+            "(int) $loggedInEmployee->active !== 1",
+            "strtolower(trim((string) $loggedInEmployee->email)) !== strtolower($adminEmail)",
+            "$aclEmployeeId = (int) $loggedInEmployee->id;",
+            "$aclProfileId = (int) $loggedInEmployee->id_profile;",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, PHP)
+
     def test_one_target_get_and_no_browserkit_login_or_case_loop(self) -> None:
         self.assertEqual(PHP.count("$browser->request("), 1)
         self.assertIn("$browser->request('GET', $requestUri);", PHP)
