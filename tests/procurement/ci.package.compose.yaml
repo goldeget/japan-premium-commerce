@@ -1,0 +1,6 @@
+# Add only after package_release.py has loaded a verified same-SHA image.
+# ci_acceptance.sh always starts this service with --no-build in package mode.
+services:
+  prestashop:
+    image: ${ORDENOWA_CI_IMAGE_REF:?run-owned package image reference required}
+    pull_policy: never

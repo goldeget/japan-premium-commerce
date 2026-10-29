@@ -11,8 +11,10 @@ on:
       - 'modules/kuraneabackoffice/**'
       - 'modules/kuraneacatalog/**'
       - 'modules/kuraneapush/**'
+      - 'modules/kuraneapostcode/**'
       - 'tests/pwa/**'
       - 'tests/procurement/**'
+      - 'tests/release/**'
       - 'tests/catalog/**'
       - 'tests/admin_audit/**'
       - 'tests/admin_locale/**'
@@ -21,6 +23,13 @@ on:
       - 'docker/**'
       - 'compose.yaml'
       - 'themes/kuranea/**'
+      - 'themes/hummingbird'
+      - 'mails/**'
+      - 'assets/brand/ordenowa/**'
+      - 'tools/release/**'
+      - '.gitmodules'
+      - '.gitignore'
+      - '.gitattributes'
       - '.dockerignore'
       - '.env.example'
 
@@ -43,6 +52,7 @@ jobs:
       SHOP_BASE_URL: http://localhost:18081
       PS_DOMAIN: localhost:18081
       ORDENOWA_APP_MODE: procurement
+      DOCKER_CONTEXT: default
     steps:
       - uses: actions/checkout@v4
         with:
@@ -144,6 +154,28 @@ jobs:
         run: |
           python3 -m unittest discover -s tests/procurement -p 'test_ci*.py'
           python3 -m unittest discover -s tests/admin_locale -p 'test_*.py'
+          python3 -m unittest discover -s tests/release -p 'test_checkout_line_endings.py'
+          python3 -m unittest discover -s tests/release -p 'test_*release*.py'
+
+      - name: Build, export, load, and select this exact source-SHA image
+        id: release_package
+        shell: bash
+        run: |
+          set -euo pipefail
+          prefix="$GITHUB_WORKSPACE/release-artifacts/ordenowa-prestashop-sha-$GITHUB_SHA"
+          python3 tools/release/package_release.py \
+            --root "$GITHUB_WORKSPACE" \
+            --output-dir "$GITHUB_WORKSPACE/release-artifacts"
+          python3 tools/release/ci_release.py prepare \
+            --root "$GITHUB_WORKSPACE" \
+            --package-proof "$prefix.package.json" \
+            --release-manifest "$prefix.release.json" \
+            --archive "$prefix.docker.tar" \
+            --source-sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --artifact-dir "$QA_ARTIFACT_DIR" \
+            --github-env "$GITHUB_ENV"
 
       - name: Run fresh native install, behavioral and browser acceptance, restart and restore
         id: acceptance
@@ -156,12 +188,20 @@ jobs:
         run: |
           set -euo pipefail
           test "$CI_COMPOSE_PROJECT_NAME" = "ordenowa-procurement-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          docker compose -f compose.yaml -f tests/procurement/ci.compose.yaml -p "$CI_COMPOSE_PROJECT_NAME" down --volumes --remove-orphans
-          restore_container="${CI_COMPOSE_PROJECT_NAME}-restore"
-          if docker container inspect "$restore_container" >/dev/null 2>&1; then
-            docker rm -f "$restore_container"
+          compose_files=(-f compose.yaml -f tests/procurement/ci.compose.yaml)
+          if [[ -n ${ORDENOWA_CI_IMAGE_REF:-} ]]; then
+            compose_files+=(-f tests/procurement/ci.package.compose.yaml)
           fi
+          docker compose "${compose_files[@]}" -p "$CI_COMPOSE_PROJECT_NAME" down --volumes --remove-orphans
           rm -f .env
+          restore_container="${CI_COMPOSE_PROJECT_NAME}-restore"
+          python3 tests/procurement/ci_owned_resources_cleanup.py container --container-name "$restore_container"
+          if [[ -n ${ORDENOWA_CI_IMAGE_REF:-} ]]; then
+            test "$ORDENOWA_CI_IMAGE_REF" = "local-only/ordenowa-procurement-ci:run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            [[ ${ORDENOWA_CI_IMAGE_ID:-} =~ ^sha256:[0-9a-f]{64}$ ]]
+            python3 tests/procurement/ci_owned_resources_cleanup.py image \
+              --image-ref "$ORDENOWA_CI_IMAGE_REF" --image-id "$ORDENOWA_CI_IMAGE_ID"
+          fi
 
       - name: Publish actual aggregate outcome
         if: always()
@@ -191,6 +231,29 @@ jobs:
               raise SystemExit(1)
           PY
 
+      - name: Bind final acceptance and encrypted restore to the package digest
+        if: always()
+        env:
+          PACKAGE_OUTCOME: ${{ steps.release_package.outcome }}
+          ACCEPTANCE_OUTCOME: ${{ steps.acceptance.outcome }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+        run: |
+          prefix="$GITHUB_WORKSPACE/release-artifacts/ordenowa-prestashop-sha-$GITHUB_SHA"
+          python3 tools/release/ci_release.py bind \
+            --root "$GITHUB_WORKSPACE" \
+            --package-proof "$prefix.package.json" \
+            --release-manifest "$prefix.release.json" \
+            --archive "$prefix.docker.tar" \
+            --source-sha "$GITHUB_SHA" \
+            --selection "$QA_ARTIFACT_DIR/ci-package-selection.json" \
+            --runtime-binding "$QA_ARTIFACT_DIR/package-runtime-binding.json" \
+            --qa-outcome "$QA_ARTIFACT_DIR/outcome.json" \
+            --restore-outcome "$QA_ARTIFACT_DIR/encrypted-restore-outcome.json" \
+            --output "$QA_ARTIFACT_DIR/release-qa-binding.json" \
+            --package-status "$PACKAGE_OUTCOME" \
+            --acceptance-status "$ACCEPTANCE_OUTCOME" \
+            --cleanup-status "$CLEANUP_OUTCOME"
+
       - name: Upload redacted outcomes and captures
         if: always()
         uses: actions/upload-artifact@v4
@@ -199,6 +262,19 @@ jobs:
           path: |
             ${{ runner.temp }}/procurement-safe-artifacts/*.json
             ${{ runner.temp }}/procurement-safe-artifacts/*-redacted-*.png
+            ${{ github.workspace }}/release-artifacts/*.package.json
+            ${{ github.workspace }}/release-artifacts/*.release.json
           if-no-files-found: error
           retention-days: 7
+
+      - name: Remove the private release archive from the runner workspace
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$GITHUB_WORKSPACE/release-artifacts/ordenowa-prestashop-sha-$GITHUB_SHA.docker.tar"
+          case "$archive" in
+            "$GITHUB_WORKSPACE"/release-artifacts/ordenowa-prestashop-sha-*.docker.tar) rm -f -- "$archive" ;;
+            *) exit 1 ;;
+          esac
 

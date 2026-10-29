@@ -20,7 +20,13 @@ roundtrip_verified=false
 tampered_ciphertext_rejected=false
 wrong_identity_rejected=false
 database_restore_verified=false
-compose() { docker compose -f compose.yaml -f tests/procurement/ci.compose.yaml -p "$source_project" "$@"; }
+compose() {
+  local -a files=(-f compose.yaml -f tests/procurement/ci.compose.yaml)
+  if [[ -n ${ORDENOWA_CI_IMAGE_REF:-} ]]; then
+    files+=(-f tests/procurement/ci.package.compose.yaml)
+  fi
+  docker compose "${files[@]}" -p "$source_project" "$@"
+}
 
 write_outcome() {
   local exit_code=$1
@@ -67,9 +73,8 @@ PY
 cleanup() {
   result=$?
   trap - EXIT
-  if docker container inspect "$restore_project" >/dev/null 2>&1; then
-    docker rm -f "$restore_project" >/dev/null 2>&1 || result=1
-  fi
+  python3 tests/procurement/ci_owned_resources_cleanup.py container \
+    --container-name "$restore_project" >"$private_dir/restore-container-cleanup.log" 2>&1 || result=1
   rm -rf -- "$private_dir" || result=1
   write_outcome "$result" || result=1
   exit "$result"

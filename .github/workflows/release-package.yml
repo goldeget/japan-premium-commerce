@@ -1,23 +1,10 @@
 name: Release archive preparation
 
+# Push-triggered packaging now runs inside procurement-platform so the package
+# and full runtime QA share one source SHA and one Docker build.
+# Keep this workflow manually dispatchable for package-only diagnostics.
 on:
   workflow_dispatch:
-  push:
-    branches: [work]
-    paths:
-      - 'tools/release/package_release.py'
-      - 'tools/release/release_manifest.py'
-      - 'tests/release/test_package_release.py'
-      - '.github/workflows/release-package.yml'
-      - 'docker/**'
-      - 'compose.yaml'
-      - '.gitmodules'
-      - 'modules/**'
-      - 'themes/**'
-      - 'mails/**'
-      - 'assets/brand/ordenowa/**'
-      - '.gitignore'
-      - '.dockerignore'
 
 permissions:
   contents: read

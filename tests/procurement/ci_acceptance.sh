@@ -9,10 +9,29 @@ umask 077
 [[ ${SHOP_BASE_URL:-} == http://localhost:18081 && ${SHOP_PORT:-} == 18081 ]]
 [[ ${PS_DOMAIN:-} == localhost:18081 ]]
 [[ ${QA_ARTIFACT_DIR:-} == "$RUNNER_TEMP"/* ]]
+if [[ -n ${ORDENOWA_CI_IMAGE_REF:-} ]]; then
+  [[ ${GITHUB_SHA:-} =~ ^[0-9a-f]{40}$ ]]
+  [[ ${ORDENOWA_CI_SOURCE_SHA:-} == "$GITHUB_SHA" ]]
+  [[ ${ORDENOWA_CI_ARCHIVE_SHA256:-} =~ ^[0-9a-f]{64}$ ]]
+  [[ ${ORDENOWA_CI_IMAGE_ID:-} =~ ^sha256:[0-9a-f]{64}$ ]]
+  [[ ${ORDENOWA_CI_IMAGE_REF:-} == "local-only/ordenowa-procurement-ci:run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ]]
+  release_prefix="$GITHUB_WORKSPACE/release-artifacts/ordenowa-prestashop-sha-$GITHUB_SHA"
+  [[ ${ORDENOWA_CI_PACKAGE_PROOF:-} == "$release_prefix.package.json" ]]
+  [[ ${ORDENOWA_CI_RELEASE_MANIFEST:-} == "$release_prefix.release.json" ]]
+  [[ ${ORDENOWA_CI_ARCHIVE_PATH:-} == "$release_prefix.docker.tar" ]]
+  [[ ${ORDENOWA_CI_PACKAGE_SELECTION:-} == "$QA_ARTIFACT_DIR/ci-package-selection.json" ]]
+fi
 private_dir=$(mktemp -d "$RUNNER_TEMP/procurement-private.XXXXXXXX")
 mkdir -p "$QA_ARTIFACT_DIR"
 export PROCUREMENT_IDENTITY_FILE="$private_dir/identity.json"
-compose() { docker compose -f compose.yaml -f tests/procurement/ci.compose.yaml -p "$CI_COMPOSE_PROJECT_NAME" "$@"; }
+compose() {
+  local -a files=(-f compose.yaml -f tests/procurement/ci.compose.yaml)
+  if [[ -n ${ORDENOWA_CI_IMAGE_REF:-} ]]; then
+    files+=(-f tests/procurement/ci.package.compose.yaml)
+  fi
+  docker compose "${files[@]}" -p "$CI_COMPOSE_PROJECT_NAME" "$@"
+}
+source tests/procurement/ci_acceptance_copy.sh
 outcomes="$QA_ARTIFACT_DIR/outcomes.tsv"
 : > "$outcomes"
 phase=guard
@@ -121,6 +140,29 @@ for volume in mariadb_data prestashop_html catalog_review_data; do
 done
 image_build() {
   local setup_status
+  if [[ -n ${ORDENOWA_CI_IMAGE_REF:-} ]]; then
+    : >"$private_dir/image-build.log"
+    if compose config --format json >"$private_dir/compose-config.json" 2>"$private_dir/image-build.log"; then
+      :
+    else
+      setup_status=$?
+      python3 tests/procurement/ci_safe_failure.py image_build "$private_dir/image-build.log" "$QA_ARTIFACT_DIR/image-build-outcome.json" "$setup_status" || :
+      return "$setup_status"
+    fi
+    python3 tools/release/ci_release.py verify \
+      --root "$GITHUB_WORKSPACE" \
+      --package-proof "$ORDENOWA_CI_PACKAGE_PROOF" \
+      --release-manifest "$ORDENOWA_CI_RELEASE_MANIFEST" \
+      --archive "$ORDENOWA_CI_ARCHIVE_PATH" \
+      --source-sha "$GITHUB_SHA" \
+      --image-ref "$ORDENOWA_CI_IMAGE_REF" \
+      --image-id "$ORDENOWA_CI_IMAGE_ID" \
+      --selection "$ORDENOWA_CI_PACKAGE_SELECTION" \
+      --compose-config "$private_dir/compose-config.json" \
+      >>"$private_dir/image-build.log" 2>&1 || return "$?"
+    python3 tests/procurement/ci_safe_failure.py image_build "$private_dir/image-build.log" "$QA_ARTIFACT_DIR/image-build-outcome.json" 0
+    return "$?"
+  fi
   if compose config --quiet >"$private_dir/image-build.log" 2>&1; then
     :
   else
@@ -151,27 +193,22 @@ run_phase image_build image_build
 run_phase fresh_install fresh_install
 run_phase native_source python3 tests/procurement/source_integrity.py native_source
 phase=copy_acceptance
-# The integration diagnostic may run while peers finish source changes. A
-# committed Actions checkout copies identical module files from the same SHA.
-compose cp modules/ordenowaprocurement/. prestashop:/var/www/html/modules/ordenowaprocurement/
-compose cp themes/kuranea/templates/_partials/footer.tpl prestashop:/var/www/html/themes/kuranea/templates/_partials/footer.tpl
-compose cp themes/kuranea/templates/_partials/header.tpl prestashop:/var/www/html/themes/kuranea/templates/_partials/header.tpl
-compose cp themes/kuranea/templates/customer/my-account.tpl prestashop:/var/www/html/themes/kuranea/templates/customer/my-account.tpl
-compose exec -T prestashop sh -ec 'chown www-data:www-data /var/www/html/themes/kuranea/templates/_partials/footer.tpl /var/www/html/themes/kuranea/templates/_partials/header.tpl /var/www/html/themes/kuranea/templates/customer/my-account.tpl; chmod 0644 /var/www/html/themes/kuranea/templates/_partials/footer.tpl /var/www/html/themes/kuranea/templates/_partials/header.tpl /var/www/html/themes/kuranea/templates/customer/my-account.tpl; chown -R www-data:www-data /var/www/html/modules/ordenowaprocurement; find /var/www/html/modules/ordenowaprocurement -type d -exec chmod 0755 {} +; find /var/www/html/modules/ordenowaprocurement -type f -exec chmod 0644 {} +'
-compose exec -T prestashop mkdir -p /tmp/ordenowa-procurement-ci/catalog /var/www/html/tests/procurement /var/www/html/tests/catalog /var/www/html/tests/admin_audit /var/www/html/tests/admin_locale
-for source in tests/procurement/ci_*.php; do
-  compose cp "$source" prestashop:/tmp/ordenowa-procurement-ci/
-done
-for source in tests/procurement/requests*.php tests/procurement/points*.php tests/procurement/native*.php tests/procurement/customer*.php tests/procurement/notifications*.php tests/procurement/policies*.php tests/procurement/support*.php tests/procurement/navigation*.php tests/procurement/signin*.php tests/procurement/language*.php; do
-  compose cp "$source" prestashop:/var/www/html/tests/procurement/
-done
-compose cp tests/catalog/. prestashop:/tmp/ordenowa-procurement-ci/catalog/
-compose cp tests/catalog/. prestashop:/var/www/html/tests/catalog/
-compose cp tests/admin_audit/. prestashop:/var/www/html/tests/admin_audit/
-compose cp tests/admin_locale/. prestashop:/var/www/html/tests/admin_locale/
-compose cp tests/procurement/accounts_native.php prestashop:/tmp/ordenowa-procurement-ci/accounts_native.php
-compose exec -T prestashop sh -ec 'find /var/www/html/tests /tmp/ordenowa-procurement-ci -type d -exec chmod 0755 {} +; find /var/www/html/tests /tmp/ordenowa-procurement-ci -type f -exec chmod 0644 {} +'
-compose exec -T prestashop chown -R www-data:www-data /tmp/ordenowa-procurement-ci
+copy_acceptance_files
+if [[ -n ${ORDENOWA_CI_IMAGE_REF:-} ]]; then
+  # Runtime identity is attested only after package mode has skipped every
+  # application source copy and permission repair.
+  [[ ${ORDENOWA_APPLICATION_HOT_COPY:-} == false ]]
+  app_container=$(compose ps -q prestashop)
+  [[ $app_container =~ ^[0-9a-f]{12,64}$ ]]
+  observed_image_id=$(docker inspect --format '{{.Image}}' "$app_container")
+  observed_image_ref=$(docker inspect --format '{{.Config.Image}}' "$app_container")
+  python3 tools/release/ci_release.py attest-runtime \
+    --selection "$ORDENOWA_CI_PACKAGE_SELECTION" \
+    --output "$QA_ARTIFACT_DIR/package-runtime-binding.json" \
+    --image-id "$observed_image_id" \
+    --image-ref "$observed_image_ref" \
+    --application-hot-copy "$ORDENOWA_APPLICATION_HOT_COPY"
+fi
 # No credentials/identity data are emitted; only a private file crosses the
 # container boundary and is deleted at the end of this acceptance process.
 seed_module() {
@@ -248,6 +285,7 @@ PYHEALTH
 }
 run_phase notifications_health health_snapshot_acceptance
 
+source tests/admin_locale/ci_authenticated_mbo.sh
 native_boundaries() {
   behavior native_integration_test || return "$?"
   compose exec -T -u www-data -e PROCUREMENT_TEST_DSN='mysql:host=mariadb;dbname=ordenowa_procurement_test;charset=utf8mb4' \
@@ -261,6 +299,7 @@ native_boundaries() {
   # No memory override, no --no-warmup, and no hidden failed command.
   compose exec -T -u www-data prestashop php /var/www/html/bin/console cache:clear --env=prod --no-debug || return "$?"
   compose exec -T -u www-data prestashop php /var/www/html/tests/admin_locale/native_mbo_error_render.php >"$QA_ARTIFACT_DIR/native-mbo-error-render.json" || return "$?"
+  authenticated_mbo_acceptance || return "$?"
   python3 - "$QA_ARTIFACT_DIR/cache-warmup-outcome.json" "$native_cli_memory_limit" <<'PYCACHE'
 import json,sys
 from pathlib import Path
