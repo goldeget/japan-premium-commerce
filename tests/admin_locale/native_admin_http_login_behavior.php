@@ -24,6 +24,7 @@ namespace {
         if (!defined($name)) define($name, $value);
     }
     require_once __DIR__ . '/native_admin_http_login.php';
+    require_once __DIR__ . '/native_admin_mbo_route.php';
 
     $assert = static function (bool $condition, string $message): void {
         if (!$condition) {
@@ -68,7 +69,7 @@ namespace {
             return ['status' => 303, 'location' => 'http://localhost:18081/admin-kuranea/index.php?controller=AdminDashboard', 'body' => ''];
         }
         if ($method === 'GET' && $uri === '/admin-kuranea/index.php?controller=AdminDashboard') {
-            return ['status' => 200, 'body' => 'AUTHENTICATED_DASHBOARD'];
+            return ['status' => 200, 'body' => '<!doctype html><html><body data-token="a.' . str_repeat('b', 43) . '.' . str_repeat('c', 58) . '">AUTHENTICATED_DASHBOARD</body></html>'];
         }
         throw new RuntimeException('mock_request_out_of_contract');
     };
@@ -92,11 +93,65 @@ namespace {
     );
     $assert($login['login_form_posted'] === true, 'native form POST proof');
     $assert($login['final_uri'] === '/admin-kuranea/index.php?controller=AdminDashboard', 'same-admin final redirect');
+    $assert($login['native_body_token'] === 'a.' . str_repeat('b', 43) . '.' . str_repeat('c', 58),
+        'authenticated native body token extracted in memory');
     $assert($login['redirects'] === 1, 'redirect count');
     $assert(count($requests) === 3, 'one GET, one form POST, one validated redirect GET');
     $assert($requests[1][0] === 'POST' && $requests[1][2] === [
         'token' => 'native-csrf', 'email' => 'ci-admin@example.invalid', 'passwd' => 'synthetic-password',
     ], 'hidden CSRF/form fields preserved with real login credentials');
+
+    $safeOutcome = json_encode(['login_form_posted' => $login['login_form_posted']], JSON_THROW_ON_ERROR);
+    $assert(!str_contains($safeOutcome, $login['native_body_token']), 'native body token is absent from safe outcome fields');
+    $nativeToken = 'z.' . str_repeat('y', 43) . '.' . str_repeat('x', 58);
+    $expectedMboUri = '/admin-kuranea/index.php/modules/mbo/themes/catalog/?_token=' . $nativeToken;
+    $assert(NativeAdminMboRoute::nativeTargetUri($nativeToken) === $expectedMboUri,
+        'native target URI carries the real in-memory session CSRF token');
+    foreach ([
+        '/modules/mbo/themes/catalog/?_token=',
+        '/admin-kuranea/index.php/modules/mbo/themes/catalog/?_token=' . $nativeToken,
+        '/modules/mbo/themes/catalog/?_token=a.' . str_repeat('m', 43) . '.' . str_repeat('n', 58),
+    ] as $generatedRoute) {
+        $assert(NativeAdminMboRoute::canonicalizeGeneratedUri($generatedRoute, $nativeToken) === $expectedMboUri,
+            'installed route accepts masked native Symfony token and preserves the authenticated page token');
+    }
+    foreach ([
+        '',
+        '/mbo/themes/catalog/?_token=' . $nativeToken,
+        '/modules/mbo/themes/catalog?_token=' . $nativeToken,
+        '/modules/mbo/themes/catalog/?_token=' . $nativeToken . '&_token=' . $nativeToken,
+        '/modules/mbo/themes/catalog/?_token=' . $nativeToken . '&extra=1',
+        'https://example.invalid/modules/mbo/themes/catalog/?_token=' . $nativeToken,
+        '/modules/mbo/themes/catalog/?_token=invalid',
+    ] as $invalidRoute) {
+        try {
+            NativeAdminMboRoute::canonicalizeGeneratedUri($invalidRoute, $nativeToken);
+        } catch (RuntimeException $error) {
+            $assert($error->getMessage() === 'native_mbo_route_contract_mismatch',
+                'invalid route rejected without exposing token');
+            continue;
+        }
+        throw new RuntimeException('invalid native MBO route was accepted');
+    }
+
+    $validBodyTokenHtml = '<html><body data-token="' . $nativeToken . '"></body></html>';
+    $assert(NativeAdminHttpLogin::extractNativeBodyToken($validBodyTokenHtml) === $nativeToken,
+        'unique native body token extracted');
+    foreach ([
+        '<html><body></body></html>',
+        '<html><body data-token="bad/token"></body></html>',
+        '<html><body data-token="' . $nativeToken . '"></body><body data-token="' . $nativeToken . '"></body></html>',
+    ] as $invalidBody) {
+        try {
+            NativeAdminHttpLogin::extractNativeBodyToken($invalidBody);
+        } catch (RuntimeException $error) {
+            $assert(in_array($error->getMessage(), [
+                'native_http_authenticated_body_ambiguous', 'native_http_authenticated_body_token_invalid',
+            ], true), 'missing, duplicate, or malformed native token rejected');
+            continue;
+        }
+        throw new RuntimeException('invalid authenticated native body token was accepted');
+    }
 
     $getMethodOptions = NativeAdminHttpCurlOptions::forRequest('GET', 'http://127.0.0.1:18080/probe');
     $assert(array_keys($getMethodOptions) === [CURLOPT_URL, CURLOPT_POSTFIELDS, CURLOPT_POST, CURLOPT_HTTPGET]

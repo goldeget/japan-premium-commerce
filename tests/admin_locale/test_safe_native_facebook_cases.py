@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -11,6 +12,7 @@ import unittest
 
 
 SCRIPT = Path(__file__).with_name("safe_native_facebook_cases.py")
+PHP_FIXTURE = Path(__file__).with_name("native_facebook_transport_fallback.php")
 SPEC = importlib.util.spec_from_file_location("safe_native_facebook_cases", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC and SPEC.loader
@@ -27,7 +29,7 @@ def valid_case(case: str) -> dict:
     status = 503 if positive else 403 if denied else 500 if generic or other else 302
     language = "ko-kr" if positive else ""
     return {
-        "schema": 2,
+        "schema": 4,
         "passed": True,
         "case": case,
         "module_inventory": {
@@ -44,14 +46,18 @@ def valid_case(case: str) -> dict:
             "native_login_form_posted": authenticated,
             "native_login_http_requests": 3 if authenticated else 0,
             "native_login_stages_verified": True,
+            "native_http_body_token_applied": authenticated,
             "framework_generated_legacy_link": True,
             "framework_link_has_token": authenticated,
             "unauthenticated_link_token_validity_claimed": False,
             "case": case,
             "browserkit_target_get_count": 1,
-            "route": "admin_dashboard" if other else "admin_legacy_controller_route",
-            "controller": "AdminDashboard" if other else "AdminPsfacebookModuleController",
-            "controller_action": "not_applicable" if other else "read",
+            "attempted_route": "dashboard_admin_link" if other else "facebook_admin_link",
+            "attempted_controller": "AdminDashboard" if other else "AdminPsfacebookModule",
+            "route_observation": "not_observed" if case == "unauthenticated" else "controller_event",
+            "route": "not_observed" if case == "unauthenticated" else ("admin_dashboard" if other else "admin_legacy_controller_route"),
+            "controller": "not_observed" if case == "unauthenticated" else ("AdminDashboard" if other else "AdminPsfacebookModuleController"),
+            "controller_action": "not_observed" if case == "unauthenticated" else ("not_applicable" if other else "read"),
             "authenticated_read_gate_passes": gate,
             "known_facebook_request_controller_events": int(bool(gate)),
             "mismatched_facebook_route_events": 0,
@@ -66,6 +72,7 @@ def valid_case(case: str) -> dict:
             "installed_http_client_calls": int(positive),
             "response_status": status,
             "unauthenticated_status_not_converted": case == "unauthenticated",
+            "unauthenticated_auth_rejection": "local_admin_login_redirect" if case == "unauthenticated" else "not_applicable",
             "other_route_status_not_converted": other,
             "generic_facebook_runtime_status_not_converted": generic,
             "access_denied_status_preserved": denied,
@@ -160,7 +167,7 @@ class SafeNativeFacebookCasesTests(unittest.TestCase):
 
     def test_rejects_duplicate_keys_and_case_name_substitution(self) -> None:
         raw, statuses = good_inputs()
-        raw["unauthenticated"] = raw["unauthenticated"].replace(b'"schema":2,', b'"schema":2,"schema":2,', 1)
+        raw["unauthenticated"] = raw["unauthenticated"].replace(b'"schema":4,', b'"schema":4,"schema":4,', 1)
         self.assertEqual(MODULE.collect_cases(raw, statuses)["failure_code"], "case_contract_mismatch")
         raw, statuses = good_inputs()
         payload = valid_case("generic_facebook")
@@ -184,6 +191,12 @@ class SafeNativeFacebookCasesTests(unittest.TestCase):
         mutations = (
             ("unauthenticated", "native_login_form_posted", True),
             ("unauthenticated", "unauthenticated_link_token_validity_claimed", True),
+            ("unauthenticated", "native_http_body_token_applied", True),
+            ("curl_transport", "native_http_body_token_applied", False),
+            ("unauthenticated", "unauthenticated_status_not_converted", False),
+            ("unauthenticated", "route_observation", "controller_event"),
+            ("unauthenticated", "route", "admin_legacy_controller_route"),
+            ("unauthenticated", "attempted_controller", "AdminPsfacebookModuleController"),
             ("generic_facebook", "authenticated_read_gate_passes", 0),
             ("generic_facebook", "authenticated_read_gate_passes", True),
             ("curl_transport", "installed_http_client_calls", True),
@@ -200,6 +213,149 @@ class SafeNativeFacebookCasesTests(unittest.TestCase):
                 payload["facebook_case_facts"][key] = value
                 raw[case] = json.dumps(payload).encode()
                 self.assertFalse(MODULE.collect_cases(raw, statuses)["passed"])
+
+    def test_unauthenticated_case_requires_a_specific_auth_rejection_not_just_non_503(self) -> None:
+        for status, evidence in (
+            (404, "not_proven"),
+            (200, "not_proven"),
+            (302, "not_proven"),
+            (200, "local_admin_login_redirect"),
+            (302, "local_admin_login_form"),
+            (200, "http_401"),
+            (403, "http_401"),
+        ):
+            with self.subTest(status=status, evidence=evidence):
+                raw, statuses = good_inputs()
+                payload = valid_case("unauthenticated")
+                payload["facebook_case_facts"]["response_status"] = status
+                payload["facebook_case_facts"]["unauthenticated_auth_rejection"] = evidence
+                raw["unauthenticated"] = json.dumps(payload).encode()
+                result = MODULE.collect_cases(raw, statuses)
+                self.assertFalse(result["passed"])
+                self.assertEqual(result["failed_case"], "unauthenticated")
+
+    def test_unauthenticated_case_accepts_only_matching_local_auth_rejection_evidence(self) -> None:
+        accepted = ((302, "local_admin_login_redirect"), (200, "local_admin_login_form"),
+                    (401, "http_401"), (403, "http_403"))
+        for status, evidence in accepted:
+            with self.subTest(status=status, evidence=evidence):
+                raw, statuses = good_inputs()
+                payload = valid_case("unauthenticated")
+                payload["facebook_case_facts"]["response_status"] = status
+                payload["facebook_case_facts"]["unauthenticated_auth_rejection"] = evidence
+                raw["unauthenticated"] = json.dumps(payload).encode()
+                result = MODULE.collect_cases(raw, statuses)
+                self.assertTrue(result["passed"], result)
+                fact = result["cases"]["unauthenticated"]
+                self.assertEqual(fact["unauthenticated_auth_rejection"], evidence)
+                self.assertEqual(fact["attempted_route"], "facebook_admin_link")
+                self.assertEqual(fact["attempted_controller"], "AdminPsfacebookModule")
+                self.assertEqual(fact["route_observation"], "not_observed")
+                self.assertEqual(fact["route"], "not_observed")
+                self.assertEqual(fact["controller"], "not_observed")
+
+    def test_php_probe_requires_login_semantics_and_never_exports_redirect_target(self) -> None:
+        source = PHP_FIXTURE.read_text(encoding="utf-8")
+        for required in (
+            "$classifyUnauthenticatedResponse(",
+            "$status === 200 && $hasLoginForm",
+            "$isLocalAdminLoginRedirect($location, $baseUri)",
+            "'http_401'",
+            "'http_403'",
+            "'local_admin_login_form'",
+            "'local_admin_login_redirect'",
+            "'attempted_route' =>",
+            "'attempted_controller' =>",
+            "'route_observation' =>",
+            "'route' => $observedFacebookControllerEvent",
+            "$nativeLogin['native_body_token'] ?? null",
+            "$applyNativeHttpBodyToken(",
+            "hash_equals((string) $nativeHttpBodyToken, $facebookToken)",
+            "'native_http_body_token_applied' => $nativeHttpBodyTokenApplied",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, source)
+        self.assertIn("($query['controller'] ?? null) === 'AdminLogin'", source)
+        self.assertIn("/admin-kuranea/(?:login|index\\\\.php/login)", source)
+        self.assertNotIn("'unauthenticated_redirect_target' =>", source)
+        self.assertIn("$request->getRequestUri() === $dashboardUri", source)
+        self.assertIn("in_array($routeName, ['admin_dashboard', 'admin_dashboard_index'], true)", source)
+        self.assertNotIn("$dashboardQuery['controller']", source)
+        self.assertNotIn("'native_http_body_token' =>", source)
+
+    def test_php_unauthenticated_classifier_rejects_ordinary_pages_and_nonlocal_redirects(self) -> None:
+        php = os.environ.get("ORDENOWA_TEST_PHP") or shutil.which("php")
+        if not php:
+            self.skipTest("PHP required to execute the probe's actual response-classification closures")
+        source = PHP_FIXTURE.read_text(encoding="utf-8")
+        uri_start = source.index("$localAdminUri = static function")
+        uri_end = source.index("$parseLoginForm =", uri_start)
+        classifier_start = source.index("$isLocalAdminLoginRedirect = static function")
+        classifier_end = source.index("$safeControllerEventTarget =", classifier_start)
+        php_source = source[uri_start:uri_end] + source[classifier_start:classifier_end]
+        cases = [
+            [404, None, False, "/admin-kuranea/index.php?controller=AdminPsfacebookModule", "not_proven"],
+            [200, None, False, "/admin-kuranea/index.php?controller=AdminPsfacebookModule", "not_proven"],
+            [302, "/admin-kuranea/index.php?controller=AdminDashboard", False,
+             "/admin-kuranea/index.php?controller=AdminPsfacebookModule", "not_proven"],
+            [302, "https://attacker.invalid/admin-kuranea/index.php?controller=AdminLogin", False,
+             "/admin-kuranea/index.php?controller=AdminPsfacebookModule", "not_proven"],
+            [302, "https://localhost:18081/admin-kuranea/index.php?controller=AdminLogin", False,
+             "/admin-kuranea/index.php?controller=AdminPsfacebookModule", "not_proven"],
+            [302, "/admin-kuranea/index.php?controller=AdminLogin&token=synthetic", False,
+             "/admin-kuranea/index.php?controller=AdminPsfacebookModule", "local_admin_login_redirect"],
+            [303, "/admin-kuranea/login", False,
+             "/admin-kuranea/index.php?controller=AdminPsfacebookModule", "local_admin_login_redirect"],
+            [200, None, True, "/admin-kuranea/index.php?controller=AdminPsfacebookModule", "local_admin_login_form"],
+            [401, None, False, "/admin-kuranea/index.php?controller=AdminPsfacebookModule", "http_401"],
+            [403, None, False, "/admin-kuranea/index.php?controller=AdminPsfacebookModule", "http_403"],
+        ]
+        php_source += "$cases = " + json.dumps(cases, ensure_ascii=False) + ";\n"
+        php_source += "foreach ($cases as [$status, $location, $hasLoginForm, $baseUri, $expected]) {\n"
+        php_source += "  if ($classifyUnauthenticatedResponse($status, $location, $hasLoginForm, $baseUri) !== $expected) { fwrite(STDERR, 'classification_mismatch'); exit(1); }\n"
+        php_source += "}\necho 'ok';\n"
+        result = subprocess.run([php, "-r", php_source], capture_output=True, text=True, timeout=15)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("ok", result.stdout)
+
+    def test_php_native_body_token_adapter_preserves_url_identity_and_rejects_ambiguous_fields(self) -> None:
+        php = os.environ.get("ORDENOWA_TEST_PHP") or shutil.which("php")
+        if not php:
+            self.skipTest("PHP required to execute the probe's actual native-token URL adapter")
+        source = PHP_FIXTURE.read_text(encoding="utf-8")
+        uri_start = source.index("$localAdminUri = static function")
+        uri_end = source.index("$parseLoginForm =", uri_start)
+        helper_path = json.dumps(str(PHP_FIXTURE.with_name("native_admin_http_login.php")).replace("\\", "/"))
+        php_source = "require_once " + helper_path + ";\n" + source[uri_start:uri_end]
+        php_source += r"""
+$nativeToken = 'a.' . str_repeat('b', 43) . '.' . str_repeat('c', 58);
+$generated = '/admin-kuranea/index.php?keep=a%2Fb&controller=AdminPsfacebookModule&token=';
+$expected = '/admin-kuranea/index.php?keep=a%2Fb&controller=AdminPsfacebookModule&token=' . rawurlencode($nativeToken);
+if ($applyNativeHttpBodyToken($generated, $nativeToken, '/admin-kuranea/index.php') !== $expected) { exit(1); }
+$dashboard = '/admin-kuranea/index.php/modules/mbo/themes/catalog?keep=&_token=';
+$expectedDashboard = '/admin-kuranea/index.php/modules/mbo/themes/catalog?keep=&_token=' . rawurlencode($nativeToken);
+if ($applyNativeHttpBodyToken($dashboard, $nativeToken, '/admin-kuranea/index.php') !== $expectedDashboard) { exit(2); }
+$existingNative = 'd.' . str_repeat('e', 43) . '.' . str_repeat('f', 58);
+if (!NativeAdminHttpLogin::isSymfonyUriSafeToken($existingNative)
+    || !str_ends_with($applyNativeHttpBodyToken('/admin-kuranea/index.php?token=' . rawurlencode($existingNative), $nativeToken, '/admin-kuranea/index.php'), rawurlencode($nativeToken))) { exit(3); }
+foreach ([
+    '/admin-kuranea/index.php?controller=AdminPsfacebookModule',
+    '/admin-kuranea/index.php?token=bad',
+    '/admin-kuranea/index.php?token=&_token=',
+    '/admin-kuranea/index.php?token=&token=',
+    'http://attacker.invalid/admin-kuranea/index.php?token=',
+] as $invalidUri) {
+    try { $applyNativeHttpBodyToken($invalidUri, $nativeToken, '/admin-kuranea/index.php'); exit(4); }
+    catch (Throwable) {}
+}
+try { $applyNativeHttpBodyToken('/admin-kuranea/index.php?token=', 'invalid', '/admin-kuranea/index.php'); exit(5); }
+catch (Throwable) {}
+echo 'ok';
+"""
+        result = subprocess.run([php, "-r", php_source], capture_output=True, text=True, timeout=15,
+                                cwd=PHP_FIXTURE.parent)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("ok", result.stdout)
 
     @unittest.skipIf(os.name == "nt", "POSIX private-mode checks are not available on Windows")
     def test_cli_rejects_world_readable_raw_case_input(self) -> None:

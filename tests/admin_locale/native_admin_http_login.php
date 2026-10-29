@@ -13,7 +13,7 @@ final class NativeAdminHttpLogin
     private const MAX_COOKIE_VALUE_BYTES = 4096;
 
     /**
-     * @return array{login_form_posted: bool, final_uri: string, redirects: int, cookies: array<int, array{name: string, value: string, domain: string, path: string, expires: ?int, secure: bool, http_only: bool}>}
+     * @return array{login_form_posted: bool, final_uri: string, native_body_token: string, redirects: int, cookies: array<int, array{name: string, value: string, domain: string, path: string, expires: ?int, secure: bool, http_only: bool}>}
      */
     public static function authenticate(
         string $loginUri,
@@ -54,6 +54,12 @@ final class NativeAdminHttpLogin
             throw new RuntimeException('native_http_admin_authentication_not_established');
         }
 
+        // Keep the token only in this in-memory result. The native Admin page
+        // exposes the authenticated user's Symfony CSRF token on its body;
+        // this avoids generating an empty token before BrowserKit has dispatched
+        // a request and initialized the native session/security context.
+        $nativeBodyToken = self::extractNativeBodyToken($authenticated['response']['body']);
+
         $cookies = self::validateCookies($cookieReader());
         if ($cookies === []) {
             throw new RuntimeException('native_http_login_session_cookie_missing');
@@ -62,9 +68,52 @@ final class NativeAdminHttpLogin
         return [
             'login_form_posted' => true,
             'final_uri' => $authenticated['uri'],
+            'native_body_token' => $nativeBodyToken,
             'redirects' => $page['redirects'] + $authenticated['redirects'],
             'cookies' => $cookies,
         ];
+    }
+
+    /**
+     * Extract the unique native body token from the authenticated Admin page.
+     * The token format matches Symfony 6.4's masked URI-safe CSRF token. Raw
+     * response HTML and the token are deliberately never written by this helper.
+     */
+    public static function extractNativeBodyToken(string $html): string
+    {
+        if (!class_exists(DOMDocument::class) || !class_exists(DOMXPath::class)
+            || !defined('LIBXML_NONET') || !defined('LIBXML_NOERROR') || !defined('LIBXML_NOWARNING')) {
+            throw new RuntimeException('native_http_dom_unavailable');
+        }
+
+        $previousLibxmlState = libxml_use_internal_errors(true);
+        libxml_clear_errors();
+        try {
+            $document = new DOMDocument();
+            if (!$document->loadHTML($html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) {
+                throw new RuntimeException('native_http_authenticated_document_invalid');
+            }
+            $bodies = (new DOMXPath($document))->query('/html/body');
+            if ($bodies === false || $bodies->length !== 1 || !$bodies->item(0) instanceof DOMElement) {
+                throw new RuntimeException('native_http_authenticated_body_ambiguous');
+            }
+
+            $token = $bodies->item(0)->getAttribute('data-token');
+            if (!self::isSymfonyUriSafeToken($token)) {
+                throw new RuntimeException('native_http_authenticated_body_token_invalid');
+            }
+
+            return $token;
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previousLibxmlState);
+        }
+    }
+
+    /** Symfony 6.4 randomizes a URI-safe token into bounded, dot-separated pieces. */
+    public static function isSymfonyUriSafeToken(string $token): bool
+    {
+        return preg_match('/\A[A-Za-z0-9_-]{1,32}\.[A-Za-z0-9_-]{43}\.[A-Za-z0-9_-]{43,256}\z/D', $token) === 1;
     }
 
     /**

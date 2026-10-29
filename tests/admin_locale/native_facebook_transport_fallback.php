@@ -34,6 +34,8 @@ $caseModes = [
 $mode = $caseModes[$caseName] ?? 'invalid';
 $nativeLogin = null;
 $nativeCookies = [];
+$nativeHttpBodyToken = null;
+$nativeHttpBodyTokenApplied = false;
 $nativeLoginRequests = 0;
 $nativeLoginStages = [];
 $injectionCounts = [
@@ -49,6 +51,10 @@ $injectionCounts = [
 $nativeSessionCsrfVerified = false;
 $nativeSessionCsrfProbeCount = 0;
 $authenticatedReadGatePasses = 0;
+$observedFacebookControllerEvent = false;
+$observedDashboardControllerEvent = false;
+$observedDashboardRouteName = 'not_observed';
+$dashboardUri = null;
 $heldSockets = [];
 
 $require = static function (bool $condition, string $reason): void {
@@ -140,6 +146,51 @@ $localAdminUri = static function (string $candidate, string $baseUri): string {
     return $path . (isset($parts['query']) && $parts['query'] !== '' ? '?' . $parts['query'] : '');
 };
 
+$applyNativeHttpBodyToken = static function (
+    string $generatedUri,
+    string $nativeBodyToken,
+    string $baseUri
+) use ($localAdminUri): string {
+    if (!class_exists(NativeAdminHttpLogin::class)
+        || !NativeAdminHttpLogin::isSymfonyUriSafeToken($nativeBodyToken)) {
+        throw new RuntimeException('native_http_body_token_invalid');
+    }
+    $uri = $localAdminUri($generatedUri, $baseUri);
+    $parts = parse_url($uri);
+    if (!is_array($parts) || !isset($parts['path']) || !isset($parts['query']) || $parts['query'] === '') {
+        throw new RuntimeException('native_generated_admin_token_field_missing');
+    }
+
+    $queryParts = explode('&', (string) $parts['query']);
+    $tokenIndex = null;
+    foreach ($queryParts as $index => $queryPart) {
+        if ($queryPart === '') {
+            throw new RuntimeException('native_generated_admin_query_invalid');
+        }
+        $separator = strpos($queryPart, '=');
+        $rawName = $separator === false ? $queryPart : substr($queryPart, 0, $separator);
+        $rawValue = $separator === false ? '' : substr($queryPart, $separator + 1);
+        $name = urldecode($rawName);
+        if (!in_array($name, ['token', '_token'], true)) {
+            continue;
+        }
+        if ($tokenIndex !== null) {
+            throw new RuntimeException('native_generated_admin_token_field_ambiguous');
+        }
+        $generatedToken = urldecode($rawValue);
+        if ($generatedToken !== '' && !NativeAdminHttpLogin::isSymfonyUriSafeToken($generatedToken)) {
+            throw new RuntimeException('native_generated_admin_token_invalid');
+        }
+        $tokenIndex = $index;
+        $queryParts[$index] = $rawName . '=' . rawurlencode($nativeBodyToken);
+    }
+    if ($tokenIndex === null) {
+        throw new RuntimeException('native_generated_admin_token_field_missing');
+    }
+
+    return (string) $parts['path'] . '?' . implode('&', $queryParts);
+};
+
 $parseLoginForm = static function (string $html): ?array {
     $previousLibxmlState = libxml_use_internal_errors(true);
     try {
@@ -192,6 +243,56 @@ $parseLoginForm = static function (string $html): ?array {
 };
 
 $hasLoginForm = static fn (string $html): bool => $parseLoginForm($html) !== null;
+
+$isLocalAdminLoginRedirect = static function (mixed $location, string $baseUri) use ($localAdminUri): bool {
+    if (!is_string($location) || $location === '') {
+        return false;
+    }
+
+    try {
+        $target = $localAdminUri($location, $baseUri);
+    } catch (Throwable) {
+        return false;
+    }
+    $parts = parse_url($target);
+    if (!is_array($parts)) {
+        return false;
+    }
+
+    $query = [];
+    parse_str((string) ($parts['query'] ?? ''), $query);
+    if (($query['controller'] ?? null) === 'AdminLogin') {
+        return true;
+    }
+
+    return preg_match(
+        '~\\A/admin-kuranea/(?:login|index\\.php/login)(?:/|\\z)~D',
+        (string) ($parts['path'] ?? '')
+    ) === 1;
+};
+
+$classifyUnauthenticatedResponse = static function (
+    int $status,
+    mixed $location,
+    bool $hasLoginForm,
+    string $baseUri
+) use ($isLocalAdminLoginRedirect): string {
+    if ($status === 401) {
+        return 'http_401';
+    }
+    if ($status === 403) {
+        return 'http_403';
+    }
+    if ($status === 200 && $hasLoginForm) {
+        return 'local_admin_login_form';
+    }
+    if (in_array($status, [301, 302, 303, 307, 308], true)
+        && $isLocalAdminLoginRedirect($location, $baseUri)) {
+        return 'local_admin_login_redirect';
+    }
+
+    return 'not_proven';
+};
 
 $safeControllerEventTarget = static function (Request $request): bool {
     return $request->getMethod() === 'GET'
@@ -267,6 +368,11 @@ try {
                 throw new RuntimeException('native_http_login_stage_sequence_invalid');
             }
             $nativeCookies = $nativeLogin['cookies'];
+            $nativeHttpBodyToken = $nativeLogin['native_body_token'] ?? null;
+            if (!is_string($nativeHttpBodyToken)
+                || !NativeAdminHttpLogin::isSymfonyUriSafeToken($nativeHttpBodyToken)) {
+                throw new RuntimeException('native_http_login_body_token_missing');
+            }
             $_COOKIE = NativeAdminHttpLogin::globalsForUri($nativeCookies, $nativeLogin['final_uri']);
         } finally {
             $transport->close();
@@ -480,10 +586,32 @@ try {
     if (($facebookQuery['controller'] ?? null) !== 'AdminPsfacebookModule') {
         throw new RuntimeException('framework_facebook_link_contract_mismatch');
     }
-    $facebookToken = is_string($facebookQuery['token'] ?? null) ? $facebookQuery['token'] : '';
+    if ($caseName !== 'unauthenticated') {
+        if (!is_string($nativeHttpBodyToken)) {
+            throw new RuntimeException('native_http_login_body_token_missing');
+        }
+        $facebookUri = $applyNativeHttpBodyToken(
+            $facebookUri,
+            $nativeHttpBodyToken,
+            '/admin-kuranea/index.php'
+        );
+        $nativeHttpBodyTokenApplied = true;
+        $facebookParts = parse_url($facebookUri);
+        $facebookQuery = [];
+        parse_str((string) (is_array($facebookParts) ? ($facebookParts['query'] ?? '') : ''), $facebookQuery);
+    }
+    $facebookTokenField = array_key_exists('token', $facebookQuery)
+        ? 'token'
+        : (array_key_exists('_token', $facebookQuery) ? '_token' : null);
+    $facebookToken = $facebookTokenField !== null && is_string($facebookQuery[$facebookTokenField])
+        ? $facebookQuery[$facebookTokenField]
+        : '';
     $frameworkLinkHasToken = $facebookToken !== '';
     if ($caseName !== 'unauthenticated' && !$frameworkLinkHasToken) {
         throw new RuntimeException('authenticated_framework_facebook_token_missing');
+    }
+    if ($caseName !== 'unauthenticated' && !hash_equals((string) $nativeHttpBodyToken, $facebookToken)) {
+        throw new RuntimeException('authenticated_framework_facebook_token_source_mismatch');
     }
 
     $stage = 'test_only_controller_listener';
@@ -491,9 +619,13 @@ try {
         &$mode,
         &$injectionCounts,
         &$authenticatedReadGatePasses,
+        &$observedFacebookControllerEvent,
+        &$observedDashboardControllerEvent,
+        &$observedDashboardRouteName,
         &$heldSockets,
         $exceptionSubscriber,
         $facebookUri,
+        &$dashboardUri,
         $moduleInventory,
         $safeControllerEventTarget
     ): void {
@@ -506,6 +638,7 @@ try {
         $isKnownFacebookRequest = $request->getRequestUri() === $facebookUri
             || $requestController === 'AdminPsfacebookModule';
         if ($isFacebook) {
+            $observedFacebookControllerEvent = true;
             ++$injectionCounts['target_controller_events'];
             $resolvedController = $event->getController();
             $isNativeLegacyAction = is_array($resolvedController)
@@ -538,6 +671,20 @@ try {
         }
 
         if ($mode === 'other_route_runtime') {
+            $routeName = $request->attributes->get('_route');
+            $legacyControllerName = $request->attributes->get('_legacy_controller_name');
+            $dashboardRouteNames = ['admin_dashboard', 'admin_dashboard_index', 'admin_legacy_controller_route'];
+            $isDashboardController = $request->getRequestUri() === $dashboardUri
+                && ($requestController === 'AdminDashboard'
+                    || $legacyControllerName === 'AdminDashboard'
+                    || in_array($routeName, ['admin_dashboard', 'admin_dashboard_index'], true));
+            if (!$isDashboardController) {
+                throw new RuntimeException('native_other_route_target_mismatch');
+            }
+            $observedDashboardControllerEvent = true;
+            $observedDashboardRouteName = in_array($routeName, $dashboardRouteNames, true)
+                ? $routeName
+                : 'not_observed';
             $injectionCounts['other_route_exceptions']++;
             throw new RuntimeException('Synthetic isolated-CI unrelated-route failure');
         }
@@ -669,13 +816,20 @@ try {
         -16
     );
 
-    $dashboardUri = null;
     if ($caseName === 'other_route') {
         $dashboardLink = $context->link->getAdminLink('AdminDashboard', true);
         if (!is_string($dashboardLink) || $dashboardLink === '') {
             throw new RuntimeException('framework_dashboard_link_missing');
         }
         $dashboardUri = $localAdminUri($dashboardLink, '/admin-kuranea/index.php');
+        if (!is_string($nativeHttpBodyToken)) {
+            throw new RuntimeException('native_http_login_body_token_missing');
+        }
+        $dashboardUri = $applyNativeHttpBodyToken(
+            $dashboardUri,
+            $nativeHttpBodyToken,
+            '/admin-kuranea/index.php'
+        );
     }
 
     $stage = 'single_fresh_process_case_request';
@@ -703,6 +857,7 @@ try {
     $stage = 'case_specific_semantic_assertions';
     $safeTitle = 'Facebook 계정 연결을 일시적으로 사용할 수 없습니다';
     $safeMessage = 'Facebook 서비스에 연결하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+    $unauthenticatedAuthRejection = 'not_applicable';
     $caseChecks = [
         'unauthenticated_status_not_converted' => false,
         'other_route_status_not_converted' => false,
@@ -714,11 +869,23 @@ try {
     $noSensitiveDetails = false;
 
     if ($caseName === 'unauthenticated') {
+        $unauthenticatedAuthRejection = $classifyUnauthenticatedResponse(
+            $responseStatus,
+            $response->headers->get('Location'),
+            $responseStatus === 200 && $hasLoginForm($body),
+            $requestUri
+        );
         $caseChecks['unauthenticated_status_not_converted'] = $responseStatus !== 503
             && !str_contains($body, $safeTitle)
+            && $unauthenticatedAuthRejection !== 'not_proven'
+            && !$observedFacebookControllerEvent
+            && !$observedDashboardControllerEvent
+            && $injectionCounts['target_controller_events'] === 0
+            && $injectionCounts['known_facebook_request_controller_events'] === 0
+            && $injectionCounts['mismatched_facebook_route_events'] === 0
             && $authenticatedReadGatePasses === 0
             && $injectionCounts['disabled_mode_facebook_sentinels'] === 0;
-        $require($caseChecks['unauthenticated_status_not_converted'], 'unauthenticated_request_was_converted');
+        $require($caseChecks['unauthenticated_status_not_converted'], 'unauthenticated_auth_rejection_not_proven');
     } elseif ($caseName === 'other_route') {
         $caseChecks['other_route_status_not_converted'] = $injectionCounts['other_route_exceptions'] === 1
             && $responseStatus !== 503 && !str_contains($body, $safeTitle);
@@ -805,7 +972,7 @@ try {
     }
 
     $outcome = [
-        'schema' => 2,
+        'schema' => 4,
         'passed' => true,
         'case' => $caseName,
         'module_inventory' => [
@@ -822,14 +989,26 @@ try {
                 : $nativeLoginStages === [
                     'native_login_get', 'native_login_get_redirects', 'native_login_post', 'native_login_post_redirects',
                 ],
+            'native_http_body_token_applied' => $nativeHttpBodyTokenApplied,
             'framework_generated_legacy_link' => true,
             'framework_link_has_token' => $frameworkLinkHasToken,
             'unauthenticated_link_token_validity_claimed' => false,
             'case' => $caseName,
             'browserkit_target_get_count' => $browserRequests,
-            'route' => $caseName === 'other_route' ? 'admin_dashboard' : 'admin_legacy_controller_route',
-            'controller' => $caseName === 'other_route' ? 'AdminDashboard' : 'AdminPsfacebookModuleController',
-            'controller_action' => $caseName === 'other_route' ? 'not_applicable' : 'read',
+            'attempted_route' => $caseName === 'other_route' ? 'dashboard_admin_link' : 'facebook_admin_link',
+            'attempted_controller' => $caseName === 'other_route' ? 'AdminDashboard' : 'AdminPsfacebookModule',
+            'route_observation' => ($observedFacebookControllerEvent || $observedDashboardControllerEvent)
+                ? 'controller_event'
+                : 'not_observed',
+            'route' => $observedFacebookControllerEvent
+                ? 'admin_legacy_controller_route'
+                : ($observedDashboardControllerEvent ? $observedDashboardRouteName : 'not_observed'),
+            'controller' => $observedFacebookControllerEvent
+                ? 'AdminPsfacebookModuleController'
+                : ($observedDashboardControllerEvent ? 'AdminDashboard' : 'not_observed'),
+            'controller_action' => $observedFacebookControllerEvent
+                ? 'read'
+                : ($observedDashboardControllerEvent ? 'not_applicable' : 'not_observed'),
             'authenticated_read_gate_passes' => $authenticatedReadGatePasses,
             'known_facebook_request_controller_events' => $injectionCounts['known_facebook_request_controller_events'],
             'mismatched_facebook_route_events' => $injectionCounts['mismatched_facebook_route_events'],
@@ -844,6 +1023,7 @@ try {
             'installed_http_client_calls' => $injectionCounts['http_client_requests'],
             'response_status' => $responseStatus,
             'unauthenticated_status_not_converted' => $caseChecks['unauthenticated_status_not_converted'],
+            'unauthenticated_auth_rejection' => $unauthenticatedAuthRejection,
             'other_route_status_not_converted' => $caseChecks['other_route_status_not_converted'],
             'generic_facebook_runtime_status_not_converted' => $caseChecks['generic_facebook_status_not_converted'],
             'access_denied_status_preserved' => $caseChecks['access_denied_status_preserved'],

@@ -33,18 +33,6 @@ $require = static function (bool $condition, string $reason): void {
     }
 };
 
-// Symfony may generate a route with or without the installed admin base URL.
-// Both must resolve to the same exact CI target; no arbitrary URI is accepted.
-$canonicalMboUri = static function (string $path): string {
-    if ($path === '/mbo/themes/catalog') {
-        return '/admin-kuranea/index.php/mbo/themes/catalog';
-    }
-    if ($path === '/admin-kuranea/index.php/mbo/themes/catalog') {
-        return $path;
-    }
-    throw new RuntimeException('native_mbo_route_contract_mismatch');
-};
-
 /**
  * Resolve a same-origin admin URI. Redirects and form actions may never send
  * the test client to another host or escape the installed admin path.
@@ -224,7 +212,7 @@ try {
         throw new RuntimeException('native_admin_path_mismatch');
     }
     require_once __DIR__ . '/native_admin_http_login.php';
-    $nativeTargetUri = '/admin-kuranea/index.php/mbo/themes/catalog';
+    require_once __DIR__ . '/native_admin_mbo_route.php';
     $stage = 'native_login_get';
     $nativeHttpTransport = new NativeAdminHttpCurlTransport();
     $nativeHttpLoginResult = NativeAdminHttpLogin::authenticate(
@@ -239,6 +227,11 @@ try {
         static function (string $nextStage) use (&$stage): void { $stage = $nextStage; }
     );
     $nativeLoginCookies = NativeAdminHttpLogin::validateCookies($nativeHttpLoginResult['cookies'] ?? null);
+    $nativeSessionToken = $nativeHttpLoginResult['native_body_token'] ?? null;
+    if (!is_string($nativeSessionToken) || !NativeAdminHttpLogin::isSymfonyUriSafeToken($nativeSessionToken)) {
+        throw new RuntimeException('native_http_session_token_missing');
+    }
+    $nativeTargetUri = NativeAdminMboRoute::nativeTargetUri($nativeSessionToken);
     $nativeLoopbackHttpRequestCount = $nativeHttpTransport->requestCount();
     $nativeHttpTransport->close();
     $nativeHttpTransport = null;
@@ -258,16 +251,16 @@ try {
     $_SERVER['REQUEST_METHOD'] = 'GET';
     $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
     $_SERVER['REQUEST_URI'] = $nativeTargetUri;
-    $_SERVER['QUERY_STRING'] = '';
+    $_SERVER['QUERY_STRING'] = '_token=' . rawurlencode($nativeSessionToken);
     $_SERVER['SCRIPT_NAME'] = '/admin-kuranea/index.php';
     $_SERVER['PHP_SELF'] = '/admin-kuranea/index.php';
     $_SERVER['SCRIPT_FILENAME'] = $adminRoot . '/index.php';
     $_SERVER['REQUEST_METHOD'] = 'GET';
-    $_GET = [];
+    $_GET = ['_token' => $nativeSessionToken];
     $_POST = [];
     $_FILES = [];
     $_COOKIE = NativeAdminHttpLogin::globalsForUri($nativeLoginCookies, $nativeTargetUri);
-    $_REQUEST = $_COOKIE;
+    $_REQUEST = array_merge($_COOKIE, $_GET);
 
     $stage = 'bootstrap';
     $baseVendorAutoload = $shopRoot . '/vendor/autoload.php';
@@ -482,7 +475,7 @@ try {
     }
 
     $catalogPath = $container->get('router')->generate('admin_mbo_catalog_theme');
-    $catalogUri = $canonicalMboUri($catalogPath);
+    $catalogUri = NativeAdminMboRoute::canonicalizeGeneratedUri($catalogPath, $nativeSessionToken);
     if ($catalogUri !== $nativeTargetUri) {
         throw new RuntimeException('native_mbo_target_uri_mismatch');
     }
@@ -514,17 +507,15 @@ try {
     }
 
     $koreanOccurrences = substr_count($body, $koreanMessage);
-    $require(
-        $response->getStatusCode() === 503
-        && $response->headers->get('X-ORDENOWA-CI-Injected-Failure') === '1'
-        && str_contains($contentType, 'text/html')
-        && preg_match('/\Ako(?:[-_]|\z)/i', $documentLanguage) === 1
-        && $koreanOccurrences >= 2
-        && !str_contains($body, $sourceMessage)
-        && $injectedProvider->calls === 1
-        && $nativeSessionCsrfVerified && $nativeSessionCsrfProbeCount === 1,
-        'authenticated_korean_error_assertions_failed'
-    );
+    $require($response->getStatusCode() === 503, 'native_mbo_response_status_not_503');
+    $require($response->headers->get('X-ORDENOWA-CI-Injected-Failure') === '1', 'native_mbo_injected_header_missing');
+    $require(str_contains($contentType, 'text/html'), 'native_mbo_content_type_not_html');
+    $require(preg_match('/\Ako(?:[-_]|\z)/i', $documentLanguage) === 1, 'native_mbo_document_language_not_korean');
+    $require($koreanOccurrences >= 2, 'native_mbo_korean_message_occurrences_insufficient');
+    $require(!str_contains($body, $sourceMessage), 'native_mbo_english_source_message_present');
+    $require($injectedProvider->calls === 1, 'native_mbo_provider_invocation_count_invalid');
+    $require($nativeSessionCsrfProbeCount === 1, 'native_mbo_session_csrf_probe_count_invalid');
+    $require($nativeSessionCsrfVerified, 'native_mbo_session_csrf_not_verified');
 
     require_once __DIR__ . '/native_admin_private_snapshot.php';
     persistNativeAdminSnapshot('mbo', $body, '/tmp/owned/kuranea-admin-test-deps', $expectedProject);

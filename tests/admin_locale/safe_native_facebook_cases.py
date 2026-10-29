@@ -13,7 +13,7 @@ import sys
 from typing import Any
 
 
-SCHEMA = 2
+SCHEMA = 4
 MAX_INPUT_BYTES = 1_048_576
 CASES = ("unauthenticated", "other_route", "generic_facebook", "access_denied", "curl_transport")
 MODULES = {"ps_facebook": "1.38.19", "kuraneabackoffice": "1.0.8"}
@@ -102,14 +102,17 @@ def _validate_hashes(value: Any) -> dict[str, str]:
 def _validate_case_facts(case_name: str, value: Any) -> dict[str, Any]:
     keys = {
         "native_login_transport", "native_login_form_posted", "native_login_http_requests",
-        "native_login_stages_verified", "framework_generated_legacy_link", "framework_link_has_token",
-        "unauthenticated_link_token_validity_claimed", "case", "browserkit_target_get_count", "route",
-        "controller", "controller_action", "authenticated_read_gate_passes",
+        "native_login_stages_verified", "native_http_body_token_applied",
+        "framework_generated_legacy_link", "framework_link_has_token",
+        "unauthenticated_link_token_validity_claimed", "case", "browserkit_target_get_count",
+        "attempted_route", "attempted_controller", "route_observation", "route", "controller", "controller_action",
+        "authenticated_read_gate_passes",
         "known_facebook_request_controller_events", "mismatched_facebook_route_events",
         "disabled_mode_facebook_sentinels", "other_route_exception_count", "generic_facebook_exception_count",
         "access_denied_exception_count", "test_transport_target", "stream_server_listen_used",
         "facebook_vendor_initContent_called_by_fixture", "script_initiated_external_transport_requests",
         "installed_http_client_calls", "response_status", "unauthenticated_status_not_converted",
+        "unauthenticated_auth_rejection",
         "other_route_status_not_converted", "generic_facebook_runtime_status_not_converted",
         "access_denied_status_preserved", "korean_safe_title", "korean_safe_message",
         "korean_document_language", "fixed_error_fragment_excludes_token_and_transport_details",
@@ -135,6 +138,8 @@ def _validate_case_facts(case_name: str, value: Any) -> dict[str, Any]:
         raise ValueError
     if value["native_login_stages_verified"] is not True:
         raise ValueError
+    if type(value["native_http_body_token_applied"]) is not bool or value["native_http_body_token_applied"] is not authenticated:
+        raise ValueError
     if type(value["framework_generated_legacy_link"]) is not bool or not value["framework_generated_legacy_link"]:
         raise ValueError
     if type(value["framework_link_has_token"]) is not bool or (authenticated and not value["framework_link_has_token"]):
@@ -144,12 +149,32 @@ def _validate_case_facts(case_name: str, value: Any) -> dict[str, Any]:
     if value["browserkit_target_get_count"] != 1 or type(value["browserkit_target_get_count"]) is not int:
         raise ValueError
 
-    expected_route = "admin_dashboard" if is_other else "admin_legacy_controller_route"
-    expected_controller = "AdminDashboard" if is_other else "AdminPsfacebookModuleController"
-    expected_action = "not_applicable" if is_other else "read"
-    if (value["route"], value["controller"], value["controller_action"]) != (
-        expected_route, expected_controller, expected_action
+    expected_attempted_route = "dashboard_admin_link" if is_other else "facebook_admin_link"
+    expected_attempted_controller = "AdminDashboard" if is_other else "AdminPsfacebookModule"
+    if (value["attempted_route"], value["attempted_controller"]) != (
+        expected_attempted_route, expected_attempted_controller
     ):
+        raise ValueError
+    if case_name == "unauthenticated":
+        expected_observation = ("not_observed", "not_observed", "not_observed", "not_observed")
+    elif is_other:
+        if (value["route_observation"], value["controller"], value["controller_action"]) != (
+            "controller_event", "AdminDashboard", "not_applicable"
+        ) or value["route"] not in {
+            "admin_dashboard", "admin_dashboard_index", "admin_legacy_controller_route", "not_observed"
+        }:
+            raise ValueError
+        expected_observation = None
+    else:
+        expected_observation = (
+            "controller_event",
+            "admin_legacy_controller_route",
+            "AdminPsfacebookModuleController",
+            "read",
+        )
+    if expected_observation is not None and (
+        value["route_observation"], value["route"], value["controller"], value["controller_action"]
+    ) != expected_observation:
         raise ValueError
     expected_gate = 1 if case_name in {"generic_facebook", "access_denied", "curl_transport"} else 0
     if type(value["authenticated_read_gate_passes"]) is not int or value["authenticated_read_gate_passes"] != expected_gate:
@@ -172,7 +197,6 @@ def _validate_case_facts(case_name: str, value: Any) -> dict[str, Any]:
         "facebook_vendor_initContent_called_by_fixture": False,
         "script_initiated_external_transport_requests": 0,
         "installed_http_client_calls": int(is_positive),
-        "unauthenticated_status_not_converted": not is_positive if case_name == "unauthenticated" else False,
         "other_route_status_not_converted": is_other,
         "generic_facebook_runtime_status_not_converted": is_generic,
         "access_denied_status_preserved": is_denied,
@@ -190,6 +214,20 @@ def _validate_case_facts(case_name: str, value: Any) -> dict[str, Any]:
         if type(actual) is not type(expected) or actual != expected:
             raise ValueError
     if type(value["response_status"]) is not int or not 100 <= value["response_status"] <= 599:
+        raise ValueError
+    rejection = value["unauthenticated_auth_rejection"]
+    if case_name == "unauthenticated":
+        allowed_rejections = {
+            "local_admin_login_redirect": {301, 302, 303, 307, 308},
+            "local_admin_login_form": {200},
+            "http_401": {401},
+            "http_403": {403},
+        }
+        if rejection not in allowed_rejections or value["response_status"] not in allowed_rejections[rejection]:
+            raise ValueError
+        if type(value["unauthenticated_status_not_converted"]) is not bool or not value["unauthenticated_status_not_converted"]:
+            raise ValueError
+    elif rejection != "not_applicable" or value["unauthenticated_status_not_converted"] is not False:
         raise ValueError
     if is_positive and value["response_status"] != 503:
         raise ValueError
@@ -217,16 +255,24 @@ def _validate_case_facts(case_name: str, value: Any) -> dict[str, Any]:
         "native_login_transport": expected_login_transport,
         "native_login_form_posted": authenticated,
         "native_login_http_requests": requests,
+        "native_http_body_token_applied": authenticated,
         "framework_generated_legacy_link": True,
         "framework_link_has_token": value["framework_link_has_token"],
         "unauthenticated_link_token_validity_claimed": False,
+        "attempted_route": value["attempted_route"],
+        "attempted_controller": value["attempted_controller"],
+        "route_observation": value["route_observation"],
         "browserkit_target_get_count": 1,
+        "route": value["route"],
+        "controller": value["controller"],
+        "controller_action": value["controller_action"],
         "authenticated_read_gate_passes": expected_gate,
         "vendor_initContent_called_by_fixture": False,
         "script_initiated_external_transport_requests": 0,
         "installed_http_client_calls": int(is_positive),
         "native_session_csrf_verified": is_positive,
         "korean_fallback_verified": is_positive,
+        "unauthenticated_auth_rejection": rejection,
         "korean_document_language": language,
         "positive_response_snapshot_sha256": snapshot_hash,
     }

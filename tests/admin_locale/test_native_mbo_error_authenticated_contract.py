@@ -7,6 +7,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
+ROOT = Path(__file__).resolve().parents[2]
 SOURCE = Path(__file__).with_name("native_mbo_error_authenticated.php").read_text(encoding="utf-8")
 BOOTSTRAP = Path(__file__).with_name("prepare_test_browserkit.sh").read_text(encoding="utf-8")
 
@@ -18,8 +19,10 @@ class AuthenticatedNativeMboErrorContract(unittest.TestCase):
             self.skipTest('PHP required for actual module metadata regression')
         for name in ('module_inventory_behavior.php', 'native_admin_kernel_browser_behavior.php',
                      'native_admin_private_snapshot_behavior.php', 'native_admin_http_login_behavior.php'):
+            env = os.environ.copy()
+            env.setdefault('ORDENOWA_TEST_REPO_ROOT', str(ROOT))
             result = subprocess.run([php, '-n', str(Path(__file__).with_name(name))],
-                                    capture_output=True, text=True, timeout=20)
+                                    capture_output=True, text=True, timeout=20, env=env)
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_uses_production_kernel_and_real_login_form(self):
@@ -56,6 +59,11 @@ class AuthenticatedNativeMboErrorContract(unittest.TestCase):
     def test_native_login_uses_real_http_then_one_authenticated_kernel_request(self):
         helper = Path(__file__).with_name('native_admin_http_login.php').read_text(encoding='utf-8')
         self.assertIn("NativeAdminHttpLogin::authenticate(", SOURCE)
+        self.assertIn("self::extractNativeBodyToken", helper)
+        self.assertIn("NativeAdminMboRoute::nativeTargetUri($nativeSessionToken)", SOURCE)
+        self.assertIn("NativeAdminMboRoute::canonicalizeGeneratedUri($catalogPath, $nativeSessionToken)", SOURCE)
+        self.assertIn("$_SERVER['QUERY_STRING'] = '_token=' . rawurlencode($nativeSessionToken)", SOURCE)
+        self.assertIn("$_GET = ['_token' => $nativeSessionToken]", SOURCE)
         self.assertIn("NativeAdminHttpLogin::installInBrowserKit($browser->getCookieJar(), $nativeLoginCookies)", SOURCE)
         self.assertIn("$browser->nativeRequestCount === 1", SOURCE)
         self.assertIn("'native_login_transport' => 'loopback_http_native_front_controller'", SOURCE)
@@ -139,8 +147,30 @@ class AuthenticatedNativeMboErrorContract(unittest.TestCase):
         self.assertIn("$injectedProvider->calls === 1", SOURCE)
         self.assertIn("hash_equals($expectedAdminEmail, $adminEmail)", SOURCE)
         self.assertIn("'authentication_session_or_audit_writes_possible' => true", SOURCE)
+        for assertion in (
+            'native_mbo_response_status_not_503', 'native_mbo_injected_header_missing',
+            'native_mbo_content_type_not_html', 'native_mbo_document_language_not_korean',
+            'native_mbo_korean_message_occurrences_insufficient', 'native_mbo_english_source_message_present',
+            'native_mbo_provider_invocation_count_invalid', 'native_mbo_session_csrf_probe_count_invalid',
+            'native_mbo_session_csrf_not_verified',
+        ):
+            self.assertIn(assertion, SOURCE)
         self.assertNotIn("getMessage()", SOURCE)
         self.assertNotIn("getTraceAsString()", SOURCE)
+
+    def test_native_token_is_private_and_route_is_module_prefixed(self):
+        helper = Path(__file__).with_name('native_admin_http_login.php').read_text(encoding='utf-8')
+        route_helper = Path(__file__).with_name('native_admin_mbo_route.php').read_text(encoding='utf-8')
+        self.assertIn("query('/html/body')", helper)
+        self.assertIn("getAttribute('data-token')", helper)
+        self.assertIn("[A-Za-z0-9_-]{1,32}\\.[A-Za-z0-9_-]{43}\\.[A-Za-z0-9_-]{43,256}", helper)
+        self.assertIn("'/modules/mbo/themes/catalog/'", route_helper)
+        self.assertIn("'/admin-kuranea/index.php/modules/mbo/themes/catalog/'", route_helper)
+        self.assertIn("'?_token=' . rawurlencode($nativeSessionToken)", route_helper)
+        outcome_start = SOURCE.index("    $outcome = [")
+        outcome_end = SOURCE.index("    $emitSafeOutcome($outcome);", outcome_start)
+        self.assertNotIn('native_body_token', SOURCE[outcome_start:outcome_end])
+        self.assertNotIn('nativeSessionToken', SOURCE[outcome_start:outcome_end])
 
 
 if __name__ == "__main__":

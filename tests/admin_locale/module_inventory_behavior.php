@@ -13,8 +13,11 @@ class Module
         return new Kuraneabackoffice();
     }
 }
-$root = dirname(__DIR__, 2);
+$root = getenv('ORDENOWA_TEST_REPO_ROOT') ?: dirname(__DIR__, 2);
+$root = realpath($root) ?: throw new RuntimeException('native_test_repo_root_missing');
 require $root . '/modules/kuraneabackoffice/kuraneabackoffice.php';
+require_once __DIR__ . '/native_admin_http_login.php';
+require_once __DIR__ . '/native_admin_mbo_route.php';
 $source = file_get_contents(__DIR__ . '/native_mbo_error_authenticated.php');
 $headerEnd = strpos($source, "ini_set(");
 if ($headerEnd === false) throw new RuntimeException('native_probe_header_missing');
@@ -30,22 +33,35 @@ if ($start === false || $end === false) {
 }
 eval(substr($source, $start, $end + 3 - $start));
 $inventory = $readModule('kuraneabackoffice', true, ['kuraneabackoffice'], ['kuraneabackoffice'], realpath($root . '/modules'));
-// The native router includes RequestContext::baseUrl after a real admin login.
-$routeStart = strpos($source, '$canonicalMboUri = static function ');
-$routeEnd = $routeStart === false ? false : strpos($source, "\n};", $routeStart);
-if ($routeStart === false || $routeEnd === false) throw new RuntimeException('canonical_mbo_uri_closure_missing');
-eval(substr($source, $routeStart, $routeEnd + 3 - $routeStart));
-foreach (['/mbo/themes/catalog', '/admin-kuranea/index.php/mbo/themes/catalog'] as $path) {
-    if ($canonicalMboUri($path) !== '/admin-kuranea/index.php/mbo/themes/catalog') {
-        throw new RuntimeException('canonical_mbo_target_changed');
+$routeHelper = file_get_contents(__DIR__ . '/native_admin_mbo_route.php');
+if (!is_string($routeHelper) || !str_contains($source, 'NativeAdminMboRoute::canonicalizeGeneratedUri($catalogPath, $nativeSessionToken)')) {
+    throw new RuntimeException('native_mbo_route_helper_not_used');
+}
+$nativeToken = 'a.' . str_repeat('b', 43) . '.' . str_repeat('c', 58);
+$expectedNativeUri = '/admin-kuranea/index.php/modules/mbo/themes/catalog/?_token=' . $nativeToken;
+if (NativeAdminMboRoute::nativeTargetUri($nativeToken) !== $expectedNativeUri) {
+    throw new RuntimeException('native_mbo_module_route_target_changed');
+}
+foreach ([
+    '/modules/mbo/themes/catalog/?_token=',
+    '/admin-kuranea/index.php/modules/mbo/themes/catalog/?_token=' . $nativeToken,
+    '/modules/mbo/themes/catalog/?_token=z.' . str_repeat('y', 43) . '.' . str_repeat('x', 58),
+] as $generatedRoute) {
+    if (NativeAdminMboRoute::canonicalizeGeneratedUri($generatedRoute, $nativeToken) !== $expectedNativeUri) {
+        throw new RuntimeException('native_mbo_module_route_canonicalization_changed');
     }
 }
-foreach (['', '/admin-kuranea/mbo/themes/catalog', '/mbo/themes/catalog?x=1',
-    'http://localhost:18081/admin-kuranea/index.php/mbo/themes/catalog',
-    '/admin-kuranea/index.php/admin-kuranea/index.php/mbo/themes/catalog',
-    '//example.org/mbo/themes/catalog', '/mbo/themes/catalog/'] as $path) {
-    try { $canonicalMboUri($path); }
-    catch (RuntimeException $error) {
+foreach ([
+    '', '/mbo/themes/catalog/?_token=' . $nativeToken,
+    '/modules/mbo/themes/catalog?_token=' . $nativeToken,
+    '/modules/mbo/themes/catalog/?_token=' . $nativeToken . '&_token=' . $nativeToken,
+    '/modules/mbo/themes/catalog/?_token=' . $nativeToken . '&unexpected=1',
+    'https://example.invalid/modules/mbo/themes/catalog/?_token=' . $nativeToken,
+    '/modules/mbo/themes/catalog/?_token=invalid',
+] as $invalidRoute) {
+    try {
+        NativeAdminMboRoute::canonicalizeGeneratedUri($invalidRoute, $nativeToken);
+    } catch (RuntimeException $error) {
         if ($error->getMessage() === 'native_mbo_route_contract_mismatch') continue;
         throw $error;
     }
