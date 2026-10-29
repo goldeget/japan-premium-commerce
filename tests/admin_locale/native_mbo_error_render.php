@@ -31,11 +31,30 @@ try {
         throw new RuntimeException('isolated_ci_guard');
     }
 
+    $stage = 'admin_bootstrap_path';
+    $adminRoot = realpath($shopRoot . '/admin-kuranea');
+    if ($adminRoot === false || dirname($adminRoot) !== realpath($shopRoot)
+        || !is_file($adminRoot . '/index.php') || !is_dir($adminRoot . '/themes')) {
+        throw new RuntimeException('native_admin_path_missing');
+    }
+    if (!defined('_PS_ADMIN_DIR_')) {
+        define('_PS_ADMIN_DIR_', $adminRoot);
+    } elseif (realpath(_PS_ADMIN_DIR_) !== $adminRoot) {
+        throw new RuntimeException('native_admin_path_mismatch');
+    }
+    $_SERVER['HTTP_HOST'] = 'localhost:18081';
+    $_SERVER['REQUEST_URI'] = '/admin-kuranea/index.php/mbo/themes/catalog?liteDisplaying=1';
+    $_SERVER['SCRIPT_NAME'] = '/admin-kuranea/index.php';
+
     $stage = 'bootstrap';
     require_once $shopRoot . '/autoload.php';
     require_once $shopRoot . '/config/config.inc.php';
     require_once $shopRoot . '/app/AppKernel.php';
     require_once $shopRoot . '/app/AdminKernel.php';
+
+    if (!defined('_PS_BO_ALL_THEMES_DIR_') || realpath(_PS_BO_ALL_THEMES_DIR_) !== realpath($adminRoot . '/themes')) {
+        throw new RuntimeException('native_admin_theme_constant_missing');
+    }
 
     $stage = 'admin_kernel_boot';
     // Match native_boundaries' warmed production container exactly.
@@ -329,6 +348,24 @@ try {
         $templateLine = $error->getTemplateLine();
         if (is_int($templateLine) && $templateLine > 0 && $templateLine <= 100000) {
             $outcome['twig_template_line'] = $templateLine;
+        }
+    }
+    $cause = $error;
+    for ($depth = 0; $depth < 6 && $cause->getPrevious() !== null; ++$depth) {
+        $cause = $cause->getPrevious();
+    }
+    $causeClass = get_class($cause);
+    if (preg_match('/\A[A-Za-z0-9_\\\\]{1,160}\z/D', $causeClass)) {
+        $outcome['cause_class'] = $causeClass;
+    }
+    $causeFile = str_replace('\\', '/', $cause->getFile());
+    $sourceRoot = str_replace('\\', '/', $shopRoot) . '/';
+    if (str_starts_with($causeFile, $sourceRoot)) {
+        $relativeSource = substr($causeFile, strlen($sourceRoot));
+        if (preg_match('~\A(?:src/(?:Core/Context|PrestaShopBundle/Twig|PrestaShopBundle/Security|Adapter)|vendor/symfony)/[A-Za-z0-9_./-]+\.php\z~D', $relativeSource)
+            && !str_contains($relativeSource, '..')) {
+            $outcome['cause_source'] = $relativeSource;
+            $outcome['cause_line'] = $cause->getLine();
         }
     }
     echo json_encode($outcome, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . PHP_EOL;
