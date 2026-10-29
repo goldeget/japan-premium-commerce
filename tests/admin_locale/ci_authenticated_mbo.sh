@@ -154,9 +154,33 @@ from pathlib import Path
 try:
     value = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
     facts = value.get('auth_landing')
-    ok = (value.get('passed') is False and value.get('failed_stage') == 'native_login_post_redirects'
-          and isinstance(facts, dict) and facts.get('post_status') == 302
-          and type(facts.get('final_status')) is int and 100 <= facts['final_status'] <= 599)
+    auth_landing_failure = (
+        value.get('failed_stage') == 'native_login_post_redirects'
+        and isinstance(facts, dict) and facts.get('post_status') == 302
+        and type(facts.get('final_status')) is int and 100 <= facts['final_status'] <= 599
+    )
+    assertion_ids = {
+        'native_kernel_browser_target_request_count_invalid',
+        'native_mbo_response_status_not_503', 'native_mbo_injected_header_missing',
+        'native_mbo_content_type_not_html', 'native_mbo_document_language_not_korean',
+        'native_mbo_korean_message_occurrences_insufficient', 'native_mbo_english_source_message_present',
+        'native_mbo_provider_invocation_count_invalid', 'native_mbo_session_csrf_probe_count_invalid',
+        'native_mbo_session_csrf_not_verified',
+    }
+    expected_fact_keys = {
+        'response_status', 'injected_header_present', 'html_content_type', 'korean_document_language',
+        'korean_message_occurrences', 'english_source_present', 'provider_calls',
+        'csrf_verified', 'csrf_probe_count', 'body_token_present',
+    }
+    response_facts = value.get('failure_facts')
+    assertion_failure = (
+        value.get('failed_stage') == 'assert_authenticated_korean_error'
+        and value.get('failed_assertion') in assertion_ids
+        and isinstance(response_facts, dict) and set(response_facts) == expected_fact_keys
+        and type(response_facts.get('response_status')) is int
+        and 100 <= response_facts['response_status'] <= 599
+    )
+    ok = value.get('passed') is False and (auth_landing_failure or assertion_failure)
 except (OSError, ValueError, TypeError, AttributeError):
     ok = False
 raise SystemExit(0 if ok else 1)

@@ -1068,6 +1068,21 @@ try {
         'login_session_or_auth_audit_writes_possible' => true,
         'kernel_bootstrap_database_network_side_effects_instrumented' => false,
     ];
+    if ($error instanceof \Twig\Error\Error) {
+        try {
+            $sourceContext = $error->getSourceContext();
+            $templateName = $sourceContext?->getName();
+            $templateLine = $error->getTemplateLine();
+            if (is_string($templateName) && strlen($templateName) <= 240
+                && preg_match('~\A@(?:PrestaShop/Admin|PrestaShopCore|Modules/ps_facebook)/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.twig\z~D', $templateName) === 1
+                && is_int($templateLine) && $templateLine >= 1 && $templateLine <= 100000) {
+                $outcome['twig_template'] = $templateName;
+                $outcome['twig_template_line'] = $templateLine;
+            }
+        } catch (Throwable) {
+            // Safe template provenance is optional; never replace the original failure.
+        }
+    }
     if ($isolatedCiGuardPassed && $caseName === 'unauthenticated'
         && $stage === 'case_specific_semantic_assertions'
         && isset($requestUri, $responseStatus, $body)

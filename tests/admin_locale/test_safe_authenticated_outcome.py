@@ -125,6 +125,73 @@ class SafeAuthenticatedOutcomeTests(unittest.TestCase):
                 self.assertNotIn("PRIVATE", serialized)
                 self.assertNotIn("localhost", serialized)
 
+    def test_failed_mbo_assertion_and_bounded_response_facts_are_exactly_allowlisted(self):
+        facts = {
+            "response_status": 503,
+            "injected_header_present": True,
+            "html_content_type": True,
+            "korean_document_language": True,
+            "korean_message_occurrences": 2,
+            "english_source_present": False,
+            "provider_calls": 1,
+            "csrf_verified": True,
+            "csrf_probe_count": 1,
+            "body_token_present": True,
+        }
+        payload = {
+            "schema": 1,
+            "passed": False,
+            "failed_stage": "assert_authenticated_korean_error",
+            "failed_assertion": "native_mbo_session_csrf_not_verified",
+            "failure_facts": facts,
+            "request_uri": "http://localhost/admin-kuranea/?_token=PRIVATE_TOKEN",
+            "body": "PRIVATE_HTML",
+            "exception_message": "PRIVATE_MESSAGE",
+        }
+        result = MODULE.collect_safe_outcome(raw_json(payload), 1)
+        self.assertEqual(result["failed_assertion"], "native_mbo_session_csrf_not_verified")
+        self.assertEqual(result["failure_facts"], facts)
+        encoded = json.dumps(result)
+        for secret in ("localhost", "admin-kuranea", "PRIVATE_TOKEN", "PRIVATE_HTML", "PRIVATE_MESSAGE"):
+            self.assertNotIn(secret, encoded)
+
+    def test_malformed_mbo_assertion_metadata_is_dropped_without_crashing(self):
+        facts = {
+            "response_status": 503,
+            "injected_header_present": True,
+            "html_content_type": True,
+            "korean_document_language": True,
+            "korean_message_occurrences": 2,
+            "english_source_present": False,
+            "provider_calls": 1,
+            "csrf_verified": True,
+            "csrf_probe_count": 1,
+            "body_token_present": True,
+        }
+        bad_facts = [
+            {**facts, "private_url": "PRIVATE_URL"},
+            {**facts, "response_status": True},
+            {**facts, "korean_message_occurrences": 11},
+            {**facts, "provider_calls": 101},
+            {**facts, "csrf_verified": 1},
+            {**facts, "body_token_present": []},
+        ]
+        for item in bad_facts:
+            with self.subTest(item=item):
+                payload = {
+                    "schema": 1, "passed": False,
+                    "failed_assertion": "native_mbo_response_status_not_503",
+                    "failure_facts": item,
+                }
+                result = MODULE.collect_safe_outcome(raw_json(payload), 1)
+                self.assertEqual(result["failed_assertion"], "native_mbo_response_status_not_503")
+                self.assertNotIn("failure_facts", result)
+                self.assertNotIn("PRIVATE", json.dumps(result))
+        for value in ("PRIVATE_ASSERTION", ["native_mbo_response_status_not_503"], 1):
+            payload = {"schema": 1, "passed": False, "failed_assertion": value, "failure_facts": facts}
+            result = MODULE.collect_safe_outcome(raw_json(payload), 1)
+            self.assertNotIn("failed_assertion", result)
+
     def test_success_rebuilds_a_whitelist_and_discards_raw_extra_fields(self):
         payload = valid_helper_payload()
         payload["password"] = "PRIVATE_TOP_LEVEL_SECRET"
@@ -204,6 +271,34 @@ class SafeAuthenticatedOutcomeTests(unittest.TestCase):
         encoded = json.dumps(result)
         self.assertNotIn("PRIVATE_", encoded)
         self.assertNotIn("trace", encoded)
+
+    def test_twig_diagnostics_allow_only_fixed_native_namespaces_and_pair_line_with_template(self):
+        for template in (
+            "@PrestaShop/Admin/Layout/light_layout.html.twig",
+            "@PrestaShopCore/Resources/views/Admin/layout.html.twig",
+            "@Modules/ps_mbo/views/templates/admin/error.html.twig",
+            "@Modules/ps_facebook/views/templates/admin/error.html.twig",
+        ):
+            with self.subTest(template=template):
+                payload = {
+                    "schema": 1,
+                    "passed": False,
+                    "failed_stage": "admin_kernel_boot",
+                    "twig_template": template,
+                    "twig_template_line": 17,
+                    "exception_message": "PRIVATE_MESSAGE",
+                }
+                result = MODULE.collect_safe_outcome(raw_json(payload), 1)
+                self.assertEqual(result["twig_template"], template)
+                self.assertEqual(result["twig_template_line"], 17)
+
+        for payload in (
+            {"schema": 1, "passed": False, "twig_template_line": 17},
+            {"schema": 1, "passed": False, "twig_template": "@Modules/other_module/error.html.twig", "twig_template_line": 17},
+        ):
+            result = MODULE.collect_safe_outcome(raw_json(payload), 1)
+            self.assertNotIn("twig_template", result)
+            self.assertNotIn("twig_template_line", result)
 
     def test_optional_failure_metadata_drops_unallowlisted_paths_and_stages(self):
         payload = {

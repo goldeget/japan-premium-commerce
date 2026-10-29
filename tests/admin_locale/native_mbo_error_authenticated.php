@@ -25,11 +25,26 @@ $nativeHttpLoginResult = null;
 $nativeLoginCookies = [];
 $nativeLoopbackHttpRequestCount = 0;
 $isolatedCiGuardPassed = false;
+$failedAssertion = null;
+$failureFacts = null;
+$allowedFailureAssertions = [
+    'native_kernel_browser_target_request_count_invalid',
+    'native_mbo_response_status_not_503',
+    'native_mbo_injected_header_missing',
+    'native_mbo_content_type_not_html',
+    'native_mbo_document_language_not_korean',
+    'native_mbo_korean_message_occurrences_insufficient',
+    'native_mbo_english_source_message_present',
+    'native_mbo_provider_invocation_count_invalid',
+    'native_mbo_session_csrf_probe_count_invalid',
+    'native_mbo_session_csrf_not_verified',
+];
 $shopRoot = dirname(__DIR__, 2);
 
 /** Fail with a fixed stage only; exception text and request data can carry secrets. */
-$require = static function (bool $condition, string $reason): void {
+$require = static function (bool $condition, string $reason) use (&$failedAssertion, $allowedFailureAssertions): void {
     if (!$condition) {
+        if (in_array($reason, $allowedFailureAssertions, true)) $failedAssertion = $reason;
         throw new RuntimeException($reason);
     }
 };
@@ -494,6 +509,7 @@ try {
     $koreanMessage = 'Addons에 연결하는 데 문제가 있는 것 같습니다. 페이지를 새로고침하거나 방화벽 설정을 확인해 주세요.';
     $contentType = strtolower((string) $response->headers->get('Content-Type', ''));
     $documentLanguage = '';
+    $bodyTokenPresent = false;
     $previousLibxmlState = libxml_use_internal_errors(true);
     try {
         $document = new DOMDocument();
@@ -502,6 +518,11 @@ try {
             if ($htmlNodes !== false && $htmlNodes->length === 1 && $htmlNodes->item(0) instanceof DOMElement) {
                 $documentLanguage = strtolower($htmlNodes->item(0)->getAttribute('lang'));
             }
+            $bodies = (new DOMXPath($document))->query('/html/body');
+            if ($bodies !== false && $bodies->length === 1 && $bodies->item(0) instanceof DOMElement) {
+                $bodyTokenPresent = $bodies->item(0)->hasAttribute('data-token')
+                    && $bodies->item(0)->getAttribute('data-token') !== '';
+            }
         }
     } finally {
         libxml_clear_errors();
@@ -509,6 +530,24 @@ try {
     }
 
     $koreanOccurrences = substr_count($body, $koreanMessage);
+    $responseStatus = $response->getStatusCode();
+    $injectedHeaderPresent = $response->headers->get('X-ORDENOWA-CI-Injected-Failure') === '1';
+    $htmlContentType = str_contains($contentType, 'text/html');
+    $koreanDocumentLanguage = preg_match('/\Ako(?:[-_]|\z)/i', $documentLanguage) === 1;
+    $englishSourcePresent = str_contains($body, $sourceMessage);
+    $providerCalls = $injectedProvider === null ? 0 : $injectedProvider->calls;
+    $failureFacts = [
+        'response_status' => $responseStatus,
+        'injected_header_present' => $injectedHeaderPresent,
+        'html_content_type' => $htmlContentType,
+        'korean_document_language' => $koreanDocumentLanguage,
+        'korean_message_occurrences' => min(10, $koreanOccurrences),
+        'english_source_present' => $englishSourcePresent,
+        'provider_calls' => min(100, $providerCalls),
+        'csrf_verified' => $nativeSessionCsrfVerified,
+        'csrf_probe_count' => min(100, $nativeSessionCsrfProbeCount),
+        'body_token_present' => $bodyTokenPresent,
+    ];
     $require($response->getStatusCode() === 503, 'native_mbo_response_status_not_503');
     $require($response->headers->get('X-ORDENOWA-CI-Injected-Failure') === '1', 'native_mbo_injected_header_missing');
     $require(str_contains($contentType, 'text/html'), 'native_mbo_content_type_not_html');
@@ -606,18 +645,45 @@ try {
             // never exposes raw HTML or encryption metadata in public output.
         }
     }
+    if ($isolatedCiGuardPassed && $stage === 'assert_authenticated_korean_error'
+        && is_string($failedAssertion) && in_array($failedAssertion, $allowedFailureAssertions, true)) {
+        try {
+            if (is_array($failureFacts) && isset($responseStatus, $catalogUri, $body)
+                && is_int($responseStatus) && $responseStatus >= 100 && $responseStatus <= 599
+                && is_string($catalogUri) && preg_match('~\A/admin-kuranea(?:/|\z)~D', $catalogUri) === 1
+                && is_string($body) && strlen($body) <= 2 * 1024 * 1024) {
+                $privateEnvelope = json_encode([
+                    'scope' => 'mbo_native_error_assertion_failure',
+                    'status' => $responseStatus,
+                    'request_uri' => $catalogUri,
+                    'body_base64' => base64_encode($body),
+                ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+                require_once __DIR__ . '/native_admin_private_snapshot.php';
+                persistNativeAdminSnapshot(
+                    'mbo-auth-landing', $privateEnvelope,
+                    '/tmp/owned/kuranea-admin-test-deps', $expectedProject
+                );
+            }
+        } catch (Throwable) {
+            // Preserve the functional failure; response content remains private.
+        }
+    }
     if (class_exists('NativeAdminHttpLogin', false)) {
         $authLanding = NativeAdminHttpLogin::safeAuthLandingFacts();
         if (is_array($authLanding)) $outcome['auth_landing'] = $authLanding;
     }
+    if (is_string($failedAssertion) && in_array($failedAssertion, $allowedFailureAssertions, true)) {
+        $outcome['failed_assertion'] = $failedAssertion;
+    }
+    if (is_array($failureFacts)) $outcome['failure_facts'] = $failureFacts;
     if ($error instanceof Twig\Error\Error) {
         $sourceName = $error->getSourceContext()?->getName() ?? '';
         if (preg_match('~\A@(?:PrestaShop/Admin|PrestaShopCore|Modules/ps_mbo)/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.twig\z~D', $sourceName)) {
             $outcome['twig_template'] = $sourceName;
-        }
-        $line = $error->getTemplateLine();
-        if (is_int($line) && $line > 0 && $line <= 100000) {
-            $outcome['twig_template_line'] = $line;
+            $line = $error->getTemplateLine();
+            if (is_int($line) && $line > 0 && $line <= 100000) {
+                $outcome['twig_template_line'] = $line;
+            }
         }
     }
     $cause = $error;

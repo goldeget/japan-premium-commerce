@@ -54,7 +54,7 @@ FAILURE_STAGES = {
 CAUSE_CLASS_RE = re.compile(r"[A-Za-z0-9_\\]{1,160}\Z")
 FAILURE_SOURCE_RE = re.compile(r"[A-Za-z0-9_.-]{1,165}\.php:[1-9][0-9]{0,6}\Z")
 TWIG_TEMPLATE_RE = re.compile(
-    r"@(?:PrestaShop/Admin|Modules/ps_mbo)/(?:[A-Za-z0-9_-]+/)*"
+    r"@(?:PrestaShop/Admin|PrestaShopCore|Modules/(?:ps_mbo|ps_facebook))/(?:[A-Za-z0-9_-]+/)*"
     r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.twig\Z"
 )
 AUTH_LANDING_KEYS = {
@@ -65,6 +65,23 @@ AUTH_PATH_KINDS = {"login", "index", "other_admin"}
 AUTH_CONTROLLER_KINDS = {"login", "dashboard", "other", "none"}
 AUTH_TOKEN_KINDS = {"missing", "masked", "plain_hex32", "plain_uri_safe", "other"}
 AUTH_PAGE_KINDS = {"login", "dashboard", "security_warning", "other"}
+MBO_FAILURE_ASSERTIONS = {
+    "native_kernel_browser_target_request_count_invalid",
+    "native_mbo_response_status_not_503",
+    "native_mbo_injected_header_missing",
+    "native_mbo_content_type_not_html",
+    "native_mbo_document_language_not_korean",
+    "native_mbo_korean_message_occurrences_insufficient",
+    "native_mbo_english_source_message_present",
+    "native_mbo_provider_invocation_count_invalid",
+    "native_mbo_session_csrf_probe_count_invalid",
+    "native_mbo_session_csrf_not_verified",
+}
+MBO_FAILURE_FACT_KEYS = {
+    "response_status", "injected_header_present", "html_content_type",
+    "korean_document_language", "korean_message_occurrences", "english_source_present",
+    "provider_calls", "csrf_verified", "csrf_probe_count", "body_token_present",
+}
 
 
 class _DuplicateJsonKey(ValueError):
@@ -104,6 +121,28 @@ def _safe_auth_landing_facts(value: Any) -> dict[str, Any] | None:
     return {key: value[key] for key in (
         "post_status", "redirect_count", "final_status", "final_path_kind",
         "final_controller_kind", "redirect_token_kind", "body_token_kind", "body_page_kind",
+    )}
+
+
+def _safe_mbo_failure_facts(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or set(value) != MBO_FAILURE_FACT_KEYS:
+        return None
+    status = value["response_status"]
+    if type(status) is not int or not 100 <= status <= 599:
+        return None
+    for key in (
+        "injected_header_present", "html_content_type", "korean_document_language",
+        "english_source_present", "csrf_verified", "body_token_present",
+    ):
+        if type(value[key]) is not bool:
+            return None
+    for key, maximum in (("korean_message_occurrences", 10), ("provider_calls", 100), ("csrf_probe_count", 100)):
+        if type(value[key]) is not int or not 0 <= value[key] <= maximum:
+            return None
+    return {key: value[key] for key in (
+        "response_status", "injected_header_present", "html_content_type",
+        "korean_document_language", "korean_message_occurrences", "english_source_present",
+        "provider_calls", "csrf_verified", "csrf_probe_count", "body_token_present",
     )}
 
 
@@ -180,12 +219,18 @@ def _safe_failure(
         twig_template = payload.get("twig_template")
         if isinstance(twig_template, str) and TWIG_TEMPLATE_RE.fullmatch(twig_template):
             result["twig_template"] = twig_template
-        twig_line = payload.get("twig_template_line")
-        if type(twig_line) is int and 1 <= twig_line <= 100_000:
-            result["twig_template_line"] = twig_line
+            twig_line = payload.get("twig_template_line")
+            if type(twig_line) is int and 1 <= twig_line <= 100_000:
+                result["twig_template_line"] = twig_line
         auth_landing = _safe_auth_landing_facts(payload.get("auth_landing"))
         if auth_landing is not None:
             result["auth_landing"] = auth_landing
+        failed_assertion = payload.get("failed_assertion")
+        if isinstance(failed_assertion, str) and failed_assertion in MBO_FAILURE_ASSERTIONS:
+            result["failed_assertion"] = failed_assertion
+        failure_facts = _safe_mbo_failure_facts(payload.get("failure_facts"))
+        if failure_facts is not None:
+            result["failure_facts"] = failure_facts
     return result
 
 
