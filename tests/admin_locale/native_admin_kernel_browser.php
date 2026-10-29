@@ -18,11 +18,14 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class NativeAdminKernelBrowser extends KernelBrowser
 {
+    public int $nativeRequestCount = 0;
+
     protected function doRequest(object $request): Response
     {
         if (!$request instanceof Request) {
             throw new UnexpectedValueException('native_http_foundation_request_required');
         }
+        ++$this->nativeRequestCount;
 
         $previousGet = $_GET;
         $previousPost = $_POST;

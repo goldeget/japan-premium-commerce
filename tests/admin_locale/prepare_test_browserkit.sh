@@ -85,6 +85,7 @@ container_root=/tmp/owned/kuranea-admin-test-deps
   install -d -o root -g www-data -m 0750 /tmp/owned/kuranea-admin-test-deps
   printf "%s\n" "$KURANEA_CI_PROJECT_NAME" > /tmp/owned/kuranea-admin-test-deps/.ordenowa-ci-project
   install -d -o root -g www-data -m 0750 /tmp/owned/kuranea-admin-test-deps/source
+  install -d -o www-data -g www-data -m 0700 /tmp/owned/kuranea-admin-test-deps/private-snapshots
 ' >/dev/null
 "${compose[@]}" cp "$stage/browser-kit.tar" "prestashop:$container_root/browser-kit.tar" >/dev/null
 "${compose[@]}" cp "$stage/css-selector.tar" "prestashop:$container_root/css-selector.tar" >/dev/null
@@ -110,6 +111,11 @@ phase=verify_and_extract
   chown -R root:www-data "$root"
   find "$root" -type d -exec chmod 0750 {} +
   find "$root" -type f -exec chmod 0640 {} +
+  # The only writable child is the one-shot private response handoff. Restore
+  # its ownership/mode after the blanket read-only dependency permissions.
+  chown www-data:www-data "$root/private-snapshots"
+  chmod 0700 "$root/private-snapshots"
+  runuser -u www-data -- test -w "$root/private-snapshots"
   runuser -u www-data -- test -r "$root/source-revisions.json"
   runuser -u www-data -- test -r "$root/source/browser-kit/AbstractBrowser.php"
   runuser -u www-data -- test -r "$root/source/css-selector/CssSelectorConverter.php"

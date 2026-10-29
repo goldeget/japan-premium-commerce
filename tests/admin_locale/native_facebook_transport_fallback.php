@@ -7,12 +7,35 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\ControllerEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
 
+ini_set('display_errors', '0');
+ini_set('log_errors', '0');
+$probeBufferLevel = ob_get_level();
+ob_start();
+$emitSafeOutcome = static function (array $value) use ($probeBufferLevel): void {
+    while (ob_get_level() > $probeBufferLevel) ob_end_clean();
+    echo json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . PHP_EOL;
+};
+
+require_once __DIR__ . '/native_admin_http_login.php';
+
 $stage = 'ci_guard';
 $shopRoot = dirname(__DIR__, 2);
 $moduleInventory = [];
 $dependencySources = [];
 $outcome = [];
-$mode = 'disabled';
+$caseName = getenv('ORDENOWA_FACEBOOK_CASE') ?: '';
+$caseModes = [
+    'unauthenticated' => 'disabled',
+    'other_route' => 'other_route_runtime',
+    'generic_facebook' => 'generic_facebook_runtime',
+    'access_denied' => 'facebook_access_denied',
+    'curl_transport' => 'curl_transport',
+];
+$mode = $caseModes[$caseName] ?? 'invalid';
+$nativeLogin = null;
+$nativeCookies = [];
+$nativeLoginRequests = 0;
+$nativeLoginStages = [];
 $injectionCounts = [
     'target_controller_events' => 0,
     'known_facebook_request_controller_events' => 0,
@@ -117,26 +140,6 @@ $localAdminUri = static function (string $candidate, string $baseUri): string {
     return $path . (isset($parts['query']) && $parts['query'] !== '' ? '?' . $parts['query'] : '');
 };
 
-$followLocalRedirects = static function (KernelBrowser $browser, string $uri) use ($localAdminUri): string {
-    for ($hop = 0; $hop < 6; ++$hop) {
-        $response = $browser->getResponse();
-        if (!$response->isRedirection()) {
-            return $uri;
-        }
-        $status = $response->getStatusCode();
-        if (!in_array($status, [301, 302, 303], true)) {
-            throw new RuntimeException('unexpected_redirect_status');
-        }
-        $location = $response->headers->get('Location');
-        if (!is_string($location) || $location === '') {
-            throw new RuntimeException('redirect_location_missing');
-        }
-        $uri = $localAdminUri($location, $uri);
-        $browser->request('GET', $uri);
-    }
-    throw new RuntimeException('redirect_limit');
-};
-
 $parseLoginForm = static function (string $html): ?array {
     $previousLibxmlState = libxml_use_internal_errors(true);
     try {
@@ -208,8 +211,8 @@ try {
     $runId = getenv('GITHUB_RUN_ID') ?: '';
     $runAttempt = getenv('GITHUB_RUN_ATTEMPT') ?: '';
     $expectedProject = 'ordenowa-procurement-ci-' . $runId . '-' . $runAttempt;
-    $adminEmail = getenv('ADMIN_MAIL') ?: '';
-    $adminPassword = getenv('ADMIN_PASSWD') ?: '';
+    $adminEmail = $caseName === 'unauthenticated' ? '' : (getenv('ADMIN_MAIL') ?: '');
+    $adminPassword = $caseName === 'unauthenticated' ? '' : (getenv('ADMIN_PASSWD') ?: '');
     $expectedAdminEmail = 'procurement-admin-' . $runId . '-' . $runAttempt . '@example.invalid';
     $require(
         getenv('KURANEA_ISOLATED_CI') === '1'
@@ -219,16 +222,58 @@ try {
         && preg_match('/\A[0-9]{1,8}\z/D', $runAttempt) === 1
         && getenv('KURANEA_CI_PROJECT_NAME') === $expectedProject
         && getenv('PS_DOMAIN') === 'localhost:18081'
-        && hash_equals($expectedAdminEmail, $adminEmail)
-        && preg_match('/\A[A-Za-z0-9_-]{32,128}\z/D', $adminPassword) === 1,
+        && ($caseName === 'unauthenticated'
+            || (hash_equals($expectedAdminEmail, $adminEmail)
+                && preg_match('/\A[A-Za-z0-9_-]{32,128}\z/D', $adminPassword) === 1)),
         'isolated_ci_auth_guard'
     );
+    $require(array_key_exists($caseName, $caseModes), 'isolated_facebook_case_guard');
 
     $stage = 'admin_bootstrap_path';
     $adminRoot = realpath($shopRoot . '/admin-kuranea');
     $shopRootReal = realpath($shopRoot);
     $require($adminRoot !== false && $shopRootReal !== false && dirname($adminRoot) === $shopRootReal
         && is_file($adminRoot . '/index.php') && is_dir($adminRoot . '/themes'), 'native_admin_path_missing');
+
+    // Each invocation is one fresh PHP process. Authenticated cases perform
+    // real HTTP login before configuration/session bootstrap.
+    if ($caseName !== 'unauthenticated') {
+        $stage = 'native_http_admin_login';
+        $transport = new NativeAdminHttpCurlTransport();
+        try {
+            $nativeLogin = NativeAdminHttpLogin::authenticate(
+                '/admin-kuranea/',
+                $adminEmail,
+                $adminPassword,
+                [$transport, 'request'],
+                [$transport, 'cookies'],
+                $parseLoginForm,
+                $hasLoginForm,
+                $localAdminUri,
+                static function (string $loginStage) use (&$nativeLoginStages): void {
+                    $nativeLoginStages[] = $loginStage;
+                }
+            );
+            if (!method_exists($transport, 'requestCount')) {
+                throw new RuntimeException('native_http_request_counter_unavailable');
+            }
+            $nativeLoginRequests = $transport->requestCount();
+            if (!is_int($nativeLoginRequests) || $nativeLoginRequests < 2 || $nativeLoginRequests > 20) {
+                throw new RuntimeException('native_http_request_count_invalid');
+            }
+            if ($nativeLoginStages !== [
+                'native_login_get', 'native_login_get_redirects', 'native_login_post', 'native_login_post_redirects',
+            ]) {
+                throw new RuntimeException('native_http_login_stage_sequence_invalid');
+            }
+            $nativeCookies = $nativeLogin['cookies'];
+            $_COOKIE = NativeAdminHttpLogin::globalsForUri($nativeCookies, $nativeLogin['final_uri']);
+        } finally {
+            $transport->close();
+        }
+    } else {
+        $_COOKIE = [];
+    }
     if (!defined('_PS_ADMIN_DIR_')) {
         define('_PS_ADMIN_DIR_', $adminRoot);
     } elseif (realpath(_PS_ADMIN_DIR_) !== $adminRoot) {
@@ -403,7 +448,7 @@ try {
 
     require_once __DIR__ . '/native_admin_kernel_browser.php';
     \Symfony\Component\HttpFoundation\Request::enableHttpMethodParameterOverride();
-    $stage = 'login_browser_fixture';
+    $stage = 'native_admin_kernel_browser_fixture';
     $browserServer = [
         'HTTP_HOST' => 'localhost:18081', 'SERVER_NAME' => 'localhost', 'SERVER_PORT' => '18081',
         'SERVER_PROTOCOL' => 'HTTP/1.1', 'REQUEST_SCHEME' => 'http', 'HTTPS' => 'off',
@@ -413,24 +458,11 @@ try {
     ];
     $browser = new NativeAdminKernelBrowser($kernel, $browserServer);
     $browser->disableReboot();
-    $loginUri = '/admin-kuranea/';
-    $browser->request('GET', $loginUri);
-    $loginUri = $followLocalRedirects($browser, $loginUri);
-    $loginHtml = $browser->getResponse()->getContent();
-    $loginForm = is_string($loginHtml) ? $parseLoginForm($loginHtml) : null;
-    if ($loginForm === null) {
-        throw new RuntimeException('native_login_form_contract_mismatch');
-    }
-    $loginTarget = $localAdminUri((string) $loginForm['action'], $loginUri);
-    $loginFields = $loginForm['fields'];
-    $loginFields[$loginForm['email_name']] = $adminEmail;
-    $loginFields[$loginForm['password_name']] = $adminPassword;
-    $browser->request('POST', $loginTarget, $loginFields);
-    $loginUri = $followLocalRedirects($browser, $loginTarget);
-    $loginResponse = $browser->getResponse();
-    $loginBody = $loginResponse->getContent();
-    if ($loginResponse->getStatusCode() !== 200 || !is_string($loginBody) || $hasLoginForm($loginBody)) {
-        throw new RuntimeException('native_admin_authentication_not_established');
+    if ($caseName !== 'unauthenticated') {
+        if (($nativeLogin['login_form_posted'] ?? false) !== true || $nativeCookies === []) {
+            throw new RuntimeException('native_http_login_contract_mismatch');
+        }
+        NativeAdminHttpLogin::installInBrowserKit($browser->getCookieJar(), $nativeCookies);
     }
 
     $stage = 'framework_generated_facebook_admin_link';
@@ -445,11 +477,14 @@ try {
     $facebookUri = $localAdminUri($facebookLink, '/admin-kuranea/index.php');
     $facebookParts = parse_url($facebookUri);
     parse_str((string) (is_array($facebookParts) ? ($facebookParts['query'] ?? '') : ''), $facebookQuery);
-    if (($facebookQuery['controller'] ?? null) !== 'AdminPsfacebookModule'
-        || !is_string($facebookQuery['token'] ?? null) || $facebookQuery['token'] === '') {
+    if (($facebookQuery['controller'] ?? null) !== 'AdminPsfacebookModule') {
         throw new RuntimeException('framework_facebook_link_contract_mismatch');
     }
-    $facebookToken = $facebookQuery['token'];
+    $facebookToken = is_string($facebookQuery['token'] ?? null) ? $facebookQuery['token'] : '';
+    $frameworkLinkHasToken = $facebookToken !== '';
+    if ($caseName !== 'unauthenticated' && !$frameworkLinkHasToken) {
+        throw new RuntimeException('authenticated_framework_facebook_token_missing');
+    }
 
     $stage = 'test_only_controller_listener';
     $controllerListener = static function (ControllerEvent $event) use (
@@ -634,118 +669,114 @@ try {
         -16
     );
 
-    $stage = 'unauthenticated_facebook_negative';
-    $unauthenticatedBrowser = new NativeAdminKernelBrowser($kernel, $browserServer);
-    $unauthenticatedBrowser->disableReboot();
-    $mode = 'disabled';
-    $beforeUnauthenticatedTargetEvents = $injectionCounts['known_facebook_request_controller_events'];
-    $unauthenticatedBrowser->request('GET', $facebookUri);
-    $unauthResponse = $unauthenticatedBrowser->getResponse();
-    $unauthBody = $unauthResponse->getContent();
-    if ($unauthResponse->getStatusCode() === 503 || !is_string($unauthBody)
-        || $injectionCounts['known_facebook_request_controller_events'] !== $beforeUnauthenticatedTargetEvents
-        || $injectionCounts['disabled_mode_facebook_sentinels'] !== 0
-        || str_contains($unauthBody, 'Facebook 계정 연결을 일시적으로 사용할 수 없습니다')) {
-        throw new RuntimeException('unauthenticated_request_was_converted');
-    }
-    $unauthenticatedStatus = $unauthResponse->getStatusCode();
-
-    $stage = 'other_route_negative';
-    $dashboardLink = $context->link->getAdminLink('AdminDashboard', true);
-    if (!is_string($dashboardLink) || $dashboardLink === '') {
-        throw new RuntimeException('framework_dashboard_link_missing');
-    }
-    $dashboardUri = $localAdminUri($dashboardLink, '/admin-kuranea/index.php');
-    $mode = 'other_route_runtime';
-    $beforeOtherRoute = $injectionCounts['other_route_exceptions'];
-    $browser->request('GET', $dashboardUri);
-    $otherRouteResponse = $browser->getResponse();
-    $otherRouteBody = $otherRouteResponse->getContent();
-    if ($injectionCounts['other_route_exceptions'] !== $beforeOtherRoute + 1
-        || $otherRouteResponse->getStatusCode() === 503 || !is_string($otherRouteBody)
-        || str_contains($otherRouteBody, 'Facebook 계정 연결을 일시적으로 사용할 수 없습니다')) {
-        throw new RuntimeException('unrelated_route_failure_was_converted');
-    }
-
-    $stage = 'generic_facebook_exception_negative';
-    $mode = 'generic_facebook_runtime';
-    $beforeGeneric = $injectionCounts['generic_facebook_exceptions'];
-    $browser->request('GET', $facebookUri);
-    $genericResponse = $browser->getResponse();
-    $genericBody = $genericResponse->getContent();
-    if ($injectionCounts['generic_facebook_exceptions'] !== $beforeGeneric + 1
-        || $genericResponse->getStatusCode() === 503 || !is_string($genericBody)
-        || str_contains($genericBody, 'Facebook 계정 연결을 일시적으로 사용할 수 없습니다')) {
-        throw new RuntimeException('generic_facebook_exception_was_converted');
-    }
-
-    $stage = 'access_denied_negative';
-    $mode = 'facebook_access_denied';
-    $beforeDenied = $injectionCounts['facebook_access_denied_exceptions'];
-    $browser->request('GET', $facebookUri);
-    $deniedResponse = $browser->getResponse();
-    $deniedBody = $deniedResponse->getContent();
-    if ($injectionCounts['facebook_access_denied_exceptions'] !== $beforeDenied + 1
-        || $deniedResponse->getStatusCode() !== 403 || !is_string($deniedBody)
-        || str_contains($deniedBody, 'Facebook 계정 연결을 일시적으로 사용할 수 없습니다')) {
-        throw new RuntimeException('access_denied_was_converted_or_not_preserved');
-    }
-
-    $stage = 'actual_installed_curl_failure_positive';
-    $mode = 'curl_transport';
-    $beforeHttpClient = $injectionCounts['http_client_requests'];
-    $browser->request('GET', $facebookUri);
-    $response = $browser->getResponse();
-    $body = $response->getContent();
-    $mode = 'disabled';
-    if (!is_string($body) || $response->getStatusCode() !== 503
-        || $injectionCounts['http_client_requests'] !== $beforeHttpClient + 1
-        || str_contains(strtolower((string) $response->headers->get('Cache-Control')), 'no-store') === false
-        || strtolower((string) $response->headers->get('X-Robots-Tag')) !== 'noindex') {
-        throw new RuntimeException('facebook_transport_fallback_response_mismatch');
-    }
-
-    $stage = 'assert_safe_korean_html';
-    $previousLibxmlState = libxml_use_internal_errors(true);
-    $documentLanguage = '';
-    $errorFragment = '';
-    try {
-        $document = new DOMDocument();
-        if ($document->loadHTML($body, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) {
-            $htmlNodes = (new DOMXPath($document))->query('/html');
-            if ($htmlNodes !== false && $htmlNodes->length === 1 && $htmlNodes->item(0) instanceof DOMElement) {
-                $documentLanguage = strtolower($htmlNodes->item(0)->getAttribute('lang'));
-            }
-            $errorNodes = (new DOMXPath($document))->query('//*[@id="ordenowa-facebook-transport-error"]');
-            if ($errorNodes !== false && $errorNodes->length === 1 && $errorNodes->item(0) instanceof DOMElement) {
-                $errorFragment = $errorNodes->item(0)->textContent;
-            }
+    $dashboardUri = null;
+    if ($caseName === 'other_route') {
+        $dashboardLink = $context->link->getAdminLink('AdminDashboard', true);
+        if (!is_string($dashboardLink) || $dashboardLink === '') {
+            throw new RuntimeException('framework_dashboard_link_missing');
         }
-    } finally {
-        libxml_clear_errors();
-        libxml_use_internal_errors($previousLibxmlState);
+        $dashboardUri = $localAdminUri($dashboardLink, '/admin-kuranea/index.php');
     }
+
+    $stage = 'single_fresh_process_case_request';
+    if ($caseName === 'unauthenticated') {
+        if ($nativeLogin !== null || $nativeCookies !== [] || $_COOKIE !== []) {
+            throw new RuntimeException('unauthenticated_case_has_auth_state');
+        }
+        $requestUri = $facebookUri;
+    } elseif ($caseName === 'other_route') {
+        $requestUri = $dashboardUri;
+    } else {
+        $requestUri = $facebookUri;
+    }
+    $require(is_string($requestUri) && $requestUri !== '', 'case_request_uri_missing');
+    $browser->request('GET', $requestUri);
+    $browserRequests = $browser->nativeRequestCount;
+    $require($browserRequests === 1, 'one_native_target_request_required');
+    $response = $browser->getResponse();
+    $responseStatus = $response->getStatusCode();
+    $body = $response->getContent();
+    if (!is_string($body)) {
+        throw new RuntimeException('case_response_body_unavailable');
+    }
+
+    $stage = 'case_specific_semantic_assertions';
     $safeTitle = 'Facebook 계정 연결을 일시적으로 사용할 수 없습니다';
     $safeMessage = 'Facebook 서비스에 연결하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.';
-    $leakCheckValues = ['cURL error', 'billing-api.distribution.prestashop.net', '127.0.0.1'];
-    $noSensitiveDetails = $errorFragment !== '' && !str_contains($errorFragment, $facebookToken);
-    foreach ($leakCheckValues as $forbidden) {
-        if ($forbidden !== '' && str_contains($body, $forbidden)) {
-            $noSensitiveDetails = false;
+    $caseChecks = [
+        'unauthenticated_status_not_converted' => false,
+        'other_route_status_not_converted' => false,
+        'generic_facebook_status_not_converted' => false,
+        'access_denied_status_preserved' => false,
+        'facebook_fallback_response_safe' => false,
+    ];
+    $documentLanguage = '';
+    $noSensitiveDetails = false;
+
+    if ($caseName === 'unauthenticated') {
+        $caseChecks['unauthenticated_status_not_converted'] = $responseStatus !== 503
+            && !str_contains($body, $safeTitle)
+            && $authenticatedReadGatePasses === 0
+            && $injectionCounts['disabled_mode_facebook_sentinels'] === 0;
+        $require($caseChecks['unauthenticated_status_not_converted'], 'unauthenticated_request_was_converted');
+    } elseif ($caseName === 'other_route') {
+        $caseChecks['other_route_status_not_converted'] = $injectionCounts['other_route_exceptions'] === 1
+            && $responseStatus !== 503 && !str_contains($body, $safeTitle);
+        $require($caseChecks['other_route_status_not_converted'], 'unrelated_route_failure_was_converted');
+    } elseif ($caseName === 'generic_facebook') {
+        $caseChecks['generic_facebook_status_not_converted'] = $authenticatedReadGatePasses === 1
+            && $injectionCounts['generic_facebook_exceptions'] === 1
+            && $responseStatus !== 503 && !str_contains($body, $safeTitle);
+        $require($caseChecks['generic_facebook_status_not_converted'], 'generic_facebook_exception_was_converted');
+    } elseif ($caseName === 'access_denied') {
+        $caseChecks['access_denied_status_preserved'] = $authenticatedReadGatePasses === 1
+            && $injectionCounts['facebook_access_denied_exceptions'] === 1
+            && $responseStatus === 403 && !str_contains($body, $safeTitle);
+        $require($caseChecks['access_denied_status_preserved'], 'access_denied_was_converted_or_not_preserved');
+    } elseif ($caseName === 'curl_transport') {
+        if ($responseStatus !== 503 || $injectionCounts['http_client_requests'] !== 1
+            || str_contains(strtolower((string) $response->headers->get('Cache-Control')), 'no-store') === false
+            || strtolower((string) $response->headers->get('X-Robots-Tag')) !== 'noindex') {
+            throw new RuntimeException('facebook_transport_fallback_response_mismatch');
         }
+        $oldLibxmlState = libxml_use_internal_errors(true);
+        $errorFragment = '';
+        try {
+            $document = new DOMDocument();
+            if ($document->loadHTML($body, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) {
+                $htmlNodes = (new DOMXPath($document))->query('/html');
+                if ($htmlNodes !== false && $htmlNodes->length === 1 && $htmlNodes->item(0) instanceof DOMElement) {
+                    $documentLanguage = strtolower($htmlNodes->item(0)->getAttribute('lang'));
+                }
+                $errorNodes = (new DOMXPath($document))->query('//*[@id="ordenowa-facebook-transport-error"]');
+                if ($errorNodes !== false && $errorNodes->length === 1 && $errorNodes->item(0) instanceof DOMElement) {
+                    $errorFragment = $errorNodes->item(0)->textContent;
+                }
+            }
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($oldLibxmlState);
+        }
+        $noSensitiveDetails = $errorFragment !== '' && $frameworkLinkHasToken
+            && !str_contains($errorFragment, $facebookToken);
+        foreach (['cURL error', 'billing-api.distribution.prestashop.net', '127.0.0.1'] as $forbidden) {
+            if (str_contains($body, $forbidden)) {
+                $noSensitiveDetails = false;
+            }
+        }
+        $caseChecks['facebook_fallback_response_safe'] = str_contains($body, $safeTitle)
+            && str_contains($body, $safeMessage)
+            && preg_match('/\Ako(?:[-_]|\z)/i', $documentLanguage) === 1
+            && $response->headers->get('Content-Type') !== null
+            && str_contains(strtolower((string) $response->headers->get('Content-Type')), 'text/html')
+            && $noSensitiveDetails
+            && $nativeSessionCsrfVerified && $nativeSessionCsrfProbeCount === 1
+            && $authenticatedReadGatePasses === 1;
+        $require($caseChecks['facebook_fallback_response_safe'], 'facebook_safe_html_or_csrf_assertions_failed');
+    } else {
+        throw new RuntimeException('unknown_isolated_facebook_case');
     }
-    $require(
-        str_contains($body, $safeTitle)
-        && str_contains($body, $safeMessage)
-        && preg_match('/\Ako(?:[-_]|\z)/i', $documentLanguage) === 1
-        && $response->headers->get('Content-Type') !== null
-        && str_contains(strtolower((string) $response->headers->get('Content-Type')), 'text/html')
-        && $noSensitiveDetails,
-        'facebook_safe_html_assertions_failed'
-    );
-    $require($nativeSessionCsrfVerified && $nativeSessionCsrfProbeCount === 1,
-        'facebook_native_session_csrf_probe_failed');
-    $require($authenticatedReadGatePasses === 3, 'facebook_native_authenticated_read_gate_probe_failed');
+
     $sourceHashes = [
         'facebook_http_client_sha256' => $sourceHash,
         'project_subscriber_sha256' => hash_file('sha256', $moduleInventory['kuraneabackoffice']['module_path']
@@ -757,50 +788,79 @@ try {
         || !preg_match('/\A[a-f0-9]{64}\z/D', (string) $sourceHashes['project_template_sha256'])) {
         throw new RuntimeException('project_fallback_source_missing');
     }
+
+    $snapshotHash = null;
+    if ($caseName === 'curl_transport') {
+        if (!$nativeSessionCsrfVerified || $nativeSessionCsrfProbeCount !== 1
+            || !$caseChecks['facebook_fallback_response_safe']) {
+            throw new RuntimeException('facebook_private_snapshot_not_yet_proven');
+        }
+        require_once __DIR__ . '/native_admin_private_snapshot.php';
+        $ownedDependencyRoot = '/tmp/owned/kuranea-admin-test-deps';
+        persistNativeAdminSnapshot('facebook', $body, $ownedDependencyRoot, $expectedProject);
+        $snapshotHash = hash('sha256', $body);
+        if (!is_string($snapshotHash) || !preg_match('/\A[a-f0-9]{64}\z/D', $snapshotHash)) {
+            throw new RuntimeException('facebook_private_snapshot_hash_invalid');
+        }
+    }
+
     $outcome = [
-        'schema' => 1,
+        'schema' => 2,
         'passed' => true,
+        'case' => $caseName,
         'module_inventory' => [
             'ps_facebook' => ['installed' => true, 'active' => true, 'version' => $moduleInventory['ps_facebook']['version']],
             'kuraneabackoffice' => ['installed' => true, 'active' => true, 'version' => $moduleInventory['kuraneabackoffice']['version']],
         ],
         'source_sha256' => $sourceHashes,
-        'facebook_error_fallback' => [
-            'mode' => 'authenticated_native_admin_kernel_browserkit',
-            'native_admin_login_posted' => true,
+        'facebook_case_facts' => [
+            'native_login_transport' => $caseName === 'unauthenticated' ? 'none' : 'loopback_http_native_front_controller',
+            'native_login_form_posted' => $caseName !== 'unauthenticated' && ($nativeLogin['login_form_posted'] ?? false) === true,
+            'native_login_http_requests' => $nativeLoginRequests,
+            'native_login_stages_verified' => $caseName === 'unauthenticated'
+                ? $nativeLoginStages === []
+                : $nativeLoginStages === [
+                    'native_login_get', 'native_login_get_redirects', 'native_login_post', 'native_login_post_redirects',
+                ],
             'framework_generated_legacy_link' => true,
-            'route' => 'admin_legacy_controller_route',
-            'controller' => 'AdminPsfacebookModuleController',
-            'controller_action' => 'read',
-            'positive_failure_source' => 'installed_ps_facebook_HttpClient_cURL_exception',
-            'actual_http_client_source_trace_verified_by_fallback' => true,
-            'native_authenticated_read_gate_verified' => $authenticatedReadGatePasses === 3,
+            'framework_link_has_token' => $frameworkLinkHasToken,
+            'unauthenticated_link_token_validity_claimed' => false,
+            'case' => $caseName,
+            'browserkit_target_get_count' => $browserRequests,
+            'route' => $caseName === 'other_route' ? 'admin_dashboard' : 'admin_legacy_controller_route',
+            'controller' => $caseName === 'other_route' ? 'AdminDashboard' : 'AdminPsfacebookModuleController',
+            'controller_action' => $caseName === 'other_route' ? 'not_applicable' : 'read',
+            'authenticated_read_gate_passes' => $authenticatedReadGatePasses,
             'known_facebook_request_controller_events' => $injectionCounts['known_facebook_request_controller_events'],
             'mismatched_facebook_route_events' => $injectionCounts['mismatched_facebook_route_events'],
             'disabled_mode_facebook_sentinels' => $injectionCounts['disabled_mode_facebook_sentinels'],
+            'other_route_exception_count' => $injectionCounts['other_route_exceptions'],
+            'generic_facebook_exception_count' => $injectionCounts['generic_facebook_exceptions'],
+            'access_denied_exception_count' => $injectionCounts['facebook_access_denied_exceptions'],
             'test_transport_target' => 'run_owned_ipv4_loopback_bind_only',
             'stream_server_listen_used' => false,
             'facebook_vendor_initContent_called_by_fixture' => false,
             'script_initiated_external_transport_requests' => 0,
             'installed_http_client_calls' => $injectionCounts['http_client_requests'],
-            'response_status' => $response->getStatusCode(),
-            'korean_safe_title' => str_contains($body, $safeTitle),
-            'korean_safe_message' => str_contains($body, $safeMessage),
+            'response_status' => $responseStatus,
+            'unauthenticated_status_not_converted' => $caseChecks['unauthenticated_status_not_converted'],
+            'other_route_status_not_converted' => $caseChecks['other_route_status_not_converted'],
+            'generic_facebook_runtime_status_not_converted' => $caseChecks['generic_facebook_status_not_converted'],
+            'access_denied_status_preserved' => $caseChecks['access_denied_status_preserved'],
+            'korean_safe_title' => $caseChecks['facebook_fallback_response_safe'],
+            'korean_safe_message' => $caseChecks['facebook_fallback_response_safe'],
             'korean_document_language' => $documentLanguage,
-            'fixed_error_fragment_excludes_token_and_transport_details' => $noSensitiveDetails,
-            'unauthenticated_status_not_converted' => $unauthenticatedStatus !== 503,
-            'other_route_status_not_converted' => $otherRouteResponse->getStatusCode() !== 503,
-            'generic_facebook_runtime_status_not_converted' => $genericResponse->getStatusCode() !== 503,
-            'access_denied_status_preserved' => $deniedResponse->getStatusCode() === 403,
+            'fixed_error_fragment_excludes_token_and_transport_details' => $caseChecks['facebook_fallback_response_safe'] && $noSensitiveDetails,
             'native_session_csrf_verified' => $nativeSessionCsrfVerified,
             'native_session_csrf_probe_count' => $nativeSessionCsrfProbeCount,
+            'positive_response_snapshot_sha256' => $snapshotHash,
             'script_business_data_mutations' => false,
-            'login_session_or_auth_audit_writes_possible' => true,
+            'login_session_or_auth_audit_writes_possible' => $caseName !== 'unauthenticated',
             'kernel_bootstrap_database_network_side_effects_instrumented' => false,
         ],
         'test_dependencies' => $dependencySources,
     ];
-    echo json_encode($outcome, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . PHP_EOL;
+    $emitSafeOutcome($outcome);
     exit(0);
 } catch (Throwable $error) {
     fwrite(STDERR, 'FAIL native Facebook transport fallback stage=' . $stage . PHP_EOL);
@@ -826,7 +886,29 @@ try {
         'login_session_or_auth_audit_writes_possible' => true,
         'kernel_bootstrap_database_network_side_effects_instrumented' => false,
     ];
-    echo json_encode($outcome, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . PHP_EOL;
+    $cause = $error;
+    for ($depth = 0; $depth < 6 && $cause->getPrevious() !== null; ++$depth) $cause = $cause->getPrevious();
+    $causeClass = get_class($cause);
+    if (preg_match('/\A[A-Za-z0-9_\\\\]{1,160}\z/D', $causeClass)) $outcome['cause_class'] = $causeClass;
+    $outcome['failure_trace'] = [];
+    foreach (array_slice($cause->getTrace(), 0, 8) as $frame) {
+        $class = (string) ($frame['class'] ?? '');
+        $function = (string) ($frame['function'] ?? '');
+        $file = basename(str_replace('\\', '/', (string) ($frame['file'] ?? '')));
+        $line = $frame['line'] ?? 0;
+        if (strlen($class) <= 160 && preg_match('/\A[A-Za-z0-9_\\\\]{1,160}\z/D', $class)
+            && preg_match('/\A[A-Za-z_][A-Za-z0-9_]{0,79}\z/D', $function)
+            && preg_match('/\A[A-Za-z0-9_.-]{1,120}\.php\z/D', $file)
+            && is_int($line) && $line > 0 && $line <= 1000000) {
+            $outcome['failure_trace'][] = ['class' => $class, 'function' => $function, 'source' => $file . ':' . $line];
+        }
+    }
+    $sourceBase = basename(str_replace('\\', '/', $cause->getFile()));
+    if (preg_match('/\A[A-Za-z0-9_.-]{1,180}\.php\z/D', $sourceBase)
+        && $cause->getLine() > 0 && $cause->getLine() <= 1000000) {
+        $outcome['failure_source'] = $sourceBase . ':' . $cause->getLine();
+    }
+    $emitSafeOutcome($outcome);
     exit(1);
 } finally {
     foreach ($heldSockets as $heldSocket) {

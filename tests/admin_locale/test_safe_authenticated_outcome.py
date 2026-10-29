@@ -42,6 +42,11 @@ def valid_helper_payload():
         "mbo_error_render": {
             "mode": "authenticated_production_kernel_browserkit_request",
             "actual_admin_login_form_post": True,
+            "native_login_transport": "loopback_http_native_front_controller",
+            "native_login_loopback_http_requests": 4,
+            "native_login_cookie_count": 2,
+            "kernel_browser_target_request_count": 1,
+            "private_response_snapshot_sha256": "c" * 64,
             "native_route": "admin_mbo_catalog_theme",
             "controller": "ThemeCatalogController::indexAction",
             "response_status": 503,
@@ -204,6 +209,11 @@ class SafeAuthenticatedOutcomeTests(unittest.TestCase):
             ("browser_socket_requests", False),
             ("actual_admin_login_form_post", 1),
             ("bootstrap_network_side_effects_instrumented", True),
+            ("kernel_browser_target_request_count", 2),
+            ("native_login_cookie_count", True),
+            ("native_login_cookie_count", 0),
+            ("native_login_loopback_http_requests", 2),
+            ("native_login_loopback_http_requests", 15),
         )
         for field, value in cases:
             payload = valid_helper_payload()
@@ -212,6 +222,25 @@ class SafeAuthenticatedOutcomeTests(unittest.TestCase):
                 result = MODULE.collect_safe_outcome(raw_json(payload), 0)
                 self.assertFalse(result["passed"])
                 self.assertEqual(result["failure_code"], "outcome_contract_mismatch")
+
+    def test_login_transport_metadata_is_fixed_and_sanitized(self):
+        result = MODULE.collect_safe_outcome(raw_json(valid_helper_payload()), 0)
+        self.assertTrue(result["passed"])
+        render = result["mbo_error_render"]
+        self.assertEqual(render["native_login_transport"], "loopback_http_native_front_controller")
+        self.assertEqual(render["native_login_loopback_http_requests"], 4)
+        self.assertEqual(render["native_login_cookie_count"], 2)
+        self.assertEqual(render["kernel_browser_target_request_count"], 1)
+
+        for field, value in (
+            ("native_login_transport", "browserkit_fake_login"),
+            ("native_login_transport", True),
+        ):
+            payload = valid_helper_payload()
+            payload["mbo_error_render"][field] = value
+            rejected = MODULE.collect_safe_outcome(raw_json(payload), 0)
+            self.assertFalse(rejected["passed"])
+            self.assertEqual(rejected["failure_code"], "outcome_contract_mismatch")
 
     def test_dependency_sources_require_allowlisted_packages_versions_and_sha_shapes(self):
         cases = (

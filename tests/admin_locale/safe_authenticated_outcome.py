@@ -191,6 +191,8 @@ def _safe_mbo_error_render(value: Any) -> dict[str, Any] | None:
     fixed_values: dict[str, str | bool | int] = {
         "mode": "authenticated_production_kernel_browserkit_request",
         "actual_admin_login_form_post": True,
+        "native_login_transport": "loopback_http_native_front_controller",
+        "kernel_browser_target_request_count": 1,
         "native_route": "admin_mbo_catalog_theme",
         "controller": "ThemeCatalogController::indexAction",
         "response_status": 503,
@@ -218,8 +220,21 @@ def _safe_mbo_error_render(value: Any) -> dict[str, Any] | None:
     if type(occurrences) is not int or not 2 <= occurrences <= 10:
         return None
 
+    loopback_requests = value.get("native_login_loopback_http_requests")
+    if type(loopback_requests) is not int or not 3 <= loopback_requests <= 14:
+        return None
+    cookie_count = value.get("native_login_cookie_count")
+    if type(cookie_count) is not int or not 1 <= cookie_count <= 20:
+        return None
+    snapshot_hash = value.get('private_response_snapshot_sha256')
+    if not isinstance(snapshot_hash, str) or re.fullmatch(r'[0-9a-f]{64}', snapshot_hash) is None:
+        return None
+
     safe_render: dict[str, Any] = dict(fixed_values)
     safe_render["korean_message_occurrences"] = occurrences
+    safe_render["native_login_loopback_http_requests"] = loopback_requests
+    safe_render["native_login_cookie_count"] = cookie_count
+    safe_render['private_response_snapshot_sha256'] = snapshot_hash
     return safe_render
 
 

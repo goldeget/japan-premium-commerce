@@ -285,6 +285,11 @@ PYHEALTH
 }
 run_phase notifications_health health_snapshot_acceptance
 
+# These isolated database contracts are independent of the native admin HTTP
+# fixture. Preserve their evidence even if that later boundary finds a defect.
+run_phase policies_behavior behavior policies_behavior
+run_phase policies_concurrency behavior policies_concurrency
+
 source tests/admin_locale/ci_authenticated_mbo.sh
 native_boundaries() {
   behavior native_integration_test || return "$?"
@@ -312,8 +317,6 @@ PYCACHE
 }
 run_phase native_boundary native_boundaries
 run_phase native_push_settings behavior native_push_settings
-run_phase policies_behavior behavior policies_behavior
-run_phase policies_concurrency behavior policies_concurrency
 run_phase policies_smarty behavior policies_smarty
 run_phase support_database behavior support_database
 run_phase support_concurrency_review behavior support_concurrency_review

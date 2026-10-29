@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use PrestaShop\Module\Mbo\Service\ExternalContentProvider\ExternalContentProvider;
 use PrestaShop\Module\Mbo\Service\ExternalContentProvider\ExternalContentProviderInterface;
-use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 
 ini_set('display_errors', '0');
@@ -20,6 +19,10 @@ $stage = 'ci_guard';
 $moduleInventory = [];
 $testDependencySources = [];
 $injectedProvider = null;
+$nativeHttpTransport = null;
+$nativeHttpLoginResult = null;
+$nativeLoginCookies = [];
+$nativeLoopbackHttpRequestCount = 0;
 $shopRoot = dirname(__DIR__, 2);
 
 /** Fail with a fixed stage only; exception text and request data can carry secrets. */
@@ -31,7 +34,7 @@ $require = static function (bool $condition, string $reason): void {
 
 /**
  * Resolve a same-origin admin URI. Redirects and form actions may never send
- * this in-process client to another host or escape the installed admin path.
+ * the test client to another host or escape the installed admin path.
  */
 $localAdminUri = static function (string $candidate, string $baseUri): string {
     if ($candidate === '') {
@@ -57,7 +60,8 @@ $localAdminUri = static function (string $candidate, string $baseUri): string {
     } elseif (!str_starts_with($path, '/')) {
         $baseParts = parse_url($baseUri);
         $basePath = is_array($baseParts) ? (string) ($baseParts['path'] ?? '/') : '/';
-        $path = rtrim(dirname($basePath), '/') . '/' . $path;
+        $baseDirectory = str_ends_with($basePath, '/') ? rtrim($basePath, '/') : dirname($basePath);
+        $path = rtrim($baseDirectory, '/') . '/' . $path;
     }
 
     if (str_contains($path, '\\') || preg_match('~(?:\A|/)\.\.?(/|\z)|%2e|%2f|%5c~i', $path)
@@ -67,27 +71,6 @@ $localAdminUri = static function (string $candidate, string $baseUri): string {
 
     $query = isset($parts['query']) && $parts['query'] !== '' ? '?' . $parts['query'] : '';
     return $path . $query;
-};
-
-$followLocalRedirects = static function (KernelBrowser $browser, string $uri) use ($localAdminUri): string {
-    for ($hop = 0; $hop < 6; ++$hop) {
-        $response = $browser->getResponse();
-        $status = $response->getStatusCode();
-        if (!$response->isRedirection()) {
-            return $uri;
-        }
-        if (!in_array($status, [301, 302, 303], true)) {
-            throw new RuntimeException('unexpected_redirect_status');
-        }
-        $location = $response->headers->get('Location');
-        if (!is_string($location) || $location === '') {
-            throw new RuntimeException('redirect_location_missing');
-        }
-        $uri = $localAdminUri($location, $uri);
-        $browser->request('GET', $uri);
-    }
-
-    throw new RuntimeException('redirect_limit');
 };
 
 $parseLoginForm = static function (string $html): ?array {
@@ -227,6 +210,33 @@ try {
     } elseif (realpath(_PS_ADMIN_DIR_) !== $adminRoot) {
         throw new RuntimeException('native_admin_path_mismatch');
     }
+    require_once __DIR__ . '/native_admin_http_login.php';
+    $nativeTargetUri = '/admin-kuranea/index.php/mbo/themes/catalog';
+    $stage = 'native_login_get';
+    $nativeHttpTransport = new NativeAdminHttpCurlTransport();
+    $nativeHttpLoginResult = NativeAdminHttpLogin::authenticate(
+        '/admin-kuranea/',
+        $adminEmail,
+        $adminPassword,
+        static fn (string $method, string $uri, ?array $fields): array => $nativeHttpTransport->request($method, $uri, $fields),
+        static fn (): array => $nativeHttpTransport->cookies(),
+        $parseLoginForm,
+        $hasLoginForm,
+        $localAdminUri,
+        static function (string $nextStage) use (&$stage): void { $stage = $nextStage; }
+    );
+    $nativeLoginCookies = NativeAdminHttpLogin::validateCookies($nativeHttpLoginResult['cookies'] ?? null);
+    $nativeLoopbackHttpRequestCount = $nativeHttpTransport->requestCount();
+    $nativeHttpTransport->close();
+    $nativeHttpTransport = null;
+    $require(
+        ($nativeHttpLoginResult['login_form_posted'] ?? false) === true
+        && is_string($nativeHttpLoginResult['final_uri'] ?? null)
+        && $nativeLoopbackHttpRequestCount >= 3 && $nativeLoopbackHttpRequestCount <= 14
+        && count($nativeLoginCookies) >= 1 && count($nativeLoginCookies) <= NativeAdminHttpLogin::MAX_COOKIES,
+        'native_http_login_proof_invalid'
+    );
+
     $_SERVER['HTTP_HOST'] = 'localhost:18081';
     $_SERVER['SERVER_NAME'] = 'localhost';
     $_SERVER['SERVER_PORT'] = '18081';
@@ -234,10 +244,17 @@ try {
     $_SERVER['REQUEST_SCHEME'] = 'http';
     $_SERVER['REQUEST_METHOD'] = 'GET';
     $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
-    $_SERVER['REQUEST_URI'] = '/admin-kuranea/';
+    $_SERVER['REQUEST_URI'] = $nativeTargetUri;
+    $_SERVER['QUERY_STRING'] = '';
     $_SERVER['SCRIPT_NAME'] = '/admin-kuranea/index.php';
     $_SERVER['PHP_SELF'] = '/admin-kuranea/index.php';
     $_SERVER['SCRIPT_FILENAME'] = $adminRoot . '/index.php';
+    $_SERVER['REQUEST_METHOD'] = 'GET';
+    $_GET = [];
+    $_POST = [];
+    $_FILES = [];
+    $_COOKIE = NativeAdminHttpLogin::globalsForUri($nativeLoginCookies, $nativeTargetUri);
+    $_REQUEST = $_COOKIE;
 
     $stage = 'bootstrap';
     $baseVendorAutoload = $shopRoot . '/vendor/autoload.php';
@@ -430,7 +447,7 @@ try {
 
     require_once __DIR__ . '/native_admin_kernel_browser.php';
     \Symfony\Component\HttpFoundation\Request::enableHttpMethodParameterOverride();
-    $stage = 'browserkit_authenticated_login';
+    $stage = 'native_authenticated_error_route';
     $browser = new NativeAdminKernelBrowser($kernel, [
         'HTTP_HOST' => 'localhost:18081',
         'SERVER_NAME' => 'localhost',
@@ -446,48 +463,21 @@ try {
         'HTTP_USER_AGENT' => 'ORDENOWA-isolated-ci-kernel-browser',
     ]);
     $browser->disableReboot();
+    NativeAdminHttpLogin::installInBrowserKit($browser->getCookieJar(), $nativeLoginCookies);
     if ($container->get($providerInterfaceId) !== $injectedProvider) {
         throw new RuntimeException('native_provider_override_lost');
     }
 
-    $loginUri = '/admin-kuranea/';
-    $stage = 'native_login_get';
-    $browser->request('GET', $loginUri);
-    $stage = 'native_login_get_redirects';
-    $loginUri = $followLocalRedirects($browser, $loginUri);
-    $loginHtml = $browser->getResponse()->getContent();
-    if (!is_string($loginHtml)) {
-        throw new RuntimeException('native_login_page_missing');
-    }
-    $loginForm = $parseLoginForm($loginHtml);
-    if ($loginForm === null) {
-        throw new RuntimeException('native_login_form_contract_mismatch');
-    }
-    $loginTarget = $localAdminUri((string) $loginForm['action'], $loginUri);
-    $loginFields = $loginForm['fields'];
-    $loginFields[$loginForm['email_name']] = $adminEmail;
-    $loginFields[$loginForm['password_name']] = $adminPassword;
-    $stage = 'native_login_post';
-    $browser->request('POST', $loginTarget, $loginFields);
-    $stage = 'native_login_post_redirects';
-    $postLoginUri = $followLocalRedirects($browser, $loginTarget);
-    $postLoginResponse = $browser->getResponse();
-    $postLoginBody = $postLoginResponse->getContent();
-    if ($postLoginResponse->getStatusCode() !== 200 || !is_string($postLoginBody)
-        || $hasLoginForm($postLoginBody)) {
-        throw new RuntimeException('native_admin_authentication_not_established');
-    }
-    if ($container->get($providerInterfaceId) !== $injectedProvider) {
-        throw new RuntimeException('native_provider_override_lost_after_login');
-    }
-
-    $stage = 'native_authenticated_error_route';
     $catalogPath = $container->get('router')->generate('admin_mbo_catalog_theme');
     if ($catalogPath !== '/mbo/themes/catalog') {
         throw new RuntimeException('native_mbo_route_contract_mismatch');
     }
     $catalogUri = '/admin-kuranea/index.php' . $catalogPath;
+    if ($catalogUri !== $nativeTargetUri) {
+        throw new RuntimeException('native_mbo_target_uri_mismatch');
+    }
     $browser->request('GET', $catalogUri);
+    $require($browser->nativeRequestCount === 1, 'native_kernel_browser_target_request_count_invalid');
     $response = $browser->getResponse();
     $body = $response->getContent();
     if (!is_string($body)) {
@@ -526,6 +516,9 @@ try {
         'authenticated_korean_error_assertions_failed'
     );
 
+    require_once __DIR__ . '/native_admin_private_snapshot.php';
+    persistNativeAdminSnapshot('mbo', $body, '/tmp/owned/kuranea-admin-test-deps', $expectedProject);
+
     $outcome = [
         'schema' => 1,
         'passed' => true,
@@ -533,7 +526,12 @@ try {
         'module_inventory' => $moduleInventory,
         'mbo_error_render' => [
             'mode' => 'authenticated_production_kernel_browserkit_request',
-            'actual_admin_login_form_post' => true,
+            'actual_admin_login_form_post' => $nativeHttpLoginResult['login_form_posted'] === true,
+            'native_login_transport' => 'loopback_http_native_front_controller',
+            'native_login_loopback_http_requests' => $nativeLoopbackHttpRequestCount,
+            'native_login_cookie_count' => count($nativeLoginCookies),
+            'kernel_browser_target_request_count' => $browser->nativeRequestCount,
+            'private_response_snapshot_sha256' => hash('sha256', $body),
             'native_session_csrf_verified' => $nativeSessionCsrfVerified,
             'native_session_csrf_probe_count' => $nativeSessionCsrfProbeCount,
             'native_route' => 'admin_mbo_catalog_theme',
@@ -556,6 +554,9 @@ try {
     $emitSafeOutcome($outcome);
     exit(0);
 } catch (Throwable $error) {
+    if ($nativeHttpTransport instanceof NativeAdminHttpCurlTransport) {
+        $nativeHttpTransport->close();
+    }
     fwrite(STDERR, 'FAIL authenticated native MBO error stage=' . $stage . PHP_EOL);
     $outcome = [
         'schema' => 1,
