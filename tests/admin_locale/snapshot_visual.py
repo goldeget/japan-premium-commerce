@@ -60,7 +60,9 @@ EXPECTED = {
 
 ASSET_ROOTS = (
     "/admin-kuranea/themes/new-theme/public/",
-    "/admin-kuranea/themes/default/",
+    "/admin-kuranea/themes/default/css/",
+    "/admin-kuranea/themes/default/fonts/",
+    "/admin-kuranea/themes/default/img/",
     "/themes/new-theme/public/",
     "/themes/default/public/",
     "/js/jquery/plugins/fancybox/",
@@ -68,6 +70,7 @@ ASSET_ROOTS = (
     "/img/admin/",
     "/modules/ps_mbo/views/img/",
     "/modules/klaviyopsautomation/dist/",
+    "/modules/kuraneabusinessprofile/views/css/",
 )
 ASSET_MIME = {
     ".css": {"text/css"},
@@ -90,7 +93,12 @@ PRIVATE_TITLE_RE = re.compile(
     r"(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|https?://|\btoken\s*[=:]|\b[A-F0-9]{32,}\b)",
     re.IGNORECASE,
 )
-CSS_ONLY_ROOTS = ("/js/jquery/plugins/fancybox/", "/js/jquery/plugins/chosen/")
+CSS_ONLY_ROOTS = (
+    "/js/jquery/plugins/fancybox/",
+    "/js/jquery/plugins/chosen/",
+    "/admin-kuranea/themes/default/css/",
+    "/modules/kuraneabusinessprofile/views/css/",
+)
 ALLOWED_TAGS_DROP = frozenset({"script", "iframe", "frame", "object", "embed", "applet", "noscript"})
 VOID_TAGS = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"})
 

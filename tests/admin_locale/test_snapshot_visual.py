@@ -271,6 +271,15 @@ async function run(kind) {
         safe, ext = visual.normalize_asset_url("/admin-kuranea/themes/default/css/admin.css")
         self.assertEqual("/admin-kuranea/themes/default/css/admin.css", safe)
         self.assertEqual(".css", ext)
+        safe, ext = visual.normalize_asset_url("/admin-kuranea/themes/default/fonts/admin.woff2")
+        self.assertEqual("/admin-kuranea/themes/default/fonts/admin.woff2", safe)
+        self.assertEqual(".woff2", ext)
+        safe, ext = visual.normalize_asset_url("/admin-kuranea/themes/default/img/error.png")
+        self.assertEqual("/admin-kuranea/themes/default/img/error.png", safe)
+        self.assertEqual(".png", ext)
+        safe, ext = visual.normalize_asset_url("/modules/kuraneabusinessprofile/views/css/admin.css")
+        self.assertEqual("/modules/kuraneabusinessprofile/views/css/admin.css", safe)
+        self.assertEqual(".css", ext)
         for url in (
             "https://localhost:18081/admin-kuranea/themes/new-theme/public/theme.css",
             "http://user:pass@localhost:18081/admin-kuranea/themes/new-theme/public/theme.css",
@@ -282,7 +291,11 @@ async function run(kind) {
             "/modules/klaviyopsautomation/dist/admin.js",
             "/modules/klaviyopsautomation/dist/../private/admin.css",
             "/admin-kuranea/themes/default/css/admin.php",
-            "/admin-kuranea/themes/default/../private/admin.css",
+            "/admin-kuranea/themes/default/js/admin.js",
+            "/admin-kuranea/themes/default/css/../private/admin.css",
+            "/modules/kuraneabusinessprofile/views/templates/front/legal.css",
+            "/modules/kuraneabusinessprofile/views/css/legal.php",
+            "/modules/kuraneabusinessprofile/views/css/image.svg",
             "//evil.invalid/theme.css",
         ):
             with self.subTest(url=url):
@@ -333,15 +346,21 @@ class AssetProxyTests(unittest.TestCase):
         self.FakeConnection.response = self.FakeResponse()
 
     def test_proxy_uses_only_localhost_static_get_without_cookies_or_auth(self):
+        paths = [
+            "/admin-kuranea/themes/new-theme/public/theme.css",
+            "/modules/kuraneabusinessprofile/views/css/admin.css",
+        ]
         with patch.object(visual.http.client, "HTTPConnection", self.FakeConnection):
-            body, mime = visual.fetch_static_asset("/admin-kuranea/themes/new-theme/public/theme.css")
-        self.assertEqual(b"body{color:#123}", body)
-        self.assertEqual("text/css", mime)
-        request = next(call for call in self.FakeConnection.calls if call[0] == "request")
-        self.assertEqual(("request", "GET", "/admin-kuranea/themes/new-theme/public/theme.css"), request[:3])
-        self.assertEqual("localhost:18081", request[3]["Host"])
-        self.assertNotIn("Cookie", request[3])
-        self.assertNotIn("Authorization", request[3])
+            for path in paths:
+                body, mime = visual.fetch_static_asset(path)
+                self.assertEqual(b"body{color:#123}", body)
+                self.assertEqual("text/css", mime)
+        requests = [call for call in self.FakeConnection.calls if call[0] == "request"]
+        self.assertEqual([("request", "GET", path) for path in paths], [call[:3] for call in requests])
+        for request in requests:
+            self.assertEqual("localhost:18081", request[3]["Host"])
+            self.assertNotIn("Cookie", request[3])
+            self.assertNotIn("Authorization", request[3])
 
     def test_proxy_rejects_non_static_paths_before_connecting(self):
         for path in (

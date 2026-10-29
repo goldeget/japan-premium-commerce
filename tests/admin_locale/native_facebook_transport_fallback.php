@@ -837,7 +837,9 @@ try {
                 $nativeAccessDeniedFromLegacyController = true;
             }
         },
-        PHP_INT_MIN
+        // Observe before Symfony's ErrorListener converts the exception to a
+        // 403 response and stops exception-event propagation.
+        PHP_INT_MAX
     );
     $controllerListeners = $dispatcher->getListeners(KernelEvents::CONTROLLER);
     if ($controllerListeners === [] || end($controllerListeners) !== $controllerListener) {
